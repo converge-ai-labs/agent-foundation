@@ -4,7 +4,7 @@
 
 `a13n-harness` is distributed as `a13n-harness`. Its public API is async for execution and run-scoped cleanup, while Agent and Model construction is synchronous and code-first. It exposes native Pydantic AI types where upstream already owns the semantics and adds only the process-local definition, context, plugin, state, model-integration, recovery, event, and result boundaries shared by embedded and hosted callers.
 
-The package does not expose a serialized Agent-definition language, compiler, or universal extension framework. Hosted systems reconstruct trusted direct Python inputs through their own adapters and call the same public builder as embedded applications. The Harness plugin boundary additionally owns one narrow versioned preferred YAML or supported JSON document and Build Context that can select factory classes during explicitly enabled builder construction. Environment definitions, management, connections, operations, and state codecs belong to the independent [Environment library](../a13n-environment/01-environment-contract.md); Run execution accepts fixed-target Environment connectors, opens Environment execution scopes, and adds mount policy, routing, tools, and context. Public `EnvironmentMount.mount_path` optionally assigns a Host-selected aggregate/model-facing root while keeping `working_directory` and every Provider call in the provider-local namespace; the complete compatibility and routing contract belongs to [Environment Integration](08-environment-integration.md#run-inputs).
+The package does not expose a serialized Agent-definition language, compiler, or universal extension framework. Hosted systems reconstruct trusted direct Python inputs through their own adapters and call the same public builder as embedded applications. The Harness plugin boundary additionally owns one narrow versioned preferred YAML or supported JSON document and Build Context that can select factory classes during explicitly enabled builder construction. Environment definitions, management, connections, operations, and state codecs belong to the independent [Environment library](../a13n-environment/01-environment-contract.md); Run execution accepts Host-owned Environment sources, opens executions on first use, and adds mount policy, routing, tools, and context. Public `EnvironmentMount.mount_path` optionally assigns a Host-selected aggregate/model-facing root while keeping `working_directory` and every Provider call in the provider-local namespace; the complete compatibility and routing contract belongs to [Environment Integration](08-environment-integration.md#run-inputs).
 
 Shared Environment definitions, `EnvironmentState`, `EnvironmentConnector`, `EnvironmentExecution`, and single-target operation types are imported from `a13n_environment`. Harness owns their mount and tool adaptation under `a13n_harness.environment`.
 
@@ -20,7 +20,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | Definition and build          | `AgentSpec`, `ModelCapability`, `HarnessModelCharacteristics`, `ImageInputPolicy`, `UrlInputSupport`, `VideoInputPolicy`, `VideoUrlType`, `AgentDefinition`, `HarnessBuilder`, `ExecutableAgent`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, `derive_child_identity` |
 | Context and identity          | `RunBindings`, `AgentContext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                                                                                                        |
 | Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `ContentItem`, `ContentMetadata`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                                                            |
-| Environment selection         | `EnvironmentEntry`, `EnvironmentMount`                                                                                                                                                                                                                                                               |
+| Environment selection         | `EnvironmentEntry`, `EnvironmentSource`, `EnvironmentMount`                                                                                                                                                                                                                                          |
 | Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                                                                                            |
 | Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                                                                         |
 | Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                                                                                    |
@@ -265,8 +265,8 @@ class ExecutableAgent[OutputT]:
         *,
         input_factory: RunInputFactory | None = None,
         bindings: RunBindings | None = None,
-        environment: EnvironmentConnector | EnvironmentMount | None = None,
-        environments: Mapping[str, EnvironmentConnector | EnvironmentMount] | None = None,
+        environment: EnvironmentSource | EnvironmentMount | None = None,
+        environments: Mapping[str, EnvironmentSource | EnvironmentMount] | None = None,
         default_environment: str | None = None,
         previous_state: HarnessState | None = None,
         resume_usage: bool = False,
@@ -282,8 +282,8 @@ class ExecutableAgent[OutputT]:
         *,
         input_factory: RunInputFactory | None = None,
         bindings: RunBindings | None = None,
-        environment: EnvironmentConnector | EnvironmentMount | None = None,
-        environments: Mapping[str, EnvironmentConnector | EnvironmentMount] | None = None,
+        environment: EnvironmentSource | EnvironmentMount | None = None,
+        environments: Mapping[str, EnvironmentSource | EnvironmentMount] | None = None,
         default_environment: str | None = None,
         previous_state: HarnessState | None = None,
         resume_usage: bool = False,
@@ -337,7 +337,7 @@ class HarnessRunStream[OutputT](
     async def export_state(self) -> HarnessState: ...
 ```
 
-Context entry allocates the Harness Run ID, restores the selected State-owned Thread ID or generates initial State, opens a fresh `EnvironmentExecution` from each `EnvironmentConnector`, atomically publishes the initial mount set, optionally builds input, creates `AgentContext`, binds plugins, and prepares the outer plugin invocation. Portable `environment_states` never restores a live `EnvironmentExecution`; the Host selects authoritative state before constructing the `EnvironmentConnector`. Trusted Run-local mutation remains valid until the terminal fence across every `ModelAttempt` and recovery backoff. No model or tool work begins until iteration reaches the inner Pydantic path.
+Context entry allocates the Harness Run ID, restores the selected State-owned Thread ID or generates initial State, registers inert Environment sources, atomically publishes the initial mount set, optionally builds input, creates `AgentContext`, binds plugins, and prepares the outer plugin invocation. Dependent use calls the Host source's `ensure_ready()` and opens its returned connector once for that mount. Portable `environment_states` never restores a source or live execution, and export never activates unused mounts; the Host owns authoritative state and target preparation. Trusted Run-local mutation remains valid until the terminal fence across every `ModelAttempt` and recovery backoff. No model or tool work begins until iteration reaches the inner Pydantic path.
 
 The stream has exactly one consumer and forbids concurrent `__anext__()` calls. It yields normalized `HarnessEvent` values followed by at most one `HarnessRunResultEvent`. Public root event sequence numbers are assigned on delivery and remain monotonic from zero; execution plugins do not rewrite events.
 

@@ -18,7 +18,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [05-plugin-system.md](05-plugin-system.md)                                               | Plugin document/Build Context, selected factories, concrete middleware, ordering, binding, result/state composition, and cleanup |
 | [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Logical run lifecycle, inner model attempts, cancellation, terminal results, and cleanup                                         |
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
-| [08-environment-integration.md](08-environment-integration.md)                           | Fresh Environment inputs, aggregate path roots and routing, Run Extensions, mutation, model projection, state, and cleanup       |
+| [08-environment-integration.md](08-environment-integration.md)                           | Environment sources, first-use readiness, routes, Run Extensions, mutation, model projection, state, and cleanup                 |
 | [Environment library](../a13n-environment/README.md)                                     | Independent single-target management, Environment connectors and Environment executions, portable state, and Providers           |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, and compaction                                   |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
@@ -58,7 +58,7 @@ Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host cr
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then the [Environment library](../a13n-environment/README.md) for management, connection, and provider guarantees, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run opens independent Environment executions from authorized Environment connectors and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
+Read `07`, `08`, `13`, and `15`, then the [Environment library](../a13n-environment/README.md) for management, connection, and provider guarantees, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run calls its Host sources' `ensure_ready()` on first use, opens independent executions from the returned connectors, and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
 
 ### Add Agent Memory
 

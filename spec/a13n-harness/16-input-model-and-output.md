@@ -47,7 +47,7 @@ class SemanticRunInput:
     value: str | tuple[UserContent | ContentItem, ...] | None
 ```
 
-`run()` and `stream()` accept either an immediate value or one async factory, never both. The factory runs exactly once after Harness has opened the Environment execution scopes and atomically published the initial mount set, but before plugin middleware or Pydantic execution. It can use trusted run identity, metadata, scoped readiness, and the entered Environment without depending on `DynamicEnvironmentCapability` or receiving a live Pydantic run handle.
+`run()` and `stream()` accept either an immediate value or one async factory, never both. The factory runs exactly once after Harness has registered inert Environment sources and atomically published the initial mount set, but before plugin middleware or Pydantic execution. Its dependent Environment operations trigger first-use readiness. It can use trusted run identity, metadata, scoped readiness, and the registered Environment without depending on `DynamicEnvironmentCapability` or receiving a live Pydantic run handle.
 
 Normalization rules are deliberately small:
 

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness UI stores Device connections and Project/Thread working-directory selections. Each Run captures its bindings and supplies fixed-target Environment connectors for fresh Environment execution scopes. EIP Sessions are internal execution resources, not user-managed Project or Thread resources.
+Harness UI stores Device connections and Project/Thread working-directory selections. Each Run captures its bindings and supplies Host-owned Environment sources implementing `ensure_ready()`, which return fixed-target connectors for fresh execution scopes. EIP Sessions are internal execution resources, not user-managed Project or Thread resources.
 
 [Projects and Threads](04-projects-threads-and-environments.md) owns local roots, sticky configuration and admission. [EIP](../a13n-envd/README.md) owns Device discovery, Sessions and resource cleanup.
 

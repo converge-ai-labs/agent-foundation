@@ -41,8 +41,8 @@ The trusted caller may supply fresh bindings for a logical run; an embedded call
 
 1. validates and normalizes `environment`, `environments`, and `default_environment`, or accepts an explicit `RunBindings.environment` runtime, under the [Environment input rules](08-environment-integration.md#run-inputs) without provider effects;
 2. allocates the public Harness `run_id` and obtains a new or restored State-owned `thread_id`;
-3. assigns opaque mount IDs and enters every fresh adapter with ephemeral Run, Thread, Agent-instance, mount, and Host correlation;
-4. atomically publishes the initial mount snapshot only after every adapter enters successfully;
+3. assigns opaque mount IDs and registers inert Environment sources with ephemeral Run, Thread, Agent-instance, mount, and Host correlation;
+4. atomically publishes the initial mount snapshot after static validation, without activating sources; dependent input or Capability work requests readiness when needed;
 5. invokes an optional `RunInputFactory` exactly once;
 6. normalizes semantic input;
 7. creates one `AgentContext` with the stable Thread ID, imported `AgentContextState`, entered Environment facade, optional model resolver and model-context middleware, immutable metadata, and executable-owned child collection;
@@ -80,7 +80,7 @@ Pydantic AI also owns the native `AgentSpec.retries` budgets. The upstream defau
 ```mermaid
 stateDiagram-v2
     [*] --> created
-    created --> active: EnvironmentExecution objects opened
+    created --> active: Environment mounts registered
     active --> active: ModelAttempt or Run-local mount mutation
     active --> completed: validated output
     active --> suspended: supported native deferred or approval boundary
@@ -105,7 +105,7 @@ sequenceDiagram
     participant Provider
 
     Caller->>Harness: enter stream with input, optional Environment/bindings, and optional state
-    Harness->>Harness: normalize and open EnvironmentExecution scopes, publish mounts, and create context
+    Harness->>Harness: register Environment sources, publish mounts, and create context
     Harness->>Plugins: bind one fresh middleware chain
     Caller->>Harness: request first item
     loop consecutive-failure recovery budget

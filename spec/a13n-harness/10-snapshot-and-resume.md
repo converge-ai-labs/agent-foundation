@@ -225,7 +225,7 @@ A provider-suspended response is continuation of an already issued model request
 
 A new run receives `previous_state` separately from fresh `RunBindings`. Stream construction deep-copies the supplied state. Entry then:
 
-1. opens fresh Environment executions from Host-authorized Environment connectors and atomically publishes the initial mount set;
+1. registers Host-authorized Environment sources and atomically publishes the initial mount set without forcing activation;
 2. validates that portable `environment_states` is observation only and does not restore or replace adapter state after entry;
 3. invokes the optional `RunInputFactory` against that entered Environment;
 4. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
@@ -235,7 +235,7 @@ A new run receives `previous_state` separately from fresh `RunBindings`. Stream 
 8. passes the resulting messages, with saved content parts loaded, to the first `ModelAttempt`;
 9. lets each Capability read and validate only the namespaces it understands.
 
-Initial Environment entry and complete mount publication finish before input production and never overlap mount mutation. Harness does not apply saved Environment state to a live Environment execution: the Host selects state before constructing each Environment connector. An unmatched portable mapping entry is inert; an explicit unmanaged/import flow can adopt it only before Run construction. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
+Initial Environment registration and complete mount publication finish before input production and never overlap mount mutation. Required executions open on first use, including dependent input production. Harness does not apply saved state to a source or live execution: the Host selects authoritative state and prepares targets through its readiness boundary. Export never activates an unused mount. An unmatched portable mapping entry is inert; an explicit unmanaged/import flow can adopt it only before Run construction. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
 
 Identity, policy, credentials, model resolution, Environment authority, desired mounts, tool grants, provider sessions, and Host ownership always come from fresh trusted bindings. Message metadata, Thread identity, Capability state, and portable Environment state grant none of them.
 

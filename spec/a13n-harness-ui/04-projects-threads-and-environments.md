@@ -210,7 +210,7 @@ For each captured Project root, the App:
 1. resolves the exact Provider and approved Host adapter;
 2. loads current Host-authoritative state under the complete binding key;
 3. asks the adapter to materialize root-specific validated Provider configuration;
-4. performs any required explicit management under App policy, publishes its observed state, and supplies a fixed-target Environment connector for Harness to open;
+4. performs any required explicit management under App policy, publishes its observed state, and supplies an `EnvironmentSource` whose `ensure_ready()` returns the authorized fixed-target connector;
 5. constructs the deterministic Harness Project mount set;
 6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root;
 7. adds the selected configuration directory and Thread file area under the contracts below; and
@@ -232,7 +232,7 @@ An approved custom adapter that explicitly preserves Host paths receives the sam
 
 The same adapter decision applies to the dedicated Direct Local user Skill mount. A Host-path-preserving profile exposes its canonical resolved `~/.agents/skills` path; a virtual-layout profile routes it as `/environment/user-skills`. When a Host-path-preserving Project mount already has that exact path, Harness UI omits the duplicate dedicated mount and routes the user Skill source through the Project mount. Otherwise internal mount aliases, opaque mount incarnations, permission ceilings, Environment-state keys, and source precedence are unchanged by presentation layout.
 
-Harness UI selects preparation under its own Host policy; Service Template preparation and retention settings are not Harness UI resources. Harness scope entry never performs a second provider connection.
+Harness UI selects preparation under its own Host policy; Service Template preparation and retention settings are not Harness UI resources. Harness registration is inert. It calls the same readiness boundary on first dependent use and opens one execution per used mount; App prewarming does not transfer or duplicate a Run execution.
 
 ### Configuration File Mount
 
@@ -296,7 +296,7 @@ Management outcome publication retains known state even after a partial failure 
 
 A newly delegated child Thread initializes Project and Environment profile selections from the parent Run capture. Every child segment later uses the child Thread's own current selections and can apply an explicit patch before resume.
 
-Each segment receives authorized Environment connectors, independent Environment execution scopes, and fresh Environment Run Extensions. It never borrows the parent's entered Environment facade. A descendant initializes from its admitting child capture under the same rule.
+Each segment receives authorized Environment sources and fresh Environment Run Extensions, and opens independent execution scopes on first use. It never borrows the parent's entered Environment facade. A descendant initializes from its admitting child capture under the same rule.
 
 ## Local EIP Runtime
 
