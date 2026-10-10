@@ -15315,6 +15315,109 @@
         "title": "ThreadDetail",
         "type": "object"
       },
+      "ThreadExecution": {
+        "additionalProperties": false,
+        "description": "Latest admitted root attempt, never continuation or live control authority.",
+        "properties": {
+          "execution_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "preparing",
+              "running",
+              "completed",
+              "suspended",
+              "failed",
+              "cancelled",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Message"
+          }
+        },
+        "required": [
+          "execution_id",
+          "status",
+          "submitted_at"
+        ],
+        "title": "ThreadExecution",
+        "type": "object"
+      },
       "ThreadPage": {
         "properties": {
           "threads": {
@@ -15586,6 +15689,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ThreadCompletion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "last_execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadExecution"
               },
               {
                 "type": "null"
@@ -15956,6 +16070,14 @@
             },
             "type": "array",
             "title": "Parts"
+          },
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptFailure"
+            },
+            "type": "array",
+            "title": "Failures",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -15966,6 +16088,50 @@
           "parts"
         ],
         "title": "TranscriptEntry"
+      },
+      "TranscriptFailure": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4096,
+            "title": "Message"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "message"
+        ],
+        "title": "TranscriptFailure",
+        "description": "A retained Run error, not a model message or comment target."
       },
       "TranscriptInputPage": {
         "properties": {

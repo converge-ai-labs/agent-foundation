@@ -14,7 +14,7 @@ from a13n_harness_ui.conversation import excerpt_text
 from a13n_harness_ui.display_history import DisplayHistory, ordinary_input
 from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import Thread
-from a13n_harness_ui.surfaces import TranscriptEntry, TranscriptPart, TranscriptTurn
+from a13n_harness_ui.surfaces import TranscriptEntry, TranscriptFailure, TranscriptPart, TranscriptTurn
 
 
 @dataclass
@@ -22,6 +22,7 @@ class _Row:
     items: list[Item] = field(default_factory=list)
     parts: list[dict[str, Any]] = field(default_factory=list)
     kind: Literal["request", "response"] = "response"
+    failures: list[TranscriptFailure] = field(default_factory=list)
 
 
 def _parts(item: Item) -> list[dict[str, Any]]:
@@ -91,9 +92,25 @@ def _parts(item: Item) -> list[dict[str, Any]]:
 
 def _rows(display: DisplayHistory) -> list[_Row]:
     rows: OrderedDict[str, _Row] = OrderedDict()
+    run_id: str | None = None
     for item in display.items:
         content = item.content
         if content.get("subagentRunId"):
+            continue
+        if content.get("type") == "RUN_STARTED":
+            value = content.get("runId")
+            run_id = value if isinstance(value, str) else None
+        if content.get("type") == "RUN_ERROR" and rows:
+            # Attach inspection facts without introducing rows or parts: previously
+            # published message/part comment coordinates must never be renumbered.
+            next(reversed(rows.values())).failures.append(
+                TranscriptFailure(
+                    id=item.id,
+                    run_id=run_id,
+                    message=str(content.get("message") or "The Run failed.")[:4096],
+                    code=str(content["code"])[:256] if content.get("code") else None,
+                )
+            )
             continue
         imported = content.get("entry")
         if isinstance(imported, dict):
@@ -164,6 +181,7 @@ def display_entries(display: DisplayHistory, thread: Thread | None = None) -> tu
                 message_kind=row.kind,
                 timestamp=_timestamp(row),
                 parts=tuple(parts),
+                failures=tuple(row.failures),
             )
         )
     return tuple(entries)

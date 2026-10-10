@@ -26,6 +26,7 @@ from .contracts import (
     Thread,
     ThreadCompletion,
     ThreadConfiguration,
+    ThreadExecution,
     ThreadReadModel,
 )
 from .database import DatabaseSessions, short_session, transaction
@@ -317,6 +318,23 @@ class ThreadRepository:
             )
             if touched is None:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+
+    async def save_execution(self, thread_id: str, value: ThreadExecution) -> bool:
+        """Replace on admission; later transitions can only update that same attempt."""
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            previous = (
+                ThreadExecution.model_validate_json(record.last_execution_json)
+                if record.last_execution_json is not None
+                else None
+            )
+            if value.status != "preparing" and (previous is None or previous.execution_id != value.execution_id):
+                return False
+            record.last_execution_json = value.model_dump_json()
+            await session.flush()
+            return True
 
     async def get(self, thread_id: str) -> Thread | None:
         async with short_session(self._sessions) as session:
@@ -1095,6 +1113,11 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         memory_scope=record.memory_scope,
         read_model=_read_model(record),
         completion=completion,
+        last_execution=(
+            ThreadExecution.model_validate_json(record.last_execution_json)
+            if record.last_execution_json is not None
+            else None
+        ),
         thread_id=record.thread_id,
         parent_thread_id=record.parent_thread_id,
         created_at=record.created_at,

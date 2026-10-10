@@ -586,3 +586,27 @@ def test_imported_turns_preserve_native_output_and_completion_semantics(closing:
         completed = (1,)
         history.append(ModelRequest(parts=[UserPromptPart("Steer")], metadata={"a13n.steering-run": "run-one"}))
     assert display_turns(import_display_history(history)) == _transcript_turns(tuple(history), completed)
+
+
+def test_saved_run_errors_are_inspectable_without_renumbering_comment_targets():
+    from a13n_harness_ui.display_projection import original_text
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("run-old", full_content=True)
+    fold.fold(
+        [
+            {"type": "RUN_STARTED", "threadId": "thread", "runId": "run-old"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "partial", "delta": "Partial answer"},
+            {"type": "RUN_ERROR", "message": "Provider failed", "code": "provider_failed"},
+            {"type": "RUN_STARTED", "threadId": "thread", "runId": "run-new"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "new", "delta": "New answer"},
+        ]
+    )
+    display = DisplayHistory(items=tuple(fold.items.values()))
+    entries = display_entries(display)
+    assert len(entries) == 2
+    assert entries[0].failures[0].run_id == "run-old"
+    assert entries[0].failures[0].message == "Provider failed"
+    assert entries[1].failures == ()
+    assert original_text(display, 0, 0) == "Partial answer"
+    assert original_text(display, 1, 0) == "New answer"

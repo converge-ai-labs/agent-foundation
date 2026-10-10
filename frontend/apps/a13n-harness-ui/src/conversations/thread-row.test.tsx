@@ -84,8 +84,14 @@ function mount({
 } = {}) {
   const row = {
     pending_decision: waiting ? { decision_id: "decision-one" } : null,
-    latest_operation: failed ? { status: "failed" } : null,
     thread: {
+      last_execution: failed
+        ? {
+            execution_id: "receipt-failed",
+            status: "failed",
+            submitted_at: "2026-01-01T00:00:00Z",
+          }
+        : null,
       thread_id: "thread-one",
       title: "Example",
       role: coordinator ? "coordinator" : worker ? "worker" : "ordinary",
@@ -346,13 +352,15 @@ it("keeps Coordinator identity through compact activity and explicit attention s
 
   row.pending_decision = null;
   row.thread.root_activity.state = "inactive";
-  row.latest_operation = { status: "failed" } as NonNullable<
-    typeof row.latest_operation
-  >;
+  row.thread.last_execution = {
+    execution_id: "receipt-failed",
+    status: "failed",
+    submitted_at: "2026-01-01T00:00:00Z",
+  };
   rerender(row, 0);
   expect(within(link).getByText("Failed")).toBeTruthy();
 
-  row.latest_operation = null;
+  row.thread.last_execution = null;
   rerender(row, 0);
   expect(link.querySelector("small")).toBeNull();
   expect(link.querySelector("svg")).toBe(identity);

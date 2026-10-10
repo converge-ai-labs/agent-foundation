@@ -5422,6 +5422,49 @@ export interface components {
              */
             available_actions?: ("run" | "respond" | "wait" | "steer" | "cancel" | "archive" | "clear_context")[];
         };
+        /**
+         * ThreadExecution
+         * @description Latest admitted root attempt, never continuation or live control authority.
+         */
+        ThreadExecution: {
+            /** Execution Id */
+            execution_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "preparing" | "running" | "completed" | "suspended" | "failed" | "cancelled" | "unknown";
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id?: string | null;
+            /**
+             * Started At
+             * @default null
+             */
+            started_at?: string | null;
+            /**
+             * Completed At
+             * @default null
+             */
+            completed_at?: string | null;
+            /**
+             * Error Code
+             * @default null
+             */
+            error_code?: string | null;
+            /**
+             * Error Message
+             * @default null
+             */
+            error_message?: string | null;
+        };
         /** ThreadPage */
         ThreadPage: {
             /** Threads */
@@ -5537,6 +5580,8 @@ export interface components {
             root_activity: components["schemas"]["RootActivityView"];
             /** @default null */
             completion?: components["schemas"]["ThreadCompletion"] | null;
+            /** @default null */
+            last_execution?: components["schemas"]["ThreadExecution"] | null;
             /** @default null */
             goal?: components["schemas"]["GoalView"] | null;
         };
@@ -5669,6 +5714,25 @@ export interface components {
             timestamp?: string | null;
             /** Parts */
             parts: components["schemas"]["TranscriptPart"][];
+            /**
+             * Failures
+             * @default []
+             */
+            failures?: components["schemas"]["TranscriptFailure"][];
+        };
+        /**
+         * TranscriptFailure
+         * @description A retained Run error, not a model message or comment target.
+         */
+        TranscriptFailure: {
+            /** Id */
+            id: string;
+            /** Run Id */
+            run_id?: string | null;
+            /** Message */
+            message: string;
+            /** Code */
+            code?: string | null;
         };
         /** TranscriptInputPage */
         TranscriptInputPage: {
