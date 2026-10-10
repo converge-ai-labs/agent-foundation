@@ -11,7 +11,8 @@ from pydantic_ai.realtime import AudioRetention, RealtimeModel, RealtimeModelSet
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from a13n_harness._run_stream import HarnessRunStream, _usage_limits_from_spec
+from a13n_harness._run_stream import HarnessRunStream as HarnessRunStream
+from a13n_harness._run_stream import _usage_limits_from_spec
 from a13n_harness.context import AgentContext, RunBindings, SubagentCollection
 from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import RunError
