@@ -12,8 +12,9 @@ from anyio import sleep, to_thread
 from pydantic import JsonValue
 
 from a13n_harness_ui import __version__
+from a13n_harness_ui.errors import StoreConflictError
 
-from .comments import OutputCommentRepository
+from .checkpoint_lock import checkpoint_lock
 from .contracts import StoredContinuation, StoredThreadInitialState
 from .database import Database, open_database
 from .inspection import InspectionRepository
@@ -58,7 +59,6 @@ class LocalStore:
         self.inspections = InspectionRepository(database.sessions)
         self.work = WorkRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
-        self.comments = OutputCommentRepository(database.sessions)
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
@@ -86,6 +86,17 @@ class LocalStore:
 
         return await self.objects.read(reference)
 
+    async def read_continuation(self, thread_id: str, reference: ObjectRef) -> StoredContinuation:
+        """Load the exact selected head, or report a selection race before file access."""
+        async with checkpoint_lock(self.layout.root, thread_id):
+            thread = await self.threads.get(thread_id)
+            if thread is None or thread.continuation != reference:
+                raise StoreConflictError(
+                    "The selected continuation changed; refetch before reading.",
+                    code="thread_continuation_conflict",
+                )
+            return await self.objects.read_model(reference, StoredContinuation)
+
     async def publish_work(self, thread_id: str, reference: ObjectRef, state: HarnessState) -> bool:
         """Best-effort derived publication cannot invalidate a selected checkpoint."""
         from a13n_harness_ui.thread_work import build_work_projection
@@ -112,7 +123,7 @@ class LocalStore:
                 work_attempts.add((thread_id, reference))
                 value = None
                 try:
-                    value = await self.objects.read_model(reference, StoredContinuation)
+                    value = await self.read_continuation(thread_id, reference)
                     projection = await to_thread.run_sync(project_continuation, value)
                     if await self.threads.repair_read_model(thread_id, reference, projection):
                         repaired.append(thread_id)
@@ -136,7 +147,7 @@ class LocalStore:
                 value = None
                 try:
                     value = (
-                        await self.objects.read_model(reference, StoredContinuation)
+                        await self.read_continuation(thread_id, reference)
                         if reference.object_kind is ObjectKind.continuation
                         else await self.objects.read_model(reference, StoredThreadInitialState)
                     )

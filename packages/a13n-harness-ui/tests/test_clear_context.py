@@ -22,7 +22,7 @@ pytestmark = pytest.mark.anyio
 def transcript_content(entries):
     # Saved-output references are rebound to the new continuation; content and
     # stable message positions must remain unchanged.
-    return [entry.model_dump(exclude={"parts": {"__all__": {"comment_target"}}}) for entry in entries]
+    return [entry.model_dump() for entry in entries]
 
 
 async def test_clear_context_retains_history_but_restarts_model_and_working_state(tmp_path: Path, monkeypatch) -> None:

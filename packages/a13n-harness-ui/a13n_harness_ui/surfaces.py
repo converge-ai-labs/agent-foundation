@@ -21,7 +21,6 @@ from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
 from a13n_harness_ui.model_thinking import ThinkingControl
-from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
 from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion, ThreadExecution
@@ -252,7 +251,6 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
-    comment_target: SavedOutputTarget | None = None
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
@@ -289,7 +287,7 @@ class TranscriptPart(SurfaceModel):
 
 
 class TranscriptFailure(SurfaceModel):
-    """A retained Run error, not a model message or comment target."""
+    """A retained Run error, not a model message."""
 
     id: str
     run_id: str | None = None

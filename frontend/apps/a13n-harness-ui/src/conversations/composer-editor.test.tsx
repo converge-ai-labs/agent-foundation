@@ -396,49 +396,29 @@ it("clears an idle editor cursor and does not revive it on remote updates or hea
   }
 });
 
-it("renders a comment as the same atomic attachment with preview, removal, and undo", async () => {
+it("renders a file as an atomic attachment with preview, removal, and undo", async () => {
   const { draft, editor, context, textbox } = inlineEditor();
-  context.metadata.set("attachment-comment", {
-    attachment_id: "attachment-comment",
-    name: "Feedback by Reader.txt",
+  context.metadata.set("attachment-file", {
+    attachment_id: "attachment-file",
+    name: "Feedback.txt",
     media_type: "text/plain",
     size: 200,
-    source: {
-      kind: "comment_reference",
-      root_thread_id: "thread-one",
-      comment_id: "comment-1234567890123456",
-      target: {
-        producing_thread_id: "thread-one",
-        source_id: "a".repeat(64),
-        location: { kind: "root_text", message: 0, part: 0 },
-      },
-    },
-    comment: {
-      version: 2,
-      author: "Reader",
-      preview: "Please reconsider the conclusion",
-      quote: "saved source",
-    },
   });
-  act(() => draft.addAttachment("attachment-comment"));
-  await screen.findByText("Comment · Reader");
-  expect(screen.getByText("Please reconsider the conclusion")).toBeTruthy();
-  expect(textbox.textContent).not.toContain("comment-123");
+  act(() => draft.addAttachment("attachment-file"));
+  await screen.findByText("Feedback.txt");
   expect(textbox.textContent).not.toContain("inline-");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Feedback by Reader.txt" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Feedback.txt" }));
   expect(context.preview).toHaveBeenCalledWith(
-    "attachment-comment",
-    context.metadata.get("attachment-comment"),
+    "attachment-file",
+    context.metadata.get("attachment-file"),
   );
   const token = attachmentSelections(draft.doc)[0];
   act(() => editor.current!.dispatch({ selection: { anchor: token.to! } }));
   fireEvent.keyDown(textbox, { key: "Backspace" });
   expect(values(draft.doc).attachment_ids).toEqual([]);
   act(() => draft.undo.undo());
-  await screen.findByText("Comment · Reader");
-  expect(values(draft.doc).attachment_ids).toEqual(["attachment-comment"]);
+  await screen.findByText("Feedback.txt");
+  expect(values(draft.doc).attachment_ids).toEqual(["attachment-file"]);
 });
 
 it("previews staged images locally and releases the thumbnail when removed", async () => {

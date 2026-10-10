@@ -49,7 +49,7 @@ export function ChildSavedOutputs({
       <ErrorNotice
         error={
           output.error instanceof ApiError &&
-          output.error.code === "comment_source_unavailable"
+          output.error.code === "saved_output_source_unavailable"
             ? undefined
             : output.error
         }

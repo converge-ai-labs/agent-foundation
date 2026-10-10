@@ -4,23 +4,20 @@
 
 Collaboration combines awareness of participants' current pages with shared work on those pages. Page presence describes where people are looking; shared prompt editing merges changes to one root Thread's input. Neither changes another participant's navigation or turns the conversation transcript into a jointly editable document. The App owns mutations and acceptance; browser replicas and synchronization delivery are not execution authority.
 
-Pair prompting means multiple participants editing the same prompt, not submitting independent personal drafts to a shared transcript. One root Thread provides shared conversation context, editable input, and current execution presentation. [Output comments](05-output-comments.md) add separately persisted human discussion on saved AI output; their lifetime is not the shared draft's lifetime.
+Pair prompting means multiple participants editing the same prompt, not submitting independent personal drafts to a shared transcript. One root Thread provides shared conversation context, editable input, and current execution presentation.
 
 Collaboration is scoped to one running server instance. Opening the same data root in several independent App processes does not create a distributed collaboration server or share their current operation receipts.
 
-The current browser does not expose comment controls or load discussions. The retained App/API comment contract and stored records remain unchanged; historical captured references remain readable.
-
 ## Shared Values and Authority
 
-| Value                | Meaning                                                                      | Authority and lifetime                                                       |
-| -------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Shared draft         | Editable prompt content and selected attachments/context for one Thread      | In-memory CRDT document, separate from continuation                          |
-| Submitted input      | Definite immutable content selected for one submission                       | Existing root admission and captured input boundary                          |
-| Page presence        | Display profile, current page/focus, and foreground/background participation | Transient App state, not an account, permission, or navigation command       |
-| Editor presence      | Cursor and selection relative to a specific shared draft                     | Transient state associated with that editor, not CRDT document content       |
-| Output comment       | Published human discussion about saved assistant text                        | App-owned durable record under the [comment contract](05-output-comments.md) |
-| Operation receipt    | Exact current-process execution/control correlation                          | Existing root-operation authority                                            |
-| Conversation history | Inspection of selected continuation and current live output                  | Existing transcript/checkpoint and live presentation contracts               |
+| Value                | Meaning                                                                      | Authority and lifetime                                                 |
+| -------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Shared draft         | Editable prompt content and selected attachments/context for one Thread      | In-memory CRDT document, separate from continuation                    |
+| Submitted input      | Definite immutable content selected for one submission                       | Existing root admission and captured input boundary                    |
+| Page presence        | Display profile, current page/focus, and foreground/background participation | Transient App state, not an account, permission, or navigation command |
+| Editor presence      | Cursor and selection relative to a specific shared draft                     | Transient state associated with that editor, not CRDT document content |
+| Operation receipt    | Exact current-process execution/control correlation                          | Existing root-operation authority                                      |
+| Conversation history | Inspection of selected continuation and current live output                  | Existing transcript/checkpoint and live presentation contracts         |
 
 Participants see one shared draft and can edit it concurrently. Edits merge rather than replacing the entire document with the most recently received browser text. The UI shows collaborator names, cursors, and selections without forcing participants to share navigation or scroll.
 
@@ -50,13 +47,13 @@ Participants can inspect who is on each page and who shares their current page. 
 
 On the same conversation page, participants can see named, color-coded mouse pointers over the shared composer and loaded saved transcript entries. Pointers are approximate positions relative to those surfaces, not desktop coordinates or precise text selections. A receiver resolves only the matching visible surface; absent, clipped, or covered content does not acquire a floating pointer. Different viewport sizes and personal scroll positions do not force navigation or scrolling. Other workbench areas and live output do not broadcast pointer positions.
 
-Mouse observations use the existing authenticated per-tab presence connection with explicit pointer capability opt-in. They retain only the latest bounded position, are coalesced independently of directory/resource inspection, and never enter the shared document, transcript, comments, or storage. Only other foreground participants on the same conversation receive current positions. Navigation, leaving the supported surface, loss of focus, disconnect, and a short idle expiry clear them; reconnect does not replay old positions. Legacy participants that do not opt in continue receiving only the ordinary directory frames.
+Mouse observations use the existing authenticated per-tab presence connection with explicit pointer capability opt-in. They retain only the latest bounded position, are coalesced independently of directory/resource inspection, and never enter the shared document, transcript, or storage. Only other foreground participants on the same conversation receive current positions. Navigation, leaving the supported surface, loss of focus, disconnect, and a short idle expiry clear them; reconnect does not replay old positions. Legacy participants that do not opt in continue receiving only the ordinary directory frames.
 
 ## Editor Presence and CRDT Scope
 
-The shared document contains prompt text and selected attachment references only. Editor presence carries optional relative cursor/selection positions for that document; the browser resolves and renders those positions through the CRDT library. They are not page-wide mouse coordinates, durable comments, or edits to the document. Disconnect removes editor presence without deleting shared content. Remote carets retain a visible name label and participant color; blurring the editor or 30 seconds without local editor interaction clears its selection report without changing the draft. Remote edits and awareness heartbeats do not renew local editing activity. The server expires unrefreshed cursor reports after 30 seconds, and a browser independently clears peer cursors when draft delivery stalls, including a half-open connection.
+The shared document contains prompt text and selected attachment references only. Editor presence carries optional relative cursor/selection positions for that document; the browser resolves and renders those positions through the CRDT library. They are not page-wide mouse coordinates, or edits to the document. Disconnect removes editor presence without deleting shared content. Remote carets retain a visible name label and participant color; blurring the editor or 30 seconds without local editor interaction clears its selection report without changing the draft. Remote edits and awareness heartbeats do not renew local editing activity. The server expires unrefreshed cursor reports after 30 seconds, and a browser independently clears peer cursors when draft delivery stalls, including a half-open connection.
 
-Page presence, editor presence, and the draft are distinct values even when an implementation shares an authenticated connection. Page changes update presence, not the CRDT roots. A same-page group uses that page's existing capabilities: the shared composer for prompt coediting, [comments](05-output-comments.md) for saved AI output, and the existing native-operation rules for files or terminals. Presence does not make every text surface collaboratively editable.
+Page presence, editor presence, and the draft are distinct values even when an implementation shares an authenticated connection. Page changes update presence, not the CRDT roots. A same-page group uses that page's existing capabilities: the shared composer for prompt coediting and the existing native-operation rules for files or terminals. Presence does not make every text surface collaboratively editable.
 
 ## Unsent Input Discovery
 
@@ -107,11 +104,10 @@ Attachments use the existing Thread-scoped input identity and limits. Draft/cont
 | Current page and editor presence | Authenticated interactive updates and current membership snapshots | Current App participation only                   |
 | Shared composer                  | Authenticated bidirectional CRDT synchronization                   | In-memory draft document                         |
 | Thread execution and history     | Focused realtime channels plus detached history queries            | Existing Run observations and saved continuation |
-| Published comments               | Ordinary App write/read operations and post-commit refetch hints   | Persisted comment records                        |
 
-A Thread observation update or reset does not reset the composer, clear published comments, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across realtime observation, interactive delivery, and HTTP acknowledgements; submission and comment publication use their own explicit completion boundaries.
+A Thread observation update or reset does not reset the composer, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across realtime observation, interactive delivery, and HTTP acknowledgements; submission has its own explicit completion boundary.
 
-After a page reload, the browser reestablishes presence, reloads saved history, and rejoins an available draft independently. Comment reads remain disabled in the current browser. A draft incarnation change is not a comment reset. A presence snapshot is not proof that all Thread events or comments have been received.
+After a page reload, the browser reestablishes presence, reloads saved history, and rejoins an available draft independently. A presence snapshot is not proof that all Thread events have been received.
 
 ## Shared Execution and Decisions
 
@@ -131,15 +127,15 @@ Execution continues independently of browser presence. A browser may close its s
 
 ## Failure and Reconnect Behavior
 
-| Event                                              | Observable outcome                                                                                                          |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Browser transport disconnect                       | Presence becomes unavailable; no automatic prompt submission, cancellation, or tool-input replay                            |
-| Reconnect to the same instance                     | Synchronize the in-memory draft and query current operation evidence                                                        |
-| Live cursor no longer usable                       | Follow the owning stream reset/snapshot contract, not fabricated replay                                                     |
-| Another participant submits while edits arrive     | Preserve edits not captured in the submitted version; never blindly clear newer content                                     |
-| Admission fails or Thread is busy                  | Report rejection and preserve the draft; do not silently queue a root operation                                             |
-| Server process restarts                            | Reload selected continuation and committed comments; do not restore shared drafts, presence, receipts, or execution control |
-| Post-restart submission outcome is not established | Show uncertainty and require deliberate action; do not submit text automatically                                            |
+| Event                                              | Observable outcome                                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Browser transport disconnect                       | Presence becomes unavailable; no automatic prompt submission, cancellation, or tool-input replay     |
+| Reconnect to the same instance                     | Synchronize the in-memory draft and query current operation evidence                                 |
+| Live cursor no longer usable                       | Follow the owning stream reset/snapshot contract, not fabricated replay                              |
+| Another participant submits while edits arrive     | Preserve edits not captured in the submitted version; never blindly clear newer content              |
+| Admission fails or Thread is busy                  | Report rejection and preserve the draft; do not silently queue a root operation                      |
+| Server process restarts                            | Reload selected continuation; do not restore shared drafts, presence, receipts, or execution control |
+| Post-restart submission outcome is not established | Show uncertainty and require deliberate action; do not submit text automatically                     |
 
 Uncertainty is not proof of rollback. A provider or tool operation might have taken effect even when no terminal result was saved.
 
@@ -155,4 +151,4 @@ Uncertainty is not proof of rollback. A provider or tool operation might have ta
 08. Shared control decisions use existing exact-receipt and exact-continuation authority.
 09. Page presence works without a draft and never changes another participant's navigation.
 10. Background tabs are not presented as confirmed foreground attention; duplicate names are not merged into verified users.
-11. Thread observation resets and draft synchronization cannot overwrite one another's state or erase published comments.
+11. Thread observation resets and draft synchronization cannot overwrite one another's state.

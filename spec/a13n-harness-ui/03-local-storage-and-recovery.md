@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Harness UI keeps execution persistence continuation-oriented and stores published human comments separately:
+Harness UI keeps execution persistence continuation-oriented:
 
 1. editable YAML, MCP JSON, and local Markdown files own desired resources and global defaults;
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
-3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, selected references, published output comments, and browser push subscriptions/VAPID identity;
+3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, selected references, and browser push subscriptions/VAPID identity;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
 
@@ -27,7 +27,6 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint               |
 | Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                  |
 | Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                         |
-| Published output comments and original saved target references                                    | SQLite                        | Durable human discussion; never model history or execution authority     |
 | Browser push subscriptions and VAPID identity                                                     | SQLite                        | Device opt-in delivery destinations; never execution or delivery history |
 | Shared browser drafts                                                                             | Process memory                | Synchronized editing state only; not execution or continuation authority |
 | Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                             |
@@ -46,7 +45,7 @@ The root coordinator records admission before starting execution effects, record
 
 The summary is inspection data, not a durable receipt, input queue, execution claim, or retry authority. An App that lacks matching live authority projects a saved `preparing` or `running` value as `unknown`, without rewriting shared storage or inventing an end time. This covers abrupt restart and independent Apps: execution might have stopped or might still run elsewhere. Confirmed terminal outcomes survive browser reload and process restart. No startup sweep declares foreign work interrupted, and no summary replays tools or unsaved input. If terminal persistence fails, the live operation reports the storage failure and the last durable active record remains unknown on later inspection.
 
-Saved display-history Run errors remain inspectable alongside their surrounding transcript entry, without becoming model messages or changing existing message/part comment coordinates. They are observations already retained in selected checkpoints, not a new error journal. Surfaces avoid repeating the current failure both in history and in the latest-execution notice; a later admission does not erase older saved errors.
+Saved display-history Run errors remain inspectable alongside their surrounding transcript entry, without becoming model messages or changing existing message/part coordinates. They are observations already retained in selected checkpoints, not a new error journal. Surfaces avoid repeating the current failure both in history and in the latest-execution notice; a later admission does not erase older saved errors.
 
 ## Device and Environment Selection Storage
 
@@ -104,18 +103,6 @@ A browser can reconnect to the document during the same App lifetime. Server res
 
 Attachments reuse the existing Thread-scoped staging and retained-input lifecycle. The App protects a participating Thread's file area during its lifetime; submitting input retains referenced files independently of the document. Sharing a data root between independent App processes does not synchronize their live documents.
 
-## Output Comment Storage
-
-[Saved output comments](webui/05-output-comments.md) own comment semantics and source anchoring. The existing data-root `metadata.sqlite3` owns their complete durable records: comment identity, root and producing Thread association, exact saved source and text-block location, optional validated text range/quote, publication-time author attribution, body, creation time, mutation version, last-edit time, and deletion tombstone. Version-checked edits change only the publication body. Deletion removes the publication row and retains a separate identity-only tombstone to prevent retry resurrection; already captured message bytes remain independent. Older readers still see only valid publication rows. The database rejects re-insertion of tombstoned identities, including retries from older writers. Downgrade refuses to discard edited versions or deletion tombstones. Lookup indexes support Thread-scoped ordered listing and exact-target queries. Presence directories, browser tabs, and CRDT updates are not written into these records or new participant tables.
-
-Publication reads and validates an existing saved source outside the database transaction. One short transaction checks the required selected source or existing retained comment target and inserts the complete record. The stable comment identity is unique; identical reconciliation returns the existing record and conflicting reuse fails without overwriting it. Comment publication does not increment Thread metadata/configuration versions or advance a continuation. Notification occurs only after commit and holds no database session across delivery.
-
-Comment-held source references are retained even after the Thread selects a newer continuation. They point only to existing immutable saved output, not a new output accumulator, whole-transcript table, or a newly synthesized execution checkpoint. Referenced-object reads remain App-mediated and bounded. Scratch cleanup, archive, continuation compaction, draft clearing, and process shutdown do not delete comments or their referenced saved objects. A broken source reference fails explicitly without deleting or relocating the comment. This retention does not select the old checkpoint for execution.
-
-The comment schema is an additive change to the package-owned local SQLite/Alembic history. Upgrade creates the comment storage and indexes with an empty collection for existing Threads; it neither rewrites checkpoints nor backfills comments from conversation text, usage, or live events. It uses the existing serialized migration transaction, single-head migration history, and short bounded lock waiting. There is no new database service, separate migration runner, or cross-database transaction.
-
-Startup serves comment reads and writes only after a compatible schema is established. Migration failure is an explicit store-startup failure, not an in-memory-only fallback that acknowledges unsaved comments. Interrupted transactional upgrades retain the prior schema or the complete new schema. A newer revision alone does not exclude older Apps whose required storage surface remains available. Downgrade past comment storage refuses while comment records exist rather than silently deleting human discussion; forward repair or restoration of a compatible backup remains deliberate. An empty comment schema can be removed without altering Thread or checkpoint data.
-
 ## SQLite Contract
 
 SQLite uses WAL, foreign keys, a bounded busy timeout, UTC-aware persistence values, and short transactions. A transaction never spans Agent execution, model or tool I/O, Environment operations, a wait, a sleep, configuration-file mutation, or live streaming.
@@ -128,7 +115,6 @@ The conceptual groups are:
 | Threads          | Identity, parent, metadata version and values, initial state, sticky configuration version, exact selections, and selected continuation |
 | Child executions | Execution ID, child Run ID, segment index, saved status, composition, checkpoint, and failure                                           |
 | Environments     | Complete Thread/configuration/root binding key and current state reference                                                              |
-| Output comments  | Stable comment identity, Thread family, saved target, author attribution, body, selection quote, and publication time                   |
 
 Resource lookup rows are rebuildable projections of the accepted file generation. They accelerate queries but never authorize edits or survive as an alternate resource definition when the owning file is removed.
 
@@ -243,7 +229,7 @@ The composition reference explains which Agent, Project roots, Capability, Harne
 
 Root continuations retain an independent compact display history. Harness producer observations feed the shared Stream Protocol fold before external stream consumption; handoff and compaction cannot erase captured content. The UI-owned `a13n.harness-ui.display-history` namespace at version `2` stores compact items, their covered position, completion IDs and an optional suspended-response slot, not a second native message history or raw event journal. Checkpoint and terminal publication freeze that display on the producer event loop and select it with native state in one continuation. Inline child attribution remains separate; helper-model histories are excluded. Tool images and MCP App references are retained before the next native checkpoint. Display never becomes model history, execution authority, or evidence that unsaved live output survived a crash.
 
-Transcript pagination and saved-output locations address a presentation projection of the selected compact items, while context usage and execution address `HarnessState`. Full saved assistant originals remain available for comments independently of bounded previews. Native initial history and version-1 envelopes have one import path that preserves message/part coordinates; a version-1 digest mismatch falls back to available native history. Discarded content is not reconstructed. New response groups and reserved tool-result slots keep comment coordinates stable as results arrive. Resuming a suspended response reuses its display row; reopening a provider-boundary checkpoint replaces a partial tail absent from its native state. No SQLite migration or outer continuation-envelope change is required. Version-2 display state requires a compatible UI reader; downgrading to a version-1-only reader is unsupported. The existing immutable-object size bound still applies: oversize or failed publication leaves the prior selected head intact instead of silently truncating display history.
+Transcript pagination and saved-output locations address a presentation projection of the selected compact items, while context usage and execution address `HarnessState`. Full saved assistant originals remain available for inspection independently of bounded previews. Native initial history and version-1 envelopes have one import path that preserves message/part coordinates; a version-1 digest mismatch falls back to available native history. Discarded content is not reconstructed. New response groups and reserved tool-result slots keep text coordinates stable as results arrive. Resuming a suspended response reuses its display row; reopening a provider-boundary checkpoint replaces a partial tail absent from its native state. No SQLite migration or outer continuation-envelope change is required. Version-2 display state requires a compatible UI reader; downgrading to a version-1-only reader is unsupported. The existing immutable-object size bound still applies: oversize or failed publication leaves the prior selected head intact instead of silently truncating display history.
 
 Successful terminal selection marks the final root response's compact item IDs. It does not modify native model messages. Checkpoints, failed, cancelled, and suspended results do not establish final responses. A turn begins at an ordinary visible input request; its steering, context replacement, and input-free resume remain in that turn. Multiple input parts and attachments in the same request do not create additional turns. A later continuation of the same turn makes an earlier final response insufficient to establish current completion. Older history without recorded completion remains inspectable but is not automatically classified as successful from its last assistant text.
 
@@ -257,11 +243,21 @@ Every successful checkpoint advances the expected reference for subsequent reque
 
 Harness UI also publishes every available valid terminal `HarnessState`, including failed and cancelled results, and compare-and-selects it against the latest successfully selected reference for that operation. After an unexpected exception or external cancellation, it attempts to export the Harness-retained shutdown checkpoint and publish it under cancellation shielding before propagating the original error. Saving a checkpoint does not turn failed or cancelled execution into success and never automatically replays input or effects. Deferred requests accompany only a suspended result. If export, publication, or selection fails, the prior or concurrently selected continuation remains current and the save failure is diagnosed independently. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
 
+### Run-Local Checkpoint Retention
+
+A root Run remembers only its latest successfully selected checkpoint in process memory. Request-boundary recovery remains enabled. After a new immutable checkpoint is published and successfully selected, the Run removes its own superseded checkpoint. Publication or compare-and-swap failure leaves the previous checkpoint intact. Failure to unlink a superseded file is diagnostic only and does not undo a successful selection.
+
+The final selected checkpoint remains frozen when the Run ends, including failed, cancelled, suspended, and graceful-restart boundaries. The next Run starts with no replaceable checkpoint and never deletes an earlier Run's final state. Latest-completion markers and finalized restart references remain readable. There is no historical sweep, age-based cleanup, or persistent garbage-collection registry.
+
+Selected continuation reads and publish/select/remove use short per-Thread cross-process resource locks. Readers recheck the selected reference under the lock; a stale reference returns a continuation conflict, not a missing-object read. These locks protect file use only. They do not establish execution ownership or span model/tool execution, and no database transaction spans object I/O. Child checkpoints and other object families retain their existing lifecycles.
+
+Upgrading to this protocol requires stopping all Apps sharing the data root. Older Apps do not coordinate deletable checkpoint reads. The same upgrade retires output-comment APIs and drops their database tables and indexes; it does not rewrite conversation checkpoints or delete retained attachment bytes. Historical captures load as ordinary attachments. Comment data cannot be recreated by downgrade; rollback requires a pre-upgrade backup.
+
 ### Explicit Context Clearing
 
 Clearing context replaces the selected root continuation with empty model history and fresh Agent Capability state. Only the UI-owned compact display history is carried forward; saved message positions and completed-response markers remain inspectable. Notes, embedded tasks, handoff/compaction state, explicit stored values, Goal state, and deferred requests do not carry forward. This is not deletion of historical immutable objects or a secure erasure operation.
 
-The replacement retains the Thread identity, previous Run composition provenance, conversation excerpts, configuration, completion markers, Environment state, files, attachments, and independently stored comments. External task-provider data and child Threads are not deleted or cancelled. Shared browser drafts are independent and unchanged. The next admission loads standing instructions and current configuration normally, without receiving the retained display history as model context. Context usage no longer falls back to an older observed request when native history is empty; accumulated usage is retained.
+The replacement retains the Thread identity, previous Run composition provenance, conversation excerpts, configuration, completion markers, Environment state, files, and attachments. External task-provider data and child Threads are not deleted or cancelled. Shared browser drafts are independent and unchanged. The next admission loads standing instructions and current configuration normally, without receiving the retained display history as model context. Context usage no longer falls back to an older observed request when native history is empty; accumulated usage is retained.
 
 The App accepts this command only for a non-archived, inactive root with a selected continuation. The caller supplies the exact continuation ID reviewed for confirmation. Publication uses the existing immutable continuation envelope and compare-and-select boundary; stale selection or publication failure leaves the selected head unchanged. The mutation is serialized with process-local root admission, and successful clearing cancels any pending human-interaction timeout for the old continuation. No Run or model request is created. Other processes retain the ordinary compare-and-select concurrency contract, not distributed liveness guarantees.
 
@@ -384,7 +380,7 @@ The profile digest reuses the accepted generation's canonical normalized content
 
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Committed comments remain available through ordinary queries, without restoring page presence or shared drafts. Ordinary startup does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display. The completely finalized, single-use [graceful restart handoff](#graceful-restart-handoff) is the only automatic task-continuation path.
+Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Ordinary startup does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display. The completely finalized, single-use [graceful restart handoff](#graceful-restart-handoff) is the only automatic task-continuation path.
 
 An ordinary Thread admission resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Harness UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 
@@ -443,7 +439,7 @@ The terminal failure presentation identifies the report path and the repository'
 
 ## Invariants
 
-01. Files own desired resources; SQLite owns accepted projections, mutable runtime heads, and published human comments.
+01. Files own desired resources; SQLite owns accepted projections and mutable runtime heads.
 02. Thread configuration is sticky, exact, versioned, and replaceable between Runs.
 03. Thread metadata and Thread configuration are independent versioned heads.
 04. Every admitted Run has one immutable resolved composition.
@@ -453,5 +449,3 @@ The terminal failure presentation identifies the report path and the repository'
 08. Compact display never becomes Harness continuation state.
 09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery. Only a completely finalized graceful restart handoff authorizes single-use automatic continuation.
 10. Transactions remain short and outside file or external execution I/O.
-11. Published comments retain their original saved targets independently of the selected continuation; they never become continuation or execution authority.
-12. Comment schema upgrades preserve existing conversation data, and no successful publication falls back to transient storage.

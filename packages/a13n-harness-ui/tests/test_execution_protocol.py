@@ -16,7 +16,6 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from websockets.asyncio.client import connect
 
 from .test_app import _write_configuration
-from .test_comment_protocol import publication
 from .test_configuration_protocol import HEADERS, settled
 from .test_interactive_protocol import frame_until, listener, listener_with_app
 
@@ -180,10 +179,7 @@ async def test_child_question_competing_response_history_and_restart(
             assert output["text"] == child_output[: 64 * 1024]
             assert output["total_characters"] == len(child_output)
             assert output["target"]["location"]["activity"] is None
-            child_comment = publication(output["target"])
-            posted = await api.post(prefix + "/comments", json=child_comment)
-            assert posted.status_code == 200, posted.text
-            child_comment_record = posted.json()
+            target = output["target"]
             wrong_parent = await api.get(
                 f"/api/threads/{child['child_thread_id']}/children/{child['execution_id']}/saved-output"
             )
@@ -195,15 +191,12 @@ async def test_child_question_competing_response_history_and_restart(
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             restored = (await api.get(prefix + "/transcript")).json()
             assert restored == history
-            assert (await api.post(prefix + "/comments", json=child_comment)).json() == child_comment_record
-            original = await api.post(prefix + "/saved-output", json=child_comment["target"])
+            original = await api.post(prefix + "/saved-output", json=target)
             assert original.status_code == 200
             page = original.json()
             text = page["text"]
             while page["next_offset"] is not None:
-                response = await api.post(
-                    prefix + "/saved-output", json=child_comment["target"], params={"offset": page["next_offset"]}
-                )
+                response = await api.post(prefix + "/saved-output", json=target, params={"offset": page["next_offset"]})
                 assert response.status_code == 200
                 page = response.json()
                 text += page["text"]
@@ -319,7 +312,9 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
                         for event in child_events
                     )
                     saved = await api.get(prefix + f"/children/{child['execution_id']}/saved-output")
-                    assert saved.status_code == 400 and saved.json()["error"]["code"] == "comment_source_unavailable"
+                    assert (
+                        saved.status_code == 400 and saved.json()["error"]["code"] == "saved_output_source_unavailable"
+                    )
                     assert all(
                         event["root_thread_id"] == thread_id and event["execution_id"] == child["execution_id"]
                         for event in child_events

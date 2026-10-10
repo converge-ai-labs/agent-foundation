@@ -59,7 +59,7 @@ const props = {
 const readingAnchor = (node: HTMLElement) =>
   node.closest<HTMLElement>("[data-reading-anchor]")?.dataset.readingAnchor;
 
-it("retains live output nodes and reading anchors through repeated saves while updating exact comment targets", () => {
+it("retains live output nodes and reading anchors through repeated saves", () => {
   const view = render(
     <ConversationTranscript
       {...props}
@@ -71,21 +71,10 @@ it("retains live output nodes and reading anchors through repeated saves while u
   const before = screen.getByText("Visible reply");
   const anchor = readingAnchor(before);
   for (const continuation of ["C1", "C2"]) {
-    const target: Schema<"SavedOutputTarget"> = {
-      producing_thread_id: "one",
-      source_id: continuation,
-      location: { kind: "root_text", message: 1, part: 0 },
-    };
     view.rerender(
       <ConversationTranscript
         {...props}
-        entries={[
-          input,
-          {
-            ...output,
-            parts: [{ ...output.parts[0], comment_target: target }],
-          },
-        ]}
+        entries={[input, output]}
         turns={[{ ...turn, end_position: 2 }]}
         blocks={[]}
         continuation={continuation}
@@ -93,12 +82,6 @@ it("retains live output nodes and reading anchors through repeated saves while u
     );
     expect(screen.getByText("Visible reply")).toBe(before);
     expect(readingAnchor(before)).toBe(anchor);
-    expect(
-      JSON.parse(
-        before.closest<HTMLElement>("[data-saved-target]")!.dataset
-          .savedTarget!,
-      ),
-    ).toEqual(target);
   }
 });
 

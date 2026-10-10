@@ -1,4 +1,4 @@
-"""Present compact items through the existing transcript and comment contracts."""
+"""Present compact items through the existing transcript contract."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from a13n_stream_protocol.display import Item
 
 from a13n_harness_ui.conversation import excerpt_text
 from a13n_harness_ui.display_history import DisplayHistory, ordinary_input
-from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import Thread
 from a13n_harness_ui.surfaces import TranscriptEntry, TranscriptFailure, TranscriptPart, TranscriptTurn
 
@@ -51,7 +50,7 @@ def _parts(item: Item) -> list[dict[str, Any]]:
         }
         parts = [{"kind": "tool_call", "value": content.get("arguments"), **common}]
         # Reserve the result coordinate with the call: a later result must not
-        # renumber assistant parts that already have saved comment targets.
+        # renumber assistant parts that already have saved transcript positions.
         parts.append(
             {
                 "kind": "retry" if content.get("retry") else "tool_result",
@@ -102,7 +101,7 @@ def _rows(display: DisplayHistory) -> list[_Row]:
             run_id = value if isinstance(value, str) else None
         if content.get("type") == "RUN_ERROR" and rows:
             # Attach inspection facts without introducing rows or parts: previously
-            # published message/part comment coordinates must never be renumbered.
+            # published message/part coordinates must never be renumbered.
             next(reversed(rows.values())).failures.append(
                 TranscriptFailure(
                     id=item.id,
@@ -155,25 +154,13 @@ def display_entries(display: DisplayHistory, thread: Thread | None = None) -> tu
     entries = []
     for position, row in enumerate(_rows(display)):
         parts = []
-        for index, source in enumerate(row.parts):
+        for source in row.parts:
             data = dict(source)
+            data.pop("comment_target", None)  # Retired field in imported historical display rows.
             metadata = data.get("metadata") or {}
             text = data.get("text")
             if isinstance(text, str) and len(text) > 65536 and not metadata.get("a13n.context"):
                 data.update(text=text[:65513] + "\n...[content truncated]", text_truncated=True)
-            if (
-                data["kind"] == "assistant"
-                and not metadata.get("a13n.context")
-                and metadata.get("display") is not False
-                and thread is not None
-                and thread.parent_thread_id is None
-                and thread.continuation is not None
-            ):
-                data["comment_target"] = SavedOutputTarget(
-                    producing_thread_id=thread.thread_id,
-                    source_id=thread.continuation.logical_digest,
-                    location=RootOutputLocation(message=position, part=index),
-                )
             parts.append(TranscriptPart.model_validate(data, strict=False))
         entries.append(
             TranscriptEntry(

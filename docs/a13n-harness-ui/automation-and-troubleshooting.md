@@ -72,6 +72,12 @@ After cleanup, your terminal shows a resume command for the saved conversation (
 
 Large active messages use a lightweight plain-text preview and reflow to Markdown when complete. Rendered rows are loaded in pages as you scroll, rather than dropping older rows at a fixed viewport limit. The source cache is still bounded; explicit eviction notices direct you to `/history`. That command can only recover content retained and exposed by the App, not data omitted upstream.
 
+## Checkpoint retention and upgrades
+
+Harness UI saves recovery checkpoints before model requests. Each Run remembers its latest checkpoint and removes only its own previous checkpoint after a successful replacement. Its final checkpoint remains available across later Runs. Existing historical objects are not automatically cleaned up.
+
+Before upgrading from a release with output comments, stop every Harness UI App sharing the data root and back up the complete data root. Upgrade all of those Apps before restarting them. The upgrade removes comment APIs and comment database records; saved conversations and captured attachment bytes remain intact. Historical feedback captures appear as ordinary files. Rolling old/new operation is unsupported for this transition, and rollback requires restoring the backup.
+
 ## Command reference
 
 The [complete command reference](command-reference.md) lists every registered shell subcommand and option, slash-command grammar, aliases, and busy-state availability. Put global options before subcommands; use `-h` or `--help` at each level.

@@ -2353,6 +2353,8 @@ async def test_consumed_steering_checkpoint_and_terminal_save_use_successive_sel
             consumed = await app.get_thread(thread.thread_id)
             assert consumed.continuation_id != initial.continuation_id
             assert len(selections) == 2
+            assert not app._store.objects._path_for(selections[0][1]).exists()
+            assert app._store.objects._path_for(selections[1][1]).exists()
             assert consumed.thread.excerpt.first_input == "Initial task"
             assert consumed.thread.excerpt.latest_input == "Focus on correctness"
             history = await app.get_thread_transcript(thread_id=thread.thread_id)
@@ -2382,6 +2384,9 @@ async def test_consumed_steering_checkpoint_and_terminal_save_use_successive_sel
         assert selections[2][0] == selections[1][1]
         final = await app.get_thread(thread.thread_id)
         assert final.continuation_id == selections[2][1].logical_digest
+        assert not app._store.objects._path_for(selections[0][1]).exists()
+        assert not app._store.objects._path_for(selections[1][1]).exists()
+        assert app._store.objects._path_for(selections[2][1]).exists()
         assert final.continuation_id != consumed.continuation_id
         final_history = await app.get_thread_transcript(thread_id=thread.thread_id)
         assert [
@@ -2922,7 +2927,7 @@ async def test_preparation_failure_after_handoff_saves_intact_display_and_reopen
 
         # Output targets pin the newly selected continuation; saved content does not change.
         def saved_content(entry):
-            return entry.model_dump(exclude={"parts": {"__all__": {"comment_target"}}})
+            return entry.model_dump()
 
         assert [saved_content(entry) for entry in history.entries[: len(before_history.entries)]] == [
             saved_content(entry) for entry in before_history.entries

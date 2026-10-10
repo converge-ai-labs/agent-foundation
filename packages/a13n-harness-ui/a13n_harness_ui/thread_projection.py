@@ -39,7 +39,6 @@ from a13n_harness_ui.conversation import excerpt_text, input_excerpt
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import app_references
-from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import (
     LocalStore,
     ObjectRef,
@@ -645,7 +644,7 @@ class ThreadProjectionService:
                 if thread.continuation is None:
                     stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
                 else:
-                    stored = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+                    stored = await self._store.read_continuation(thread.thread_id, thread.continuation)
                 data = await to_thread.run_sync(build_thread_inspection, thread, stored)
                 if not await self._store.inspections.publish(thread.thread_id, source_id, data):
                     raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
@@ -980,25 +979,7 @@ def _message_entry(position: int, message: ModelMessage, *, thread: Thread | Non
             position=position,
             message_kind="response",
             timestamp=message.timestamp,
-            parts=tuple(
-                _response_part(part).model_copy(
-                    update={
-                        "comment_target": SavedOutputTarget(
-                            producing_thread_id=thread.thread_id,
-                            source_id=thread.continuation.logical_digest,
-                            location=RootOutputLocation(message=position, part=index),
-                        )
-                    }
-                )
-                if (
-                    isinstance(part, TextPart)
-                    and thread is not None
-                    and thread.parent_thread_id is None
-                    and thread.continuation is not None
-                )
-                else _response_part(part)
-                for index, part in enumerate(message.parts)
-            ),
+            parts=tuple(_response_part(part) for part in message.parts),
         )
     raise ThreadError("Thread history contains an unsupported message.", code="thread_history_invalid")
 

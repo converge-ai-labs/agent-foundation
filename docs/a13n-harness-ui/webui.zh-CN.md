@@ -9,7 +9,7 @@ WebUI 是 Harness UI 的浏览器工作台，是面向个人和可信小团队�
 
 ## 启动服务器
 
-Chat 是主视图，**Files** 和 **Changes** 在侧边打开，**Terminal** 位于下方。查看 Git 需要安装 Git；原生终端需要 POSIX Host。评论控件已停用，保存的评论仍可通过 API 读取。
+Chat 是主视图，**Files** 和 **Changes** 在侧边打开，**Terminal** 位于下方。查看 Git 需要安装 Git；原生终端需要 POSIX Host。
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
@@ -270,9 +270,9 @@ Sidekick 为 `create_thread` 创建的根对话提供默认 Agent、Model 和汇
 
 对话配置中的 **Default model** 可独立于输入框 Run 选择器设置持久模型；选择 **Follow Agent model** 清除它。遵循保存的默认值时，选择器显示 **Thread default** ；改选模型只影响该 Run 草稿。配置检查会区分下一次的模型与当前或保存 Run 实际捕获的模型。
 
-## 保存的输出与评论
+## 保存的输出
 
-WebUI 评论创建、选区操作、高亮、菜单和讨论面板目前停用，等待重新设计。这不会删除后端评论或 API。此变更前捕获的反馈引用，在消息和草稿中仍可读取。子执行保存结果仍可从检查面板读取，不提供评论控件。
+子执行结果仍可从检查面板读取。历史捕获的反馈仍作为普通保留附件读取。
 
 ## 读取、编辑与捕获 Host 文件和 Git 变更
 

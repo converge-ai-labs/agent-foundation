@@ -240,6 +240,10 @@ class ImmutableObjectStore:
                 details=details,
             ) from exc
 
+    async def remove(self, reference: ObjectRef) -> None:
+        """Remove an object whose owner has released it; callers coordinate reference use."""
+        await to_thread.run_sync(partial(self._path_for(reference).unlink, missing_ok=True))
+
     async def references(self) -> tuple[ObjectRef, ...]:
         """List object files currently present in the local store."""
 

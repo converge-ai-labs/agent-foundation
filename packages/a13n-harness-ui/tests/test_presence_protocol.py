@@ -92,7 +92,7 @@ async def test_two_tabs_page_membership_focus_availability_and_draft_independenc
                         )
                         assert moved["same_page_participant_ids"] == []
                         assert (await api.get(prefix + "/transcript")).json() == before
-                        assert (await api.get(prefix + "/comments")).json()["comments"] == []
+                        assert (await api.get(prefix + "/comments")).status_code == 404
                         async with connect(ws + prefix + "/draft/connect", proxy=None, origin=http) as observer:
                             await observer.send('{"api_key":"test-only-key"}')
                             preserved = await frame_until(observer, lambda frame: frame.get("kind") == "draft")

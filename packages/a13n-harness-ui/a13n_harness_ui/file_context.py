@@ -6,8 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from a13n_harness_ui.output_comment_models import SavedOutputTarget
-
 MAX_INLINE_CONTEXT_BYTES = 64 * 1024
 
 
@@ -41,29 +39,7 @@ class GitContextSource(BaseModel):
     end_line: int | None = Field(default=None, ge=1)
 
 
-class CommentContextSource(BaseModel):
-    """A complete published comment and its exact saved assistant output."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    kind: Literal["comment_reference"] = "comment_reference"
-    root_thread_id: str = Field(min_length=1, max_length=80)
-    comment_id: str = Field(pattern=r"^comment-[A-Za-z0-9_-]{16,64}$")
-    target: SavedOutputTarget
-
-
-class CommentReferencePreview(BaseModel):
-    """Additive attachment display metadata; the captured bytes own full content."""
-
-    model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
-
-    version: int = Field(default=1, ge=1)
-    author: str | None = Field(default=None, max_length=80)
-    preview: str | None = Field(default=None, max_length=240)
-    quote: str | None = Field(default=None, max_length=240)
-
-
-CapturedSource = FileContextSource | GitContextSource | CommentContextSource
+CapturedSource = FileContextSource | GitContextSource
 
 
 def context_text(source: CapturedSource, data: bytes) -> str | None:
@@ -74,7 +50,5 @@ def context_text(source: CapturedSource, data: bytes) -> str | None:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return None
-    if isinstance(source, CommentContextSource):
-        return text
     kind = "Git diff" if isinstance(source, GitContextSource) else "file"
     return f"Selected Host {kind} context (source: {source.model_dump_json()}):\n{text}"
