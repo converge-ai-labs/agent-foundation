@@ -105,12 +105,19 @@ class ModalEnvironment(NativeEnvironment[ModalEnvironmentConfiguration, ModalSta
 
     async def connection(self) -> modal.Client:
         import modal
+        from modal.config import config as modal_config
+        from modal_proto import api_pb2
 
         if self.client is None:
             with sdk_errors():
-                self.client = await modal.Client.from_credentials.aio(
-                    self.credential.token_id.get_secret_value(), self.credential.token_secret.get_secret_value()
+                # from_credentials registers a process-lifetime shutdown task that retains each short-lived client.
+                # The adapter owns this client's lifetime, so enter it directly and close it in close_transport.
+                self.client = modal.Client(
+                    modal_config["server_url"],
+                    api_pb2.CLIENT_TYPE_CLIENT,
+                    (self.credential.token_id.get_secret_value(), self.credential.token_secret.get_secret_value()),
                 )
+                await self.client.__aenter__()
         return self.client
 
     async def inspect(self) -> modal.Sandbox | None:
@@ -164,10 +171,14 @@ class ModalEnvironment(NativeEnvironment[ModalEnvironmentConfiguration, ModalSta
                     await self.validate_snapshot(
                         SnapshotReference(image_id=snapshot, sandbox_id=self.target.snapshot_source_id)
                     )
+                with sdk_errors():
+                    try:
+                        app = await modal.App.lookup.aio(
+                            self.backend.app_name, environment_name=self.backend.environment_name, client=client
+                        )
+                    except modal.exception.NotFoundError:
+                        raise failure(self.provider_key, "provider_target_missing", Category.MISSING) from None
                 with sdk_errors(mutation=True):
-                    app = await modal.App.lookup.aio(
-                        self.backend.app_name, environment_name=self.backend.environment_name, client=client
-                    )
                     image = (
                         modal.Image.from_id(snapshot, client=client)
                         if snapshot
