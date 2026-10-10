@@ -63,14 +63,20 @@ export function FindingDetail() {
         .then(data),
   });
   const update = useMutation({
-    mutationFn: (body: Schema["FindingUpdate"]) =>
+    mutationFn: ({
+      body,
+      etag,
+    }: {
+      body: Schema["FindingUpdate"];
+      etag: string;
+    }) =>
       client
         .workspace(workspace.id)
         .PATCH("/api/v1/findings/{finding_id}", {
           body,
           params: {
             path: { finding_id: findingId },
-            header: ifMatch(rowTag(finding!)),
+            header: ifMatch(etag),
           },
         })
         .then(data),
@@ -113,7 +119,7 @@ export function FindingDetail() {
               pending={update.isPending}
               error={update.error}
               onReset={() => update.reset()}
-              onSave={(body) => update.mutateAsync(body)}
+              onSave={(body, etag) => update.mutateAsync({ body, etag })}
             />
           )}
           {can("run") && composer.available && (
@@ -140,7 +146,12 @@ export function FindingDetail() {
               }
               title={finding.closed ? t("Reopen finding") : t("Close finding")}
               disabled={update.isPending}
-              onClick={() => update.mutate({ closed: !finding.closed })}
+              onClick={() =>
+                update.mutate({
+                  body: { closed: !finding.closed },
+                  etag: rowTag(finding),
+                })
+              }
             >
               {finding.closed ? (
                 <ArrowCounterClockwiseIcon aria-hidden="true" />
@@ -318,14 +329,16 @@ function AssessmentEditor({
   pending: boolean;
   error: unknown;
   onReset: () => void;
-  onSave: (body: Schema["FindingUpdate"]) => Promise<unknown>;
+  onSave: (body: Schema["FindingUpdate"], etag: string) => Promise<unknown>;
 }) {
   const { t } = useTranslation();
+  // A background refresh must not advance the draft's concurrency precondition.
+  const [baseline, setBaseline] = useState(finding);
   const [assessment, setAssessment] = useState(finding.assessment);
   const [note, setNote] = useState(finding.assessment_note);
   const [editing, setEditing] = useState(false);
   const dirty =
-    assessment !== finding.assessment || note !== finding.assessment_note;
+    assessment !== baseline.assessment || note !== baseline.assessment_note;
   const label =
     finding.assessment === "unreviewed" && !finding.assessment_note
       ? t("Add assessment")
@@ -336,6 +349,7 @@ function AssessmentEditor({
       onOpenChange={(open) => {
         if (pending) return;
         if (open) {
+          setBaseline(finding);
           setAssessment(finding.assessment);
           setNote(finding.assessment_note);
           onReset();
@@ -364,7 +378,10 @@ function AssessmentEditor({
         onSubmit={(event) => {
           event.preventDefault();
           if (dirty && !pending) {
-            void onSave({ assessment, assessment_note: note }).then(
+            void onSave(
+              { assessment, assessment_note: note },
+              rowTag(baseline),
+            ).then(
               () => setEditing(false),
               () => {}, // The mutation error stays visible beside the retained draft.
             );

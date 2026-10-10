@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -85,18 +85,17 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
-function mount(path = "/workspace/ws_test/findings") {
+function mount(
+  path = "/workspace/ws_test/findings",
+  cache = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  }),
+) {
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({
-          defaultOptions: {
-            queries: { retry: false },
-            mutations: { retry: false },
-          },
-        })
-      }
-    >
+    <QueryClientProvider client={cache}>
       <TooltipProvider>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
@@ -411,6 +410,102 @@ it("reads saved feedback, edits outcome and rationale atomically, cancels edits,
     screen.getByText("The retry succeeded, so this diagnosis is incorrect."),
   ).toBeTruthy();
   expect(screen.getByText(finding.explanation)).toBeTruthy();
+});
+
+it("keeps the draft version across background refresh and conflict retries until explicitly reopened", async () => {
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  let current = { ...finding };
+  const original = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) =>
+    path === "/api/v1/findings/{finding_id}"
+      ? { data: current }
+      : original(path, ...args),
+  );
+  http.PATCH.mockImplementation(async (_path, options) => {
+    if (options.params.header["If-Match"] !== `"fnd_test:${current.version}"`)
+      throw new Error("The finding was changed by another reviewer");
+    current = { ...current, ...options.body, version: current.version + 1 };
+    return { data: current };
+  });
+  const user = mount("/workspace/ws_test/findings/fnd_test", cache);
+  await user.click(
+    await screen.findByRole("button", { name: "Add assessment" }),
+  );
+  const note = screen.getByRole("textbox", { name: "Review note" });
+  await user.type(note, "My draft based on version one.");
+  current = {
+    ...finding,
+    version: 2,
+    assessment: "confirmed",
+    assessment_note: "Another reviewer confirmed the evidence.",
+  };
+  await act(async () => {
+    await cache.refetchQueries({
+      queryKey: ["finding", "ws_test", "fnd_test"],
+    });
+  });
+  expect((note as HTMLTextAreaElement).value).toBe(
+    "My draft based on version one.",
+  );
+  await user.click(screen.getByRole("button", { name: "Save assessment" }));
+  await waitFor(() =>
+    expect(http.PATCH.mock.calls[0][1].params.header).toEqual({
+      "If-Match": '"fnd_test:1"',
+    }),
+  );
+  await screen.findByRole("alert");
+  expect((note as HTMLTextAreaElement).value).toBe(
+    "My draft based on version one.",
+  );
+  await user.click(screen.getByRole("button", { name: "Save assessment" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledTimes(2));
+  expect(http.PATCH.mock.calls[1][1].params.header).toEqual({
+    "If-Match": '"fnd_test:1"',
+  });
+  expect(current.version).toBe(2);
+  expect(current.assessment).toBe("confirmed");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Edit assessment" }));
+  const reopened = screen.getByRole("textbox", { name: "Review note" });
+  expect((reopened as HTMLTextAreaElement).value).toBe(current.assessment_note);
+  expect(screen.queryByRole("alert")).toBeNull();
+  await user.type(reopened, " Reviewed again.");
+  await user.click(screen.getByRole("button", { name: "Save assessment" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(http.PATCH.mock.calls[2][1].params.header).toEqual({
+    "If-Match": '"fnd_test:2"',
+  });
+  expect(current.assessment).toBe("confirmed");
+  expect(current.version).toBe(3);
+});
+
+it("does not make an untouched assessment draft dirty when the finding refreshes", async () => {
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const user = mount("/workspace/ws_test/findings/fnd_test", cache);
+  await user.click(
+    await screen.findByRole("button", { name: "Add assessment" }),
+  );
+  await act(async () => {
+    cache.setQueryData(["finding", "ws_test", "fnd_test"], {
+      ...finding,
+      version: 2,
+      assessment: "confirmed",
+      assessment_note: "Another reviewer confirmed the evidence.",
+    });
+  });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save assessment",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(http.PATCH).not.toHaveBeenCalled();
 });
 
 it("keeps a failed assessment draft in the dialog and restores trigger focus on keyboard dismissal", async () => {
