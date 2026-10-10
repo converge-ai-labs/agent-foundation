@@ -8,12 +8,15 @@ import sys
 import pytest
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.providers.environment.models import EnvironmentState
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message_factory import GetMessageClass
 from grpclib import GRPCError, Status
 from grpclib.const import Cardinality, Handler
 from grpclib.server import Server
+from modal._utils.async_utils import _shutdown_tasks
 from modal_proto import api_pb2 as api
 from modal_proto import task_command_router_pb2 as router
 
@@ -30,6 +33,7 @@ class ModalCloud:
         self.names = {}
         self.created = 0
         self.calls = []
+        self.app_exists = True
 
     def __mapping__(self):
         result = {}
@@ -51,6 +55,8 @@ class ModalCloud:
         if name == "ClientHello":
             response = api.ClientHelloResponse()
         elif name == "AppGetOrCreate":
+            if not self.app_exists:
+                raise GRPCError(Status.NOT_FOUND)
             response = api.AppGetOrCreateResponse(app_id="ap-fixture")
         elif name == "EnvironmentGetOrCreate":
             response = api.EnvironmentGetOrCreateResponse(
@@ -215,6 +221,48 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
             await env.destroy()
         finally:
             await env.close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_missing_modal_app_closes_each_client_without_shutdown_task(tmp_path, monkeypatch):
+    async def scenario():
+        cloud = ModalCloud(tmp_path)
+        cloud.app_exists = False
+        server = Server([cloud])
+        await server.start("127.0.0.1", 0)
+        port = server._server.sockets[0].getsockname()[1]
+        monkeypatch.setenv("MODAL_SERVER_URL", f"http://127.0.0.1:{port}")
+        provider = ProviderCatalog(select_builtin_environment_providers(["modal"])).require("modal")
+        config = provider.validate_environment({"root": str(tmp_path), "request_timeout_seconds": 15})
+        runtime = await provider.runtime_factory(
+            configuration=provider.configuration_model(workspace="fixture", app_name="missing"),
+            credential=provider.credential_model(token_id="fixture", token_secret="fixture"),
+        )
+        before = len(_shutdown_tasks)
+        try:
+            for _ in range(3):
+                env = provider.construct(
+                    operation_id="op-test",
+                    allow_create=True,
+                    configuration=config,
+                    environment_id="env-fixture",
+                    state=None,
+                    runtime=runtime,
+                )
+                try:
+                    with pytest.raises(EnvironmentProviderError) as caught:
+                        await env.prepare()
+                    assert caught.value.category == Category.MISSING
+                    assert caught.value.code == "provider_target_missing"
+                finally:
+                    await env.close()
+                assert len(_shutdown_tasks) == before
+            assert cloud.calls.count("AppGetOrCreate") == 3
+            assert cloud.created == 0
+        finally:
             server.close()
             await server.wait_closed()
 
