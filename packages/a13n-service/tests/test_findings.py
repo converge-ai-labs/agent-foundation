@@ -414,88 +414,27 @@ async def test_composer_reads_durable_finding_without_changing_the_target(servic
     assert unchanged["default_revision_id"] == agent["default_revision_id"]
 
 
-async def test_preset_migration_backfills_existing_composer_and_preserves_other_heads(
+async def test_final_findings_migration_backfills_composer_and_preserves_other_heads(
     service, scripted_model, runs_kit, database
 ):
     from a13n_service.distribution import OSS
     from a13n_service.migrations.runner import migration_connection, upgrade
     from alembic import command
+    from alembic.script import ScriptDirectory
 
     await runs_kit.create_model(service, scripted_model)
     composer = (await service.client.post("/api/v1/agent-composer")).json()
     finder = (await service.client.post("/api/v1/finding-agent")).json()
     with migration_connection(database, OSS) as config:
-        command.downgrade(config, "7dc8ec393cc1")
+        final = ScriptDirectory.from_config(config).get_revision("676068536e99")
+        assert final is not None and final.down_revision == "7dc8ec393cc1"
+        command.downgrade(config, final.down_revision)
     upgrade(database, OSS)
     restored = (await service.client.get(f"/api/v1/agents/{composer['id']}")).json()
     assert restored["preset_kind"] == "composer" and restored["default_revision_id"] == composer["default_revision_id"]
     preserved = (await service.client.get(f"/api/v1/agents/{finder['id']}")).json()
     assert preserved["source"] == "custom" and preserved["preset_kind"] is None
     assert preserved["default_revision_id"] == finder["default_revision_id"]
-
-
-async def test_analysis_selection_migration_preserves_order_reads_and_evidence(
-    service, scripted_model, runs_kit, database
-):
-    import json
-
-    from a13n_service.distribution import OSS
-    from a13n_service.migrations.runner import migration_connection, upgrade
-    from alembic import command
-    from sqlalchemy import text
-
-    agent, run = await target(service, scripted_model, runs_kit)
-    runtime = replace(service.runtime, traces=Backend(service, run["id"]))
-    service.app.state.runtime = runtime
-    await service.client.post("/api/v1/finding-agent")
-    created = await service.client.post(
-        "/api/v1/finding-analyses", json={"trace_id": TRACE}, headers={"Idempotency-Key": "migration-analysis"}
-    )
-    assert created.status_code == 201, created.text
-    result = created.json()
-    await analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], TRACE)
-    from a13n_service.runs.findings.schemas import FindingCreate
-    from a13n_service.runs.findings.service import create_finding
-
-    evidence = await create_finding(
-        runtime.storage,
-        actor(service),
-        service.tenant.workspace_id,
-        FindingCreate.model_validate(finding(agent, run)),
-        source_run_id=result["run_id"],
-    )
-    with migration_connection(database, OSS) as config:
-        command.downgrade(config, "74b2192ae6ee")
-        connection = config.attributes["connection"]
-        connection.execute(
-            text("""
-            UPDATE finding_analyses SET
-                trace_ids = CAST(:traces AS jsonb), trace_runs = CAST(:runs AS jsonb),
-                reviewed_trace_ids = CAST(:reads AS jsonb), reported = true, limitations = 'Old report'
-            WHERE id = :id
-        """),
-            {
-                "id": result["id"],
-                "traces": json.dumps(["b" * 32, TRACE]),
-                "runs": json.dumps({TRACE: run["id"], "b" * 32: run["id"]}),
-                "reads": json.dumps([TRACE]),
-            },
-        )
-        connection.commit()
-    upgrade(database, OSS)
-    restored = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
-    assert restored["selected_traces"] == [
-        {"trace_id": "b" * 32, "run_id": run["id"]},
-        {"trace_id": TRACE, "run_id": run["id"]},
-    ]
-    assert restored["read_trace_ids"] == [TRACE]
-    assert restored["finding_count"] == restored["cited_trace_count"] == 1
-    assert restored["session_id"] == result["session_id"] and restored["thread_id"] == result["thread_id"]
-    # Coverage claims are deliberately discarded; Findings' evidence and limitations survive.
-    finding_id = evidence.id
-    preserved = (await service.client.get(f"/api/v1/findings/{finding_id}")).json()
-    assert preserved["evidence"] == evidence.model_dump(mode="json")["evidence"]
-    assert "reported" not in restored and "limitations" not in restored
 
 
 async def reviewed(service, runs_kit, body, assessment="false_positive", note="The tool recovered successfully."):
@@ -726,25 +665,6 @@ async def test_error_priority_cross_page_selection_and_feedback_from_final_cap(s
         headers={"Idempotency-Key": "answer-priority"},
     )
     assert answer_only.json()["selected_traces"] == [{"trace_id": TRACE, "run_id": first_run["id"]}]
-
-
-async def test_feedback_downgrade_refuses_false_positive_without_losing_review(
-    service, scripted_model, runs_kit, database
-):
-    from a13n_service.distribution import OSS
-    from a13n_service.migrations.runner import check, migration_connection
-    from alembic import command
-    from sqlalchemy.exc import IntegrityError
-
-    agent, run = await target(service, scripted_model, runs_kit)
-    saved = await reviewed(service, runs_kit, finding(agent, run), note="This tool failure recovered.")
-    with pytest.raises(IntegrityError), migration_connection(database, OSS) as config:
-        command.downgrade(config, "574a1b928f40")
-    check(database, OSS)
-    preserved = (await service.client.get(f"/api/v1/findings/{saved['id']}")).json()
-    assert preserved["assessment"] == "false_positive"
-    assert preserved["assessment_note"] == saved["assessment_note"]
-    assert preserved["version"] == saved["version"] and preserved["closed"]
 
 
 async def test_unreviewed_diagnosis_is_context_not_confirmation_and_retry_keeps_values(

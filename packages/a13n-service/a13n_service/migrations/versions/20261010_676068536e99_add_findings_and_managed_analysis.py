@@ -1,14 +1,21 @@
-"""add findings and managed analyst
+"""add findings and managed analysis
 
-Revision ID: c5d0c6c08220
+Revision ID: 676068536e99
 Revises: 7dc8ec393cc1
+
+Creates empty Findings tables with ordinary indexes. Adding the nullable preset column
+and its CHECK briefly locks agents; the small builtin-Composer backfill scans agents
+without rewriting revision history. Deploy API and workers together: older builds
+cannot interpret multiple builtin kinds. Transactional failure rolls back and retries
+safely. Prefer forward repair; downgrade discards Findings and converts Finding Agents
+to custom heads while retaining their identity, revisions and referenced Runs.
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "c5d0c6c08220"
+revision = "676068536e99"
 down_revision = "7dc8ec393cc1"
 branch_labels = None
 depends_on = None
@@ -21,20 +28,14 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(), nullable=False),
-        sa.Column("agent_id", sa.String(), nullable=False),
-        sa.Column("session_id", sa.String(length=72), nullable=False),
-        sa.Column("thread_id", sa.String(length=72), nullable=False),
+        sa.Column("agent_id", sa.String(), nullable=True),
         sa.Column("run_id", sa.String(length=72), nullable=False),
         sa.Column("request_key", sa.String(length=512), nullable=False),
         sa.Column("request_digest", sa.String(), nullable=False),
         sa.Column("selection", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("trace_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("trace_runs", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("selected_traces", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("selection_truncated", sa.Boolean(), nullable=False),
         sa.Column("read_trace_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("reviewed_trace_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("reported", sa.Boolean(), nullable=False),
-        sa.Column("limitations", sa.String(), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("updated_by_id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
@@ -52,8 +53,6 @@ def upgrade() -> None:
             ["organization_id"], ["organizations.id"], name=op.f("fk_finding_analyses_organization_id_organizations")
         ),
         sa.ForeignKeyConstraint(["run_id"], ["runs.id"], name=op.f("fk_finding_analyses_run_id_runs")),
-        sa.ForeignKeyConstraint(["session_id"], ["sessions.id"], name=op.f("fk_finding_analyses_session_id_sessions")),
-        sa.ForeignKeyConstraint(["thread_id"], ["threads.id"], name=op.f("fk_finding_analyses_thread_id_threads")),
         sa.ForeignKeyConstraint(
             ["updated_by_id"], ["principals.id"], name=op.f("fk_finding_analyses_updated_by_id_principals")
         ),
@@ -90,17 +89,18 @@ def upgrade() -> None:
         sa.Column("evidence", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("limitations", sa.String(), nullable=False),
         sa.Column("source_key", sa.String(), nullable=False),
-        sa.Column("analysis_id", sa.String(), nullable=True),
         sa.Column("source_run_id", sa.String(length=72), nullable=True),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("updated_by_id", sa.String(length=72), nullable=False),
         sa.Column("assessment", sa.String(), nullable=False),
+        sa.Column("assessment_note", sa.String(), nullable=False),
         sa.Column("closed", sa.Boolean(), nullable=False),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint(
-            "assessment IN ('unreviewed', 'confirmed', 'expected', 'insufficient')", name=op.f("ck_findings_assessment")
+            "assessment IN ('unreviewed', 'confirmed', 'expected', 'insufficient', 'false_positive')",
+            name=op.f("ck_findings_assessment"),
         ),
         sa.CheckConstraint("severity IN ('critical', 'warning', 'suggestion')", name=op.f("ck_findings_severity")),
         sa.ForeignKeyConstraint(
@@ -128,11 +128,6 @@ def upgrade() -> None:
             ["agents.workspace_id", "agents.id"],
             name=op.f("fk_findings_workspace_id_agents"),
         ),
-        sa.ForeignKeyConstraint(
-            ["workspace_id", "analysis_id"],
-            ["finding_analyses.workspace_id", "finding_analyses.id"],
-            name=op.f("fk_findings_workspace_id_finding_analyses"),
-        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_findings")),
         sa.UniqueConstraint(
             "workspace_id",
@@ -141,9 +136,15 @@ def upgrade() -> None:
             name=op.f("uq_findings_workspace_id_created_by_id_source_key"),
         ),
     )
+    op.create_index(
+        "ix_findings_revision_feedback",
+        "findings",
+        ["workspace_id", "agent_id", "agent_revision_id", "updated_at", "id"],
+        unique=False,
+    )
     op.create_index("ix_findings_workspace_created", "findings", ["workspace_id", "created_at", "id"], unique=False)
     op.add_column("agents", sa.Column("preset_kind", sa.String(length=32), nullable=True))
-    # Existing builtin heads are Composer; retain their identity and revision history.
+    # Preserve existing Composer heads and their complete revision history.
     op.execute("UPDATE agents SET preset_kind = 'composer' WHERE source = 'builtin'")
     op.drop_index(op.f("uq_agents_builtin"), table_name="agents", postgresql_where="((source)::text = 'builtin'::text)")
     op.create_index(
@@ -185,7 +186,6 @@ def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_constraint(op.f("ck_agents_preset"), "agents", type_="check")
     op.drop_index("uq_agents_builtin", table_name="agents", postgresql_where=sa.text("source = 'builtin'"))
-    # Preserve Finding Agents and their referenced runs when returning to the single-preset schema.
     op.execute("UPDATE agents SET source = 'custom' WHERE preset_kind = 'finding'")
     op.create_index(
         op.f("uq_agents_builtin"),
@@ -196,6 +196,7 @@ def downgrade() -> None:
     )
     op.drop_column("agents", "preset_kind")
     op.drop_index("ix_findings_workspace_created", table_name="findings")
+    op.drop_index("ix_findings_revision_feedback", table_name="findings")
     op.drop_table("findings")
     op.drop_index("ix_finding_analyses_workspace_created", table_name="finding_analyses")
     op.drop_table("finding_analyses")
