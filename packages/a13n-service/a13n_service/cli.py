@@ -4,6 +4,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -14,11 +15,12 @@ import uvicorn
 from a13n_logging import configure_logging
 from pydantic import SecretStr, ValidationError
 
-from a13n_service.app import build_app, check_schema, open_storage
+from a13n_service.app import build_app, check_schema, open_objects, open_storage
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import serve_metrics
+from a13n_service.migrations import run_objects
 from a13n_service.migrations.runner import check, generate, heads, upgrade
 from a13n_service.settings import ProcessRole, Settings, load_settings
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap
@@ -84,6 +86,11 @@ def migrate(settings: Settings, message: str | None, check_only: bool) -> None:
         check(settings.database, OSS)
     else:
         upgrade(settings.database, OSS)
+    if not message:
+        try:
+            _with_storage(settings, run_objects.require_current)
+        except RuntimeError as error:
+            raise click.ClickException(str(error)) from None
 
 
 def _with_storage[T](settings: Settings, operation: Callable[[Storage], Awaitable[T]]) -> T:
@@ -98,6 +105,35 @@ def _with_storage[T](settings: Settings, operation: Callable[[Storage], Awaitabl
             await storage.close()
 
     return asyncio.run(run())
+
+
+@main.command("migrate-run-objects")
+@click.option("--apply", is_flag=True, help="Convert after stopping all Service replicas; default is read-only.")
+@click.option(
+    "--backup-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Private backup directory; required with --apply.",
+)
+@click.option("--limit", type=click.IntRange(1, 1000), default=100, show_default=True)
+@click.pass_obj
+def migrate_run_objects(settings: Settings, apply: bool, backup_dir: Path | None, limit: int) -> None:
+    """Convert legacy display pointers, messages and uncompressed checkpoints after schema migration."""
+    if apply and backup_dir is None:
+        raise click.UsageError("--apply requires --backup-dir")
+
+    async def operation(storage: Storage) -> int:
+        async with AsyncExitStack() as stack:
+            objects = await open_objects(stack, settings.objects)
+            return await run_objects.migrate(storage, objects, backup_dir=backup_dir, apply=apply, limit=limit)
+
+    try:
+        count = _with_storage(settings, operation)
+    except RuntimeError as error:
+        raise click.ClickException(str(error)) from None
+    except Exception as error:
+        # Object and validation failures can carry saved conversation contents or credential-bearing URLs.
+        raise click.ClickException(f"Run object conversion failed ({type(error).__name__})") from None
+    click.echo(json.dumps({"converted" if apply else "verified": count, "limit": limit}))
 
 
 @main.command("bootstrap")
