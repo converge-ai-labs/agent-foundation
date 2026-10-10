@@ -11,8 +11,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+import a13n_harness._run_stream as run_stream_module
 import a13n_harness.environment.dynamic as dynamic_environment_module
-import a13n_harness.execution as execution_module
 import a13n_harness.toolsets.file_media as file_media_module
 import a13n_harness.toolsets.files as file_toolset_module
 import pytest
@@ -2371,14 +2371,14 @@ async def test_terminal_waits_for_delayed_environment_change_adapter_drain(
     adapter_started = asyncio.Event()
     release_adapter = asyncio.Event()
     mount_applied = asyncio.Event()
-    original_adapter = execution_module._emit_environment_change_events
+    original_adapter = run_stream_module._emit_environment_change_events
 
     async def delayed_adapter(context: Any, drain: Any) -> None:
         adapter_started.set()
         await release_adapter.wait()
         await original_adapter(context, drain)
 
-    monkeypatch.setattr(execution_module, "_emit_environment_change_events", delayed_adapter)
+    monkeypatch.setattr(run_stream_module, "_emit_environment_change_events", delayed_adapter)
     aggregate = create_empty_environment_runtime()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
