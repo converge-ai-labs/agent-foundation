@@ -16,7 +16,6 @@ from google.protobuf.message_factory import GetMessageClass
 from grpclib import GRPCError, Status
 from grpclib.const import Cardinality, Handler
 from grpclib.server import Server
-from modal._utils.async_utils import _shutdown_tasks
 from modal_proto import api_pb2 as api
 from modal_proto import task_command_router_pb2 as router
 
@@ -229,6 +228,8 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
 
 def test_missing_modal_app_closes_each_client_without_shutdown_task(tmp_path, monkeypatch):
     async def scenario():
+        from modal._utils.async_utils import _shutdown_tasks
+
         cloud = ModalCloud(tmp_path)
         cloud.app_exists = False
         server = Server([cloud])
