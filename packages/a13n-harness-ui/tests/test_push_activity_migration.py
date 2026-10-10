@@ -5,7 +5,7 @@ from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 
-def test_push_activity_upgrade_and_downgrade_preserve_subscription_and_signing_key(tmp_path):
+def test_push_activity_upgrade_and_downgrade_preserve_subscription_and_signing_key(tmp_path, before_comment_retirement):
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "e416fbd4674c"), write=True)

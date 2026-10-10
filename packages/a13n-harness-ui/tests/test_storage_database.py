@@ -22,18 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 pytestmark = pytest.mark.anyio
 
 
-def _before_comment_retirement(tmp_path, monkeypatch):
-    """Keep historical downgrade tests on their reversible migration chain."""
-    import shutil
-
-    from a13n_harness_ui.storage import migration
-
-    historical = tmp_path / "historical-migrations"
-    shutil.copytree(migration.MIGRATIONS_PATH, historical, ignore=shutil.ignore_patterns("__pycache__"))
-    (historical / "versions/20261010_3cf95de9550a_retire_saved_output_comments.py").unlink()
-    monkeypatch.setattr(migration, "MIGRATIONS_PATH", historical)
-
-
 def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
@@ -76,8 +64,9 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
         engine.dispose()
 
 
-def test_planned_handoff_migration_requires_resolution_before_downgrade(tmp_path: Path, monkeypatch) -> None:
-    _before_comment_retirement(tmp_path, monkeypatch)
+def test_planned_handoff_migration_requires_resolution_before_downgrade(
+    tmp_path: Path, before_comment_retirement
+) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator.upgrade()
@@ -321,8 +310,9 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
             assert records[0].accepted_at.tzinfo is UTC
 
 
-def test_mcp_bundle_index_upgrade_preserves_rows_and_rejects_lossy_downgrade(tmp_path: Path, monkeypatch) -> None:
-    _before_comment_retirement(tmp_path, monkeypatch)
+def test_mcp_bundle_index_upgrade_preserves_rows_and_rejects_lossy_downgrade(
+    tmp_path: Path, before_comment_retirement
+) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "11422c5bac45"), write=True)
@@ -396,8 +386,7 @@ async def test_project_model_preferences_are_independent_and_last_write_wins(tmp
         assert await repository.get("project-b") == "model-b"
 
 
-def test_project_model_preference_migration_round_trip(tmp_path: Path, monkeypatch) -> None:
-    _before_comment_retirement(tmp_path, monkeypatch)
+def test_project_model_preference_migration_round_trip(tmp_path: Path, before_comment_retirement) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(  # pyright: ignore[reportPrivateUsage]

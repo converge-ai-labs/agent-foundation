@@ -121,7 +121,7 @@ async def test_verified_configuration_cache_returns_detached_values(tmp_path, mo
         assert not reads
 
 
-async def test_read_model_migration_keeps_older_writers_and_selected_heads(tmp_path):
+async def test_read_model_migration_keeps_older_writers_and_selected_heads(tmp_path, before_comment_retirement):
     from a13n_harness_ui.storage.migration import DatabaseMigrator
     from alembic import command
     from sqlalchemy import create_engine, text

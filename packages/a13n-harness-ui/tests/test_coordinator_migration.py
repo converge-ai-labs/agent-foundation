@@ -4,7 +4,7 @@ from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 
-def test_upgrade_preserves_coordinators_workers_settings_and_history(tmp_path):
+def test_upgrade_preserves_coordinators_workers_settings_and_history(tmp_path, before_comment_retirement):
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "78e4e7206898"), write=True)
@@ -50,7 +50,7 @@ def test_upgrade_preserves_coordinators_workers_settings_and_history(tmp_path):
         engine.dispose()
 
 
-def test_empty_database_can_upgrade_downgrade_and_upgrade(tmp_path):
+def test_empty_database_can_upgrade_downgrade_and_upgrade(tmp_path, before_comment_retirement):
     migrator = DatabaseMigrator(tmp_path / "metadata.sqlite3")
     migrator.upgrade()
     migrator._run(lambda config: command.downgrade(config, "78e4e7206898"), write=True)

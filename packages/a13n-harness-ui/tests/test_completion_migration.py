@@ -5,7 +5,7 @@ from alembic import command
 from sqlalchemy import create_engine, text
 
 
-def test_completion_upgrade_preserves_legacy_writers_and_child_references(tmp_path):
+def test_completion_upgrade_preserves_legacy_writers_and_child_references(tmp_path, before_comment_retirement):
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "122039abf689"), write=True)

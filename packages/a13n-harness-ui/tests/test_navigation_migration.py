@@ -5,7 +5,7 @@ from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 
-def test_navigation_migration_preserves_order_old_writers_and_incoming_references(tmp_path):
+def test_navigation_migration_preserves_order_old_writers_and_incoming_references(tmp_path, before_comment_retirement):
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "20e4b84abfd1"), write=True)

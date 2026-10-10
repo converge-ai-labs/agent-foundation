@@ -176,7 +176,9 @@ async def test_setup_needs_no_project_and_does_not_publish_one(tmp_path: Path) -
         assert (await app.create_thread()).configuration.project_id is None
 
 
-async def test_projectless_migration_preserves_existing_threads_and_refuses_lossy_downgrade(tmp_path: Path) -> None:
+async def test_projectless_migration_preserves_existing_threads_and_refuses_lossy_downgrade(
+    tmp_path: Path, before_comment_retirement
+) -> None:
     from a13n_harness_ui.storage.migration import DatabaseMigrator
     from alembic import command
     from sqlalchemy import create_engine, inspect, text
