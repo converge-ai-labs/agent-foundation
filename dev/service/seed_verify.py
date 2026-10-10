@@ -36,6 +36,7 @@ def verify(api: Api, seeded: Seeded) -> list[Check]:
         *_execution(api, index),
         *_memories(api, index),
         *_usage(api, index),
+        *_findings(api, index),
     ]
 
 
@@ -357,3 +358,72 @@ def _usage(api: Api, index: dict[str, str]) -> Iterator[Check]:
         )
     finally:
         api.workspace_id = workspace
+
+
+def _findings(api: Api, index: dict[str, str]) -> Iterator[Check]:
+    agent = api.get(f"/api/v1/agents/{index['findings_agent']}")
+    revision = api.get(f"/api/v1/agents/{agent['id']}/revisions/{index['findings_revision']}")
+    runs = {
+        key: api.get(f"/api/v1/runs/{index[f'findings_run_{key}']}") for key in ("shipping", "endpoint", "readonly")
+    }
+    yield (
+        "Findings examples execute on the exact seeded revision",
+        all(run["status"] == "completed" and run["agent_revision_id"] == revision["id"] for run in runs.values()),
+    )
+    if index["findings_trace_backend"] == "none":
+        yield (
+            "Tracing disabled: Findings and analysis examples are omitted, with no placeholder evidence",
+            not api.items("/api/v1/findings", agent_id=agent["id"]) and "findings_analysis" not in index,
+        )
+        return
+    findings = {key: api.get(f"/api/v1/findings/{index[f'finding_{key}']}") for key in runs}
+    yield (
+        "Findings show unreviewed, confirmed and closed false-positive assessments",
+        (
+            findings["shipping"]["assessment"] == "unreviewed"
+            and not findings["shipping"]["closed"]
+            and findings["endpoint"]["assessment"] == "confirmed"
+            and bool(findings["endpoint"]["assessment_note"])
+            and not findings["endpoint"]["closed"]
+            and findings["readonly"]["assessment"] == "false_positive"
+            and bool(findings["readonly"]["assessment_note"])
+            and findings["readonly"]["closed"]
+        ),
+    )
+    analysis = next(a for a in api.items("/api/v1/finding-analyses") if a["id"] == index["findings_analysis"])
+    selected = {item["trace_id"]: item["run_id"] for item in analysis["selected_traces"]}
+    yield (
+        "Managed Findings analysis records selected/read evidence and derived counts",
+        (
+            analysis["run_status"] == "completed"
+            and analysis["finding_count"] == analysis["cited_trace_count"] == 3
+            and selected == {index[f"findings_trace_{key}"]: run["id"] for key, run in runs.items()}
+            and set(analysis["read_trace_ids"]) == set(selected)
+        ),
+    )
+    yield (
+        "Finding producer, exact revision and evidence Run navigation are intact",
+        all(
+            f["analysis_id"] == analysis["id"]
+            and f["source_run_id"] == analysis["run_id"]
+            and f["agent_id"] == agent["id"]
+            and f["agent_revision_id"] == revision["id"]
+            and all(e["run_id"] == selected[e["trace_id"]] for e in f["evidence"])
+            for f in findings.values()
+        ),
+    )
+    roots = {key: api.get(f"/api/v1/traces/{index[f'findings_trace_{key}']}") for key in runs}
+    yield (
+        "Cited traces and spans resolve to the same evidence Runs",
+        all(
+            root["trace_id"] == index[f"findings_trace_{key}"]
+            and root["attributes"]["a13n.observation.metadata.service_run_id"] == runs[key]["id"]
+            and findings[key]["evidence"]
+            == [{"trace_id": root["trace_id"], "run_id": runs[key]["id"], "span_ids": [root["id"]]}]
+            for key, root in roots.items()
+        ),
+    )
+    yield (
+        "Long Finding titles and reviewer notes exercise the preview layout",
+        (max(len(f["title"]) for f in findings.values()) > 160 and len(findings["readonly"]["assessment_note"]) > 250),
+    )
