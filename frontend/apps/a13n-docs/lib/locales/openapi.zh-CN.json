@@ -394,5 +394,6 @@
   "Create Service Account Key": "创建服务账号密钥",
   "Health": "健康检查",
   "Ready while started and the database holds a usable schema. Redis only speeds work up, so losing it\nis reported as degraded rather than taking the replica out of service.": "进程已启动且数据库 schema 可用时就绪。Redis 仅用于加速，因此丢失时报告降级，不会将副本移出服务。",
-  "Ready": "就绪检查"
+  "Ready": "就绪检查",
+  "One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories.": "核心问题的主要类型，与分析预设、影响程度和审阅独立。不确定性写在说明或局限中，不要自行创建类型。"
 }

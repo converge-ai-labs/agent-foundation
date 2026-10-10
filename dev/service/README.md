@@ -66,9 +66,9 @@ It reads the state back through the API and writes the seeded IDs and the verifi
 
 With queryable tracing, the same seeded reset adds a release operations Agent with three real scripted Runs and one completed managed Findings analysis. Open **Improve → Findings** for:
 
-- An unreviewed shipping diagnosis with missing clarification and an unsupported quote.
-- A confirmed tool dependency issue with a reviewer note.
-- A closed false positive with a corrective review note.
+- An unreviewed `answer_quality` diagnosis centered on an unsupported shipping quote; missing clarification is supporting evidence.
+- A confirmed `tool_execution` dependency issue with a reviewer note.
+- A closed `boundary_violation` false positive: a permission denial was misclassified, with a corrective review note explaining the expected behavior.
 
 Long titles and notes exercise the list and detail layout. Trace, span, Run and Agent revision links come from actual execution and tool reads. The analysis records its selected and read traces and derives its finding and cited-trace counts. The scripted analyst recognizes only the explicit preview markers in trace inputs; these fictional examples demonstrate interaction and provenance, not model quality or complete analysis.
 
@@ -76,7 +76,7 @@ For the complete preview, start the shared local Langfuse stack with `make langf
 
 ### Resetting earlier Findings PR databases
 
-The Findings feature uses one migration from the pre-feature schema. Disposable checkout databases previously upgraded through the four intermediate PR revisions must be reset and reseeded:
+The Findings feature uses one migration from the pre-feature schema. Disposable checkout databases previously upgraded through earlier intermediate or consolidated PR revisions must be reset and reseeded:
 
 ```sh
 make dev-stop

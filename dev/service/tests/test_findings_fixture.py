@@ -28,6 +28,7 @@ def test_analyst_reads_before_submitting_and_cites_returned_evidence() -> None:
     name, submitted = plan[-1]
     assert name == "submit_finding"
     finding = submitted["finding"]
+    assert finding["category"] == "answer_quality"
     assert finding["agent_revision_id"] == "apr_pinned"
     assert finding["evidence"] == [{"trace_id": "trace-real", "run_id": "run_real", "span_ids": ["span-returned"]}]
     assert finding["source_key"] == "fan_fixture:shipping"

@@ -37,6 +37,17 @@ import { Page, Section, useTabParam } from "../../shared/page";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
 
+export const categoryLabels = {
+  unclear_request: "Unclear request",
+  instruction_issue: "Instruction issue",
+  tool_design: "Tool design",
+  tool_usage: "Tool usage",
+  tool_execution: "Tool execution",
+  answer_quality: "Answer quality",
+  context_gap: "Context gap",
+  workflow_issue: "Workflow issue",
+  boundary_violation: "Boundary violation",
+} satisfies Record<Schema["Finding"]["category"], string>;
 export const severityLabels = {
   critical: "Critical",
   warning: "Warning",
@@ -113,11 +124,16 @@ export function FindingsPage() {
   const [search, setSearch] = useSearchParams();
   const [tab, setTab] = useTabParam(["findings", "history"]);
   const [open, setOpen] = useState(search.has("trace"));
+  const [category, setCategory] = useState("all");
   const [severity, setSeverity] = useState("all"),
     [assessment, setAssessment] = useState("all"),
     [state, setState] = useState("open");
   const agents = useFindingAgents();
   const filters = {
+    category:
+      category === "all"
+        ? undefined
+        : (category as Schema["Finding"]["category"]),
     severity:
       severity === "all"
         ? undefined
@@ -194,6 +210,18 @@ export function FindingsPage() {
                   <>
                     <ChoiceField
                       variant="filter"
+                      label={t("Category")}
+                      value={category}
+                      options={[
+                        { value: "all", label: t("All") },
+                        ...Object.entries(categoryLabels).map(
+                          ([value, label]) => ({ value, label: t(label) }),
+                        ),
+                      ]}
+                      onValueChange={(value) => filter(setCategory, value)}
+                    />
+                    <ChoiceField
+                      variant="filter"
                       label={t("Severity")}
                       value={severity}
                       options={[
@@ -263,13 +291,18 @@ export function FindingsPage() {
                         dataColumn: "finding",
                         tone: "primary",
                         render: (finding) => (
-                          <Link
-                            to={`${basePath}/findings/${finding.id}`}
-                            className={styles.title}
-                            title={finding.title}
-                          >
-                            {finding.title}
-                          </Link>
+                          <>
+                            <Link
+                              to={`${basePath}/findings/${finding.id}`}
+                              className={styles.title}
+                              title={finding.title}
+                            >
+                              {finding.title}
+                            </Link>
+                            <span className={styles.hint}>
+                              {t(categoryLabels[finding.category])}
+                            </span>
+                          </>
                         ),
                       },
                       {

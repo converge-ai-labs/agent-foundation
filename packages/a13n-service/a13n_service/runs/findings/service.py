@@ -13,7 +13,15 @@ from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.rows import audit_row, find_row, record_update
-from a13n_service.runs.findings.schemas import Assessment, Finding, FindingCreate, FindingPage, FindingUpdate, Severity
+from a13n_service.runs.findings.schemas import (
+    Assessment,
+    Category,
+    Finding,
+    FindingCreate,
+    FindingPage,
+    FindingUpdate,
+    Severity,
+)
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.schemas import canonical_json
 from a13n_service.runs.threads import get_run
@@ -87,6 +95,7 @@ async def list_findings(
     workspace_id: str,
     *,
     agent_id: str | None = None,
+    category: Category | None = None,
     severity: Severity | None = None,
     assessment: Assessment | None = None,
     closed: bool | None = None,
@@ -98,6 +107,7 @@ async def list_findings(
         query = select(FindingRow).where(FindingRow.workspace_id == scope.workspace_id)
         for name, value in (
             ("agent_id", agent_id),
+            ("category", category),
             ("severity", severity),
             ("assessment", assessment),
             ("closed", closed),
@@ -109,7 +119,7 @@ async def list_findings(
             query,
             (FindingRow.created_at, FindingRow.id),
             kind="findings",
-            owner=cursors.query_owner(scope.workspace_id, agent_id, severity, assessment, closed),
+            owner=cursors.query_owner(scope.workspace_id, agent_id, category, severity, assessment, closed),
             cursor=cursor,
             limit=limit,
             newest_first=True,

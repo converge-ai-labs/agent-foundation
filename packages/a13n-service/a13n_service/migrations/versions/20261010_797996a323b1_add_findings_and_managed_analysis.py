@@ -1,6 +1,6 @@
 """add findings and managed analysis
 
-Revision ID: 676068536e99
+Revision ID: 797996a323b1
 Revises: 7dc8ec393cc1
 
 Creates empty Findings tables with ordinary indexes. Adding the nullable preset column
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "676068536e99"
+revision = "797996a323b1"
 down_revision = "7dc8ec393cc1"
 branch_labels = None
 depends_on = None
@@ -101,6 +101,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "assessment IN ('unreviewed', 'confirmed', 'expected', 'insufficient', 'false_positive')",
             name=op.f("ck_findings_assessment"),
+        ),
+        sa.CheckConstraint(
+            "category IN ('unclear_request','instruction_issue','tool_design','tool_usage','tool_execution','answer_quality','context_gap','workflow_issue','boundary_violation')",
+            name=op.f("ck_findings_category"),
         ),
         sa.CheckConstraint("severity IN ('critical', 'warning', 'suggestion')", name=op.f("ck_findings_severity")),
         sa.ForeignKeyConstraint(

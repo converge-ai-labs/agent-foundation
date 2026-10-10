@@ -3,7 +3,7 @@
 import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from a13n_service.api_tools import api_tools, tool_name
@@ -11,6 +11,7 @@ from a13n_service.app import build_app
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session
+from a13n_service.runs.findings.schemas import Category
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Authenticated
 from a13n_service.tenancy.authenticate import LocalAuthenticator
@@ -232,3 +233,9 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert len(tools) == len(selected) == len({tool.name for tool in tools})
     assert all(len(tool.name) <= 64 for tool in tools)
     assert all("X-Workspace-ID" not in tool.parameters["properties"] for tool in tools)
+    findings = next(
+        tool for tool in tools if tool.name == tool_name(schema["paths"]["/api/v1/findings"]["get"]["operationId"])
+    )
+    category = findings.parameters["properties"]["category"]
+    assert category["anyOf"][0] == {"$ref": "#/$defs/Category"}
+    assert set(findings.parameters["$defs"]["Category"]["enum"]) == set(get_args(Category.__value__))

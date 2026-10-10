@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import get_args
 
 import pytest
 from a13n_service.infra.errors import ServiceError
@@ -9,6 +10,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import correlation_attributes
 from a13n_service.providers.traces import Span, SpanPage
 from a13n_service.runs.findings import analysis
+from a13n_service.runs.findings.schemas import Category
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, ExecutionAuthority, Grant, Principal, WorkspaceScope
 from pydantic_ai.exceptions import ToolFailed
 
@@ -72,7 +74,7 @@ def finding(agent, run):
         "agent_id": agent["id"],
         "agent_revision_id": agent["default_revision_id"],
         "title": "Unverified completion",
-        "category": "execution",
+        "category": "answer_quality",
         "severity": "critical",
         "explanation": "The execution evidence does not establish completion.",
         "suggestion": "Verify tool success before reporting completion.",
@@ -113,6 +115,48 @@ async def test_external_submission_review_retries_and_workspace_scope(service, s
     assert workspace.status_code == 201, workspace.text
     hidden = await service.client.get(path, headers={"x-workspace-id": workspace.json()["id"]})
     assert hidden.status_code == 404
+
+
+async def test_categories_validate_persist_filter_and_bind_pagination(service, scripted_model, runs_kit):
+    from a13n_service.infra.db import short_session
+    from a13n_service.runs.findings.tables import FindingRow
+    from sqlalchemy import update
+    from sqlalchemy.exc import IntegrityError
+
+    agent, run = await target(service, scripted_model, runs_kit)
+    body = finding(agent, run)
+    for category in get_args(Category.__value__):
+        response = await service.client.post(
+            "/api/v1/findings", json={**body, "category": category, "source_key": category}
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["category"] == category
+    for invalid in ("execution", "other", "Tool execution", ""):
+        response = await service.client.post(
+            "/api/v1/findings", json={**body, "category": invalid, "source_key": "invalid"}
+        )
+        assert response.status_code == 400, response.text
+        assert (await service.client.get("/api/v1/findings", params={"category": invalid})).status_code == 400
+    second = await service.client.post(
+        "/api/v1/findings", json={**body, "category": "tool_execution", "source_key": "second-execution"}
+    )
+    assert second.status_code == 201
+    query = {"category": "tool_execution", "assessment": "unreviewed", "limit": 1}
+    first = (await service.client.get("/api/v1/findings", params=query)).json()
+    assert first["items"][0]["id"] == second.json()["id"] and first["next_cursor"]
+    page = await service.client.get("/api/v1/findings", params={**query, "cursor": first["next_cursor"]})
+    assert page.status_code == 200 and len(page.json()["items"]) == 1
+    assert page.json()["items"][0]["category"] == "tool_execution"
+    changed = await service.client.get(
+        "/api/v1/findings", params={**query, "category": "answer_quality", "cursor": first["next_cursor"]}
+    )
+    assert changed.status_code == 400
+    with pytest.raises(IntegrityError):
+        async with short_session(service.runtime.storage) as session:
+            await session.execute(
+                update(FindingRow).where(FindingRow.id == second.json()["id"]).values(category="other")
+            )
+            await session.commit()
 
 
 async def test_presets_coexist_and_finder_has_no_configuration_writes(service, scripted_model, runs_kit):
@@ -220,6 +264,8 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     scripted_model.call("read_trace", {"trace_id": TRACE}, call_id="read-1")
     submitted = finding(agent, run)
     submitted["source_key"] = result["id"] + ":execution"
+    # Invalid categories produce ordinary tool validation feedback; a corrected call can succeed.
+    scripted_model.call("submit_finding", {"finding": {**submitted, "category": "other"}}, call_id="bad-category")
     scripted_model.call("submit_finding", {"finding": submitted}, call_id="submit-1")
     # Two distinct diagnoses citing one trace count as two findings and one cited trace.
     scripted_model.call(
@@ -239,6 +285,9 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
         last_request = scripted_model.requests.get_nowait()
     tools = last_request["tools"]
     assert {"create_agent_revision", "report_analysis"}.isdisjoint(tool["function"]["name"] for tool in tools)
+    submit = next(tool["function"] for tool in tools if tool["function"]["name"] == "submit_finding")
+    assert set(submit["parameters"]["$defs"]["Category"]["enum"]) == set(get_args(Category.__value__))
+    assert "bad-category" in str(last_request["messages"])
 
 
 async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_runs(service, scripted_model, runs_kit):
@@ -426,7 +475,7 @@ async def test_final_findings_migration_backfills_composer_and_preserves_other_h
     composer = (await service.client.post("/api/v1/agent-composer")).json()
     finder = (await service.client.post("/api/v1/finding-agent")).json()
     with migration_connection(database, OSS) as config:
-        final = ScriptDirectory.from_config(config).get_revision("676068536e99")
+        final = ScriptDirectory.from_config(config).get_revision("797996a323b1")
         assert final is not None and final.down_revision == "7dc8ec393cc1"
         command.downgrade(config, final.down_revision)
     upgrade(database, OSS)

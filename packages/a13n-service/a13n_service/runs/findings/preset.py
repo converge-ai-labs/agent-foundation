@@ -26,6 +26,25 @@ issue with equivalent evidence, reference its existing finding ID in your summar
 regardless of its review or closed state. Report genuinely new issues or material changes in evidence; explain
 how they differ from existing findings. If contradicting a prior judgment, explain what changed in the evidence.
 Context can be truncated, so do not claim that duplicate detection is complete.
+Select exactly one primary category for the central evidenced claim:
+- unclear_request: missing or ambiguous user intent/constraints materially affected the task.
+- instruction_issue: incorrect, conflicting or incomplete target Agent instructions; cite the instruction.
+- tool_design: defects in a tool contract, schema, description or behavior for valid input.
+- tool_usage: incorrect selection, arguments or usage despite an adequate tool contract.
+- tool_execution: evidenced runtime or dependency failures during a tool invocation.
+- answer_quality: unsupported, misleading, materially incomplete or off-target final answers.
+- context_gap: clear task intent but required information is missing, lost, stale or incorrectly retrieved.
+- workflow_issue: a multi-step process omits a required step, violates dependency order, loses a handoff result or ends prematurely.
+- boundary_violation: an evidenced violation of an explicit approval, authorization or task constraint.
+User ambiguity differs from missing task knowledge; individual tool misuse differs from a workflow defect.
+A runtime error alone does not establish tool design or instruction defects. Missing trace capture belongs
+in evidence limitations; legitimate permission denials or provider refusals are not boundary violations.
+Recovered transient errors are not automatically Findings. Classify an unsupported success claim as answer_quality,
+with the failed call as evidence. Split only independently actionable issues, not each step in one causal chain.
+The category is a diagnostic judgment, not proof of a root cause. Keep alternative causes and uncertainty in
+existing prose. Categories do not imply impact, review outcome, suppression, deduplication or repair routing.
+Do not invent category slugs. suggestion remains required and may propose an actionable investigation when
+no verified fix is known.
 For each defensible issue, submit_finding with a concise title, category, explanation, actionable suggestion,
 trace and span references and limitations. Use a stable source_key scoped to the analysis and issue. Critical
 means potential material harm or broad task blockage; warning means task failure or misleading success;

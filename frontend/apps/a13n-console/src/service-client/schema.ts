@@ -3935,6 +3935,17 @@ export interface components {
       provider: string;
     };
     /** @enum {string} */
+    Category:
+      | "unclear_request"
+      | "instruction_issue"
+      | "tool_design"
+      | "tool_usage"
+      | "tool_execution"
+      | "answer_quality"
+      | "context_gap"
+      | "workflow_issue"
+      | "boundary_violation";
+    /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
     /**
      * ChildEnvironmentPolicy
@@ -4579,8 +4590,8 @@ export interface components {
       assessment: components["schemas"]["Assessment"];
       /** Assessment Note */
       assessment_note: string;
-      /** Category */
-      category: string;
+      /** @description One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories. */
+      category: components["schemas"]["Category"];
       /** Closed */
       closed: boolean;
       /**
@@ -4627,8 +4638,8 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string;
-      /** Category */
-      category: string;
+      /** @description One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories. */
+      category: components["schemas"]["Category"];
       /** Evidence */
       evidence: components["schemas"]["Evidence"][];
       /** Explanation */
@@ -9834,6 +9845,7 @@ export interface operations {
     parameters: {
       query?: {
         agent_id?: string | null;
+        category?: components["schemas"]["Category"] | null;
         severity?: components["schemas"]["Severity"] | null;
         assessment?: components["schemas"]["Assessment"] | null;
         closed?: boolean | null;

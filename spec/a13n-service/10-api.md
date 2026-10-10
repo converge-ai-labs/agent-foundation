@@ -119,15 +119,15 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Findings
 
-| Method | Route                 | Result / authority                                                                         |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------ |
-| POST   | `/finding-agent`      | Prepare the managed Finding Agent; `write`                                                 |
-| POST   | `/finding-analyses`   | Start bounded analysis; `run` + `write`, `Idempotency-Key`; 201 new, 200 replay            |
-| GET    | `/finding-analyses`   | Newest-first analysis history and current Run statuses; `read`                             |
-| POST   | `/findings`           | Submit a finding with stable body `source_key`; `write`; 201 including retry readback      |
-| GET    | `/findings`           | Newest-first collection, filtering by Agent, severity, assessment and closed state; `read` |
-| GET    | `/findings/{finding}` | Read one finding and its ETag; `read`                                                      |
-| PATCH  | `/findings/{finding}` | Review, close or reopen; `write`, `If-Match`                                               |
+| Method | Route                 | Result / authority                                                                                   |
+| ------ | --------------------- | ---------------------------------------------------------------------------------------------------- |
+| POST   | `/finding-agent`      | Prepare the managed Finding Agent; `write`                                                           |
+| POST   | `/finding-analyses`   | Start bounded analysis; `run` + `write`, `Idempotency-Key`; 201 new, 200 replay                      |
+| GET    | `/finding-analyses`   | Newest-first analysis history and current Run statuses; `read`                                       |
+| POST   | `/findings`           | Submit a finding with stable body `source_key`; `write`; 201 including retry readback                |
+| GET    | `/findings`           | Newest-first collection, filtering by Agent, category, severity, assessment and closed state; `read` |
+| GET    | `/findings/{finding}` | Read one finding and its ETag; `read`                                                                |
+| PATCH  | `/findings/{finding}` | Review, close or reopen; `write`, `If-Match`                                                         |
 
 [Findings and analysis](07-facts-and-delivery.md#findings-and-analysis) owns selection, submission retry and coverage semantics. Both lists use bounded keyset pages; finding cursors bind their filters. These commands do not publish an Agent revision.
 

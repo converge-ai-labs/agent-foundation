@@ -2608,6 +2608,20 @@
         "title": "CatalogRef",
         "type": "object"
       },
+      "Category": {
+        "enum": [
+          "unclear_request",
+          "instruction_issue",
+          "tool_design",
+          "tool_usage",
+          "tool_execution",
+          "answer_quality",
+          "context_gap",
+          "workflow_issue",
+          "boundary_violation"
+        ],
+        "type": "string"
+      },
       "Certainty": {
         "enum": [
           "not_dispatched",
@@ -4501,10 +4515,8 @@
             "type": "string"
           },
           "category": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Category",
-            "type": "string"
+            "$ref": "#/components/schemas/Category",
+            "description": "One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories."
           },
           "closed": {
             "title": "Closed",
@@ -4631,10 +4643,8 @@
             "type": "string"
           },
           "category": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Category",
-            "type": "string"
+            "$ref": "#/components/schemas/Category",
+            "description": "One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories."
           },
           "evidence": {
             "items": {
@@ -19531,6 +19541,22 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Category"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
             }
           },
           {

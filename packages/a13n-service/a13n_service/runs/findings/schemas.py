@@ -7,6 +7,17 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstrai
 
 from a13n_service.infra.ids import ObjectId
 
+type Category = Literal[
+    "unclear_request",
+    "instruction_issue",
+    "tool_design",
+    "tool_usage",
+    "tool_execution",
+    "answer_quality",
+    "context_gap",
+    "workflow_issue",
+    "boundary_violation",
+]
 type Severity = Literal["critical", "warning", "suggestion"]
 type Assessment = Literal["unreviewed", "confirmed", "expected", "insufficient", "false_positive"]
 type Preset = Literal["execution", "recovery", "answer"]
@@ -28,7 +39,9 @@ class FindingCreate(_Input):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     title: str = Field(min_length=1, max_length=256)
-    category: str = Field(min_length=1, max_length=64)
+    category: Category = Field(
+        description="One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories."
+    )
     severity: Severity = "warning"
     explanation: str = Field(min_length=1, max_length=8192)
     suggestion: str = Field(min_length=1, max_length=8192)

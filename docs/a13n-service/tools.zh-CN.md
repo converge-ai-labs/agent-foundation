@@ -27,6 +27,8 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 | `traces`        | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | 禁用                                           |
 | `findings`      | `read_finding`, `submit_finding`                                                                                                              | 禁用                                           |
 
+发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。不支持的值返回校验错误。发现类型与分析规则预设相互独立。
+
 配置、trace 查询和发现项提交工具位于 **高级 / 平台功能**下。工具集开关会保留各平台工具的独立选择。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
 
 文件和终端工具操作运行挂载的[环境](environments.md)，只有挂载环境时才提供给模型。记忆工具操作挂载的[记忆](memory.md)：文件工具用于文件型记忆，记录工具用于记录型记忆；`read` 挂载只提供查看、列出和搜索。`publish_asset` 将环境文件转换为工作空间[资产](files-and-webhooks.md#assets)。

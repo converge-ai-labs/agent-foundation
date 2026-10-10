@@ -1974,5 +1974,13 @@
   "Next step": "Next step",
   "Review with Composer": "Review with Composer",
   "No review note yet.": "No review note yet.",
-  "Edit assessment": "Edit assessment"
+  "Edit assessment": "Edit assessment",
+  "Unclear request": "Unclear request",
+  "Instruction issue": "Instruction issue",
+  "Tool design": "Tool design",
+  "Tool usage": "Tool usage",
+  "Tool execution": "Tool execution",
+  "Context gap": "Context gap",
+  "Workflow issue": "Workflow issue",
+  "Boundary violation": "Boundary violation"
 }

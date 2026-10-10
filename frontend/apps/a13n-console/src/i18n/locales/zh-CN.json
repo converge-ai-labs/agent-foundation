@@ -1974,5 +1974,13 @@
   "Next step": "下一步",
   "Review with Composer": "交给 Composer 审阅",
   "No review note yet.": "尚无审阅备注。",
-  "Edit assessment": "编辑判断"
+  "Edit assessment": "编辑判断",
+  "Unclear request": "请求不明确",
+  "Instruction issue": "指令问题",
+  "Tool design": "工具设计",
+  "Tool usage": "工具使用",
+  "Tool execution": "工具执行",
+  "Context gap": "上下文缺失",
+  "Workflow issue": "流程问题",
+  "Boundary violation": "边界违规"
 }

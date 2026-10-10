@@ -48,7 +48,7 @@ const finding = {
   assessment: "unreviewed",
   assessment_note: "",
   closed: false,
-  category: "execution",
+  category: "tool_execution",
   explanation: "The tool could not complete the task.",
   suggestion: "Check tool configuration.",
   evidence: [{ run_id: "run_target", trace_id: "a".repeat(32), span_ids: [] }],
@@ -115,6 +115,29 @@ function mount(path = "/workspace/ws_test/findings") {
   );
   return userEvent.setup();
 }
+it("uses the category label and sends its stable value to the list filter", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: {
+      items: path === "/api/v1/findings" ? [finding] : [],
+      next_cursor: null,
+    },
+  }));
+  const user = mount();
+  await screen.findByText("Tool unavailable");
+  expect(screen.getByText("Tool execution")).toBeTruthy();
+  await user.click(screen.getByRole("combobox", { name: "Category" }));
+  await user.click(screen.getByRole("option", { name: "Answer quality" }));
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      "/api/v1/findings",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({ category: "answer_quality" }),
+        },
+      }),
+    ),
+  );
+});
 it("does not infer health from empty findings and blocks analysis when trace query is disabled", async () => {
   const user = mount();
   await screen.findByText("No findings in this view");

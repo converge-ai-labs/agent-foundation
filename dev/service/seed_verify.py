@@ -378,6 +378,11 @@ def _findings(api: Api, index: dict[str, str]) -> Iterator[Check]:
         return
     findings = {key: api.get(f"/api/v1/findings/{index[f'finding_{key}']}") for key in runs}
     yield (
+        "Findings use the primary claim category, including a reviewed misclassification",
+        {key: row["category"] for key, row in findings.items()}
+        == {"shipping": "answer_quality", "endpoint": "tool_execution", "readonly": "boundary_violation"},
+    )
+    yield (
         "Findings show unreviewed, confirmed and closed false-positive assessments",
         (
             findings["shipping"]["assessment"] == "unreviewed"

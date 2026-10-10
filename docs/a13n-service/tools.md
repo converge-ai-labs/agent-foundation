@@ -27,6 +27,8 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 | `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | Disabled                                          |
 | `findings`         | `read_finding`, `submit_finding`                                                                                                              | Disabled                                          |
 
+Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), with one primary category per issue. Unsupported values return a validation error. Categories are separate from the analysis rule presets.
+
 Configuration, trace queries and finding submission appear under **Advanced / Platform Features**. Group switches preserve individual platform-tool choices. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
 
 The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md): file tools on file memories and record tools on record memories, and a `read` mount offers only viewing, listing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).

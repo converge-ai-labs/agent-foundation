@@ -44,6 +44,10 @@ class FindingRow(Stamped, Base):
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "agent_id"], ["agents.workspace_id", "agents.id"]),
         ForeignKeyConstraint(["agent_id", "agent_revision_id"], ["agent_revisions.agent_id", "agent_revisions.id"]),
+        CheckConstraint(
+            "category IN ('unclear_request','instruction_issue','tool_design','tool_usage','tool_execution','answer_quality','context_gap','workflow_issue','boundary_violation')",
+            name="category",
+        ),
         CheckConstraint("severity IN ('critical', 'warning', 'suggestion')", name="severity"),
         CheckConstraint(
             "assessment IN ('unreviewed', 'confirmed', 'expected', 'insufficient', 'false_positive')", name="assessment"

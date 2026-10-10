@@ -10,7 +10,12 @@ import { MarkdownContent } from "../../shared/markdown";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Page, Section } from "../../shared/page";
 import { useAgentComposer } from "../agents/composer";
-import { assessmentLabels, Severity, useFindingAgents } from "./page";
+import {
+  assessmentLabels,
+  categoryLabels,
+  Severity,
+  useFindingAgents,
+} from "./page";
 import styles from "./findings.module.css";
 
 export function FindingDetail() {
@@ -96,6 +101,7 @@ export function FindingDetail() {
       {composer.setup}
       <ErrorNotice error={update.error ?? composer.error ?? revision.error} />
       <div className={styles.metadata}>
+        <span>{t(categoryLabels[finding.category])}</span>
         <Severity finding={finding} />
         <span>{finding.closed ? t("Closed") : t("Open")}</span>
         <Link to={`${basePath}/agents/${finding.agent_id}`}>
