@@ -16,7 +16,7 @@ async with executable.stream(input_value, bindings=bindings) as stream:
         await host.persist_and_publish(new_events)
 ```
 
-One stream observer binds to the root Thread and Run on its first successful source item. Forwarded inline children have independent state and carry `subagentRunId`, preserving native message and tool-call IDs. Independently executed asynchronous children use separate stream observers. `HarnessAguiObserver` remains available for sources containing exactly one Run.
+One stream observer binds to the root Thread and Run on its first successful source item. Forwarded inline children have independent state and carry `subagentRunId` without changing converted message or native tool-call IDs. Reasoning message IDs identify the source Run, model request, and part index so provider summary parts sharing a native ID remain separate. Independently executed asynchronous children use separate stream observers. `HarnessAguiObserver` remains available for sources containing exactly one Run.
 
 A Host that retains the exact public Harness source history can atomically rebuild a fresh observer before continuing with live items:
 

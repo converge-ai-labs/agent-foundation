@@ -414,6 +414,38 @@ async def test_preparation_failure_preserves_saved_display_after_native_request_
     assert saved_display_history(saved) == updated
 
 
+def test_reasoning_parts_with_shared_provider_id_stay_separate_in_live_and_saved_display() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from pydantic_ai.messages import PartEndEvent, PartStartEvent, ThinkingPart
+
+    collector = DisplayHistoryCollector(())
+    parts = [ThinkingPart(text, id="rs_shared") for text in ("**First plan**", "**Second plan**")]
+    for index, part in enumerate(parts):
+        for offset, event in enumerate((PartStartEvent(index=index, part=part), PartEndEvent(index=index, part=part))):
+            collector.observe(
+                HarnessEvent(
+                    thread_id="thread",
+                    run_id="run",
+                    sequence=index * 2 + offset,
+                    occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    event=event,
+                )
+            )
+    publication = collector.drain()
+    assert publication is not None
+    assert [item.content["text"] for item in publication.items if item.kind == "reasoning_message"] == [
+        part.content for part in parts
+    ]
+    native = HarnessState.new(message_history=[ModelResponse(parts=parts)])
+    saved = with_display_history(native, collector.capture(native.message_history))
+    restored = saved_display_history(HarnessState.model_validate_json(saved.model_dump_json()))
+    assert restored is not None
+    assert visible(restored) == [part.content for part in parts]
+    assert [part.kind for entry in display_entries(restored) for part in entry.parts] == ["thinking", "thinking"]
+
+
 def test_legacy_compact_migration_preserves_full_original_message_part_addresses() -> None:
     from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
     from a13n_harness_ui.display_history import _message_digest
