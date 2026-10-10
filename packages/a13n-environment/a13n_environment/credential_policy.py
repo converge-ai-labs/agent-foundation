@@ -12,7 +12,7 @@ class CredentialMode(StrEnum):
     forbidden = "forbidden"
 
 
-class AuthenticationCase(BaseModel):
+class CredentialPolicyCase(BaseModel):
     """Override credential presence for one declared configuration field value."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -21,16 +21,18 @@ class AuthenticationCase(BaseModel):
     mode: CredentialMode
 
 
-class Authentication(BaseModel):
+class CredentialPolicy(BaseModel):
+    """Declare credential presence requirements; no remote authentication is performed."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     mode: CredentialMode = CredentialMode.required
-    cases: tuple[AuthenticationCase, ...] = ()
+    cases: tuple[CredentialPolicyCase, ...] = ()
 
     @model_validator(mode="after")
     def unique_cases(self):
         keys = [(case.field, type(case.equals), case.equals) for case in self.cases]
         if len(set(keys)) != len(keys):
-            raise ValueError("duplicate authentication condition")
+            raise ValueError("duplicate credential policy condition")
         return self
 
     def resolve(self, configuration: BaseModel | dict[str, JsonValue]) -> CredentialMode:
@@ -45,7 +47,7 @@ class Authentication(BaseModel):
             if type(values.get(case.field)) is type(case.equals) and values.get(case.field) == case.equals
         }
         if len(matches) > 1:
-            raise ValueError("conflicting authentication conditions")
+            raise ValueError("conflicting credential policy conditions")
         return next(iter(matches), self.mode)
 
     def validate_presence(self, configuration: BaseModel | dict[str, JsonValue], configured: bool) -> None:
@@ -58,4 +60,4 @@ class Authentication(BaseModel):
     def validate_configuration_model(self, model: type[BaseModel]) -> None:
         fields = {field.alias or name for name, field in model.model_fields.items()}
         if any(case.field not in fields for case in self.cases):
-            raise ValueError("authentication conditions must name configuration fields")
+            raise ValueError("credential policy conditions must name configuration fields")

@@ -10,13 +10,13 @@ from uuid import uuid4
 from pydantic import BaseModel, JsonValue
 
 from ._metadata import validate_definition
-from .authentication import Authentication, CredentialMode
+from .credential_policy import CredentialMode, CredentialPolicy
 from .errors import EnvironmentProviderErrorCategory, provider_error
 from .execution import EnvironmentConnector
 from .management import EnvironmentProvider
 from .models import EnvironmentDescriptor, EnvironmentState
 
-NO_CREDENTIAL = Authentication(mode=CredentialMode.forbidden)
+NO_CREDENTIAL = CredentialPolicy(mode=CredentialMode.forbidden)
 
 
 class ProviderFactory[C: BaseModel, K: BaseModel, E: BaseModel, R](Protocol):
@@ -63,7 +63,7 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
     display_name: str
     configuration_model: type[C]
     credential_model: type[K] | None = None
-    authentication: Authentication = field(default_factory=Authentication)
+    credential_policy: CredentialPolicy = field(default_factory=CredentialPolicy)
     setup_url: str | None = None
     setup_label: str | None = None
 
@@ -89,17 +89,17 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
             credential_model=self.credential_model,
         )
         if self.credential_model is None:
-            if self.authentication not in (Authentication(), NO_CREDENTIAL):
+            if self.credential_policy not in (CredentialPolicy(), NO_CREDENTIAL):
                 raise ValueError(
                     f"{self.DOMAIN} Provider {self.type!r} declares no credential model and cannot accept one"
                 )
-            object.__setattr__(self, "authentication", NO_CREDENTIAL)
-        self.authentication.validate_configuration_model(self.configuration_model)
+            object.__setattr__(self, "credential_policy", NO_CREDENTIAL)
+        self.credential_policy.validate_configuration_model(self.configuration_model)
         self.validate_domain()
 
     def parse_credential(self, configuration: C | dict[str, JsonValue], credential: object) -> K | None:
         """Enforce the declared presence rule, then parse a credential this Provider accepts."""
-        self.authentication.validate_presence(configuration, credential is not None)
+        self.credential_policy.validate_presence(configuration, credential is not None)
         if credential is None or self.credential_model is None:
             return None
         return self.credential_model.model_validate(credential)

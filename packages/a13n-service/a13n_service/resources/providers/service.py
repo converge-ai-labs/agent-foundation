@@ -11,6 +11,7 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 
+from a13n_environment.credential_policy import CredentialPolicy
 from a13n_environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -276,6 +277,12 @@ def list_provider_types(registry: Registry, kind: ProviderKind) -> ProviderTypeP
     )
 
 
+def _credential_policy(definition: RegisteredProvider) -> CredentialPolicy | Authentication:
+    if isinstance(definition, EnvironmentProviderDefinition):
+        return definition.credential_policy
+    return definition.authentication
+
+
 def _validated_config(
     definition: RegisteredProvider,
     config: Mapping[str, JsonValue],
@@ -295,7 +302,7 @@ def _validated_config(
         raise invalid("config", rejection_reason(error)) from None
     try:
         if credential is None and stored_credential:
-            definition.authentication.validate_presence(parsed, True)
+            _credential_policy(definition).validate_presence(parsed, True)
         else:
             definition.parse_credential(parsed, credential)
     except ValueError as error:
@@ -383,7 +390,7 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         display_name=definition.display_name,
         configuration_schema=definition.configuration_model.model_json_schema(),
         credential_schema=None if credential is None else credential.model_json_schema(),
-        authentication=Authentication.model_validate(definition.authentication.model_dump(mode="json")),
+        authentication=Authentication.model_validate(_credential_policy(definition).model_dump(mode="json")),
         setup_url=definition.setup_url,
         setup_label=definition.setup_label,
         supports_test=supports_probe(definition),

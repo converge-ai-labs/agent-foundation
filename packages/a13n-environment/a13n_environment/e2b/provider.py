@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from .._backend import ExecutionBackend, ManagementBackend
 from .._backend_factory import BackendFactory
-from ..authentication import Authentication, CredentialMode
+from ..credential_policy import CredentialMode, CredentialPolicy
 from ..definition import EnvironmentProviderDefinition
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..models import (
@@ -109,7 +109,7 @@ E2B = EnvironmentProviderDefinition(
     provider_factory=_factory.provider,
     describe_environment=_describe,
     target_identity=_identity,
-    authentication=Authentication(mode=CredentialMode.required),
+    credential_policy=CredentialPolicy(mode=CredentialMode.required),
     setup_url="https://e2b.dev/dashboard?tab=keys",
     setup_label="E2B API keys",
     supports_stop=True,

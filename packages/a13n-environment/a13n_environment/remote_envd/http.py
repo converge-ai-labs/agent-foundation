@@ -18,7 +18,7 @@ from a13n_environment._transport_policy import outbound_tls_verify
 from .._backend import ExecutionBackend
 from .._backend_factory import BackendFactory
 from ..attachments import DeviceEIPSessionSource
-from ..authentication import Authentication, CredentialMode
+from ..credential_policy import CredentialMode, CredentialPolicy
 from ..definition import EnvironmentProviderDefinition
 from ..envd_policy import (
     EnvdBoundaryRequirement,
@@ -213,5 +213,5 @@ HTTP_ENVD = EnvironmentProviderDefinition(
     target_identity=lambda **kwargs: target_identity(HTTP_PROVIDER_KEY, **kwargs),
     backend_identity=_backend_identity,
     supports_managed=False,
-    authentication=Authentication(mode=CredentialMode.required),
+    credential_policy=CredentialPolicy(mode=CredentialMode.required),
 )

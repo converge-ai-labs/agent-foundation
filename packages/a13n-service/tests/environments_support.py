@@ -7,7 +7,7 @@ from typing import Literal
 from uuid import uuid4
 
 import httpx2
-from a13n_environment.authentication import Authentication, CredentialMode
+from a13n_environment.credential_policy import CredentialMode, CredentialPolicy
 from a13n_environment.definition import EnvironmentProviderDefinition
 from a13n_environment.errors import (
     EnvironmentManagementError,
@@ -253,7 +253,7 @@ EXPIRING = replace(
     display_name="Expiring",
     requires_keepalive=True,
     credential_model=FakeCredential,
-    authentication=Authentication(mode=CredentialMode.optional),
+    credential_policy=CredentialPolicy(mode=CredentialMode.optional),
 )
 
 
