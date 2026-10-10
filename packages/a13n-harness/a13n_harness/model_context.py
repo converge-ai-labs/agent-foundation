@@ -140,39 +140,7 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         if request is None:
             return request_context
 
-        async def terminal(current: ModelContextProjectionRequest) -> ModelContextProjection:
-            return await ctx.deps.project_model_context(current)
-
-        projection_handler: ModelContextNext = terminal
-        capabilities = tuple(
-            capability
-            for capability in ctx.capabilities.values()
-            if isinstance(capability, AbstractModelContextCapability)
-        )
-        for capability in reversed(capabilities):
-            inner = projection_handler
-
-            async def wrapped(
-                current: ModelContextProjectionRequest,
-                *,
-                capability: AbstractModelContextCapability = capability,
-                inner: ModelContextNext = inner,
-            ) -> ModelContextProjection:
-                return await capability.wrap_model_context(ctx, current, inner)
-
-            projection_handler = wrapped
-
-        host = ctx.deps.model_context
-        if host is not None:
-            inner = projection_handler
-
-            async def host_wrapped(current: ModelContextProjectionRequest) -> ModelContextProjection:
-                return await host.wrap_model_context(ctx.deps, current, inner)
-
-            projection_handler = host_wrapped
-
-        projection = await projection_handler(request)
-        _validate_projection(projection, request)
+        projection = await _project_model_context(ctx, request)
         original_request = request_context.messages[-1]
         assert isinstance(original_request, ModelRequest)
         committed = _commit_projection(request_context.messages, request, projection)
@@ -189,6 +157,45 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         ):
             await ctx.emit(event)
         return _replace_messages(request_context, committed)
+
+
+async def _project_model_context(
+    ctx: RunContext[AgentContext], request: ModelContextProjectionRequest
+) -> ModelContextProjection:
+    """Resolve the same validated projection for request and duplex boundaries."""
+
+    async def terminal(current: ModelContextProjectionRequest) -> ModelContextProjection:
+        return await ctx.deps.project_model_context(current)
+
+    projection_handler: ModelContextNext = terminal
+    capabilities = tuple(
+        capability for capability in ctx.capabilities.values() if isinstance(capability, AbstractModelContextCapability)
+    )
+    for capability in reversed(capabilities):
+        inner = projection_handler
+
+        async def wrapped(
+            current: ModelContextProjectionRequest,
+            *,
+            capability: AbstractModelContextCapability = capability,
+            inner: ModelContextNext = inner,
+        ) -> ModelContextProjection:
+            return await capability.wrap_model_context(ctx, current, inner)
+
+        projection_handler = wrapped
+
+    host = ctx.deps.model_context
+    if host is not None:
+        inner = projection_handler
+
+        async def host_wrapped(current: ModelContextProjectionRequest) -> ModelContextProjection:
+            return await host.wrap_model_context(ctx.deps, current, inner)
+
+        projection_handler = host_wrapped
+
+    projection = await projection_handler(request)
+    _validate_projection(projection, request)
+    return projection
 
 
 def _classify_request(

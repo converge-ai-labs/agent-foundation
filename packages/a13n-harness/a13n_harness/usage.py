@@ -259,6 +259,7 @@ class RunUsageSummary(BoundedRequestUsage):
     provider_receipts: int = Field(default=0, ge=0)
     unknown_cost_records: int = Field(default=0, ge=0)
     incomplete_requests: int = Field(default=0, ge=0)
+    model_usage_coverage: Literal["all", "responses_only"] = "all"
 
     @property
     def total_tokens(self) -> int:
@@ -338,6 +339,7 @@ class UsageAccumulator:
             cost=sum_decimal((self.cost, self.provider_cost)) if known else None,
             unknown_cost_records=self.unknown + self.unknown_provider,
             incomplete_requests=self.incomplete,
+            model_usage_coverage="all",
         )
 
 
@@ -372,6 +374,7 @@ class UsageScope(BaseModel):
     delegation_id: str | None = Field(default=None, max_length=512)
     sequence: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
+    model_usage_coverage: Literal["all", "responses_only"] = "all"
 
 
 def _validate_records(scope: UsageScope, records: tuple[UsageRecord, ...]) -> None:
@@ -408,7 +411,9 @@ class UsageSnapshot(UsageScope):
 
     @property
     def summary(self) -> RunUsageSummary:
-        return summarize_usage(self.records, tool_calls=self.tool_calls)
+        return summarize_usage(self.records, tool_calls=self.tool_calls).model_copy(
+            update={"model_usage_coverage": self.model_usage_coverage}
+        )
 
     @classmethod
     def from_state(cls, state: HarnessState) -> UsageSnapshot | None:
@@ -543,6 +548,9 @@ class RunUsageLedger:
         self._state = state
         self._sequence = snapshot.sequence if snapshot is not None else 0
         self._tool_calls = snapshot.tool_calls if snapshot is not None else 0
+        self.model_usage_coverage: Literal["all", "responses_only"] = (
+            snapshot.model_usage_coverage if snapshot is not None else "all"
+        )
         self._events = events
         self.reporter = reporter
         self.cost_capability: AbstractModelCostCapability | None = None
@@ -578,6 +586,7 @@ class RunUsageLedger:
             delegation_id=self.instance.delegation_id,
             sequence=self._sequence,
             tool_calls=self._tool_calls,
+            model_usage_coverage=self.model_usage_coverage,
             records=self.records,
         )
 
@@ -593,7 +602,9 @@ class RunUsageLedger:
             if observed > self._tool_calls:
                 self._tool_calls = observed
                 self._sequence += 1
-        return summarize_usage(self._records.values(), tool_calls=self._tool_calls)
+        return summarize_usage(self._records.values(), tool_calls=self._tool_calls).model_copy(
+            update={"model_usage_coverage": self.model_usage_coverage}
+        )
 
     def generation(self, record_id: str) -> ModelUsageRecord:
         record = self._records.get(record_id)
