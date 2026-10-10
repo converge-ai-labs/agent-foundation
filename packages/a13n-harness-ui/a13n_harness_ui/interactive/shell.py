@@ -499,7 +499,7 @@ class CliShell:
             await asyncio.sleep(2)
 
     def _toolbar(self) -> FormattedText:
-        return FormattedText([("", self.status.line(self.app.output.get_size().columns))])
+        return FormattedText(self.status.fragments(self.app.output.get_size().columns))
 
     def _composer_header(self) -> FormattedText:
         label = "Answer required" if self.interaction else "Message"
@@ -607,7 +607,7 @@ class CliShell:
             self._saved_draft = None
             self._draft_generation += 1
         if not self.busy and self.interaction is None:
-            self.status.state = "ready"
+            self.status.state = self.status.idle_state
         self.app.invalidate()
 
     async def _show_notes(self) -> None:
@@ -1251,7 +1251,7 @@ class CliShell:
             self.renderer.tasks.restore(await backend.app.thread_tasks(thread_id=backend.thread_id))
             await self._load_notes()
         self.ready = True
-        self.status.state = "waiting for you" if self.interaction is not None else "ready"
+        self.status.state = "waiting for you" if self.interaction is not None else self.status.idle_state
         self.app.invalidate()
         flusher = self.app.create_background_task(self._flusher())
         activity_refresher = self.app.create_background_task(self._activity_refresher())
@@ -1353,7 +1353,7 @@ class CliShell:
             self.interaction = None
             self.menu_handler = None
             self._restore_draft()
-            self.status.state = "ready"
+            self.status.state = self.status.idle_state
             self.emit(
                 "Interaction cancelled. Completed writes are retained; pending decisions remain unapproved. /status reopens decisions."
             )
@@ -1429,7 +1429,7 @@ class CliShell:
                 if self.status.started is not None:
                     self.status.elapsed = time.monotonic() - self.status.started
                 self.status.started = None
-                self.status.state = "ready"
+                self.status.state = self.status.idle_state
                 try:
                     await self._activate_decisions()
                     if self.backend is not None and not self.closing:

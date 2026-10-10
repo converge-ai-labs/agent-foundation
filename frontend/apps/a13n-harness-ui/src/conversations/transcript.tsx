@@ -1,5 +1,7 @@
 import {
   memo,
+  createContext,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,6 +29,9 @@ import {
 import { MessageText } from "./message-text";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
+import { FailureNotice } from "./failure-notice";
+
+const CurrentFailureRun = createContext<string | null | undefined>(undefined);
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
 import type { DisplayBlock, FocusDisplay } from "./stream";
@@ -77,6 +82,7 @@ type Row = {
       kind: "notifications";
       notices: { id: string; source: string; text: string }[];
     }
+  | { kind: "failure"; text: string }
   | { kind: "activity"; name: string; text: string }
 );
 
@@ -97,6 +103,7 @@ export function savedEntryIdentity(entry: Schema<"TranscriptEntry">) {
     entry.timestamp,
     entry.message_kind,
     entry.parts.map(({ comment_target: _target, ...part }) => part),
+    entry.failures,
   ]);
 }
 
@@ -104,6 +111,7 @@ function savedRows(
   entries: Schema<"TranscriptEntry">[],
   groups: Map<Schema<"TranscriptPart">, ToolView[] | null>,
   continuation?: string | null,
+  currentFailureRunId?: string | null,
 ): Row[] {
   const rows: Row[] = [];
   for (const entry of entries) {
@@ -167,6 +175,15 @@ function savedRows(
         rows.push({ id: reference.app_id, kind: "app", reference });
       }
     });
+    for (const failure of entry.failures ?? []) {
+      if (currentFailureRunId && failure.run_id === currentFailureRunId)
+        continue;
+      rows.push({
+        id: `failure:${failure.id}`,
+        kind: "failure",
+        text: failure.message,
+      });
+    }
     for (let index = start; index < rows.length; index++) {
       rows[index].position = entry.position;
       rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
@@ -421,6 +438,8 @@ function Rows({
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
         />
+      ) : row.kind === "failure" ? (
+        <FailureNotice message={row.text} />
       ) : row.kind === "origin" ? (
         <div className={styles.assistantMessage}>
           <header>
@@ -501,10 +520,16 @@ export const SavedEntry = memo(function SavedEntry({
   entry: Schema<"TranscriptEntry">;
   threadId?: string;
 }) {
+  const currentFailureRunId = useContext(CurrentFailureRun);
   return (
     <article className={styles.entry} data-position={entry.position}>
       <Rows
-        rows={savedRows([entry], toolGroups ?? savedToolGroups([entry]))}
+        rows={savedRows(
+          [entry],
+          toolGroups ?? savedToolGroups([entry]),
+          undefined,
+          currentFailureRunId,
+        )}
         threadId={threadId}
         continuation={continuation}
       />
@@ -525,7 +550,9 @@ export function ConversationTranscript({
   recovery,
   pending,
   activity,
+  currentFailureRunId,
 }: {
+  currentFailureRunId?: string | null;
   activity?: ReactNode;
   pending?: PendingInteraction;
   recovery?: FocusDisplay["recovery"];
@@ -540,8 +567,14 @@ export function ConversationTranscript({
   gap?: boolean;
 }) {
   const saved = useMemo(
-    () => savedRows(entries, savedToolGroups(entries), continuation),
-    [entries, continuation],
+    () =>
+      savedRows(
+        entries,
+        savedToolGroups(entries),
+        continuation,
+        currentFailureRunId,
+      ),
+    [entries, continuation, currentFailureRunId],
   );
   const live = liveRows(blocks);
   const savedIds = new Set(
@@ -576,7 +609,7 @@ export function ConversationTranscript({
       });
   }
   return (
-    <>
+    <CurrentFailureRun value={currentFailureRunId}>
       <TurnRows
         rows={rows}
         entries={entries}
@@ -591,7 +624,7 @@ export function ConversationTranscript({
       />
       {activity}
       {gap && <GapNotice />}
-    </>
+    </CurrentFailureRun>
   );
 }
 
@@ -748,9 +781,16 @@ function TurnHistory({
     }
     return [...byPosition.values()].sort((a, b) => a.position - b.position);
   }, [entries, history.data, turn]);
+  const currentFailureRunId = useContext(CurrentFailureRun);
   const saved = useMemo(
-    () => savedRows(loaded, savedToolGroups(loaded), continuation),
-    [loaded, continuation],
+    () =>
+      savedRows(
+        loaded,
+        savedToolGroups(loaded),
+        continuation,
+        currentFailureRunId,
+      ),
+    [loaded, continuation, currentFailureRunId],
   );
   const savedInputs = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),

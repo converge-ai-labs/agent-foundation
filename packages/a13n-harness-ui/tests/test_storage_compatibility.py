@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261010_4bd3d3ab1b82_retain_latest_root_execution_summary.py").unlink()
     (newer / "versions/20261001_c82e5ae6ef80_add_small_thread_work_projections.py").unlink()
     (newer / "versions/20260926_1da116a90fda_add_memory_scope_to_observable_threads.py").unlink()
     (newer / "versions/20260924_6fb2512c92a3_add_shared_thread_stars.py").unlink()
@@ -89,6 +90,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_digest VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_schema_version VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_json TEXT"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN last_execution_json TEXT"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
@@ -330,7 +332,7 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
         migrator.upgrade()
         with engine.connect() as connection:
             after = connection.execute(text("SELECT * FROM thread")).mappings().one()
-            assert dict(after) == {**before, "memory_scope": None}
+            assert dict(after) == {**before, "memory_scope": None, "last_execution_json": None}
             assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
         async with open_harness_ui_app(settings, configuration_path=configuration) as app:
             memory = await app._threads.memory_thread(scope="global", project_id=None, model_id="model-primary")

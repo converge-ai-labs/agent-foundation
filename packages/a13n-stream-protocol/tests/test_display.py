@@ -6,7 +6,15 @@ import pytest
 from a13n_harness import HarnessEvent
 from a13n_stream_protocol import AguiObservationError, HarnessAguiObserver
 from a13n_stream_protocol.display import DisplayFold
-from pydantic_ai.messages import PartDeltaEvent, PartEndEvent, PartStartEvent, TextPart, TextPartDelta
+from pydantic_ai.messages import (
+    PartDeltaEvent,
+    PartEndEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
+)
 
 
 def test_snapshot_and_raw_suffix_reconstruct_text_and_tool_lifecycle() -> None:
@@ -133,7 +141,8 @@ def test_every_event_cut_roundtrips_normalized_state(full_content: bool) -> None
         assert frozen.model_dump_json() == encoded  # No mutable aliases.
 
 
-def test_native_converter_continues_after_each_serialized_cut() -> None:
+@pytest.mark.parametrize("reasoning", [False, True])
+def test_native_converter_continues_after_each_serialized_cut(reasoning: bool) -> None:
     from a13n_stream_protocol.display import DisplaySnapshot
 
     sources = [
@@ -141,6 +150,15 @@ def test_native_converter_continues_after_each_serialized_cut() -> None:
         PartDeltaEvent(index=0, delta=TextPartDelta(" world")),
         PartEndEvent(index=0, part=TextPart("hello world")),
     ]
+    if reasoning:
+        sources = [
+            PartStartEvent(index=0, part=ThinkingPart("**First", id="rs_shared")),
+            PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta=" plan**", signature_delta="signature-0")),
+            PartEndEvent(index=0, part=ThinkingPart("**First plan**", id="rs_shared", signature="signature-0")),
+            PartStartEvent(index=1, part=ThinkingPart("**Second", id="rs_shared")),
+            PartDeltaEvent(index=1, delta=ThinkingPartDelta(content_delta=" plan**", signature_delta="signature-1")),
+            PartEndEvent(index=1, part=ThinkingPart("**Second plan**", id="rs_shared", signature="signature-1")),
+        ]
     wrapped = [
         HarnessEvent(
             thread_id="thread",
@@ -154,6 +172,10 @@ def test_native_converter_continues_after_each_serialized_cut() -> None:
     expected = DisplayFold("run")
     for source in wrapped:
         expected.fold(expected.events(source), source)
+    if reasoning:
+        items = list(expected.items.values())
+        assert [item.content["text"] for item in items] == ["**First plan**", "**Second plan**"]
+        assert all(item.state == "completed" for item in items)
     for cut in range(len(wrapped) + 1):
         fold = DisplayFold("run")
         for source in wrapped[:cut]:

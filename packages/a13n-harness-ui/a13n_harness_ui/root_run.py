@@ -35,6 +35,7 @@ from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
+from a13n_harness_ui.storage.contracts import ThreadExecution
 from a13n_harness_ui.surfaces import (
     ContinuationSelectionView,
     EnvironmentOutcomeView,
@@ -116,6 +117,7 @@ class RootRunCoordinator:
         terminal_retention: int = 256,
         observation: UiObservation | None = None,
         touch_thread: Callable[[str], Awaitable[None]] | None = None,
+        save_execution: Callable[[str, ThreadExecution], Awaitable[bool]] | None = None,
         interaction_timeouts: bool = False,
         notify: Callable[[str, RootOperationNotice], None] | None = None,
         on_settled: Callable[[str | None, RootOperationView], Awaitable[None]] | None = None,
@@ -129,6 +131,7 @@ class RootRunCoordinator:
         self._restart = restart_coordinator
         self._executor = executor
         self._touch_thread = touch_thread
+        self._save_execution = save_execution
         self._summary_hub = summary_hub
         self._notify = notify
         self._on_settled = on_settled
@@ -608,6 +611,10 @@ class RootRunCoordinator:
         cancelled = False
         cancelled_class = get_cancelled_exc_class()
         try:
+            # Registration is the admission boundary (including source authority).
+            # Save even a pre-start cancellation, before any execution effects.
+            with CancelScope(shield=True):
+                await self._persist_execution(operation)
             with scope:
                 if cancel_requested:
                     scope.cancel()
@@ -678,6 +685,17 @@ class RootRunCoordinator:
                     }
                 )
             operation.completed_at = datetime.now(UTC)
+            try:
+                await self._persist_execution(operation)
+            except Exception:
+                # Keep the last durable active record as unknown, never claim a saved
+                # success. Storage failure must not strand waiters or crash other roots.
+                get_logger(__name__).exception("Could not save root execution: %s", operation.receipt.thread_id)
+                operation.status = RootOperationStatus.failed
+                operation.failure = FailureView(
+                    code="execution_status_save_failed",
+                    message="Could not save the execution outcome. Inspect the saved conversation before retrying.",
+                )
             operation.scope = None
             operation.stream = None
             if self._active_by_thread.get(operation.receipt.thread_id) == operation.receipt.receipt_id:
@@ -806,9 +824,32 @@ class RootRunCoordinator:
         operation.started_at = datetime.now(UTC)
         operation.status = RootOperationStatus.running
         cancel_requested = operation.cancel_requested
+        await self._persist_execution(operation)
         await self._publish_change(operation)
         if cancel_requested:
             stream.cancel()
+
+    async def _persist_execution(self, operation: _RootOperation) -> None:
+        if self._save_execution is None:
+            return
+        failure = operation.failure
+        if failure is None and operation.outcome is not None:
+            failure = operation.outcome.execution.failure or operation.outcome.continuation.failure
+        if failure is None and operation.status is RootOperationStatus.failed:
+            failure = FailureView(code="root_operation_failed", message="The root operation did not complete.")
+        await self._save_execution(
+            operation.receipt.thread_id,
+            ThreadExecution(
+                execution_id=operation.receipt.receipt_id,
+                status=operation.status.value,
+                submitted_at=operation.receipt.submitted_at,
+                started_at=operation.started_at,
+                completed_at=operation.completed_at,
+                run_id=operation.run_id,
+                error_code=failure.code if failure is not None else None,
+                error_message=failure.message[:4096] if failure is not None else None,
+            ),
+        )
 
     async def _publish_change(self, operation: _RootOperation, *, notice: RootOperationNotice | None = None) -> None:
         if notice is not None and self._notify is not None:

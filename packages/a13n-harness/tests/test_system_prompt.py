@@ -9,7 +9,7 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
 )
-from a13n_harness.execution import _reconcile_system_prompt
+from a13n_harness._run_stream import _reconcile_system_prompt
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,

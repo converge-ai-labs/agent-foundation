@@ -437,3 +437,21 @@ it("does not discard orphaned inline content when no parent was retained", () =>
     }),
   ]);
 });
+
+it("retains the source entry of steering even when historical paging omits the initial input", () => {
+  const { entries } = timeline(
+    message("steer", "user", {
+      text: "Use revised numbers",
+      input_group: "01a12147-bd16-73f2-b290-80198647ebc8",
+      metadata: { source_id: "inb_abcdef1234567890abcdef123456" },
+      input_source: "steering",
+    }),
+  );
+  expect(entries).toMatchObject([
+    {
+      kind: "guidance",
+      sourceId: "inb_abcdef1234567890abcdef123456",
+      text: "Use revised numbers",
+    },
+  ]);
+});

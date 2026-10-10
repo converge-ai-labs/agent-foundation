@@ -65,6 +65,7 @@ class Status:
     theme: Literal["auto", "dark", "light"] = "auto"
     theme_explicit: bool = False
     state: str = "starting"
+    execution_status: str | None = None
     goal: GoalView | None = None
     agent: str = "not configured"
     model: str = "not configured"
@@ -169,7 +170,18 @@ class Status:
     def reasoning_mode_label(self) -> str:
         return "Provider default" if self.reasoning_mode == "default" else self.reasoning_mode.capitalize()
 
+    @property
+    def idle_state(self) -> str:
+        if self.execution_status == "failed":
+            return "error"
+        if self.execution_status in {"unknown", "preparing", "running"}:
+            return "outcome unknown"
+        return "ready"
+
     def line(self, width: int | None = None) -> str:
+        return "".join(text for _, text in self.fragments(width))
+
+    def fragments(self, width: int | None = None) -> list[tuple[str, str]]:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
         from prompt_toolkit.utils import get_cwidth
 
@@ -206,8 +218,8 @@ class Status:
             )
             goal_label = f"Goal {phase} {goal.iteration}/{goal.max_iterations}"
         fields = [
-            *((goal_label,) if goal_label is not None else ()),
             state,
+            *((goal_label,) if goal_label is not None else ()),
             *((speed_label,) if not compact and speed_label is not None else ()),
             *(("Pro",) if not compact and self.reasoning_mode == "pro" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
@@ -222,11 +234,30 @@ class Status:
         ]
         while width is not None and get_cwidth(" · ".join(fields)) + 2 > width and len(fields) > 1:
             fields.pop()
-        text = terminal_text(" " + " · ".join(fields) + " ")
-        if width is not None:
-            while get_cwidth(text) > width and text:
+        state_style = (
+            "class:status-bar.ready"
+            if self.state == "ready"
+            else "class:status-bar.warning"
+            if self.state == "waiting for you"
+            else "class:status-bar.error"
+            if self.state in {"error", "outcome unknown"}
+            else "class:status-bar.working"
+        )
+        fragments = [
+            ("", " "),
+            (state_style, terminal_text(fields[0])),
+            ("", terminal_text((" · " + " · ".join(fields[1:]) if len(fields) > 1 else "") + " ")),
+        ]
+        if width is None:
+            return fragments
+        clipped: list[tuple[str, str]] = []
+        remaining = max(0, width)
+        for style, text in fragments:
+            while get_cwidth(text) > remaining and text:
                 text = text[:-1]
-        return text
+            clipped.append((style, text))
+            remaining -= get_cwidth(text)
+        return clipped
 
 
 @dataclass(slots=True)

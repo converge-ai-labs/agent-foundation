@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tarfile
 from graphlib import TopologicalSorter
 from pathlib import Path
 
@@ -48,10 +49,62 @@ def test_release_keeps_all_native_targets_and_one_version_patch(jobs: dict) -> N
     targets = jobs["build-binaries"]["strategy"]["matrix"]["include"]
     assert len(targets) == 6
     assert {entry["target"] for entry in targets} == TARGETS
-    for name in ("build-client", "build-binaries", "publish-crate", "publish-image"):
+    for entry in targets:
+        if entry["target"].endswith("-unknown-linux-gnu"):
+            assert entry["os"] == "ubuntu-24.04"
+            assert entry["cross_linux"] == (entry["target"] == "aarch64-unknown-linux-gnu")
+    for name in ("build-client", "build-binaries", "publish-crate"):
         patch_steps = [step for step in jobs[name]["steps"] if step["name"] == "Download release version patch"]
         assert len(patch_steps) == 1
         assert patch_steps[0]["with"]["name"] == "release-version-a13n-envd"
+
+
+def test_sandbox_release_consumes_same_workflow_linux_artifacts(jobs: dict) -> None:
+    assert "build-binaries" in jobs["publish-image"]["needs"]
+    steps = jobs["publish-image"]["steps"]
+    download = next(step for step in steps if step["name"] == "Download Linux binary archives")
+    assert download["uses"] == "actions/download-artifact@v4"
+    assert download["with"] == {
+        "pattern": "a13n-envd-*-unknown-linux-gnu",
+        "path": "dist/linux",
+        "merge-multiple": True,
+    }
+    stage = next(step for step in steps if step["name"] == "Stage sandbox binaries")
+    assert stage["env"] == {"VERSION": "${{ needs.prepare.outputs.version }}"}
+    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
+    assert "ENVD_BINARY_SOURCE=prebuilt" in build["with"]["build-args"]
+    assert build["with"]["context"] == "."
+    assert steps.index(download) < steps.index(stage) < steps.index(build)
+    assert not any("release version patch" in step["name"] for step in steps)
+
+
+@pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
+@pytest.mark.parametrize("missing_arch", [None, "amd64", "arm64"])
+def test_sandbox_binary_staging_preserves_target_bytes_and_requires_both_archives(
+    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, missing_arch: str | None
+) -> None:
+    archives = tmp_path / "dist/linux"
+    archives.mkdir(parents=True)
+    targets = {"amd64": "x86_64-unknown-linux-gnu", "arm64": "aarch64-unknown-linux-gnu"}
+    for arch, target in targets.items():
+        if arch == missing_arch:
+            continue
+        binary = tmp_path / f"binary-{arch}"
+        binary.write_bytes(f"release binary for {target}".encode())
+        binary.chmod(0o755)
+        with tarfile.open(archives / f"a13n-envd-{version}-{target}.tar.gz", "w:gz") as archive:
+            archive.add(binary, arcname="a13n-envd")
+    monkeypatch.setenv("VERSION", version)
+    script = next(step["run"] for step in jobs["publish-image"]["steps"] if step["name"] == "Stage sandbox binaries")
+
+    result = run_step(script, tmp_path)
+
+    assert (result.returncode == 0) == (missing_arch is None), result.stderr
+    if missing_arch is None:
+        for arch, target in targets.items():
+            binary = tmp_path / "tmp/sandbox-binaries" / arch / "a13n-envd"
+            assert binary.read_bytes() == f"release binary for {target}".encode()
+            assert os.access(binary, os.X_OK)
 
 
 def release_step(jobs: dict, name: str) -> str:

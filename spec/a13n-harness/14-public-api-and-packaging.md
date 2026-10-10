@@ -10,7 +10,7 @@ Shared Environment definitions, `EnvironmentState`, `EnvironmentConnector`, `Env
 
 ## Root Public Surface
 
-`a13n_harness.builder` owns `AgentDefinition`, `HarnessBuilder`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, and `derive_child_identity`. `a13n_harness.execution` owns `ExecutableAgent` and `HarnessRunStream`; it does not re-export construction APIs. The package root lazily exposes these values from their owners. Business-output adaptation is package-private.
+`a13n_harness.builder` owns `AgentDefinition`, `HarnessBuilder`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, and `derive_child_identity`. `a13n_harness.execution` exposes `ExecutableAgent` and `HarnessRunStream`; `a13n_harness.live` owns `HarnessLiveStream`. The execution module does not re-export construction APIs. The package root lazily exposes these values from their owners. Business-output adaptation is package-private.
 
 The package root is a closed primary code-first facade. It exports only the values needed to define, build, run, observe, continue, and compose an Agent through the ordinary path:
 
@@ -24,7 +24,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                                                                                            |
 | Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                                                                         |
 | Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                                                                                    |
-| State, execution, and results | `HarnessState`, `StateStore`, `StoredRef`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                                                 |
+| State, execution, and results | `HarnessState`, `StateStore`, `StoredRef`, `HarnessRunStream`, `HarnessLiveStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                            |
 | Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                                                                                                 |
 
 `a13n_harness.__all__` is exactly this table. Feature-family APIs remain public through their owning stable modules rather than being duplicated at the package root. Important routes include:

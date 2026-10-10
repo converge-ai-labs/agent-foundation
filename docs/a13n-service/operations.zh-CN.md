@@ -33,6 +33,18 @@ a13n-service --config service.toml migrate --check  # verify the schema matches 
 
 使用专用迁移步骤时，例如 Helm chart 的迁移 Job，应在副本设置 `database.auto_migrate = false`，启动前运行 `migrate`。滚动升级期间，旧副本仍使用迁移后的 schema，因此需检查每个发布版本的 schema 修改是否兼容前一版本。
 
+从最初不分页的运行显示格式升级时，还需要转换已保存的运行对象。Schema 迁移只把 `runs.display` 改名为 `runs.tail`，没有添加消息序号，也没有压缩旧显示对象和检查点。`migrate`、`migrate --check` 和进程启动检查会拒绝这些旧指针，并提示所需的运维命令。先等待已接受和正在运行的任务结束，停止**所有** Control 和 Worker 副本，完成 schema 迁移后再转换对象：
+
+```sh
+a13n-service --config service.toml migrate-run-objects  # 检查最多 100 条运行，不写入数据
+a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
+a13n-service --config service.toml migrate --check
+```
+
+该命令会校验原始对象摘要，将两个对象及其数据库指针备份到私有本地目录，写入并读回新的压缩对象，再用一个短事务替换一条运行的两个指针。消息 ID、顺序、内容、流位置和检查点原始字节均会保留。备份包含会话数据，目录应位于源码仓库之外的持久私有存储中。命令不会删除原始对象，但后续清理可能会删除它们，因此仍须保留备份。实际转换需要数据库所有者权限，仅在持有表锁的事务内暂时关闭已结束运行的更新保护；失败回滚会恢复保护。读写对象和备份期间不会持有数据库 session。
+
+重复执行，直到报告转换数量为零；`--limit` 支持 1–1000。已转换的运行会被跳过，中断后可以继续。有未完成的检查点清理、已有显示分页、对象缺失或损坏，或旧显示已丢弃部分消息时，命令会拒绝转换，要求调查，不会猜测数据或静默截断。`migrate --check` 成功后再恢复副本，并验证历史运行、消息列表和继续对话。转换后不支持直接回退到旧的不分页读取代码；离线回退时应同时恢复备份的数据库指针和对象。
+
 ## 健康与就绪
 
 | 端点           | 响应                                                                                             |
@@ -61,14 +73,15 @@ Control 进程通过有界扫描维护排队任务和投递。失败的扫描记
 
 ## 运维命令
 
-| 命令                                                      | 用途                                                                                                                                                     |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a13n-service bootstrap --email EMAIL [--password-stdin]` | 创建首个组织、工作空间和管理员。提示输入至少 8 个字符的密码，或读取标准输入首行。以 JSON 输出新 ID；已初始化时不做修改，退出码为 `3`；输入无效时为 `1`。 |
-| `a13n-service user disable --email EMAIL`                 | 禁用用户账号；参阅[运维账号控制](identity.md#operator-account-control)。                                                                                 |
-| `a13n-service user enable --email EMAIL`                  | 恢复账号原有的授权和密钥。                                                                                                                               |
-| `a13n-service migrate [--check]`                          | 迁移或检查数据库 schema。                                                                                                                                |
-| `a13n-service run [--role ROLE]`                          | 运行一个进程。                                                                                                                                           |
-| `a13n-service --version`                                  | 输出已安装版本。                                                                                                                                         |
+| 命令                                                                       | 用途                                                                                                                                                     |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n-service bootstrap --email EMAIL [--password-stdin]`                  | 创建首个组织、工作空间和管理员。提示输入至少 8 个字符的密码，或读取标准输入首行。以 JSON 输出新 ID；已初始化时不做修改，退出码为 `3`；输入无效时为 `1`。 |
+| `a13n-service user disable --email EMAIL`                                  | 禁用用户账号；参阅[运维账号控制](identity.md#operator-account-control)。                                                                                 |
+| `a13n-service user enable --email EMAIL`                                   | 恢复账号原有的授权和密钥。                                                                                                                               |
+| `a13n-service migrate [--check]`                                           | 迁移或检查数据库 schema。                                                                                                                                |
+| `a13n-service migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | 所有副本停止后，检查或转换旧的不分页显示对象和检查点。                                                                                                   |
+| `a13n-service run [--role ROLE]`                                           | 运行一个进程。                                                                                                                                           |
+| `a13n-service --version`                                                   | 输出已安装版本。                                                                                                                                         |
 
 `--config` 放在命令名之前。数据库 schema 与构建不匹配时，`bootstrap`、`user` 和 `run` 拒绝执行。
 

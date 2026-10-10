@@ -37,6 +37,7 @@ import {
 import { Confirm } from "../../../shared/dialogs";
 import { JsonView } from "../../../shared/forms";
 import { conversationQueries, invalidateConversation, runPath } from "../api";
+import { MessageAuthor } from "../message-author";
 import { entryResubmission } from "../resubmit";
 import { isInteractive } from "./run-actions";
 import { InputContent } from "./user-message";
@@ -232,7 +233,15 @@ export function ThreadInbox({
             <article key={item.id} className={styles.inboxItem}>
               <header>
                 <StatePill state={item.status} />
-                <Timestamp value={item.created_at} relative />
+                {item.kind === "message" ? (
+                  <MessageAuthor
+                    entryId={item.id}
+                    principalId={item.principal_id}
+                    submittedAt={item.created_at}
+                  />
+                ) : (
+                  <Timestamp value={item.created_at} relative />
+                )}
                 <div className={styles.inboxActions}>
                   {editable && state === "queued" && (
                     <>

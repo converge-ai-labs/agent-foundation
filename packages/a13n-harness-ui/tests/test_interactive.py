@@ -1332,3 +1332,43 @@ async def test_model_control_status_distinguishes_inheritance_overrides_and_prov
         assert "Mode Provider default" in backend.status.line()
         assert not any(choice.description.startswith("Current") for choice in backend.thinking_choices())
         assert backend.overrides.controls().model_dump(exclude_none=True) == {}
+
+
+@pytest.mark.parametrize(
+    "state,style",
+    [
+        ("ready", "ready"),
+        ("thinking", "working"),
+        ("responding", "working"),
+        ("shell_exec", "working"),
+        ("waiting for you", "warning"),
+        ("error", "error"),
+        ("cancelling", "working"),
+        ("outcome unknown", "error"),
+    ],
+)
+def test_status_fragments_keep_primary_state_and_plain_text_identical(state, style):
+    from prompt_toolkit.utils import get_cwidth
+
+    status = Status(state=state)
+    for width in (5, 20, 40, 80, 200):
+        fragments = status.fragments(width)
+        assert status.line(width) == "".join(text for _, text in fragments)
+        assert get_cwidth(status.line(width)) <= width
+        assert fragments[1][0] == f"class:status-bar.{style}"
+    assert status.line(40).strip().startswith(state.capitalize())
+
+
+@pytest.mark.parametrize(
+    "execution,state",
+    [
+        ("failed", "error"),
+        ("unknown", "outcome unknown"),
+        ("cancelled", "ready"),
+        ("completed", "ready"),
+        (None, "ready"),
+    ],
+)
+def test_idle_status_uses_execution_outcome_not_operation_text(execution, state):
+    status = Status(execution_status=execution)
+    assert status.idle_state == state

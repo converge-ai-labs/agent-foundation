@@ -8,6 +8,14 @@ A logical Harness Run may contain several sequential `ModelAttempt` values when 
 
 Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Runs retain its native deferred boundary when current Host bindings support it, independently of parent lineage. Unsupported Runs resolve runtime deferral as denied tool results inside the same loop and reserve terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
 
+## Live Runs
+
+`ExecutableAgent.live(model=...)` enters one duplex native realtime session as one Harness Run. It shares the ordinary Run's fresh Context, Environment lifetime, plugin middleware, state export, cancellation, usage ledger, and post-cleanup terminal fence. Pydantic AI owns the connection, turn detection, tool scheduling, audio retention, playback, and provider reconnect behavior. Harness does not start ordinary `ModelAttempt` recovery or replay effectful tools after a connection failure.
+
+The Live entrypoint requires an explicit native `RealtimeModel`. Entering the async context prepares the Run and opens the connection. The Host consumes the single semantic iterator concurrently with input and optional audio playback. `close()` ends the native session normally; `cancel()` requests a cancelled Run. Neither a completed conversational turn nor a completed `close()` call is a terminal Harness receipt. A `HarnessRunResultEvent` follows successful wrapper unwind and teardown, with `output=None`. Early context exit closes resources and retains a checkpoint without manufacturing that receipt. Connection, provider, plugin, or cleanup errors propagate and do not produce a successful terminal result.
+
+Inline native approval handlers may wait, approve, reject, or supply external results. They retain current tool permissions and native cancellation. Live does not suspend a socket into an out-of-band `DeferredToolResume`; an unresolved approval or external call receives the native failed tool result. Interruption cancels speech, optionally truncating it at the Host's playback position; it does not undo tools, cancel the Harness Run, or terminate detached processes.
+
 ## Boundary
 
 | Concern                                                     | Owner                                      |

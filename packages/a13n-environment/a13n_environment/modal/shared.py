@@ -161,12 +161,19 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
 
     async def connection(self) -> modal.Client:
         import modal
+        from modal.config import config as modal_config
+        from modal_proto import api_pb2
 
         if self.client is None:
             with sdk_errors():
-                self.client = await modal.Client.from_credentials.aio(
-                    self.credential.token_id.get_secret_value(), self.credential.token_secret.get_secret_value()
+                # from_credentials registers a process-lifetime shutdown task that retains each short-lived client.
+                # This reference owns the client and releases it in close_transport.
+                self.client = modal.Client(
+                    modal_config["server_url"],
+                    api_pb2.CLIENT_TYPE_CLIENT,
+                    (self.credential.token_id.get_secret_value(), self.credential.token_secret.get_secret_value()),
                 )
+                await self.client.__aenter__()
         return self.client
 
     async def status(self) -> Literal["running", "stopped", "absent"]:

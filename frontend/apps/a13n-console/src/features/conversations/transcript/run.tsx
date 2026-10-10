@@ -12,6 +12,7 @@ import { useAgent } from "../../agents/queries";
 import { conversationQueries, type ViewLevel } from "../api";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
+import { BranchOrigin } from "../thread-branches";
 import { RunNavigator } from "./debug/run-navigator";
 import { useViewLevel } from "./debug/view";
 import { HistoryTranscript } from "./history";
@@ -126,7 +127,12 @@ function RunBody({
   error: unknown;
 }) {
   const { t } = useTranslation();
-  const { can } = useWorkspace();
+  const { can, workspace } = useWorkspace();
+  const client = useClient();
+  const threads = useQuery({
+    ...conversationQueries(client, workspace.id).threads(thread.session_id),
+    enabled: thread.origin === "fork",
+  });
   const transcript = useRef<HTMLDivElement>(null);
   const scroll = useTranscriptScroll(transcript);
   const stopped = ["failed", "cancelled"].includes(run.status);
@@ -154,6 +160,11 @@ function RunBody({
   return (
     <div className={styles.run} ref={transcript}>
       <ErrorNotice error={error} />
+      <BranchOrigin
+        thread={thread}
+        threads={threads.data ?? [thread]}
+        level={level}
+      />
       {level === "debug" && <RunNavigator thread={thread} runId={run.id} />}
       <div className={level === "debug" ? debug.sections : styles.transcript}>
         <HistoryTranscript
@@ -189,6 +200,7 @@ function RunBody({
       <RunDock
         run={run}
         thread={thread}
+        level={level}
         agentName={agentName}
         resubmit={resubmit}
         pendingRunId={submitting?.runId}

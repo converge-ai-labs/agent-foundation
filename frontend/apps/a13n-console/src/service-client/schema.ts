@@ -1751,6 +1751,23 @@ export interface paths {
     patch: operations["update_session_api_v1_sessions__session_id__patch"];
     trace?: never;
   };
+  "/api/v1/sessions/{session_id}/message-authors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Message Authors */
+    get: operations["get_message_authors_api_v1_sessions__session_id__message_authors_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/skills": {
     parameters: {
       query?: never;
@@ -5306,6 +5323,24 @@ export interface components {
       kind?: "message";
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
+    };
+    /** MessageAuthor */
+    MessageAuthor: {
+      /** Entry Id */
+      entry_id: string;
+      principal: components["schemas"]["PrincipalSummary"] | null;
+      /** Principal Id */
+      principal_id: string;
+      /**
+       * Submitted At
+       * Format: date-time
+       */
+      submitted_at: string;
+    };
+    /** MessageAuthors */
+    MessageAuthors: {
+      /** Items */
+      items: components["schemas"]["MessageAuthor"][];
     };
     /** @description Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. At most 256 messages and 256 KiB of normalized JSON. */
     MessageHistory: {
@@ -11704,6 +11739,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SessionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_message_authors_api_v1_sessions__session_id__message_authors_get: {
+    parameters: {
+      query: {
+        entry_id: string[];
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MessageAuthors"];
         };
       };
       400: components["responses"]["Error"];

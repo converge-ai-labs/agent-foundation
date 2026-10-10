@@ -697,8 +697,14 @@ it("preserves status labels, title tooltips and independent action menus from th
             },
           },
           {
-            thread: thread("Check provider"),
-            latest_operation: { status: "failed" },
+            thread: {
+              ...thread("Check provider"),
+              last_execution: {
+                execution_id: "receipt-failed",
+                status: "failed",
+                submitted_at: "2026-01-01T00:00:00Z",
+              },
+            },
           },
         ],
         next_cursor: null,

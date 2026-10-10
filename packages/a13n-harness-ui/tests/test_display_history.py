@@ -414,6 +414,38 @@ async def test_preparation_failure_preserves_saved_display_after_native_request_
     assert saved_display_history(saved) == updated
 
 
+def test_reasoning_parts_with_shared_provider_id_stay_separate_in_live_and_saved_display() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from pydantic_ai.messages import PartEndEvent, PartStartEvent, ThinkingPart
+
+    collector = DisplayHistoryCollector(())
+    parts = [ThinkingPart(text, id="rs_shared") for text in ("**First plan**", "**Second plan**")]
+    for index, part in enumerate(parts):
+        for offset, event in enumerate((PartStartEvent(index=index, part=part), PartEndEvent(index=index, part=part))):
+            collector.observe(
+                HarnessEvent(
+                    thread_id="thread",
+                    run_id="run",
+                    sequence=index * 2 + offset,
+                    occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    event=event,
+                )
+            )
+    publication = collector.drain()
+    assert publication is not None
+    assert [item.content["text"] for item in publication.items if item.kind == "reasoning_message"] == [
+        part.content for part in parts
+    ]
+    native = HarnessState.new(message_history=[ModelResponse(parts=parts)])
+    saved = with_display_history(native, collector.capture(native.message_history))
+    restored = saved_display_history(HarnessState.model_validate_json(saved.model_dump_json()))
+    assert restored is not None
+    assert visible(restored) == [part.content for part in parts]
+    assert [part.kind for entry in display_entries(restored) for part in entry.parts] == ["thinking", "thinking"]
+
+
 def test_legacy_compact_migration_preserves_full_original_message_part_addresses() -> None:
     from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
     from a13n_harness_ui.display_history import _message_digest
@@ -586,3 +618,27 @@ def test_imported_turns_preserve_native_output_and_completion_semantics(closing:
         completed = (1,)
         history.append(ModelRequest(parts=[UserPromptPart("Steer")], metadata={"a13n.steering-run": "run-one"}))
     assert display_turns(import_display_history(history)) == _transcript_turns(tuple(history), completed)
+
+
+def test_saved_run_errors_are_inspectable_without_renumbering_comment_targets():
+    from a13n_harness_ui.display_projection import original_text
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("run-old", full_content=True)
+    fold.fold(
+        [
+            {"type": "RUN_STARTED", "threadId": "thread", "runId": "run-old"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "partial", "delta": "Partial answer"},
+            {"type": "RUN_ERROR", "message": "Provider failed", "code": "provider_failed"},
+            {"type": "RUN_STARTED", "threadId": "thread", "runId": "run-new"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "new", "delta": "New answer"},
+        ]
+    )
+    display = DisplayHistory(items=tuple(fold.items.values()))
+    entries = display_entries(display)
+    assert len(entries) == 2
+    assert entries[0].failures[0].run_id == "run-old"
+    assert entries[0].failures[0].message == "Provider failed"
+    assert entries[1].failures == ()
+    assert original_text(display, 0, 0) == "Partial answer"
+    assert original_text(display, 1, 0) == "New answer"

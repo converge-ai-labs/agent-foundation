@@ -6774,6 +6774,59 @@
         "title": "Message",
         "type": "object"
       },
+      "MessageAuthor": {
+        "additionalProperties": false,
+        "properties": {
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "principal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrincipalSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "principal_id",
+          "submitted_at",
+          "principal"
+        ],
+        "title": "MessageAuthor",
+        "type": "object"
+      },
+      "MessageAuthors": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MessageAuthor"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MessageAuthors",
+        "type": "object"
+      },
       "MessageHistory": {
         "description": "Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. At most 256 messages and 256 KiB of normalized JSON.",
         "items": {
@@ -24771,6 +24824,88 @@
           }
         ],
         "summary": "Update Session",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/message-authors": {
+      "get": {
+        "operationId": "get_message_authors_api_v1_sessions__session_id__message_authors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "items": {
+                "maxLength": 72,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "title": "Entry Id",
+              "type": "array"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageAuthors"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Message Authors",
         "tags": [
           "runs"
         ]

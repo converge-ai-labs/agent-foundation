@@ -3182,6 +3182,7 @@ async def open_harness_ui_app(
                 summary_hub=summary_hub,
                 observation=observation,
                 touch_thread=store.threads.touch,
+                save_execution=store.threads.save_execution,
                 interaction_timeouts=host_mode == "webui",
             )
             projections = ThreadProjectionService(

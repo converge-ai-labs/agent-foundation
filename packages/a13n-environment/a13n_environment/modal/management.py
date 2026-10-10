@@ -41,10 +41,14 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
         client = await self.connection()
         if snapshot is not None:
             await self.validate_snapshot(snapshot)
+        with sdk_errors():
+            try:
+                app = await modal.App.lookup.aio(
+                    self.backend.app_name, environment_name=self.backend.environment_name, client=client
+                )
+            except modal.exception.NotFoundError:
+                raise failure(self.provider_key, "provider_target_missing", Category.MISSING) from None
         with sdk_errors(mutation=True):
-            app = await modal.App.lookup.aio(
-                self.backend.app_name, environment_name=self.backend.environment_name, client=client
-            )
             image = (
                 modal.Image.from_id(snapshot.image_id, client=client)
                 if snapshot

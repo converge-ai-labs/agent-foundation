@@ -279,7 +279,7 @@ async def test_goal_live_status_and_saved_outcome_share_app_execution(
             assert not task.done()
             assert status.goal.iteration == 1
             assert "Goal checking 1/10" in status.line(80)
-            assert status.line(30).strip().startswith("Goal")
+            assert status.line(30).strip() == "Working · Goal checking 1/10"
             receipt = backend.receipt_id
             assert (await app.get_root_operation(receipt)).goal.iteration == 1
         finally:

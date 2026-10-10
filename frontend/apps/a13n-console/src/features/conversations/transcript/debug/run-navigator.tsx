@@ -7,20 +7,11 @@ import {
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
 import { useRunOutline } from "./outline";
-import {
-  OutlineBranch,
-  RunOutline,
-  RunRow,
-  hasNestedGroups,
-} from "./run-outline";
+import { RunOutline, RunRow } from "./run-outline";
 import outline from "./run-outline.module.css";
 import styles from "./details.module.css";
 
-/**
- * Where the reader is, and every other Run they can go to. One tree, two
- * presentations: an outline in the left gutter where the page is wide enough
- * for one, and a pinned pill that opens the same tree where it is not.
- */
+/** The current Thread's Runs in a wide outline or a compact navigation menu. */
 export function RunNavigator({
   thread,
   runId,
@@ -30,13 +21,12 @@ export function RunNavigator({
 }) {
   const { t } = useTranslation();
   const tree = useRunOutline(thread, runId);
-  if (tree.sequence.length <= 1) return null;
-  const position = tree.sequence.findIndex((run) => run.id === tree.inView);
+  if (tree.nodes.length === 0) return null;
+  const position = tree.nodes.findIndex((node) => node.run.id === tree.inView);
   const step = (offset: number) => {
-    const next = tree.sequence[position + offset];
+    const next = tree.nodes[position + offset]?.run;
     if (next) tree.open(next);
   };
-  const named = hasNestedGroups(tree.groups);
   return (
     <div className={styles.navigator}>
       <RunOutline outline={tree} />
@@ -67,22 +57,15 @@ export function RunNavigator({
             <CaretDownIcon size={11} aria-hidden="true" />
           </MenuTrigger>
           <MenuPopup align="center" className={styles.navigatorPopup}>
-            {tree.groups.map((group) => (
-              <OutlineBranch
-                key={group.thread.id}
-                group={group}
-                outline={tree}
-                labelled={named}
-                row={(node, current) => (
-                  <MenuItem
-                    className={`${outline.row} ${outline.menuRow}`}
-                    data-current={current || undefined}
-                    onClick={() => tree.open(node.run)}
-                  >
-                    <RunRow node={node} />
-                  </MenuItem>
-                )}
-              />
+            {tree.nodes.map((node) => (
+              <MenuItem
+                key={node.run.id}
+                className={`${outline.row} ${outline.menuRow}`}
+                data-current={node.run.id === tree.inView || undefined}
+                onClick={() => tree.open(node.run)}
+              >
+                <RunRow node={node} />
+              </MenuItem>
             ))}
           </MenuPopup>
         </Menu>
@@ -92,7 +75,7 @@ export function RunNavigator({
           type="button"
           aria-label={t("Next run")}
           title={t("Next run")}
-          disabled={position < 0 || position >= tree.sequence.length - 1}
+          disabled={position < 0 || position >= tree.nodes.length - 1}
           onClick={() => step(1)}
         >
           <CaretRightIcon size={13} aria-hidden="true" />

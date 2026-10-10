@@ -131,6 +131,19 @@ class ThreadCompletion(StoredContract):
     completed_at: datetime
 
 
+class ThreadExecution(StoredContract):
+    """Latest admitted root attempt, never continuation or live control authority."""
+
+    execution_id: str = Field(min_length=1, max_length=128)
+    status: Literal["preparing", "running", "completed", "suspended", "failed", "cancelled", "unknown"]
+    submitted_at: datetime
+    run_id: str | None = Field(default=None, min_length=1, max_length=80)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_code: str | None = Field(default=None, max_length=256)
+    error_message: str | None = Field(default=None, max_length=4096)
+
+
 class RetainedActivity(StoredContract):
     kind: Literal["assistant", "reasoning", "tool"]
     text: str = Field(max_length=2048)
@@ -163,6 +176,7 @@ class Thread(StoredContract):
     initial_state: ObjectRef
     continuation: ObjectRef | None = None
     completion: ThreadCompletion | None = None
+    last_execution: ThreadExecution | None = None
     read_model: ThreadReadModel | None = None
 
     @field_validator("created_at", "updated_at")

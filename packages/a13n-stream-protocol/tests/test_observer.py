@@ -375,6 +375,54 @@ def test_text_lifecycle_uses_harness_request_identity_and_accumulates() -> None:
     assert observer.run_id == "run-1"
 
 
+@pytest.mark.parametrize("first_event", ["start", "delta", "end"])
+def test_reasoning_identity_uses_part_index_not_shared_provider_id(first_event: str) -> None:
+    observer = HarnessAguiObserver()
+    identities = []
+    for index in range(2):
+        part = ThinkingPart(f"**Part {index}**", id="rs_shared", signature=f"signature-{index}")
+        sources = []
+        if first_event == "start":
+            sources.append(PartStartEvent(index=index, part=ThinkingPart("", id=part.id)))
+        if first_event != "end":
+            sources.append(
+                PartDeltaEvent(
+                    index=index,
+                    delta=ThinkingPartDelta(content_delta=part.content, signature_delta=part.signature),
+                )
+            )
+        sources.append(PartEndEvent(index=index, part=part))
+        events = [converted for source in sources for converted in observer.observe(_event(0, source))]
+        starts = [event for event in events if isinstance(event, ReasoningMessageStartEvent)]
+        assert len(starts) == 1
+        message_id = starts[0].message_id
+        identities.append(message_id)
+        assert message_id == f"run-1:request-0:part-{index}:reasoning"
+        assert [event.message_id for event in events if isinstance(event, ReasoningMessageContentEvent)] == [message_id]
+        assert [event.entity_id for event in events if isinstance(event, ReasoningEncryptedValueEvent)] == [message_id]
+        assert [event.message_id for event in events if isinstance(event, ReasoningMessageEndEvent)] == [message_id]
+    assert len(set(identities)) == 2
+
+
+def test_reasoning_end_keeps_open_identity_when_next_request_starts() -> None:
+    observer = HarnessAguiObserver()
+    part = ThinkingPart("first", id="rs_shared")
+    started = observer.observe(_event(0, PartStartEvent(index=0, part=part)))[0]
+    assert isinstance(started, ReasoningMessageStartEvent)
+    observer.observe(
+        _event(
+            1, HarnessExtensionEvent(kind="lifecycle", payload={"type": "model_request_started", "request_index": 1})
+        )
+    )
+    observer = HarnessAguiObserver.restore(observer.export())
+    ended = observer.observe(_event(2, PartEndEvent(index=0, part=part)))[0]
+    assert isinstance(ended, ReasoningMessageEndEvent)
+    assert ended.message_id == started.message_id
+    following = observer.observe(_event(3, PartStartEvent(index=0, part=part)))[0]
+    assert isinstance(following, ReasoningMessageStartEvent)
+    assert following.message_id != started.message_id
+
+
 def test_reasoning_tool_and_tool_result_use_standard_agui_events() -> None:
     observer = HarnessAguiObserver()
 

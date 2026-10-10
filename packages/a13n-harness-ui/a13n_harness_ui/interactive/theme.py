@@ -119,7 +119,10 @@ def prompt_toolkit_style_rules(theme: ResolvedTheme) -> dict[str, str]:
         return {
             "": "bg:default fg:default",
             "status-bar": "fg:ansibrightblack",
+            "status-bar.ready": "bg:default fg:default reverse bold",
+            "status-bar.working": "fg:default",
             "status-bar.warning": "fg:ansiyellow bold",
+            "status-bar.error": "fg:ansired bold",
             "task-pane": "",
             "task-pane.heading": "fg:ansicyan bold",
             **activity,
@@ -150,7 +153,10 @@ def prompt_toolkit_style_rules(theme: ResolvedTheme) -> dict[str, str]:
     return {
         "": f"bg:{background} fg:{foreground}",
         "status-bar": f"bg:{surface} fg:{muted}",
+        "status-bar.ready": f"bg:{background} fg:{foreground} reverse bold",
+        "status-bar.working": f"fg:{foreground}",
         "status-bar.warning": f"fg:{warning} bold",
+        "status-bar.error": f"fg:{'#b91c1c' if light else '#f87171'} bold",
         "task-pane": f"bg:{surface} fg:{foreground}",
         "task-pane.heading": f"bg:{selected} fg:{accent} bold",
         **activity,

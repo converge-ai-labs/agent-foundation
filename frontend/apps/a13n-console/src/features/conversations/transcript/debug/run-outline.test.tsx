@@ -8,7 +8,12 @@ import type { Client } from "../../../../service-client";
 import type { Schema } from "../../../../shared/api";
 import { useRunOutline } from "./outline";
 import { RunOutline } from "./run-outline";
-import { fixtureBranchedSession, fixtureThread } from "../fixture";
+import {
+  fixtureBranchedSession,
+  fixtureForkThread,
+  fixtureChildThread,
+  fixtureThread,
+} from "../fixture";
 
 let client: Client;
 let cache: QueryClient;
@@ -68,38 +73,44 @@ function show(thread = fixtureThread(), runId = "run_2") {
   );
 }
 
-it("draws the thread's runs with the threads they branched into", async () => {
+it("draws only the current thread's runs and marks the active Run", async () => {
   show();
-  const tree = within(await screen.findByRole("navigation", { name: "Runs" }));
-  await tree.findByText("Alternative proposal");
-  const rows = tree.getAllByRole("button");
-  // Everything Run 2 started hangs off it: the delegation, then the fork.
+  const list = within(await screen.findByRole("navigation", { name: "Runs" }));
+  await list.findByText("Write the marker");
+  const rows = list.getAllByRole("button");
   expect(rows.map((row) => row.textContent)).toEqual([
     "Run 1Review the release12s",
     "Run 2Write the markerstate.waiting",
-    "Run 1Find prior incidents12s",
-    "Run 1Alternative proposal12s",
   ]);
-  // The delegated thread hangs off the run that dispatched it.
-  const branch = tree.getByText("Researcher").parentElement;
-  expect(branch?.hasAttribute("data-nested")).toBe(true);
-  expect(branch?.previousElementSibling?.textContent).toContain(
-    "Write the marker",
-  );
-  // The tree branches, so the root group names it.
-  expect(tree.getByText("Root thread")).toBeTruthy();
   expect(rows[1]?.getAttribute("aria-current")).toBe("true");
   expect(rows[0]?.hasAttribute("aria-current")).toBe(false);
 });
 
-it("opens a run that is not on the page", async () => {
+it.each([
+  [fixtureForkThread, "run_fork", "Alternative proposal"],
+  [fixtureChildThread, "run_child", "Find prior incidents"],
+] as const)(
+  "excludes inherited runs from a $origin thread",
+  async (thread, runId, text) => {
+    show(thread, runId);
+    const list = within(
+      await screen.findByRole("navigation", { name: "Runs" }),
+    );
+    await list.findByText(text);
+    expect(list.getAllByRole("button")).toHaveLength(1);
+    expect(list.queryByText("Review the release")).toBeNull();
+    expect(list.queryByText("Root thread")).toBeNull();
+  },
+);
+
+it("opens a current-thread run that is not on the page", async () => {
   show();
-  const tree = within(await screen.findByRole("navigation", { name: "Runs" }));
-  await tree.findByText("Find prior incidents");
-  await userEvent.setup().click(tree.getAllByRole("button")[2]!);
+  const list = within(await screen.findByRole("navigation", { name: "Runs" }));
+  await list.findByText("Review the release");
+  await userEvent.setup().click(list.getAllByRole("button")[0]!);
   expect(
     await screen.findByText(
-      "/workspace/design/sessions/ses_1/threads/thr_child/runs/run_child?view=debug",
+      "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
     ),
   ).toBeTruthy();
 });
