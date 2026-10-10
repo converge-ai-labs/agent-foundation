@@ -99,6 +99,31 @@ class CodeActCapability(AbstractModelContextCapability):
             return toolset
         return CodeActToolset(wrapped=toolset, config=self.config, state=self._state)
 
+    def get_instructions(self):
+        return self._live_instructions
+
+    async def _live_instructions(self, ctx: RunContext[AgentContext]) -> str:
+        if not ctx.realtime:
+            return ""
+        self._require_context(ctx)
+        manager = ctx.tool_manager
+        if manager is None or manager.tools is None:
+            return ""
+        # Realtime resolves instructions after final tool preparation, but never
+        # invokes before_model_request. Advertise the same callable directory here.
+        blocks: list[str] = []
+        for tool in manager.tools.values():
+            metadata = tool.tool_def.metadata or {}
+            if metadata.get("a13n.codeact.runner") is not True:
+                continue
+            blocks.append(
+                render_codeact_runner_description(
+                    manager.tools,
+                    program=metadata.get("a13n.codeact.program") is True,
+                )
+            )
+        return "\n\n".join(blocks)
+
     async def before_model_request(
         self,
         ctx: RunContext[AgentContext],

@@ -1372,7 +1372,7 @@ async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it
         monkeypatch.setattr(HarnessRunStream, "_create_context", check_context)
         monkeypatch.setattr(app._store.objects, "publish_model", check_publication)
         if failed_entry:
-            monkeypatch.setattr("a13n_harness.execution.bind_run_plugins", fail_after_context)
+            monkeypatch.setattr("a13n_harness._run_stream.bind_run_plugins", fail_after_context)
         second = await app.submit_thread(thread_id=thread.thread_id, prompt="new prompt")
         result = await app.wait_root_operation(second.receipt_id)
         assert result.status is (RootOperationStatus.failed if failed_entry else RootOperationStatus.completed)
@@ -1411,7 +1411,7 @@ async def test_failed_stream_entry_still_exports_retained_state(
                 raise RuntimeError("retained state export failed")
             return await export(stream)
 
-        monkeypatch.setattr("a13n_harness.execution.bind_run_plugins", fail_after_context)
+        monkeypatch.setattr("a13n_harness._run_stream.bind_run_plugins", fail_after_context)
         monkeypatch.setattr(HarnessRunStream, "export_state", record_export)
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="entry failure")
         with fail_after(5):
