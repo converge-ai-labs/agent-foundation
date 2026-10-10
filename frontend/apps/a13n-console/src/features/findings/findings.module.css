@@ -80,6 +80,7 @@
   text-underline-offset: 3px;
 }
 .metadata {
+  margin-bottom: 28px;
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
@@ -90,8 +91,8 @@
 
 .detail {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
-  max-width: 1200px;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 820px;
   gap: 36px;
   align-items: start;
   min-width: 0;
@@ -173,18 +174,6 @@
   gap: 28px;
   min-width: 0;
 }
-.reviewSidebar {
-  display: grid;
-  gap: 24px;
-  min-width: 0;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-}
-.reviewSidebar button {
-  white-space: normal;
-}
 .reviewSummary {
   display: grid;
   gap: 12px;
@@ -203,8 +192,8 @@
 }
 .evidenceCard {
   padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--a13n-surface);
+  border-radius: 12px;
   min-width: 0;
 }
 .evidenceActions {
@@ -231,7 +220,6 @@
   margin: 12px 0;
 }
 .referenceList dd {
-  font-family: var(--font-mono);
   overflow-wrap: anywhere;
   margin: 0;
 }
@@ -240,7 +228,17 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 28px;
   }
-  .reviewSidebar {
-    max-width: 720px;
-  }
+}
+
+.detailPage > header {
+  flex-wrap: wrap;
+}
+.detailPage > header > :first-child {
+  flex: 1 1 auto;
+  width: min(600px, 100%);
+}
+.detailPage > header > :last-child,
+.detailPage > header > :last-child > div {
+  max-width: 100%;
+  justify-content: flex-start;
 }

@@ -240,7 +240,7 @@ it("reviews impact independently and sends the exact revision and evidence to Co
   }));
   const user = mount("/workspace/ws_test/findings/fnd_test");
   await screen.findByText(/Critical.*Unconfirmed/);
-  await user.click(screen.getByRole("button", { name: "Edit assessment" }));
+  await user.click(screen.getByRole("button", { name: "Add assessment" }));
   await user.click(screen.getByRole("combobox", { name: "Assessment" }));
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
   await user.click(screen.getByRole("button", { name: "Save assessment" }));
@@ -357,7 +357,9 @@ it("reads saved feedback, edits outcome and rationale atomically, cancels edits,
   });
   const user = mount("/workspace/ws_test/findings/fnd_test");
   await screen.findByText("The tool recovered.");
-  expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull(),
+  );
   expect(
     (
       screen.getByRole("button", {
@@ -371,7 +373,9 @@ it("reads saved feedback, edits outcome and rationale atomically, cancels edits,
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
   expect((note as HTMLTextAreaElement).value).toBe("");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull(),
+  );
   expect(screen.getByText("The tool recovered.")).toBeTruthy();
   expect(http.PATCH).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Edit assessment" }));
@@ -398,11 +402,42 @@ it("reads saved feedback, edits outcome and rationale atomically, cancels edits,
   await screen.findByText(
     "The retry succeeded, so this diagnosis is incorrect.",
   );
-  expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull(),
+  );
   await user.click(screen.getByRole("button", { name: "Close finding" }));
   await screen.findByRole("button", { name: "Reopen finding" });
   expect(
     screen.getByText("The retry succeeded, so this diagnosis is incorrect."),
   ).toBeTruthy();
   expect(screen.getByText(finding.explanation)).toBeTruthy();
+});
+
+it("keeps a failed assessment draft in the dialog and restores trigger focus on keyboard dismissal", async () => {
+  http.PATCH.mockRejectedValueOnce(new Error("Review could not be saved"));
+  const user = mount("/workspace/ws_test/findings/fnd_test");
+  const trigger = await screen.findByRole("button", { name: "Add assessment" });
+  await user.click(trigger);
+  await screen.findByRole("dialog", { name: "Add assessment" });
+  const note = screen.getByRole("textbox", { name: "Review note" });
+  await user.type(note, "The trace needs a second look.");
+  await user.click(screen.getByRole("button", { name: "Save assessment" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledTimes(1));
+  await screen.findByRole("alert");
+  expect((note as HTMLTextAreaElement).value).toBe(
+    "The trace needs a second look.",
+  );
+  expect(screen.getByRole("dialog", { name: "Add assessment" })).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  await user.click(trigger);
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Review note",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("");
+  expect(screen.queryByRole("alert")).toBeNull();
 });

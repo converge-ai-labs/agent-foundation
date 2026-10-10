@@ -1,4 +1,10 @@
-import { Button, ChoiceField, FormField, Textarea } from "a13n-ui";
+import {
+  ArrowCounterClockwiseIcon,
+  CheckCircleIcon,
+  NotePencilIcon,
+  SparkleIcon,
+} from "@phosphor-icons/react";
+import { Button, ChoiceField, FormField, ModalFrame, Textarea } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +15,7 @@ import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { MarkdownContent } from "../../shared/markdown";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Page, Section } from "../../shared/page";
+import { FormActions } from "../../shared/forms";
 import { useAgentComposer } from "../agents/composer";
 import {
   assessmentLabels,
@@ -97,6 +104,53 @@ export function FindingDetail() {
       title={finding.title}
       back={`${basePath}/findings`}
       backLabel={t("Findings")}
+      actions={
+        <>
+          {can("write") && (
+            <AssessmentEditor
+              key={finding.id}
+              finding={finding}
+              pending={update.isPending}
+              error={update.error}
+              onReset={() => update.reset()}
+              onSave={(body) => update.mutateAsync(body)}
+            />
+          )}
+          {can("run") && composer.available && (
+            <Button
+              size="icon"
+              aria-label={t("Review with Composer")}
+              title={t("Review with Composer")}
+              disabled={
+                !revision.data ||
+                composer.pending ||
+                ["expected", "false_positive"].includes(finding.assessment)
+              }
+              onClick={fix}
+            >
+              <SparkleIcon aria-hidden="true" />
+            </Button>
+          )}
+          {can("write") && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={
+                finding.closed ? t("Reopen finding") : t("Close finding")
+              }
+              title={finding.closed ? t("Reopen finding") : t("Close finding")}
+              disabled={update.isPending}
+              onClick={() => update.mutate({ closed: !finding.closed })}
+            >
+              {finding.closed ? (
+                <ArrowCounterClockwiseIcon aria-hidden="true" />
+              ) : (
+                <CheckCircleIcon aria-hidden="true" />
+              )}
+            </Button>
+          )}
+        </>
+      }
     >
       {composer.setup}
       <ErrorNotice error={update.error ?? composer.error ?? revision.error} />
@@ -104,6 +158,7 @@ export function FindingDetail() {
         <span>{t(categoryLabels[finding.category])}</span>
         <Severity finding={finding} />
         <span>{finding.closed ? t("Closed") : t("Open")}</span>
+        <span>{t(assessmentLabels[finding.assessment])}</span>
         <Link to={`${basePath}/agents/${finding.agent_id}`}>
           {agent?.name ?? finding.agent_id} ·{" "}
           {revision.data
@@ -137,6 +192,16 @@ export function FindingDetail() {
               <MarkdownContent text={finding.limitations} />
             </Section>
           )}
+          {(finding.assessment !== "unreviewed" || finding.assessment_note) && (
+            <Section title={t("Assessment")}>
+              <div className={styles.reviewSummary}>
+                <strong>{t(assessmentLabels[finding.assessment])}</strong>
+                {finding.assessment_note && (
+                  <MarkdownContent text={finding.assessment_note} />
+                )}
+              </div>
+            </Section>
+          )}
           <details className={styles.references}>
             <summary>{t("Technical references")}</summary>
             <dl className={styles.referenceList}>
@@ -166,50 +231,6 @@ export function FindingDetail() {
             )}
           </details>
         </div>
-        <aside className={styles.reviewSidebar}>
-          <Section
-            title={t("Review")}
-            description={t(
-              "Severity describes impact. Assessment records your review of the evidence.",
-            )}
-          >
-            <AssessmentEditor
-              key={`${finding.id}:${finding.version}`}
-              finding={finding}
-              canWrite={can("write")}
-              pending={update.isPending}
-              onSave={(body) => update.mutate(body)}
-            />
-          </Section>
-          <Section
-            title={t("Next step")}
-            description={t(
-              "Composer opens with this evidence and the cited version. Review the proposed change before approving it.",
-            )}
-          >
-            {can("run") && composer.available && (
-              <Button
-                disabled={
-                  !revision.data ||
-                  composer.pending ||
-                  ["expected", "false_positive"].includes(finding.assessment)
-                }
-                onClick={fix}
-              >
-                {t("Review with Composer")}
-              </Button>
-            )}
-            {can("write") && (
-              <Button
-                variant="outline"
-                disabled={update.isPending}
-                onClick={() => update.mutate({ closed: !finding.closed })}
-              >
-                {finding.closed ? t("Reopen finding") : t("Close finding")}
-              </Button>
-            )}
-          </Section>
-        </aside>
       </div>
     </Page>
   );
@@ -288,14 +309,16 @@ function RunEvidence({ runId, label }: { runId: string; label?: string }) {
 
 function AssessmentEditor({
   finding,
-  canWrite,
   pending,
+  error,
+  onReset,
   onSave,
 }: {
   finding: Schema["Finding"];
-  canWrite: boolean;
   pending: boolean;
-  onSave: (body: Schema["FindingUpdate"]) => void;
+  error: unknown;
+  onReset: () => void;
+  onSave: (body: Schema["FindingUpdate"]) => Promise<unknown>;
 }) {
   const { t } = useTranslation();
   const [assessment, setAssessment] = useState(finding.assessment);
@@ -303,84 +326,87 @@ function AssessmentEditor({
   const [editing, setEditing] = useState(false);
   const dirty =
     assessment !== finding.assessment || note !== finding.assessment_note;
-  if (!editing)
-    return (
-      <div className={styles.reviewSummary}>
-        <strong>{t(assessmentLabels[finding.assessment])}</strong>
-        {finding.assessment_note ? (
-          <MarkdownContent text={finding.assessment_note} />
-        ) : (
-          <p className={styles.hint}>{t("No review note yet.")}</p>
-        )}
-        {canWrite && (
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={() => setEditing(true)}
-          >
-            {t("Edit assessment")}
-          </Button>
-        )}
-      </div>
-    );
+  const label =
+    finding.assessment === "unreviewed" && !finding.assessment_note
+      ? t("Add assessment")
+      : t("Edit assessment");
   return (
-    <form
-      className={styles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (canWrite && dirty && !pending)
-          onSave({ assessment, assessment_note: note });
+    <ModalFrame
+      open={editing}
+      onOpenChange={(open) => {
+        if (pending) return;
+        if (open) {
+          setAssessment(finding.assessment);
+          setNote(finding.assessment_note);
+          onReset();
+        }
+        setEditing(open);
       }}
-    >
-      <ChoiceField
-        label={t("Assessment")}
-        value={assessment}
-        readOnly={!canWrite}
-        disabled={pending}
-        options={Object.entries(assessmentLabels).map(([value, label]) => ({
-          value,
-          label: t(label),
-        }))}
-        onValueChange={(value) => {
-          if (value !== assessment) setNote("");
-          setAssessment(value as Schema["Finding"]["assessment"]);
-        }}
-      />
-      <FormField
-        label={t("Review note")}
-        description={t(
-          "Explain your judgment. Later analyses of this Agent version will receive reviewed findings and their notes.",
-        )}
-      >
-        <Textarea
-          rows={3}
-          maxLength={2048}
-          value={note}
-          readOnly={!canWrite}
+      trigger={
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          title={label}
           disabled={pending}
-          placeholder={t("What did the analysis miss or misunderstand?")}
-          onChange={(event) => setNote(event.target.value)}
-        />
-      </FormField>
-      {canWrite && (
-        <div className={styles.actions}>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={pending}
-            onClick={() => {
-              setAssessment(finding.assessment);
-              setNote(finding.assessment_note);
-              setEditing(false);
-            }}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" disabled={!dirty || pending} loading={pending}>
-            {t("Save assessment")}
-          </Button>
-        </div>
+        >
+          <NotePencilIcon aria-hidden="true" />
+        </Button>
+      }
+      title={label}
+      closeLabel={t("Close")}
+      description={t(
+        "Record your judgment of the evidence. This does not change the original diagnosis.",
       )}
-    </form>
+    >
+      <form
+        className={styles.form}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (dirty && !pending) {
+            void onSave({ assessment, assessment_note: note }).then(
+              () => setEditing(false),
+              () => {}, // The mutation error stays visible beside the retained draft.
+            );
+          }
+        }}
+      >
+        <ErrorNotice error={error} />
+        <ChoiceField
+          label={t("Assessment")}
+          value={assessment}
+          disabled={pending}
+          options={Object.entries(assessmentLabels).map(([value, label]) => ({
+            value,
+            label: t(label),
+          }))}
+          onValueChange={(value) => {
+            if (value !== assessment) setNote("");
+            setAssessment(value as Schema["Finding"]["assessment"]);
+          }}
+        />
+        <FormField
+          label={t("Review note")}
+          description={t(
+            "Explain your judgment. Later analyses of this Agent version will receive reviewed findings and their notes.",
+          )}
+        >
+          <Textarea
+            rows={5}
+            maxLength={2048}
+            value={note}
+            disabled={pending}
+            placeholder={t("What did the analysis miss or misunderstand?")}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </FormField>
+        <FormActions
+          pending={pending}
+          disabled={!dirty || pending}
+          label={t("Save assessment")}
+          onCancel={() => setEditing(false)}
+        />
+      </form>
+    </ModalFrame>
   );
 }
