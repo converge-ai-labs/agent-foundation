@@ -5,7 +5,7 @@ from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 
-def test_navigation_migration_preserves_order_old_writers_and_incoming_references(tmp_path, before_comment_retirement):
+def test_navigation_migration_preserves_order_old_writers_and_incoming_references(tmp_path):
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "20e4b84abfd1"), write=True)
@@ -54,13 +54,11 @@ def test_navigation_migration_preserves_order_old_writers_and_incoming_reference
             legacy.commit()
             assert legacy.execute(text("SELECT starred FROM thread")).scalars().all() == [False, False, False]
         assert "ix_thread_touched_at" in {item["name"] for item in inspect(engine).get_indexes("thread")}
-        migrator._run(lambda config: command.downgrade(config, "20e4b84abfd1"), write=True)
         with engine.connect() as connection:
             assert connection.execute(
                 text("SELECT parent_thread_id, initial_state_digest FROM thread WHERE thread_id = 'child'")
             ).one() == ("root", "2" * 64)
             assert connection.execute(text("SELECT count(*) FROM thread")).scalar_one() == 3
-        assert "touched_at" not in {item["name"] for item in inspect(engine).get_columns("thread")}
         migrator.upgrade()
         migrator.verify_current()
     finally:

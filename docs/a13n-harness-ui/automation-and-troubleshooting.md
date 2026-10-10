@@ -76,6 +76,8 @@ Large active messages use a lightweight plain-text preview and reflow to Markdow
 
 Harness UI saves recovery checkpoints before model requests. Each Run remembers its latest checkpoint and removes only its own previous checkpoint after a successful replacement. Its final checkpoint remains available across later Runs. Existing historical objects are not automatically cleaned up.
 
+Harness UI supports one-way database upgrades, not schema downgrades. Use forward repair or restore a complete pre-upgrade backup with the matching application version; do not point an older release at an upgraded data root.
+
 Before upgrading from a release with output comments, stop every Harness UI App sharing the data root and back up the complete data root. Upgrade all of those Apps before restarting them. The upgrade removes comment APIs and comment database records; saved conversations and captured attachment bytes remain intact. Historical feedback captures appear as ordinary files. Rolling old/new operation is unsupported for this transition, and rollback requires restoring the backup.
 
 ## Command reference

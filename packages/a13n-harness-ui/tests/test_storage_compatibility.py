@@ -247,23 +247,33 @@ def test_comment_retirement_preserves_threads_and_requires_backup_for_rollback(t
         engine.dispose()
 
 
-async def test_memory_migration_preserves_existing_threads_and_enforces_scope_identity(tmp_path, monkeypatch):
-    historical = tmp_path / "historical-migrations"
-    shutil.copytree(migration.MIGRATIONS_PATH, historical, ignore=shutil.ignore_patterns("__pycache__"))
-    (historical / "versions/20261010_3cf95de9550a_retire_saved_output_comments.py").unlink()
-    monkeypatch.setattr(migration, "MIGRATIONS_PATH", historical)
+async def test_memory_migration_preserves_existing_threads_and_enforces_scope_identity(tmp_path):
     from sqlalchemy.exc import IntegrityError
 
     configuration = _write_configuration(tmp_path)
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
-    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
-        ordinary = await app.create_thread(title="Before Memory")
     migrator = DatabaseMigrator(settings.storage.data_root / "metadata.sqlite3")
-    migrator._run(lambda config: command.downgrade(config, "6fb2512c92a3"), write=True)
+    migrator._run(lambda config: command.upgrade(config, "6fb2512c92a3"), write=True)
     engine = create_engine(f"sqlite:///{settings.storage.data_root / 'metadata.sqlite3'}")
     try:
         assert "memory_scope" not in {column["name"] for column in inspect(engine).get_columns("thread")}
-        with engine.connect() as connection:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO thread (thread_id, title, metadata_version, archived, created_at, updated_at, "
+                    "initial_state_schema_version, initial_state_digest) "
+                    "VALUES ('thread-ordinary', 'Before Memory', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '1', :digest)"
+                ),
+                {"digest": "a" * 64},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO thread_configuration (thread_id, version, project_id, agent_source_kind, "
+                    "agent_source_id, environment_profile_id, harness_plugin_ids_json, "
+                    "environment_run_extension_ids_json, mcp_server_ids_json) "
+                    "VALUES ('thread-ordinary', 1, 'project-main', 'agent', 'agent-assistant', 'environment-native', '[]', '[]', '[]')"
+                )
+            )
             before = connection.execute(text("SELECT * FROM thread")).mappings().one()
             before_config = connection.execute(text("SELECT * FROM thread_configuration")).mappings().one()
         migrator.upgrade()
@@ -276,13 +286,11 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
             assert (
                 await app._threads.memory_thread(scope="global", project_id=None, model_id="model-primary")
             ).thread_id == memory.thread_id
-            assert (await app.get_thread(ordinary.thread_id)).thread.title == "Before Memory"
         with engine.begin() as connection, pytest.raises(IntegrityError):
             connection.execute(
-                text("UPDATE thread SET memory_scope = 'global' WHERE thread_id = :id"), {"id": ordinary.thread_id}
+                text("UPDATE thread SET memory_scope = 'global' WHERE thread_id = :id"), {"id": "thread-ordinary"}
             )
-        with pytest.raises(RuntimeError, match="Cannot downgrade while Memory Threads exist"):
-            migrator._run(lambda config: command.downgrade(config, "6fb2512c92a3"), write=True)
+        migrator.upgrade()
         migrator.verify_current()
     finally:
         engine.dispose()

@@ -192,12 +192,10 @@ async def test_work_repair_rechecks_head_after_object_loading(tmp_path: Path, mo
         assert NotePage.model_validate_json(data.notes_json).notes[0].value == "new"
 
 
-def test_work_migration_upgrade_and_downgrade_preserve_selected_heads(
-    tmp_path: Path, before_comment_retirement
-) -> None:
+def test_work_migration_upgrade_preserves_selected_heads(tmp_path: Path) -> None:
     from a13n_harness_ui.storage.migration import DatabaseMigrator
     from alembic import command
-    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy import create_engine, text
 
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
@@ -225,8 +223,7 @@ def test_work_migration_upgrade_and_downgrade_preserve_selected_heads(
             """),
                 values,
             )
-        migrator._run(lambda config: command.downgrade(config, "1da116a90fda"), write=True)
-        assert "thread_work" not in inspect(engine).get_table_names()
+        migrator.upgrade()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT initial_state_digest, continuation_digest FROM thread")).one() == (
                 values["initial"],

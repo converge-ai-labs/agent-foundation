@@ -64,30 +64,18 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
         engine.dispose()
 
 
-def test_planned_handoff_migration_requires_resolution_before_downgrade(
-    tmp_path: Path, before_comment_retirement
-) -> None:
+def test_upgrade_preserves_planned_handoff(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
-    migrator.upgrade()
+    migrator._run(lambda config: command.upgrade(config, "ba240ec65035"), write=True)
     engine = create_engine(f"sqlite:///{path}")
     try:
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
-        with pytest.raises(RuntimeError, match="retained restart data"):
-            migrator._run(  # pyright: ignore[reportPrivateUsage]
-                lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
-            )
-        migrator.verify_current()
-        with engine.begin() as connection:
-            assert connection.execute(text("SELECT payload FROM planned_restart")).scalar_one() == "{}"
-            connection.execute(text("DELETE FROM planned_restart"))
-        migrator._run(  # pyright: ignore[reportPrivateUsage]
-            lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
-        )
-        assert "planned_restart" not in inspect(engine).get_table_names()
         migrator.upgrade()
         migrator.verify_current()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT payload FROM planned_restart")).scalar_one() == "{}"
     finally:
         engine.dispose()
 
@@ -310,9 +298,7 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
             assert records[0].accepted_at.tzinfo is UTC
 
 
-def test_mcp_bundle_index_upgrade_preserves_rows_and_rejects_lossy_downgrade(
-    tmp_path: Path, before_comment_retirement
-) -> None:
+def test_mcp_bundle_index_upgrade_preserves_rows(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, "11422c5bac45"), write=True)
@@ -352,8 +338,7 @@ def test_mcp_bundle_index_upgrade_preserves_rows_and_rejects_lossy_downgrade(
                 ),
                 {"digest": "a" * 64},
             )
-        with pytest.raises(RuntimeError, match="multi-server"):
-            migrator._run(lambda config: command.downgrade(config, "11422c5bac45"), write=True)
+        migrator.upgrade()
         migrator.verify_current()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT count(*) FROM resource_index")).scalar_one() == 2
@@ -386,7 +371,7 @@ async def test_project_model_preferences_are_independent_and_last_write_wins(tmp
         assert await repository.get("project-b") == "model-b"
 
 
-def test_project_model_preference_migration_round_trip(tmp_path: Path, before_comment_retirement) -> None:
+def test_project_model_preference_upgrade_preserves_selection(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(  # pyright: ignore[reportPrivateUsage]
@@ -400,12 +385,6 @@ def test_project_model_preference_migration_round_trip(tmp_path: Path, before_co
         migrator.upgrade()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT model_id FROM project_model_preference")).scalar_one() == "model-a"
-        migrator._run(  # pyright: ignore[reportPrivateUsage]
-            lambda config: command.downgrade(config, "a65ad8a5330d"), write=True
-        )
-        assert "project_model_preference" not in inspect(engine).get_table_names()
-        assert "thread_configuration" in inspect(engine).get_table_names()
-        migrator.upgrade()
         migrator.verify_current()
     finally:
         engine.dispose()

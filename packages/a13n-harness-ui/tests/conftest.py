@@ -36,19 +36,6 @@ def no_model_directory_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def before_comment_retirement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep historical downgrade tests on their reversible migration chain."""
-    import shutil
-
-    from a13n_harness_ui.storage import migration
-
-    historical = tmp_path / "historical-migrations"
-    shutil.copytree(migration.MIGRATIONS_PATH, historical, ignore=shutil.ignore_patterns("__pycache__"))
-    (historical / "versions/20261010_3cf95de9550a_retire_saved_output_comments.py").unlink()
-    monkeypatch.setattr(migration, "MIGRATIONS_PATH", historical)
-
-
-@pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 

@@ -176,46 +176,49 @@ async def test_setup_needs_no_project_and_does_not_publish_one(tmp_path: Path) -
         assert (await app.create_thread()).configuration.project_id is None
 
 
-async def test_projectless_migration_preserves_existing_threads_and_refuses_lossy_downgrade(
-    tmp_path: Path, before_comment_retirement
-) -> None:
+def test_projectless_migration_preserves_existing_threads(tmp_path: Path) -> None:
     from a13n_harness_ui.storage.migration import DatabaseMigrator
     from alembic import command
     from sqlalchemy import create_engine, inspect, text
 
-    path = _write_configuration(tmp_path)
-    settings = _settings(tmp_path / "state")
-    async with open_harness_ui_app(settings, configuration_path=path) as app:
-        thread = await app.create_thread(title="Preserved", defaults=NewThreadDefaults(local_roots=()))
-        app._root_runs._executor._agents = _CompletedReconstructor()
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Retain my history")
-        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
-        before = await app.get_thread(thread.thread_id)
-    database = tmp_path / "state/metadata.sqlite3"
+    database = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(database)
-    migrator._run(lambda config: command.downgrade(config, "ecdbb45e3c57"), write=True)
-    migrator.upgrade()
-    migrator.upgrade()
-    async with open_harness_ui_app(settings, configuration_path=path) as app:
-        after = await app.get_thread(thread.thread_id)
-        assert after.thread.configuration == before.thread.configuration
-        assert after.thread.title == "Preserved"
-        assert after.continuation_id == before.continuation_id
-        await app.update_thread_configuration(
-            thread_id=thread.thread_id,
-            mutation=ThreadConfigurationMutation(expected_version=1, patch=ThreadConfigurationPatch(project_id=None)),
-        )
-    with pytest.raises(RuntimeError, match="without a Project"):
-        migrator._run(lambda config: command.downgrade(config, "ecdbb45e3c57"), write=True)
-    migrator.verify_current()
+    migrator._run(lambda config: command.upgrade(config, "ecdbb45e3c57"), write=True)
     engine = create_engine(f"sqlite:///{database}")
     try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO thread (thread_id, title, metadata_version, archived, created_at, updated_at, "
+                    "initial_state_schema_version, initial_state_digest, continuation_schema_version, continuation_digest) "
+                    "VALUES ('thread-existing', 'Preserved', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '1', :initial, '1', :head)"
+                ),
+                {"initial": "a" * 64, "head": "b" * 64},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO thread_configuration (thread_id, version, project_id, agent_source_kind, "
+                    "agent_source_id, environment_profile_id, harness_plugin_ids_json, "
+                    "environment_run_extension_ids_json, mcp_server_ids_json) "
+                    "VALUES ('thread-existing', 1, 'project-main', 'agent', 'agent-assistant', 'environment-native', '[]', '[]', '[]')"
+                )
+            )
+            before = dict(connection.execute(text("SELECT * FROM thread")).mappings().one())
+            before_config = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
+        migrator.upgrade()
+        migrator.upgrade()
+        migrator.verify_current()
         assert next(
             column for column in inspect(engine).get_columns("thread_configuration") if column["name"] == "project_id"
         )["nullable"]
-        with engine.connect() as connection:
+        with engine.begin() as connection:
+            after = connection.execute(text("SELECT * FROM thread")).mappings().one()
+            after_config = connection.execute(text("SELECT * FROM thread_configuration")).mappings().one()
+            assert {key: after[key] for key in before} == before
+            assert {key: after_config[key] for key in before_config} == before_config
+            connection.execute(text("UPDATE thread_configuration SET project_id = NULL"))
+            assert connection.execute(text("SELECT project_id FROM thread_configuration")).scalar_one() is None
             assert not connection.execute(text("PRAGMA foreign_key_check")).all()
-            assert connection.execute(text("SELECT count(*) FROM thread")).scalar_one() == 1
     finally:
         engine.dispose()
 
