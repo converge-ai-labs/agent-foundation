@@ -69,17 +69,15 @@ class Source:
 
     async def ensure_ready(self) -> EnvironmentConnector:
         seconds = self.runtime.settings.environments.wait_seconds
-        logger.info("Environment readiness requested", extra={"environment_id": self.mount.environment_id})
         try:
             try:
                 with anyio.fail_after(seconds):
-                    prepared = await _ready(
+                    prepared = await prepare(
                         self.runtime,
                         self.lease,
                         self.principal,
                         self.authority,
                         self.mount,
-                        anyio.current_time() + seconds,
                     )
                     connector = await execution_connector(
                         self.runtime,
@@ -94,10 +92,29 @@ class Source:
             raise EnvironmentUnavailable(error.message) from error
         self.state = prepared.target.state
         self.activated = True
-        logger.info("Environment ready", extra={"environment_id": self.mount.environment_id})
         if self.mount.working_directory is not None:
             return _DirectoryConnector(connector, prepared, seconds)
         return connector
+
+
+async def prepare(
+    runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority, mount: EnvironmentMount
+) -> PreparedMount:
+    """Create or start an instance and publish its state, without building or opening an execution connector."""
+    seconds = runtime.settings.environments.wait_seconds
+    logger.info("Environment instance preparation requested", extra={"environment_id": mount.environment_id})
+    try:
+        try:
+            with anyio.fail_after(seconds):
+                prepared = await _ready(runtime, lease, principal, authority, mount, anyio.current_time() + seconds)
+        except TimeoutError as error:
+            raise _not_ready(mount.environment_id) from error
+    except ServiceError as error:
+        if error.code == "unavailable":
+            raise
+        raise EnvironmentUnavailable(error.message) from error
+    logger.info("Environment instance ready", extra={"environment_id": mount.environment_id})
+    return prepared
 
 
 def _not_ready(environment_id: str) -> ServiceError:

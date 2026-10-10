@@ -38,7 +38,6 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids
-from a13n_harness.environment import EnvironmentError, EnvironmentReadinessRequirement
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.usage import without_usage
@@ -71,7 +70,7 @@ from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObj
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
-from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts
+from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
@@ -362,8 +361,11 @@ class _Attempt:
         try:
             result = await self._stream()
             if result is None:
-                # The worker is draining before the Harness run started: another worker prepares the mounts again.
-                await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
+                if self.control.stopped.is_set():
+                    await self._seal_interrupted(self.control.outcome)
+                else:
+                    # Another worker resumes instance preparation under the same durable operation.
+                    await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
             await self._end(result)
         except (LeaseLost, asyncio.CancelledError):
@@ -382,8 +384,11 @@ class _Attempt:
                 await self._seal_interrupted(outcome)
 
     async def _stream(self) -> HarnessRunResult | None:
-        """The Harness run's result, or None when the worker drained while the mounts were being prepared."""
+        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
         runtime, lease = self.runtime, self.lease
+        root = self.plan.agent
+        if not root.config.lazy_environment and not await self._prepare_environments():
+            return None
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
                 open_mounts(
@@ -395,7 +400,6 @@ class _Attempt:
                     configuration=self.plan.configuration,
                 )
             )
-            root = self.plan.agent
             models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
             host = await stack.enter_async_context(
                 open_host(
@@ -467,11 +471,6 @@ class _Attempt:
             async with stream:
                 interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
                 try:
-                    if not root.config.lazy_environment:
-                        if not await self._prepare_environments(stream.context.environment):
-                            if not self.control.stopped.is_set():
-                                return None
-                            stream.cancel()
                     async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
                         async for item in stream:
                             await self._observe(item, output)
@@ -482,24 +481,16 @@ class _Attempt:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
 
-    async def _prepare_environments(self, environment: BoundEnvironment) -> bool:
-        """Prepare frozen mounts under Harness ownership; stop or handoff interrupts the wait."""
+    async def _prepare_environments(self) -> bool:
+        """Prepare instances in Service before entering Harness; stop or handoff interrupts the wait."""
         if self.control.stopped.is_set() or self.control.handoff.is_set():
             return False
-        if not environment.snapshot.mounts:
+        if not self.plan.mounts:
             return True
-        logger.info("Preparing run environments before model execution")
+        logger.info("Preparing run environment instances before entering Harness")
         readiness = [
-            asyncio.create_task(
-                environment.ensure_ready(
-                    EnvironmentReadinessRequirement(
-                        mounts=frozenset({mount.name}),
-                        operations=mount.descriptor.operation_families,
-                        timeout_seconds=self.runtime.settings.environments.wait_seconds,
-                    )
-                )
-            )
-            for mount in environment.snapshot.mounts
+            asyncio.create_task(prepare(self.runtime, self.lease, self.plan.principal, self.plan.authority, mount))
+            for mount in self.plan.mounts
         ]
         prepared = asyncio.gather(*readiness)
         signals = [asyncio.create_task(event.wait()) for event in (self.control.stopped, self.control.handoff)]
@@ -507,16 +498,7 @@ class _Attempt:
             await asyncio.wait([prepared, *signals], return_when=asyncio.FIRST_COMPLETED)
             if self.control.stopped.is_set() or self.control.handoff.is_set():
                 return False
-            try:
-                await prepared
-            except EnvironmentError as error:
-                if error.code != "environment_timeout":
-                    raise
-                raise ServiceError(
-                    "unavailable",
-                    "The run environments did not become ready in time",
-                    {"dependency": "environment", "reason": "environment_not_ready"},
-                ) from error
+            await prepared
             return True
         finally:
             for task in [*readiness, *signals]:

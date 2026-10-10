@@ -906,42 +906,42 @@ async def test_preparation_policy_applies_to_all_mounts_before_the_model(
     task = await runs_kit.attempt(env)
     try:
         await scripted_model.request()
-        assert set(opened) == (ids if eager else set())
-        assert len(opened) == len(set(opened))
+        assert set(BACKEND.instances) == (ids if eager else set())
+        assert opened == []
         assert closed == []
     finally:
         gate.set()
         await task
     current = await runs_kit.get_run(env, submitted["run"]["id"])
     assert current["status"] == "completed", current
-    assert sorted(closed) == sorted(opened)
+    assert opened == closed == []
     assert len(BACKEND.preparations) == (len(ids) if eager else 0)
 
 
 async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_model, runs_kit, monkeypatch) -> None:
-    from .environments_support import FakeConnector
+    import a13n_service.runs.environments.execution as execution
 
     model = await runs_kit.create_model(env, scripted_model)
     agent = await runs_kit.add_agent(env, "preparation", model, default_environment_template_id=env.template["id"])
     submitted = await runs_kit.start_thread(env, agent, "hello", options={"overrides": {"lazy_environment": False}})
     identity = submitted["run"]["environment_mounts"][0]["environment_id"]
-    original = FakeConnector.open
-    opened = []
+    original = execution._ready
+    preparations = []
 
-    async def open_execution(self):
-        opened.append(self.environment_id)
-        if len(opened) == 1:
+    async def prepare_instance(runtime, lease, principal, authority, mount, deadline):
+        preparations.append(mount.environment_id)
+        if len(preparations) == 1:
             await asyncio.Event().wait()
-        return await original(self)
+        return await original(runtime, lease, principal, authority, mount, deadline)
 
-    monkeypatch.setattr(FakeConnector, "open", open_execution)
+    monkeypatch.setattr(execution, "_ready", prepare_instance)
     limits = env.runtime.settings.environments.model_copy(update={"wait_seconds": 0.5})
     runtime = replace(env.runtime, settings=env.runtime.settings.model_copy(update={"environments": limits}))
     await (await runs_kit.attempt(env, runtime=runtime))
     failed = await runs_kit.get_run(env, submitted["run"]["id"])
     assert failed["status"] == "accepted", failed
     assert scripted_model.requests.empty()
-    assert opened == [identity]
+    assert preparations == [identity]
     changed = await env.client.post(
         f"{env.api}/agents/{agent['id']}/revisions",
         json={"config": {"model": model, "lazy_environment": True}, "make_default": True},
@@ -952,12 +952,12 @@ async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_mode
     await (await runs_kit.attempt(env))
     current = await runs_kit.get_run(env, submitted["run"]["id"])
     assert current["status"] == "completed", current
-    assert opened == [identity, identity]
+    assert preparations == [identity, identity]
     assert len(BACKEND.preparations) == 1
     assert current["options"]["overrides"]["lazy_environment"] is False
 
 
-async def test_eager_preparation_reuses_the_open_execution_for_tools(
+async def test_eager_preparation_leaves_execution_opening_to_first_tool(
     env, local_instance, scripted_model, runs_kit, monkeypatch
 ) -> None:
     from a13n_environment.direct_local.execution import DirectLocalExecution
@@ -982,7 +982,7 @@ async def test_eager_preparation_reuses_the_open_execution_for_tools(
     task = await runs_kit.attempt(env)
     try:
         await scripted_model.request()
-        assert opened == [identity]
+        assert opened == []
     finally:
         gate.set()
         await task

@@ -18,26 +18,6 @@ INSTANCE = AgentInstanceContext(
 )
 
 
-async def test_explicit_readiness_can_open_a_mount_without_requesting_operations(tmp_path: Path) -> None:
-    connector = Connector(tmp_path)
-    runtime = create_environment_runtime(mounts={"workspace": Source(connector)})
-    async with runtime.bind(thread_id="thread", run_id="run", instance=INSTANCE, host_refs={}) as bound:
-        assert connector.opened == []
-        await bound.ensure_ready(
-            EnvironmentReadinessRequirement(mounts=frozenset({"workspace"}), operations=frozenset())
-        )
-        assert len(connector.opened) == 1
-        await bound.files.stat("/environment/workspace")
-        assert len(connector.opened) == 1
-    assert connector.closed == [connector.opened[0].execution_id]
-
-
-def test_readiness_without_operations_requires_explicit_nonempty_mounts() -> None:
-    for mounts in (None, frozenset()):
-        with pytest.raises(ValueError):
-            EnvironmentReadinessRequirement(mounts=mounts, operations=frozenset())
-
-
 class Connector(EnvironmentConnector):
     def __init__(self, root: Path, *, failure: bool = False, reuse: bool = False):
         self.delegate = DIRECT_LOCAL.execution_connector({"root": {"path": str(root)}})

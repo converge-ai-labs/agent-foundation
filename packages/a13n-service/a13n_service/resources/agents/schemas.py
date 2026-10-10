@@ -160,7 +160,7 @@ class AgentConfig(_Frozen):
     retries: RetryConfig | None = None
     # Referenced, not pinned: read when an environment is created from it, never during execution.
     default_environment_template_id: ObjectId | None = None
-    # Otherwise prepare every frozen mount before the first model request.
+    # Otherwise create/start mounted instances before Harness; execution connections still open on first use.
     lazy_environment: bool = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
     memory_mounts: MemoryMounts = ()

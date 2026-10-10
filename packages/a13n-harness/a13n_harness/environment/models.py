@@ -86,8 +86,8 @@ class EnvironmentReadinessRequirement(BaseModel):
 
     @model_validator(mode="after")
     def _non_empty(self) -> EnvironmentReadinessRequirement:
-        if not self.operations and self.mounts is None:
-            raise ValueError("empty operations require explicit mounts")
+        if not self.operations:
+            raise ValueError("operations must not be empty")
         if self.mounts is not None and not self.mounts:
             raise ValueError("mounts must not be empty")
         if self.timeout_seconds is not None:

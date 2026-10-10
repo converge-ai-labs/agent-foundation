@@ -156,7 +156,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 `AgentConfig.lazy_environment` 默认为 `true`。每个挂载首次使用时，Worker 最多等待 `environments.wait_seconds` 让环境就绪，创建预留目标或启动已停止目标。其他实例持有操作 claim 时，Worker 会等待其发布结果；有实例正在处理不代表已经就绪。输入附件和依赖环境的技能可在调用模型前触发首次使用。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
 
-将 agent 配置中的 `lazy_environment` 设为 `false`，可在首次模型请求前准备全部挂载并打开执行连接，即使工具不会使用它们。每个挂载检查其支持的操作和选定的工作目录，后续工具调用复用该连接。没有挂载的运行无需准备。通过 `POST …/environments` 显式创建环境的行为保持不变。
+将 agent 配置中的 `lazy_environment` 设为 `false`，Service 会在进入 Harness 前创建或启动全部挂载的实例并等待就绪，即使工具不会使用它们。这个开关只控制实例准备时机。Harness 仍在首次实际使用时打开执行连接，并检查操作是否就绪及选定的工作目录。运行未使用某个环境时，就不会打开该环境的执行连接。没有挂载的运行无需准备。通过 `POST …/environments` 显式创建环境的行为保持不变。
 
 消息可以通过以下选项仅覆盖本次运行：
 

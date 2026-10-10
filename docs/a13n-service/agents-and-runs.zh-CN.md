@@ -53,26 +53,26 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 
 修订版本的 `config` 包含：
 
-| 字段                              | 含义                                                                                                                                       |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`                           | 模型 key。参阅[模型](models.md)。                                                                                                          |
-| `model_settings`                  | 模型 API 专属设置，例如推理强度。                                                                                                          |
-| `model_characteristics`           | 上下文窗口和上下文管理阈值。                                                                                                               |
-| `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                   |
-| `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                   |
-| `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                             |
-| `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                           |
-| `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                            |
-| `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                            |
-| `subagents`, `subagent_mode`      | 可委派的其他 agent；参阅[子 agent](#subagents)。                                                                                           |
-| `reviewer`                        | 按 key 指定 reviewer 模型，决定权限为 `review` 的调用。                                                                                    |
-| `media_understanding`             | 按 key 指定为 agent 读取图片、视频或音频的模型；参阅[媒体理解](models.md#media-understanding)。                                            |
-| `plugins`                         | 部署已安装的 Harness 插件实例（`plugins.keys`）。                                                                                          |
-| `output_spec`                     | 结构化输出：一个 JSON Schema，或 2–32 个命名 `variants`。未设置时结果为文本。                                                              |
-| `retries`                         | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                  |
-| `default_environment_template_id` | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                    |
-| `lazy_environment`                | 默认 `true`：首次使用时准备挂载。设为 `false` 可在首次模型请求前准备全部挂载，参见[环境](environments.md#mount-environments-on-a-thread)。 |
-| `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                    |
+| 字段                              | 含义                                                                                                                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                           | 模型 key。参阅[模型](models.md)。                                                                                                                                             |
+| `model_settings`                  | 模型 API 专属设置，例如推理强度。                                                                                                                                             |
+| `model_characteristics`           | 上下文窗口和上下文管理阈值。                                                                                                                                                  |
+| `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
+| `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
+| `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
+| `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
+| `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
+| `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                                                               |
+| `subagents`, `subagent_mode`      | 可委派的其他 agent；参阅[子 agent](#subagents)。                                                                                                                              |
+| `reviewer`                        | 按 key 指定 reviewer 模型，决定权限为 `review` 的调用。                                                                                                                       |
+| `media_understanding`             | 按 key 指定为 agent 读取图片、视频或音频的模型；参阅[媒体理解](models.md#media-understanding)。                                                                               |
+| `plugins`                         | 部署已安装的 Harness 插件实例（`plugins.keys`）。                                                                                                                             |
+| `output_spec`                     | 结构化输出：一个 JSON Schema，或 2–32 个命名 `variants`。未设置时结果为文本。                                                                                                 |
+| `retries`                         | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                                                     |
+| `default_environment_template_id` | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                                                       |
+| `lazy_environment`                | 默认 `true`：首次使用时创建或启动实例。设为 `false` 可在进入 Harness 前准备全部实例；执行连接仍在首次使用时打开，参见[环境](environments.md#mount-environments-on-a-thread)。 |
+| `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
 
 保存时按工作空间验证完整配置：每个引用的模型、skill、连接、provider 和 agent 必须存在且可由你使用，否则对应字段以 `invalid_argument` 拒绝；没有 `revision_id` 的 skill 和子 agent 引用会固定到当前默认修订版本。因此修订版本保留其配置以及 skill 和子 agent 的固定修订版本；它引用的模型、连接、provider 和模板是实时资源，每次使用时重新解析。
 

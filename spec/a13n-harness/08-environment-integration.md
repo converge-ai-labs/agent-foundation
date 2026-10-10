@@ -145,8 +145,6 @@ These wrappers add Harness mount correlation to the shared library's target/exec
 
 `EnvironmentMountInfo` contains the mount name, provider key, configured descriptor narrowed by available live observations, readiness summary, access ceiling, provider-local default working directory, mapped `provider_root`, and optional aggregate `mount_path`. It omits opaque mount ID and provider target identity from model context.
 
-`BoundEnvironment.ensure_ready(EnvironmentReadinessRequirement)` prepares the selected mounts and requested operation families under the same activation and cleanup ownership as tool use. Nonempty `operations` must be covered by the selected mounts, and each explicitly selected mount must advertise at least one requested family. Empty `operations` requires explicit nonempty `mounts`: it activates those mounts and opens their executions without requiring an operation family, including for mounts that advertise none. This does not grant operation permissions. Omitting `mounts` selects mounts by requested families and therefore requires nonempty `operations`.
-
 ## Environment Run Extensions
 
 An `EnvironmentRunExtension` is a trusted async context-manager scope around one complete entered Environment aggregate. It is separate from Harness middleware Plugins, declarative Capabilities, and Environment Providers. A Host supplies ordered fresh, pre-entry-inert instances as Run inputs.
