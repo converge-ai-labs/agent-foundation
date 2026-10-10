@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import mimetypes
 import os
@@ -20,7 +21,7 @@ from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict
 
-from a13n_harness_ui.file_context import CapturedSource, CommentReferencePreview
+from a13n_harness_ui.file_context import CapturedSource
 
 logger = logging.getLogger(__name__)
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
@@ -39,7 +40,6 @@ class ThreadAttachment(BaseModel):
     media_type: str
     size: int
     source: CapturedSource | None = None
-    comment: CommentReferencePreview | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +48,6 @@ class AttachmentUpload:
     data: bytes
     media_type: str | None = None
     source: CapturedSource | None = None
-    comment: CommentReferencePreview | None = None
 
 
 def composer_attachment_label(label: str, name: str | None = None) -> str:
@@ -259,7 +258,6 @@ class ThreadFiles:
             media_type=media_type,
             size=len(upload.data),
             source=upload.source,
-            comment=upload.comment,
         )
         directory = await self.touch(thread_id)
         await to_thread.run_sync(self._stage, directory, attachment, upload.data)
@@ -274,8 +272,6 @@ class ThreadFiles:
             absent = set()
             if attachment.source is None:
                 absent.add("source")
-            if attachment.comment is None:
-                absent.add("comment")
             metadata = attachment.model_dump_json(exclude=absent)
             _write_file(target, "metadata.json", metadata.encode("utf-8"))
 
@@ -286,7 +282,12 @@ class ThreadFiles:
         for parent in (("attachments",), ("tmp", "uploads")):
             try:
                 with _directory(self.directory(thread_id), (*parent, attachment_id)) as directory:
-                    attachment = ThreadAttachment.model_validate_json(_read_file(directory, "metadata.json", 65536))
+                    metadata = json.loads(_read_file(directory, "metadata.json", 65536))
+                    # Retired comment captures keep their independent bytes as ordinary files.
+                    source = metadata.get("source") if isinstance(metadata, dict) else None
+                    if isinstance(source, dict) and source.get("kind") == "comment_reference":
+                        metadata["source"] = None
+                    attachment = ThreadAttachment.model_validate(metadata)
                     with _open_file(directory, "content") as stream:
                         size = os.fstat(stream.fileno()).st_size
                         if (

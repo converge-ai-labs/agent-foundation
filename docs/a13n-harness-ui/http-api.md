@@ -199,38 +199,11 @@ Set `foreground: false` when hidden or unfocused. Report changes immediately and
 
 `PresenceFrame` carries the directory and `same_page_participant_ids` relative to that connection. Matching uses the focused target, not scroll position, layout, or containing Thread. HTTP can supply `participant_id` to obtain the same grouping without changing membership. Snapshots are refreshed on membership changes and periodically (15 seconds) to recheck resource availability. Disconnect removes only presence; reconnect reports a fresh current location, not navigation history. App restart clears the directory. A client forgetting its access key closes its interactive connections.
 
-Page presence is independent of the draft's editor cursors, saved comments and execution observation. Focusing Files does not clear or move a Thread draft. Opening a collaborator's location is an explicit personal navigation action; no follow mode or forced scroll is provided.
+Page presence is independent of the draft's editor cursors and execution observation. Focusing Files does not clear or move a Thread draft. Opening a collaborator's location is an explicit personal navigation action; no follow mode or forced scroll is provided.
 
-## Saved output comments
+## Saved output
 
-`features.output_comments` exposes editable human comments on **saved visible assistant text only**. WebUI does not currently show comment controls; only API clients use these routes. It does not make live or unsaved output durable. Root transcript assistant parts include a nullable `comment_target` and an explicit `text_truncated` flag; truncated display excerpts are not exact-selection sources. Fetch original windows for exact selections instead. User/tool/thinking parts and initial/unsaved history do not. Saved child inspection uses `GET /api/threads/{parent_thread_id}/children/{execution_id}/saved-output`, with up to 20 blocks per page and a source-bound `next_cursor`. Use these detached targets unchanged rather than guessing indices or converting a live event into an object reference.
-
-Publish with `POST /api/threads/{root_thread_id}/comments`:
-
-```json
-{
-  "comment_id": "comment-0123456789abcdef0123456789abcdef",
-  "target": {
-    "producing_thread_id": "thread-example",
-    "source_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    "location": {"kind": "root_text", "message": 1, "part": 0}
-  },
-  "author": {"display_name": "Alice"},
-  "body": "Please explain this conclusion."
-}
-```
-
-Allocate a fresh client identity once per intended comment: `comment-` followed by 16–64 alphanumeric, underscore or hyphen characters (a UUID hex value works). Body and selected quote each allow at most 16,384 characters; display names allow 80. The optional author `participant_id` is unverified correlation and need not remain connected. Omit `selection` to discuss the whole block; otherwise supply `{"start":0,"end":5,"quote":"exact"}` matching the exact source's Unicode code-point range, before Markdown rendering. JavaScript UTF-16/DOM offsets must be translated; ambiguous selections should use whole-block comments. Oversized text is rejected, not truncated into a different anchor.
-
-Acknowledgement follows SQLite commit. Repeating the same identity and canonical publication returns the original record and creation time, including after reconnect or restart. Different content under that identity returns `409 comment_identity_conflict`. A lost response is reconciled by GET or repeating the same identity, never by automatically allocating another. First publication rechecks source selection at commit and returns `409 comment_target_stale` when it changed. A previously commented block remains a valid retained target after later Runs. Posting comments neither admits a Run nor changes Thread metadata/configuration versions, continuation, decisions or model messages.
-
-`GET /api/threads/{root_thread_id}/comments` lists all comments, including those on older sources, with `limit` (1–100, default 20) and an opaque cursor. Ordering is ascending creation time then comment identity by default; `newest_first=true` reverses both for a newest-first discussion. Cursors are bound to the ordering direction. Optional `target` is the JSON-encoded exact target; a cursor is bound to its Thread and filter. GET `.../comments/{comment_id}` reads one publication. Empty history is an empty collection. The realtime summary channel emits best-effort `kind: comment` invalidations after commit; reconcile after a fresh subscription or reset rather than treating its cursor as a durable comment cursor.
-
-POST the target to `/api/threads/{root_thread_id}/saved-output` for the original text. `offset` and `limit` select at most 65,536 Unicode code points; `total_characters` and `next_offset` disclose clipping. This read permits only a currently selected or comment-retained target in that Thread family, not arbitrary immutable objects. A broken source fails explicitly while its comment remains readable. Identical text in a newer continuation is not the same target: show the Thread comment list and original-output view unless exact inline identity is established. Reading original output does not select it for execution.
-
-Comments return `version` (initially 1) and optional `updated_at`. `PATCH .../comments/{comment_id}` accepts only `{"body":"Revised feedback","expected_version":1}`; identity, target, selection and attribution remain fixed. `DELETE .../comments/{comment_id}?expected_version=1` returns 204 after deletion. Stale edits/deletes return `409 comment_version_conflict`. An identical edit retry reconciles the next version; repeated deletion succeeds without resurrecting the record. All trusted instance participants can edit/delete; author names are not access-control identities. Comment bodies are not jointly editable and there are no reply/resolution workflows. `POST /api/threads/{root_thread_id}/comments/{comment_id}/capture` explicitly captures one complete publication (body, selection and attribution) plus its complete original assistant block into a Thread attachment. Supply `?expected_version=<reviewed version>` to reject changes before capture. It returns the existing `ThreadAttachment` with `source.kind: comment_reference`, root/comment IDs and the exact saved target. The additive top-level `comment` metadata holds bounded author/body/quote previews and the captured version. Existing captured bytes stay unchanged after edits or deletion. It requires neither native sharing nor a model-side Capability. Complete UTF-8 content, including attribution, must fit 64 KiB; unavailable sources or oversized content fail without truncation. Capture never modifies the shared composer or admits execution. A client selects the returned attachment ID only after success.
-
-Ordinary submit and root steering expand the immutable capture as native text with existing `harness_ui.attachment` metadata. Clients can render an inspectable comment-reference card instead of the expanded editor text; model content remains the complete capture. Retention, eight-attachment bounds and capture-only clearing are unchanged. Publication or inspection alone is never model input.
+Read the selected child output with `GET /api/threads/{thread_id}/children/{execution_id}/saved-output`. The response contains saved-output targets and bounded text windows. Read additional text with `POST /api/threads/{thread_id}/saved-output`, supplying a target and optional `offset` and `limit` query parameters. Root targets use the producing Thread, current continuation digest, and original message/part positions. A stale target fails explicitly; refetch the selected output. These read-only endpoints do not retain historical checkpoints.
 
 ## Shared composer
 
@@ -251,7 +224,7 @@ Send is a client action, not a draft endpoint:
 3. On a positive submission acknowledgement, delete only the text and legacy selections visible in that captured clone. Merge its full deletion update back into the live replica. Keep inline registry entries: an uncaptured occurrence pasted by a peer can reuse a key and arrive after acknowledgement. This preserves concurrent inserts and replaced/added selections. Do not clear the current editor by offsets or replace it with an empty document.
 4. On rejection or unknown outcome, retain the draft. Never retry submission automatically. Resending a CRDT editing update is not resending an execution request.
 
-Explicit root steering accepts ordered `parts`, using the same attachment preparation and limits as ordinary submission. Images become native image input; ordinary files and binary or larger captures retain readable Thread attachment references. Captured NUL-free UTF-8 file/diff/comment context of at most 64 KiB also supplies attributed inline text. Attachment-only steering is valid, and ordered parts retain their authored order and metadata. A later Host edit cannot change either path's captured bytes or source attribution.
+Explicit root steering accepts ordered `parts`, using the same attachment preparation and limits as ordinary submission. Images become native image input; ordinary files and binary or larger captures retain readable Thread attachment references. Captured NUL-free UTF-8 file/diff context of at most 64 KiB also supplies attributed inline text. Attachment-only steering is valid, and ordered parts retain their authored order and metadata. A later Host edit cannot change either path's captured bytes or source attribution.
 
 ### Ordered input bodies
 
@@ -280,10 +253,7 @@ Use this route map for common operations; consult the live OpenAPI document for 
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `GET /api/status`                                                   | Listener/API/App status                                                           |
 | `GET /api/presence`                                                 | Current per-tab directory and optional same-page membership                       |
-| `POST /api/threads/{thread_id}/comments`                            | Publish or reconcile a saved-output comment                                       |
-| `GET /api/threads/{thread_id}/comments`                             | Cursor-page comments under the root Thread, optionally by exact target            |
-| `GET /api/threads/{thread_id}/comments/{comment_id}`                | Read a scoped committed publication                                               |
-| `POST /api/threads/{thread_id}/saved-output`                        | Bounded selected or comment-retained original assistant text                      |
+| `POST /api/threads/{thread_id}/saved-output`                        | Bounded selected original assistant text                                          |
 | `GET /api/threads/{thread_id}/children/{execution_id}/saved-output` | Parent-scoped saved child text blocks with typed targets                          |
 | `GET /api/catalog`                                                  | Discovered implementation references, not configured selectors                    |
 | `GET /api/agents/{agent_id}/tool-proxy`                             | Static Agent-default source grouping                                              |
@@ -361,7 +331,7 @@ Use this route map for common operations; consult the live OpenAPI document for 
 | `POST /api/operations/{receipt_id}/cancel`                          | Request cancellation                                                              |
 | `WS /api/realtime/connect`                                          | Multiplexed summary and focused observation channels                              |
 
-`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` and `features.output_comments` report transient page awareness and durable saved-output comments, independently of native sharing.
+`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` reports transient page awareness independently of native sharing.
 
 ## Skill catalogs and references
 

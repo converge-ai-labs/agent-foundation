@@ -150,7 +150,8 @@ async def test_read_model_migration_keeps_older_writers_and_selected_heads(tmp_p
             connection.execute(insert, {**values, "id": "thread-after"})
             rows = connection.execute(text("SELECT continuation_digest, read_model_json FROM thread")).all()
             assert rows == [("a" * 64, None), ("a" * 64, None)]
-        migrator._run(lambda config: command.downgrade(config, "9aeed42d15b3"), write=True)
+        migrator.upgrade()
+        migrator.verify_current()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT count(*) FROM thread")).scalar() == 2
     finally:

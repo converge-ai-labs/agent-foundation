@@ -886,7 +886,7 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
 
     create = Mock()
     # Definitions are immutable: observe construction through a replaced definition.
-    provider = replace(LOCAL_ENVD, construct=create)
+    provider = replace(LOCAL_ENVD, connector_factory=create)
     profile = ResolvedEnvironmentProfile(
         profile_id="environment-sandbox",
         behavior_digest="a" * 64,
@@ -896,7 +896,7 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
     await adapters.LocalEnvdProjectAdapter().bind(
         profile=profile, root=tmp_path, state=None, provider=provider, runtime=None
     )
-    configuration = create.call_args.kwargs["configuration"]
+    configuration = create.call_args.kwargs["environment"]
     assert configuration.working_directory == tmp_path.as_posix()
     assert configuration.egress is None and configuration.expected_boundary is None
     assert set(configuration.model_dump()) == {"working_directory", "required_methods", "egress", "expected_boundary"}

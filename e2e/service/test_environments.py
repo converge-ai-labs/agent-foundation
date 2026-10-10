@@ -20,7 +20,7 @@ from uuid import uuid4
 import docker
 import httpx2
 import pytest
-from a13n_environment.management import Environment
+from a13n_environment.management import EnvironmentProvider
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 from docker.errors import DockerException, ImageNotFound
 
@@ -59,9 +59,9 @@ class Backend:
             return (self.directory / environment_id).is_dir()
         if self.type == "docker":
             return bool(containers(environment_id))
-        adapter = await self._adapter(environment_id)
+        adapter = await self._provider()
         try:
-            return await adapter.reconcile() != "absent"
+            return (await adapter.inspect(self.recipe, environment_id=environment_id, state=None)).status != "absent"
         finally:
             await adapter.close()
 
@@ -71,22 +71,18 @@ class Backend:
             for container in containers(environment_id):
                 container.remove(force=True)
         elif self.type != "local":
-            adapter = await self._adapter(environment_id)
+            adapter = await self._provider()
             try:
-                await adapter.destroy()
+                await adapter.destroy(
+                    self.recipe, environment_id=environment_id, operation_id=f"op-{uuid4().hex}", state=None
+                )
             finally:
                 await adapter.close()
 
-    async def _adapter(self, environment_id: str) -> Environment:
-        # Acting as the owner, as the Service's lifecycle does, finds the target by the environment ID alone.
+    async def _provider(self) -> EnvironmentProvider:
+        # The owner can inspect and delete targets by Environment ID without opening execution.
         [definition] = [item for item in BUILT_IN_ENVIRONMENT_PROVIDERS if item.type == self.type]
-        return await definition.create(
-            self.recipe,
-            configuration=self.config,
-            credential=self.credential,
-            environment_id=environment_id,
-            allow_create=True,
-        )
+        return await definition.open_provider(configuration=self.config, credential=self.credential)
 
 
 def variables(config: pytest.Config, provider: str, *names: str) -> list[str]:

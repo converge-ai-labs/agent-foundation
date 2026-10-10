@@ -85,6 +85,7 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfigurationMutation,
 )
+from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.contracts import StoredDeferredInput, ThreadReadModel
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
@@ -325,6 +326,7 @@ class RootRunExecutor:
     ) -> RootRunOutcome:
         thread = admission.thread
         thread_id = thread.thread_id
+        run_checkpoint: ObjectRef | None = None
         source, published = admission.source, admission.published
         previous_state, deferred_resume = admission.previous_state, admission.deferred_resume
         prompt = admission.prompt
@@ -353,7 +355,7 @@ class RootRunExecutor:
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
-                nonlocal thread
+                nonlocal thread, run_checkpoint
                 assert stream is not None
                 frozen = display.capture(state.message_history)
                 excerpt = await to_thread.run_sync(lambda: checkpoint_excerpt(thread.excerpt, state.message_history))
@@ -361,6 +363,7 @@ class RootRunExecutor:
                 # before propagating either native or AnyIO cancellation.
                 selected = await self._select_state(
                     thread=thread,
+                    superseded=run_checkpoint,
                     composition=published.reference,
                     memory_positions=reconstructed.memory_cursors.snapshot(),
                     accepted=stream.pending_deferred_input,
@@ -372,6 +375,7 @@ class RootRunExecutor:
                 if selected.status != "selected" or selected.reference is None:
                     assert selected.error is not None
                     raise selected.error
+                run_checkpoint = selected.reference
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
                 if self._summary_hub is not None:
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
@@ -578,6 +582,7 @@ class RootRunExecutor:
                 if paused_state is not None:
                     continuation = await self._select_state(
                         thread=thread,
+                        superseded=run_checkpoint,
                         composition=published.reference,
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
@@ -628,6 +633,7 @@ class RootRunExecutor:
                     )
                     continuation = await self._select_state(
                         thread=thread,
+                        superseded=run_checkpoint,
                         composition=published.reference,
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
@@ -654,6 +660,7 @@ class RootRunExecutor:
                         )
                         continuation = await self._select_state(
                             thread=thread,
+                            superseded=run_checkpoint,
                             composition=published.reference,
                             memory_positions=reconstructed.memory_cursors.snapshot(),
                             accepted=deferred_resume if stream is None else stream.pending_deferred_input,
@@ -772,7 +779,7 @@ class RootRunExecutor:
             deferred = None
             composition = None
         else:
-            stored_continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+            stored_continuation = await self._store.read_continuation(thread.thread_id, thread.continuation)
             state = stored_continuation.harness_state
             deferred = stored_continuation.deferred_requests
             composition = stored_continuation.run_composition
@@ -797,6 +804,7 @@ class RootRunExecutor:
         excerpt: ConversationExcerpt,
         activity_changed: bool,
         completed_run_id: str | None = None,
+        superseded: ObjectRef | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> RootContinuationSelection:
         """Select native state with a display already frozen on the producer's event loop."""
@@ -822,18 +830,29 @@ class RootRunExecutor:
             # cancellation; terminal saving starts only after stream teardown.
             # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
-            published_ref = (
-                await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
-            ).ref
-            selected = await self._store.threads.select_continuation(
-                thread_id=thread.thread_id,
-                expected=thread.continuation,
-                replacement=published_ref,
-                read_model=read_model,
-                completed_run_id=completed_run_id,
-                excerpt=excerpt,
-                activity_changed=activity_changed,
-            )
+            async with checkpoint_lock(self._store.layout.root, thread.thread_id):
+                published_ref = (
+                    await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
+                ).ref
+                selected = await self._store.threads.select_continuation(
+                    thread_id=thread.thread_id,
+                    expected=thread.continuation,
+                    replacement=published_ref,
+                    read_model=read_model,
+                    completed_run_id=completed_run_id,
+                    excerpt=excerpt,
+                    activity_changed=activity_changed,
+                )
+                # Only this Run's previous successful checkpoint is replaceable.
+                # Previous Runs, completions, and finalized restart handoffs stay immutable.
+                if superseded is not None and superseded == thread.continuation and superseded != published_ref:
+                    try:
+                        await self._store.objects.remove(superseded)
+                    except OSError as exc:
+                        get_logger(__name__).warning(
+                            "Could not remove superseded Run checkpoint",
+                            extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},
+                        )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
         await self._store.publish_work(thread.thread_id, published_ref, state)

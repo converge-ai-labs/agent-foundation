@@ -68,7 +68,6 @@ type Row = {
   | {
       kind: "assistant";
       text: string;
-      target?: Schema<"SavedOutputTarget"> | null;
       truncated?: boolean;
       live?: boolean;
     }
@@ -94,7 +93,6 @@ function appendInput(rows: Row[], part: InputPart, fallback: string) {
   else rows.push({ id, kind: "input", parts: [part] });
 }
 
-// A continuation changes comment targets, not the identity of unchanged content.
 // Include the actual entry content so history replacement cannot reuse an unrelated
 // row merely because it occupies the same numeric position.
 export function savedEntryIdentity(entry: Schema<"TranscriptEntry">) {
@@ -102,7 +100,7 @@ export function savedEntryIdentity(entry: Schema<"TranscriptEntry">) {
     entry.position,
     entry.timestamp,
     entry.message_kind,
-    entry.parts.map(({ comment_target: _target, ...part }) => part),
+    entry.parts,
     entry.failures,
   ]);
 }
@@ -153,7 +151,6 @@ function savedRows(
           id,
           kind: "assistant",
           text: part.text ?? "",
-          target: part.comment_target,
           truncated: part.text_truncated,
         });
       } else if (part.kind === "thinking") {
@@ -455,12 +452,7 @@ function Rows({
       ) : row.kind === "tools" ? (
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
-        <section
-          className={styles.assistantMessage}
-          data-saved-target={
-            row.target ? JSON.stringify(row.target) : undefined
-          }
-        >
+        <section className={styles.assistantMessage}>
           {!row.subagentRunId &&
             ((index === 0 && !continuation) ||
               (index > 0 &&
@@ -823,7 +815,7 @@ function TurnHistory({
 // Presentation identity is separate from source identity. Match only the same
 // text slot within an input boundary when live text becomes saved verbatim.
 // Never deduplicate by text or carry state from changed saved history. The new
-// row (including its exact comment target) always remains authoritative.
+// row always remains authoritative.
 function usePresentedRows(rows: Row[], complete: boolean) {
   const previous = useRef(new Map<string, { source: Row; presented: Row }>());
   const next = new Map<string, { source: Row; presented: Row }>();

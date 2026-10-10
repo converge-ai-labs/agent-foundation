@@ -127,13 +127,7 @@ export function useLiveWorkbench(
         if (event?.kind === "thread_work") {
           const id = event.root_thread_id ?? event.thread_id;
           if (id) refreshThread(queries, id, "work");
-        } else if (event?.kind === "comment")
-          void queries.invalidateQueries({
-            queryKey: event.root_thread_id
-              ? ["comments", event.root_thread_id]
-              : ["comments"],
-          });
-        else if (
+        } else if (
           event &&
           ["thread", "root_operation", "child_execution"].includes(event.kind)
         ) {

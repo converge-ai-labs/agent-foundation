@@ -199,38 +199,11 @@ Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `
 
 `PresenceFrame` 携带目录，以及相对于当前连接的 `same_page_participant_ids`。匹配依据聚焦目标，不依据滚动位置、布局或所属 Thread。HTTP 可提供 `participant_id` 获取相同分组，不改变成员资格。成员变化时及每 15 秒刷新快照，重新检查资源可用性。断开只移除在线状态；重连报告新的当前位置，不报告导航历史。App 重启清空目录。客户端忘记访问密钥时，会关闭交互连接。
 
-页面在线状态独立于草稿编辑器光标、已保存评论和执行观测。聚焦 Files 不会清除或移动 Thread 草稿。打开协作者的位置是显式的个人导航操作；没有跟随模式或强制滚动。
+页面在线状态独立于草稿编辑器光标和执行观测。聚焦 Files 不会清除或移动 Thread 草稿。打开协作者的位置是显式的个人导航操作；没有跟随模式或强制滚动。
 
-## 已保存输出的评论
+## 保存的输出
 
-`features.output_comments` 提供可编辑的人类评论，**仅针对已保存、可见的 assistant 文本**。WebUI 当前不显示评论控件；只有 API 客户端使用这些路由。它不会将实时或未保存输出持久化。根对话记录的 assistant 部分包含可为 null 的 `comment_target` 和显式 `text_truncated` 标志；截断的显示片段不能用作精确选区来源，应获取原始文本窗口。User、tool、thinking 部分，以及初始或未保存历史没有这些字段。已保存子运行检查使用 `GET /api/threads/{parent_thread_id}/children/{execution_id}/saved-output`，每页最多 20 个块，`next_cursor` 绑定来源。请原样使用这些目标快照，不要猜测索引，也不要将实时事件转成对象引用。
-
-通过 `POST /api/threads/{root_thread_id}/comments` 发布：
-
-```json
-{
-  "comment_id": "comment-0123456789abcdef0123456789abcdef",
-  "target": {
-    "producing_thread_id": "thread-example",
-    "source_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    "location": {"kind": "root_text", "message": 1, "part": 0}
-  },
-  "author": {"display_name": "Alice"},
-  "body": "Please explain this conclusion."
-}
-```
-
-每条拟发布评论只分配一次新的客户端身份：`comment-` 后接 16–64 个字母、数字、下划线或连字符（可用 UUID 十六进制值）。正文和所选引用各最多 16,384 个字符，显示名称最多 80 个。可选作者 `participant_id` 只是未经验证的关联信息，不要求保持连接。省略 `selection` 表示评论整个块；否则提供 `{"start":0,"end":5,"quote":"exact"}`，必须匹配 Markdown 渲染前原始来源的 Unicode 码点范围。JavaScript UTF-16 或 DOM 偏移量必须转换；选区不明确时应使用整块评论。超长文本会被拒绝，不会截断成另一个锚点。
-
-SQLite 提交后才返回确认。相同身份和规范化发布内容重复请求会返回原始记录与创建时间，重连或重启后也相同。同一身份使用不同内容返回 `409 comment_identity_conflict`。响应丢失后通过 GET 或重复使用同一身份核对，不能自动分配新身份。首次发布在提交时重新检查来源选择，已变化时返回 `409 comment_target_stale`。后续 Run 执行后，已有评论的块仍是有效的保留目标。发布评论不接收 Run，也不修改 Thread 元数据或配置版本、continuation、决策或模型消息。
-
-`GET /api/threads/{root_thread_id}/comments` 列出全部评论，包括旧来源评论，接受 `limit`（1–100，默认 20）和不透明游标。默认按创建时间、评论身份升序排列；`newest_first=true` 反转两者，显示最新讨论在前。游标绑定排序方向。可选 `target` 是精确目标的 JSON 编码；游标绑定 Thread 和筛选条件。GET `.../comments/{comment_id}` 读取一次发布。没有历史时返回空集合。实时摘要通道在提交后尽力发送 `kind: comment` 失效通知；新订阅或 reset 后应重新核对，不要将其游标当作持久评论游标。
-
-向 `/api/threads/{root_thread_id}/saved-output` POST 目标，获取原始文本。`offset` 和 `limit` 最多选择 65,536 个 Unicode 码点，`total_characters` 和 `next_offset` 表明截取情况。只能读取该 Thread 家族中当前选定或因评论保留的目标，不能读取任意不可变对象。来源损坏会显式失败，但评论仍可读。新 continuation 中的相同文本不是同一目标：除非确认精确内联身份，否则应显示 Thread 评论列表和原始输出视图。读取原始输出不会将它选为执行输入。
-
-评论返回 `version`（初始为 1）和可选 `updated_at`。`PATCH .../comments/{comment_id}` 只接受 `{"body":"Revised feedback","expected_version":1}`；身份、目标、选区和署名保持不变。`DELETE .../comments/{comment_id}?expected_version=1` 删除后返回 204。过期编辑或删除返回 `409 comment_version_conflict`。相同编辑重试可核对下一版本；重复删除成功，不会恢复记录。所有可信实例参与者都可编辑或删除；作者名称不是访问控制身份。评论正文不支持共同编辑，也没有回复或解决流程。`POST /api/threads/{root_thread_id}/comments/{comment_id}/capture` 显式将完整评论（正文、选区和署名）及完整原始 assistant 块捕获为 Thread 附件。提供 `?expected_version=<reviewed version>` 可拒绝捕获前的变化。响应使用已有 `ThreadAttachment`，带 `source.kind: comment_reference`、根线程与评论 ID、精确保存目标。新增顶层 `comment` 元数据包含有界作者、正文、引用预览和捕获版本。后续编辑或删除不改变已捕获字节。此操作不需要原生共享或模型侧 Capability。完整 UTF-8 内容（含署名）必须在 64 KiB 内；来源不可用或内容过大会失败，不截断。捕获不修改共享输入区，也不接收执行。客户端只在成功后选择返回的附件 ID。
-
-普通提交和根运行引导将不可变捕获展开为原生文本，保留现有 `harness_ui.attachment` 元数据。客户端可显示可检查的评论引用卡片，无需在编辑器展开文本；模型仍收到完整捕获。保留策略、八个附件上限和仅捕获内容的清除规则不变。单独发布或查看永不成为模型输入。
+通过 `GET /api/threads/{thread_id}/children/{execution_id}/saved-output` 读取选中的子执行输出。响应包含输出定位信息和有界文本窗口。将定位信息提交到 `POST /api/threads/{thread_id}/saved-output`，并按需指定 `offset` 和 `limit` 查询参数，可继续读取文本。根输出使用产生输出的 Thread、当前 continuation 摘要以及原始消息和 part 位置定位。定位信息过期时会明确失败，需要重新读取选中的输出。这些只读端点不负责保留历史 checkpoint。
 
 ## 共享输入区
 
@@ -251,7 +224,7 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 3. 提交确认成功后，只删除捕获副本中可见的文本和旧式选择。将完整删除更新合并回实时副本。保留内联注册项：协作者粘贴的未捕获 token 可能复用 key，并在确认后到达。这样可保留并发插入和替换、新增选择。不要按偏移量清空当前编辑器，也不要替换为空文档。
 4. 被拒绝或结果未知时保留草稿。不得自动重试提交。重发 CRDT 编辑更新不等于重发执行请求。
 
-显式根运行引导接受有序 `parts`，附件准备和限制与普通提交相同。图片成为原生图片输入；普通文件、二进制或较大捕获保留可读的 Thread 附件引用。最多 64 KiB 的无 NUL UTF-8 文件、diff 或评论上下文还提供带来源的内联文本。仅附件引导有效，有序部分保留编写顺序和元数据。之后的 Host 编辑不会改变这两种路径捕获的字节或来源署名。
+显式根运行引导接受有序 `parts`，附件准备和限制与普通提交相同。图片成为原生图片输入；普通文件、二进制或较大捕获保留可读的 Thread 附件引用。最多 64 KiB 的无 NUL UTF-8 文件或 diff 上下文还提供带来源的内联文本。仅附件引导有效，有序部分保留编写顺序和元数据。之后的 Host 编辑不会改变这两种路径捕获的字节或来源署名。
 
 ### 有序输入请求体
 
@@ -280,10 +253,7 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `GET /api/status`                                                   | 监听器、API 和 App 状态                                           |
 | `GET /api/presence`                                                 | 当前标签页目录和可选同页成员                                      |
-| `POST /api/threads/{thread_id}/comments`                            | 发布或核对已保存输出评论                                          |
-| `GET /api/threads/{thread_id}/comments`                             | 按游标分页读取根 Thread 评论，可按精确目标筛选                    |
-| `GET /api/threads/{thread_id}/comments/{comment_id}`                | 读取限定范围内已提交评论                                          |
-| `POST /api/threads/{thread_id}/saved-output`                        | 读取选定或评论保留的原始 assistant 文本，有大小限制               |
+| `POST /api/threads/{thread_id}/saved-output`                        | 读取选定的原始 assistant 文本，有大小限制                         |
 | `GET /api/threads/{thread_id}/children/{execution_id}/saved-output` | 读取限定到父线程的已保存子文本块及类型化目标                      |
 | `GET /api/catalog`                                                  | 已发现的实现引用，不是已配置选择项                                |
 | `GET /api/agents/{agent_id}/tool-proxy`                             | 静态 Agent 默认来源分组                                           |
@@ -361,7 +331,7 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 | `POST /api/operations/{receipt_id}/cancel`                          | 请求取消                                                          |
 | `WS /api/realtime/connect`                                          | 多路复用的摘要和聚焦观测通道                                      |
 
-`GET /api/openapi.json`、`/healthz`、`/readyz` 及静态导航和资源，是 schema 未列出的其他边界。只有 App 启用原生共享时，`features.host_files` 才为 true。共享已启用且可找到 Git 可执行文件时，`features.host_git` 为 true。`features.host_terminal` 报告原生 POSIX 终端可用性。`features.shared_drafts` 报告内存共享输入协议支持情况。`features.page_presence` 和 `features.output_comments` 分别报告临时页面在线状态和持久化已保存输出评论，与原生共享独立。
+`GET /api/openapi.json`、`/healthz`、`/readyz` 及静态导航和资源，是 schema 未列出的其他边界。只有 App 启用原生共享时，`features.host_files` 才为 true。共享已启用且可找到 Git 可执行文件时，`features.host_git` 为 true。`features.host_terminal` 报告原生 POSIX 终端可用性。`features.shared_drafts` 报告内存共享输入协议支持情况。`features.page_presence` 报告临时页面在线状态，与原生共享独立。
 
 ## Skill 目录与引用
 

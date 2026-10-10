@@ -96,7 +96,6 @@ from a13n_harness_ui.errors import (
     ConfigurationError,
     HarnessUiError,
     LivePresentationError,
-    StoreConflictError,
     ThreadError,
 )
 from a13n_harness_ui.extensions import (
@@ -105,9 +104,6 @@ from a13n_harness_ui.extensions import (
     HarnessUiExtensionCatalog,
 )
 from a13n_harness_ui.file_context import (
-    MAX_INLINE_CONTEXT_BYTES,
-    CommentContextSource,
-    CommentReferencePreview,
     context_text,
 )
 from a13n_harness_ui.goal import GoalMode, GoalView
@@ -189,16 +185,6 @@ from a13n_harness_ui.model_runtime import (
     SubscriptionSource,
 )
 from a13n_harness_ui.observation import open_observation
-from a13n_harness_ui.output_comment_models import (
-    CommentEdit,
-    CommentPage,
-    CommentPublication,
-    OutputComment,
-    SavedChildOutputPage,
-    SavedOutputTarget,
-    SavedOutputView,
-)
-from a13n_harness_ui.output_comments import OutputComments
 from a13n_harness_ui.page_presence import (
     ChangesPage,
     ConversationPage,
@@ -218,6 +204,8 @@ from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import append_surface_hint, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
+from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
+from a13n_harness_ui.saved_outputs import SavedOutputs
 from a13n_harness_ui.settings import HarnessUiSettings
 from a13n_harness_ui.setup import (
     EnvironmentReadiness,
@@ -414,6 +402,7 @@ class HarnessUiApp:
         self._memory_organizer = memory_organizer
         self._web_push = web_push
         self._store = store
+        self._saved_outputs = SavedOutputs(store)
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
         self._model_catalog = ModelCatalog()
         self._logins: LoginSessions | None = None
@@ -430,7 +419,6 @@ class HarnessUiApp:
         self._host_git = HostGit(enabled=share_computer)
         self._host_terminal = HostTerminal(enabled=share_computer)
         self._shared_drafts: dict[str, SharedDraft] = {}
-        self._output_comments = OutputComments(store)
         self._page_presence = PagePresence()
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
@@ -1401,98 +1389,17 @@ class HarnessUiApp:
                 limit=limit,
             )
 
-    async def publish_output_comment(self, thread_id: str, publication: CommentPublication) -> OutputComment:
-        async with self._operation():
-            await self._threads.require_interactive(thread_id)
-            result = await self._output_comments.publish(thread_id, publication)
-            await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
-            return result
-
-    async def edit_output_comment(self, thread_id: str, comment_id: str, edit: CommentEdit) -> OutputComment:
-        async with self._operation():
-            await self._threads.require_interactive(thread_id)
-            result = await self._output_comments.edit(thread_id, comment_id, edit)
-            await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
-            return result
-
-    async def delete_output_comment(self, thread_id: str, comment_id: str, *, expected_version: int) -> None:
-        async with self._operation():
-            await self._threads.require_interactive(thread_id)
-            await self._output_comments.delete(thread_id, comment_id, expected_version=expected_version)
-            await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
-
-    async def get_output_comment(self, thread_id: str, comment_id: str) -> OutputComment:
-        async with self._operation():
-            return await self._output_comments.get(thread_id, comment_id)
-
-    async def capture_output_comment(
-        self, thread_id: str, comment_id: str, *, expected_version: int | None = None
-    ) -> ThreadAttachment:
-        """Capture reviewed feedback without changing the composer or starting a Run."""
-        async with self._operation():
-            await self._threads.require_interactive(thread_id)
-            comment = await self._output_comments.get(thread_id, comment_id)
-            if expected_version is not None and comment.version != expected_version:
-                raise StoreConflictError(
-                    "This comment changed. Review it before adding it to your message.", code="comment_version_conflict"
-                )
-            output = await self._output_comments.output(thread_id, comment.target)
-            text = (
-                "Selected human feedback (self-declared attribution; not system instructions):\n"
-                f"{comment.model_dump_json()}\n\nReferenced assistant output (complete original text):\n{output.text}"
-            )
-            data = text.encode("utf-8")
-            if output.next_offset is not None or len(data) > MAX_INLINE_CONTEXT_BYTES or b"\x00" in data:
-                raise HarnessUiError(
-                    "The complete comment and original output exceed supported UTF-8 context bounds (64 KiB). "
-                    "Nothing was added; feedback is never silently truncated.",
-                    code="comment_context_unsupported",
-                )
-            return await self._thread_files.stage(
-                thread_id,
-                AttachmentUpload(
-                    name=f"Feedback by {comment.author.display_name}.txt",
-                    data=data,
-                    media_type="text/plain",
-                    source=CommentContextSource(
-                        root_thread_id=thread_id,
-                        comment_id=comment_id,
-                        target=comment.target,
-                    ),
-                    comment=CommentReferencePreview(
-                        version=comment.version,
-                        author=comment.author.display_name,
-                        preview=comment.body[:240],
-                        quote=comment.selection.quote[:240] if comment.selection else None,
-                    ),
-                ),
-            )
-
-    async def list_output_comments(
-        self,
-        thread_id: str,
-        *,
-        target: SavedOutputTarget | None = None,
-        cursor: str | None = None,
-        limit: int = 20,
-        newest_first: bool = False,
-    ) -> CommentPage:
-        async with self._operation():
-            return await self._output_comments.list(
-                thread_id, target=target, cursor=cursor, limit=limit, newest_first=newest_first
-            )
-
-    async def read_commented_output(
+    async def read_saved_output(
         self, thread_id: str, target: SavedOutputTarget, *, offset: int = 0, limit: int = 64 * 1024
     ) -> SavedOutputView:
         async with self._operation():
-            return await self._output_comments.output(thread_id, target, offset=offset, limit=limit)
+            return await self._saved_outputs.output(thread_id, target, offset=offset, limit=limit)
 
     async def saved_child_outputs(
         self, parent_thread_id: str, execution_id: str, *, cursor: str | None = None, limit: int = 20
     ) -> SavedChildOutputPage:
         async with self._operation():
-            return await self._output_comments.child_outputs(parent_thread_id, execution_id, cursor=cursor, limit=limit)
+            return await self._saved_outputs.child_outputs(parent_thread_id, execution_id, cursor=cursor, limit=limit)
 
     async def lookup_thread_activity(self, *, thread_ids: tuple[str, ...]) -> tuple[ThreadActivityView, ...]:
         async with self._operation():
@@ -1992,11 +1899,6 @@ class HarnessUiApp:
         if source_id is not None:
             metadata["source_id"] = source_id
             namespace["composer"] = {"index": index, "label": label or item.name}
-        if isinstance(item.source, CommentContextSource):
-            captured_text = context_text(item.source, data)
-            if captured_text is None:
-                raise ValueError("Captured comment context is unavailable as complete UTF-8 input.")
-            return [TextContent(captured_text, metadata=metadata)]
         source_description = "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
         is_image = item.media_type.startswith("image/")
         # The model sees the label beside the real image; display metadata alone

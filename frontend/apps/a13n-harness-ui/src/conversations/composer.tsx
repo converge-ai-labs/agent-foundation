@@ -49,7 +49,6 @@ import {
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useTrackUnsent } from "./unsent";
-import { commentReference, CommentReferenceContent } from "./comment-reference";
 import { previewInput, type LocalInput } from "./local-input";
 import type { OrderedInputPart } from "./inline-attachments";
 
@@ -484,7 +483,6 @@ export function Composer({
     text: string;
     url?: string;
     source?: Schema<"ThreadAttachment">["source"];
-    comment?: Schema<"ThreadAttachment">["comment"];
     image?: boolean;
   } | null>(null);
   const selections = attachmentSelections(draft.doc);
@@ -856,7 +854,6 @@ export function Composer({
         text,
         url: URL.createObjectURL(blob),
         source: attachment?.source,
-        comment: attachment?.comment,
         image: attachment?.media_type.startsWith("image/"),
       });
     } catch (failure) {
@@ -940,17 +937,11 @@ export function Composer({
         <CoordinatorIcon size={16} /> Coordinator
       </Button>
     ));
-  const comment = commentReference(preview);
   return (
     <section
       className={styles.composer}
       aria-label={busy ? "Next message" : "Message composer"}
     >
-      {attachments.some((attachment) => commentReference(attachment.data)) && (
-        <p role="status" className={styles.composerConnection}>
-          Comment added to your message. Review it below, then send when ready.
-        </p>
-      )}
       {contextCleared && (
         <p role="status" className={styles.composerConnection}>
           Context cleared. Your next message starts fresh; chat history and your
@@ -1226,15 +1217,11 @@ export function Composer({
             setPreview(null);
           }
         }}
-        title={comment ? "Comment reference" : (preview?.name ?? "Attachment")}
-        description={
-          comment
-            ? "Review the comment and response included in your message."
-            : "These are the retained bytes selected for input, not the current file on the server."
-        }
+        title={preview?.name ?? "Attachment"}
+        description="These are the retained bytes selected for input, not the current file on the server."
         closeLabel="Close"
       >
-        {preview?.source && !comment && (
+        {preview?.source && (
           <div className={styles.summary}>
             {"path" in preview.source && (
               <p>Server native capture · {preview.source.path}</p>
@@ -1257,11 +1244,7 @@ export function Composer({
             </p>
           </div>
         )}
-        {comment && preview ? (
-          <CommentReferenceContent source={comment} text={preview.text} />
-        ) : (
-          <pre className={styles.code}>{preview?.text}</pre>
-        )}
+        <pre className={styles.code}>{preview?.text}</pre>
         {preview?.url && (
           <a href={preview.url} download={preview.name}>
             Download original

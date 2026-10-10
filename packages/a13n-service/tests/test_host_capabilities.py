@@ -18,6 +18,7 @@ from a13n_environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.execution import EnvironmentConnector
 from a13n_harness import (
     AgentContext,
     AgentSpec,
@@ -93,11 +94,25 @@ class Script:
             yield {0: DeltaToolCall(name=name, json_args=json.dumps(arguments), tool_call_id=call_id)}
 
 
+class PreparedSource:
+    """Test Host for a local directory that already exists."""
+
+    def __init__(self, connector: EnvironmentConnector):
+        self.connector = connector
+        self.provider_key = connector.provider_key
+        self.environment_id = connector.environment_id
+        self.descriptor = connector.descriptor
+        self.state = connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+
 def mount(root: Path, environment_id: str = ENVIRONMENT) -> EnvironmentMount:
     root = root / environment_id
     recipe = DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root))
     root.mkdir(parents=True, exist_ok=True)
-    return EnvironmentMount(DIRECT_LOCAL.execution_connector(recipe, environment_id=environment_id))
+    return EnvironmentMount(PreparedSource(DIRECT_LOCAL.execution_connector(recipe, environment_id=environment_id)))
 
 
 async def run(

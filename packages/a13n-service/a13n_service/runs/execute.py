@@ -488,11 +488,9 @@ class _Attempt:
         if not self.plan.mounts:
             return True
         logger.info("Preparing run environment instances before entering Harness")
-        readiness = [
-            asyncio.create_task(prepare(self.runtime, self.lease, self.plan.principal, self.plan.authority, mount))
-            for mount in self.plan.mounts
-        ]
-        prepared = asyncio.gather(*readiness)
+        prepared = self.runtime.tasks.start(
+            self._prepare_instances(), name=f"prepare-environments-{self.lease.attempt_id}"
+        )
         signals = [asyncio.create_task(event.wait()) for event in (self.control.stopped, self.control.handoff)]
         try:
             await asyncio.wait([prepared, *signals], return_when=asyncio.FIRST_COMPLETED)
@@ -501,10 +499,25 @@ class _Attempt:
             await prepared
             return True
         finally:
-            for task in [*readiness, *signals]:
-                if not task.done():
+            # The process retains the preparation child while it finishes cancellation cleanup.
+            # Run interruption must not wait for that cleanup or cancel it a second time.
+            for task in [prepared, *signals]:
+                if not task.done() and not task.cancelling():
                     task.cancel()
-            await asyncio.gather(prepared, *readiness, *signals, return_exceptions=True)
+            await asyncio.gather(*signals, return_exceptions=True)
+
+    async def _prepare_instances(self) -> None:
+        readiness = [
+            asyncio.create_task(prepare(self.runtime, self.lease, self.plan.principal, self.plan.authority, mount))
+            for mount in self.plan.mounts
+        ]
+        try:
+            await asyncio.gather(*readiness)
+        finally:
+            for task in readiness:
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+            await asyncio.gather(*readiness, return_exceptions=True)
 
     async def _observe(self, item: HarnessStreamEvent, output: Coalescer) -> None:
         event = item.event if isinstance(item, HarnessEvent) else None

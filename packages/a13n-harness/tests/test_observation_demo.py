@@ -42,7 +42,7 @@ _DEMO_PATH = Path(__file__).resolve().parents[3] / "dev" / "observation-demo" / 
             "view",
             "View completed through the media-understanding Agent: Detected text: OBSERVATION DEMO. "
             "Unclear or omitted details: none.",
-            (),
+            ("environment_changed",),
             (
                 "invoke_agent view-observation-demo",
                 "execute_tool view",

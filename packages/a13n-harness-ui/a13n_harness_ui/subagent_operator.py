@@ -220,7 +220,10 @@ class _SubagentRequestError(RunCoordinationError):
 def _subagent_tool[**P, T](function: Callable[P, Awaitable[T]]) -> Callable[P, CoroutineType[Any, Any, T]]:
     @wraps(function)
     async def wrapped(*args: P.args, **kwargs: P.kwargs) -> T:
-        return await function(*args, **kwargs)
+        try:
+            return await function(*args, **kwargs)
+        except _SubagentRequestError as exc:
+            raise ToolFailed(f"{exc.code}: {exc}") from exc
 
     return wrapped
 

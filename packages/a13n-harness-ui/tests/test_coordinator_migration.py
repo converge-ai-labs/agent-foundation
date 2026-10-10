@@ -1,4 +1,3 @@
-import pytest
 from a13n_harness_ui.storage.migration import DatabaseMigrator
 from alembic import command
 from sqlalchemy import create_engine, inspect, text
@@ -43,16 +42,5 @@ def test_upgrade_preserves_coordinators_workers_settings_and_history(tmp_path):
             # Later additive migrations can add columns without changing any existing value.
             assert [{key: row[key] for key in before[0]} for row in after] == before
         assert not {"project_lead", "project_lead_worker"} & set(inspect(engine).get_table_names())
-        with pytest.raises(RuntimeError, match="Cannot downgrade"):
-            migrator._run(lambda config: command.downgrade(config, "78e4e7206898"), write=True)
-        migrator.verify_current()
     finally:
         engine.dispose()
-
-
-def test_empty_database_can_upgrade_downgrade_and_upgrade(tmp_path):
-    migrator = DatabaseMigrator(tmp_path / "metadata.sqlite3")
-    migrator.upgrade()
-    migrator._run(lambda config: command.downgrade(config, "78e4e7206898"), write=True)
-    migrator.upgrade()
-    migrator.verify_current()

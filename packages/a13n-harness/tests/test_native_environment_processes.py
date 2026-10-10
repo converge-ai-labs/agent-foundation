@@ -22,6 +22,8 @@ from pydantic import SecretStr
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
+from .environment_helpers import Source
+
 pytestmark = pytest.mark.anyio
 
 
@@ -142,7 +144,7 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
             capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
         )
 
-    first = E2B.execution_connector(configuration, environment_id="env-test", state=state, runtime=runtime)
+    first = Source(E2B.execution_connector(configuration, environment_id="env-test", state=state, runtime=runtime))
     await executable([lambda _: ("shell_exec", {"command": "sleep 60", "yield_time_seconds": 0})]).run(
         "start", environment=first, bindings=bindings()
     )
