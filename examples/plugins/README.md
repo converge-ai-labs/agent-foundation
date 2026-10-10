@@ -69,7 +69,7 @@ workspace = "a13n_plugin_examples.environment:manifest"
 - a constant immutable `WORKSPACE_ENVIRONMENT` definition exported through `ProviderManifest`;
 - a fresh `WorkspaceEnvironment` adapter backed by Direct Local operations.
 
-Manifest import, configuration validation, and `construct()` perform no filesystem I/O. The workspace is checked when the Host explicitly prepares the adapter or its first operation requests readiness; scope entry performs no target I/O. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
+Manifest import, configuration validation, and connector construction perform no filesystem I/O. Each connector `open()` checks the existing workspace and returns an independently owned execution. State is `None` because the target is the deterministic Host-selected directory. Execution close does not delete that directory.
 
 ### Installed entry-point mode
 
@@ -106,7 +106,7 @@ Code mode prints the same result with `selection mode: code`.
 - Use one stable entry-point name and one stable Provider `type`.
 - Keep definition construction, recipe validation, and Environment construction strict, bounded, and side-effect free.
 - Declare one account model, one optional credential model, and one target recipe model; support exact state versions without fallback or shape inference.
-- Acquire current credentials, SDK clients, bootstrap stores, and transport factories only inside `runtime_factory`.
+- Acquire live clients only in the management `provider_factory` or connector `open()`. The `connector_factory` must remain inert.
 - Construct one fresh Environment per independent Run or explicit Host lifecycle operation.
 - Validate supplied state before target mutation; create a replacement only after authoritative absence.
 - Update cached state as soon as changed target identity is known, before later readiness can fail.
@@ -132,7 +132,7 @@ The distribution registers a separate aggregate-lifecycle factory:
 
 The factory receives an `EnvironmentRunExtensionFactoryContext` with separate `extension_key`, `extension_id`, and detached JSON configuration. It returns a fresh pre-entry-inert extension. All file I/O occurs only inside `EnvironmentRunExtension.bind()`.
 
-The demo passes the Provider's Environment through `EnvironmentMount` with an exact text-read, text-write, and remove ceiling. The same mount input works with `run()` and `create_environment_runtime()`; Harness owns single-use transfer, entry, and cleanup without an example-specific lifecycle adapter.
+The demo wraps an already prepared connector in a Host-owned `EnvironmentSource` and passes it through `EnvironmentMount` with an exact text-read, text-write, and remove ceiling. The same mount input works with `run()` and `create_environment_runtime()`; Harness owns each opened execution and its cleanup on first use.
 
 ### Installed entry-point mode
 

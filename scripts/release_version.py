@@ -12,6 +12,7 @@ COMPONENTS = (
     "a13n-harness",
     "a13n-harness-ui",
     "a13n-logging",
+    "a13n-environment",
     "a13n-service",
     "a13n-envd",
 )
@@ -31,6 +32,8 @@ HARNESS_UI_PACKAGE = "a13n-harness-ui"
 RELEASE_DEPENDENCIES_TOOL = "tool.a13n.release-dependencies"
 LOGGING_MANIFEST = Path("packages/a13n-logging/pyproject.toml")
 LOGGING_PACKAGE = "a13n-logging"
+ENVIRONMENT_PACKAGE = "a13n-environment"
+ENVIRONMENT_MANIFEST = Path("packages/a13n-environment/pyproject.toml")
 A13N_SERVICE_MANIFEST = Path("packages/a13n-service/pyproject.toml")
 A13N_SERVICE_MANIFESTS = (
     Path("pyproject.toml"),
@@ -184,9 +187,10 @@ def validate_dependency_range(value: str) -> str:
 def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     """Read independently versioned dependencies without constraining local workspace members."""
     expected = {
-        HARNESS_MANIFEST: (LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
-        A13N_SERVICE_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE),
-        HARNESS_UI_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
+        HARNESS_MANIFEST: (LOGGING_PACKAGE, ENVIRONMENT_PACKAGE),
+        ENVIRONMENT_MANIFEST: (A13N_ENVD_CLIENT_PACKAGE,),
+        A13N_SERVICE_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, ENVIRONMENT_PACKAGE),
+        HARNESS_UI_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE, ENVIRONMENT_PACKAGE),
     }[manifest]
     label = f"{RELEASE_DEPENDENCIES_TOOL} in {manifest}"
     tool = _mapping(_load_toml(root, manifest).get("tool"), label)
@@ -268,13 +272,18 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
                 HARNESS_UI_PACKAGE,
             ),
         }
-    if component == "a13n-logging":
+    if component in {"a13n-logging", "a13n-environment"}:
+        manifest, package = (
+            (LOGGING_MANIFEST, LOGGING_PACKAGE)
+            if component == "a13n-logging"
+            else (ENVIRONMENT_MANIFEST, ENVIRONMENT_PACKAGE)
+        )
         return {
-            str(LOGGING_MANIFEST): _project_version(root, LOGGING_MANIFEST),
-            f"{ROOT_UV_LOCK} package {LOGGING_PACKAGE}": _lock_package_version(
+            str(manifest): _project_version(root, manifest),
+            f"{ROOT_UV_LOCK} package {package}": _lock_package_version(
                 root,
                 ROOT_UV_LOCK,
-                LOGGING_PACKAGE,
+                package,
             ),
         }
     if component == "a13n-service":
@@ -315,7 +324,7 @@ def _expected_component_versions(
     release_version: ReleaseVersion,
     labels: tuple[str, ...],
 ) -> dict[str, str]:
-    if component in {"a13n-harness", "a13n-harness-ui", "a13n-logging", "a13n-service"}:
+    if component in {"a13n-harness", "a13n-harness-ui", "a13n-logging", "a13n-environment", "a13n-service"}:
         return {label: release_version.python_package for label in labels}
     if component == "a13n-envd":
         python_labels = {
@@ -353,6 +362,7 @@ def validate_component_version(root: Path, component: str, version: str) -> None
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
     manifests = {
+        "a13n-environment": (ENVIRONMENT_MANIFEST,),
         "a13n-harness": (HARNESS_MANIFEST,),
         "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
         "a13n-service": (A13N_SERVICE_MANIFEST,),
@@ -526,16 +536,21 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             python_version,
             ROOT_UV_LOCK,
         )
-    elif component == "a13n-logging":
-        planned[LOGGING_MANIFEST] = _replace_table_version(
-            _read_text(root, LOGGING_MANIFEST),
+    elif component in {"a13n-logging", "a13n-environment"}:
+        manifest, package = (
+            (LOGGING_MANIFEST, LOGGING_PACKAGE)
+            if component == "a13n-logging"
+            else (ENVIRONMENT_MANIFEST, ENVIRONMENT_PACKAGE)
+        )
+        planned[manifest] = _replace_table_version(
+            _read_text(root, manifest),
             "project",
             python_version,
-            LOGGING_MANIFEST,
+            manifest,
         )
         planned[ROOT_UV_LOCK] = _replace_lock_package_version(
             _read_text(root, ROOT_UV_LOCK),
-            LOGGING_PACKAGE,
+            package,
             python_version,
             ROOT_UV_LOCK,
         )
@@ -583,6 +598,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
 
     manifests = {
+        "a13n-environment": (ENVIRONMENT_MANIFEST,),
         "a13n-harness": (HARNESS_MANIFEST,),
         "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
         "a13n-service": (A13N_SERVICE_MANIFEST,),

@@ -15,13 +15,13 @@ from importlib.metadata import version
 from pathlib import PurePosixPath
 from typing import Annotated, Any
 
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.docker.configuration import (
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.docker.configuration import (
     DockerEnvironmentConfiguration as HarnessRecipe,
 )
-from a13n_harness.providers.environment.docker.configuration import DockerMountConfiguration
-from a13n_harness.providers.environment.docker.provider import DOCKER as HARNESS_DOCKER
-from a13n_harness.providers.environment.docker.provider import (
+from a13n_environment.docker.configuration import DockerMountConfiguration
+from a13n_environment.docker.provider import DOCKER as BASE_DOCKER
+from a13n_environment.docker.provider import (
     DockerConnectionConfiguration as HarnessAccount,
 )
 from packaging.version import Version
@@ -96,7 +96,7 @@ def docker(*, host: str | None, mount_roots: Sequence[PurePosixPath]) -> Environ
             return mounts
 
     return replace(
-        HARNESS_DOCKER,
+        BASE_DOCKER,
         configuration_model=DockerConnectionConfiguration,
         environment_model=DockerEnvironmentConfiguration,
     )

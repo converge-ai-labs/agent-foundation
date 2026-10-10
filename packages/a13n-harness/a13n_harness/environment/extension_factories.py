@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import cast
 
+from a13n_environment.models import EnvironmentError
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from a13n_harness._json import require_finite_json
-from a13n_harness.providers.environment.models import EnvironmentError
 
 from .extensions import EnvironmentRunExtension
 

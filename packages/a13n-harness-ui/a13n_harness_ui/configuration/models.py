@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
-from a13n_harness import RunConfiguration
-from a13n_harness.capabilities import ToolProxyConfig
-from a13n_harness.providers.environment.remote_envd.configuration import (
+from a13n_environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     RemoteEnvdStateData,
     WebSocketEnvdConnectionConfiguration,
 )
+from a13n_harness import RunConfiguration
+from a13n_harness.capabilities import ToolProxyConfig
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.tools.tool_proxy import validate_group
 from a13n_harness.toolsets.file_media import NativeInputMediaKind

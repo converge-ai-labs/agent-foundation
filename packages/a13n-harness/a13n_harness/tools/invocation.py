@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from a13n_environment.models import EnvironmentError
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import CallToolsNode, RunContext, ToolReturn
@@ -30,9 +31,8 @@ from a13n_harness._json import (
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import DefinitionError
+from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
@@ -653,7 +653,7 @@ async def _prepare_invocation(
     if metadata.resource_resolver is not None:
         try:
             resolved = await metadata.resource_resolver(deepcopy(typed_arguments), context=ctx.deps)
-        except EnvironmentError:
+        except (EnvironmentError, EnvironmentActivationError):
             raise
         except Exception as exc:
             logger.warning(

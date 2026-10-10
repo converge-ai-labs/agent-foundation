@@ -9,6 +9,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from a13n_environment.commands import CommandRequest, ShellCommand
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.local_envd.provider import LocalEnvdExecution
+from a13n_environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+)
+from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
@@ -21,13 +29,6 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
 from a13n_harness.environment import FILE_ACTIONS, EnvironmentError
-from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
-from a13n_harness.providers.environment.local_envd.runtime import (
-    LocalEnvdProviderRuntime,
-    TemporaryLocalEnvdRuntimeAllocator,
-)
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness_ui.app import AppState, HarnessUiIntegrations, open_harness_ui_app
 from a13n_harness_ui.composition import (
@@ -629,13 +630,13 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    prepared: list[LocalEnvdEnvironment] = []
+    prepared: list[LocalEnvdExecution] = []
 
-    async def prepare_local_envd(environment: LocalEnvdEnvironment, **scope: object) -> None:
+    async def prepare_local_envd(environment: LocalEnvdExecution, **scope: object) -> None:
         del scope
         prepared.append(environment)
 
-    monkeypatch.setattr(LocalEnvdEnvironment, "_prepare", prepare_local_envd)
+    monkeypatch.setattr(LocalEnvdExecution, "open", prepare_local_envd)
     root = _write_configuration(tmp_path)
     root.write_text(f"{root.read_text()}  environment_profile: {SANDBOX_PROFILE_ID}\n")
     agent = tmp_path / "agents" / "assistant.yaml"
@@ -686,7 +687,7 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
             "configuration",
             "thread-files",
         )
-        assert isinstance(plan.environments["workspace"], LocalEnvdEnvironment)
+        assert isinstance(plan.environments["workspace"], EnvironmentConnector)
         assert tuple(item.mount_path for item in plan._mounts) == (
             project_root,
             "/environment/builtin-skills",
@@ -695,12 +696,12 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
             (tmp_path / "state/threads" / published.value.thread_id).as_posix(),
         )
         local_envd = plan.environments["workspace"]
-        assert isinstance(local_envd, LocalEnvdEnvironment)
-        assert prepared == [local_envd, plan.environments["thread-files"]]
-        assert local_envd._configuration.working_directory == project_root
+        assert isinstance(local_envd, EnvironmentConnector)
+        assert prepared == []  # Host preparation constructs inert connectors.
+        assert local_envd.environment.working_directory == project_root
         assert plan._mounts[0].provider_root == project_root
-        assert local_envd._runtime is plan.environments["thread-files"]._runtime
-        finalization = await plan.finalize(timeout_seconds=1)
+        assert local_envd.runtime is plan.environments["thread-files"].runtime
+        finalization = plan.finalization
 
     assert finalization.cleanup_errors == ()
     assert len(finalization.state_publications) == 1
@@ -804,7 +805,7 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
                         )
                     )
                 assert traversal.value.code == "environment_request_invalid"
-        finalization = await plan.finalize(timeout_seconds=1)
+        finalization = plan.finalization
 
     assert finalization.cleanup_errors == ()
     assert len(finalization.state_publications) == 1
@@ -900,7 +901,7 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
                     "Not allowed",
                     mode="create",
                 )
-        finalization = await plan.finalize(timeout_seconds=1)
+        finalization = plan.finalization
 
     assert finalization.cleanup_errors == ()
     assert subagent.read_text() == "Edited subagent"
@@ -964,7 +965,7 @@ async def test_environment_run_service_adds_dedicated_skill_mounts(tmp_path: Pat
                 root.parent.resolve().as_posix(),
                 (tmp_path / "state/threads" / stored.thread_id).as_posix(),
             )
-        finalization = await plan.finalize(timeout_seconds=1)
+        finalization = plan.finalization
 
     assert finalization.cleanup_errors == ()
     assert len(finalization.state_publications) == 1
@@ -1045,7 +1046,7 @@ async def test_native_skills_reuse_a_project_mount_at_the_user_skill_root(
             expected_mount = next(item for item in environment.snapshot.mounts if item.name == expected_name)
             assert selected.path == "/"
             assert expected_mount.mount_path == user_skills.as_posix()
-        finalization = await plan.finalize(timeout_seconds=1)
+        finalization = plan.finalization
 
     assert finalization.cleanup_errors == ()
 

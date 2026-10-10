@@ -2,11 +2,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from a13n_environment.commands import CommandRequest, ShellCommand
+from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.capabilities import SkillsCapability
 from a13n_harness.environment import FILE_ACTIONS, EnvironmentError
-from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
 from a13n_harness_ui.configuration.setup import SetupSelection
@@ -111,53 +111,47 @@ async def test_scratch_cwd_and_selected_configuration_file_mount(tmp_path: Path,
         if not with_project:
             assert not any(".agents/skills" in root for root in skills.manager.roots)
         plan = await executor._environments.prepare(composition)
-        try:
-            assert plan.default_environment == ("workspace" if with_project else "thread-files")
-            assert ("workspace" in plan.environments) is with_project
-            config_mount = next(mount for mount in plan._mounts if mount.alias == "configuration")
-            assert config_mount.permission_ceiling.operations == FILE_ACTIONS
-            async with plan.runtime.bind(
-                thread_id=thread.thread_id,
-                run_id="run-projectless",
-                instance=AgentInstanceContext(
-                    identity=AgentIdentityRef(issuer="test", subject="projectless"), agent_instance_id="agent-test"
-                ),
-                host_refs={},
-            ) as environment:
-                scratch = tmp_path / "state/threads" / thread.thread_id / "tmp"
-                target = "note.txt" if not with_project else (scratch / "note.txt").as_posix()
-                await environment.files.write_text(target, "scratch", mode="create")
-                assert (scratch / "note.txt").read_text() == "scratch"
-                await environment.files.write_text(
-                    (path.parent / "AGENTS.md").as_posix(), "Global guidance", mode="create"
+        assert plan.default_environment == ("workspace" if with_project else "thread-files")
+        assert ("workspace" in plan.environments) is with_project
+        config_mount = next(mount for mount in plan._mounts if mount.alias == "configuration")
+        assert config_mount.permission_ceiling.operations == FILE_ACTIONS
+        async with plan.runtime.bind(
+            thread_id=thread.thread_id,
+            run_id="run-projectless",
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="projectless"), agent_instance_id="agent-test"
+            ),
+            host_refs={},
+        ) as environment:
+            scratch = tmp_path / "state/threads" / thread.thread_id / "tmp"
+            target = "note.txt" if not with_project else (scratch / "note.txt").as_posix()
+            await environment.files.write_text(target, "scratch", mode="create")
+            assert (scratch / "note.txt").read_text() == "scratch"
+            await environment.files.write_text((path.parent / "AGENTS.md").as_posix(), "Global guidance", mode="create")
+            with pytest.raises(EnvironmentError):
+                await environment.shell.exec_captured(
+                    CommandRequest(
+                        command=ShellCommand(profile_id="default", script="echo forbidden"),
+                        cwd=path.parent.as_posix(),
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                        ),
+                    )
                 )
-                with pytest.raises(EnvironmentError):
-                    await environment.shell.exec_captured(
-                        CommandRequest(
-                            command=ShellCommand(profile_id="default", script="echo forbidden"),
-                            cwd=path.parent.as_posix(),
-                            output_policy=EnvironmentOutputPolicy(
-                                max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
-                            ),
-                        )
+            if not with_project:
+                result = await environment.shell.exec_captured(
+                    CommandRequest(
+                        command=ShellCommand(
+                            profile_id="default", script="(Get-Location).Path" if sys.platform == "win32" else "pwd"
+                        ),
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                        ),
                     )
-                if not with_project:
-                    result = await environment.shell.exec_captured(
-                        CommandRequest(
-                            command=ShellCommand(
-                                profile_id="default", script="(Get-Location).Path" if sys.platform == "win32" else "pwd"
-                            ),
-                            output_policy=EnvironmentOutputPolicy(
-                                max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
-                            ),
-                        )
-                    )
-                    assert result.status.exit_code == 0
-                    assert result.output.stdout.inline is not None
-                    assert Path(result.output.stdout.inline.decode().strip()).resolve() == scratch.resolve()
-        finally:
-            finalized = await plan.finalize()
-            assert not finalized.cleanup_errors
+                )
+                assert result.status.exit_code == 0
+                assert result.output.stdout.inline is not None
+                assert Path(result.output.stdout.inline.decode().strip()).resolve() == scratch.resolve()
         await app.reload_configuration()
         assert (await app.current_configuration()).global_guidance[0].endswith("\n\nGlobal guidance")
         assert composition.root.global_guidance == ()
@@ -226,8 +220,8 @@ def test_projectless_migration_preserves_existing_threads(tmp_path: Path) -> Non
 async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_not_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
-    from a13n_harness.providers.environment.local_envd.runtime import (
+    from a13n_environment.local_envd.provider import LocalEnvdExecution
+    from a13n_environment.local_envd.runtime import (
         LocalEnvdProviderRuntime,
         TemporaryLocalEnvdRuntimeAllocator,
     )
@@ -282,9 +276,11 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
             raise RuntimeError("Sandbox unavailable")
 
         monkeypatch.setattr(executor._environments._reconstructor, "sandbox_runtime", runtime)
-        monkeypatch.setattr(LocalEnvdEnvironment, "_prepare", unavailable)
+        monkeypatch.setattr(LocalEnvdExecution, "open", unavailable)
+        plan = await executor._environments.prepare(composition)
+        assert prepared == []
         with pytest.raises(RuntimeError, match="Sandbox unavailable"):
-            await executor._environments.prepare(composition)
+            await plan.environments["thread-files"].open()
         assert prepared == [tmp_path / "state/threads" / thread.thread_id]
 
 

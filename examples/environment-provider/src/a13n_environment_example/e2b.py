@@ -4,66 +4,50 @@ import asyncio
 import os
 import secrets
 
-from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
-from pydantic import SecretStr
+from a13n_environment.commands import CommandRequest, ShellCommand
+from a13n_environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_environment.e2b.provider import E2B
+from a13n_environment.retention import EnvironmentOutputPolicy
 
 
 async def main() -> None:
     configuration = E2BEnvironmentConfiguration()
-    runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["E2B_API_KEY"]))
-    identity = "environment-example-" + secrets.token_hex(8)
-    environment = E2BEnvironment(configuration, environment_id=identity, state=None, runtime=runtime)
-    try:
-        await environment.prepare()
-        files = environment.operations.files
-        assert files is not None
-        await files.write_text("/example.txt", "Hello from native E2B\n", mode="create")
-        print((await files.read_text("/example.txt")).text, end="")
-        print(f"provider: {environment.provider_key}")
-        processes = environment.operations.processes
-        assert processes is not None
-        started = await processes.start(
-            CommandRequest(
-                command=ShellCommand(profile_id="default", script="sleep 60"),
-                output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=4096,
-                    max_output_bytes=65536,
-                    overflow="truncate",
-                ),
-            )
-        )
-        native_identity = started.process.handle.identity
-        await environment.close()  # Disconnect observation, not the native command.
-        recovered = E2BEnvironment(
-            configuration,
-            environment_id=identity,
-            state=environment.dump_state(),
-            runtime=runtime,
-        )
+    identity = "env-example-" + secrets.token_hex(8)
+    async with await E2B.open_provider(credential={"api_key": os.environ["E2B_API_KEY"]}) as provider:
+        state = await provider.create(configuration, environment_id=identity, operation_id="op-create")
+        connector = provider.execution_connector(configuration, environment_id=identity, state=state)
         try:
-            await recovered.prepare()
-            processes = recovered.operations.processes
-            assert processes is not None
-            listing = await processes.list(limit=50)
-            process = next((item for item in listing.processes if item.handle.identity == native_identity), None)
-            if process is not None:
-                print(f"recovered native command: {process.status.phase}")
-                await processes.kill(process.handle)  # Termination is explicit.
-            else:
-                print("Native command no longer discoverable; not restarting it.")
+            async with await connector.open() as environment:
+                files = environment.operations.files
+                assert files is not None
+                await files.write_text("/example.txt", "Hello from native E2B\n", mode="create")
+                print((await files.read_text("/example.txt")).text, end="")
+                print(f"provider: {environment.provider_key}")
+                processes = environment.operations.processes
+                assert processes is not None
+                started = await processes.start(
+                    CommandRequest(
+                        command=ShellCommand(profile_id="default", script="sleep 60"),
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096,
+                            max_output_bytes=65536,
+                            overflow="truncate",
+                        ),
+                    )
+                )
+                native_identity = started.process.handle.identity
+            async with await connector.open() as recovered:
+                processes = recovered.operations.processes
+                assert processes is not None
+                listing = await processes.list(limit=50)
+                process = next((item for item in listing.processes if item.handle.identity == native_identity), None)
+                if process is not None:
+                    print(f"recovered native command: {process.status.phase}")
+                    await processes.kill(process.handle)
+                else:
+                    print("Native command no longer discoverable; not restarting it.")
         finally:
-            await recovered.close()
-    finally:
-        try:
-            await environment.close()
-        finally:
-            cleanup = E2BEnvironment(
-                configuration, environment_id=identity, state=environment.dump_state(), runtime=runtime
-            )
-            await cleanup.destroy()
+            await provider.destroy(configuration, environment_id=identity, state=state, operation_id="op-delete")
 
 
 if __name__ == "__main__":

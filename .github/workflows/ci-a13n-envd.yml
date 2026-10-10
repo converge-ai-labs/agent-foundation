@@ -14,10 +14,11 @@ on:
       - "crates/a13n-envd/**"
       - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
-      - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
-      - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
-      - "packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**"
-      - "packages/a13n-harness/tests/providers_environment/test_*envd*.py"
+      - "packages/a13n-environment/a13n_environment/eip/**"
+      - "packages/a13n-environment/a13n_environment/local_envd/**"
+      - "packages/a13n-environment/a13n_environment/remote_envd/**"
+      - "packages/a13n-environment/tests/test_*envd*.py"
+      - "packages/a13n-harness/tests/providers_environment/test_envd_error_boundaries.py"
       - "packages/a13n-service/a13n_service/providers/envd.py"
       - "packages/a13n-service/a13n_service/providers/endpoints.py"
       - "packages/a13n-service/a13n_service/infra/crypto.py"
@@ -48,10 +49,11 @@ on:
       - "crates/a13n-envd/**"
       - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
-      - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
-      - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
-      - "packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**"
-      - "packages/a13n-harness/tests/providers_environment/test_*envd*.py"
+      - "packages/a13n-environment/a13n_environment/eip/**"
+      - "packages/a13n-environment/a13n_environment/local_envd/**"
+      - "packages/a13n-environment/a13n_environment/remote_envd/**"
+      - "packages/a13n-environment/tests/test_*envd*.py"
+      - "packages/a13n-harness/tests/providers_environment/test_envd_error_boundaries.py"
       - "packages/a13n-service/a13n_service/providers/envd.py"
       - "packages/a13n-service/a13n_service/providers/endpoints.py"
       - "packages/a13n-service/a13n_service/infra/crypto.py"
@@ -141,10 +143,11 @@ jobs:
               - 'Cargo.lock'
               - 'crates/a13n-envd/**'
               - 'packages/a13n-envd-client/**'
-              - 'packages/a13n-harness/a13n_harness/providers/environment/eip/**'
-              - 'packages/a13n-harness/a13n_harness/providers/environment/local_envd/**'
-              - 'packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**'
-              - 'packages/a13n-harness/tests/providers_environment/test_*envd*.py'
+              - 'packages/a13n-environment/a13n_environment/eip/**'
+              - 'packages/a13n-environment/a13n_environment/local_envd/**'
+              - 'packages/a13n-environment/a13n_environment/remote_envd/**'
+              - 'packages/a13n-environment/tests/test_*envd*.py'
+              - 'packages/a13n-harness/tests/providers_environment/test_envd_error_boundaries.py'
               - 'packages/a13n-service/a13n_service/providers/envd.py'
               - 'packages/a13n-service/a13n_service/providers/endpoints.py'
               - 'packages/a13n-service/a13n_service/infra/crypto.py'

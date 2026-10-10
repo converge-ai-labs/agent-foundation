@@ -18,24 +18,23 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
+from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_environment.commands import ArgvCommand, CommandRequest
+from a13n_environment.retention import EnvironmentOutputPolicy
 
 
 async def main() -> None:
     (direct_local,) = select_builtin_environment_providers(("direct_local",))
     with TemporaryDirectory(prefix="a13n-command-") as temporary:
         executable = str(Path(sys.executable).resolve())
-        environment = await direct_local.create(
+        connector = direct_local.execution_connector(
             {
                 "root": {"path": str(Path(temporary).resolve())},
                 "allowed_executables": [executable],
             },
             environment_id="command-example",
         )
-        async with environment:
-            await environment.ensure_ready(frozenset({"shell"}))
+        async with await connector.open() as environment:
             shell = environment.operations.shell
             if shell is None:
                 raise RuntimeError("Shell operations are unavailable")
@@ -82,7 +81,7 @@ Requested limits must be positive and finite where applicable. Unsupported limit
 
 ## Start, inspect, wait, and release
 
-After `ensure_ready({"processes"})`, obtain the optional `processes` facet. Its methods are:
+After connector `open()` returns a ready execution, obtain its optional `processes` facet. Its methods are:
 
 | Method                                               | Behavior                                                                                 |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -114,6 +113,6 @@ When full output matters beyond an observation budget, write an application log 
 
 ## Ports and lifecycle
 
-The optional `ports` facet supports `inspect(PortTarget(...))` and `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`. `PortTarget` carries optional alias, address selection (`loopback` by default or `any`), and port 1–65,535. This is observation, not a public ingress/tunnel service or permission to expose a port.
+The optional `ports` facet supports `inspect(PortTarget(...))` and `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`. `PortTarget` carries address selection (`loopback` by default or `any`), and port 1–65,535. This is observation, not a public ingress/tunnel service or permission to expose a port.
 
 Provider configuration and actual descriptors determine support. Keep [lifecycle recovery](lifecycle.md) separate from command replay, and close a fresh adapter after each independent scope. Close releases local resources; it does not imply retained target destruction.

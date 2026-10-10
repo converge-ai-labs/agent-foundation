@@ -7,9 +7,9 @@ the operator chose.
 
 from urllib.parse import urlsplit
 
+from a13n_environment.docker.provider import DockerConnectionConfiguration
+from a13n_environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
-from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
-from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from pydantic import BaseModel
 
 # A remote Docker engine's scheme, and the one its API is spoken over.

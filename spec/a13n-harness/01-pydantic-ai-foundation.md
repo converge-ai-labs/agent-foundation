@@ -37,7 +37,7 @@ The Harness adds:
 - SDK-first provider-compatible Model OAuth values, Host credential sources, refresh lifecycle, and native Model constructors through [`a13n_harness.providers.model.oauth`](16a-model-authentication.md);
 - trusted code-first plugins around the outer semantic-input-to-result boundary;
 - fresh `RunBindings` and one `AgentContext` per logical run;
-- fresh Environment adapters entered before input and Pydantic work, exposed through one stable Run-local bound facade;
+- Environment mounts registered before input and Pydantic work, with executions opened on first dependent use through one stable Run-local facade;
 - portable messages, Capability state, and optional portable Environment state in `HarnessState`;
 - normalized process-local events and result combinations;
 - optional independently selected [Harness Observation](19-observation-model.md) traces and metrics around native Pydantic instrumentation;
@@ -113,7 +113,7 @@ The same context is supplied to every `ModelAttempt` inside one logical Harness 
 
 ## Run Flow
 
-01. Enter the fresh Environment adapters and atomically publish the initial mount set before input production.
+01. Register the selected Environment sources and atomically publish the initial mount set before input production; dependent use invokes Host readiness and opens an execution.
 02. Validate imported portable Environment data as observation only; do not restore it into adapters.
 03. Invoke an optional input factory once and normalize input.
 04. Create `AgentContext` from fresh bindings and copied Capability state.

@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
 from a13n_harness import (
     HarnessBuilder,
     HarnessRunResultEvent,
@@ -44,25 +49,18 @@ from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     create_environment_runtime,
 )
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
-)
 from a13n_harness.model_context import user_prompt_content
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-)
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = pytest.mark.anyio
 
@@ -126,7 +124,7 @@ class _WebScrapeProvider:
 
 
 def _environment(root: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
             shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path(sys.executable).resolve()),),
@@ -136,8 +134,8 @@ def _environment(root: Path):
     )
     return create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
+            "local": EnvironmentMount(
+                source=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory="/",
             )

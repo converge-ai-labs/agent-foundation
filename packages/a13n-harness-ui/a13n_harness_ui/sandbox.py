@@ -10,19 +10,19 @@ import tempfile
 from pathlib import Path
 
 from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox, SandboxGrant
-from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-from a13n_harness.providers.environment.envd_policy import EnvdNetworkConfiguration
-from a13n_harness.providers.environment.local_envd.configuration import (
+from a13n_environment.commands import CommandRequest, ShellCommand
+from a13n_environment.envd_policy import EnvdNetworkConfiguration
+from a13n_environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
     LocalEnvdShellProfile,
 )
-from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
-from a13n_harness.providers.environment.local_envd.runtime import (
+from a13n_environment.local_envd.provider import LOCAL_ENVD
+from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
+from a13n_environment.retention import EnvironmentOutputPolicy
 from anyio import CancelScope, to_thread
 
 from a13n_harness_ui.errors import EnvironmentLifecycleError
@@ -105,18 +105,19 @@ async def validate_sandbox_runtime(
                 executable, roots=(project_path,), protected_roots=protected_roots, thread_files_root=owned_probe_root
             )
         )
-        environment = LocalEnvdEnvironment(
+        connector = LOCAL_ENVD.execution_connector(
             LocalEnvdEnvironmentConfiguration(working_directory=project_path.resolve().as_posix()),
-            runtime,
+            runtime=runtime,
             environment_id="sandbox-probe",
         )
+        environment = None
         server = await asyncio.start_server(lambda reader, writer: writer.close(), "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
         try:
-            await environment.prepare()
+            environment = await connector.open()
             files, processes = environment.operations.files, environment.operations.processes
             assert files is not None and processes is not None
-            from a13n_harness.providers.environment.models import EnvironmentError
+            from a13n_environment.models import EnvironmentError
 
             try:
                 await files.read_text(sentinel.as_posix())
@@ -147,7 +148,8 @@ async def validate_sandbox_runtime(
                 server.close()
                 await server.wait_closed()
                 try:
-                    await environment.close()
+                    if environment is not None:
+                        await environment.close()
                 finally:
                     await runtime.close()
 

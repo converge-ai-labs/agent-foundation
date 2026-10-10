@@ -1599,6 +1599,7 @@
   "A thread can mount at most {{limit}} environments. Remove one before adding another.": "一个对话最多可挂载 {{limit}} 个环境。请先移除一个，再添加新的环境。",
   "This workspace has reached its limit of {{limit}} managed environments. Delete one it no longer needs, then try again.": "此工作区的托管环境已达上限（{{limit}} 个）。请删除一个不再需要的环境后重试。",
   "This request was already sent with different content. Send it again as a new request.": "此请求已以不同的内容发送过。请作为新请求重新发送。",
+  "state.reserved": "待使用",
   "state.creating": "创建中",
   "state.starting": "启动中",
   "state.withdrawn": "已撤回",

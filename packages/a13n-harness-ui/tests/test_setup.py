@@ -445,7 +445,7 @@ async def test_native_preflight_never_resolves_envd(tmp_path: Path) -> None:
 async def test_sandbox_preflight_uses_production_denied_network_and_does_not_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from a13n_harness.providers.environment.models import EnvironmentError
+    from a13n_environment.models import EnvironmentError
     from a13n_harness_ui import setup
 
     observed = []
@@ -880,13 +880,13 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
     from dataclasses import replace
     from unittest.mock import Mock
 
-    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+    from a13n_environment.local_envd.provider import LOCAL_ENVD
     from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
     from a13n_harness_ui.extensions import environment_adapters as adapters
 
     create = Mock()
     # Definitions are immutable: observe construction through a replaced definition.
-    provider = replace(LOCAL_ENVD, construct=create)
+    provider = replace(LOCAL_ENVD, connector_factory=create)
     profile = ResolvedEnvironmentProfile(
         profile_id="environment-sandbox",
         behavior_digest="a" * 64,
@@ -896,7 +896,7 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
     await adapters.LocalEnvdProjectAdapter().bind(
         profile=profile, root=tmp_path, state=None, provider=provider, runtime=None
     )
-    configuration = create.call_args.kwargs["configuration"]
+    configuration = create.call_args.kwargs["environment"]
     assert configuration.working_directory == tmp_path.as_posix()
     assert configuration.egress is None and configuration.expected_boundary is None
     assert set(configuration.model_dump()) == {"working_directory", "required_methods", "egress", "expected_boundary"}

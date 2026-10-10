@@ -8,6 +8,11 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_environment.direct_local.files import LocalFileOperator
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -34,20 +39,13 @@ from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     EnvironmentRuntime,
     create_environment_runtime,
 )
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
-)
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
@@ -63,8 +61,8 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Tool
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 from .environment_helpers import (
-    DirectLocalEnvironmentProviderBinding,
     DirectLocalFilePolicy,
+    DirectLocalSource,
 )
 
 pytestmark = pytest.mark.anyio
@@ -75,7 +73,7 @@ def scan_files(tmp_path: Path) -> LocalFileOperator:
     return LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="skill-scan",
+        execution_id="skill-scan",
         generation="test",
     )
 
@@ -148,7 +146,7 @@ class _MountChangingSource:
         inner: FileSkillSource,
         runtime: EnvironmentRuntime,
         name: str,
-        replacement: EnvironmentRuntimeMount,
+        replacement: EnvironmentMount,
     ) -> None:
         self._inner = inner
         self._runtime = runtime
@@ -184,9 +182,9 @@ class _Materializer:
         )
 
 
-def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> EnvironmentRuntimeMount:
-    return EnvironmentRuntimeMount(
-        binding=DirectLocalEnvironmentProviderBinding(
+def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> EnvironmentMount:
+    return EnvironmentMount(
+        source=DirectLocalSource(
             DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=root),
             ),
@@ -397,7 +395,7 @@ async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> 
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="cli-files",
+        execution_id="cli-files",
         generation="generation-1",
     )
     manager = SkillManager((FileSkillSource("local", ("/.agents/skills",)),))
@@ -1561,7 +1559,7 @@ async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="plugin-test",
+        execution_id="plugin-test",
         generation="generation-1",
     )
     tolerant = FileSkillSource("plugin", ("/skills",), skip_invalid=True)

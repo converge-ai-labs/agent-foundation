@@ -389,7 +389,7 @@ async def test_unavailable_project_is_local_to_selected_run_and_history_survives
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
         assert "workspace" in plan.environments
-        assert not (await plan.finalize()).cleanup_errors
+        assert not (plan.finalization).cleanup_errors
         (tmp_path / "workspace").rmdir()
         assert await app.current_configuration() == source
         with pytest.raises(EnvironmentLifecycleError) as failure:

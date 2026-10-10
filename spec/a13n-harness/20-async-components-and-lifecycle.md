@@ -56,7 +56,7 @@ Async admission is one complete Host boundary:
 
 An operator exception before its documented acceptance boundary is rejection. If a backend can accept work but lose the response, the Host preserves enough idempotency or correlation to reconcile that outcome and may use the supplied tool-call correlation. Harness does not assign an idempotency identity, automatically retry non-idempotent delegate or resume operations, or keep a compensating parent projection.
 
-The Host independently selects child Environment association, loads current Host state, constructs fresh adapters and `RunBindings`, invokes Harness, stores observations, acknowledges checkpoints, and publishes Environment state. Accepted work never borrows the parent Run's entered Environment, mutable state coordinator, live context, credential, or callback.
+The Host independently selects child Environment association, loads current Host state, supplies Host Environment sources and fresh `RunBindings`, invokes Harness, stores observations, acknowledges checkpoints, and publishes Environment state. Accepted work never borrows the parent Run's entered Environment, mutable state coordinator, live context, credential, or callback.
 
 Info and wait query current Host authority. Steering and cancellation return Host acknowledgements rather than invented completion. Resume resolves retained execution through the Host, requires resumability and the same stable roster name in the current parent collection, and then requests one linked continuation from the operator. The Host owns checkpoint-schema compatibility, current child authorization, and any separately authorized retained child-definition selection; Harness does not require equality with either the definition that produced the checkpoint or the current roster definition.
 
@@ -110,7 +110,7 @@ sequenceDiagram
     Operator-->>Tools: accepted execution view
     Tools-->>Parent: execution ID
     Threads->>Envs: load association and current state
-    Threads->>Child: run with fresh adapters and bindings
+    Threads->>Child: run with EnvironmentConnector objects and fresh bindings
     Child-->>Threads: observations and checkpoint candidate
     Threads->>Envs: publish final adapter states
     Parent->>Tools: info or wait

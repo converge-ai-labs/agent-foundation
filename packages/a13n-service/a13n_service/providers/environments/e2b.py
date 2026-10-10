@@ -9,13 +9,15 @@ A renewal extends a sandbox by at most its recipe's timeout, so the timeout is a
 
 from dataclasses import replace
 
-from a13n_harness.providers.environment.e2b.configuration import (
+from a13n_environment.e2b.configuration import (
     E2BConnectionConfiguration,
     E2BCredential,
     E2BEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.e2b.provider import E2B as HARNESS_E2B
-from a13n_harness.providers.environment.management import EnvironmentProviderConfiguration
+from a13n_environment.e2b.provider import E2B as BASE_E2B
+from a13n_environment.e2b.provider import E2BProviderRuntime
+from a13n_environment.management import EnvironmentProviderConfiguration
+from a13n_environment.models import EnvironmentState
 from pydantic import BaseModel, Field
 
 from a13n_service.settings import RENEWAL_HORIZON_SECONDS
@@ -27,16 +29,34 @@ class CloudRecipe(E2BEnvironmentConfiguration):
     timeout_seconds: int = Field(default=3600, ge=RENEWAL_HORIZON_SECONDS, le=86_400, title="Sandbox timeout (seconds)")
 
 
-async def _cloud_runtime(*, configuration: BaseModel, credential: E2BCredential | None) -> object:
-    del configuration
-    assert HARNESS_E2B.runtime_factory is not None
-    return await HARNESS_E2B.runtime_factory(configuration=_CLOUD, credential=credential)
+async def _provider(*, configuration: BaseModel, credential: E2BCredential | None, runtime: E2BProviderRuntime | None):
+    return await BASE_E2B.open_provider(configuration=_CLOUD, credential=credential, runtime=runtime)
+
+
+def _connector(
+    *,
+    configuration: BaseModel,
+    credential: E2BCredential | None,
+    environment: E2BEnvironmentConfiguration,
+    environment_id: str,
+    state: EnvironmentState | None,
+    runtime: E2BProviderRuntime | None,
+):
+    return BASE_E2B.execution_connector(
+        environment,
+        configuration=_CLOUD,
+        credential=credential,
+        environment_id=environment_id,
+        state=state,
+        runtime=runtime,
+    )
 
 
 E2B = replace(
-    HARNESS_E2B,
+    BASE_E2B,
     configuration_model=EnvironmentProviderConfiguration,
     environment_model=CloudRecipe,
-    runtime_factory=_cloud_runtime,
-    backend_identity=lambda configuration: HARNESS_E2B.backend_identity(_CLOUD),
+    provider_factory=_provider,
+    connector_factory=_connector,
+    backend_identity=lambda configuration: BASE_E2B.backend_identity(_CLOUD),
 )

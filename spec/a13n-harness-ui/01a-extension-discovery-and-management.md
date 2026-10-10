@@ -88,7 +88,7 @@ Plugin order is the selection order stored by the Agent or Thread. There is no r
 
 Environment extension packages export a `ProviderManifest` under `a13n_harness.providers.plugins`. Harness UI selects them through `load_provider_plugins()` and does not reimplement entry-point loading.
 
-An Environment profile selects one installed Provider and one approved Host adapter configuration. It is not the Provider implementation and is distinct from the runtime `Environment.environment_id`.
+An Environment profile selects one installed Provider and one approved Host adapter configuration. It is not the Provider implementation and is distinct from the provider target identity.
 
 Harness UI owns two fixed profiles that require no YAML resource:
 
@@ -112,7 +112,7 @@ adapter_key: a13n.docker-project-roots
 adapter_configuration: {}
 ```
 
-`provider_configuration` contains desired Provider behavior independent of a particular Project root. The Harness UI Host adapter validates that template, resolves runtime collaborators, and binds each captured local root into one fresh Provider configuration and `Environment` adapter. The adapter also declares whether its aggregate path presentation preserves canonical Host paths. An adapter that does not explicitly preserve them receives the provider-neutral virtual layout.
+`provider_configuration` contains desired Provider behavior independent of a particular Project root. The Harness UI Host adapter validates that template, resolves runtime collaborators, and binds each captured local root into validated Provider configuration and a fixed-target `EnvironmentConnector`. The adapter also declares whether its aggregate path presentation preserves canonical Host paths. An adapter that does not explicitly preserve them receives the provider-neutral virtual layout.
 
 Provider discovery alone can prove installation but cannot prove that Harness UI knows how to map local Project roots or construct Docker, E2B, credential, transport, or bootstrap collaborators. A discovered Provider without an approved Host adapter is reported as installed but not configurable. Full Control, Sandbox, and other Harness UI-supported Providers use release-owned adapters. Explicit embedding integrations can add exact approved adapters without placing Python import targets in YAML.
 
@@ -137,12 +137,12 @@ The upstream factory creates a fresh pre-entry-inert extension and validates the
 
 ## Selection Ownership
 
-| Kind                      | Configured by                        | Selected by                                 | Fresh runtime scope                            |
-| ------------------------- | ------------------------------------ | ------------------------------------------- | ---------------------------------------------- |
-| Capability                | Agent capability specification       | Agent                                       | Native Agent/Run according to Capability hooks |
-| Harness Plugin            | Extension YAML                       | Agent default or root/child Thread override | Each resolved Agent definition                 |
-| Environment profile       | Harness UI release or Extension YAML | Thread                                      | Fresh Provider and adapter per Project root    |
-| Environment Run Extension | Extension YAML                       | Thread                                      | Complete Environment aggregate for each Run    |
+| Kind                      | Configured by                        | Selected by                                 | Fresh runtime scope                               |
+| ------------------------- | ------------------------------------ | ------------------------------------------- | ------------------------------------------------- |
+| Capability                | Agent capability specification       | Agent                                       | Native Agent/Run according to Capability hooks    |
+| Harness Plugin            | Extension YAML                       | Agent default or root/child Thread override | Each resolved Agent definition                    |
+| Environment profile       | Harness UI release or Extension YAML | Thread                                      | Authorized Environment connector per Project root |
+| Environment Run Extension | Extension YAML                       | Thread                                      | Complete Environment aggregate for each Run       |
 
 An Agent can select Capabilities, Harness Plugins, MCP servers, and tool visibility. A root Thread can replace the Agent's Harness Plugin and MCP defaults. A child Thread retains its selected Agent-resource or Markdown-subagent source and initializes Host selections under the rules in [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration), then owns its sticky selections.
 
@@ -193,6 +193,6 @@ This value explains what the admitted Run used. Model routes, authentication kin
 05. Availability, configured resource identity, and Thread/Agent selection are separate facts.
 06. Toolsets are configured through their owning Capabilities rather than a parallel discovery plane.
 07. Every independent Run receives fresh extension instances.
-08. An Environment profile is Host configuration, not a runtime `Environment` identity.
+08. An Environment profile is Host configuration, not a runtime target identity.
 09. Full Control and Sandbox are fixed release-owned profiles whose IDs cannot be shadowed by configuration resources.
 10. A Provider without a Host Project-root adapter is not executable merely because it is installed.

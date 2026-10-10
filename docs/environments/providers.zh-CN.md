@@ -14,7 +14,7 @@ description: 注册 provider 插件，并配置每个内置 provider 的运行�
 
 ```python
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_environment.builtins import select_builtin_environment_providers
 from a13n_harness.providers.plugins import load_provider_plugins
 
 plugins = load_provider_plugins(("acme",))
@@ -41,18 +41,18 @@ acme = "acme_agent_environment:manifest"
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
 ```
 
 `EnvironmentProviderDefinition` 应当：
 
-1. 声明匹配 `^[a-z][a-z0-9_]{0,63}$` 的稳定 `type`、`display_name`，以及可选 HTTPS `setup_url` 和 `setup_label`；
-2. 声明用于账号输入的 `configuration_model`、可选 `credential_model`，以及用于期望目标配置的 `environment_model`；
-3. 在 `runtime_factory(configuration=..., credential=...)` 中获取共享协作对象，或将操作连接和会话延迟到准备阶段；绝不能在导入或验证时进行 I/O；
-4. 从 `construct(configuration=recipe, environment_id=..., state=..., runtime=..., operation_id=..., allow_create=...)` 返回一个尚未操作目标的新 `Environment`；逐适配器创建策略和操作身份不能放入可复用运行时，`describe_environment()` 应无需目标 I/O 就能反映配置能力；
-5. 修改前验证提供的状态，每次目标身份转换都更新缓存状态；
-6. 进入后提供与 provider 无关的 `EnvironmentOperations`；
-7. 如实声明 `supports_managed`、`supports_stop`、`supports_destroy` 和 `requires_keepalive`，保持 `close()` 不销毁目标，只有显式 `destroy()` 才移除目标。
+1. 声明稳定的 `type`、显示名称和可选 HTTPS 设置链接；
+2. 分别声明账号配置、凭据和目标配置模型；
+3. 通过 `provider_factory` 返回账号级 `EnvironmentProvider`，显式执行管理操作；
+4. 通过纯 `connector_factory` 返回固定目标的 `EnvironmentConnector`；
+5. 每次 `open()` 返回新的已就绪 `EnvironmentExecution`，包含独立的 `execution_id` 和操作对象；
+6. 验证目标引用，在管理失败或取消时保留已知引用；执行期间不修改它；
+7. 如实声明管理能力。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
 
 可运行的 [provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)展示单个已安装 manifest 使用相同的目录、验证、构建和 Harness 路径。共享编写契约见[插件与扩展](../a13n-harness/plugins.md#provider-plugins)。
 
@@ -89,7 +89,7 @@ Direct Local 共享 Host 账号。Docker 使用原生 Engine 操作；六个云 
 Host 选择一个兼容的 `a13n-envd` 可执行文件和私有运行时分配器：
 
 ```python
-from a13n_harness.providers.environment.local_envd.runtime import (
+from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
@@ -111,7 +111,7 @@ Docker 使用 Host 进程的 Engine 连接。无需启动存储、客体守护�
 
 ```python
 import docker
-from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 
 engine = DockerSDKEngine(docker.from_env())
 runtime = DockerProviderRuntime(engine=engine)
@@ -144,7 +144,7 @@ Daytona、Modal、Vercel、Sprites 和 Runloop 目标配置接受 `root`、`pyth
 
 ### 重连与生命周期
 
-在 Host 存储中保存最新 `EnvironmentState`，提供给每个新适配器。每个新适配器消费该状态。关闭适配器只释放本地传输。托管分配使用稳定所有权元数据或原生名称；确认丢失后可按冻结配置重建。超时、权限失败和未知响应绝不等于目标不存在。重建改变底层身份，不恢复丢失文件。
+Host 保存最新 `EnvironmentState` 并将其交给固定目标连接配置。关闭执行只释放自己的资源。已知目标丢失时不会自动重建；管理端必须明确决定后续操作。超时、权限失败和未知响应都不等于目标不存在。
 
 | Provider       | 显式停止/恢复                           | 内存             | 过期与保留                                                                                               |
 | -------------- | --------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
@@ -155,7 +155,7 @@ Daytona、Modal、Vercel、Sprites 和 Runloop 目标配置接受 `root`、`pyth
 | Fly.io Sprites | 无显式停止 API；空闲时休眠，exec 时唤醒 | 不承诺保留       | 持久文件系统在原生自动休眠后保留。该 provider 不支持 `stop()`，因此不要调度显式停止；销毁是独立操作。    |
 | Runloop        | 原生挂起/恢复保留磁盘                   | 不保留           | 空闲策略挂起 Devbox。保活确认新的空闲间隔，不能启动已挂起目标。                                          |
 
-停止绝不会实现为无保护删除。Modal 内部快照属于 provider 状态，不是面向用户的快照资源。删除要求匹配原生所有权标签。以 `allow_create=False` 构建的 Modal 适配器（外部注册）不能使用基于快照的停止/恢复，因为恢复会分配另一个原生沙箱。所有外部注册都要求 provider 状态，绝不隐式分配。Daytona、Modal、Vercel、Sprites 和 Runloop 也拒绝适配器销毁外部管理的目标。
+Modal 的停止会先保存文件系统快照，显式 `start()` 才从该快照恢复目标，并返回恢复后的引用。`open()` 不执行恢复或快照清理。快照删除需要匹配原生所有权标签。外部注册只提供连接配置；销毁权限属于独立管理端，不能从状态引用推导。
 
 创建被中断时，通过原生名称或所有权元数据核对。已分派但结果未知的命令不重放。Daytona、Modal、Vercel、Sprites 和 Runloop 的每个前台命令都有有限客体期限；传输丢失或取消不能证明命令立即停止。取消关闭本地传输资源；客体命令 runner 限制前台命令并终止其进程组。这不是沙箱级进程隔离：故意分离到新会话的后代需要原生目标生命周期清理。超时输出不完整，不会虚构生产方总量。Modal SDK 用稳定 exec ID 重试原生命令，用稳定快照请求 ID 重试文件系统快照。
 
@@ -163,22 +163,25 @@ Daytona、Modal、Vercel、Sprites 和 Runloop 目标配置接受 `root`、`pyth
 
 E2B 通过原生异步 SDK 直接执行命令。有界 Python helper 只实现文件和端口检查。默认 `base` 模板无需安装 `a13n-envd`、上传可执行文件或构建自定义模板。自定义模板需要 Linux、Python 3.11+、Bash，以及配置的账号/根目录；git-ignore 查询还需要 Git。
 
+此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
+
 ```python
 import os
 
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_environment.builtins import select_builtin_environment_providers
 
 (E2B,) = select_builtin_environment_providers(("e2b",))
-environment = await E2B.create(
-    {"template": "base", "timeout_seconds": 300},
-    configuration={"domain": "e2b.dev"},
-    credential={"api_key": os.environ["E2B_API_KEY"]},
-    environment_id="environment-example",
-    state=None,
-)
+recipe = {"template": "base", "timeout_seconds": 300}
+async with await E2B.open_provider(
+    configuration={"domain": "e2b.dev"}, credential={"api_key": os.environ["E2B_API_KEY"]}
+) as provider:
+    state = await provider.create(recipe, environment_id="env-example", operation_id="op-create")
+    await state_store.publish(environment_key, state)
+    connector = provider.execution_connector(recipe, environment_id="env-example", state=state)
+result = await executable.run("Inspect the sandbox", environment=PreparedSource(connector))
 ```
 
-照常将该环境传给 Harness。在 Host 上持久保存 `environment.dump_state()`，重新进入时提供给新适配器。`close()` 保留沙箱和用户文件，断开自身输出观测，不终止命令。`stop()`（暂停）、`prepare()`（恢复）和 `destroy()`（终止）都使用新适配器。保活报告实际过期时间，绝不恢复暂停沙箱。库不读取 `.env`；Host 将 domain 作为 provider 配置、`api_key` 作为凭据传入。
+`close()` 保留沙箱和用户文件，断开当前执行的输出观测，不终止命令。管理端显式调用 `stop()`、`start()`、`keepalive()` 和 `destroy()`。打开执行通过只读查询连接已运行目标，不续期或恢复；不接受会自动恢复的 E2B 目标。库不读取 `.env`，凭据由 Host 提供。
 
 新适配器可通过原生进程发现查找同一沙箱中仍运行的命令。这是尽力发现：沙箱 ID 不能证明某个进程存活，缺失命令绝不会自动重启。SDK 原生列表不分页；返回投影有界，但上游清单无界。
 
@@ -236,27 +239,19 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 使用与 Service 相同的目录和带类型的运行时构建：
 
 ```python
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_environment.builtins import select_builtin_environment_providers
 
 (DAYTONA,) = select_builtin_environment_providers(("daytona",))
-environment = await DAYTONA.create(
-    {},
-    configuration={"organization_id": "your-organization"},
-    # Read this value from your Host's private credential storage.
-    credential={"api_key": api_key},
-    environment_id="env-workspace",
-    state=saved_state,
+connector = DAYTONA.execution_connector(
+    {}, configuration={"organization_id": "your-organization"},
+    credential={"api_key": api_key}, environment_id="env-workspace", state=saved_state,
 )
-try:
-    await environment.prepare()
-finally:
-    try:
-        saved_state = environment.dump_state()
-    finally:
-        await environment.close()
+async with await connector.open() as execution:
+    assert execution.operations.files is not None
+    listing = await execution.operations.files.list("/", max_results=20)
 ```
 
-`create()` 先验证目标配置，再验证账号配置和凭据规则，随后才调用 provider 运行时工厂。工厂前的全部步骤无副作用。你传入的运行时仍由你关闭；`create()` 获取的运行时随适配器关闭。
+`execution_connector()` 验证输入但不获取客户端。`open()` 为每个执行获取独立客户端。借用的运行时由 Host 关闭；管理客户端和执行客户端分别拥有独立的生命周期。
 
 ### 云端验证
 
@@ -264,7 +259,7 @@ finally:
 
 ```sh
 A13N_TEST_CLOUD_PROVIDERS=daytona make test \
-  PYTHON_TEST_DIRS=packages/a13n-harness/tests/providers_environment/test_cloud_live.py
+  PYTHON_TEST_DIRS=packages/a13n-environment/tests/test_cloud_live.py
 ```
 
 通过私有测试环境提供 `A13N_TEST_DAYTONA_BACKEND_JSON` 和 `A13N_TEST_DAYTONA_CREDENTIAL_JSON`；其他四个 provider 使用对应大写前缀。可选 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 分配计费目标，并在清理中尝试删除，包括失败后。绝不能提交凭据 JSON。未主动启用或缺少凭据时跳过，不代表完成云端验证。

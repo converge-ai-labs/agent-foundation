@@ -16,6 +16,20 @@ import a13n_harness.environment.dynamic as dynamic_environment_module
 import a13n_harness.toolsets.file_media as file_media_module
 import a13n_harness.toolsets.files as file_toolset_module
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
+from a13n_environment.direct_local.files import LocalFileOperator
+from a13n_environment.files import (
+    FileEntriesResult,
+    FileMetadata,
+    FileTextMatch,
+    FileTextSearchResult,
+    FileWriteResult,
+)
+from a13n_environment.models import EnvironmentOperationReceipt
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
     HarnessBuilder,
@@ -33,6 +47,7 @@ from a13n_harness.environment import (
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
     EnvironmentError,
+    EnvironmentMount,
     EnvironmentPath,
     EnvironmentPermissionSet,
 )
@@ -41,10 +56,7 @@ from a13n_harness.environment.advanced import (
     create_environment_runtime,
 )
 from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
-    FileScopeSelection,
-)
+from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_context import user_prompt_content
@@ -53,20 +65,6 @@ from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
 )
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-)
-from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
-from a13n_harness.providers.environment.files import (
-    FileEntriesResult,
-    FileMetadata,
-    FileTextMatch,
-    FileTextSearchResult,
-    FileWriteResult,
-)
-from a13n_harness.providers.environment.models import EnvironmentOperationReceipt
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
@@ -101,8 +99,8 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.usage import RequestUsage
 
 from .environment_helpers import (
-    DirectLocalEnvironmentProviderBinding,
     DirectLocalFilePolicy,
+    DirectLocalSource,
 )
 
 pytestmark = pytest.mark.anyio
@@ -204,9 +202,9 @@ def _local_mount(
     operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
     process_output: bool = False,
     mount_path: str | None = None,
-) -> EnvironmentRuntimeMount:
-    return EnvironmentRuntimeMount(
-        binding=DirectLocalEnvironmentProviderBinding(
+) -> EnvironmentMount:
+    return EnvironmentMount(
+        source=DirectLocalSource(
             DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=root),
                 shell_profiles=(
@@ -1482,6 +1480,7 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
             return FileScopeSelection(
                 logical_path=path,
                 resolved_path=EnvironmentPath(
+                    execution_id="mount-1",
                     mount_id="mount-1",
                     path="/image.png",
                 ),
@@ -1502,6 +1501,7 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
     class BlockingProvider:
         async def understand(self, request: MediaUnderstandingRequest, *, usage=None) -> MediaUnderstandingResult:
             assert request.source == EnvironmentPath(
+                execution_id="mount-1",
                 mount_id="mount-1",
                 path="/image.png",
             )
@@ -2153,7 +2153,7 @@ async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool)
                 path=path,
                 bytes_written=len(staged),
                 receipt=EnvironmentOperationReceipt(
-                    mount_id="mount-destination-1",
+                    execution_id="mount-destination-1",
                     observed_generation="generation-destination",
                     operation_id="operation-1",
                     stage="completed",
@@ -2171,7 +2171,11 @@ async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool)
         kind = "source" if source else "destination"
         return FileScopeSelection(
             logical_path=path,
-            resolved_path=EnvironmentPath(mount_id=f"mount-{kind}-{current_incarnation}", path=f"/{path}"),
+            resolved_path=EnvironmentPath(
+                execution_id=f"mount-{kind}-{current_incarnation}",
+                mount_id=f"mount-{kind}-{current_incarnation}",
+                path=f"/{path}",
+            ),
             observed_generation=f"generation-{kind}",
         )
 
@@ -2203,7 +2207,7 @@ async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool)
 
 
 class _MountAfterResultPlugin(AbstractHarnessPlugin):
-    def __init__(self, runtime: Any, mount: EnvironmentRuntimeMount) -> None:
+    def __init__(self, runtime: Any, mount: EnvironmentMount) -> None:
         self._runtime = runtime
         self._mount = mount
         self.error_code: str | None = None
@@ -2421,7 +2425,7 @@ async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replac
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
+        execution_id="mount-1",
         generation="generation-1",
     )
 
@@ -2630,7 +2634,7 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
+        execution_id="mount-1",
         generation="generation-1",
     )
     mount_current = True
@@ -2685,7 +2689,7 @@ async def test_file_toolset_pins_one_mount_incarnation_across_compound_write() -
                 path=path,
                 bytes_written=len(text.encode()),
                 receipt=EnvironmentOperationReceipt(
-                    mount_id=self.mount_id,
+                    execution_id=self.mount_id,
                     observed_generation=f"generation-{self.mount_id}",
                     operation_id=f"operation-{len(writes)}",
                     stage="completed",
@@ -2703,6 +2707,7 @@ async def test_file_toolset_pins_one_mount_incarnation_across_compound_write() -
             return FileScopeSelection(
                 logical_path=path,
                 resolved_path=EnvironmentPath(
+                    execution_id=current_mount_id,
                     mount_id=current_mount_id,
                     path=path,
                 ),
@@ -2730,7 +2735,7 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
+        execution_id="mount-1",
         generation="generation-1",
     )
     toolset = FileToolset(files)
@@ -2750,7 +2755,7 @@ async def test_direct_local_create_is_exclusive_under_concurrency(tmp_path: Path
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
+        execution_id="mount-1",
         generation="generation-1",
     )
 
@@ -2778,7 +2783,7 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
+        execution_id="mount-1",
         generation="generation-1",
     )
     toolset = FileToolset(files)

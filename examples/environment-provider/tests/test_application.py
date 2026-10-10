@@ -4,19 +4,9 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
 
 from a13n_environment_example import application as application_module
 from a13n_environment_example import run_direct_local
-
-
-class _CloseFailingEnvironment(DirectLocalEnvironment):
-    async def _close(self) -> None:
-        raise RuntimeError("close failed")
 
 
 def test_direct_local_example_runs_offline_and_preserves_host_workspace(tmp_path: Path) -> None:
@@ -45,20 +35,15 @@ def test_direct_local_example_constructs_a_fresh_stateless_adapter_each_time(tmp
     assert workspace.is_dir()
 
 
-def test_run_and_close_preserves_use_and_cleanup_failures(tmp_path: Path) -> None:
-    environment = _CloseFailingEnvironment(
-        DirectLocalEnvironmentConfiguration(
-            root=DirectLocalRootConfiguration(path=tmp_path),
-        ),
-        environment_id="failure-test",
-    )
-
-    async def fail_use() -> None:
+def test_target_use_and_cleanup_failures_are_preserved():
+    async def fail_use():
         raise ValueError("use failed")
 
-    with pytest.raises(BaseExceptionGroup) as captured:
-        asyncio.run(application_module._run_and_close(environment, fail_use))
+    async def fail_cleanup():
+        raise RuntimeError("cleanup failed")
 
+    with pytest.raises(BaseExceptionGroup) as captured:
+        asyncio.run(application_module._run_with_cleanup(fail_use, fail_cleanup))
     assert [type(error) for error in captured.value.exceptions] == [ValueError, RuntimeError]
 
 
@@ -76,28 +61,28 @@ def test_local_envd_example_closes_host_runtime_and_preserves_workspace(tmp_path
     assert (workspace / "provider-example.txt").read_text() == result.text
 
 
-@pytest.mark.parametrize("close_fails", [False, True])
-def test_docker_example_closes_borrowed_runtime_when_creation_fails(monkeypatch, close_fails: bool) -> None:
+def test_docker_partial_creation_is_cleaned_up(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    engine = AsyncMock()
-    if close_fails:
-        engine.close.side_effect = OSError("engine close failed")
-    provider = AsyncMock()
-    provider.validate_environment = lambda recipe: recipe
-    provider.create.side_effect = RuntimeError("creation failed")
-    monkeypatch.setattr(application_module, "select_builtin_environment_providers", lambda keys: ())
-    monkeypatch.setattr(
-        application_module, "ProviderCatalog", lambda definitions: SimpleNamespace(require=lambda key: provider)
-    )
-    monkeypatch.setattr(application_module.DockerSDKEngine, "connect", lambda endpoint: engine)
+    from a13n_environment.errors import EnvironmentManagementError, EnvironmentProviderErrorCategory, provider_error
+    from a13n_environment.models import EnvironmentState
 
-    if close_fails:
-        with pytest.raises(BaseExceptionGroup) as captured:
-            asyncio.run(application_module.run_docker())
-        assert [type(error) for error in captured.value.exceptions] == [RuntimeError, OSError]
-    else:
-        with pytest.raises(RuntimeError, match="creation failed"):
-            asyncio.run(application_module.run_docker())
-    engine.close.assert_awaited_once()
+    state = EnvironmentState(provider_key="docker", state_version="1", state={"container_id": "allocated"})
+    failure = provider_error("docker", "provider_unknown_outcome", EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME)
+    provider = AsyncMock()
+    provider.__aenter__.return_value = provider
+    provider.create.side_effect = EnvironmentManagementError(failure, state, "op-create", "docker-example")
+    definition = SimpleNamespace(
+        validate_environment=lambda value: value, open_provider=AsyncMock(return_value=provider)
+    )
+    monkeypatch.setattr(application_module, "DOCKER", definition)
+    with pytest.raises(EnvironmentManagementError):
+        asyncio.run(application_module.run_docker())
+    provider.destroy.assert_awaited_once_with(
+        {"image": application_module.DEFAULT_EXAMPLE_DOCKER_IMAGE},
+        environment_id="docker-example",
+        state=state,
+        operation_id="op-delete",
+    )
+    provider.__aexit__.assert_awaited_once()

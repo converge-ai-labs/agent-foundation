@@ -12,16 +12,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
-from a13n_harness.providers.environment.envd_policy import EnvdNetworkConfiguration
-from a13n_harness.providers.environment.local_envd.configuration import (
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.envd_policy import EnvdNetworkConfiguration
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
 )
-from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_environment.local_envd.provider import LOCAL_ENVD
+from a13n_environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.environment_profiles import (
@@ -73,8 +73,11 @@ class EnvironmentProjectAdapter(ABC):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-    ) -> Environment:
-        """Create one fresh pre-entry-inert root-specific Environment."""
+    ) -> EnvironmentConnector:
+        """Prepare the Host-selected target and return its inert execution connector.
+
+        Management failures must preserve observed state for Host publication.
+        """
 
 
 class NativeProjectAdapter(EnvironmentProjectAdapter):
@@ -101,7 +104,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-    ) -> Environment:
+    ) -> EnvironmentConnector:
         _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
@@ -125,13 +128,11 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
             "allowed_environment_keys": None,
         }
         configuration = provider.validate_environment(value)
-        return provider.construct(
-            configuration=configuration,
+        return provider.execution_connector(
+            environment=configuration,
             environment_id=_environment_id(self.key, root),
             state=state,
             runtime=runtime,
-            operation_id=_environment_id(self.key, root),
-            allow_create=False,
         )
 
 
@@ -187,17 +188,15 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-    ) -> Environment:
+    ) -> EnvironmentConnector:
         _require_provider(provider, LOCAL_ENVD)
         selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
         configuration = selected.session.model_copy(update={"working_directory": root.as_posix()})
-        return provider.construct(
-            configuration=configuration,
+        return provider.execution_connector(
+            environment=configuration,
             environment_id=_environment_id(self.key, root),
             state=state,
             runtime=runtime,
-            operation_id=_environment_id(self.key, root),
-            allow_create=False,
         )
 
 

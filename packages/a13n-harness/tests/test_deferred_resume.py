@@ -438,13 +438,13 @@ async def test_current_resources_are_resolved_without_historical_attestation(rep
 )
 async def test_environment_approval_ignores_connection_identity(kind, change):
     from a13n_harness.environment._resources import selection_resource
+    from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import FileScopeSelection
-    from a13n_harness.providers.environment.models import EnvironmentPath
 
     executed = []
     selection = FileScopeSelection(
         logical_path="/workspace/work",
-        resolved_path=EnvironmentPath(mount_id="mount-first", path="/work"),
+        resolved_path=EnvironmentPath(execution_id="mount-first", mount_id="mount-first", path="/work"),
         observed_generation="generation-first",
     )
 
@@ -455,7 +455,9 @@ async def test_environment_approval_ignores_connection_identity(kind, change):
     first = await _suspend(executable, _Policy(InvocationPolicyDecision.require_approval(), []))
     selection = FileScopeSelection(
         logical_path="/workspace/work",
-        resolved_path=EnvironmentPath(mount_id="mount-resumed", path="/other" if change == "path" else "/work"),
+        resolved_path=EnvironmentPath(
+            execution_id="mount-resumed", mount_id="mount-resumed", path="/other" if change == "path" else "/work"
+        ),
         observed_generation="generation-resumed",
     )
     requests = first.deferred

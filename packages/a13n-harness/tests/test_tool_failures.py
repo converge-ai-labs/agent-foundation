@@ -4,8 +4,8 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from a13n_environment.models import EnvironmentError
 from a13n_harness.capabilities.working_state import CreateTask, TaskStateError
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.toolsets._results import validation_failure
 from a13n_harness.toolsets.documents import DocumentsToolset
 from a13n_harness.toolsets.files import _environment_error_result as file_failure

@@ -234,6 +234,19 @@ def test_overrides_replace_or_merge_the_revision_fields() -> None:
     assert cast(SubagentOverride, frozen.subagents["helper"]).revision_id == HELPER_REVISION
 
 
+@pytest.mark.parametrize("baseline", [False, True])
+@pytest.mark.parametrize("choice", [None, False, True])
+def test_lazy_environment_override_preserves_false_and_inherits_null(baseline: bool, choice: bool | None) -> None:
+    assert config().lazy_environment
+    revision = config(lazy_environment=baseline)
+    override = AgentOverride(lazy_environment=choice)
+    applied = apply_override(revision, override)
+    assert applied.lazy_environment is (baseline if choice is None else choice)
+    frozen = freeze_override(override, applied)
+    restored = AgentOverride.model_validate_json(frozen.model_dump_json())
+    assert apply_override(revision, restored).lazy_environment is applied.lazy_environment
+
+
 class _Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     level: int = 1

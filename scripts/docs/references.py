@@ -7,44 +7,44 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from a13n_harness.providers.environment.daytona.provider import (
+from a13n_environment.daytona.provider import (
     DaytonaConnectionConfiguration,
     DaytonaEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
-from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
-from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
-from a13n_harness.providers.environment.e2b.configuration import (
+from a13n_environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
+from a13n_environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_environment.docker.provider import DockerConnectionConfiguration
+from a13n_environment.e2b.configuration import (
     E2BConnectionConfiguration,
     E2BCredential,
     E2BEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.local_envd.configuration import (
+from a13n_environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
 )
-from a13n_harness.providers.environment.management import HostLocalProviderConfiguration
-from a13n_harness.providers.environment.modal.provider import (
+from a13n_environment.management import HostLocalProviderConfiguration
+from a13n_environment.modal.provider import (
     ModalConnectionConfiguration,
     ModalCredential,
     ModalEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.native.configuration import TokenCredential
-from a13n_harness.providers.environment.remote_envd.configuration import (
+from a13n_environment.native.configuration import TokenCredential
+from a13n_environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
     RemoteEnvdEnvironmentConfiguration,
     WebSocketEnvdConnectionConfiguration,
 )
-from a13n_harness.providers.environment.runloop.provider import (
+from a13n_environment.runloop.provider import (
     RunloopConnectionConfiguration,
     RunloopEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.sprites.provider import (
+from a13n_environment.sprites.provider import (
     SpritesConnectionConfiguration,
     SpritesEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.vercel.provider import (
+from a13n_environment.vercel.provider import (
     VercelConnectionConfiguration,
     VercelEnvironmentConfiguration,
 )

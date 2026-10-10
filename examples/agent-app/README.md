@@ -97,7 +97,7 @@ async with application.stream_turn("Hello") as stream:
 6. requires a successful terminal result;
 7. atomically replaces the state file with the returned continuation state.
 
-The executable is immutable build output and has no independent resource lifecycle. The application constructs one fresh adapter per turn; Harness enters it, uses it for Run-local routing, and closes it without deleting the Host workspace. Harness never calls Provider destruction.
+The executable is immutable build output and has no independent resource lifecycle. The application supplies a Host source per turn. On first use, Harness opens a fresh execution for Run-local operations and closes it without deleting the Host workspace. Harness never calls Provider destruction.
 
 A failed or abandoned turn does not replace the last completed state. Callers must enter `stream_turn()` with `async with`; leaving that scope deterministically closes the Harness stream and fresh Environment adapter. The next application instance can therefore recover only from a committed checkpoint.
 

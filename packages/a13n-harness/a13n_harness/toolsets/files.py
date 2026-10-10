@@ -10,6 +10,14 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, cast
 
+from a13n_environment.files import (
+    FileMetadata,
+    FileOperator,
+    FileQueryRequest,
+    FileTextResult,
+    FileTextSearchRequest,
+)
+from a13n_environment.models import EnvironmentAction, EnvironmentError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from pydantic_ai import BinaryContent, RunContext, ToolReturn
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -19,19 +27,12 @@ from a13n_harness._json import redact_json
 from a13n_harness.context import AgentContext, ToolMetadataKey
 from a13n_harness.environment._mount_path import normalize_operation_path
 from a13n_harness.environment._resources import EnvironmentResources
+from a13n_harness.environment.models import EnvironmentPath
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeProvider
 from a13n_harness.errors import HarnessError
 from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
 from a13n_harness.filters.cold_start import COLD_START_RETENTION_METADATA_KEY
 from a13n_harness.metering import ModelUsageBinding
-from a13n_harness.providers.environment.files import (
-    FileMetadata,
-    FileOperator,
-    FileQueryRequest,
-    FileTextResult,
-    FileTextSearchRequest,
-)
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
 from a13n_harness.spec import ModelCapability
 from a13n_harness.tools.metadata import (
     CanonicalResource,

@@ -12,21 +12,22 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import RunBindings
-from a13n_harness.environment import (
-    EnvironmentAction,
-    EnvironmentError,
-    EnvironmentPermissionSet,
-)
-from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntimeMount
-from a13n_harness.providers.environment.commands import ProcessDiscovery, ProcessStreamRead
-from a13n_harness.providers.environment.direct_local.configuration import (
+from a13n_environment.commands import ProcessDiscovery, ProcessStreamRead
+from a13n_environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
-from a13n_harness.providers.environment.retention import EnvironmentOutputCapture, EnvironmentOutputSegment
+from a13n_environment.retention import EnvironmentOutputCapture, EnvironmentOutputSegment
+from a13n_harness import RunBindings
+from a13n_harness.environment import (
+    EnvironmentAction,
+    EnvironmentError,
+    EnvironmentMount,
+    EnvironmentPermissionSet,
+)
+from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
     _ProcessController,
@@ -35,7 +36,7 @@ from a13n_harness.toolsets.process_manager import (
 )
 from a13n_harness.toolsets.shell import ShellToolset
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = [
     pytest.mark.anyio,
@@ -87,8 +88,8 @@ async def _bound_process_environment(
 ) -> AsyncIterator[BoundEnvironment]:
     runtime = create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=DirectLocalEnvironmentProviderBinding(
+            "local": EnvironmentMount(
+                source=DirectLocalSource(
                     DirectLocalEnvironmentConfiguration(
                         root=DirectLocalRootConfiguration(path=root),
                         shell_profiles=(
@@ -583,7 +584,7 @@ async def test_foreground_capture_requires_only_shell_execution(tmp_path: Path) 
 
 
 async def test_native_exit_is_observable_before_tree_cleanup_and_output_completion(tmp_path: Path, monkeypatch) -> None:
-    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+    from a13n_environment.direct_local.processes import LocalProcessManager
 
     cleanup_started = asyncio.Event()
     cleanup_release = asyncio.Event()
@@ -622,7 +623,7 @@ async def test_native_exit_is_observable_before_tree_cleanup_and_output_completi
 
 
 async def test_input_close_permission_is_checked_before_writing(tmp_path: Path, monkeypatch) -> None:
-    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+    from a13n_environment.direct_local.processes import LocalProcessManager
 
     writes = []
     original = LocalProcessManager.write_stdin

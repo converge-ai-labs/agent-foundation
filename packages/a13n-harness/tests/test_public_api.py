@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import a13n_environment as environment_provider
 import a13n_harness as harness
 import a13n_harness.capabilities as capabilities
 import a13n_harness.capability_types as capability_types
@@ -9,7 +10,6 @@ import a13n_harness.filters as filters
 import a13n_harness.models as models
 import a13n_harness.pricing as pricing
 import a13n_harness.providers as providers
-import a13n_harness.providers.environment as environment_provider
 import a13n_harness.providers.memory as memory_provider
 import a13n_harness.providers.model.oauth as model_auth
 import a13n_harness.tools as tools
@@ -31,9 +31,10 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
         "DefinitionError",
         "DeferredToolResume",
         "DelegationContextPolicy",
-        "Environment",
+        "EnvironmentConnector",
         "EnvironmentEntry",
         "EnvironmentMount",
+        "EnvironmentSource",
         "ExecutableAgent",
         "HarnessBuilder",
         "HarnessError",
@@ -317,9 +318,10 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     expected_environment = {
         "DynamicEnvironmentCapability",
         "ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP",
-        "Environment",
+        "EnvironmentConnector",
         "EnvironmentEntry",
         "EnvironmentMount",
+        "EnvironmentSource",
         "EnvironmentRunCallback",
         "EnvironmentRunCallbacks",
         "EnvironmentRunExtension",
@@ -362,7 +364,13 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     assert removed_harness_provider_symbols.isdisjoint(harness.__all__)
     # The Provider domain package exports authoring contracts only; vendor definitions,
     # their schemas and the built-in catalog stay in their own owning modules.
-    assert set(environment_provider.__all__) == {"Environment", "EnvironmentProviderDefinition"}
+    assert set(environment_provider.__all__) == {
+        "EnvironmentConnector",
+        "EnvironmentExecution",
+        "EnvironmentProvider",
+        "EnvironmentStatus",
+        "EnvironmentProviderDefinition",
+    }
     assert set(providers.__all__) == {
         "Authentication",
         "AuthenticationCase",

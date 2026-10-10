@@ -6,21 +6,20 @@ import json
 from pathlib import Path
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
-from a13n_harness.content import request_input_content
-from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
-from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
-from a13n_harness.environment.providers import EnvironmentRuntimeMount
-from a13n_harness.model_context import ModelContextProjectionRequest, ModelContextRequestKind, user_prompt_content
-from a13n_harness.providers.environment.computer import ComputerPoint
-from a13n_harness.providers.environment.models import (
+from a13n_environment.computer import ComputerPoint
+from a13n_environment.models import (
     COMPUTER_ACTIONS,
     FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentError,
     EnvironmentPermissionSet,
 )
-from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_environment.operations import EnvironmentOperations
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.content import request_input_content
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration, EnvironmentMount
+from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
+from a13n_harness.model_context import ModelContextProjectionRequest, ModelContextRequestKind, user_prompt_content
 from a13n_harness.toolsets.computer import ComputerToolset
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -43,7 +42,7 @@ def _desktop(name, actions=COMPUTER_ACTIONS):
     )
     computer.binding = binding
     return (
-        EnvironmentRuntimeMount(binding=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions)),
+        EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions)),
         computer,
     )
 

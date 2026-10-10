@@ -466,21 +466,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent=scope,
             agent_instance_id=agent_instance_id,
         )
-        try:
-            head = await self._store.child_executions.create(
-                execution_id=execution_id,
-                parent_thread_id=scope.thread_id,
-                child_thread_id=state.thread_id,
-                child_run_id=stream.run_id,
-                run_composition=published.reference,
-            )
-        except BaseException as exc:
-            await _finalize_rejected(
-                environment,
-                exc,
-                timeout_seconds=self._cleanup_timeout_seconds,
-            )
-            raise
+        head = await self._store.child_executions.create(
+            execution_id=execution_id,
+            parent_thread_id=scope.thread_id,
+            child_thread_id=state.thread_id,
+            child_run_id=stream.run_id,
+            run_composition=published.reference,
+        )
         prepared = _PreparedSegment(
             head=head,
             scope=scope,
@@ -497,13 +489,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         try:
             await self._start_segment(prepared)
-        except BaseException as exc:
+        except BaseException:
             await self._lose_after_acceptance(head.execution_id, expected_checkpoint=None)
-            await _finalize_rejected(
-                environment,
-                exc,
-                timeout_seconds=self._cleanup_timeout_seconds,
-            )
             raise
         await self._publish_summary(head)
         return _async_view(
@@ -877,20 +864,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent=scope,
             agent_instance_id=agent_instance_id,
         )
-        try:
-            head = await self._store.child_executions.resume(
-                previous_execution_id=previous.execution_id,
-                execution_id=execution_id,
-                child_run_id=stream.run_id,
-                run_composition=published.reference,
-            )
-        except BaseException as exc:
-            await _finalize_rejected(
-                environment,
-                exc,
-                timeout_seconds=self._cleanup_timeout_seconds,
-            )
-            raise
+        head = await self._store.child_executions.resume(
+            previous_execution_id=previous.execution_id,
+            execution_id=execution_id,
+            child_run_id=stream.run_id,
+            run_composition=published.reference,
+        )
         prepared = _PreparedSegment(
             head=head,
             scope=scope,
@@ -907,13 +886,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         try:
             await self._start_segment(prepared)
-        except BaseException as exc:
+        except BaseException:
             await self._lose_after_acceptance(head.execution_id, expected_checkpoint=None)
-            await _finalize_rejected(
-                environment,
-                exc,
-                timeout_seconds=self._cleanup_timeout_seconds,
-            )
             raise
         await self._publish_summary(head)
         return _async_view(
@@ -976,45 +950,41 @@ class HarnessUiSubagentOperator(SubagentOperator):
         limits = None if item.usage_limits is None else TypeAdapter(UsageLimits).validate_python(item.usage_limits)
         accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
         restored = await self._store.usage.restore(thread_id=item.thread_id, state=checkpoint.harness_state)
-        try:
-            stream = self._new_stream(
-                reconstructed=reconstructed,
-                input=None,
-                deferred_resume=accepted,
-                usage_limits=limits,
-                identity=identity,
-                state=restored,
-                resume_usage=UsageSnapshot.from_state(restored) is not None,
-                environment=environment,
-                execution_id=execution_id,
-                parent=scope,
-                agent_instance_id=agent_instance_id,
-            )
-            head = await self._store.child_executions.resume(
-                previous_execution_id=previous.execution_id,
-                execution_id=execution_id,
-                child_run_id=stream.run_id,
-                run_composition=item.composition,
-                restart_batch_id=batch_id,
-            )
-            prepared = _PreparedSegment(
-                head=head,
-                scope=scope,
-                composition=composition,
-                reconstructed=reconstructed,
-                input=None,
-                usage_limits=limits,
-                identity=identity,
-                state=checkpoint.harness_state,
-                environment=environment,
-                stream=stream,
-                agent_instance_id=agent_instance_id,
-                display=checkpoint.display,
-            )
-            await self._start_segment(prepared)
-        except BaseException as exc:
-            await _finalize_rejected(environment, exc, timeout_seconds=self._cleanup_timeout_seconds)
-            raise
+        stream = self._new_stream(
+            reconstructed=reconstructed,
+            input=None,
+            deferred_resume=accepted,
+            usage_limits=limits,
+            identity=identity,
+            state=restored,
+            resume_usage=UsageSnapshot.from_state(restored) is not None,
+            environment=environment,
+            execution_id=execution_id,
+            parent=scope,
+            agent_instance_id=agent_instance_id,
+        )
+        head = await self._store.child_executions.resume(
+            previous_execution_id=previous.execution_id,
+            execution_id=execution_id,
+            child_run_id=stream.run_id,
+            run_composition=item.composition,
+            restart_batch_id=batch_id,
+        )
+        prepared = _PreparedSegment(
+            head=head,
+            scope=scope,
+            composition=composition,
+            reconstructed=reconstructed,
+            input=None,
+            usage_limits=limits,
+            identity=identity,
+            state=checkpoint.harness_state,
+            environment=environment,
+            stream=stream,
+            agent_instance_id=agent_instance_id,
+            display=checkpoint.display,
+        )
+        await self._start_segment(prepared)
         return execution_id, stream.run_id
 
     def _new_stream(
@@ -1350,9 +1320,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         finalization_error: BaseException | None = None
         with CancelScope(shield=True):
             try:
-                finalized = await prepared.environment.finalize(
-                    timeout_seconds=self._cleanup_timeout_seconds,
-                )
+                finalized = prepared.environment.finalization
                 active.cleanup_succeeded = not finalized.cleanup_errors and all(
                     publication.status != "failed" for publication in finalized.state_publications
                 )
@@ -2007,22 +1975,6 @@ class _DisplayCompactor:
             del self._activities[: len(self._activities) - _MAX_DISPLAY_ACTIVITIES]
 
 
-async def _finalize_rejected(
-    environment: EnvironmentRunPlan,
-    original: BaseException,
-    *,
-    timeout_seconds: float,
-) -> None:
-    cleanup_error: BaseException | None = None
-    with CancelScope(shield=True):
-        try:
-            await environment.finalize(timeout_seconds=timeout_seconds)
-        except BaseException as exc:
-            cleanup_error = exc
-    if cleanup_error is not None:
-        original.add_note(f"Rejected child Environment finalization also failed: {cleanup_error!r}")
-
-
 def _require_edge(parent: ResolvedAgentNode, name: str) -> ResolvedSubagent:
     for edge in parent.children:
         if edge.name == name:
@@ -2239,12 +2191,9 @@ def _encode_child_cursor(value: _ChildCursor) -> str:
 def _decode_child_cursor(value: str) -> _ChildCursor:
     if not value or len(value) > 4096:
         raise RunCoordinationError("Child cursor is invalid.", code="child_cursor_invalid")
-    try:
-        padded = value + "=" * (-len(value) % 4)
-        payload = base64.b64decode(padded, altchars=b"-_", validate=True)
-        return _ChildCursor.model_validate_json(payload, strict=True)
-    except (ValueError, ValidationError) as exc:
-        raise RunCoordinationError("Child cursor is invalid.", code="child_cursor_invalid") from exc
+    padded = value + "=" * (-len(value) % 4)
+    payload = base64.b64decode(padded, altchars=b"-_", validate=True)
+    return _ChildCursor.model_validate_json(payload, strict=True)
 
 
 def _surface_activity(value: SubagentActivitySnapshot, display: CompactChildDisplay) -> ChildActivityView:

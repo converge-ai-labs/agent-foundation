@@ -14,17 +14,17 @@ from typing import Literal
 from a13n_envd_client import EIPClientError
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentState
-from a13n_harness.providers.environment.remote_envd.configuration import (
+from a13n_environment.errors import EnvironmentProviderError
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.models import EnvironmentState
+from a13n_environment.remote_envd.configuration import (
     HttpEnvdCredential,
     RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
-from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
-from a13n_harness.providers.environment.remote_envd.pairing import credential_matches
-from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
+from a13n_environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_environment.remote_envd.pairing import credential_matches
+from a13n_environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr, ValidationError
 
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
@@ -241,7 +241,7 @@ class DeviceConnections:
 
     async def bind(
         self, binding: ResolvedEnvironmentBinding, *, environment_id: str, state: EnvironmentState | None = None
-    ) -> Environment:
+    ) -> EnvironmentConnector:
         resource = binding.device
         configuration = RemoteEnvdEnvironmentConfiguration(
             working_directory=binding.selection.working_directory,
@@ -249,9 +249,9 @@ class DeviceConnections:
             expected_boundary=binding.selection.expected_boundary,
         )
         if isinstance(resource.transport, HttpDeviceTransport):
-            return await HTTP_ENVD.create(
+            return HTTP_ENVD.execution_connector(
                 environment=configuration,
-                allow_create=False,
+                configuration=resource.transport.configuration,
                 environment_id=environment_id,
                 state=state
                 or EnvironmentState(
@@ -259,9 +259,9 @@ class DeviceConnections:
                 ),
                 runtime=await self._http_runtime(resource),
             )
-        return await WEBSOCKET_ENVD.create(
+        return WEBSOCKET_ENVD.execution_connector(
             environment=configuration,
-            allow_create=False,
+            configuration=resource.transport.configuration,
             environment_id=environment_id,
             state=state
             or EnvironmentState(

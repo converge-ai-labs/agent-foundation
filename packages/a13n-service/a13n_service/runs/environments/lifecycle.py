@@ -4,8 +4,8 @@ An operation begins under the environment row lock: the status names it, `genera
 `operation_id` exists before any I/O. A dispatcher claims it with a token and expiry, calls the provider with
 no database session held, and publishes only if generation, operation and claim still match, so a late result
 never overwrites a newer operation. An expired claim lets the next dispatcher continue the *same* operation:
-Harness lifecycle calls reconcile the instance they are bound to (preparation looks the instance up before
-creating one; stop and destroy observe its actual state), so continuing never issues conflicting work. Errors
+Provider management calls reconcile the explicit target (create looks up its correlation identity before
+allocation; start, stop and destroy act on saved state), so continuing never issues conflicting work. Errors
 stay on the phase with the same operation ID, and maintenance revisits it at its fixed interval.
 
 Reaching `ready` schedules the first renewal of a sandbox whose type expires it unless renewed (`renewal`), and
@@ -19,15 +19,16 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 import anyio
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.errors import (
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderOutcomeCertainty,
+    observed_environment_state,
 )
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentError as OperationError
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_environment.management import EnvironmentProvider
+from a13n_environment.models import EnvironmentError as OperationError
+from a13n_environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +41,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments.adapters import Target, close, construct, credential_version, provider_identity
+from a13n_service.runs.environments.adapters import Target, close, credential_version, open_provider, provider_identity
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -145,7 +146,7 @@ async def reserve(
     limit: int,
     name: str | None = None,
 ) -> EnvironmentRow:
-    """A new workspace-managed instance in `creating`, from an enabled template of an enabled provider the principal
+    """A new workspace-managed instance in `reserved`, from an enabled template of an enabled provider the principal
     may run, while the workspace holds fewer than `limit` managed instances that are not deleted. Nothing external
     exists until its create operation is dispatched, which reads the template then."""
     template = await resolve_template(session, principal, scope, template_id)
@@ -170,9 +171,9 @@ async def reserve(
         template_id=template.id,
         name=name or template.name,
         generation=0,
+        status="reserved",
         created_by_id=principal.id,
     )
-    await begin(session, environment, "creating")
     session.add(environment)
     await session.flush()
     return environment
@@ -286,64 +287,90 @@ async def _refusal(
 
 async def claim(runtime: Runtime, environment_id: str, *, owner: str) -> Operation | None:
     """Claim the outstanding operation unless nobody needs to or someone else holds it."""
-    seconds = runtime.settings.environments.operation_seconds
     async with transaction(runtime.storage) as session:
         environment = await lock(session, EnvironmentRow, environment_id)
-        phase = None if environment is None else _PHASES.get(environment.status)
-        if environment is None or phase is None or environment.operation_id is None:
-            return None
-        current = await now(session)
-        if environment.lease_expires_at is not None and environment.lease_expires_at > current:
-            return None
-        assert environment.provider_id is not None, "only managed instances have operations"
-        failure = environment.failure or {}
-        unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
-        # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
+        return await claim_locked(runtime, session, environment, owner=owner)
+
+
+async def claim_locked(
+    runtime: Runtime,
+    session: AsyncSession,
+    environment: EnvironmentRow | None,
+    *,
+    owner: str,
+    provider: ResolvedProvider | None = None,
+) -> Operation | None:
+    """Claim under the caller's row lock, allowing begin and first claim to commit together."""
+    seconds = runtime.settings.environments.operation_seconds
+    phase = None if environment is None else _PHASES.get(environment.status)
+    if environment is None or phase is None or environment.operation_id is None:
+        return None
+    current = await now(session)
+    if environment.lease_expires_at is not None and environment.lease_expires_at > current:
+        return None
+    assert environment.provider_id is not None, "only managed instances have operations"
+    failure = environment.failure or {}
+    unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
+    # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
+    if provider is None:
         provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
-        if (fault := await _refusal(session, runtime, environment, provider)) is not None:
-            environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
-            record_failure(environment, fault, current, unresolved=unresolved)
-            return None
-        token = secrets.token_urlsafe(32)
-        environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
-        deadline = current + timedelta(seconds=seconds)
-        environment.operation_deadline = deadline
-        environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
-        handle = Handle.model_validate(environment.handle)
-        version, changed = reached_with(handle, provider)
-        return Operation(
-            environment_id=environment.id,
-            phase=phase,
-            generation=environment.generation,
-            operation_id=environment.operation_id,
-            token=token,
-            target=Target(environment.id, provider, handle.recipe, handle.state),
-            unresolved=unresolved,
-            seconds=seconds,
-            credential_version=version,
-            credential_changed=changed,
-        )
+    if (fault := await _refusal(session, runtime, environment, provider)) is not None:
+        environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
+        record_failure(environment, fault, current, unresolved=unresolved)
+        return None
+    token = secrets.token_urlsafe(32)
+    environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
+    deadline = current + timedelta(seconds=seconds)
+    environment.operation_deadline = deadline
+    environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
+    handle = Handle.model_validate(environment.handle)
+    version, changed = reached_with(handle, provider)
+    return Operation(
+        environment_id=environment.id,
+        phase=phase,
+        generation=environment.generation,
+        operation_id=environment.operation_id,
+        token=token,
+        target=Target(environment.id, provider, handle.recipe, handle.state),
+        unresolved=unresolved,
+        seconds=seconds,
+        credential_version=version,
+        credential_changed=changed,
+    )
 
 
-class _InstanceLost(Exception):
-    """Reconciliation proved the instance no longer exists."""
-
-
-async def _call(adapter: Environment, phase: Phase) -> EnvironmentState | None:
-    match phase:
+async def _call(provider: EnvironmentProvider, operation: Operation) -> EnvironmentState | None:
+    target = operation.target
+    match operation.phase:
         case "creating":
-            await adapter.prepare()
+            return await provider.create(
+                dict(target.recipe),
+                environment_id=target.environment_id,
+                operation_id=operation.operation_id,
+                state=target.state,
+            )
         case "starting":
-            # Resume only the instance that exists; a lost one is never silently recreated.
-            if await adapter.reconcile() == "absent":
-                raise _InstanceLost()
-            await adapter.prepare()
+            return await provider.start(
+                dict(target.recipe),
+                environment_id=target.environment_id,
+                operation_id=operation.operation_id,
+                state=target.state,
+            )
         case "stopping":
-            await adapter.stop()
+            return await provider.stop(
+                dict(target.recipe),
+                environment_id=target.environment_id,
+                operation_id=operation.operation_id,
+                state=target.state,
+            )
         case "deleting":
-            await adapter.destroy()
+            await provider.destroy(
+                dict(target.recipe),
+                environment_id=target.environment_id,
+                operation_id=operation.operation_id,
+                state=target.state,
+            )
             return None
-    return adapter.dump_state()
 
 
 def fault_of(error: Exception, *, dispatched: bool) -> Fault:
@@ -362,17 +389,13 @@ def fault_of(error: Exception, *, dispatched: bool) -> Fault:
 
 async def perform(runtime: Runtime, operation: Operation) -> Outcome:
     """One bounded provider call for the claimed phase, with no database session held."""
-    adapter: Environment | None = None
+    provider: EnvironmentProvider | None = None
     dispatched = False
     try:
         with anyio.fail_after(operation.seconds):
-            # Lifecycle calls act as the instance's owner, so an adapter finds it by the environment ID even before
-            # its state was recorded; only preparation ever creates one, and stop and destroy never prepare.
-            adapter = await construct(runtime, operation.target, operation_id=operation.operation_id, allow_create=True)
+            provider = await open_provider(runtime, operation.target)
             dispatched = True
-            return Outcome(await _call(adapter, operation.phase))
-    except _InstanceLost:
-        return Outcome(adapter.dump_state() if adapter is not None else None, lost(operation.credential_changed))
+            return Outcome(await _call(provider, operation))
     except Exception as error:
         logger.warning(
             "Environment operation failed",
@@ -384,10 +407,17 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
             },
         )
         # A known target stays recorded even when a later step failed, so the next dispatcher can recover it.
-        return Outcome(adapter.dump_state() if adapter is not None else None, fault_of(error, dispatched=dispatched))
+        fault = (
+            lost(operation.credential_changed)
+            if operation.phase == "starting"
+            and isinstance(error, EnvironmentProviderError)
+            and error.category == EnvironmentProviderErrorCategory.MISSING
+            else fault_of(error, dispatched=dispatched)
+        )
+        return Outcome(observed_environment_state(error, operation.target.state), fault)
     finally:
-        if adapter is not None:
-            await close(adapter)
+        if provider is not None:
+            await close(provider)
 
 
 async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> None:
@@ -407,8 +437,7 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.operation_deadline = None
         handle = Handle.model_validate(environment.handle)
         if outcome.fault is not None:
-            if outcome.state is not None:
-                environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
+            environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
             record_failure(environment, outcome.fault, current, unresolved=operation.unresolved)
             return
         reached = _REACHES[operation.phase]
@@ -441,12 +470,19 @@ async def advance(runtime: Runtime, environment_id: str, *, owner: str) -> None:
     operation = await claim(runtime, environment_id, owner=owner)
     if operation is None:
         return
+    await dispatch(runtime, operation)
+
+
+async def dispatch(runtime: Runtime, operation: Operation) -> None:
+    """Perform a claimed operation here and publish its fenced outcome without retaining a transaction."""
     try:
         outcome = await perform(runtime, operation)
-    except BaseException:
+    except BaseException as error:
         # Interrupted mid-call: the effect is unknown until the next dispatcher reconciles the same operation.
         interrupted = Fault("environment_operation_interrupted", "The dispatcher stopped mid-call", "unknown")
         with anyio.CancelScope(shield=True), anyio.move_on_after(PUBLISH_SECONDS):
-            await publish(runtime, operation, Outcome(None, interrupted))
+            await publish(
+                runtime, operation, Outcome(observed_environment_state(error, operation.target.state), interrupted)
+            )
         raise
     await publish(runtime, operation, outcome)

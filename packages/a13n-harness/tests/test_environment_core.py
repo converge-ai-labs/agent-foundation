@@ -5,9 +5,28 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, cast
+from uuid import uuid4
 
 import a13n_harness.environment.coordinator as environment_coordinator
 import pytest
+from a13n_environment.commands import (
+    ArgvCommand,
+    BoundProcessHandle,
+    CommandRequest,
+    ProcessIdentity,
+    ProcessInfo,
+    ProcessOutputSnapshot,
+    ProcessStartResult,
+    ProcessStatus,
+)
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.models import EnvironmentOperationReceipt, EnvironmentState
+from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_environment.retention import (
+    EnvironmentOutputCapture,
+    EnvironmentOutputPolicy,
+    OpaqueProcessHandle,
+)
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -17,6 +36,7 @@ from a13n_harness.environment import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
+    EnvironmentMount,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
     EnvironmentRunCallbacks,
@@ -29,27 +49,6 @@ from a13n_harness.environment.advanced import (
     NoopBoundEnvironment,
     create_empty_environment_runtime,
     create_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentProviderBinding,
-    EnvironmentRuntimeMount,
-)
-from a13n_harness.providers.environment.commands import (
-    ArgvCommand,
-    BoundProcessHandle,
-    CommandRequest,
-    ProcessIdentity,
-    ProcessInfo,
-    ProcessOutputSnapshot,
-    ProcessStartResult,
-    ProcessStatus,
-)
-from a13n_harness.providers.environment.models import EnvironmentOperationReceipt, EnvironmentState
-from a13n_harness.providers.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
-from a13n_harness.providers.environment.retention import (
-    EnvironmentOutputCapture,
-    EnvironmentOutputPolicy,
-    OpaqueProcessHandle,
 )
 
 pytestmark = pytest.mark.anyio
@@ -67,21 +66,23 @@ class _BoundProvider:
     descriptor: EnvironmentDescriptor
     operations: EnvironmentProviderOperations
     availability: EnvironmentAvailability
+    execution_id: str = field(default_factory=lambda: "exec-" + uuid4().hex)
     ready_calls: list[frozenset[str]] = field(default_factory=list)
     cached_state: EnvironmentState | None = None
 
-    async def ensure_ready(self, operations: frozenset[str]) -> None:
+    async def check_ready(self, operations: frozenset[str]) -> None:
         self.ready_calls.append(operations)
         self.availability = EnvironmentAvailability(
             status="available",
             ready_families=self.availability.ready_families | operations,
         )
 
-    def dump_state(self) -> EnvironmentState | None:
+    @property
+    def state(self) -> EnvironmentState | None:
         return self.cached_state
 
 
-class _Binding(EnvironmentProviderBinding):
+class _Binding(EnvironmentConnector):
     def __init__(
         self,
         name: str,
@@ -115,8 +116,33 @@ class _Binding(EnvironmentProviderBinding):
                 limits={"nested": {"items": [1, 2]}},
             ),
             operations=self._operations,
-            availability=EnvironmentAvailability(status="preparing"),
+            availability=EnvironmentAvailability(status="available", ready_families=families),
         )
+
+    @property
+    def provider_key(self) -> str:
+        return self.provider_type
+
+    @property
+    def descriptor(self):
+        return self.bound.descriptor
+
+    @property
+    def state(self):
+        return self.bound.state
+
+    async def ensure_ready(self):
+        return self
+
+    async def open(self):
+        scope = self.bind(mount_id=self.bound.execution_id)
+        execution = await scope.__aenter__()
+
+        async def close():
+            await scope.__aexit__(None, None, None)
+
+        execution.close = close
+        return execution
 
     @property
     def provider_type(self) -> str:
@@ -193,16 +219,16 @@ def _runtime_mount(
     working_directory: str | None = "/",
     mount_path: str | None = None,
     permissions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.FILE_STAT}),
-) -> EnvironmentRuntimeMount:
-    return EnvironmentRuntimeMount(
-        binding=provider,
+) -> EnvironmentMount:
+    return EnvironmentMount(
+        source=provider,
         permission_ceiling=EnvironmentPermissionSet(operations=permissions),
         working_directory=working_directory,
         mount_path=mount_path,
     )
 
 
-def _request(*bindings: _Binding) -> dict[str, EnvironmentRuntimeMount]:
+def _request(*bindings: _Binding) -> dict[str, EnvironmentMount]:
     return {f"workspace-{index}": _runtime_mount(binding) for index, binding in enumerate(bindings, start=1)}
 
 
@@ -241,7 +267,8 @@ async def test_static_aggregate_intersects_permissions_and_scopes_readiness() ->
         assert first.bound.ready_calls == []
         assert second.bound.ready_calls == [frozenset({"files"})]
         assert (await environment.describe("workspace-2")).availability.status == "available"
-    assert first.exited == second.exited == 1
+    assert first.exited == 0
+    assert second.exited == 1
     assert first.discarded == second.discarded == 0
 
 
@@ -262,6 +289,7 @@ async def test_environment_run_extensions_follow_aggregate_lifecycle_and_remain_
     ) as environment:
         await binding._activate()
         assert events == ["enter:first", "enter:second"]
+        await environment.files.stat("/workspace/prepare.txt")
         change = await binding.mount("added", _runtime_mount(added))
         assert change.kind == "mounted"
         assert [item.name for item in environment.snapshot.mounts] == ["workspace-1", "added"]
@@ -311,8 +339,11 @@ async def test_environment_run_callbacks_follow_the_extension_lifecycle() -> Non
         ),
     )
 
-    async with binding.bind(thread_id="thread-1", run_id="run-callbacks", instance=_instance(), host_refs={}):
+    async with binding.bind(
+        thread_id="thread-1", run_id="run-callbacks", instance=_instance(), host_refs={}
+    ) as environment:
         await binding._activate()
+        await environment.files.stat("/workspace/prepare.txt")
         assert events == [
             "enter:first:run-callbacks",
             "enter:second:run-callbacks",
@@ -435,7 +466,7 @@ async def test_environment_run_extension_entry_failure_unwinds_and_keeps_runtime
             await asyncio.wait_for(binding.wait_until_active(), timeout=1)
         assert inactive.value.code == "environment_activation_failed"
 
-    assert provider.exited == 1
+    assert provider.exited == 0
 
 
 async def test_environment_run_extension_cleanup_continues_after_failure() -> None:
@@ -463,7 +494,7 @@ async def test_environment_run_extension_cleanup_continues_after_failure() -> No
         "exit:failing",
         "exit:first",
     ]
-    assert provider.exited == 1
+    assert provider.exited == 0
 
 
 @pytest.mark.parametrize("extension_id", ["", " spaced", "x" * 201])
@@ -526,39 +557,35 @@ async def test_descriptor_facet_mismatch_fails_and_all_candidates_are_owned() ->
         default_mount="workspace-1",
     )
     with pytest.raises(EnvironmentError) as failure:
-        async with binding.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}):
-            pass
+        async with binding.bind(
+            thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}
+        ) as environment:
+            await environment.files.stat("/workspace/bad.txt")
     assert failure.value.code == "environment_provider_failure"
     assert invalid.entered == invalid.exited == 1
     assert never_entered.entered == 0
-    assert never_entered.discarded == 1
+    assert never_entered.discarded == 0
 
 
-@pytest.mark.parametrize("prepared_facets", ["valid", "missing_facet", "missing_method"])
-async def test_lazy_mount_validates_materialized_operations_before_dispatch(
-    prepared_facets: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    provider = _Binding("lazy", operations=EnvironmentProviderOperations())
-
-    async def prepare(operations: frozenset[str]) -> None:
-        provider.bound.ready_calls.append(operations)
-        if prepared_facets == "valid":
-            provider.bound.operations = EnvironmentProviderOperations(files=_Files())
-        elif prepared_facets == "missing_method":
-            provider.bound.operations = EnvironmentProviderOperations(files=cast(Any, object()))
-        provider.bound.availability = EnvironmentAvailability(status="available", ready_families=operations)
-
-    monkeypatch.setattr(provider.bound, "ensure_ready", prepare)
+@pytest.mark.parametrize("prepared_facets", ["valid", "missing_facet"])
+async def test_mount_validates_materialized_operations_before_publication(prepared_facets: str) -> None:
+    operations = (
+        EnvironmentProviderOperations(files=_Files()) if prepared_facets == "valid" else EnvironmentProviderOperations()
+    )
+    provider = _Binding("ready", operations=operations)
     runtime = create_environment_runtime(mounts=_request(provider), default_mount="workspace-1")
-    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        assert provider.bound.ready_calls == []
-        if prepared_facets == "valid":
+    if prepared_facets == "valid":
+        async with runtime.bind(
+            thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}
+        ) as environment:
             assert (await environment.files.stat("note.txt")).kind == "file"
-        else:
-            with pytest.raises(EnvironmentError) as failure:
+    else:
+        with pytest.raises(EnvironmentError) as failure:
+            async with runtime.bind(
+                thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}
+            ) as environment:
                 await environment.files.stat("note.txt")
-            assert failure.value.code == "environment_provider_failure"
-        assert provider.bound.ready_calls == [frozenset({"files"})]
+        assert failure.value.code == "environment_provider_failure"
     assert provider.entered == provider.exited == 1
 
 
@@ -571,49 +598,23 @@ async def test_partial_entry_failure_closes_entered_and_discards_remaining_candi
         default_mount="workspace-1",
     )
     with pytest.raises(RuntimeError, match="entry failed"):
-        async with binding.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}):
-            pass
+        async with binding.bind(
+            thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}
+        ) as environment:
+            await environment.files.stat("/workspace/value")
+            await environment.files.stat("/environment/workspace-2/value")
     assert entered.exited == 1
-    assert failed.discarded == later.discarded == 1
-
-
-@pytest.mark.parametrize("fail_cleanup", [False, True])
-async def test_initial_reuse_never_discards_an_active_advanced_binding(fail_cleanup: bool) -> None:
-    active = _Binding("active")
-    fresh = _Binding("fresh", fail_discard=fail_cleanup)
-    runtime = create_environment_runtime(mounts=_request(active), default_mount="workspace-1")
-    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as bound:
-        await runtime._activate()
-        conflicting = create_environment_runtime(mounts=_request(active, fresh))
-        with pytest.raises(BaseExceptionGroup if fail_cleanup else EnvironmentError) as reused:
-            async with conflicting.bind(thread_id="thread-2", run_id="run-2", instance=_instance(), host_refs={}):
-                pytest.fail("A transferred candidate cannot enter another runtime")
-        error = reused.value.exceptions[0] if isinstance(reused.value, BaseExceptionGroup) else reused.value
-        assert isinstance(error, EnvironmentError)
-        assert error.code == "environment_provider_binding_reused"
-        with pytest.raises(EnvironmentError) as inactive:
-            await asyncio.wait_for(conflicting.wait_until_active(), timeout=1)
-        assert inactive.value.code == "environment_activation_failed"
-        assert inactive.value.__cause__ is error
-        assert active.entered == 1
-        assert active.exited == active.discarded == 0
-        assert fresh.entered == 0
-        assert fresh.discarded == 1
-        with pytest.raises(EnvironmentError) as discarded:
-            await runtime.replace("workspace-1", _runtime_mount(fresh))
-        assert discarded.value.code == "environment_provider_binding_reused"
-        assert fresh.discarded == 1
-        assert (await bound.files.stat("/workspace/value.txt")).kind == "file"
-    assert active.exited == 1
-    assert active.discarded == 0
+    assert failed.discarded == later.discarded == later.entered == 0
 
 
 async def test_invalid_mount_set_is_rejected_before_provider_entry() -> None:
     candidate = _Binding("one")
-    mount = _runtime_mount(candidate)
     with pytest.raises(EnvironmentError) as exc_info:
         create_environment_runtime(
-            mounts={"one": mount, "two": mount},
+            mounts={
+                "one": _runtime_mount(candidate, mount_path="/same"),
+                "two": _runtime_mount(candidate, mount_path="/same"),
+            },
         )
     assert exc_info.value.code == "environment_request_invalid"
     assert candidate.entered == candidate.discarded == 0
@@ -640,11 +641,11 @@ async def test_direct_mount_paths_route_by_longest_prefix_without_legacy_aliases
         child = environment.resolve_path("/Users/example/project/./vendor//package.toml")
         relative = environment.resolve_path("src/main.py")
 
-        assert root.mount_id == project.mount_id
+        assert root.mount_id == relative.mount_id
         assert root.path == "/readme.md"
-        assert child.mount_id == nested.mount_id
+        assert child.mount_id != root.mount_id
         assert child.path == "/package.toml"
-        assert relative.mount_id == project.mount_id
+        assert project.entered == nested.entered == 0
         assert relative.path == "/src/main.py"
         assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
             "/Users/example/project",
@@ -736,7 +737,7 @@ async def test_default_change_rejects_a_new_legacy_route_conflict() -> None:
         assert conflict.value.code == "environment_request_invalid"
         assert environment.snapshot == before
         selected = environment.resolve_path("/workspace/value.txt")
-        assert selected.mount_id == direct.mount_id
+        assert selected == environment.resolve_path("value.txt", alias="direct")
 
 
 async def test_direct_mount_paths_support_drive_and_unc_roots() -> None:
@@ -759,9 +760,9 @@ async def test_direct_mount_paths_support_drive_and_unc_roots() -> None:
         drive_path = environment.resolve_path("c:/users/example/project/src/main.py")
         unc_path = environment.resolve_path("//SERVER/SHARE/project/readme.md")
 
-        assert drive_path.mount_id == drive.mount_id
+        assert drive_path.mount_id != unc_path.mount_id
         assert drive_path.path == "/src/main.py"
-        assert unc_path.mount_id == unc.mount_id
+        assert drive.entered == unc.entered == 0
         assert unc_path.path == "/readme.md"
 
 
@@ -809,7 +810,7 @@ async def test_direct_file_results_return_reusable_mount_paths() -> None:
 
         assert returned == "/Users/example/project/src/child.txt"
         selected = environment.resolve_path(returned)
-        assert selected.mount_id == provider.mount_id
+        assert selected.mount_id == environment.resolve_path(".").mount_id
         assert selected.path == "/src/child.txt"
 
 
@@ -875,12 +876,13 @@ async def test_readiness_requires_live_ready_observation() -> None:
     async def no_progress(operations: frozenset[str]) -> None:
         provider.bound.ready_calls.append(operations)
 
-    provider.bound.ensure_ready = no_progress  # type: ignore[method-assign]
+    provider.bound.check_ready = no_progress  # type: ignore[method-assign]
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
     )
     async with binding.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        provider.bound.availability = EnvironmentAvailability(status="unavailable")
         with pytest.raises(EnvironmentError) as unavailable:
             await environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))
         assert unavailable.value.code == "environment_unavailable"
@@ -897,7 +899,7 @@ async def test_unavailable_status_rejects_residual_ready_family() -> None:
             reason_code="gone",
         )
 
-    provider.bound.ensure_ready = become_unavailable  # type: ignore[method-assign]
+    provider.bound.check_ready = become_unavailable  # type: ignore[method-assign]
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
@@ -981,8 +983,11 @@ async def test_each_provider_exit_has_an_independent_cleanup_deadline(
         default_mount="workspace-1",
     )
     with pytest.raises(BaseExceptionGroup):
-        async with binding.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}):
-            pass
+        async with binding.bind(
+            thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}
+        ) as environment:
+            await environment.files.stat("/workspace/value")
+            await environment.files.stat("/environment/workspace-2/value")
     assert reached == ["second-exit", "first-exit"]
 
 
@@ -996,8 +1001,8 @@ async def test_invalid_identity_does_not_transfer_or_consume_binding() -> None:
         async with binding.bind(thread_id="thread-1", run_id="", instance=_instance(), host_refs={}):
             pass
     assert provider.entered == provider.discarded == 0
-    async with binding.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}):
-        pass
+    async with binding.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        await environment.files.stat("/workspace/value")
     assert provider.entered == 1
 
 
@@ -1096,8 +1101,10 @@ async def test_replace_preserves_default_and_changes_mount_incarnation() -> None
         assert change.previous_default == change.current_default == "workspace"
         assert environment.snapshot.default_mount == "workspace"
         assert before.mount_id != after.mount_id
+        assert environment.snapshot.mounts[0].descriptor.generation == "unprepared"
+        assert initial.entered == replacement.entered == 0
+        await environment.files.stat("/workspace/value")
         assert environment.snapshot.mounts[0].descriptor.generation == "generation-replacement"
-        await asyncio.wait_for(initial.exit_event.wait(), timeout=0.5)
 
 
 async def test_unmounting_the_default_clears_it_atomically() -> None:
@@ -1122,28 +1129,22 @@ async def test_unmounting_the_default_clears_it_atomically() -> None:
         assert change.current_default is None
         assert environment.snapshot.default_mount is None
         assert [item.name for item in environment.snapshot.mounts] == ["second"]
-        await asyncio.wait_for(first.exit_event.wait(), timeout=0.5)
+        assert first.entered == first.exited == 0
 
 
-async def test_dynamic_prepare_failure_is_atomic_and_cleans_candidate() -> None:
+async def test_dynamic_activation_failure_closes_execution_and_keeps_other_mounts_usable() -> None:
     initial = _Binding("initial")
-    aggregate = create_environment_runtime(
-        mounts={"initial": _runtime_mount(initial)},
-        default_mount="initial",
-    )
+    aggregate = create_environment_runtime(mounts={"initial": _runtime_mount(initial)}, default_mount="initial")
     invalid = _Binding("invalid", operations=EnvironmentProviderOperations())
-    invalid.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
         await aggregate._activate()
-        before = environment.snapshot
-
+        await aggregate.mount("invalid", _runtime_mount(invalid))
+        assert invalid.entered == 0
         with pytest.raises(EnvironmentError) as failed:
-            await aggregate.mount("invalid", _runtime_mount(invalid))
-
+            await environment.files.stat("/environment/invalid/value")
         assert failed.value.code == "environment_provider_failure"
-        assert environment.snapshot == before
-        assert environment._change_sequence == 0
-    assert invalid.entered == invalid.exited == 1
+        assert invalid.entered == invalid.exited == 1
+        assert (await environment.files.stat("/workspace/value")).kind == "file"
 
 
 async def test_unmounted_scope_retires_after_accepted_operation_drains() -> None:
@@ -1186,78 +1187,39 @@ async def test_unmounted_scope_retires_after_accepted_operation_drains() -> None
         assert (await operation).path == "/workspace/value"
 
 
-async def test_cancelled_queued_mount_does_not_consume_candidate() -> None:
-    entry_started = asyncio.Event()
-    release_entry = asyncio.Event()
+async def test_dynamic_mount_registration_does_not_wait_for_another_mount_activation() -> None:
+    started, release = asyncio.Event(), asyncio.Event()
 
-    class SlowBinding(_Binding):
-        @asynccontextmanager
-        async def bind(self, **kwargs: Any) -> AsyncGenerator[Any]:
-            del kwargs
-            self.entered += 1
-            entry_started.set()
-            await release_entry.wait()
-            try:
-                yield self.bound
-            finally:
-                self.exited += 1
+    class SlowSource(_Binding):
+        async def ensure_ready(self):
+            started.set()
+            await release.wait()
+            return self
 
-    aggregate = create_empty_environment_runtime()
-    slow = SlowBinding("slow")
-    queued = _Binding("queued")
-    async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        await aggregate._activate()
-        first = asyncio.create_task(aggregate.mount("slow", _runtime_mount(slow)))
-        await entry_started.wait()
-        second = asyncio.create_task(aggregate.mount("queued", _runtime_mount(queued)))
-        await asyncio.sleep(0)
-
-        second.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await second
-        assert queued.entered == queued.discarded == 0
-
-        release_entry.set()
-        assert (await first).kind == "mounted"
-        assert (await aggregate.mount("queued", _runtime_mount(queued))).kind == "mounted"
-        assert [item.name for item in environment.snapshot.mounts] == ["slow", "queued"]
+    runtime = create_empty_environment_runtime()
+    slow, other = SlowSource("slow"), _Binding("other")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        await runtime._activate()
+        await runtime.mount("slow", _runtime_mount(slow))
+        operation = asyncio.create_task(environment.files.stat("/environment/slow/value"))
+        await started.wait()
+        await asyncio.wait_for(runtime.mount("other", _runtime_mount(other)), timeout=1)
+        assert other.entered == 0
+        release.set()
+        await operation
 
 
-async def test_prepared_mount_is_cleaned_when_runtime_becomes_terminal() -> None:
-    entry_started = asyncio.Event()
-    release_entry = asyncio.Event()
-
-    class SlowBinding(_Binding):
-        @asynccontextmanager
-        async def bind(self, **kwargs: Any) -> AsyncGenerator[Any]:
-            del kwargs
-            self.entered += 1
-            entry_started.set()
-            await release_entry.wait()
-            try:
-                yield self.bound
-            finally:
-                self.exited += 1
-                self.exit_event.set()
-
-    aggregate = create_empty_environment_runtime()
-    candidate = SlowBinding("terminal")
-    async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        await aggregate._activate()
-        mutation = asyncio.create_task(aggregate.mount("terminal", _runtime_mount(candidate)))
-        await entry_started.wait()
-        aggregate._begin_close()
-        release_entry.set()
-
+async def test_terminal_fence_rejects_new_activation() -> None:
+    runtime = create_empty_environment_runtime()
+    source = _Binding("terminal")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        await runtime._activate()
+        await runtime.mount("terminal", _runtime_mount(source), make_default=True)
+        runtime._begin_close()
         with pytest.raises(EnvironmentError) as closed:
-            await mutation
-        assert closed.value.code == "run_not_active"
-        assert environment.snapshot.mounts == ()
-        assert candidate.entered == candidate.exited == 1
-
-        with pytest.raises(EnvironmentError) as rejected:
-            await aggregate.set_default(None)
-        assert rejected.value.code == "run_not_active"
+            await environment.files.stat("/workspace/value")
+        assert closed.value.code == "environment_closed"
+        assert source.entered == source.exited == 0
 
 
 async def test_cleanup_timeout_supervises_provider_exit_after_operation_drains(
@@ -1312,7 +1274,7 @@ async def test_readiness_timeout_cancels_an_unowned_worker_and_releases_its_moun
             raise
 
     provider = _Binding("readiness-timeout")
-    provider.bound.ensure_ready = ensure_ready  # type: ignore[method-assign]
+    provider.bound.check_ready = ensure_ready  # type: ignore[method-assign]
     aggregate = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
@@ -1352,7 +1314,7 @@ async def test_readiness_timeout_preserves_a_worker_owned_by_another_waiter() ->
             ready_families=operations,
         )
 
-    provider.bound.ensure_ready = ensure_ready  # type: ignore[method-assign]
+    provider.bound.check_ready = ensure_ready  # type: ignore[method-assign]
     aggregate = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
@@ -1395,58 +1357,6 @@ async def test_readiness_timeout_preserves_a_worker_owned_by_another_waiter() ->
         assert provider.exited == 1
 
 
-async def test_reused_candidate_rejection_leaves_independent_candidate_transferable() -> None:
-    aggregate = create_empty_environment_runtime()
-    active = _Binding("active")
-    fresh = _Binding("fresh")
-    async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        await aggregate._activate()
-        await aggregate.mount("active", _runtime_mount(active), make_default=True)
-
-        with pytest.raises(EnvironmentError) as reused:
-            await aggregate.replace("active", _runtime_mount(active))
-        assert reused.value.code == "environment_provider_binding_reused"
-        assert fresh.entered == fresh.discarded == 0
-
-        assert (await aggregate.mount("fresh", _runtime_mount(fresh))).kind == "mounted"
-        assert [item.name for item in environment.snapshot.mounts] == ["active", "fresh"]
-        assert not hasattr(environment, "_transferred_candidates")
-
-
-async def test_candidate_discard_deadline_is_hard_and_does_not_block_later_candidates(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(environment_coordinator, "DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS", 0.01)
-    release = asyncio.Event()
-    finished = asyncio.Event()
-
-    class StubbornDiscardBinding(_Binding):
-        async def discard(self) -> None:
-            self.discarded += 1
-            try:
-                while not release.is_set():
-                    try:
-                        await release.wait()
-                    except asyncio.CancelledError:
-                        continue
-            finally:
-                finished.set()
-
-    stubborn = StubbornDiscardBinding("stubborn-discard", fail_entry=True)
-    later = _Binding("later-discard")
-    aggregate = create_empty_environment_runtime()
-    async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        await aggregate._activate()
-        with pytest.raises(BaseExceptionGroup):
-            await aggregate.mount("stubborn", _runtime_mount(stubborn))
-        assert stubborn.discarded == 1
-
-        assert (await aggregate.mount("later", _runtime_mount(later))).kind == "mounted"
-        assert [item.name for item in environment.snapshot.mounts] == ["later"]
-        release.set()
-        await asyncio.wait_for(finished.wait(), timeout=0.2)
-
-
 async def test_provider_bound_artifacts_must_match_selected_mount() -> None:
     class WrongReceiptFiles:
         async def write_text(self, path: str, text: str, **kwargs: Any) -> FileWriteResult:
@@ -1455,7 +1365,7 @@ async def test_provider_bound_artifacts_must_match_selected_mount() -> None:
                 path=path,
                 bytes_written=1,
                 receipt=EnvironmentOperationReceipt(
-                    mount_id="another-mount",
+                    execution_id="another-execution",
                     observed_generation="another-generation",
                     operation_id="operation-1",
                     stage="completed",
@@ -1500,10 +1410,11 @@ async def test_dynamic_validation_and_scope_cleanup_errors_are_both_preserved() 
     candidate = CleanupFailureBinding("invalid", operations=EnvironmentProviderOperations())
     candidate.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
     aggregate = create_empty_environment_runtime()
-    async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}):
+    async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
         await aggregate._activate()
+        await aggregate.mount("invalid", _runtime_mount(candidate))
         with pytest.raises(BaseExceptionGroup) as raised:
-            await aggregate.mount("invalid", _runtime_mount(candidate))
+            await environment.files.stat("/environment/invalid/value")
 
     def flatten(error: BaseException) -> list[BaseException]:
         if isinstance(error, BaseExceptionGroup):
@@ -1521,17 +1432,17 @@ class _IdempotentProcessOperations:
         self._next = 0
         self.inspect_result: BoundProcessHandle | None = None
         self.inspect_error: str | None = None
-        self._mount_id: str | None = None
+        self._execution_id: str | None = None
 
     @property
     def handles(self) -> tuple[BoundProcessHandle, ...]:
         return self._handles
 
-    def configure_mount(self, mount_id: str) -> None:
-        self._mount_id = mount_id
+    def configure_execution(self, execution_id: str) -> None:
+        self._execution_id = execution_id
         self._handles = tuple(
             BoundProcessHandle(
-                mount_id=mount_id,
+                execution_id=execution_id,
                 identity=ProcessIdentity(
                     provider_type="test_provider",
                     environment_id="environment:processes",
@@ -1546,9 +1457,9 @@ class _IdempotentProcessOperations:
         self.inspect_result = self._handles[0]
 
     def _receipt(self) -> EnvironmentOperationReceipt:
-        assert self._mount_id is not None
+        assert self._execution_id is not None
         return EnvironmentOperationReceipt(
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             observed_generation="generation-processes",
             operation_id="operation-1",
             stage="completed",
@@ -1617,6 +1528,7 @@ def _process_test_binding() -> tuple[Any, _IdempotentProcessOperations]:
         },
         default_mount="processes",
     )
+    operations.configure_execution(provider.bound.execution_id)
     return aggregate, operations
 
 
@@ -1684,16 +1596,15 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_d
     )
 
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        assert provider_a.mount_id is not None
-        assert provider_b.mount_id is not None
+        assert provider_a.entered == provider_b.entered == 0
         selected_operations.result_handle = BoundProcessHandle(
-            mount_id=provider_a.mount_id,
+            execution_id=provider_a.bound.execution_id,
             identity=identity,
             observed_generation="generation-a",
             handle=OpaqueProcessHandle._from_payload("bound-process-a"),
         )
         retarget_operations.result_handle = BoundProcessHandle(
-            mount_id=provider_b.mount_id,
+            execution_id=provider_b.bound.execution_id,
             identity=ProcessIdentity(
                 provider_type="test_provider",
                 environment_id="environment:b",
@@ -1830,12 +1741,11 @@ async def test_file_list_keeps_captured_virtual_root_during_unmount() -> None:
 
 
 async def test_process_handle_from_another_runtime_is_stale() -> None:
-    aggregate, operations = _process_test_binding()
+    aggregate, _operations = _process_test_binding()
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        operations.configure_mount(environment.resolve_path("/workspace").mount_id)
         await aggregate._activate()
         started = await environment.processes.start(_process_request())
-        stale_handle = started.process.handle.model_copy(update={"mount_id": "mount-stale"})
+        stale_handle = started.process.handle.model_copy(update={"execution_id": "exec-stale"})
 
         with pytest.raises(EnvironmentError) as stale:
             await environment.processes.inspect(stale_handle)
@@ -1846,7 +1756,6 @@ async def test_process_handle_from_another_runtime_is_stale() -> None:
 async def test_authoritative_process_loss_releases_the_mount_handle_fence() -> None:
     aggregate, operations = _process_test_binding()
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        operations.configure_mount(environment.resolve_path("/workspace").mount_id)
         await aggregate._activate()
         started = await environment.processes.start(_process_request())
         operations.inspect_error = "environment_not_found"
@@ -1860,7 +1769,6 @@ async def test_authoritative_process_loss_releases_the_mount_handle_fence() -> N
 async def test_unmount_retires_mount_after_active_process_handles_are_released() -> None:
     aggregate, operations = _process_test_binding()
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        operations.configure_mount(environment.resolve_path("/workspace").mount_id)
         await aggregate._activate()
         first = await environment.processes.start(_process_request())
         second = await environment.processes.start(_process_request())
@@ -1875,7 +1783,7 @@ async def test_unmount_retires_mount_after_active_process_handles_are_released()
 
 
 async def test_replace_retires_old_mount_after_active_process_handles_are_released() -> None:
-    aggregate, operations = _process_test_binding()
+    aggregate, _operations = _process_test_binding()
     replacement_operations = _IdempotentProcessOperations()
     replacement = _Binding(
         "replacement-processes",
@@ -1884,7 +1792,6 @@ async def test_replace_retires_old_mount_after_active_process_handles_are_releas
         permissions=_process_permissions(),
     )
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        operations.configure_mount(environment.resolve_path("/workspace").mount_id)
         await aggregate._activate()
         started = await environment.processes.start(_process_request())
 
@@ -1894,9 +1801,9 @@ async def test_replace_retires_old_mount_after_active_process_handles_are_releas
                 _runtime_mount(replacement, permissions=_process_permissions()),
             )
         ).kind == "replaced"
-        assert replacement.entered == 1
+        assert replacement.entered == 0
         assert replacement.exited == 0
-        assert environment.snapshot.mounts[0].descriptor.generation == "generation-replacement-processes"
+        assert environment.snapshot.mounts[0].descriptor.generation == "unprepared"
         assert (await environment.processes.inspect(started.process.handle)).handle == started.process.handle
 
         await environment.processes.release(started.process.handle)
@@ -1905,7 +1812,6 @@ async def test_replace_retires_old_mount_after_active_process_handles_are_releas
 async def test_process_result_cannot_substitute_another_same_mount_handle() -> None:
     aggregate, operations = _process_test_binding()
     async with aggregate.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
-        operations.configure_mount(environment.resolve_path("/workspace").mount_id)
         await aggregate._activate()
         first = await environment.processes.start(_process_request())
         await environment.processes.start(_process_request())
@@ -1925,7 +1831,7 @@ async def test_readiness_publishes_permissions_before_operation_dispatch() -> No
         )
         binding.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
 
-    binding.bound.ensure_ready = ready
+    binding.bound.check_ready = ready
     runtime = create_environment_runtime(mounts=_request(binding), default_mount="workspace-1")
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
         before = environment.snapshot
@@ -1935,7 +1841,7 @@ async def test_readiness_publishes_permissions_before_operation_dispatch() -> No
         assert before.mounts[0].permission_ceiling.operations
 
 
-async def test_recovery_publishes_new_generation_even_when_reporting_rebuild() -> None:
+async def test_readiness_rejects_target_replacement_without_publishing_it() -> None:
     binding = _Binding("rebuild")
 
     async def ready(operations):
@@ -1946,13 +1852,13 @@ async def test_recovery_publishes_new_generation_even_when_reporting_rebuild() -
     runtime = create_environment_runtime(mounts=_request(binding), default_mount="workspace-1")
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
         selection = environment.select_files("/workspace/file")
-        binding.bound.ensure_ready = ready
+        binding.bound.check_ready = ready
         with pytest.raises(EnvironmentError) as caught:
             await environment.files.stat("/workspace/file")
-        assert caught.value.code == "environment_rebuilt"
-        assert environment.snapshot.mounts[0].descriptor.generation == "generation-new"
+        assert caught.value.code == "environment_stale_mount"
+        assert environment.snapshot.mounts[0].descriptor.generation == "generation-rebuild"
         assert (await environment.describe("workspace-1")).mount == environment.snapshot.mounts[0]
-        with pytest.raises(EnvironmentError, match="stale"):
+        with pytest.raises(EnvironmentError, match="changed within an execution"):
             async with environment.open_files(selection):
                 pass
 
@@ -1972,14 +1878,14 @@ async def test_process_start_rechecks_compound_actions_after_readiness() -> None
         )
         provider.bound.availability = EnvironmentAvailability(status="available", ready_families=operations)
 
-    provider.bound.ensure_ready = narrow
+    provider.bound.check_ready = narrow
     runtime = create_environment_runtime(
         mounts={"processes": _runtime_mount(provider, permissions=_process_permissions())},
         default_mount="processes",
     )
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as env:
-        assert provider.mount_id is not None
-        operations.configure_mount(provider.mount_id)
+        assert provider.entered == 0
+        operations.configure_execution(provider.bound.execution_id)
         with pytest.raises(EnvironmentError) as error:
             await env.processes.start(_process_request(), required_actions=_process_permissions())
         assert error.value.code == "environment_denied"
@@ -1992,8 +1898,8 @@ async def test_foreground_entry_points_share_dispatch_and_reject_retained_output
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from a13n_harness.providers.environment.commands import ShellExecResult
-    from a13n_harness.providers.environment.retention import BoundOutputReference, OpaqueOutputReference
+    from a13n_environment.commands import ShellExecResult
+    from a13n_environment.retention import BoundOutputReference, OpaqueOutputReference
 
     async def execute(request):
         assert request.cwd == "/"
@@ -2005,7 +1911,7 @@ async def test_foreground_entry_points_share_dispatch_and_reject_retained_output
             captured_bytes=4,
             inline=None if retained else b"done",
             reference=BoundOutputReference(
-                mount_id=provider.mount_id,
+                execution_id=provider.bound.execution_id,
                 observed_generation=provider.bound.descriptor.generation,
                 reference=OpaqueOutputReference._from_payload("native-output"),
             )
@@ -2016,7 +1922,7 @@ async def test_foreground_entry_points_share_dispatch_and_reject_retained_output
             status=ProcessStatus(phase="exited", exit_code=0, termination_reason="exit", cleanup="complete"),
             output=ProcessOutputSnapshot(stdout=output, stderr=empty),
             receipt=EnvironmentOperationReceipt(
-                mount_id=provider.mount_id,
+                execution_id=provider.bound.execution_id,
                 observed_generation=provider.bound.descriptor.generation,
                 operation_id="shell-1",
                 stage="completed",
@@ -2111,7 +2017,7 @@ async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: 
                 path=path,
                 bytes_written=len(writes[-1]),
                 receipt=EnvironmentOperationReceipt(
-                    mount_id=destination.mount_id,
+                    execution_id=destination.bound.execution_id,
                     observed_generation=destination.bound.descriptor.generation,
                     operation_id="copy-1",
                     stage="completed",
@@ -2129,8 +2035,8 @@ async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: 
         operations=EnvironmentProviderOperations(files=DestinationFiles()),
         permissions=destination_actions,
     )
-    source_ready = source.bound.ensure_ready
-    destination_ready = destination.bound.ensure_ready
+    source_ready = source.bound.check_ready
+    destination_ready = destination.bound.check_ready
 
     async def prepare_source(operations):
         source_started.set()
@@ -2142,8 +2048,8 @@ async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: 
             destination.bound.descriptor = destination.bound.descriptor.model_copy(update={"generation": "replacement"})
         await destination_ready(operations)
 
-    source.bound.ensure_ready = prepare_source
-    destination.bound.ensure_ready = prepare_destination
+    source.bound.check_ready = prepare_source
+    destination.bound.check_ready = prepare_destination
     runtime = create_environment_runtime(
         mounts={
             "source": _runtime_mount(source, permissions=source_actions, mount_path="/source"),
@@ -2156,9 +2062,13 @@ async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: 
         copying = asyncio.create_task(files.copy("/source/input", "/destination/output", replace=False))
         try:
             await asyncio.wait_for(source_started.wait(), timeout=2)
-            await environment.ensure_ready(
-                EnvironmentReadinessRequirement(mounts=("destination",), operations=frozenset({"files"}))
-            )
+            requirement = EnvironmentReadinessRequirement(mounts=("destination",), operations=frozenset({"files"}))
+            if rebuild:
+                with pytest.raises(EnvironmentError) as changed:
+                    await environment.ensure_ready(requirement)
+                assert changed.value.code == "environment_stale_mount"
+            else:
+                await environment.ensure_ready(requirement)
         finally:
             release_source.set()
         if rebuild:

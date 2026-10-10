@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_service.runs.environments.adapters import close, construct
+from a13n_environment.errors import EnvironmentProviderError
+from a13n_service.runs.environments.adapters import execution_connector
 
 from .environments_support import EXTERNAL_TOKEN as TOKEN
 from .environments_support import change, details, register, revealed, stored, target
@@ -155,14 +155,9 @@ async def test_every_connection_expects_the_registered_device(service, daemons) 
     # The endpoint now reaches another daemon: the next connection is refused, and so is re-verifying it.
     await daemons.stop(laptop)
     await daemons.start("device-impostor", port=laptop.port)
-    adapter = await construct(
-        service.runtime, await target(service, environment_id), operation_id=None, allow_create=False
-    )
-    try:
-        with pytest.raises(EnvironmentProviderError) as refused:
-            await adapter.prepare()
-    finally:
-        await close(adapter)
+    adapter = await execution_connector(service.runtime, await target(service, environment_id))
+    with pytest.raises(EnvironmentProviderError) as refused:
+        await adapter.open()
     # The daemon refuses a connection that expects another device before any session opens.
     assert refused.value.code == "provider_device_mismatch"
     mismatch = await change(service, environment_id, {"token": TOKEN})
@@ -184,10 +179,6 @@ async def test_every_connection_expects_the_registered_device(service, daemons) 
     row = await stored(service, environment_id)
     assert (row.endpoint, row.provider_identity, row.handle) == (moved.endpoint, None, None)
     assert revealed(service, row) == b"rotated-token" and "rotated-token" not in changed.text
-    adapter = await construct(
-        service.runtime, await target(service, environment_id), operation_id=None, allow_create=False
-    )
-    try:
-        await adapter.prepare()
-    finally:
-        await close(adapter)
+    adapter = await execution_connector(service.runtime, await target(service, environment_id))
+    async with await adapter.open():
+        pass

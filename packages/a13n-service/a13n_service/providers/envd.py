@@ -5,15 +5,15 @@ the endpoint against the outbound policy. First contact reads the device identit
 connection expects that identity, so an endpoint that now reaches another daemon is refused.
 """
 
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentState
-from a13n_harness.providers.environment.remote_envd.configuration import (
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.models import EnvironmentState
+from a13n_environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
     RemoteEnvdStateData,
 )
-from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from a13n_service.providers.endpoints import check_endpoint
@@ -50,16 +50,15 @@ async def first_contact(endpoint: str, token: str, policy: EndpointPolicy) -> st
 
 async def connect(
     endpoint: str, token: str, *, environment_id: str, device_id: str, policy: EndpointPolicy
-) -> Environment:
+) -> EnvironmentConnector:
     """A fresh, unentered adapter that expects `device_id`, refused as `provider_device_mismatch` by another
     device; it never creates or changes anything there."""
     await check_endpoint(TYPE, endpoint, policy)
     state = RemoteEnvdStateData(device_id=device_id).model_dump()
-    return await HTTP_ENVD.create(
+    return HTTP_ENVD.execution_connector(
         {},
         configuration={"endpoint": endpoint},
         credential={"token": token},
         environment_id=environment_id,
         state=EnvironmentState(provider_key=TYPE, state_version="1", state=state),
-        allow_create=False,
     )

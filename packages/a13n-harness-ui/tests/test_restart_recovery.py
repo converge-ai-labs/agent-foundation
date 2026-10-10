@@ -65,10 +65,10 @@ def fail_environment_finalization(monkeypatch, mode):
     from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentStatePublication
     from a13n_harness_ui.storage import EnvironmentBindingKey
 
-    finalize = EnvironmentRunPlan.finalize
+    finalization = EnvironmentRunPlan.finalization.fget
 
-    async def failing(self, **kwargs):
-        result = await finalize(self, **kwargs)
+    def failing(self):
+        result = finalization(self)
         error = RuntimeError("Synthetic finalization failure")
         if mode == "cleanup":
             return replace(result, cleanup_errors=(error,))
@@ -91,7 +91,7 @@ def fail_environment_finalization(monkeypatch, mode):
             ),
         )
 
-    monkeypatch.setattr(EnvironmentRunPlan, "finalize", failing)
+    monkeypatch.setattr(EnvironmentRunPlan, "finalization", property(failing))
 
 
 @pytest.mark.parametrize("finalization_failure", [None, "state", "cleanup"])

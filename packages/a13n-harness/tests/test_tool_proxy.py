@@ -633,15 +633,14 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
 
 
 async def test_proxy_run_program_reads_source_and_dispatches_through_current_manager(tmp_path: Path) -> None:
-    from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
-    from a13n_harness.environment.advanced import create_environment_runtime
-    from a13n_harness.environment.providers import EnvironmentRuntimeMount
-    from a13n_harness.providers.environment.direct_local.configuration import (
+    from a13n_environment.direct_local.configuration import (
         DirectLocalEnvironmentConfiguration,
         DirectLocalRootConfiguration,
     )
+    from a13n_harness.environment import EnvironmentAction, EnvironmentMount, EnvironmentPermissionSet
+    from a13n_harness.environment.advanced import create_environment_runtime
 
-    from .environment_helpers import DirectLocalEnvironmentProviderBinding
+    from .environment_helpers import DirectLocalSource
 
     (tmp_path / "job.codeact.py").write_text(
         "async def main(inputs):\n"
@@ -650,14 +649,14 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
         "    return await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'value': inputs['value']})\n",
         encoding="utf-8",
     )
-    provider = DirectLocalEnvironmentProviderBinding(
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=tmp_path)),
         environment_id="proxy-program-test",
     )
     environment = create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
+            "local": EnvironmentMount(
+                source=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory="/",
             )

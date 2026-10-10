@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
 from a13n_harness import HarnessBuilder, HarnessInstrumentation, HarnessTraceContent, RunBindings
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capabilities import CodeActCapability
@@ -15,15 +19,11 @@ from a13n_harness.environment import (
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
     EnvironmentError,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import EnvironmentRuntimeMount
 from a13n_harness.observation import record_tool_outcome_unknown, set_tool_span_attributes
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
 from a13n_harness.toolsets.files import _environment_error_result as file_error_result
 from a13n_harness.toolsets.shell import _environment_error_result as shell_error_result
 from opentelemetry.sdk.metrics import MeterProvider
@@ -39,7 +39,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = pytest.mark.anyio
 
@@ -54,8 +54,8 @@ def _provider() -> tuple[TracerProvider, InMemorySpanExporter]:
 def _environment(root: Path):
     return create_environment_runtime(
         mounts={
-            "workspace": EnvironmentRuntimeMount(
-                binding=DirectLocalEnvironmentProviderBinding(
+            "workspace": EnvironmentMount(
+                source=DirectLocalSource(
                     DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root)),
                     environment_id="tool-observation-test",
                 ),

@@ -8,7 +8,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from a13n_harness.providers.environment.commands import (
+from a13n_environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -23,36 +23,33 @@ from a13n_harness.providers.environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from a13n_harness.providers.environment.computer import (
+from a13n_environment.computer import (
     ComputerActionResult,
     ComputerDescription,
     ComputerInput,
     ComputerScreenshot,
 )
-from a13n_harness.providers.environment.files import FileOperator
-from a13n_harness.providers.environment.models import (
+from a13n_environment.execution import EnvironmentExecution
+from a13n_environment.files import FileOperator
+from a13n_environment.models import (
     EnvironmentAction,
-    EnvironmentAvailability,
-    EnvironmentChange,
-    EnvironmentDescriptor,
-    EnvironmentMountObservation,
-    EnvironmentOperationFamily,
     EnvironmentOperationReceipt,
-    EnvironmentPath,
-    EnvironmentPermissionSet,
-    EnvironmentReadinessRequirement,
-    EnvironmentSnapshot,
     EnvironmentState,
 )
-from a13n_harness.providers.environment.operations import EnvironmentOperations
-from a13n_harness.providers.environment.retention import (
+from a13n_environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
 )
 
-from ._mount_path import parse_mount_path, validate_working_directory
+from a13n_harness.environment.models import (
+    EnvironmentChange,
+    EnvironmentMountObservation,
+    EnvironmentPath,
+    EnvironmentReadinessRequirement,
+    EnvironmentSnapshot,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext
@@ -174,12 +171,13 @@ class BoundProcessOperations(Protocol):
 class BoundPortOperations(Protocol):
     """Alias-aware port observations routed by one BoundEnvironment."""
 
-    async def inspect(self, target: PortTarget) -> PortObservation: ...
+    async def inspect(self, target: PortTarget, *, alias: str | None = None) -> PortObservation: ...
 
     async def wait(
         self,
         target: PortTarget,
         *,
+        alias: str | None = None,
         desired: Literal["listening", "not_listening"],
         timeout_seconds: float,
     ) -> PortObservation: ...
@@ -205,94 +203,15 @@ class BoundOutputOperations(Protocol):
     ) -> EnvironmentOperationReceipt: ...
 
 
-class BoundEnvironmentProvider(Protocol):
-    """One entered Environment adapter with a stable observed generation."""
-
-    @property
-    def provider_key(self) -> str: ...
-
-    @property
-    def environment_id(self) -> str: ...
-
-    @property
-    def descriptor(self) -> EnvironmentDescriptor: ...
-
-    @property
-    def availability(self) -> EnvironmentAvailability: ...
-
-    @property
-    def operations(self) -> EnvironmentOperations: ...
-
-    async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
-
-    def dump_state(self) -> EnvironmentState | None: ...
-
-
-class EnvironmentProviderBinding(ABC):
-    """Single-use provider candidate materialized by a trusted Host."""
-
-    @property
-    def _transfer_owner(self) -> object:
-        """Keep transfer ownership on the resource shared by any forwarding wrappers."""
-        return self
-
-    def _claim_transfer(self) -> bool:
-        """Atomically mark this candidate as transferred without a central identity table."""
-        owner = self._transfer_owner
-        marker_name = "_EnvironmentProviderBinding__transferred"
-        try:
-            object.__getattribute__(owner, marker_name)
-        except AttributeError:
-            object.__setattr__(owner, marker_name, True)
-            return True
-        return False
-
-    @property
-    @abstractmethod
-    def provider_type(self) -> str:
-        """Return the stable provider compatibility discriminator."""
-
-    @property
-    @abstractmethod
-    def environment_id(self) -> str:
-        """Return the provider's logical resource identity."""
-
-    @abstractmethod
-    def bind(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        instance: AgentInstanceContext,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
-        """Enter this candidate exactly once under a Harness-generated mount identity."""
-
-    @abstractmethod
-    async def discard(self) -> None:
-        """Idempotently dispose a candidate that did not enter successfully."""
-
-
-@dataclass(frozen=True, slots=True)
-class EnvironmentRuntimeMount:
-    """One trusted provider candidate and its run-local mount policy."""
-
-    binding: EnvironmentProviderBinding
-    permission_ceiling: EnvironmentPermissionSet
-    working_directory: str | None = "/"
-    mount_path: str | None = None
-    provider_root: str = "/"
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.binding, EnvironmentProviderBinding):
-            raise TypeError("binding must be an EnvironmentProviderBinding")
-        if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
-            raise TypeError("permission_ceiling must be an EnvironmentPermissionSet")
-        validate_working_directory(self.working_directory)
-        validate_working_directory(self.provider_root)
-        if self.mount_path is not None:
-            parse_mount_path(self.mount_path)
+def _claim_execution(execution: EnvironmentExecution, owner: object) -> bool:
+    """Keep ownership on the execution across mount wrappers and independent Runs."""
+    marker = "_a13n_harness_execution_owner"
+    try:
+        previous = object.__getattribute__(execution, marker)
+    except AttributeError:
+        object.__setattr__(execution, marker, owner)
+        return True
+    return previous is owner
 
 
 class BoundEnvironment(ABC):
@@ -407,15 +326,15 @@ class EnvironmentRuntime(ABC):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentEntry | EnvironmentRuntimeMount,
+        mount: EnvironmentEntry,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
-        """Prepare and atomically publish one new mount."""
+        """Register and atomically publish one new mount without activation."""
 
     @abstractmethod
-    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
-        """Prepare and atomically replace one existing mount."""
+    async def replace(self, name: str, mount: EnvironmentEntry) -> EnvironmentChange:
+        """Validate and atomically replace one existing mount without activation."""
 
     @abstractmethod
     async def unmount(self, name: str) -> EnvironmentChange:

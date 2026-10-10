@@ -20,6 +20,7 @@ from functools import partial
 from typing import Literal
 
 import anyio
+from a13n_environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness import (
     DeferredToolResume,
     HarnessError,
@@ -39,7 +40,6 @@ from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
-from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -70,7 +70,7 @@ from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObj
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
-from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
+from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
@@ -140,10 +140,6 @@ async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> No
     await _Attempt(runtime, lease, control, plan).run()
 
 
-class _EnvironmentUnavailable(Exception):
-    """A mounted environment can no longer be used by this run; a new mount is the user's decision."""
-
-
 # Provider failures that a later attempt may not repeat; the others need a changed mount or configuration.
 _TRANSIENT_ENVIRONMENT = frozenset(
     {
@@ -174,8 +170,10 @@ def _failure(lease: Lease, error: Exception) -> Outcome | None:
 def _own(error: Exception) -> Exception:
     """The Service's own failure inside a Harness hook, such as a skill package read or a lease proof, which the
     Harness wraps and keeps as the cause; it keeps its meaning. Any other error is itself."""
-    cause = error.__cause__
-    return cause if isinstance(error, HarnessError) and isinstance(cause, ServiceError | LeaseLost) else error
+    current: BaseException = error
+    while isinstance(current, HarnessError) and current.__cause__ is not None:
+        current = current.__cause__
+    return current if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable) else error
 
 
 def _deterministic(error: Exception) -> Outcome | None:
@@ -185,7 +183,7 @@ def _deterministic(error: Exception) -> Outcome | None:
         return None if error.code == "unavailable" else Outcome.refused(error)
     if isinstance(error, HarnessError):
         return Outcome.failed(error.code, str(error))
-    if isinstance(error, _EnvironmentUnavailable):
+    if isinstance(error, EnvironmentUnavailable):
         return Outcome.failed("environment_unavailable", str(error))
     if isinstance(error, EnvironmentProviderError) and error.category not in _TRANSIENT_ENVIRONMENT:
         return Outcome.failed("environment_unavailable", error.safe_projection().message)
@@ -363,8 +361,11 @@ class _Attempt:
         try:
             result = await self._stream()
             if result is None:
-                # The worker is draining before the Harness run started: another worker prepares the mounts again.
-                await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
+                if self.control.stopped.is_set():
+                    await self._seal_interrupted(self.control.outcome)
+                else:
+                    # Another worker resumes instance preparation under the same durable operation.
+                    await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
             await self._end(result)
         except (LeaseLost, asyncio.CancelledError):
@@ -383,16 +384,22 @@ class _Attempt:
                 await self._seal_interrupted(outcome)
 
     async def _stream(self) -> HarnessRunResult | None:
-        """The Harness run's result, or None when the worker drained while the mounts were being prepared."""
+        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
         runtime, lease = self.runtime, self.lease
-        prepared = await self._prepare_mounts()
-        if prepared is None:
+        root = self.plan.agent
+        if not root.config.lazy_environment and not await self._prepare_environments():
             return None
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
-                open_mounts(runtime, prepared, configuration=self.plan.configuration)
+                open_mounts(
+                    runtime,
+                    lease,
+                    self.plan.principal,
+                    self.plan.authority,
+                    self.plan.mounts,
+                    configuration=self.plan.configuration,
+                )
             )
-            root = self.plan.agent
             models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
             host = await stack.enter_async_context(
                 open_host(
@@ -474,34 +481,43 @@ class _Attempt:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
 
-    async def _prepare_mounts(self) -> list[PreparedMount] | None:
-        """Waiting for sandboxes to start can take minutes, so an interrupt or a handoff stops the wait; None
-        means the worker is draining."""
-        mounts = list(self.plan.mounts)
-        if not mounts:
-            return []
-        preparing = self.runtime.tasks.start(
-            prepare_mounts(self.runtime, self.lease, self.plan.principal, self.plan.authority, mounts),
-            name=f"prepare-mounts-{self.lease.attempt_id}",
+    async def _prepare_environments(self) -> bool:
+        """Prepare instances in Service before entering Harness; stop or handoff interrupts the wait."""
+        if self.control.stopped.is_set() or self.control.handoff.is_set():
+            return False
+        if not self.plan.mounts:
+            return True
+        logger.info("Preparing run environment instances before entering Harness")
+        prepared = self.runtime.tasks.start(
+            self._prepare_instances(), name=f"prepare-environments-{self.lease.attempt_id}"
         )
-        stopped = asyncio.create_task(self.control.stopped.wait())
-        handoff = asyncio.create_task(self.control.handoff.wait())
+        signals = [asyncio.create_task(event.wait()) for event in (self.control.stopped, self.control.handoff)]
         try:
-            done, _ = await asyncio.wait((preparing, stopped, handoff), return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait([prepared, *signals], return_when=asyncio.FIRST_COMPLETED)
+            if self.control.stopped.is_set() or self.control.handoff.is_set():
+                return False
+            await prepared
+            return True
         finally:
-            # Cancelling a finished task does nothing.
-            for task in (preparing, stopped, handoff):
-                task.cancel()
-        if preparing not in done:
-            if stopped in done:
-                self.check.refuse(self.control.outcome)
-            return None
+            # The process retains the preparation child while it finishes cancellation cleanup.
+            # Run interruption must not wait for that cleanup or cancel it a second time.
+            for task in [prepared, *signals]:
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+            await asyncio.gather(*signals, return_exceptions=True)
+
+    async def _prepare_instances(self) -> None:
+        readiness = [
+            asyncio.create_task(prepare(self.runtime, self.lease, self.plan.principal, self.plan.authority, mount))
+            for mount in self.plan.mounts
+        ]
         try:
-            return preparing.result()
-        except ServiceError as error:
-            if error.code == "unavailable":
-                raise
-            raise _EnvironmentUnavailable(error.message) from error
+            await asyncio.gather(*readiness)
+        finally:
+            for task in readiness:
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+            await asyncio.gather(*readiness, return_exceptions=True)
 
     async def _observe(self, item: HarnessStreamEvent, output: Coalescer) -> None:
         event = item.event if isinstance(item, HarnessEvent) else None

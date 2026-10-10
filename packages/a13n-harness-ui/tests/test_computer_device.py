@@ -14,7 +14,7 @@ from io import BytesIO
 import httpx
 import pytest
 from a13n_envd_client.eip import v1 as eip
-from a13n_harness.providers.environment.models import COMPUTER_ACTIONS, EnvironmentPermissionSet
+from a13n_environment.models import COMPUTER_ACTIONS, EnvironmentPermissionSet
 from a13n_harness_ui.configuration.mutation import ResourceMutationRequest
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver

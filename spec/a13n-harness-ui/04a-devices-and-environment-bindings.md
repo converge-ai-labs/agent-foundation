@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness UI stores Device connections and Project/Thread working-directory selections. Each Run captures its bindings and receives fresh Environment adapters. EIP Sessions are internal execution resources, not user-managed Project or Thread resources.
+Harness UI stores Device connections and Project/Thread working-directory selections. Each Run captures its bindings and supplies Host-owned Environment sources implementing `ensure_ready()`, which return fixed-target connectors for fresh execution scopes. EIP Sessions are internal execution resources, not user-managed Project or Thread resources.
 
 [Projects and Threads](04-projects-threads-and-environments.md) owns local roots, sticky configuration and admission. [EIP](../a13n-envd/README.md) owns Device discovery, Sessions and resource cleanup.
 
@@ -12,7 +12,7 @@ Harness UI stores Device connections and Project/Thread working-directory select
 
 ### Self-registration
 
-The App implements the [Host pairing protocol](../a13n-harness/08a-environment-providers.md#host-pairing). Only `POST /api/envd/pair` admits a daemon's narrow pairing credential without browser authentication. Pending requests grant no Device access and remain bounded, expiring process-local state. Their safe challenge is visible to authenticated users. Approval publishes an ordinary Device resource through validated configuration mutation; retried approval or polling resolves the approved resource, including after App restart. A native identity already registered with a different credential is a conflict, not implicit credential replacement.
+The App implements the [Host pairing protocol](../a13n-environment/02-providers.md#host-pairing). Only `POST /api/envd/pair` admits a daemon's narrow pairing credential without browser authentication. Pending requests grant no Device access and remain bounded, expiring process-local state. Their safe challenge is visible to authenticated users. Approval publishes an ordinary Device resource through validated configuration mutation; retried approval or polling resolves the approved resource, including after App restart. A native identity already registered with a different credential is a conflict, not implicit credential replacement.
 
 The approved credential authenticates only that Device's reverse WebSocket attachment. Human management APIs retain normal browser authentication. Device discovery and Run preparation use the same digest-scoped connection without requiring recoverable credential bytes. Each daemon process selects one Host; independent envd instances on one physical machine have independent registration identities.
 
@@ -69,7 +69,7 @@ Project, Thread and Composer surfaces share one Environments editor and readable
 
 The shared Connect Device wizard is also available in Settings. It displays terminal-specific commands, installation and foreground-process prerequisites, reachable-origin requirements, explicit shell execution opt-in via `A13N_ENVD_FULL_CONTROL=1`, and an independent advanced desktop opt-in. The wizard shows pending verification challenges and requires explicit approval of the matching terminal code. The approval response's Host Device ID selects the subsequent Device-info observation; disappearance from the pending list never proves approval. The wizard waits for an available Device before returning it to the directory picker. Device registration is global and immediate, while the binding stays in the enclosing draft until saved. Closing before approval does not reject a request; closing after approval does not remove registration. Reconnection reuses identity and credentials, but saved Host connections do not save all daemon launch settings.
 
-The browser generates the connect command from its current page origin; no separate server URL configuration is required by the wizard. The address must be reachable from the Device. Pairing responses use root-relative approval and connection paths, resolved by the daemon against its paired Host URL under the [Host pairing contract](../a13n-harness/08a-environment-providers.md#host-pairing). Reverse-proxy internal addresses do not determine the daemon's connection authority. The [listener boundary](05-runtime-subagents-and-surfaces.md#http-startup-and-access) independently controls admitted request addresses and authentication.
+The browser generates the connect command from its current page origin; no separate server URL configuration is required by the wizard. The address must be reachable from the Device. Pairing responses use root-relative approval and connection paths, resolved by the daemon against its paired Host URL under the [Host pairing contract](../a13n-environment/02-providers.md#host-pairing). Reverse-proxy internal addresses do not determine the daemon's connection authority. The [listener boundary](05-runtime-subagents-and-surfaces.md#http-startup-and-access) independently controls admitted request addresses and authentication.
 
 Edits use resource-save and expected-version Thread commands. Active Runs display captured selections separately from next-Run settings. Device online status and per-binding readiness remain distinct; a directory failure does not make the Device offline. Browser clients receive neither daemon credentials nor EIP resource selectors.
 

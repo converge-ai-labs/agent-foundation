@@ -3,9 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import EnvironmentRuntimeMount
-from a13n_harness.providers.environment.computer import (
+from a13n_environment.computer import (
     ComputerActionResult,
     ComputerClick,
     ComputerDescription,
@@ -14,7 +12,7 @@ from a13n_harness.providers.environment.computer import (
     ComputerScreenshot,
     ComputerTypeText,
 )
-from a13n_harness.providers.environment.models import (
+from a13n_environment.models import (
     COMPUTER_ACTIONS,
     FILE_EXECUTION_ACTIONS,
     EnvironmentAction,
@@ -22,7 +20,9 @@ from a13n_harness.providers.environment.models import (
     EnvironmentOperationReceipt,
     EnvironmentPermissionSet,
 )
-from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_environment.operations import EnvironmentOperations
+from a13n_harness.environment import EnvironmentMount
+from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.toolsets.computer import ComputerToolset
 from pydantic_ai import BinaryContent, ToolReturn
 
@@ -42,7 +42,7 @@ class Computer:
     async def observe(self, *, target_id=None, max_dimension=1280):
         return ComputerScreenshot(
             ComputerObservation(
-                mount_id=self.binding.mount_id,
+                execution_id=self.binding.bound.execution_id,
                 observed_generation=self.binding.bound.descriptor.generation,
                 observation_id="native-observation",
                 target_id="display-one",
@@ -58,7 +58,7 @@ class Computer:
         self.inputs.append(request)
         return ComputerActionResult(
             receipt=EnvironmentOperationReceipt(
-                mount_id=self.binding.mount_id,
+                execution_id=self.binding.bound.execution_id,
                 observed_generation=self.binding.bound.descriptor.generation,
                 operation_id="op-one",
                 stage="completed",
@@ -80,9 +80,7 @@ def mount(actions):
     computer.binding = binding
     runtime = create_environment_runtime(
         mounts={
-            "desktop": EnvironmentRuntimeMount(
-                binding=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions)
-            )
+            "desktop": EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions))
         },
         default_mount="desktop",
     )
@@ -158,8 +156,8 @@ async def test_step_scroll_is_explicit_and_bounded_before_dispatch():
 
 async def test_eip_scroll_preserves_legacy_pixels_and_requires_step_advertisement(monkeypatch):
     from a13n_envd_client.eip import v1 as eip
-    from a13n_harness.providers.environment.computer import ComputerScroll
-    from a13n_harness.providers.environment.eip import computer as adapter
+    from a13n_environment.computer import ComputerScroll
+    from a13n_environment.eip import computer as adapter
 
     units = ()
     sent = []
@@ -173,9 +171,9 @@ async def test_eip_scroll_preserves_legacy_pixels_and_requires_step_advertisemen
             raise RuntimeError("sent")
 
     monkeypatch.setattr(adapter, "session_client", lambda _: Client())
-    provider = adapter.EIPComputerOperations(None, mount_id="desktop", generation="one")
+    provider = adapter.EIPComputerOperations(None, execution_id="desktop", generation="one")
     observation = ComputerObservation(
-        mount_id="desktop",
+        execution_id="desktop",
         observed_generation="one",
         observation_id="obs-one",
         target_id="display-one",
@@ -221,9 +219,7 @@ async def test_text_input_denial_explains_selected_alias_without_switching_deskt
         )
         computer.binding = binding
         computers[name] = computer
-        mounts[name] = EnvironmentRuntimeMount(
-            binding=binding, permission_ceiling=EnvironmentPermissionSet(operations=ceiling)
-        )
+        mounts[name] = EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=ceiling))
     runtime = create_environment_runtime(mounts=mounts, default_mount="linux-desktop")
     async with runtime.bind(
         thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
@@ -301,7 +297,7 @@ async def test_incomplete_input_explains_reconciliation_and_never_replays(monkey
 
 async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch):
     from a13n_envd_client import EIPTransportClosedError
-    from a13n_harness.providers.environment.eip import computer as adapter
+    from a13n_environment.eip import computer as adapter
 
     sent = []
 
@@ -311,7 +307,7 @@ async def test_eip_computer_transport_loss_requires_inspection_not_new_run_repla
             raise EIPTransportClosedError("private connection detail")
 
     monkeypatch.setattr(adapter, "session_client", lambda _: Client())
-    provider = adapter.EIPComputerOperations(None, mount_id="desktop", generation="one")
+    provider = adapter.EIPComputerOperations(None, execution_id="desktop", generation="one")
     with pytest.raises(EnvironmentError) as caught:
         await provider.execute(ComputerTypeText(text="private text"))
     projection = caught.value.safe_projection()

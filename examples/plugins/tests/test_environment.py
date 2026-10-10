@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from a13n_environment.errors import EnvironmentProviderError
 from a13n_harness.providers.catalog import ProviderCatalog, ProviderNotSelected
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
 
 from a13n_plugin_examples.demo_environment import (
     PROVIDER_TYPE,
@@ -38,15 +38,10 @@ def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tm
     provider = catalog.require(PROVIDER_TYPE)
     root = tmp_path / "not-created-by-the-provider"
     configuration = provider.validate_environment({"root": str(root)})
-    environment = provider.construct(
-        operation_id="op-test",
-        allow_create=False,
-        environment_id="workspace-inert",
-        configuration=configuration,
-        state=None,
-        runtime=None,
+    environment = provider.execution_connector(
+        configuration, environment_id="workspace-inert", state=None, runtime=None
     )
-    assert environment.provider_key == PROVIDER_TYPE
+    assert environment.provider_key == "direct_local"
     assert not root.exists()
 
 
@@ -63,14 +58,7 @@ def test_environment_explicit_definition_needs_no_metadata_scan(
     provider = catalog.require(PROVIDER_TYPE)
     root = tmp_path / "still-inert"
     configuration = provider.validate_environment({"root": str(root)})
-    provider.construct(
-        operation_id="op-test",
-        allow_create=False,
-        configuration=configuration,
-        environment_id="workspace-code",
-        state=None,
-        runtime=None,
-    )
+    provider.execution_connector(configuration, environment_id="workspace-code", state=None, runtime=None)
 
     assert tuple(catalog) == (PROVIDER_TYPE,)
     assert not root.exists()

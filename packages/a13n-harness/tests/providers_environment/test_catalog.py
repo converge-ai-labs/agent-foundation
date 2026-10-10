@@ -3,8 +3,8 @@
 from dataclasses import replace
 
 import pytest
+from a13n_environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 
 
 def test_all_native_definitions_have_typed_schemas():

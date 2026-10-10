@@ -4,164 +4,61 @@ sidebarTitle: Built-in examples
 description: Runnable examples that use Direct Local, Local Envd, Docker, and remote Envd Providers directly.
 ---
 
-The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses selected built-in Environment Providers directly. For cloud backends, see [Cloud Providers](providers.md#cloud-providers). The project runs no Agent and needs no model credentials.
+The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project uses `a13n-environment` directly, without Harness or model credentials. See [Cloud Providers](providers.md#cloud-providers) for the cloud backends.
 
-Native and Envd backends follow the same Host-owned sequence:
-
-```mermaid
-sequenceDiagram
-    participant Host
-    participant Provider
-    participant Environment
-    participant Target
-
-    Host->>Provider: create(recipe, configuration, credential, state)
-    Provider-->>Host: fresh inert Environment
-    Host->>Environment: enter(mount correlation)
-    Host->>Environment: prepare or ensure_ready
-    Environment->>Target: create, re-enter or connect and become ready
-    Host->>Environment: provider-neutral file operations
-    Host->>Environment: dump_state()
-    Host->>Environment: close()
-    Note over Environment,Target: close is non-destructive
-
-    %% class Host app
-    %% class Provider,Environment a13n
-    %% class Target ext
-```
-
-## Install the example
-
-The example is an independent project that resolves `a13n-harness` from the local checkout:
+## Install
 
 ```bash
 cd examples/environment-provider
 uv sync --locked
 ```
 
-For an external application, depend on the released distribution instead:
-
-```bash
-uv add a13n-harness
-```
+External applications can install the released `a13n-environment` distribution.
 
 ## Direct Local
 
-Run the fully offline example:
-
 ```bash
-uv run environment-provider-example direct_local
+uv run environment-provider-example direct_local --workspace /absolute/path/to/workspace
 ```
 
-The command:
-
-- creates a Host-owned directory;
-- selects only `direct_local` in an immutable catalog;
-- validates a credential-free recipe against the Provider's declared model;
-- constructs and enters one fresh adapter;
-- writes and reads `/provider-example.txt` through `EnvironmentOperations.files`;
-- observes that `dump_state()` is `None`;
-- closes the adapter and verifies that the directory remains.
-
-Use another directory with:
-
-```bash
-uv run environment-provider-example direct_local \
-  --workspace /absolute/path/to/workspace
-```
-
-Direct Local is appropriate only when the Environment may share the embedding Host account. The configured operation policy does not provide operating-system isolation from an allowed child process.
+The Host creates the directory, constructs a connector, opens an execution, writes and reads `/provider-example.txt`, then closes the execution. The directory remains. Direct Local shares the Host account and does not provide operating-system isolation.
 
 ## Local Envd
 
-Build or install a compatible `a13n-envd`, then run:
-
 ```bash
-uv run environment-provider-example local_envd \
-  --executable /absolute/path/to/a13n-envd
+uv run environment-provider-example local_envd --executable /absolute/path/to/a13n-envd
 ```
 
-Without `--executable`, the Host-side resolver checks `A13N_ENVD_EXECUTABLE` and then `PATH`. The example supplies that resolved path and a `TemporaryLocalEnvdRuntimeAllocator` through a fresh `LocalEnvdProviderRuntime`.
-
-The shared Host runtime lazily starts a Device. Each adapter uses EIP through its own fixed-cwd Session; adapter `close()` closes that Session only. The example explicitly closes the Host runtime afterward. The selected directory remains Host-owned and `dump_state()` is `None`; another fresh adapter can access the same files without inheriting Session handles.
-
-See [Operate `a13n-envd`](../a13n-envd/index.md) for executable installation, compatibility, and platform prerequisites.
+Without `--executable`, resolution checks `A13N_ENVD_EXECUTABLE` and then `PATH`. The Host owns a `LocalEnvdProviderRuntime`. Each connector opening creates an independent fixed-cwd Session; execution close releases only that Session. The example closes the Host runtime afterward and preserves the workspace. See [Operate `a13n-envd`](../a13n-envd/index.md).
 
 ## Docker
 
-With a local Docker Engine available, build the repository sandbox image and run:
-
 ```bash
-# From the repository root
+# Repository root
 make image-sandbox
-
 cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-The example selects `a13n-sandbox:local`, the image produced by `make image-sandbox`. Pass `--image IMAGE` to use another compatible image; ordinary Docker authentication and pull behavior apply.
+The default image is `a13n-sandbox:local`; use `--image IMAGE` to select another compatible image. The Host explicitly creates a container through a management provider and keeps the returned state. A connector built from that state opens two independent executions: one writes a file, the other reads it. Closing either execution preserves the container. The Host finally calls provider `destroy()` explicitly.
 
-The Docker path demonstrates state and retention explicitly:
+A production Host publishes management state before opening execution. If a management operation fails or is cancelled after allocation, use `observed_environment_state(error, fallback)` to recover and publish the observed reference. Execution has no management-state writeback. A stopped or missing target fails opening without resume or replacement.
 
-```mermaid
-sequenceDiagram
-    participant Host
-    participant First as Fresh adapter 1
-    participant Docker as Container
-    participant Second as Fresh adapter 2
-    participant Cleanup as Fresh cleanup adapter
+## Use with Harness
 
-    Host->>First: create with state=None and enter
-    First->>Docker: create, start, and write file
-    First-->>Host: EnvironmentState
-    Host->>First: close
-    Note over First,Docker: container is retained
-    Host->>Second: create with current state and enter
-    Second->>Docker: validate exact target and read file
-    Second-->>Host: latest EnvironmentState
-    Host->>Second: close
-    Host->>Cleanup: create with exact latest state
-    Cleanup->>Docker: destroy
-    Cleanup-->>Host: state=None
-    Host->>Cleanup: close
+Supply the connector through a Host source:
 
-    %% class Host app
-    %% class First,Second,Cleanup a13n
-    %% class Docker ext
-```
-
-The example supplies a native `DockerSDKEngine` through `DockerProviderRuntime`. The image needs Python and a POSIX shell; no Envd executable or bootstrap directory is needed.
-
-A production Host persists the latest state before releasing ownership of the lifecycle operation. If creation, readiness, execution, or close fails, read `dump_state()` during unconditional finalization: the Docker Provider may already have cached the exact target identity even when a later step failed. Never infer absence from an unavailable inspection or select a container by a friendly name.
-
-## Use the adapter with Harness
-
-These examples stop at the single-Environment Provider boundary. In an Agent application, pass the already constructed fresh adapter to Harness:
+Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
 ```python
-result = await executable.run(
-    "Inspect the workspace",
-    environment=environment,
-)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-Harness enters and closes the adapter for that Run. It does not select Providers, construct runtime collaborators, persist authoritative Provider state, or call `destroy()`. Add `DynamicEnvironmentCapability` separately when the model should receive Environment tools.
-
-For a complete offline Harness application, see the [Agent application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app). For packaging a third-party Provider, see the [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#environment-provider).
-
-## Validate the examples
-
-From the repository root:
-
-```bash
-make examples-check-all
-```
-
-The gate lints, type-checks, tests, and builds the independent project. Its smoke path runs Direct Local only; Local Envd and Docker require explicitly provisioned external runtimes.
+Harness opens and closes a fresh execution for each used mount. Add `DynamicEnvironmentCapability` when the model should receive Environment tools. For a complete offline application, see the [Agent application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app).
 
 ## HTTP and WebSocket Envd
 
-For a one-command local trial, connection to an existing daemon, and a minimal Host WebSocket handler, use the [Remote Envd guide](remote-envd.md). Both examples use the same two-adapter file round trip and preserve the daemon when an adapter closes. The local demo separately shows operator-owned startup and cleanup.
+The [Remote Envd guide](remote-envd.md) covers existing daemons and a Host WebSocket handler. The demo explicitly starts and cleans up its own daemon:
 
 ```bash
 uv run environment-provider-example remote_envd_demo \
@@ -169,3 +66,9 @@ uv run environment-provider-example remote_envd_demo \
 uv run environment-provider-example remote_envd_demo \
   --transport websocket --executable ../../target/debug/a13n-envd
 ```
+
+Both open separate Sessions through the same connector. Execution close preserves the daemon; only the demo's operator code stops it.
+
+## Validate
+
+From the repository root, `make examples-check-all` lints, type-checks, tests, and builds the independent projects. The offline smoke path uses Direct Local; Envd and Docker require their respective runtimes.

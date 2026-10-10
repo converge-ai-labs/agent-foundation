@@ -64,7 +64,7 @@ The core concepts are:
 | Mutable conversation presentation      | Harness UI Thread metadata                    | Stores versioned title and archive state                                                                            |
 | Mutable conversation defaults          | Harness UI Thread configuration               | Stores sticky selections and applies explicit partial changes                                                       |
 | Root and child continuation            | Harness `HarnessState` selected by Harness UI | Persists complete immutable checkpoints and current references                                                      |
-| Environment operations and state codec | Environment package                           | Supplies fresh adapters and explicit lifecycle operations                                                           |
+| Environment operations and state codec | Environment package                           | Supplies Environment connectors, Environment execution scopes, and explicit lifecycle operations                    |
 | Local root grouping and path layout    | Harness UI Project and selected profile       | Supplies ordered roots and Host-path-preserving or virtual aggregate paths captured at Run admission                |
 | Current Environment state              | Harness UI                                    | Stores and publishes Host-authoritative state under a complete Thread/configuration/root key                        |
 | Async child admission and persistence  | `HarnessUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |

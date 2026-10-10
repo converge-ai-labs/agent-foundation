@@ -18,24 +18,23 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
+from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_environment.commands import ArgvCommand, CommandRequest
+from a13n_environment.retention import EnvironmentOutputPolicy
 
 
 async def main() -> None:
     (direct_local,) = select_builtin_environment_providers(("direct_local",))
     with TemporaryDirectory(prefix="a13n-command-") as temporary:
         executable = str(Path(sys.executable).resolve())
-        environment = await direct_local.create(
+        connector = direct_local.execution_connector(
             {
                 "root": {"path": str(Path(temporary).resolve())},
                 "allowed_executables": [executable],
             },
             environment_id="command-example",
         )
-        async with environment:
-            await environment.ensure_ready(frozenset({"shell"}))
+        async with await connector.open() as environment:
             shell = environment.operations.shell
             if shell is None:
                 raise RuntimeError("Shell operations are unavailable")
@@ -82,7 +81,7 @@ set/unset 中的环境变量键必须互不重复，不能包含 NUL 或 `=`。�
 
 ## 启动、检查、等待与释放
 
-调用 `ensure_ready({"processes"})` 后，获取可选 `processes` 接口。其方法如下：
+connector 的 `open()` 返回就绪执行对象后，获取其可选 `processes` 接口。其方法如下：
 
 | 方法                                                 | 行为                                                            |
 | ---------------------------------------------------- | --------------------------------------------------------------- |
@@ -114,6 +113,6 @@ set/unset 中的环境变量键必须互不重复，不能包含 NUL 或 `=`。�
 
 ## 端口与生命周期
 
-可选 `ports` 接口支持 `inspect(PortTarget(...))` 和 `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`。`PortTarget` 包含可选别名、地址选择（默认 `loopback` 或 `any`）和 1–65,535 的端口。这是观测，不是公共入口/隧道服务，也不是暴露端口的许可。
+可选 `ports` 接口支持 `inspect(PortTarget(...))` 和 `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`。`PortTarget` 包含地址选择（默认 `loopback` 或 `any`）和 1–65,535 的端口。这是观测，不是公共入口/隧道服务，也不是暴露端口的许可。
 
 provider 配置和实际描述符决定支持范围。将[生命周期恢复](lifecycle.md)与命令重放分开，每个独立范围使用新适配器并在结束后关闭。关闭释放本地资源，不表示销毁保留目标。

@@ -151,7 +151,7 @@ Pydantic model-request and tool-execution spans remain descendants of their Pyda
 
 The logical-run Observation uses the stable span name `harness.run`. It starts after allocation of the public Harness `run_id` and before Environment entry and run preparation. It remains open across:
 
-- fresh Environment adapter entry and initial mount publication;
+- initial mount registration and publication, then Host readiness and execution opening on dependent use;
 - validation of portable Environment observation data without restoring authority;
 - input preparation and semantic normalization;
 - run-plugin binding and outer middleware;

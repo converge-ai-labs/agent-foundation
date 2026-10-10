@@ -5,13 +5,13 @@ description: 选择范围最小的扩展点：Harness 中间件、Pydantic AI Ca
 
 按要添加的行为选择扩展：
 
-| 扩展点                       | 用途                                |
-| ---------------------------- | ----------------------------------- |
-| Harness 中间件插件           | 包装输入、执行、错误或最终 Run 结果 |
-| Capability                   | 添加工具、指令或 Agent 循环行为     |
-| `EnvironmentProviderBinding` | 暴露一个 Host 资源的操作            |
-| `EnvironmentRunExtension`    | 为已进入的多个挂载执行初始化和清理  |
-| Provider 插件                | 向 Host 提供 Environment Provider   |
+| 扩展点                    | 用途                                |
+| ------------------------- | ----------------------------------- |
+| Harness 中间件插件        | 包装输入、执行、错误或最终 Run 结果 |
+| Capability                | 添加工具、指令或 Agent 循环行为     |
+| `EnvironmentSource`       | 在首次使用时准备一个 Host 目标      |
+| `EnvironmentRunExtension` | 为已进入的多个挂载执行初始化和清理  |
+| Provider 插件             | 向 Host 提供 Environment Provider   |
 
 安装包后显式选择扩展。仅安装不会启用。
 
@@ -19,13 +19,13 @@ description: 选择范围最小的扩展点：Harness 中间件、Pydantic AI Ca
 
 通过各扩展对应的 API 选择：
 
-| 扩展点           | 选择方式                                                           |
-| ---------------- | ------------------------------------------------------------------ |
-| 中间件           | 向 `build()` 传入具体插件，或启用配置中的 `plugin_key`/`plugin_id` |
-| Capability       | 加入定义或 Run 组合，见[Capabilities](capabilities.md)             |
-| Run 扩展         | 向 `create_environment_runtime(extensions=...)` 传入实例           |
-| Provider binding | 向 `EnvironmentRuntimeMount` 加入新 binding                        |
-| Provider 插件    | 在 Host 配置中选择入口点名称，再选择 Provider 类型                 |
+| 扩展点        | 选择方式                                                           |
+| ------------- | ------------------------------------------------------------------ |
+| 中间件        | 向 `build()` 传入具体插件，或启用配置中的 `plugin_key`/`plugin_id` |
+| Capability    | 加入定义或 Run 组合，见[Capabilities](capabilities.md)             |
+| Run 扩展      | 向 `create_environment_runtime(extensions=...)` 传入实例           |
+| Host source   | 向 `EnvironmentMount` 加入 Host 来源                               |
+| Provider 插件 | 在 Host 配置中选择入口点名称，再选择 Provider 类型                 |
 
 `AgentSpec` 选择 Capabilities；中间件和 Environment 扩展另行配置。
 
@@ -278,8 +278,8 @@ Provider 插件发布 Environment 定义供 Host 选择。Model、Web、Connecto
 声明 Provider 类型、显示名称、配置、凭据与 runtime factory：
 
 ```python
-from a13n_harness.providers.authentication import Authentication, CredentialMode
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_environment.authentication import Authentication, CredentialMode
+from a13n_environment.definition import EnvironmentProviderDefinition
 
 ACME_SANDBOX = EnvironmentProviderDefinition(
     type="acme_sandbox",
@@ -287,9 +287,9 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
     configuration_model=AcmeConnectionConfiguration,
     credential_model=AcmeCredential,
     environment_model=AcmeEnvironmentConfiguration,
-    construct=_construct,
+    provider_factory=_open_provider,
+    connector_factory=_connector,
     describe_environment=_describe,
-    runtime_factory=_runtime,
     authentication=Authentication(mode=CredentialMode.required),
     setup_url="https://acme.example/dashboard",
     setup_label="Acme dashboard",
@@ -303,7 +303,7 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
 ```
 
 ```toml
@@ -339,14 +339,14 @@ Harness 自带内置 Provider 定义。使用对应后端时安装 extra：
 | `modal`  | Modal SDK            | `modal` Environment Provider  |
 
 ```console
-uv add "a13n-harness[docker,e2b]"
+uv add a13n-harness "a13n-environment[docker,e2b]"
 ```
 
 读取 Provider 元数据无需厂商 SDK；缺少 extra 时，Provider 打开失败。
 
-## Environment 输入与高级绑定
+## 环境输入与来源
 
-将已构造的 `Environment` 传给 `run(environment=...)`。权限上限与路径通过 `EnvironmentMount` 设置；动态挂载使用显式 runtime：
+将 Host 提供的 `EnvironmentSource` 传入 `run(environment=...)`。来源的 `ensure_ready()` 完成准备并返回 connector；参阅[环境](environments.md#supply-a-source)中的完整示例。使用 `EnvironmentMount` 添加权限和路径，或使用显式 runtime 动态修改挂载：
 
 ```python
 from a13n_harness.environment import (
@@ -359,7 +359,7 @@ from a13n_harness.environment.advanced import create_environment_runtime
 environment_runtime = create_environment_runtime(
     mounts={
         "workspace": EnvironmentMount(
-            environment=environment,
+            source=source,
             permission_ceiling=EnvironmentPermissionSet(operations=FILE_ACTIONS),
         ),
     },
@@ -367,15 +367,11 @@ environment_runtime = create_environment_runtime(
 )
 ```
 
-`permission_ceiling` 接受明确的任意操作集合，适合只需要部分文件操作的初始化扩展。Provider 权限始终只能缩小权限上限。Runtime 对每个底层 Environment 只接管一次所有权，即使它又包了一层 `EnvironmentMount` 也一样。无效的初始路由不会接管所有权，失败的复用尝试也不能关闭该 Environment 已有的作用域。
+`permission_ceiling` 接收精确操作集合；provider 权限只能进一步收窄。静态挂载注册不准备目标；首次使用时 Harness 打开并拥有一个独立 execution，结束时关闭它。已被其他挂载拥有的 execution 会被拒绝，且不会关闭原有者的资源。
 
-### 高级 Provider 绑定作用域
+### Host 准备回调
 
-如果 Host 必须在自定义异步 `bind()` 作用域中获取已认证的会话或其他资源，可将 `EnvironmentProviderBinding` 与 `EnvironmentRuntimeMount` 配合使用。随后由该绑定暴露 Provider 中立的文件、shell、进程、输出、端口、就绪状态和可移植状态操作。显式 runtime 构造和动态挂载替换仍接受这种高级输入。已有 Environment 应使用上文的直接输入。
-
-这是底层 runtime 绑定契约。Provider 目录、Environment Provider 生命周期操作、凭据处理和持久 Provider 状态由 [Provider 插件](#provider-plugins)和 Host 负责，不属于 Harness 中间件。
-
-`EnvironmentProviderBinding` 是新建且只能使用一次的绑定。会产生实际影响的分配、认证、会话进入、维护任务，以及需要后续清理的工作，必须放在其异步 `bind()` 作用域或负责的 Provider 层中，不能放在导入时的发现流程或不产生运行效果的工厂构造函数中。
+来源的 `provider_key`、`environment_id`、`descriptor` 和 `state` 都是无 I/O 元数据。`ensure_ready()` 负责准备、发布权威状态，并等待目标真正就绪后返回 connector。管理失败由 Host 处理；Harness 不自动重试同一挂载的准备。Provider 发现、凭据和持久状态仍由 [Provider 插件](#provider-plugins)及 Host 管理。
 
 ## Environment Run 扩展
 
@@ -417,7 +413,7 @@ active_run_callbacks = EnvironmentRunCallbacks(
 )
 ```
 
-`on_enter` 在 Harness 进入 Host 已构造的 adapter 后、首次模型请求前运行。初始化需要特定操作族时，显式请求就绪：
+`on_enter` 在 Harness 发布静态挂载集合后、首次模型请求前运行。仅进入扩展不会准备目标。初始化需要特定操作族时，显式请求就绪：
 
 ```python
 from a13n_harness.environment import EnvironmentReadinessRequirement

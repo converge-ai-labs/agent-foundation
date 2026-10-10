@@ -1,123 +1,86 @@
 ---
 title: 环境
-description: 将环境挂载到执行中，让 Agent 使用文件、命令和进程。
+description: 通过 Host 提供的来源，在首次使用时准备环境。
 ---
 
-一个环境（Environment）是针对单个 provider 目标的新建进程内适配器。[环境 provider](../environments/index.md)负责目标创建、重新进入、provider 操作、缓存状态和显式销毁。Harness 只管理一次执行的挂载名称、访问上限、路由、状态聚合和非破坏性清理。
+独立的 `a13n-environment` 库负责单环境管理和执行。Host 提供 `EnvironmentSource`，通过 `ensure_ready()` 完成管理并返回固定目标的 `EnvironmentConnector`。Harness 负责 Run 内的挂载、权限、路由和执行清理。
 
-应用将已构建的 `Environment` 实例传给 `run()` 或 `stream()`。Harness 绝不接受 provider 定义、provider 类型、配置、状态封装或传输会话作为执行输入。
-
-环境生命周期与模型工具是两件事：
-
-- Host 选择可信 provider 定义、账号配置、凭据、目标配置和当前 `EnvironmentState`；
-- 定义构建新环境，只在运行时工厂中获取活跃协作对象；
-- Harness 在生成输入前进入环境，在执行停止全部工作后关闭；
-- `DynamicEnvironmentCapability` 按需向模型提供允许的操作；
-- `close()` 释放进程内资源，绝不销毁底层目标；
-- 只有显式 Host 策略才会创建新适配器并调用 `destroy()`。
-
-## 不使用环境也能开始
-
-环境输入可选。未提供环境的执行获得空访问接口，不提供环境工具：
+## 不使用环境
 
 ```python
 result = await executable.run("Answer without using a workspace")
 ```
 
-## 每次执行构建一个新环境
+环境是可选输入。没有挂载的 Run 使用空环境接口，不会获得环境工具。
 
-调用 Harness 前，使用可信 provider 构建环境。Direct Local 无状态，所以每次执行传入 `state=None`：
+## 传入环境来源
 
 ```python
 from pathlib import Path
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
 
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from dataclasses import dataclass
 
-(direct_local,) = select_builtin_environment_providers(("direct_local",))
-environment = await direct_local.create(
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+
+
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},
-    environment_id="workspace",
-    state=None,
+    environment_id="env-workspace",
 )
-
-result = await executable.run(
-    "Update the workspace",
-    environment=environment,
-)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-目标配置验证和适配器构建不操作目标。Host 可调用 `await environment.prepare()` 提前准备，也可让首次就绪检查触发延迟准备。`environment.enter(...)` 只绑定本地执行范围。成功、失败、取消、放弃消费流，或初始多挂载准备回退时，Harness 都关闭适配器。关闭不销毁目标；Direct Local 绝不删除 Host 目录，Docker 关闭也绝不移除容器。
+示例目录必须已存在。这个 Host 已准备好目标，因此 `ensure_ready()` 直接返回 connector。注册挂载、读取描述、注入工具和导出状态均不触发准备。首次需要环境的操作（包括输入处理和技能加载）才调用 `ensure_ready()` 和 `open()`。同一挂载的并发操作共用一次准备；成功和失败均保留到挂载被替换。取消一个等待者不会取消其他操作需要的准备。Run 结束只关闭实际打开的 execution，不销毁目标。未使用的来源不会收到准备或清理调用；无需 `lazy` 开关。
 
-不要保留适配器并在后续独立执行中复用。每次都构建新适配器，即使多次执行重新进入同一 provider 目标。
+启用 `DynamicEnvironmentCapability` 后才会向模型暴露允许的工具。`EnvironmentMount` 添加 Run 内的路径与权限策略。
 
-## 重新进入有状态目标
+## 管理状态由 Host 负责
 
-有状态 provider 的最新权威状态由 Host 在 Harness 收到适配器前提供。Harness 不在进入后恢复 provider，也不把 `HarnessState` 视为当前权限：
+Host 可像下例一样提前准备，也可在来源的 `ensure_ready()` 中执行管理操作。返回 connector 前，必须保存权威 `EnvironmentState`：
 
 ```python
 current_state = await environment_state_store.load(thread_id, "workspace")
-environment = await definition.create(
-    recipe,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
+connector = definition.execution_connector(
+    recipe, configuration=backend_configuration, credential=current_credential,
+    environment_id="env-workspace", state=current_state,
 )
-
-try:
-    result = await executable.run(
-        "Continue the task",
-        environment=environment,
-        previous_state=previous_harness_state,
-    )
-finally:
-    await environment_state_store.publish(
-        thread_id,
-        "workspace",
-        environment.dump_state(),
-    )
+result = await executable.run(
+    "Continue the task", environment=PreparedSource(connector), previous_state=previous_harness_state,
+)
 ```
 
-`dump_state()` 同步读取最新已验证缓存的独立副本，不会失败，也不进行目标 I/O。因此，部分进入、取消、检查点失败、执行失败或关闭失败后，Host 仍可在必定执行的收尾步骤中读取。
+执行只使用固定状态，不会在 Run 结束时生成新的目标引用。`HarnessState.environment_states` 是挂载状态汇总，不能代替 Host 的管理记录。管理部分失败或取消时，Host 可通过 `observed_environment_state()` 取得已知引用并保存；完整示例见[生命周期与状态](../environments/lifecycle.md)。
 
-`HarnessState.environment_states` 记录当前挂载名到状态的聚合，供续接导出。它是有用证据，但 Host 仍决定哪个托管状态具有权威性，重建当前凭据和运行时协作对象，再提供新环境。状态不含凭据、活跃客户端、PID、传输会话、挂载策略或销毁权限。
-
-## 运行时归属与创建策略
-
-`definition.create()` 从账号 `configuration` 和 `credential` 获取运行时，或借用传入的 `runtime`。借用运行时时不要同时传入账号输入。获取的可关闭运行时随适配器释放；借用运行时仍由 Host 负责。
-
-两种模式中，`allow_create` 和 `operation_id` 都只用于新适配器。可复用运行时不携带这两个值。provider 作者通过 `construct()` 传递，而非 `runtime_factory()`。这样，同一个 Host 连接可服务托管适配器和仅连接适配器，不改变共享策略。
-
-## 显式销毁由 Host 负责
-
-Harness 绝不调用 `destroy()`。保留策略决定清理时，Host 从精确当前状态构建新适配器，并显式调用 `destroy()`：
-
-```python
-cleanup = await definition.create(
-    recipe,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
-    allow_create=False,
-)
-try:
-    await cleanup.destroy()
-finally:
-    latest_state = cleanup.dump_state()
-    await cleanup.close()
-    await environment_state_store.publish(
-        thread_id,
-        "workspace",
-        latest_state,
-    )
-```
-
-销毁成功清空适配器状态。目标不兼容或外部结果未知时失败，保留最后已验证状态供 Host 后续检查或重试。provider 只移除该状态代表的精确目标和自身启动材料；外部绑定源和共享 Host 目录仍由 Host 管理。
+关闭执行不会销毁目标。Host 使用独立的 `EnvironmentProvider.destroy()` 执行销毁，并在确认完成后清空管理状态。管理客户端关闭后，已经生成的连接配置仍可独立使用；借用的运行时由 Host 负责关闭。
 
 ## 使用多个环境
 
-通过 `environments=` 为多个已构建适配器命名。`EnvironmentMount` 添加执行内权限上限和工作目录：
+通过 `environments=` 为多个 Host 来源命名。`EnvironmentMount` 添加执行内权限上限和工作目录：
 
 ```python
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
@@ -147,7 +110,7 @@ result = await executable.run(
 
 除非挂载设置了 `mount_path`，否则默认挂载提供 `/workspace`，每个命名挂载都可通过 `/environment/{name}` 访问。设置了 `mount_path` 的挂载只能通过该根路径访问。多个条目没有显式默认值时，`/workspace/...` 会失败，不选择映射中的首项。映射顺序绝不授予权限。
 
-初始设置是原子的。Harness 在进入前验证完整输入，不发布部分挂载集合。任何适配器失败时，按反向顺序关闭所有可能持有进程内资源的已提供适配器。回退清理绝不销毁目标。
+Harness 先验证静态输入，再一次发布完整挂载集合。某个挂载首次准备失败不会移除其他挂载。已打开的 execution 按实际打开顺序的反向关闭；部分打开失败也必须完成清理。
 
 ## 限制挂载
 
@@ -263,11 +226,12 @@ sequenceDiagram
 
 1. 选择可信 provider，验证期望配置；
 2. 加载当前托管状态，其中权威 `None` 阻止使用过旧回退状态；
-3. 构建当前运行时协作对象，为每个挂载创建一个新环境；
-4. 用已构建适配器调用 Harness；
-5. 在必定执行的收尾步骤中读取每个适配器缓存状态；
-6. 根据 Host 并发策略发布状态变化；
-7. 只有保留或修剪策略授权时才显式销毁。
+3. 提供来源，由其 `ensure_ready()` 执行管理并保存状态，包括部分失败或取消时已确认的状态；
+4. 仅在就绪后，根据已发布状态返回固定目标的 connector；
+5. 调用 Harness，为每个实际使用的挂载打开并关闭独立 execution；
+6. 只有保留或修剪策略授权时才显式销毁。
+
+执行不更新权威 provider 状态。目标停止或缺失时打开失败；Host 必须先显式管理目标，再重试。
 
 共享包有意不定义 Host 表、租约、线程链接、修剪候选、暂停模式或核对操作 schema。Host 可以添加这些模型，不把生命周期权限移回 Harness。
 
@@ -275,9 +239,9 @@ sequenceDiagram
 
 多数应用应使用 `environment=` 或 `environments=`。可信 Harness 集成需要执行内实时 `mount()`、`replace()`、`unmount()` 或 `set_default()` 时，可使用高级环境运行时。
 
-每次修改仍接收包含一个新适配器的 `EnvironmentMount`。候选先进入，再提交；失败保持已发布挂载集合不变，并关闭候选。替换分配新的挂载实例，保留默认选择，等旧适配器的操作租约全部释放后才将其退役。修改绝不发现 provider、恢复状态、持久保存期望挂载或调用 `destroy()`。
+每次修改接收 `EnvironmentSource` 或包含来源的 `EnvironmentMount`。提交仅验证静态元数据，不触发准备；静态验证失败时原挂载不变。替换保留默认选择，创建新的挂载实例和首次使用记录；旧挂载停止接受新准备，待已有操作租约释放后关闭 execution。首次准备失败不会自动恢复旧挂载。修改不发现 provider、恢复或持久化状态，也不调用 `destroy()`。
 
-高层环境参数和显式高级运行时互斥。两者使用相同的路由、权限、隔离失效资源、状态导出和非破坏性清理实现。
+高层环境参数和显式高级运行时互斥。两者使用相同的路由、权限、隔离失效资源和非破坏性清理实现。
 
 ## Direct Local 边界
 
@@ -285,11 +249,11 @@ sequenceDiagram
 
 - Host 创建、选择、保留、备份、共享和移除目录；
 - 新 Direct Local 环境为一次执行验证并使用目录；
-- 目标确定且无状态，因此 `dump_state()` 返回 `None`；
+- 目标确定且无状态，因此 `state` 返回 `None`；
 - `close()` 和 `destroy()` 绝不删除目录；
 - provider 根目录始终可写；权限上限约束环境操作，不为获准子进程提供操作系统沙箱。
 
-不可信代码需要独立执行边界时，使用 Local Envd 或 Docker。两者仍要求每次独立执行使用新适配器；Local Envd 只管理当前私有守护进程代次，而 Docker 可重新进入状态代表的精确容器。
+不可信代码需要独立执行边界时，使用 Local Envd 或 Docker。每次 Run 都打开独立执行对象。Host 管理 Local Envd 守护进程；Docker connector 连接到状态代表的精确运行中容器。
 
 ## 临时工具结果文件
 

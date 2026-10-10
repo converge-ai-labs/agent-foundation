@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
     HarnessBuilder,
@@ -41,13 +45,11 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.environment import (
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     create_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
 )
 from a13n_harness.events import InputTextEvent
 from a13n_harness.model_context import (
@@ -60,10 +62,6 @@ from a13n_harness.model_context import (
     _commit_projection,
     _requires_exact_history,
     user_prompt_content,
-)
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
 )
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
@@ -92,13 +90,13 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import RequestUsage, UsageLimits
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = pytest.mark.anyio
 
 
 def _local_binding(root: Path, *, default_working_directory: str = "/"):
-    provider = DirectLocalEnvironmentProviderBinding(
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
             max_value_bytes=128 * 1024,
@@ -107,8 +105,8 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
     )
     return create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
+            "local": EnvironmentMount(
+                source=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory=default_working_directory,
             )

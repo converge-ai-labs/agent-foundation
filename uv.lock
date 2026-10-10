@@ -11,6 +11,7 @@ resolution-markers = [
 [manifest]
 members = [
     "a13n-envd-client",
+    "a13n-environment",
     "a13n-harness",
     "a13n-harness-ui",
     "a13n-logging",
@@ -45,35 +46,17 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-harness"
+name = "a13n-environment"
 version = "0.0.0"
-source = { editable = "packages/a13n-harness" }
+source = { editable = "packages/a13n-environment" }
 dependencies = [
     { name = "a13n-envd-client" },
-    { name = "a13n-logging" },
-    { name = "anthropic" },
     { name = "anyio" },
-    { name = "botocore" },
-    { name = "filelock" },
-    { name = "genai-prices" },
-    { name = "google-auth" },
-    { name = "google-genai" },
     { name = "httpx2" },
-    { name = "jsonschema" },
-    { name = "openai" },
-    { name = "opentelemetry-api" },
+    { name = "packaging" },
     { name = "pathspec" },
-    { name = "pillow" },
     { name = "pydantic" },
-    { name = "pydantic-ai", extra = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"] },
     { name = "pydantic-core" },
-    { name = "pydantic-monty" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "pyyaml" },
-    { name = "referencing" },
-    { name = "tenacity" },
-    { name = "typesafe-sdk" },
-    { name = "typing-extensions" },
     { name = "websockets" },
 ]
 
@@ -90,29 +73,80 @@ modal = [
 
 [package.dev-dependencies]
 test = [
-    { name = "opentelemetry-sdk" },
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
+    { name = "anyio", specifier = ">=4,<5" },
+    { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
+    { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },
+    { name = "httpx2", specifier = ">=2.5,<3" },
+    { name = "modal", marker = "extra == 'modal'", specifier = ">=1.5.5,<2" },
+    { name = "packaging", specifier = ">=24,<27" },
+    { name = "pathspec", specifier = ">=1.1,<2" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pydantic-core", specifier = ">=2.41,<3" },
+    { name = "websockets", specifier = ">=15,<16" },
+]
+provides-extras = ["docker", "e2b", "modal"]
+
+[package.metadata.requires-dev]
+test = [{ name = "pytest", specifier = ">=9,<10" }]
+
+[[package]]
+name = "a13n-harness"
+version = "0.0.0"
+source = { editable = "packages/a13n-harness" }
+dependencies = [
+    { name = "a13n-environment" },
+    { name = "a13n-logging" },
+    { name = "anthropic" },
+    { name = "anyio" },
+    { name = "botocore" },
+    { name = "filelock" },
+    { name = "genai-prices" },
+    { name = "google-auth" },
+    { name = "google-genai" },
+    { name = "httpx2" },
+    { name = "jsonschema" },
+    { name = "openai" },
+    { name = "opentelemetry-api" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "pydantic-ai", extra = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"] },
+    { name = "pydantic-core" },
+    { name = "pydantic-monty" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "pyyaml" },
+    { name = "referencing" },
+    { name = "tenacity" },
+    { name = "typesafe-sdk" },
+    { name = "typing-extensions" },
+]
+
+[package.dev-dependencies]
+test = [
+    { name = "opentelemetry-sdk" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "a13n-environment", editable = "packages/a13n-environment" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "anthropic", specifier = ">=1.3,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
-    { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
-    { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },
     { name = "filelock", specifier = ">=3.18,<4" },
     { name = "genai-prices", specifier = ">=0.1.9,<1" },
     { name = "google-auth", specifier = ">=2.40,<3" },
     { name = "google-genai", specifier = ">=1.0,<3" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
-    { name = "modal", marker = "extra == 'modal'", specifier = ">=1.5.5,<2" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
-    { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"], specifier = ">=2.54.0,<3" },
@@ -124,9 +158,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9,<10" },
     { name = "typesafe-sdk", specifier = ">=0.7.1,<1" },
     { name = "typing-extensions", specifier = ">=4.15,<5" },
-    { name = "websockets", specifier = ">=15,<16" },
 ]
-provides-extras = ["docker", "e2b", "modal"]
 
 [package.metadata.requires-dev]
 test = [
@@ -140,7 +172,8 @@ version = "0.0.0"
 source = { editable = "packages/a13n-harness-ui" }
 dependencies = [
     { name = "a13n-envd-client" },
-    { name = "a13n-harness", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-environment", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-harness" },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "ag-ui-protocol" },
@@ -195,7 +228,8 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
-    { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
+    { name = "a13n-environment", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-environment" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
@@ -263,7 +297,8 @@ name = "a13n-service"
 version = "0.0.0"
 source = { editable = "packages/a13n-service" }
 dependencies = [
-    { name = "a13n-harness", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-environment", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-harness" },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "ag-ui-protocol" },
@@ -302,7 +337,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
+    { name = "a13n-environment", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-environment" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
@@ -377,7 +413,8 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "a13n-harness", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-environment", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-harness" },
     { name = "deptry" },
     { name = "fastmcp" },
     { name = "grpcio-tools" },
@@ -405,7 +442,8 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
+    { name = "a13n-environment", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-environment" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
     { name = "deptry", specifier = ">=0.25,<0.26" },
     { name = "fastmcp", specifier = ">=4.0,<5" },
     { name = "grpcio-tools", specifier = ">=1.75,<2" },
@@ -4441,8 +4479,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

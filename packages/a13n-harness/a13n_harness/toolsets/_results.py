@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal, NotRequired, TypedDict, cast
 
+from a13n_environment.models import EnvironmentError
 from pydantic import JsonValue, ValidationError
 
 from a13n_harness._tool_observation import record_tool_operation_failure
-from a13n_harness.providers.environment.models import EnvironmentError
 
 
 class ToolError(TypedDict):
@@ -50,6 +50,11 @@ def tool_failure(
 
 def environment_failure(exc: EnvironmentError) -> ToolFailure:
     error = cast(ToolError, exc.safe_projection())
+    if exc.code == "environment_not_found" and not exc.details.get("hint"):
+        error["details"]["hint"] = (
+            "Verify the file path or resource reference in the selected mount. For files, use ls or glob on an "
+            "existing parent. This is not an outside-mount routing error."
+        )
     record_tool_operation_failure(exc.code, reason=error["details"].get("reason"))
     return {"ok": False, "error": error}
 

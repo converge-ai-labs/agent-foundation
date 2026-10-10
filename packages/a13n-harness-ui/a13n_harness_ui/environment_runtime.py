@@ -15,6 +15,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.errors import observed_environment_state
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    resolve_a13n_envd_executable,
+)
+from a13n_environment.models import FILE_EXECUTION_ACTIONS, EnvironmentDescriptor, EnvironmentState
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -26,15 +35,7 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.providers import EnvironmentRuntime
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
-from a13n_harness.providers.environment.local_envd.runtime import (
-    LocalEnvdProviderRuntime,
-    resolve_a13n_envd_executable,
-)
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentState
-from anyio import CancelScope, Lock, move_on_after, to_thread
+from anyio import CancelScope, Lock, fail_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
@@ -91,13 +92,30 @@ class EnvironmentFinalization:
 @dataclass(slots=True)
 class _PreparedMount:
     alias: str
-    key: EnvironmentBindingKey | None
-    expected_state_ref: ObjectRef | None
-    supplied_state: EnvironmentState | None
-    environment: Environment
+    environment: EnvironmentConnector
     permission_ceiling: EnvironmentPermissionSet
     mount_path: str | None
     provider_root: str = "/"
+
+    @property
+    def provider_key(self) -> str:
+        return self.environment.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.environment.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.environment.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.environment.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        # Project preparation and state publication already completed in this Host.
+        return self.environment
 
 
 class EnvironmentSnapshotReconstructor:
@@ -146,7 +164,7 @@ class EnvironmentSnapshotReconstructor:
         root: Path,
         state: EnvironmentState | None,
         local_runtime: LocalEnvdProviderRuntime | None = None,
-    ) -> Environment:
+    ) -> EnvironmentConnector:
         collaborator = (
             local_runtime or await self.sandbox_runtime((root,), profile=reconstructed.profile)
             if reconstructed.provider.type == LOCAL_ENVD_PROVIDER_KEY
@@ -168,7 +186,10 @@ class EnvironmentSnapshotReconstructor:
                 code="environment_binding_failed",
                 details={"adapter_key": reconstructed.profile.adapter_key},
             ) from exc
-        if not isinstance(environment, Environment) or environment.provider_key != reconstructed.profile.provider_key:
+        if (
+            not isinstance(environment, EnvironmentConnector)
+            or environment.provider_key != reconstructed.profile.provider_key
+        ):
             raise EnvironmentLifecycleError(
                 "The Environment Project adapter returned an incompatible Environment.",
                 code="environment_binding_invalid",
@@ -260,122 +281,32 @@ class EnvironmentSnapshotReconstructor:
 
 
 class EnvironmentRunPlan:
-    """Single-use Harness Environment runtime plus later Host-state publication."""
+    """Inert connectors and the outcomes already published during Host preparation."""
 
     def __init__(
         self,
         *,
-        store: LocalStore,
+        publications: Sequence[EnvironmentStatePublication],
         profile: ResolvedEnvironmentProfile,
         mounts: Sequence[_PreparedMount],
         runtime: EnvironmentRuntime,
         tool_result_directory: str,
         default_environment: str,
     ) -> None:
-        self._store = store
+        self._publications = tuple(publications)
         self.profile = profile
         self._mounts = tuple(mounts)
         self.runtime = runtime
         self.tool_result_directory = tool_result_directory
-        self.environments: Mapping[str, Environment] = MappingProxyType(
+        self.environments: Mapping[str, EnvironmentConnector] = MappingProxyType(
             {item.alias: item.environment for item in mounts}
         )
         self.default_environment = default_environment
-        self._finalized = False
 
-    async def finalize(self, *, timeout_seconds: float = 30.0) -> EnvironmentFinalization:
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
-        if self._finalized:
-            raise EnvironmentLifecycleError(
-                "An Environment Run plan can be finalized exactly once.",
-                code="environment_plan_finalized",
-            )
-        self._finalized = True
-        cleanup_errors: list[Exception] = []
-        with move_on_after(timeout_seconds) as cleanup_scope:
-            for mount in reversed(self._mounts):
-                try:
-                    await mount.environment.close()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-        if cleanup_scope.cancel_called:
-            cleanup_errors.append(
-                EnvironmentLifecycleError(
-                    "Environment cleanup exceeded its deadline.",
-                    code="environment_cleanup_timeout",
-                )
-            )
-
-        publications: list[EnvironmentStatePublication] = []
-        for mount in self._mounts:
-            if mount.key is None:
-                continue
-            try:
-                final_state = mount.environment.dump_state()
-            except Exception as exc:
-                publications.append(
-                    EnvironmentStatePublication(
-                        key=mount.key,
-                        previous=mount.expected_state_ref,
-                        replacement=None,
-                        status="failed",
-                        error=exc,
-                    )
-                )
-                continue
-            if final_state == mount.supplied_state:
-                publications.append(
-                    EnvironmentStatePublication(
-                        key=mount.key,
-                        previous=mount.expected_state_ref,
-                        replacement=mount.expected_state_ref,
-                        status="unchanged",
-                    )
-                )
-                continue
-            replacement: ObjectRef | None = None
-            try:
-                if final_state is not None:
-                    stored = StoredEnvironmentState(
-                        binding=mount.key,
-                        state=final_state,
-                        created_at=_utc_now(),
-                    )
-                    replacement = (
-                        await self._store.objects.publish_model(
-                            object_kind=ObjectKind.environment_state,
-                            value=stored,
-                        )
-                    ).ref
-                await self._store.environment_states.select(
-                    key=mount.key,
-                    expected=mount.expected_state_ref,
-                    replacement=replacement,
-                )
-            except Exception as exc:
-                publications.append(
-                    EnvironmentStatePublication(
-                        key=mount.key,
-                        previous=mount.expected_state_ref,
-                        replacement=replacement,
-                        status="failed",
-                        error=exc,
-                    )
-                )
-            else:
-                publications.append(
-                    EnvironmentStatePublication(
-                        key=mount.key,
-                        previous=mount.expected_state_ref,
-                        replacement=replacement,
-                        status="published",
-                    )
-                )
-        return EnvironmentFinalization(
-            cleanup_errors=tuple(cleanup_errors),
-            state_publications=tuple(publications),
-        )
+    @property
+    def finalization(self) -> EnvironmentFinalization:
+        """Report management publication; Harness owns execution cleanup."""
+        return EnvironmentFinalization(cleanup_errors=(), state_publications=self._publications)
 
 
 class EnvironmentRunService:
@@ -419,122 +350,117 @@ class EnvironmentRunService:
             else None
         )
         mounts: list[_PreparedMount] = []
-        try:
-            for index, root in enumerate(roots, start=1):
-                key = EnvironmentBindingKey(
-                    thread_id=composition.thread_id,
-                    environment_profile_id=profile.profile_id,
-                    profile_digest=profile.behavior_digest,
-                    adapter_key=profile.adapter_key,
-                    normalized_root=os.fspath(root),
-                )
-                head = await self._store.environment_states.get(key)
-                expected = None if head is None else head.state
-                state = await self._load_state(
-                    key=key,
-                    reference=expected,
-                    provider_key=profile.provider_key,
-                )
+        publications: list[EnvironmentStatePublication] = []
+        for index, root in enumerate(roots, start=1):
+            key = EnvironmentBindingKey(
+                thread_id=composition.thread_id,
+                environment_profile_id=profile.profile_id,
+                profile_digest=profile.behavior_digest,
+                adapter_key=profile.adapter_key,
+                normalized_root=os.fspath(root),
+            )
+            head = await self._store.environment_states.get(key)
+            expected = None if head is None else head.state
+            state = await self._load_state(
+                key=key,
+                reference=expected,
+                provider_key=profile.provider_key,
+            )
+            try:
                 environment = await self._reconstructor.bind(
                     reconstructed,
                     root=root,
                     state=state,
                     local_runtime=local_runtime,
                 )
+            except BaseException as error:
+                with CancelScope(shield=True):
+                    try:
+                        await self._publish_state(key, expected, state, observed_environment_state(error, state))
+                    except Exception as publication_error:
+                        error.add_note(f"Environment state publication also failed: {publication_error!r}")
+                raise
+            publications.append(await self._publish_state(key, expected, state, environment.state))
+            mounts.append(
+                _PreparedMount(
+                    alias="workspace" if index == 1 else f"workspace-{index}",
+                    environment=environment,
+                    permission_ceiling=EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS),
+                    mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
+                    provider_root=root.as_posix()
+                    if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+                    else "/",
+                )
+            )
+        for binding in composition.environment_bindings:
+            if isinstance(binding.device.transport, HttpDeviceTransport):
+                composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
+            mount, publication = await self._prepare_device_mount(composition.thread_id, binding)
+            mounts.append(mount)
+            publications.append(publication)
+        for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
+            zip(content_plugins, path_layout.content_plugin_roots, strict=True),
+            start=1,
+        ):
+            if canonical_host_paths and Path(root) in roots:
+                continue
+            # An uninstall is a real deletion; do not recreate a captured path.
+            if not await to_thread.run_sync(Path(root).exists):
+                continue
+            mounts.append(
+                await self._prepare_host_files_mount(
+                    root=Path(root),
+                    alias=f"content-plugin-{index}",
+                    mount_path=mount_path,
+                )
+            )
+        if _root_selects_skills(composition):
+            mounts.append(
+                await self._prepare_host_files_mount(
+                    root=BUILTIN_SKILLS_ROOT,
+                    alias="builtin-skills",
+                    mount_path=BUILTIN_SKILLS_PATH,
+                    file_actions=FILE_READ_ACTIONS,
+                )
+            )
+            if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
                 mounts.append(
-                    _PreparedMount(
-                        alias="workspace" if index == 1 else f"workspace-{index}",
-                        key=key,
-                        expected_state_ref=expected,
-                        supplied_state=state,
-                        environment=environment,
-                        permission_ceiling=EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS),
-                        mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
-                        provider_root=root.as_posix()
-                        if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
-                        else "/",
+                    await self._prepare_user_skills_mount(
+                        mount_path=(path_layout.user_skills if canonical_host_paths else None)
                     )
                 )
-            for binding in composition.environment_bindings:
-                if isinstance(binding.device.transport, HttpDeviceTransport):
-                    composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
-                mounts.append(await self._prepare_device_mount(composition.thread_id, binding))
-            for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
-                zip(content_plugins, path_layout.content_plugin_roots, strict=True),
-                start=1,
-            ):
-                if canonical_host_paths and Path(root) in roots:
-                    continue
-                # An uninstall is a real deletion; do not recreate a captured path.
-                if not await to_thread.run_sync(Path(root).exists):
-                    continue
+        if self._configuration_root is not None:
+            root = self._configuration_root.expanduser().resolve()
+            if not (canonical_host_paths and any(mount.mount_path == root.as_posix() for mount in mounts)):
                 mounts.append(
                     await self._prepare_host_files_mount(
-                        root=Path(root),
-                        alias=f"content-plugin-{index}",
-                        mount_path=mount_path,
+                        root=root,
+                        alias="configuration",
+                        mount_path=root.as_posix() if canonical_host_paths else None,
                     )
                 )
-            if _root_selects_skills(composition):
-                mounts.append(
-                    await self._prepare_host_files_mount(
-                        root=BUILTIN_SKILLS_ROOT,
-                        alias="builtin-skills",
-                        mount_path=BUILTIN_SKILLS_PATH,
-                        file_actions=FILE_READ_ACTIONS,
-                    )
+        thread_mount = await self._prepare_thread_files_mount(reconstructed, thread_root, local_runtime=local_runtime)
+        if roots:
+            mounts.append(thread_mount)
+        else:
+            mounts.insert(0, thread_mount)
+        extensions = await self._reconstructor.create_extensions(composition)
+        runtime = create_environment_runtime(
+            mounts={
+                item.alias: EnvironmentMount(
+                    source=item,
+                    permission_ceiling=item.permission_ceiling,
+                    working_directory=f"{item.provider_root.rstrip('/')}/tmp" if item.alias == "thread-files" else None,
+                    mount_path=item.mount_path,
+                    provider_root=item.provider_root,
                 )
-                if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
-                    mounts.append(
-                        await self._prepare_user_skills_mount(
-                            mount_path=(path_layout.user_skills if canonical_host_paths else None)
-                        )
-                    )
-            if self._configuration_root is not None:
-                root = self._configuration_root.expanduser().resolve()
-                if not (canonical_host_paths and any(mount.mount_path == root.as_posix() for mount in mounts)):
-                    mounts.append(
-                        await self._prepare_host_files_mount(
-                            root=root,
-                            alias="configuration",
-                            mount_path=root.as_posix() if canonical_host_paths else None,
-                        )
-                    )
-            thread_mount = await self._prepare_thread_files_mount(
-                reconstructed, thread_root, local_runtime=local_runtime
-            )
-            if roots:
-                mounts.append(thread_mount)
-            else:
-                mounts.insert(0, thread_mount)
-            for mount in mounts:
-                await mount.environment.prepare()
-            extensions = await self._reconstructor.create_extensions(composition)
-            runtime = create_environment_runtime(
-                mounts={
-                    item.alias: EnvironmentMount(
-                        environment=item.environment,
-                        permission_ceiling=item.permission_ceiling,
-                        working_directory=f"{item.provider_root.rstrip('/')}/tmp"
-                        if item.alias == "thread-files"
-                        else None,
-                        mount_path=item.mount_path,
-                        provider_root=item.provider_root,
-                    )
-                    for item in mounts
-                },
-                default_mount=composition.default_environment or mounts[0].alias,
-                extensions=extensions,
-            )
-        except BaseException as exc:
-            with CancelScope(shield=True):
-                try:
-                    await _discard_prepared(mounts)
-                except BaseException as cleanup_exc:
-                    exc.add_note(f"Prepared Environment cleanup also failed: {cleanup_exc!r}")
-            raise
+                for item in mounts
+            },
+            default_mount=composition.default_environment or mounts[0].alias,
+            extensions=extensions,
+        )
         return EnvironmentRunPlan(
-            store=self._store,
+            publications=publications,
             profile=profile,
             mounts=mounts,
             runtime=runtime,
@@ -544,7 +470,9 @@ class EnvironmentRunService:
             ),
         )
 
-    async def _prepare_device_mount(self, thread_id: str, binding: ResolvedEnvironmentBinding) -> _PreparedMount:
+    async def _prepare_device_mount(
+        self, thread_id: str, binding: ResolvedEnvironmentBinding
+    ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
         if self._devices is None:
             raise EnvironmentLifecycleError(
                 "Device connections are unavailable.", code="device_connections_unavailable"
@@ -571,15 +499,13 @@ class EnvironmentRunService:
         expected = None if head is None else head.state
         state = await self._load_state(key=key, reference=expected, provider_key=provider_key)
         environment = await self._devices.bind(binding, environment_id=f"device-{key.profile_digest[:20]}", state=state)
+        publication = await self._publish_state(key, expected, state, environment.state)
         return _PreparedMount(
             alias=selection.alias,
-            key=key,
-            expected_state_ref=expected,
-            supplied_state=state,
             environment=environment,
             permission_ceiling=selection.permission_ceiling,
             mount_path=f"/environment/{selection.alias}",
-        )
+        ), publication
 
     async def _prepare_thread_files_mount(
         self,
@@ -605,7 +531,7 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = await provider.create(
+            environment = provider.execution_connector(
                 environment_id=f"thread-files-{root.name}",
                 environment=configuration,
                 state=None,
@@ -614,9 +540,6 @@ class EnvironmentRunService:
             operations = FILE_ACTIONS
         return _PreparedMount(
             alias="thread-files",
-            key=None,
-            expected_state_ref=None,
-            supplied_state=None,
             environment=environment,
             permission_ceiling=EnvironmentPermissionSet(operations=operations),
             mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
@@ -643,7 +566,7 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = await provider.create(
+            environment = provider.execution_connector(
                 environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 environment=configuration,
                 state=None,
@@ -657,9 +580,6 @@ class EnvironmentRunService:
             ) from exc
         return _PreparedMount(
             alias=alias,
-            key=None,
-            expected_state_ref=None,
-            supplied_state=None,
             environment=environment,
             permission_ceiling=EnvironmentPermissionSet(operations=file_actions),
             mount_path=mount_path,
@@ -679,7 +599,7 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = await provider.create(
+            environment = provider.execution_connector(
                 environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 environment=configuration,
                 state=None,
@@ -693,13 +613,34 @@ class EnvironmentRunService:
             ) from exc
         return _PreparedMount(
             alias="user-skills",
-            key=None,
-            expected_state_ref=None,
-            supplied_state=None,
             environment=environment,
             permission_ceiling=EnvironmentPermissionSet(operations=FILE_ACTIONS),
             mount_path=mount_path,
         )
+
+    async def _publish_state(
+        self,
+        key: EnvironmentBindingKey,
+        expected: ObjectRef | None,
+        supplied: EnvironmentState | None,
+        observed: EnvironmentState | None,
+    ) -> EnvironmentStatePublication:
+        if supplied == observed:
+            return EnvironmentStatePublication(key, expected, expected, "unchanged")
+        # Management has already taken effect. Finish the conditional publication even
+        # when the caller is cancelled, while keeping storage failure bounded.
+        replacement = None
+        with CancelScope(shield=True), fail_after(30):
+            if observed is not None:
+                stored = StoredEnvironmentState(binding=key, state=observed, created_at=_utc_now())
+                replacement = (
+                    await self._store.objects.publish_model(
+                        object_kind=ObjectKind.environment_state,
+                        value=stored,
+                    )
+                ).ref
+            await self._store.environment_states.select(key=key, expected=expected, replacement=replacement)
+        return EnvironmentStatePublication(key, expected, replacement, "published")
 
     async def _load_state(
         self,
@@ -783,17 +724,6 @@ def _normalize_root(value: Path) -> Path:
     if not resolved.is_dir() or not os.access(resolved, os.R_OK | os.X_OK):
         raise OSError("root is not an accessible directory")
     return resolved
-
-
-async def _discard_prepared(mounts: Sequence[_PreparedMount]) -> None:
-    errors: list[Exception] = []
-    for mount in reversed(mounts):
-        try:
-            await mount.environment.close()
-        except Exception as exc:
-            errors.append(exc)
-    if errors:
-        raise BaseExceptionGroup("Prepared Environment cleanup failed", errors)
 
 
 def _utc_now() -> datetime:

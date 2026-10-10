@@ -5,13 +5,13 @@ description: 'Choose the narrowest extension point: Harness middleware, Pydantic
 
 Choose an extension by the behavior you want to add:
 
-| Extension point              | Use it for                                             |
-| ---------------------------- | ------------------------------------------------------ |
-| Harness middleware plugin    | Wrap input, execution, errors, or the final Run result |
-| Capability                   | Add tools, instructions, or Agent-loop behavior        |
-| `EnvironmentProviderBinding` | Expose operations from one Host resource               |
-| `EnvironmentRunExtension`    | Set up and clean up resources across entered mounts    |
-| Provider plugin              | Make an Environment Provider available to a Host       |
+| Extension point           | Use it for                                             |
+| ------------------------- | ------------------------------------------------------ |
+| Harness middleware plugin | Wrap input, execution, errors, or the final Run result |
+| Capability                | Add tools, instructions, or Agent-loop behavior        |
+| `EnvironmentSource`       | Prepare one Host target on first use                   |
+| `EnvironmentRunExtension` | Set up and clean up resources across entered mounts    |
+| Provider plugin           | Make an Environment Provider available to a Host       |
 
 Install the package, then explicitly select its extension. Installation alone activates nothing.
 
@@ -19,13 +19,13 @@ Install the package, then explicitly select its extension. Installation alone ac
 
 Select each extension through its owning API:
 
-| Extension point  | Selection                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| Middleware       | Pass a concrete plugin to `build()` or enable its configured `plugin_key`/`plugin_id` |
-| Capability       | Add it to definition or Run composition; see [Capabilities](capabilities.md)          |
-| Run extension    | Pass an instance to `create_environment_runtime(extensions=...)`                      |
-| Provider binding | Add a fresh binding to `EnvironmentRuntimeMount`                                      |
-| Provider plugin  | Select its entry-point name, then its Provider type in Host configuration             |
+| Extension point | Selection                                                                             |
+| --------------- | ------------------------------------------------------------------------------------- |
+| Middleware      | Pass a concrete plugin to `build()` or enable its configured `plugin_key`/`plugin_id` |
+| Capability      | Add it to definition or Run composition; see [Capabilities](capabilities.md)          |
+| Run extension   | Pass an instance to `create_environment_runtime(extensions=...)`                      |
+| Host source     | Add a Host source to `EnvironmentMount`                                               |
+| Provider plugin | Select its entry-point name, then its Provider type in Host configuration             |
 
 `AgentSpec` selects Capabilities. Configure middleware and Environment extensions separately.
 
@@ -275,11 +275,11 @@ For grouped tools, see [ToolProxy plugin-contributed sources](tool-proxy.md#plug
 
 Provider plugins publish Environment definitions for Host selection. Compose Model, Web, Connector, and Memory definitions in code through `ProviderCatalog`.
 
-Declare the Provider type, display name, configuration, credentials, and runtime factory:
+Declare the Provider type, configuration, credentials, and separate management and connector factories:
 
 ```python
-from a13n_harness.providers.authentication import Authentication, CredentialMode
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_environment.authentication import Authentication, CredentialMode
+from a13n_environment.definition import EnvironmentProviderDefinition
 
 ACME_SANDBOX = EnvironmentProviderDefinition(
     type="acme_sandbox",
@@ -287,9 +287,9 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
     configuration_model=AcmeConnectionConfiguration,
     credential_model=AcmeCredential,
     environment_model=AcmeEnvironmentConfiguration,
-    construct=_construct,
+    provider_factory=_open_provider,
+    connector_factory=_connector,
     describe_environment=_describe,
-    runtime_factory=_runtime,
     authentication=Authentication(mode=CredentialMode.required),
     setup_url="https://acme.example/dashboard",
     setup_label="Acme dashboard",
@@ -303,7 +303,7 @@ One distribution exports one `ProviderManifest` per entry point:
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
 ```
 
 ```toml
@@ -330,7 +330,7 @@ The runnable [plugin example](https://github.com/converge-ai-labs/agent-foundati
 
 ## Harness Extras
 
-Built-in Provider definitions ship with Harness. Install an extra when opening its backend:
+Environment definitions ship in the independent `a13n-environment` package. Install its extra when opening a backend:
 
 | Extra    | Adds                      | Needed by                         |
 | -------- | ------------------------- | --------------------------------- |
@@ -339,14 +339,14 @@ Built-in Provider definitions ship with Harness. Install an extra when opening i
 | `modal`  | The Modal SDK             | The `modal` Environment Provider  |
 
 ```console
-uv add "a13n-harness[docker,e2b]"
+uv add a13n-harness "a13n-environment[docker,e2b]"
 ```
 
 Reading Provider metadata needs no vendor SDK. A missing extra fails when the Provider opens.
 
-## Environment Inputs and Advanced Bindings
+## Environment Inputs and Sources
 
-Pass a constructed `Environment` to `run(environment=...)`. Use `EnvironmentMount` for permission ceilings and paths, or an explicit runtime for dynamic mounts:
+Pass a Host-owned `EnvironmentSource` to `run(environment=...)`. Its `ensure_ready()` prepares the target and returns a connector; see the complete [source example](environments.md#supply-a-source). Use `EnvironmentMount` for permissions and paths, or an explicit runtime for dynamic mounts:
 
 ```python
 from a13n_harness.environment import (
@@ -359,7 +359,7 @@ from a13n_harness.environment.advanced import create_environment_runtime
 environment_runtime = create_environment_runtime(
     mounts={
         "workspace": EnvironmentMount(
-            environment=environment,
+            source=source,
             permission_ceiling=EnvironmentPermissionSet(operations=FILE_ACTIONS),
         ),
     },
@@ -367,15 +367,11 @@ environment_runtime = create_environment_runtime(
 )
 ```
 
-`permission_ceiling` accepts any exact action set, which is useful for a setup extension that needs only selected file operations. Provider permissions always narrow the ceiling. A runtime takes ownership of each underlying Environment only once, even if it is wrapped in another `EnvironmentMount`. Invalid initial routes do not take ownership, and a failed attempt to reuse the Environment cannot close its existing scope.
+`permission_ceiling` accepts exact action sets; Provider permissions can only narrow them. Static registration does not prepare targets. On first use Harness opens and owns a fresh execution, then closes it at exit. An execution already owned by another mount is rejected without closing its existing owner’s resources.
 
-### Advanced Provider Binding Scopes
+### Host Preparation Callbacks
 
-Use `EnvironmentProviderBinding` with `EnvironmentRuntimeMount` when a Host must acquire an authenticated session or another resource inside a custom async `bind()` scope. The binding then exposes provider-neutral file, shell, process, output, port, readiness, and portable-state operations. This advanced input remains accepted by explicit runtime construction and dynamic mount replacement. An existing Environment should use the direct inputs above.
-
-That is a low-level runtime binding contract. Provider catalogs, Environment Provider lifecycle operations, credential handling, and durable provider state belong to [Provider plugins](#provider-plugins) and the Host, not to Harness middleware.
-
-An `EnvironmentProviderBinding` is fresh and single-use. Effectful allocation, authentication, session entry, maintenance tasks, and cleanup-producing work belong inside its async `bind()` scope or in the owning provider layer, never in import-time discovery or an inert factory constructor.
+Source `provider_key`, `environment_id`, `descriptor`, and `state` are inert metadata. `ensure_ready()` owns preparation, authoritative state publication, and waiting until the target is actually ready before returning a connector. The Host handles management failures; Harness does not automatically retry activation on the same mount. Provider discovery, credentials, and durable state remain with [Provider plugins](#provider-plugins) and the Host.
 
 ## Environment Run Extensions
 
@@ -417,7 +413,7 @@ active_run_callbacks = EnvironmentRunCallbacks(
 )
 ```
 
-`on_enter` runs after Harness enters the adapters constructed by the Host, before the first model request. If setup needs a specific operation family, request readiness explicitly:
+`on_enter` runs after Harness publishes the static mount set, before the first model request. Merely entering the extension does not prepare a target. If setup needs a specific operation family, request readiness explicitly:
 
 ```python
 from a13n_harness.environment import EnvironmentReadinessRequirement

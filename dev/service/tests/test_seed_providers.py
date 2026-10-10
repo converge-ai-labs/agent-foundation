@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock
 
-from a13n_harness.providers.environment.vercel.provider import VERCEL
+from a13n_environment.vercel.provider import VERCEL
 from a13n_harness.providers.model.vercel import DEFINITION as VERCEL_GATEWAY
 
 from dev.service.api import Api

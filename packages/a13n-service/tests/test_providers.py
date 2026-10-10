@@ -13,7 +13,7 @@ from typing import Any
 import anyio
 import httpx2
 import pytest
-from a13n_harness.providers.environment.docker.configuration import (
+from a13n_environment.docker.configuration import (
     DockerEnvironmentConfiguration as HarnessDockerRecipe,
 )
 from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions

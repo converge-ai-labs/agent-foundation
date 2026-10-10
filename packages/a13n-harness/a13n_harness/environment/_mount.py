@@ -7,28 +7,22 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel
-
-from a13n_harness.providers.environment.commands import (
+from a13n_environment.commands import (
     BoundProcessHandle,
 )
-from a13n_harness.providers.environment.computer import ComputerObservation
-from a13n_harness.providers.environment.models import (
-    EnvironmentError,
-    EnvironmentMountInfo,
-    EnvironmentOperationReceipt,
-    EnvironmentPermissionSet,
-)
-from a13n_harness.providers.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
-from a13n_harness.providers.environment.retention import (
+from a13n_environment.computer import ComputerObservation
+from a13n_environment.models import EnvironmentError, EnvironmentOperationReceipt, EnvironmentPermissionSet
+from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
 )
+from pydantic import BaseModel
 
-from .providers import (
-    BoundEnvironmentProvider,
-    EnvironmentProviderBinding,
-)
+from a13n_harness.environment.models import EnvironmentMountInfo
+
+from ._activation import _MountExecution
+from .sources import EnvironmentMount
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +31,7 @@ class _MountRequest:
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
     mount_path: str | None
-    candidate: EnvironmentProviderBinding
+    mount: EnvironmentMount
     provider_root: str = "/"
 
 
@@ -45,7 +39,7 @@ class _MountRequest:
 class _EnteredMount:
     mount_id: str
     configured: EnvironmentMountInfo
-    provider: BoundEnvironmentProvider
+    provider: _MountExecution
     environment_id: str
 
     operations: EnvironmentProviderOperations = field(init=False)
@@ -58,6 +52,7 @@ class _EnteredMount:
         public = self.configured.model_copy(
             update={
                 "descriptor": descriptor,
+                "provider_type": self.provider.provider_key,
                 "permission_ceiling": EnvironmentPermissionSet(
                     operations=self.configured.permission_ceiling.operations & descriptor.permissions.operations
                 ),
@@ -80,7 +75,7 @@ type _MountKey = str
 @dataclass(slots=True)
 class _OwnedProviderScope:
     entered: _EnteredMount
-    scope: AbstractAsyncContextManager[BoundEnvironmentProvider]
+    scope: AbstractAsyncContextManager[_MountExecution]
 
 
 def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
@@ -92,7 +87,10 @@ def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
         EnvironmentOperationReceipt,
     )
     if isinstance(value, bound_types):
-        if value.mount_id != entered.mount_id or value.observed_generation != entered.public.descriptor.generation:
+        if (
+            value.execution_id != entered.provider.execution_id
+            or value.observed_generation != entered.public.descriptor.generation
+        ):
             raise EnvironmentError(
                 "Environment provider returned an artifact for another mount incarnation.",
                 code="environment_provider_failure",

@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from a13n_environment.commands import CommandRequest, ShellCommand
+from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.capabilities.skills import SkillsCapability
 from a13n_harness.environment import EnvironmentAction, EnvironmentError
-from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID
@@ -114,7 +114,7 @@ async def test_builtin_skill_discovery_and_read_only_environment(
                     )
                 assert (await environment.files.read_text(skill_path)).text == skill.text
         finally:
-            finalization = await plan.finalize()
+            finalization = plan.finalization
             assert not finalization.cleanup_errors
         assert not (tmp_path / "workspace/.agents").exists()
         assert not (tmp_path / "builtin-skills").exists()
@@ -175,7 +175,7 @@ async def test_user_and_project_skills_override_builtin_in_preview_and_runtime(
                 catalog = await skills.manager.scan(files=environment.files)
                 assert next(item for item in catalog if item.name == SKILL_NAME).source_id == expected_source
         finally:
-            assert not (await plan.finalize()).cleanup_errors
+            assert not (plan.finalization).cleanup_errors
 
 
 async def test_root_run_reads_builtin_skill_navigation_and_documentation(

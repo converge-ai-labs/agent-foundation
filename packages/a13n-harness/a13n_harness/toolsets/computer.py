@@ -6,13 +6,7 @@ import secrets
 from collections import OrderedDict
 from typing import Annotated, Any, Literal
 
-from pydantic import Field
-from pydantic_ai import BinaryContent, ToolReturn
-from pydantic_ai.toolsets import FunctionToolset
-
-from a13n_harness.context import AgentContext
-from a13n_harness.environment.providers import BoundEnvironment
-from a13n_harness.providers.environment.computer import (
+from a13n_environment.computer import (
     ComputerButton,
     ComputerClick,
     ComputerDrag,
@@ -24,7 +18,13 @@ from a13n_harness.providers.environment.computer import (
     ComputerScroll,
     ComputerTypeText,
 )
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_environment.models import EnvironmentAction, EnvironmentError
+from pydantic import Field
+from pydantic_ai import BinaryContent, ToolReturn
+from pydantic_ai.toolsets import FunctionToolset
+
+from a13n_harness.context import AgentContext
+from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
 from ._instructions import InstructionFunctionToolset, tool_instruction

@@ -11,6 +11,8 @@ from typing import Annotated, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from a13n_environment.files import FileOperator
+from a13n_environment.models import EnvironmentError
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.native_tools import WebSearchTool
@@ -24,8 +26,6 @@ from a13n_harness.context import AgentContext
 from a13n_harness.environment.providers import FileScopeProvider
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.media_types import is_text_media_type, text_charset
-from a13n_harness.providers.environment.files import FileOperator
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.providers.web.contracts import _validate_headers
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
 

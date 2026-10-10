@@ -6,16 +6,18 @@ from types import SimpleNamespace
 
 import pytest
 from a13n_envd_client import EIPSessionStateError
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
-from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
-from a13n_harness.providers.environment.local_envd.runtime import (
+from a13n_environment.errors import EnvironmentProviderError
+from a13n_environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_environment.local_envd.provider import LocalEnvdExecution
+from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
-from a13n_harness.providers.environment.remote_envd import environment as remote_module
-from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdEnvironment
+from a13n_environment.models import EnvironmentError, EnvironmentState
+from a13n_environment.remote_envd import environment as remote_module
+from a13n_environment.remote_envd.environment import RemoteEnvdExecution
+
+from ..environment_helpers import Source
 
 pytestmark = pytest.mark.anyio
 
@@ -23,7 +25,7 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture(params=["local", "remote"])
 def adapter(request, tmp_path):
     if request.param == "local":
-        return LocalEnvdEnvironment(
+        return LocalEnvdExecution(
             LocalEnvdEnvironmentConfiguration(),
             LocalEnvdProviderRuntime(
                 executable=tmp_path / "unused",
@@ -36,7 +38,7 @@ def adapter(request, tmp_path):
     async def session():
         yield SimpleNamespace()
 
-    return RemoteEnvdEnvironment(
+    return RemoteEnvdExecution(
         provider_key="http_envd",
         environment_id="test",
         state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),
@@ -45,7 +47,7 @@ def adapter(request, tmp_path):
 
 
 def install_scope(adapter, scope):
-    if isinstance(adapter, LocalEnvdEnvironment):
+    if isinstance(adapter, LocalEnvdExecution):
         adapter._eip_scope = scope
     else:
         adapter._session_context = scope
@@ -88,8 +90,8 @@ async def test_prepare_failure_stays_primary_when_cleanup_also_fails(adapter, mo
     async def fail_cleanup():
         raise cleanup
 
-    monkeypatch.setattr(adapter, "_close", fail_cleanup)
-    if isinstance(adapter, LocalEnvdEnvironment):
+    monkeypatch.setattr(adapter, "close", fail_cleanup)
+    if isinstance(adapter, LocalEnvdExecution):
 
         async def acquire():
             raise original
@@ -102,15 +104,14 @@ async def test_prepare_failure_stays_primary_when_cleanup_also_fails(adapter, mo
 
         monkeypatch.setattr(remote_module, "EIPEnvironmentSession", bind)
     with pytest.raises(asyncio.CancelledError if cancel else EnvironmentProviderError) as caught:
-        await adapter.prepare()
+        await adapter.open(execution_id="exec-test")
     primary = caught.value if cancel else caught.value.__cause__
     assert primary is original
     assert primary.__cause__ is cleanup
 
 
 @pytest.mark.parametrize("failure", ["not_ready", "error"])
-@pytest.mark.parametrize("eager", [False, True])
-async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure, eager):
+async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure):
     from unittest.mock import AsyncMock
 
     from a13n_envd_client.eip import v1 as eip
@@ -139,7 +140,9 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
         if failure == "not_ready"
         else EnvironmentError("Transient readiness failure", code="environment_unavailable")
     )
-    readiness = AsyncMock(side_effect=[first, SimpleNamespace(ready=True), SimpleNamespace(ready=True)])
+    readiness = AsyncMock(
+        side_effect=[SimpleNamespace(ready=True), first, SimpleNamespace(ready=True), SimpleNamespace(ready=True)]
+    )
     stat = AsyncMock(
         return_value=eip.FileStatResult(
             info=eip.FileInfo(path=eip.EIPPath(path="/note.txt"), kind=eip.FileKind.FILE, size_bytes=4)
@@ -173,32 +176,36 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
         finally:
             closed.append(True)
 
-    adapter = RemoteEnvdEnvironment(
-        provider_key="http_envd",
-        environment_id="test",
-        state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),
-        session_context=scope(),
+    from a13n_environment.remote_envd.configuration import HttpEnvdConnectionConfiguration, HttpEnvdCredential
+    from a13n_environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+
+    class Runtime(HttpEnvdProviderRuntime):
+        def open_session(self, **kwargs):
+            return scope()
+
+    owner = Runtime(
+        HttpEnvdConnectionConfiguration(endpoint="https://fixture.example"), HttpEnvdCredential(token="fixture")
     )
-    if eager:
-        await adapter.prepare()
-    runtime = create_environment_runtime(mounts={"workspace": adapter}, default_mount="workspace")
+    adapter = HTTP_ENVD.execution_connector(
+        {},
+        configuration=owner.configuration,
+        runtime=owner,
+        state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),
+    )
+    runtime = create_environment_runtime(mounts={"workspace": Source(adapter)}, default_mount="workspace")
     async with runtime.bind(
         thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
     ) as bound:
         with pytest.raises(EnvironmentError) as caught:
             await bound.files.stat("note.txt")
         assert caught.value.code == "environment_unavailable"
-        assert adapter.availability.status == "unavailable"
         stat.assert_not_awaited()
         for _ in range(2):
             assert (await bound.files.stat("note.txt")).size == 4
-            assert adapter.availability.status == "available"
-            assert adapter.availability.ready_families == frozenset({"files"})
-        assert readiness.await_count == 3
+        assert readiness.await_count == 4
         assert stat.await_count == 2
         assert closed == []
     assert closed == [True]
-    assert adapter.availability.status == "unavailable"
 
 
 async def test_remote_cleanup_attempts_both_owners_and_retains_all_failures():
@@ -217,7 +224,7 @@ async def test_remote_cleanup_attempts_both_owners_and_retains_all_failures():
 
     scope = session()
     await scope.__aenter__()
-    adapter = RemoteEnvdEnvironment(
+    adapter = RemoteEnvdExecution(
         provider_key="http_envd",
         environment_id="test",
         state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),

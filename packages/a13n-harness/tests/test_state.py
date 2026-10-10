@@ -2,13 +2,13 @@ import re
 from typing import Any, cast
 
 import pytest
+from a13n_environment.models import EnvironmentState
 from a13n_harness import (
     HarnessRunResult,
     HarnessState,
     SafeFailure,
     StateError,
 )
-from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.state import (
     AgentContextState,
     AgentContextStateSnapshot,
