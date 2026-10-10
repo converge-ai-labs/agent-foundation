@@ -97,14 +97,14 @@ def test_release_images_prepare_real_metadata_before_building() -> None:
         jobs = yaml.safe_load((ROOT / f".github/workflows/release-{component}.yml").read_text())["jobs"]
         steps = jobs["publish-image"]["steps"]
         if component == "a13n-envd":
-            # Envd prepares once, then all native/image jobs apply the same patch.
+            # Envd prepares once; the image reuses the versioned native artifacts.
             prepare_steps = jobs["prepare"]["steps"]
             assert any(
                 'prepare-release-version.py a13n-envd "$version"' in step.get("run", "") for step in prepare_steps
             )
             patch = next(step for step in prepare_steps if step["name"] == "Create release version patch")
             assert "Cargo.toml" in patch["run"] and "Cargo.lock" in patch["run"]
-            preparation = next(index for index, step in enumerate(steps) if "git apply" in step.get("run", ""))
+            preparation = next(index for index, step in enumerate(steps) if step["name"] == "Stage sandbox binaries")
         else:
             preparation = next(
                 index for index, step in enumerate(steps) if "prepare-release-version.py" in step.get("run", "")
@@ -116,6 +116,23 @@ def test_release_images_prepare_real_metadata_before_building() -> None:
         assert preparation < build
     sandbox = (ROOT / "deploy/docker/images/sandbox/Dockerfile").read_text()
     assert 'test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"' in sandbox
+
+
+def test_sandbox_shares_trixie_runtime_with_source_and_prebuilt_binaries() -> None:
+    dockerfile = (ROOT / "deploy/docker/images/sandbox/Dockerfile").read_text()
+    assert "ARG ENVD_BINARY_SOURCE=source" in dockerfile
+    assert "FROM rust:1.96-trixie AS builder" in dockerfile
+    assert "FROM node:24-trixie-slim AS node" in dockerfile
+    assert "FROM python:3.13.12-slim-trixie AS runtime" in dockerfile
+    assert "cargo build --release --locked --package a13n-envd" in dockerfile
+    assert "COPY --from=builder /src/target/release/a13n-envd /a13n-envd" in dockerfile
+    assert "COPY --chmod=0755 tmp/sandbox-binaries/${TARGETARCH}/a13n-envd /a13n-envd" in dockerfile
+    assert "FROM envd-${ENVD_BINARY_SOURCE} AS envd" in dockerfile
+    assert "COPY --from=envd /a13n-envd /usr/local/bin/a13n-envd" in dockerfile
+    assert "tmp" not in (ROOT / ".dockerignore").read_text().splitlines()
+    steps = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())["jobs"]["publish"]["steps"]
+    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
+    assert "ENVD_BINARY_SOURCE=prebuilt" not in build["with"]["build-args"]
 
 
 @pytest.mark.parametrize(

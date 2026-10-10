@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 
-FROM rust:1.96-bookworm AS builder
+# Local and dev builds compile this checkout; releases select workflow artifacts.
+ARG ENVD_BINARY_SOURCE=source
+
+FROM rust:1.96-trixie AS builder
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
@@ -9,9 +12,19 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release --locked --package a13n-envd
 
-FROM node:24-bookworm-slim AS node
+FROM scratch AS envd-source
+COPY --from=builder /src/target/release/a13n-envd /a13n-envd
+
+FROM scratch AS envd-prebuilt
+ARG TARGETARCH
+COPY --chmod=0755 tmp/sandbox-binaries/${TARGETARCH}/a13n-envd /a13n-envd
+
+# BuildKit skips the Rust builder entirely when prebuilt is selected.
+FROM envd-${ENVD_BINARY_SOURCE} AS envd
+
+FROM node:24-trixie-slim AS node
 FROM ghcr.io/astral-sh/uv:0.7.4 AS uv
-FROM python:3.13.12-slim-bookworm AS runtime
+FROM python:3.13.12-slim-trixie AS runtime
 
 COPY --from=node /usr/local/ /usr/local/
 COPY --from=uv /uv /uvx /usr/local/bin/
@@ -40,7 +53,7 @@ RUN apt-get update \
     && chmod 0440 /etc/sudoers.d/sandbox \
     && visudo -cf /etc/sudoers
 
-COPY --from=builder /src/target/release/a13n-envd /usr/local/bin/a13n-envd
+COPY --from=envd /a13n-envd /usr/local/bin/a13n-envd
 COPY LICENSE /usr/share/licenses/a13n-envd/LICENSE
 # A release label must agree with the version compiled into the daemon.
 RUN test "$BUILD_VERSION" = dev || test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"
