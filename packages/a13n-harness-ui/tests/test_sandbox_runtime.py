@@ -9,9 +9,10 @@ from a13n_environment.local_envd.configuration import LocalEnvdEnvironmentConfig
 from a13n_environment.local_envd.provider import LOCAL_ENVD
 from a13n_environment.models import EnvironmentError
 from a13n_harness import RunBindings
-from a13n_harness.environment import EnvironmentMount
+from a13n_harness.environment import EnvironmentMount, EnvironmentPermissionSet
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+from a13n_harness_ui.environment_runtime import _PreparedMount
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.sandbox import create_sandbox_runtime, validate_sandbox_runtime
 
@@ -94,7 +95,9 @@ async def test_shared_sandbox_sessions_preserve_host_paths_and_hide_unrelated_fi
             runtime = create_environment_runtime(
                 mounts={
                     "workspace": EnvironmentMount(
-                        first_connector, mount_path=project.as_posix(), provider_root=project.as_posix()
+                        _PreparedMount("workspace", first_connector, EnvironmentPermissionSet(), None),
+                        mount_path=project.as_posix(),
+                        provider_root=project.as_posix(),
                     )
                 },
                 default_mount="workspace",

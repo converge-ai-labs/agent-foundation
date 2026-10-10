@@ -39,14 +39,12 @@ from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     EnvironmentRuntime,
     create_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
 )
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
@@ -63,8 +61,8 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Tool
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 from .environment_helpers import (
-    DirectLocalEnvironmentProviderBinding,
     DirectLocalFilePolicy,
+    DirectLocalSource,
 )
 
 pytestmark = pytest.mark.anyio
@@ -148,7 +146,7 @@ class _MountChangingSource:
         inner: FileSkillSource,
         runtime: EnvironmentRuntime,
         name: str,
-        replacement: EnvironmentRuntimeMount,
+        replacement: EnvironmentMount,
     ) -> None:
         self._inner = inner
         self._runtime = runtime
@@ -184,9 +182,9 @@ class _Materializer:
         )
 
 
-def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> EnvironmentRuntimeMount:
-    return EnvironmentRuntimeMount(
-        binding=DirectLocalEnvironmentProviderBinding(
+def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> EnvironmentMount:
+    return EnvironmentMount(
+        source=DirectLocalSource(
             DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=root),
             ),

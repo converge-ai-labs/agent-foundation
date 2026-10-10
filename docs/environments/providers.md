@@ -163,6 +163,8 @@ An interrupted create is reconciled through the native name or ownership metadat
 
 E2B executes commands directly through its native asynchronous SDK. Bounded Python helpers implement files and port checks only. The default `base` template works without installing `a13n-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+, Bash and the configured account/root; Git-ignore queries also need Git.
 
+Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
+
 ```python
 import os
 
@@ -176,7 +178,7 @@ async with await E2B.open_provider(
     state = await provider.create(recipe, environment_id="env-example", operation_id="op-create")
     await state_store.publish(environment_key, state)
     connector = provider.execution_connector(recipe, environment_id="env-example", state=state)
-result = await executable.run("Inspect the sandbox", environment=connector)
+result = await executable.run("Inspect the sandbox", environment=PreparedSource(connector))
 ```
 
 `close()` preserves the sandbox and files, disconnecting this execution's observations without killing commands. Management explicitly calls `stop()`, `start()`, `keepalive()`, and `destroy()`. Opening uses a read-only lookup of a running target without renewal or resume, and rejects E2B targets configured for automatic resume. The library never reads `.env`; the Host supplies credentials.

@@ -3,7 +3,7 @@ title: 生命周期与状态
 description: 分别管理环境目标、连接配置和独立执行对象。
 ---
 
-Host 先管理目标并保存结果，再将固定目标的连接配置交给 Harness。独立的 `a13n-environment` 包也可直接用于普通应用。
+Host 先管理目标并保存结果，再由其来源向 Harness 返回固定目标的 connector。独立的 `a13n-environment` 包也可直接用于普通应用。
 
 ## 三个对象
 
@@ -20,6 +20,8 @@ Host 先管理目标并保存结果，再将固定目标的连接配置交给 Ha
 ## 先管理，再发布状态
 
 以下片段中的状态存储、并发控制和取消保护由 Host 提供：
+
+此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
 
 ```python
 from a13n_environment.docker.provider import DOCKER
@@ -40,7 +42,7 @@ async with await DOCKER.open_provider(configuration=account_configuration) as pr
     await state_store.publish(environment_key, state)
     connector = provider.execution_connector(recipe, environment_id="env-workspace", state=state)
 
-result = await executable.run("Continue the task", environment=connector)
+result = await executable.run("Continue the task", environment=PreparedSource(connector))
 ```
 
 `EnvironmentState` 保留原有的无凭据格式。它不包含活跃客户端、执行句柄、Harness 挂载策略或销毁权限。管理方法返回当前引用；`inspect()` 返回状态和引用。

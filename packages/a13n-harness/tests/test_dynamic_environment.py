@@ -47,6 +47,7 @@ from a13n_harness.environment import (
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
     EnvironmentError,
+    EnvironmentMount,
     EnvironmentPath,
     EnvironmentPermissionSet,
 )
@@ -55,10 +56,7 @@ from a13n_harness.environment.advanced import (
     create_environment_runtime,
 )
 from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
-    FileScopeSelection,
-)
+from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_context import user_prompt_content
@@ -101,8 +99,8 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.usage import RequestUsage
 
 from .environment_helpers import (
-    DirectLocalEnvironmentProviderBinding,
     DirectLocalFilePolicy,
+    DirectLocalSource,
 )
 
 pytestmark = pytest.mark.anyio
@@ -204,9 +202,9 @@ def _local_mount(
     operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
     process_output: bool = False,
     mount_path: str | None = None,
-) -> EnvironmentRuntimeMount:
-    return EnvironmentRuntimeMount(
-        binding=DirectLocalEnvironmentProviderBinding(
+) -> EnvironmentMount:
+    return EnvironmentMount(
+        source=DirectLocalSource(
             DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=root),
                 shell_profiles=(
@@ -2209,7 +2207,7 @@ async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool)
 
 
 class _MountAfterResultPlugin(AbstractHarnessPlugin):
-    def __init__(self, runtime: Any, mount: EnvironmentRuntimeMount) -> None:
+    def __init__(self, runtime: Any, mount: EnvironmentMount) -> None:
         self._runtime = runtime
         self._mount = mount
         self.error_code: str | None = None

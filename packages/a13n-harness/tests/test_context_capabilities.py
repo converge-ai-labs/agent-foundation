@@ -45,13 +45,11 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.environment import (
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     create_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
 )
 from a13n_harness.events import InputTextEvent
 from a13n_harness.model_context import (
@@ -92,13 +90,13 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import RequestUsage, UsageLimits
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = pytest.mark.anyio
 
 
 def _local_binding(root: Path, *, default_working_directory: str = "/"):
-    provider = DirectLocalEnvironmentProviderBinding(
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
             max_value_bytes=128 * 1024,
@@ -107,8 +105,8 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
     )
     return create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
+            "local": EnvironmentMount(
+                source=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory=default_working_directory,
             )

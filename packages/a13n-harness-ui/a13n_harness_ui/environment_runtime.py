@@ -23,7 +23,7 @@ from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     resolve_a13n_envd_executable,
 )
-from a13n_environment.models import FILE_EXECUTION_ACTIONS, EnvironmentState
+from a13n_environment.models import FILE_EXECUTION_ACTIONS, EnvironmentDescriptor, EnvironmentState
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -96,6 +96,26 @@ class _PreparedMount:
     permission_ceiling: EnvironmentPermissionSet
     mount_path: str | None
     provider_root: str = "/"
+
+    @property
+    def provider_key(self) -> str:
+        return self.environment.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.environment.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.environment.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.environment.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        # Project preparation and state publication already completed in this Host.
+        return self.environment
 
 
 class EnvironmentSnapshotReconstructor:
@@ -428,7 +448,7 @@ class EnvironmentRunService:
         runtime = create_environment_runtime(
             mounts={
                 item.alias: EnvironmentMount(
-                    connector=item.environment,
+                    source=item,
                     permission_ceiling=item.permission_ceiling,
                     working_directory=f"{item.provider_root.rstrip('/')}/tmp" if item.alias == "thread-files" else None,
                     mount_path=item.mount_path,

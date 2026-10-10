@@ -9,7 +9,6 @@ from a13n_environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.execution import EnvironmentConnector
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -29,6 +28,7 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from .environment_helpers import Source
 from .test_environment_connectors import Connector
 
 pytestmark = pytest.mark.anyio
@@ -47,15 +47,17 @@ def _executable():
     )
 
 
-def _environment(root: Path, environment_id: str) -> EnvironmentConnector:
+def _environment(root: Path, environment_id: str) -> Source:
     provider = DIRECT_LOCAL
-    return provider.execution_connector(
-        environment=DirectLocalEnvironmentConfiguration(
-            root=DirectLocalRootConfiguration(path=root),
-        ),
-        state=None,
-        environment_id=environment_id,
-        runtime=None,
+    return Source(
+        provider.execution_connector(
+            environment=DirectLocalEnvironmentConfiguration(
+                root=DirectLocalRootConfiguration(path=root),
+            ),
+            state=None,
+            environment_id=environment_id,
+            runtime=None,
+        )
     )
 
 
@@ -64,10 +66,13 @@ class _TrackingConnector(Connector):
         self, root: Path, environment_id: str, *, lifecycle_events: list[str] | None = None, fail_entry: bool = False
     ):
         super().__init__(root, failure=fail_entry)
-        self.delegate = _environment(root, environment_id)
+        self.delegate = _environment(root, environment_id).connector
         self.entry: str | None = None
         self.close_calls = 0
         self._events = lifecycle_events
+
+    async def ensure_ready(self):
+        return self
 
     async def open(self):
         if self._events is not None:
@@ -250,7 +255,13 @@ def test_environment_source_validation_fails_before_stream_entry(kwargs: dict[st
 
 async def test_one_connector_can_be_mounted_twice(tmp_path: Path) -> None:
     connector = _TrackingConnector(tmp_path, "duplicate")
-    result = await _executable().run("hello", environments={"one": connector, "two": connector})
+
+    async def prepare(context):
+        await context.environment.files.stat("/environment/one")
+        await context.environment.files.stat("/environment/two")
+        return "hello"
+
+    result = await _executable().run(input_factory=prepare, environments={"one": connector, "two": connector})
     assert result.output_or_raise() == "ok"
     assert len(connector.opened) == connector.close_calls == 2
     assert connector.opened[0].execution_id != connector.opened[1].execution_id
@@ -298,8 +309,13 @@ def test_high_level_sources_conflict_with_advanced_run_binding(tmp_path: Path) -
 
 async def test_connector_opens_fresh_executions_across_runs(tmp_path: Path) -> None:
     connector = _TrackingConnector(tmp_path, "repeated")
-    for prompt in ("first", "second"):
-        assert (await _executable().run(prompt, environment=connector)).output_or_raise() == "ok"
+
+    async def prepare(context):
+        await context.environment.files.stat("/workspace")
+        return "hello"
+
+    for _ in range(2):
+        assert (await _executable().run(input_factory=prepare, environment=connector)).output_or_raise() == "ok"
     assert len(connector.opened) == connector.close_calls == 2
     assert connector.opened[0].execution_id != connector.opened[1].execution_id
 
@@ -315,19 +331,22 @@ async def test_entered_environments_close_in_reverse_order_when_later_preparatio
     second = _TrackingConnector(roots[1], "second", lifecycle_events=events)
     failed = _TrackingConnector(roots[2], "failed", lifecycle_events=events, fail_entry=True)
 
+    runtime = create_environment_runtime(mounts={"first": first, "second": second, "failed": failed})
     with pytest.raises(RuntimeError, match="opening failed"):
-        async with _executable().stream(
-            "hello",
-            environments={"first": first, "second": second, "failed": failed},
-        ):
-            pytest.fail("Partially opened environments became visible")
+        async with runtime.bind(
+            thread_id="thread-test", run_id="run-test", instance=RunBindings.embedded().instance, host_refs={}
+        ) as bound:
+            await runtime._activate()
+            await bound.files.stat("/environment/second")
+            await bound.files.stat("/environment/first")
+            await bound.files.stat("/environment/failed")
 
     assert events == [
-        "enter:first",
         "enter:second",
+        "enter:first",
         "enter:failed",
-        "close:second",
         "close:first",
+        "close:second",
     ]
 
 
@@ -360,7 +379,12 @@ async def test_connector_can_open_another_run_without_closing_the_active_one(tmp
     async with runtime.bind(
         thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
     ) as bound:
-        assert (await _executable().run("another run", environment=connector)).output_or_raise() == "ok"
+
+        async def prepare(context):
+            await context.environment.files.stat("/workspace")
+            return "another run"
+
+        assert (await _executable().run(input_factory=prepare, environment=connector)).output_or_raise() == "ok"
         assert connector.close_calls == 1
         await bound.files.write_text("/workspace/still-active.txt", "preserved", mode="create")
     assert connector.close_calls == 2
@@ -381,7 +405,7 @@ async def test_dynamic_environment_inputs_preserve_transfer_and_replacement(tmp_
         await runtime.replace("workspace", EnvironmentMount(replacement))
         await bound.files.write_text("/workspace/replaced.txt", "new target", mode="create")
         await bound.files.write_text("/environment/mounted/added.txt", "added target", mode="create")
-    assert [item.close_calls for item in (first, mounted, replacement)] == [1, 1, 1]
+    assert [item.close_calls for item in (first, mounted, replacement)] == [0, 1, 1]
     assert not (roots[0] / "replaced.txt").exists()
     assert (roots[2] / "replaced.txt").read_text() == "new target"
     assert (roots[1] / "added.txt").read_text() == "added target"
@@ -392,10 +416,14 @@ async def test_failed_initial_open_leaves_unopened_connectors_usable(tmp_path: P
     failed = _TrackingConnector(tmp_path, "failed", fail_entry=True)
     later = _TrackingConnector(tmp_path, "later")
     runtime = create_environment_runtime(mounts={"first": first, "failed": failed, "later": later})
-    with pytest.raises(RuntimeError, match="opening failed"):
-        await _executable().run("initial entry", bindings=RunBindings.embedded(environment=runtime))
-    assert [item.close_calls for item in (first, failed, later)] == [1, 0, 0]
-    assert (await _executable().run("usable", environment=later)).output_or_raise() == "ok"
+    async with runtime.bind(
+        thread_id="thread-test", run_id="run-test", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        await runtime._activate()
+        with pytest.raises(RuntimeError, match="opening failed"):
+            await bound.files.stat("/environment/failed")
+        assert [item.close_calls for item in (first, failed, later)] == [0, 0, 0]
+        await bound.files.stat("/environment/later")
     assert later.close_calls == 1
 
 
@@ -426,5 +454,6 @@ async def test_rejected_dynamic_route_does_not_consume_an_environment(tmp_path: 
         assert candidate.opened == []
         await runtime.replace("workspace", EnvironmentMount(candidate, mount_path="/project"))
         await bound.files.write_text("/project/value.txt", "accepted", mode="create")
-    assert first.close_calls == candidate.close_calls == 1
+    assert first.close_calls == 0
+    assert candidate.close_calls == 1
     assert (tmp_path / "value.txt").read_text() == "accepted"

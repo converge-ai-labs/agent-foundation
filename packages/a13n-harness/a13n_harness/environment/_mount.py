@@ -11,7 +11,6 @@ from a13n_environment.commands import (
     BoundProcessHandle,
 )
 from a13n_environment.computer import ComputerObservation
-from a13n_environment.execution import EnvironmentExecution
 from a13n_environment.models import EnvironmentError, EnvironmentOperationReceipt, EnvironmentPermissionSet
 from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
 from a13n_environment.retention import (
@@ -22,9 +21,8 @@ from pydantic import BaseModel
 
 from a13n_harness.environment.models import EnvironmentMountInfo
 
-from .providers import (
-    EnvironmentProviderBinding,
-)
+from ._activation import _MountExecution
+from .sources import EnvironmentMount
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +31,7 @@ class _MountRequest:
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
     mount_path: str | None
-    candidate: EnvironmentProviderBinding
+    mount: EnvironmentMount
     provider_root: str = "/"
 
 
@@ -41,7 +39,7 @@ class _MountRequest:
 class _EnteredMount:
     mount_id: str
     configured: EnvironmentMountInfo
-    provider: EnvironmentExecution
+    provider: _MountExecution
     environment_id: str
 
     operations: EnvironmentProviderOperations = field(init=False)
@@ -54,6 +52,7 @@ class _EnteredMount:
         public = self.configured.model_copy(
             update={
                 "descriptor": descriptor,
+                "provider_type": self.provider.provider_key,
                 "permission_ceiling": EnvironmentPermissionSet(
                     operations=self.configured.permission_ceiling.operations & descriptor.permissions.operations
                 ),
@@ -76,7 +75,7 @@ type _MountKey = str
 @dataclass(slots=True)
 class _OwnedProviderScope:
     entered: _EnteredMount
-    scope: AbstractAsyncContextManager[EnvironmentExecution]
+    scope: AbstractAsyncContextManager[_MountExecution]
 
 
 def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:

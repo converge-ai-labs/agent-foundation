@@ -28,6 +28,8 @@ from a13n_harness.environment.advanced import create_environment_runtime
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from .environment_source import PreparedSource
+
 EXTENSION_KEY = "example.workspace-marker"
 type ExtensionSelectionMode = Literal["entrypoint", "code"]
 
@@ -91,7 +93,7 @@ async def _run_extension_demo(
     environment_runtime = create_environment_runtime(
         mounts={
             "workspace": EnvironmentMount(
-                connector=environment,
+                source=PreparedSource(environment),
                 permission_ceiling=EnvironmentPermissionSet(
                     operations=frozenset(
                         {

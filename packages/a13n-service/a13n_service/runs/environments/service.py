@@ -114,6 +114,8 @@ async def reserve_environment(
         scope = await workspace_scope(session, actor, workspace_id, "run")
         limit = runtime.settings.environments.managed_count
         environment = await reserve(session, actor, scope, body.template_id, limit=limit, name=body.name)
+        await begin(session, environment, "creating")
+        await session.flush()
         _audit(session, actor, environment, "create")
         return EnvironmentView.model_validate(environment)
 

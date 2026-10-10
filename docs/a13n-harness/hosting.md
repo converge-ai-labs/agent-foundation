@@ -48,7 +48,7 @@ Scope streams with `async with executable.stream(...)`. The executable has no `c
 
 ## Fresh Authority
 
-On every Run, select the current user/policy, model credentials, Provider state, and fresh Environment adapters. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
+On every Run, select the current user/policy, model credentials, Provider state, and current Environment sources. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
 
 ### Check Model Calls Before Dispatch
 
@@ -60,7 +60,7 @@ Persist the returned `HarnessState` alongside your Host's definition revision, r
 
 ## Attempts and Recovery
 
-When `ModelRecoveryPolicy` is enabled, Harness may retry an interrupted model attempt within one Run; those model attempts share its `run_id`. A replacement worker attempt is a **new** Run with a fresh `run_id`, current bindings, new Environment adapters, and the Host-selected checkpoint. If a previous tool mutation has an uncertain outcome, reconcile it before replaying. See [State and Resume](state-and-resume.md).
+When `ModelRecoveryPolicy` is enabled, Harness may retry an interrupted model attempt within one Run; those model attempts share its `run_id`. A replacement worker attempt is a **new** Run with a fresh `run_id`, current bindings, current Environment sources, and the Host-selected checkpoint. If a previous tool mutation has an uncertain outcome, reconcile it before replaying. See [State and Resume](state-and-resume.md).
 
 ## Events and Streaming
 
@@ -74,7 +74,7 @@ A suspended Run is closed. Store its pending request and checkpoint, authenticat
 
 ## Environments
 
-Construct one fresh `Environment` per Run and pass it through `environment=` or a named `environments=` mapping. Harness enters adapters and closes them without destroying their backing targets; the Host owns Provider configuration, authoritative `EnvironmentState`, retention, and explicit `destroy()`. For multiple mounts, choose `default_environment` explicitly when a default route is needed. [Environments](environments.md) has runnable examples.
+Supply a Host-owned `EnvironmentSource` for each target through `environment=` or a named `environments=` mapping. Harness prepares each target on first use, opens a fresh execution, and closes it without destroying the target; the Host owns Provider configuration, authoritative `EnvironmentState`, retention, and explicit `destroy()`. For multiple mounts, choose `default_environment` explicitly when a default route is needed. [Environments](environments.md) has runnable examples.
 
 ## Run-local Shell Observations
 

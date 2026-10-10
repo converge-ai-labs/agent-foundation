@@ -273,6 +273,11 @@ class _ProcessFacade:
             EnvironmentAction.PROCESS_INSPECT,
             "processes",
         ) as entered:
+            if entered.public.descriptor.generation != identity.generation:
+                raise EnvironmentError(
+                    "The process belongs to another Environment generation.",
+                    code="environment_process_generation_mismatch",
+                )
             processes = entered.operations.processes
             if processes is None:
                 raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")

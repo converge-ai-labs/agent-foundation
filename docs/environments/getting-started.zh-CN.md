@@ -54,12 +54,14 @@ asyncio.run(main())
 
 ## 与 Harness 一起使用
 
-将连接配置传给 Harness。每次 Run 都会打开新的执行对象；不要把已经打开的执行对象传入 Run：
+通过 Host 来源提供 connector。每次 Run 仅在首次使用时打开独立 execution；已打开的 execution 不能作为 Run 输入：
+
+此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
 
 ```python
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-这段代码要求工作目录仍然存在，且 `executable` 启用了 `DynamicEnvironmentCapability`。Harness 在发布挂载前打开执行对象，并在 Run 结束时关闭它。仅传入环境不会自动向模型添加工具。
+这段代码要求工作目录仍然存在，且 `executable` 启用了 `DynamicEnvironmentCapability`。Harness 在首次使用时打开 execution，并在 Run 结束时关闭它。仅传入环境不会自动向模型添加工具。
 
 接下来阅读[生命周期与状态](lifecycle.md)、[操作接口](operations.md)和[Harness 环境接入](../a13n-harness/environments.md)。

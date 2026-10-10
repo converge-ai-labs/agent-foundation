@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         EnvironmentConnector,
         EnvironmentEntry,
         EnvironmentMount,
+        EnvironmentSource,
     )
     from a13n_harness.errors import (
         DefinitionError,
@@ -87,6 +88,7 @@ _EXPORTS = {
         "EnvironmentConnector",
         "EnvironmentEntry",
         "EnvironmentMount",
+        "EnvironmentSource",
     ),
     "a13n_harness.errors": (
         "DefinitionError",

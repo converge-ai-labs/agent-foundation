@@ -6,7 +6,7 @@ import asyncio
 import math
 import secrets
 import sys
-from collections.abc import AsyncGenerator, Coroutine, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, cast
@@ -16,7 +16,6 @@ from a13n_environment.commands import (
     CommandRequest,
     ProcessIdentity,
 )
-from a13n_environment.execution import EnvironmentExecution
 from a13n_environment.files import FileOperator
 from a13n_environment.models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
@@ -42,8 +41,11 @@ from a13n_harness.environment.models import (
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
 )
+from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.identity import AgentInstanceContext
 
+from ._activation import _MountExecution, _validate_operation_facets
+from ._cleanup import _await_cleanup_shielded, _supervise_cleanup_task
 from ._mount_path import (
     mount_path_from_provider_path,
     normalize_operation_path,
@@ -59,13 +61,10 @@ from .providers import (
     BoundPortOperations,
     BoundProcessOperations,
     BoundShellOperations,
-    EnvironmentProviderBinding,
     EnvironmentRuntime,
-    EnvironmentRuntimeMount,
     FileScopeSelection,
-    _claim_execution,
 )
-from .sources import EnvironmentEntry, _normalize_runtime_mount
+from .sources import EnvironmentEntry, EnvironmentMount, EnvironmentScope, _normalize_entry
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
 if TYPE_CHECKING:
@@ -270,7 +269,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if (
             entered is None
             or self._entered.get(entered.public.name) is not entered
-            or entered.public.descriptor.generation != selection.observed_generation
+            or selection.observed_generation not in {"unprepared", entered.public.descriptor.generation}
         ):
             raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
         async with self._mount_slot(entered):
@@ -394,12 +393,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
     async def _mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentMount,
         *,
         make_default: bool,
     ) -> EnvironmentChange:
         _validate_mount_name(name)
-        if not isinstance(mount, EnvironmentRuntimeMount):
+        if not isinstance(mount, EnvironmentMount):
             raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
         async with self._mutation_lock:
             self._assert_mutable()
@@ -437,9 +436,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 await _raise_with_provider_cleanup(primary, owned.scope)
             return change
 
-    async def _replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+    async def _replace(self, name: str, mount: EnvironmentMount) -> EnvironmentChange:
         _validate_mount_name(name)
-        if not isinstance(mount, EnvironmentRuntimeMount):
+        if not isinstance(mount, EnvironmentMount):
             raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
         async with self._mutation_lock:
             self._assert_mutable()
@@ -539,57 +538,24 @@ class CompositeBoundEnvironment(BoundEnvironment):
     async def _prepare_runtime_mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentMount,
     ) -> _OwnedProviderScope:
-        if not isinstance(mount, EnvironmentRuntimeMount):
+        if not isinstance(mount, EnvironmentMount):
             raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
-        candidate = mount.binding
-        if not candidate._claim_transfer():
-            raise EnvironmentError(
-                "Environment provider binding was already transferred.",
-                code="environment_provider_binding_reused",
-            )
         request = _MountRequest(
             name=name,
             permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
             default_working_directory=mount.working_directory,
             mount_path=mount.mount_path,
             provider_root=mount.provider_root,
-            candidate=candidate,
+            mount=mount,
         )
         mount_id = _new_mount_id()
-        scope = candidate.bind(
-            thread_id=self._thread_id,
-            run_id=self._run_id,
-            instance=self._instance,
-            mount_id=mount_id,
-            host_refs=self._host_refs,
+        scope = _mount_scope(
+            request, EnvironmentScope(self._thread_id, self._run_id, self._instance.agent_instance_id, mount_id)
         )
-        try:
-            async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
-                provider = await scope.__aenter__()
-        except BaseException as primary:
-            try:
-                await _await_cleanup_shielded(_discard_candidate_instances((candidate,)))
-            except BaseException as cleanup:
-                raise BaseExceptionGroup(
-                    "Environment mount entry and candidate cleanup failed",
-                    [primary, cleanup],
-                ) from None
-            raise
-        if not _claim_execution(provider, candidate):
-            raise EnvironmentError("Environment execution is already owned.", code="environment_execution_reused")
-        try:
-            entered = _validate_entered(request, mount_id, candidate, provider)
-        except BaseException as primary:
-            try:
-                await _await_cleanup_shielded(_close_provider_scopes([scope]))
-            except BaseException as cleanup:
-                raise BaseExceptionGroup(
-                    "Environment provider validation and cleanup failed",
-                    [primary, cleanup],
-                ) from None
-            raise
+        provider = await scope.__aenter__()
+        entered = _validate_entered(request, mount_id, provider)
         return _OwnedProviderScope(entered=entered, scope=scope)
 
     def _assert_mutable(self) -> None:
@@ -598,6 +564,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             raise EnvironmentError("The Environment run is not active.", code="run_not_active")
 
     def _schedule_retirement(self, key: _MountKey, owned: _OwnedProviderScope) -> None:
+        owned.entered.provider.fence_activation(cancel=True)
         task = asyncio.create_task(self._retire_scope(key, owned))
         self._retirement_tasks.add(task)
         task.add_done_callback(self._retirement_finished)
@@ -793,7 +760,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 code="environment_conflict",
             )
         entered = matches[0]
-        if entered.public.descriptor.generation != identity.generation:
+        if entered.public.descriptor.generation not in {"unprepared", identity.generation}:
             raise EnvironmentError(
                 "The process belongs to another Environment generation.",
                 code="environment_process_generation_mismatch",
@@ -1061,7 +1028,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             ) from exc
         except asyncio.CancelledError:
             raise
-        except EnvironmentError:
+        except (EnvironmentError, EnvironmentActivationError):
             raise
         except Exception as exc:
             raise EnvironmentError(
@@ -1208,11 +1175,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
             async with self._operation_lock:
                 current = self._current_publication(entered)
                 refreshed = _EnteredMount(
-                    current.mount_id, current.configured, current.provider, current.environment_id
+                    current.mount_id, current.configured, current.provider, current.provider.environment_id
                 )
                 previous_descriptor = current.public.descriptor
                 descriptor = refreshed.public.descriptor
-                if (
+                if previous_descriptor.generation != "unprepared" and (
                     descriptor.generation != previous_descriptor.generation
                     or descriptor.backing_identity != previous_descriptor.backing_identity
                 ):
@@ -1329,7 +1296,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     )
                 )
 
-        active_scopes = [owned.scope for owned in self._owned_scopes.values()]
+        active_scopes = [
+            owned.scope
+            for owned in sorted(self._owned_scopes.values(), key=lambda owned: owned.entered.provider.opened_order)
+        ]
         self._owned_scopes.clear()
         if pending:
             continuation = asyncio.create_task(_close_provider_scopes_after_tasks(tuple(pending), active_scopes))
@@ -1353,7 +1323,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             state = entered.provider.state
             if state is None:
                 continue
-            if state.provider_key != entered.public.provider_type:
+            if entered.public.provider_type != "unprepared" and state.provider_key != entered.public.provider_type:
                 raise EnvironmentError(
                     "Provider state has an incompatible provider key.",
                     code="state_invalid",
@@ -1395,16 +1365,14 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentEntry | EnvironmentRuntimeMount,
+        mount: EnvironmentEntry,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
-        return await self._require_active_bound()._mount(
-            name, _normalize_runtime_mount(mount), make_default=make_default
-        )
+        return await self._require_active_bound()._mount(name, _normalize_entry(mount), make_default=make_default)
 
-    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
-        return await self._require_active_bound()._replace(name, _normalize_runtime_mount(mount))
+    async def replace(self, name: str, mount: EnvironmentEntry) -> EnvironmentChange:
+        return await self._require_active_bound()._replace(name, _normalize_entry(mount))
 
     async def unmount(self, name: str) -> EnvironmentChange:
         return await self._require_active_bound()._unmount(name)
@@ -1439,6 +1407,9 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
 
     def _begin_close(self) -> None:
         self._accepting_mutations = False
+        if self._bound is not None:
+            for entered in self._bound._entered_by_id.values():
+                entered.provider.fence_activation()
         self._activation_changed.set()
 
     @asynccontextmanager
@@ -1465,48 +1436,18 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
                 code="environment_runtime_reused",
             )
         self._used = True
-        claimed, reused = _claim_candidate_transfers(self._initial_mounts)
-        if reused:
-            primary = EnvironmentError(
-                "Environment provider binding was already transferred.",
-                code="environment_provider_binding_reused",
-            )
-            try:
-                await _await_cleanup_shielded(_discard_candidate_instances(claimed))
-            except BaseException as cleanup:
-                raise BaseExceptionGroup(
-                    "Environment initial candidate reuse rejection and cleanup failed",
-                    [primary, cleanup],
-                ) from None
-            finally:
-                self._activation_error = primary
-                self._activation_changed.set()
-            raise primary
-
-        scopes: list[AbstractAsyncContextManager[EnvironmentExecution]] = []
+        scopes: list[AbstractAsyncContextManager[_MountExecution]] = []
         entered: dict[str, _EnteredMount] = {}
-        successfully_entered: set[int] = set()
         journal = EnvironmentChangeJournal()
         try:
             for requested in self._initial_mounts:
-                candidate = requested.candidate
                 mount_id = _new_mount_id()
-                scope = candidate.bind(
-                    thread_id=thread_id,
-                    run_id=run_id,
-                    instance=instance,
-                    mount_id=mount_id,
-                    host_refs=host_refs,
+                scope = _mount_scope(
+                    requested, EnvironmentScope(thread_id, run_id, instance.agent_instance_id, mount_id)
                 )
-                async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
-                    provider = await scope.__aenter__()
-                successfully_entered.add(id(candidate))
-                if not _claim_execution(provider, candidate):
-                    raise EnvironmentError(
-                        "Environment execution is already owned.", code="environment_execution_reused"
-                    )
+                provider = await scope.__aenter__()
                 scopes.append(scope)
-                entered[requested.name] = _validate_entered(requested, mount_id, candidate, provider)
+                entered[requested.name] = _validate_entered(requested, mount_id, provider)
 
             snapshot = EnvironmentSnapshot(
                 mounts=tuple(item.public for item in entered.values()),
@@ -1548,13 +1489,6 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
         except BaseException as primary:
             self._activation_error = primary
             self._activation_changed.set()
-            try:
-                await _discard_candidates(self._initial_mounts, successfully_entered)
-            except BaseException as cleanup:
-                raise BaseExceptionGroup(
-                    "Environment entry and candidate cleanup failed",
-                    [primary, cleanup],
-                ) from None
             raise
         finally:
             self._accepting_mutations = False
@@ -1589,14 +1523,8 @@ def _validate_initial_mounts(
     default_mount: str | None,
 ) -> None:
     names = [item.name for item in mounts]
-    candidate_ids = [id(item.candidate._transfer_owner) for item in mounts]
     if len(names) != len(set(names)):
         raise EnvironmentError("Environment mount names must be unique.", code="environment_request_invalid")
-    if len(candidate_ids) != len(set(candidate_ids)):
-        raise EnvironmentError(
-            "One provider candidate cannot occupy multiple mounts.",
-            code="environment_request_invalid",
-        )
     for name in names:
         _validate_mount_name(name)
     if default_mount is not None and default_mount not in names:
@@ -1683,11 +1611,22 @@ def _new_mount_id() -> str:
     return f"mount-{secrets.token_urlsafe(9)}"
 
 
+@asynccontextmanager
+async def _mount_scope(
+    requested: _MountRequest,
+    scope: EnvironmentScope,
+) -> AsyncGenerator[_MountExecution]:
+    provider = _MountExecution(requested.mount.source, scope, requested.mount.observer)
+    try:
+        yield provider
+    finally:
+        await provider.close()
+
+
 def _validate_entered(
     requested: _MountRequest,
     mount_id: str,
-    candidate: EnvironmentProviderBinding,
-    provider: EnvironmentExecution,
+    provider: _MountExecution,
 ) -> _EnteredMount:
     descriptor = provider.descriptor
     availability = provider.availability
@@ -1698,14 +1637,12 @@ def _validate_entered(
         raise EnvironmentError("Provider returned invalid availability.", code="environment_provider_failure")
     if not isinstance(operations, EnvironmentProviderOperations):
         raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
-    if provider.provider_key != candidate.provider_type or provider.environment_id != candidate.environment_id:
-        raise EnvironmentError("Provider identity changed during entry.", code="environment_provider_failure")
     if not availability.ready_families <= descriptor.operation_families:
         raise EnvironmentError("Provider readiness advertises an absent family.", code="environment_provider_failure")
     if not callable(getattr(provider, "check_ready", None)):
         raise EnvironmentError("Provider has no readiness path.", code="environment_provider_failure")
 
-    if availability.status not in {"available", "degraded"}:
+    if availability.status not in {"available", "degraded", "preparing"}:
         raise EnvironmentError("Provider did not return a ready execution.", code="environment_unavailable")
     if not isinstance(provider.execution_id, str) or not provider.execution_id or len(provider.execution_id) > 128:
         raise EnvironmentError("Provider returned an invalid execution identity.", code="environment_provider_failure")
@@ -1731,80 +1668,6 @@ def _validate_entered(
         provider=provider,
         environment_id=provider.environment_id,
     )
-
-
-def _validate_operation_facets(
-    descriptor: EnvironmentDescriptor,
-    availability: EnvironmentAvailability,
-    operations: EnvironmentProviderOperations,
-) -> None:
-    if not isinstance(operations, EnvironmentProviderOperations):
-        raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
-    facet_families = {
-        family
-        for family in ("files", "shell", "processes", "ports", "outputs", "computer")
-        if getattr(operations, family) is not None
-    }
-    advertised_facets = set(descriptor.operation_families)
-    required_facets = availability.ready_families if availability.status == "preparing" else advertised_facets
-    if not facet_families <= advertised_facets or not required_facets <= facet_families:
-        raise EnvironmentError(
-            "Provider descriptor and operation facets disagree.",
-            code="environment_provider_failure",
-        )
-    for action in descriptor.permissions.operations:
-        dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
-        if dispatch.facet not in facet_families:
-            continue
-        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
-        if not callable(method):
-            raise EnvironmentError(
-                "Provider permission has no executable semantic method.",
-                code="environment_provider_failure",
-                details={"action": action.value},
-            )
-
-
-_SUPERVISED_CLEANUP_TASKS: set[asyncio.Task[Any]] = set()
-
-
-def _consume_background_task(task: asyncio.Task[Any]) -> None:
-    _SUPERVISED_CLEANUP_TASKS.discard(task)
-    if not task.cancelled():
-        task.exception()
-
-
-def _supervise_cleanup_task(task: asyncio.Task[Any]) -> None:
-    _SUPERVISED_CLEANUP_TASKS.add(task)
-    task.add_done_callback(_consume_background_task)
-
-
-async def _await_cleanup_shielded(operation: Coroutine[Any, Any, None]) -> None:
-    """Finish one owned teardown worker before propagating any caller cancellation."""
-    cleanup = asyncio.create_task(operation)
-    cancellations: list[asyncio.CancelledError] = []
-    current = asyncio.current_task()
-    while not cleanup.done():
-        try:
-            await asyncio.shield(cleanup)
-        except asyncio.CancelledError as exc:
-            cancellations.append(exc)
-            if current is not None:
-                current.uncancel()
-    cleanup_error: BaseException | None = None
-    try:
-        cleanup.result()
-    except BaseException as exc:
-        cleanup_error = exc
-    if cancellations:
-        if cleanup_error is not None:
-            raise BaseExceptionGroup(
-                "Environment cancellation and cleanup failed",
-                [cancellations[0], cleanup_error],
-            ) from None
-        raise cancellations[0]
-    if cleanup_error is not None:
-        raise cleanup_error
 
 
 async def _teardown_entered_environment(
@@ -1846,7 +1709,7 @@ async def _close_extension_scopes(
 
 async def _close_provider_scopes_after_tasks(
     tasks: tuple[asyncio.Task[Any], ...],
-    scopes: list[AbstractAsyncContextManager[EnvironmentExecution]],
+    scopes: list[AbstractAsyncContextManager[_MountExecution]],
 ) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
     await _close_provider_scopes(scopes)
@@ -1854,7 +1717,7 @@ async def _close_provider_scopes_after_tasks(
 
 async def _raise_with_provider_cleanup(
     primary: BaseException,
-    scope: AbstractAsyncContextManager[EnvironmentExecution],
+    scope: AbstractAsyncContextManager[_MountExecution],
 ) -> NoReturn:
     try:
         await _await_cleanup_shielded(_close_provider_scopes([scope]))
@@ -1868,7 +1731,7 @@ async def _raise_with_provider_cleanup(
 
 
 async def _close_provider_scopes(
-    scopes: list[AbstractAsyncContextManager[EnvironmentExecution]],
+    scopes: list[AbstractAsyncContextManager[_MountExecution]],
 ) -> None:
     failures: list[BaseException] = []
     for scope in reversed(scopes):
@@ -1893,51 +1756,6 @@ async def _close_provider_scopes(
             failures.append(exc)
     if failures:
         raise BaseExceptionGroup("Environment provider scope cleanup failed", failures)
-
-
-def _claim_candidate_transfers(
-    requests: tuple[_MountRequest, ...],
-) -> tuple[tuple[EnvironmentProviderBinding, ...], tuple[EnvironmentProviderBinding, ...]]:
-    candidates = {id(item.candidate): item.candidate for item in requests}
-    claimed: list[EnvironmentProviderBinding] = []
-    reused: list[EnvironmentProviderBinding] = []
-    for candidate in candidates.values():
-        transferred = candidate._claim_transfer()
-        (claimed if transferred else reused).append(candidate)
-    return tuple(claimed), tuple(reused)
-
-
-async def _discard_candidate_instances(candidates: tuple[EnvironmentProviderBinding, ...]) -> None:
-    failures: list[BaseException] = []
-    for candidate in candidates:
-        task = asyncio.create_task(candidate.discard())
-        done, _ = await asyncio.wait((task,), timeout=DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS)
-        if task not in done:
-            task.cancel()
-            _supervise_cleanup_task(task)
-            failures.append(
-                EnvironmentError(
-                    "Environment candidate discard timed out.",
-                    code="environment_cleanup_timeout",
-                )
-            )
-            continue
-        try:
-            task.result()
-        except BaseException as exc:
-            failures.append(exc)
-    if failures:
-        raise BaseExceptionGroup("Environment candidate discard failed", failures)
-
-
-async def _discard_candidates(
-    requests: tuple[_MountRequest, ...],
-    successfully_entered: set[int],
-) -> None:
-    candidates = {
-        id(item.candidate): item.candidate for item in requests if id(item.candidate) not in successfully_entered
-    }
-    await _discard_candidate_instances(tuple(candidates.values()))
 
 
 def _normalize_environment_run_extensions(
@@ -1998,13 +1816,13 @@ def _virtualize_path(root: str, provider_path: str, provider_root: str) -> str:
 
 def create_environment_runtime(
     *,
-    mounts: Mapping[str, EnvironmentEntry | EnvironmentRuntimeMount],
+    mounts: Mapping[str, EnvironmentEntry],
     default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
     try:
-        normalized = {name: _normalize_runtime_mount(entry) for name, entry in dict(mounts).items()}
+        normalized = {name: _normalize_entry(entry) for name, entry in dict(mounts).items()}
         captured = tuple(
             _MountRequest(
                 name=name,
@@ -2012,7 +1830,7 @@ def create_environment_runtime(
                 default_working_directory=mount.working_directory,
                 mount_path=mount.mount_path,
                 provider_root=mount.provider_root,
-                candidate=mount.binding,
+                mount=mount,
             )
             for name, mount in normalized.items()
         )

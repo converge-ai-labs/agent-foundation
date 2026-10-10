@@ -154,10 +154,10 @@ The attempt constructs one Host-owned [Environment source](../a13n-harness/08-en
 Each readiness request waits at most `environments.wait_seconds`, measured from that request rather than run entry. Its checks use short transactions that prove the attempt's current lease and lock the instance:
 
 - The instance must remain usable by the run's principal, and its provider must resolve under the run's authority. An external target then updates `last_used_at` and returns its connector inputs.
-- `reserved` begins `creating` through the ordinary durable operation boundary. Concurrent attempts converge on that one operation; none allocates outside the operation claim.
+- `reserved` begins `creating` and takes its initial claim in one short transaction. The requesting Worker performs and publishes that operation directly after commit, then checks readiness immediately. Concurrent attempts converge on that one operation; none allocates outside the operation claim.
 - A `ready` instance whose provider identity changed is refused as `provider_identity_changed` without recording a failure; otherwise the check sets `last_used_at` and returns its target.
 - `stopped` begins `starting` for the same instance.
-- An outstanding operation without failure, other than `stopping`, may be dispatched once by this attempt; after a failed call the attempt waits while maintenance owns retries.
+- An outstanding operation without failure, other than `stopping`, may be dispatched once by this attempt. If another dispatcher holds its claim, this readiness request waits for fenced publication, bounded by the same request deadline; losing a claim never returns an unready connector. After a failed call the attempt waits while maintenance owns retries.
 
 Both preparation before the run and first-use preparation reuse the same begin, claim, perform, and publish lifecycle. Management I/O and waiting hold no database session or transaction. The source returns a fixed-target connector only after required lifecycle success and fenced state publication, with current authorized credentials. Library connection opening and reconnection never create, start, resume, replace, or renew an instance. Harness opens and owns the resulting execution. `workspace` appears at `/workspace` and is the default; other mounts appear at `/mnt/{name}`.
 

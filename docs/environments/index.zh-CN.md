@@ -55,12 +55,16 @@ flowchart TB
     State --> Connector[EnvironmentConnector]
     Connector --> Execution[EnvironmentExecution]
     Execution --> Operations[文件、命令、进程和输出]
-    Harness[Harness Run] --> Connector
+    Host --> Source[EnvironmentSource]
+    Source --> Connector
+    Harness[Harness Run] --> Source
 ```
 
 ## 与 Harness 一起使用
 
 工作目录必须已经存在：
+
+此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
 
 ```python
 from pathlib import Path
@@ -70,10 +74,10 @@ connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},
     environment_id="env-workspace",
 )
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-Harness 在发布挂载前打开所有执行对象。若其中一个失败，已打开的执行会关闭，不会发布部分挂载集合。连接配置可以供后续 Run 重用；打开的执行对象不能共享给其他 Run。
+Harness 验证并发布静态挂载集合，不打开 execution。首次使用只准备并打开所选挂载。每个实际使用的挂载拥有独立 execution；Run 结束时关闭这些 execution，不销毁目标。
 
 启用 `DynamicEnvironmentCapability` 后，模型才能看见允许的环境工具。使用 `EnvironmentMount` 设置挂载路径和权限上限；这些策略由 Harness 管理，不写入共享环境状态。
 

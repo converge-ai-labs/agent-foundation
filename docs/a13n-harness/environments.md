@@ -1,9 +1,9 @@
 ---
 title: Environments
-description: Mount fixed-target Environment connectors into a Run for files, commands, and processes.
+description: Supply Host-owned sources that prepare Environments on first use.
 ---
 
-The independent `a13n-environment` library owns single-environment management and execution. The Host explicitly creates, starts, stops, renews, and destroys targets. Harness accepts fixed-target `EnvironmentConnector` inputs and owns Run-local mounts, permissions, routing, and execution cleanup.
+The independent `a13n-environment` library owns single-environment management and execution. The Host supplies an `EnvironmentSource`: its `ensure_ready()` completes management and returns a fixed-target `EnvironmentConnector`. Harness owns Run-local mounts, permissions, routing, and execution cleanup.
 
 ## Start without an Environment
 
@@ -13,26 +13,55 @@ result = await executable.run("Answer without using a workspace")
 
 Environment input is optional. A Run without mounts receives an empty facade and no Environment tools.
 
-## Supply a connector
+## Supply a source
 
 ```python
 from pathlib import Path
 from a13n_environment.direct_local.provider import DIRECT_LOCAL
 
+from dataclasses import dataclass
+
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+
+
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
 connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},
     environment_id="env-workspace",
 )
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-Connector construction performs no I/O. Harness calls `open()` for every mount, publishes only a complete ready set, and closes its executions after success, failure, or cancellation. The connector can serve later Runs; an already opened execution is not an ordinary Run input.
+The example directory must already exist. This Host has already prepared the target, so `ensure_ready()` returns its connector directly. Registration, metadata reads, tool injection, and state export do not prepare targets. The first environment operation, including input processing or skill loading, calls `ensure_ready()` and `open()`. Concurrent operations share one activation per mount; success and failure remain cached until replacement. Cancelling one waiter does not cancel preparation needed by others. Run exit closes only opened executions without destroying targets. Unused sources receive neither preparation nor cleanup calls; no `lazy` flag is needed.
 
 Enable `DynamicEnvironmentCapability` to expose permitted tools. `EnvironmentMount` adds Run-local path and permission policy.
 
 ## The Host owns management state
 
-Complete management and save `EnvironmentState` before constructing the connector:
+The Host may prepare eagerly, as below, or defer management to its source’s `ensure_ready()`. Before returning the connector, save the authoritative `EnvironmentState`:
 
 ```python
 current_state = await environment_state_store.load(thread_id, "workspace")
@@ -41,7 +70,7 @@ connector = definition.execution_connector(
     environment_id="env-workspace", state=current_state,
 )
 result = await executable.run(
-    "Continue the task", environment=connector, previous_state=previous_harness_state,
+    "Continue the task", environment=PreparedSource(connector), previous_state=previous_harness_state,
 )
 ```
 
@@ -51,7 +80,7 @@ Execution close never destroys the target. The Host calls the separate `Environm
 
 ## Use several Environments
 
-Pass `environments=` to name several fixed-target connectors. `EnvironmentMount` adds one Run-local permission ceiling and working directory:
+Pass `environments=` to name several Host sources. `EnvironmentMount` adds one Run-local permission ceiling and working directory:
 
 ```python
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
@@ -81,7 +110,7 @@ The routing rules are deterministic:
 
 Unless a mount sets `mount_path`, the default mount serves `/workspace` and every named mount is addressable at `/environment/{name}`. A mount with `mount_path` is addressable only at that root. With several entries and no explicit default, `/workspace/...` fails instead of selecting the first mapping entry. Mapping order never grants authority.
 
-Initial setup is atomic. Harness validates the complete input before entry and publishes no partial mount set. If any adapter fails, Harness closes every supplied adapter that may own process-local resources in reverse order. It never destroys a target during unwind.
+Harness validates static input and publishes the complete mount set atomically. First-use activation failure on one mount does not remove other mounts. Opened executions close in reverse opening order; partial opening failures also clean up acquired resources.
 
 ## Restrict a mount
 
@@ -197,9 +226,9 @@ A production Host normally keeps desired Provider configuration and current `Env
 
 1. selects the trusted Provider and validates desired configuration;
 2. loads current managed state, where authoritative `None` suppresses stale fallback state;
-3. performs any required management operation and publishes its observed state, including partial failure or cancellation;
-4. constructs fixed-target connectors from the published state;
-5. invokes Harness, which opens and closes one fresh execution per mount;
+3. supplies a source whose `ensure_ready()` performs required management and publishes observed state, including partial failure or cancellation;
+4. returns a fixed-target connector from the published state only when ready;
+5. invokes Harness, which opens and closes one fresh execution per used mount;
 6. invokes explicit destruction only when retention or prune policy authorizes it.
 
 Execution does not update authoritative Provider state. A stopped or missing target fails opening; the Host must manage it explicitly before retrying.
@@ -210,7 +239,7 @@ The shared package deliberately defines no Host table, lease, Thread-link, prune
 
 Most applications should use `environment=` or `environments=`. Trusted Harness integrations can use the advanced Environment runtime when they need live Run-local `mount()`, `replace()`, `unmount()`, or `set_default()` behavior.
 
-Each mutation accepts an `EnvironmentMount` containing a connector. A fresh candidate execution is opened and checked before commit; failure leaves the published mount set unchanged and closes the candidate. Replacement allocates a fresh mount incarnation, preserves default selection, and retires the old execution only after its operation leases drain. Mutation never discovers a Provider, restores state, persists desired mounts, or calls `destroy()`.
+Each mutation accepts an `EnvironmentSource` or an `EnvironmentMount` containing one. Commit validates static metadata without activation; invalid input leaves the old mount unchanged. Replacement preserves default selection and creates a fresh mount incarnation with a new activation result. The retired mount stops accepting new activation and closes its execution after existing operation leases drain. First-use failure does not restore the old mount. Mutation never discovers a Provider, restores or persists state, or calls `destroy()`.
 
 High-level Environment arguments and an explicitly supplied advanced runtime are mutually exclusive. They use the same routing, permission, fencing, and non-destructive cleanup implementation.
 

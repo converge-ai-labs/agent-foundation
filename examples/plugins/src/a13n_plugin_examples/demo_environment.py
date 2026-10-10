@@ -22,6 +22,8 @@ from a13n_harness.providers.plugins import load_provider_plugins
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from .environment_source import PreparedSource
+
 PLUGIN_NAME = "workspace"
 PROVIDER_TYPE = "example_workspace"
 type EnvironmentSelectionMode = Literal["entrypoint", "code"]
@@ -85,8 +87,8 @@ async def _run_environment_demo(
     result = await executable.run(
         input_factory=read_workspaces,
         environments={
-            "source": EnvironmentMount(source, permission_ceiling=read_only),
-            "docs": EnvironmentMount(docs, permission_ceiling=read_only),
+            "source": EnvironmentMount(PreparedSource(source), permission_ceiling=read_only),
+            "docs": EnvironmentMount(PreparedSource(docs), permission_ceiling=read_only),
         },
         default_environment="source",
     )

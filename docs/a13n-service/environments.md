@@ -64,7 +64,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set.
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
-To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`.
+To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. A text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
 
 ### Docker image versions
 
@@ -85,6 +85,7 @@ Each instance saves its resolved image before its first create; upgrades and int
 
 | Status                 | Meaning                                                                       |
 | ---------------------- | ----------------------------------------------------------------------------- |
+| `reserved`             | Reserved until first use; no vendor resource exists yet.                      |
 | `creating`, `starting` | Being created or started.                                                     |
 | `ready`                | Usable.                                                                       |
 | `stopping`, `stopped`  | Stopped environments keep their files; a run that mounts one starts it again. |
@@ -153,7 +154,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 - New threads and forks take initial mounts in their `environments` field. A fork shares its origin thread's mounts unless it sets `fresh_environments`. Archiving a thread removes its mounts.
 - Several threads may mount the same environment and use it at once.
 
-Before each attempt executes, it waits up to `environments.wait_seconds` for the run's environments to be ready, starting stopped ones. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
+On first use of each mount, the worker waits up to `environments.wait_seconds` for that environment to be ready, creating reserved targets or starting stopped ones. If another dispatcher holds the operation claim, the worker waits for its published result; claim contention alone is not readiness. Input attachments and environment-backed skills can trigger first use before a model call. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
 
 Async [subagents](agents-and-runs.md#subagents) get environments from their edge's policy: the parent run's mounts (`shared`), a new environment from a template (`dedicated`), or none.
 
@@ -161,6 +162,6 @@ Async [subagents](agents-and-runs.md#subagents) get environments from their edge
 
 In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. The **Add environment** form on an existing conversation offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
 
-The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories before execution and reports missing or inaccessible paths without creating them or marking the shared instance broken.
+The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories on first activation and reports missing or inaccessible paths without creating them or marking the shared instance broken.
 
 Two conversations can use different project directories on one instance, or deliberately use the same directory to share files. Relative file paths, the `/workspace` route and the default command cwd use the chosen directory. Processes, ports, installed software and native permissions remain shared: this is file organization, not security isolation. Removing a mount does not delete the directory; accepted runs keep their captured selection.

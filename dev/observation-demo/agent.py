@@ -19,6 +19,7 @@ from a13n_environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -383,10 +384,36 @@ def _main_identity(scenario: Scenario) -> AgentIdentityRef:
     )
 
 
-def _local_environment(root: Path) -> EnvironmentConnector:
-    return DIRECT_LOCAL.execution_connector(
-        DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root)),
-        environment_id="observation-demo-local",
+@dataclass(frozen=True)
+class _PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+
+def _local_environment(root: Path) -> _PreparedSource:
+    return _PreparedSource(
+        DIRECT_LOCAL.execution_connector(
+            DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root)),
+            environment_id="observation-demo-local",
+        )
     )
 
 
@@ -546,7 +573,7 @@ async def _run_scenario(
     context_events: list[str] = []
     terminal: HarnessRunResult[str] | None = None
     workspace: TemporaryDirectory[str] | None = None
-    environments: dict[str, EnvironmentConnector] | None = None
+    environments: dict[str, _PreparedSource] | None = None
 
     if scenario == "subagent":
         executable = _build_subagent_scenario(instrumentation)

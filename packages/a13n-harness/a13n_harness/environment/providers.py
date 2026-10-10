@@ -34,7 +34,6 @@ from a13n_environment.files import FileOperator
 from a13n_environment.models import (
     EnvironmentAction,
     EnvironmentOperationReceipt,
-    EnvironmentPermissionSet,
     EnvironmentState,
 )
 from a13n_environment.retention import (
@@ -51,8 +50,6 @@ from a13n_harness.environment.models import (
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
 )
-
-from ._mount_path import parse_mount_path, validate_working_directory
 
 if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext
@@ -206,7 +203,7 @@ class BoundOutputOperations(Protocol):
     ) -> EnvironmentOperationReceipt: ...
 
 
-def _claim_execution(execution: EnvironmentExecution, owner: EnvironmentProviderBinding) -> bool:
+def _claim_execution(execution: EnvironmentExecution, owner: object) -> bool:
     """Keep ownership on the execution across mount wrappers and independent Runs."""
     marker = "_a13n_harness_execution_owner"
     try:
@@ -215,73 +212,6 @@ def _claim_execution(execution: EnvironmentExecution, owner: EnvironmentProvider
         object.__setattr__(execution, marker, owner)
         return True
     return previous is owner
-
-
-class EnvironmentProviderBinding(ABC):
-    """Single-use provider candidate materialized by a trusted Host."""
-
-    @property
-    def _transfer_owner(self) -> object:
-        """Keep transfer ownership on the resource shared by any forwarding wrappers."""
-        return self
-
-    def _claim_transfer(self) -> bool:
-        """Atomically mark this candidate as transferred without a central identity table."""
-        owner = self._transfer_owner
-        marker_name = "_EnvironmentProviderBinding__transferred"
-        try:
-            object.__getattribute__(owner, marker_name)
-        except AttributeError:
-            object.__setattr__(owner, marker_name, True)
-            return True
-        return False
-
-    @property
-    @abstractmethod
-    def provider_type(self) -> str:
-        """Return the stable provider compatibility discriminator."""
-
-    @property
-    @abstractmethod
-    def environment_id(self) -> str:
-        """Return the provider's logical resource identity."""
-
-    @abstractmethod
-    def bind(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        instance: AgentInstanceContext,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> AbstractAsyncContextManager[EnvironmentExecution]:
-        """Enter this candidate exactly once under a Harness-generated mount identity."""
-
-    @abstractmethod
-    async def discard(self) -> None:
-        """Idempotently dispose a candidate that did not enter successfully."""
-
-
-@dataclass(frozen=True, slots=True)
-class EnvironmentRuntimeMount:
-    """One trusted provider candidate and its run-local mount policy."""
-
-    binding: EnvironmentProviderBinding
-    permission_ceiling: EnvironmentPermissionSet
-    working_directory: str | None = "/"
-    mount_path: str | None = None
-    provider_root: str = "/"
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.binding, EnvironmentProviderBinding):
-            raise TypeError("binding must be an EnvironmentProviderBinding")
-        if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
-            raise TypeError("permission_ceiling must be an EnvironmentPermissionSet")
-        validate_working_directory(self.working_directory)
-        validate_working_directory(self.provider_root)
-        if self.mount_path is not None:
-            parse_mount_path(self.mount_path)
 
 
 class BoundEnvironment(ABC):
@@ -396,15 +326,15 @@ class EnvironmentRuntime(ABC):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentEntry | EnvironmentRuntimeMount,
+        mount: EnvironmentEntry,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
-        """Prepare and atomically publish one new mount."""
+        """Register and atomically publish one new mount without activation."""
 
     @abstractmethod
-    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
-        """Prepare and atomically replace one existing mount."""
+    async def replace(self, name: str, mount: EnvironmentEntry) -> EnvironmentChange:
+        """Validate and atomically replace one existing mount without activation."""
 
     @abstractmethod
     async def unmount(self, name: str) -> EnvironmentChange:

@@ -40,13 +40,11 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.environment import (
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     create_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
 )
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.usage import (
@@ -58,7 +56,7 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = pytest.mark.anyio
 
@@ -139,7 +137,7 @@ class _ScrapeProvider:
 
 
 def _binding(root: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ),
@@ -147,8 +145,8 @@ def _binding(root: Path):
     )
     return create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
+            "local": EnvironmentMount(
+                source=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory="/",
             )
@@ -157,15 +155,15 @@ def _binding(root: Path):
     )
 
 
-def _replacement_mount(root: Path) -> EnvironmentRuntimeMount:
-    provider = DirectLocalEnvironmentProviderBinding(
+def _replacement_mount(root: Path) -> EnvironmentMount:
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ),
         environment_id="content-capabilities-test",
     )
-    return EnvironmentRuntimeMount(
-        binding=provider,
+    return EnvironmentMount(
+        source=provider,
         permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
         working_directory="/",
     )
@@ -827,7 +825,7 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
     if not has_backing_identity:
         # Exercise real file scopes across fresh bindings without continuity evidence,
         # as with Remote Envd. Dispatch still has independent mount/generation fences.
-        monkeypatch.setattr("a13n_environment.direct_local.provider.local_backing_identity", lambda **kwargs: None)
+        monkeypatch.setattr("a13n_environment.direct_local.execution.local_backing_identity", lambda **kwargs: None)
 
     original, replacement = tmp_path / "original", tmp_path / "replacement"
     original.mkdir()
@@ -945,8 +943,8 @@ async def test_content_dispatch_uses_current_route_after_policy_wait(tmp_path: P
     target = original if change == "same_root" else replacement
     mount = _replacement_mount(target)
     if change == "denied":
-        mount = EnvironmentRuntimeMount(
-            binding=mount.binding,
+        mount = EnvironmentMount(
+            source=mount.source,
             permission_ceiling=EnvironmentPermissionSet(operations=frozenset()),
             working_directory="/",
         )

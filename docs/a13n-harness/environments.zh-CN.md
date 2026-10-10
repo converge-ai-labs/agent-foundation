@@ -1,9 +1,9 @@
 ---
 title: 环境
-description: 将固定目标的环境连接配置挂载到 Run，供 Agent 操作文件、命令和进程。
+description: 通过 Host 提供的来源，在首次使用时准备环境。
 ---
 
-独立的 `a13n-environment` 库拥有单环境管理和执行契约。Host 通过管理接口创建、启动、停止、续期和销毁目标；Harness 只接收固定目标的 `EnvironmentConnector`，拥有 Run 内的挂载、权限、路由和执行清理。
+独立的 `a13n-environment` 库负责单环境管理和执行。Host 提供 `EnvironmentSource`，通过 `ensure_ready()` 完成管理并返回固定目标的 `EnvironmentConnector`。Harness 负责 Run 内的挂载、权限、路由和执行清理。
 
 ## 不使用环境
 
@@ -13,26 +13,55 @@ result = await executable.run("Answer without using a workspace")
 
 环境是可选输入。没有挂载的 Run 使用空环境接口，不会获得环境工具。
 
-## 传入连接配置
+## 传入环境来源
 
 ```python
 from pathlib import Path
 from a13n_environment.direct_local.provider import DIRECT_LOCAL
 
+from dataclasses import dataclass
+
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+
+
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
 connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},
     environment_id="env-workspace",
 )
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-连接配置构造不进行 I/O。Harness 为每个挂载调用 `open()`，在完整集合就绪后才发布挂载，并在成功、失败或取消后关闭自己打开的执行对象。连接配置可供后续 Run 使用；已经打开的执行对象不能作为普通 Run 输入。
+示例目录必须已存在。这个 Host 已准备好目标，因此 `ensure_ready()` 直接返回 connector。注册挂载、读取描述、注入工具和导出状态均不触发准备。首次需要环境的操作（包括输入处理和技能加载）才调用 `ensure_ready()` 和 `open()`。同一挂载的并发操作共用一次准备；成功和失败均保留到挂载被替换。取消一个等待者不会取消其他操作需要的准备。Run 结束只关闭实际打开的 execution，不销毁目标。未使用的来源不会收到准备或清理调用；无需 `lazy` 开关。
 
 启用 `DynamicEnvironmentCapability` 后才会向模型暴露允许的工具。`EnvironmentMount` 添加 Run 内的路径与权限策略。
 
 ## 管理状态由 Host 负责
 
-Host 必须先完成管理操作并保存 `EnvironmentState`，再创建连接配置：
+Host 可像下例一样提前准备，也可在来源的 `ensure_ready()` 中执行管理操作。返回 connector 前，必须保存权威 `EnvironmentState`：
 
 ```python
 current_state = await environment_state_store.load(thread_id, "workspace")
@@ -41,7 +70,7 @@ connector = definition.execution_connector(
     environment_id="env-workspace", state=current_state,
 )
 result = await executable.run(
-    "Continue the task", environment=connector, previous_state=previous_harness_state,
+    "Continue the task", environment=PreparedSource(connector), previous_state=previous_harness_state,
 )
 ```
 
@@ -51,7 +80,7 @@ result = await executable.run(
 
 ## 使用多个环境
 
-通过 `environments=` 为多个固定目标的 connector 命名。`EnvironmentMount` 添加执行内权限上限和工作目录：
+通过 `environments=` 为多个 Host 来源命名。`EnvironmentMount` 添加执行内权限上限和工作目录：
 
 ```python
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
@@ -81,7 +110,7 @@ result = await executable.run(
 
 除非挂载设置了 `mount_path`，否则默认挂载提供 `/workspace`，每个命名挂载都可通过 `/environment/{name}` 访问。设置了 `mount_path` 的挂载只能通过该根路径访问。多个条目没有显式默认值时，`/workspace/...` 会失败，不选择映射中的首项。映射顺序绝不授予权限。
 
-初始设置是原子的。Harness 在进入前验证完整输入，不发布部分挂载集合。任何适配器失败时，按反向顺序关闭所有可能持有进程内资源的已提供适配器。回退清理绝不销毁目标。
+Harness 先验证静态输入，再一次发布完整挂载集合。某个挂载首次准备失败不会移除其他挂载。已打开的 execution 按实际打开顺序的反向关闭；部分打开失败也必须完成清理。
 
 ## 限制挂载
 
@@ -197,9 +226,9 @@ sequenceDiagram
 
 1. 选择可信 provider，验证期望配置；
 2. 加载当前托管状态，其中权威 `None` 阻止使用过旧回退状态；
-3. 执行所需管理操作，发布观测状态，包括部分失败或取消时已确认的状态；
-4. 根据已发布状态构建固定目标的 connector；
-5. 调用 Harness，为每个挂载打开并关闭独立执行对象；
+3. 提供来源，由其 `ensure_ready()` 执行管理并保存状态，包括部分失败或取消时已确认的状态；
+4. 仅在就绪后，根据已发布状态返回固定目标的 connector；
+5. 调用 Harness，为每个实际使用的挂载打开并关闭独立 execution；
 6. 只有保留或修剪策略授权时才显式销毁。
 
 执行不更新权威 provider 状态。目标停止或缺失时打开失败；Host 必须先显式管理目标，再重试。
@@ -210,7 +239,7 @@ sequenceDiagram
 
 多数应用应使用 `environment=` 或 `environments=`。可信 Harness 集成需要执行内实时 `mount()`、`replace()`、`unmount()` 或 `set_default()` 时，可使用高级环境运行时。
 
-每次修改接收包含 connector 的 `EnvironmentMount`。新候选执行对象先打开并检查就绪，再提交；失败保持已发布挂载集合不变，并关闭候选。替换分配新的挂载实例，保留默认选择，等旧执行对象的操作租约全部释放后才将其退役。修改绝不发现 provider、恢复状态、持久保存期望挂载或调用 `destroy()`。
+每次修改接收 `EnvironmentSource` 或包含来源的 `EnvironmentMount`。提交仅验证静态元数据，不触发准备；静态验证失败时原挂载不变。替换保留默认选择，创建新的挂载实例和首次使用记录；旧挂载停止接受新准备，待已有操作租约释放后关闭 execution。首次准备失败不会自动恢复旧挂载。修改不发现 provider、恢复或持久化状态，也不调用 `destroy()`。
 
 高层环境参数和显式高级运行时互斥。两者使用相同的路由、权限、隔离失效资源和非破坏性清理实现。
 

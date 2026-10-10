@@ -17,6 +17,8 @@ from a13n_environment.models import EnvironmentError, EnvironmentState
 from a13n_environment.remote_envd import environment as remote_module
 from a13n_environment.remote_envd.environment import RemoteEnvdExecution
 
+from ..environment_helpers import Source
+
 pytestmark = pytest.mark.anyio
 
 
@@ -190,7 +192,7 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
         runtime=owner,
         state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),
     )
-    runtime = create_environment_runtime(mounts={"workspace": adapter}, default_mount="workspace")
+    runtime = create_environment_runtime(mounts={"workspace": Source(adapter)}, default_mount="workspace")
     async with runtime.bind(
         thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
     ) as bound:

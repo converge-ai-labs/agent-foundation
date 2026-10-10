@@ -247,8 +247,8 @@ async def test_management_state_is_published_before_execution_and_after_partial_
                     run_id="run-test",
                     instance=RunBindings.embedded().instance,
                     host_refs={},
-                ):
-                    pytest.fail("Failed execution must not be published")
+                ) as environment:
+                    await environment.files.stat("/workspace/value.txt")
         else:
             with pytest.raises(asyncio.CancelledError if failure == "cancel" else EnvironmentManagementError):
                 await service.prepare(composition)

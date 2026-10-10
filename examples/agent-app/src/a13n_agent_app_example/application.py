@@ -8,9 +8,9 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, aclosing
 from pathlib import Path
 
-from a13n_environment import EnvironmentConnector
 from a13n_harness import (
     AgentSpec,
+    EnvironmentSource,
     HarnessBuilder,
     HarnessEvent,
     HarnessRunResult,
@@ -31,7 +31,7 @@ class ConversationApplication:
         *,
         model: Model,
         state_path: Path,
-        environment_factory: Callable[[], EnvironmentConnector],
+        environment_factory: Callable[[], EnvironmentSource],
         instructions: str = _DEFAULT_INSTRUCTIONS,
     ) -> None:
         self._state_path = state_path

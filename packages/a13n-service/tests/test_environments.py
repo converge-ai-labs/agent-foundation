@@ -1,6 +1,7 @@
 """Environments: templates, desired mounts frozen at acceptance, the fenced lifecycle, maintenance and use."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -15,9 +16,10 @@ from a13n_service.providers.registry import Registry
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.claim import claim as claim_run
 from a13n_service.runs.environments import lifecycle
-from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
+from a13n_service.runs.environments.execution import open_mounts
 from a13n_service.runs.environments.external import seal
-from a13n_service.runs.environments.lifecycle import Fault, Outcome, advance, claim, perform, publish
+from a13n_service.runs.environments.lifecycle import Fault, Outcome, claim, perform, publish
+from a13n_service.runs.environments.lifecycle import advance as dispatch_pending
 from a13n_service.runs.environments.maintenance import maintain_environments
 from a13n_service.runs.environments.schemas import MAX_MOUNTS
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -79,7 +81,7 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     thread_id, run = first["thread"]["id"], first["run"]
     [primary] = run["environment_mounts"]
     assert primary["name"] == "workspace" and primary["working_directory"] is None
-    assert (await environment(env, primary["environment_id"]))["status"] == "creating"
+    assert (await environment(env, primary["environment_id"]))["status"] == "reserved"
     mounts = f"{env.api}/threads/{thread_id}/environments"
     listing = await client.get(mounts)
     assert [item["name"] for item in listing.json()["items"]] == ["workspace"]
@@ -231,10 +233,10 @@ async def test_stop_and_delete_wait_for_active_use_and_a_run_restarts_a_stopped_
     mounts = await _prepare(env, lease)
     assert (await environment(env, environment_id))["status"] == "ready"
     assert BACKEND.instances == {environment_id: "running"}
-    async with open_mounts(env.runtime, mounts) as opened:
+    async with _open(env, lease, mounts) as opened:
         mount = opened["workspace"]
         assert (mount.mount_path, mount.provider_root, mount.working_directory) == (None, "/work", "/work")
-        assert mount.connector.environment_id == environment_id
+        assert mount.source.environment_id == environment_id
 
 
 async def test_a_disabled_provider_still_stops_its_sandboxes(env) -> None:  # type: ignore[no-untyped-def]
@@ -447,15 +449,34 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
     assert dedicated["name"] == "workspace" and dedicated["environment_id"] != primary["environment_id"]
 
 
-async def _prepare(env: SimpleNamespace, lease: Lease) -> list[PreparedMount]:
+async def advance(runtime, environment_id: str, *, owner: str) -> None:
+    """Explicitly prepare the reservation used by these lifecycle tests."""
+    async with transaction(runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment_id, with_for_update=True)
+        if row.status == "reserved":
+            await lifecycle.begin(session, row, "creating")
+    await dispatch_pending(runtime, environment_id, owner=owner)
+
+
+@asynccontextmanager
+async def _open(env, lease, mounts=None):
     async with transaction(env.runtime.storage) as session:
         run = await session.get(RunRow, lease.run_id)
         assert run is not None
         scope = WorkspaceScope(run.organization_id, run.workspace_id)
         principal = await principal_for(session, env.runtime.access, run.principal_id, confinement=scope)
         authority = ExecutionAuthority.model_validate(run.authority)
-        mounts = [EnvironmentMount.model_validate(mount) for mount in run.environment_mounts]
-    return await prepare_mounts(env.runtime, lease, principal, authority, mounts)
+        if mounts is None:
+            mounts = [EnvironmentMount.model_validate(mount) for mount in run.environment_mounts]
+    async with open_mounts(env.runtime, lease, principal, authority, mounts) as opened:
+        yield opened
+
+
+async def _prepare(env: SimpleNamespace, lease: Lease) -> list[EnvironmentMount]:
+    async with _open(env, lease) as mounts:
+        for mount in mounts.values():
+            await mount.source.ensure_ready()
+        return [mount.source.mount for mount in mounts.values()]
 
 
 async def test_an_uncertain_operation_is_continued_never_replaced(env, caplog) -> None:  # type: ignore[no-untyped-def]
@@ -510,7 +531,7 @@ async def test_an_uncertain_operation_is_continued_never_replaced(env, caplog) -
 async def test_maintenance_stops_idle_sandboxes_and_deletes_unmounted_ones(env) -> None:  # type: ignore[no-untyped-def]
     submitted = await start(env)
     environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
-    await maintain_environments(env.runtime, owner="sweep")
+    await advance(env.runtime, environment_id, owner="test")
     assert (await environment(env, environment_id))["status"] == "ready"
 
     await backdate(env, environment_id, last_used_at=timedelta(hours=2))
@@ -676,8 +697,9 @@ async def test_shared_local_mounts_route_files_and_commands_per_thread(env, loca
         for lease in await claim_run(env.runtime, worker_id="worker-test", worker_build="test", limit=4)
     }
     for index, (submission, path) in enumerate(zip(submissions, paths, strict=True)):
-        prepared = await _prepare(env, leases[submission["run"]["id"]])
-        async with open_mounts(env.runtime, prepared) as mounts:
+        lease = leases[submission["run"]["id"]]
+        prepared = await _prepare(env, lease)
+        async with _open(env, lease, prepared) as mounts:
             runtime = create_environment_runtime(mounts=mounts, default_mount="workspace")
             async with runtime.bind(
                 thread_id=submission["thread"]["id"],
@@ -732,18 +754,23 @@ async def test_invalid_directory_fails_only_its_mount(env, local_instance, monke
     )
     [lease] = await claim_run(env.runtime, worker_id="worker-test", worker_build="test", limit=1)
     prepared = await _prepare(env, lease)
-    with pytest.raises(ServiceError, match="existing accessible directory") as error:
-        async with open_mounts(env.runtime, prepared) as mounts:
-            async with await mounts["workspace"].connector.open():
+    from a13n_harness.errors import EnvironmentActivationError
+
+    with pytest.raises(EnvironmentActivationError) as failure:
+        async with _open(env, lease, prepared) as mounts:
+            async with await (await mounts["workspace"].source.ensure_ready()).open():
                 pytest.fail("Invalid mount was opened")
-    assert error.value.details["working_directory"] == path
-    assert error.value.details["mount"] == "workspace"
+    error = failure.value.__cause__
+    assert isinstance(error, ServiceError)
+    assert "existing accessible directory" in error.message
+    assert error.details["working_directory"] == path
+    assert error.details["mount"] == "workspace"
     current = await environment(env, identity)
     assert current["status"] == "ready" and current["failure"] is None
     assert not (root / "missing").exists()
     # Another Thread's valid selection still works, with the very same shared instance.
-    valid = replace(prepared[0], working_directory="/a")
-    async with open_mounts(env.runtime, [valid]) as mounts:
+    valid = prepared[0].model_copy(update={"working_directory": "/a"})
+    async with _open(env, lease, [valid]) as mounts:
         assert mounts["workspace"].provider_root == "/a"
     assert submitted["run"]["environment_mounts"][0]["working_directory"] == path
 
@@ -761,8 +788,8 @@ async def test_directory_check_preserves_transient_provider_errors(env, local_in
     prepared = await _prepare(env, lease)
     monkeypatch.setattr(LocalFileOperator, "list", unavailable)
     with pytest.raises(EnvironmentError) as error:
-        async with open_mounts(env.runtime, prepared) as mounts:
-            async with await mounts["workspace"].connector.open():
+        async with _open(env, lease, prepared) as mounts:
+            async with await (await mounts["workspace"].source.ensure_ready()).open():
                 pytest.fail("Disconnected mount was opened")
     assert error.value.code == "environment_unavailable"
     assert (await environment(env, identity))["failure"] is None
@@ -811,3 +838,200 @@ async def test_timed_out_management_publishes_observed_state(env, monkeypatch) -
     row = await stored(env, identity)
     assert row.handle["state"]["state"] == {"instance": identity}
     assert row.failure["certainty"] == "unknown"
+
+
+async def test_unused_run_keeps_reservation_without_native_creation(env, scripted_model, runs_kit) -> None:
+    model = await runs_kit.create_model(env, scripted_model)
+    agent = await runs_kit.add_agent(
+        env,
+        "plain",
+        model,
+        default_environment_template_id=env.template["id"],
+    )
+    scripted_model.say("No environment needed")
+    submitted = await runs_kit.start_thread(env, agent, "hello")
+    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    await maintain_environments(env.runtime, owner="control")
+    assert (await environment(env, environment_id))["status"] == "reserved"
+    assert BACKEND.preparations == []
+    await (await runs_kit.attempt(env))
+    assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
+    current = await environment(env, environment_id)
+    assert current["status"] == "reserved"
+    assert current["operation_id"] is current["last_used_at"] is None
+    assert BACKEND.instances == {}
+
+
+async def test_first_readiness_claims_locally_and_publishes_before_returning(env, monkeypatch) -> None:
+    from .environments_support import FakeProvider
+
+    submitted = await start(env)
+    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    [lease] = await claim_run(env.runtime, worker_id="worker-first-use", worker_build="test", limit=1)
+    original = FakeProvider.create
+
+    async def create(self, recipe, **kwargs):
+        # A separate transaction can lock the row during external I/O: the begin/claim transaction ended.
+        async with transaction(env.runtime.storage) as session:
+            row = await session.scalar(
+                select(EnvironmentRow).where(EnvironmentRow.id == environment_id).with_for_update(nowait=True)
+            )
+            assert row.status == "creating" and row.lease_owner == lease.worker_id
+            assert row.operation_id == kwargs["operation_id"]
+        return await original(self, recipe, **kwargs)
+
+    async def no_poll(_seconds):
+        pytest.fail("Locally completed creation must return without a polling sleep")
+
+    monkeypatch.setattr(FakeProvider, "create", create)
+    async with _open(env, lease) as mounts:
+        source = mounts["workspace"].source
+        assert (await environment(env, environment_id))["status"] == "reserved"
+        # Patch only the readiness module's polling dependency, without changing all AnyIO users.
+        import a13n_service.runs.environments.execution as execution
+
+        original_anyio = execution.anyio
+        monkeypatch.setattr(
+            execution,
+            "anyio",
+            SimpleNamespace(
+                current_time=original_anyio.current_time,
+                fail_after=original_anyio.fail_after,
+                sleep=no_poll,
+                CancelScope=original_anyio.CancelScope,
+                move_on_after=original_anyio.move_on_after,
+            ),
+        )
+        connector = await source.ensure_ready()
+        assert connector.environment_id == environment_id
+        assert (await environment(env, environment_id))["status"] == "ready"
+        assert len(BACKEND.preparations) == 1
+
+
+async def test_readiness_waits_for_another_dispatcher_instead_of_returning_unready(env, monkeypatch) -> None:
+    import a13n_service.runs.environments.execution as execution
+
+    submitted = await start(env)
+    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    [lease] = await claim_run(env.runtime, worker_id="waiting-worker", worker_build="test", limit=1)
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment_id, with_for_update=True)
+        await lifecycle.begin(session, row, "creating")
+    operation = await claim(env.runtime, environment_id, owner="other-instance")
+    assert operation is not None
+    waiting = asyncio.Event()
+    original = execution._inspect
+
+    async def inspect(*args):
+        result = await original(*args)
+        if result == (None, None):
+            waiting.set()
+        return result
+
+    monkeypatch.setattr(execution, "_inspect", inspect)
+    monkeypatch.setattr(execution, "_POLL_SECONDS", 0.01)
+    async with _open(env, lease) as mounts:
+        ready = asyncio.create_task(mounts["workspace"].source.ensure_ready())
+        await asyncio.wait_for(waiting.wait(), timeout=2)
+        assert not ready.done() and BACKEND.instances == {}
+        await lifecycle.dispatch(env.runtime, operation)
+        connector = await asyncio.wait_for(ready, timeout=2)
+        assert connector.environment_id == environment_id
+        assert (await environment(env, environment_id))["status"] == "ready"
+        assert len(BACKEND.preparations) == 1
+
+
+async def test_readiness_timeout_preserves_another_dispatchers_operation(env) -> None:
+    from a13n_service.infra.errors import ServiceError
+
+    submitted = await start(env)
+    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    [lease] = await claim_run(env.runtime, worker_id="waiting-worker", worker_build="test", limit=1)
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment_id, with_for_update=True)
+        await lifecycle.begin(session, row, "creating")
+    operation = await claim(env.runtime, environment_id, owner="other-instance")
+    assert operation is not None
+    limits = env.runtime.settings.environments.model_copy(update={"wait_seconds": 0.02})
+    env.runtime = replace(env.runtime, settings=env.runtime.settings.model_copy(update={"environments": limits}))
+    async with _open(env, lease) as mounts:
+        with pytest.raises(ServiceError) as failure:
+            await mounts["workspace"].source.ensure_ready()
+        assert failure.value.code == "unavailable"
+        assert failure.value.details["reason"] == "environment_not_ready"
+        current = await environment(env, environment_id)
+        assert current["status"] == "creating" and current["operation_id"] == operation.operation_id
+        assert BACKEND.instances == {}
+    await lifecycle.dispatch(env.runtime, operation)
+    assert (await environment(env, environment_id))["status"] == "ready"
+
+
+async def test_unused_reservation_is_deleted_without_provider_calls(env) -> None:
+    submitted = await start(env)
+    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    await interrupt(env, submitted["run"]["id"])
+    await unmount(env, submitted["thread"]["id"])
+    status, response = await act(env, "DELETE", environment_id)
+    assert status == 202 and response["status"] == "deleted"
+    assert BACKEND.preparations == [] and BACKEND.instances == {}
+
+
+@pytest.mark.parametrize("code", ["unavailable", "disabled"])
+async def test_tool_first_use_preserves_service_failure_and_attempt_policy(
+    env,
+    local_instance,
+    scripted_model,
+    runs_kit,
+    monkeypatch,
+    code: str,
+) -> None:
+    import a13n_service.runs.environments.execution as execution
+    from a13n_service.infra.errors import ServiceError
+
+    async def refused(*args):
+        raise ServiceError(code, "Environment readiness refused", {"dependency": "environment"})
+
+    monkeypatch.setattr(execution, "_ready", refused)
+    identity, _ = local_instance
+    agent = await runs_kit.create_agent(env, scripted_model)
+    scripted_model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="first-use")
+    scripted_model.say("This must not run after a Host preparation failure")
+    submitted = await runs_kit.start_thread(
+        env,
+        agent,
+        "read the file",
+        environments=[{"name": "workspace", "environment_id": identity}],
+    )
+    await (await runs_kit.attempt(env))
+    current = await runs_kit.get_run(env, submitted["run"]["id"])
+    if code == "unavailable":
+        assert current["status"] == "accepted", current
+        attempts = (await env.client.get(f"{env.api}/runs/{current['id']}/attempts")).json()["items"]
+        assert [item["status"] for item in attempts] == ["failed"]
+    else:
+        assert current["status"] == "failed", current
+        assert current["failure"]["code"] == "environment_unavailable"
+    assert current.get("output") != "This must not run after a Host preparation failure"
+
+
+async def test_tool_first_use_rejects_invalid_mount_directory_without_breaking_instance(
+    env, local_instance, scripted_model, runs_kit
+) -> None:
+    identity, root = local_instance
+    agent = await runs_kit.create_agent(env, scripted_model)
+    scripted_model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="first-use")
+    scripted_model.say("This must not run after invalid directory selection")
+    submitted = await runs_kit.start_thread(
+        env,
+        agent,
+        "read the file",
+        environments=[{"name": "workspace", "environment_id": identity, "working_directory": "/missing"}],
+    )
+    await (await runs_kit.attempt(env))
+    current = await runs_kit.get_run(env, submitted["run"]["id"])
+    assert current["status"] == "failed", current
+    assert current["failure"]["code"] == "invalid_argument"
+    assert "existing accessible directory" in current["failure"]["message"]
+    instance = await environment(env, identity)
+    assert instance["status"] == "ready" and instance["failure"] is None
+    assert not (root / "missing").exists()

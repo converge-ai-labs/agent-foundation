@@ -15,6 +15,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from a13n_agent_app_example import ConversationApplication
+from a13n_agent_app_example.environment import PreparedSource
 
 pytestmark = pytest.mark.anyio
 
@@ -64,9 +65,9 @@ class _MockEnvironmentFactory:
         )
         self.lifecycle: list[str] = []
 
-    def __call__(self) -> EnvironmentConnector:
+    def __call__(self) -> PreparedSource:
         self.lifecycle.append("construct")
-        return _MockEnvironment(self._configuration, self.lifecycle)
+        return PreparedSource(_MockEnvironment(self._configuration, self.lifecycle))
 
 
 def _conversation_model(
@@ -131,11 +132,11 @@ async def test_conversation_streams_multiple_turns_and_recovers_after_restart(
     assert len(recovered_after_turn.message_history) > len(second_state.message_history)
     assert recovered_history_sizes == [initial_history_sizes[1] + 2]
     assert state_path.read_text(encoding="utf-8").startswith("{\n")
-    assert initial_environment.lifecycle == ["construct", "open", "close", "construct", "open", "close"]
-    assert recovered_environment.lifecycle == ["construct", "open", "close"]
+    assert initial_environment.lifecycle == ["construct", "construct"]
+    assert recovered_environment.lifecycle == ["construct"]
 
 
-async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
+async def test_abandoned_unused_environment_allows_the_next_turn(
     tmp_path: Path,
 ) -> None:
     environment = _MockEnvironmentFactory(tmp_path)
@@ -147,14 +148,14 @@ async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
 
     async with application.stream_turn("abandoned turn") as stream:
         assert await anext(stream) == "scoped:"
-        assert environment.lifecycle == ["construct", "open"]
+        assert environment.lifecycle == ["construct"]
 
-    assert environment.lifecycle == ["construct", "open", "close"]
+    assert environment.lifecycle == ["construct"]
     assert await _collect_turn(application, "completed turn") == ["scoped:", "turn-1"]
-    assert environment.lifecycle == ["construct", "open", "close", "construct", "open", "close"]
+    assert environment.lifecycle == ["construct", "construct"]
 
 
-async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment(
+async def test_failed_turn_keeps_the_last_completed_state_without_opening_environment(
     tmp_path: Path,
 ) -> None:
     state_path = tmp_path / "conversation-state.json"
@@ -182,4 +183,4 @@ async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment
 
     assert exc_info.value.code == "agent_run_failed"
     assert state_path.read_text(encoding="utf-8") == completed_payload
-    assert environment.lifecycle == ["construct", "open", "close", "construct", "open", "close"]
+    assert environment.lifecycle == ["construct", "construct"]

@@ -62,7 +62,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
         ]
     else:
         conditions = [
-            EnvironmentRow.status.in_(("ready", "stopped")),
+            EnvironmentRow.status.in_(("reserved", "ready", "stopped")),
             idle_past(EnvironmentRow.template_id, since, "delete_after_seconds"),
             ~mounted(EnvironmentRow.id),
         ]
@@ -72,7 +72,10 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                 select(EnvironmentRow)
                 .where(
                     EnvironmentRow.template_id.is_not(None),
-                    EnvironmentRow.provider_identity["type"].astext.in_(capable),
+                    or_(
+                        EnvironmentRow.status == "reserved",
+                        EnvironmentRow.provider_identity["type"].astext.in_(capable),
+                    ),
                     ~in_use(EnvironmentRow.id),
                     *conditions,
                 )
@@ -86,7 +89,10 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                 phase == "deleting" and await session.scalar(select(mounted(environment.id)))
             ):
                 continue
-            await begin(session, environment, phase)
+            if environment.status == "reserved":
+                environment.status = "deleted"
+            else:
+                await begin(session, environment, phase)
             record(
                 session,
                 WorkspaceScope(environment.organization_id, environment.workspace_id),

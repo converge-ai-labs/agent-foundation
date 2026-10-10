@@ -30,14 +30,12 @@ from a13n_harness.capabilities import (
 from a13n_harness.codeact.runtime import CodeActRunState
 from a13n_harness.environment import (
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     EmptyEnvironmentRuntime,
     create_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
 )
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets import (
@@ -52,7 +50,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.toolsets import FunctionToolset
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = pytest.mark.anyio
 
@@ -92,7 +90,7 @@ def test_codeact_policy_detaches_and_freezes_tool_decisions() -> None:
 
 
 def _local_environment(root: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
+    provider = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ),
@@ -100,8 +98,8 @@ def _local_environment(root: Path):
     )
     return create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=provider,
+            "local": EnvironmentMount(
+                source=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory="/",
             )

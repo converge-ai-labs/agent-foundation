@@ -1,32 +1,29 @@
-"""What a worker attempt needs from its run's frozen mounts: ready instances, then fresh Harness adapters.
-
-`prepare_mounts` runs before the Harness run, in short transactions that each prove the lease. A stopped
-instance gets a starting operation, and a pending operation is dispatched once through the fenced lifecycle;
-after a failed call the attempt only waits, leaving retries to maintenance's fixed interval. `open_mounts` then
-builds adapters that connect to the ready instances and never create, start or replace one.
-"""
+"""Host-owned mount sources: inert registration, first-use lifecycle and fixed-target connectors."""
 
 from collections.abc import AsyncIterator, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
 from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_environment.files import FileOperator
 from a13n_environment.models import EnvironmentDescriptor, EnvironmentError, EnvironmentState
+from a13n_environment.remote_envd.http import HTTP_ENVD
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.errors import EnvironmentActivationError
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
 from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
+from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.environments import external
 from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
-from a13n_service.runs.environments.lifecycle import advance, begin
+from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch
 from a13n_service.runs.environments.mounts import PRIMARY, require_usable
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -47,22 +44,68 @@ class PreparedMount:
     target: Target
 
 
-async def prepare_mounts(
-    runtime: Runtime,
-    lease: Lease,
-    principal: Principal,
-    authority: ExecutionAuthority,
-    mounts: Sequence[EnvironmentMount],
-) -> list[PreparedMount]:
-    """Wait, at most `environments.wait_seconds` in all, until every mounted instance is ready.
+class EnvironmentUnavailable(Exception):
+    """A selected mount can no longer be used by this attempt."""
 
-    Raises `LeaseLost` once the lease is gone, a `conflict`/`forbidden`/`disabled` error when a mount can no
-    longer be used (retiring, lost, permanently failed, identity changed, provider disabled), and `unavailable`
-    when the wait ran out. Cancelling the calling task stops the wait at once; an interrupted provider call is
-    recorded as an unknown outcome that maintenance reconciles.
-    """
-    deadline = anyio.current_time() + runtime.settings.environments.wait_seconds
-    return [await _ready(runtime, lease, principal, authority, mount, deadline) for mount in mounts]
+
+@dataclass(slots=True)
+class Source:
+    """Service authority and detached metadata for one frozen mount."""
+
+    runtime: Runtime
+    lease: Lease
+    principal: Principal
+    authority: ExecutionAuthority
+    mount: EnvironmentMount
+    descriptor: EnvironmentDescriptor
+    provider_key: str
+    state: EnvironmentState | None
+    configuration: RunConfiguration | None = None
+    activated: bool = False
+
+    @property
+    def environment_id(self) -> str:
+        return self.mount.environment_id
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        seconds = self.runtime.settings.environments.wait_seconds
+        logger.info("Environment readiness requested", extra={"environment_id": self.mount.environment_id})
+        try:
+            try:
+                with anyio.fail_after(seconds):
+                    prepared = await _ready(
+                        self.runtime,
+                        self.lease,
+                        self.principal,
+                        self.authority,
+                        self.mount,
+                        anyio.current_time() + seconds,
+                    )
+                    connector = await execution_connector(
+                        self.runtime,
+                        prepared.target,
+                        configuration=self.configuration,
+                    )
+            except TimeoutError as error:
+                raise _not_ready(self.mount.environment_id) from error
+        except ServiceError as error:
+            if error.code == "unavailable":
+                raise
+            raise EnvironmentUnavailable(error.message) from error
+        self.state = prepared.target.state
+        self.activated = True
+        logger.info("Environment ready", extra={"environment_id": self.mount.environment_id})
+        if self.mount.working_directory is not None:
+            return _DirectoryConnector(connector, prepared, seconds)
+        return connector
+
+
+def _not_ready(environment_id: str) -> ServiceError:
+    return ServiceError(
+        "unavailable",
+        "The environment did not become ready in time",
+        {"dependency": "environment", "id": environment_id, "reason": "environment_not_ready"},
+    )
 
 
 async def _ready(
@@ -74,24 +117,33 @@ async def _ready(
     deadline: float,
 ) -> PreparedMount:
     while True:
-        target, dispatch = await _inspect(runtime, lease, principal, authority, mount.environment_id)
+        target, operation = await _inspect(runtime, lease, principal, authority, mount.environment_id)
         if target is not None:
             return PreparedMount(mount.name, mount.working_directory, target)
-        if dispatch:
-            await advance(runtime, mount.environment_id, owner=lease.worker_id)
-        if anyio.current_time() >= deadline:
-            raise ServiceError(
-                "unavailable",
-                "The environment did not become ready in time",
-                {"dependency": "environment", "id": mount.environment_id, "reason": "environment_not_ready"},
+        if operation is not None:
+            logger.info(
+                "Environment operation claimed",
+                extra={
+                    "environment_id": mount.environment_id,
+                    "operation_id": operation.operation_id,
+                    "phase": operation.phase,
+                },
             )
-        await anyio.sleep(_POLL_SECONDS)
+            await dispatch(runtime, operation)
+            # Publication has completed here; inspect immediately, without a polling delay.
+            continue
+        remaining = deadline - anyio.current_time()
+        if remaining <= 0:
+            raise _not_ready(mount.environment_id)
+        # Another dispatcher owns the operation, or maintenance owns its retry.
+        # Losing a claim is never a successful readiness result.
+        await anyio.sleep(min(_POLL_SECONDS, remaining))
 
 
 async def _inspect(
     runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority, environment_id: str
-) -> tuple[Target | None, bool]:
-    """The target of a ready instance, or whether this attempt should dispatch the pending operation itself."""
+) -> tuple[Target | None, Operation | None]:
+    """Inspect readiness, beginning and claiming new work atomically under the lease and instance locks."""
     async with transaction(runtime.storage) as session:
         await lock_lease(session, lease)
         environment = await lock(session, EnvironmentRow, environment_id)
@@ -101,7 +153,7 @@ async def _inspect(
         if environment.template_id is None:
             # An external target is always ready; it is reached with its own endpoint and token.
             environment.last_used_at = await now(session)
-            return Target(environment.id, external.account(environment), {}, None), False
+            return Target(environment.id, external.account(environment), {}, None), None
         assert environment.provider_id is not None, "a managed instance has a provider"
         scope = WorkspaceScope(environment.organization_id, environment.workspace_id)
         provider = await resolve_provider(
@@ -113,35 +165,74 @@ async def _inspect(
                 raise conflict("environment", environment.id, "provider_identity_changed")
             environment.last_used_at = await now(session)
             handle = Handle.model_validate(environment.handle)
-            return Target(environment.id, provider, handle.recipe, handle.state), False
-        if environment.status == "stopped":
+            return Target(environment.id, provider, handle.recipe, handle.state), None
+        if environment.status == "reserved":
+            await begin(session, environment, "creating")
+        elif environment.status == "stopped":
             await begin(session, environment, "starting")
-        return None, environment.failure is None and environment.status != "stopping"
+        if environment.failure is None and environment.status != "stopping":
+            return None, await claim_locked(runtime, session, environment, owner=lease.worker_id, provider=provider)
+        return None, None
 
 
 @asynccontextmanager
 async def open_mounts(
-    runtime: Runtime, prepared: Sequence[PreparedMount], *, configuration: RunConfiguration | None = None
+    runtime: Runtime,
+    lease: Lease,
+    principal: Principal,
+    authority: ExecutionAuthority,
+    mounts: Sequence[EnvironmentMount],
+    *,
+    configuration: RunConfiguration | None = None,
 ) -> AsyncIterator[dict[str, HarnessMount]]:
-    """Inert connectors for `agent.stream(environments=..., default_environment=PRIMARY if present)`.
-
-    Harness opens and closes each execution; leaving marks the instances used.
-    `workspace` keeps the Harness's `/workspace` route; other mounts appear at `/mnt/{name}`.
-    """
-    async with AsyncExitStack() as stack:
-        stack.push_async_callback(_mark_used, runtime, [item.target.environment_id for item in prepared])
-        mounts: dict[str, HarnessMount] = {}
-        for item in prepared:
-            connector = await execution_connector(runtime, item.target, configuration=configuration)
-            if item.working_directory is not None:
-                connector = _DirectoryConnector(connector, item, runtime.settings.environments.wait_seconds)
-            mounts[item.name] = HarnessMount(
-                connector,
-                working_directory=item.working_directory,
-                mount_path=None if item.name == PRIMARY else f"/mnt/{item.name}",
-                provider_root=item.working_directory or connector.descriptor.working_directory,
+    """Publish inert sources. Only activated instances are marked used on completion."""
+    sources: list[Source] = []
+    async with transaction(runtime.storage) as session:
+        await lock_lease(session, lease)
+        for mount in mounts:
+            environment = await session.get(EnvironmentRow, mount.environment_id)
+            if environment is None:
+                raise not_found("environment", mount.environment_id)
+            require_usable(environment, principal.id)
+            if environment.template_id is None:
+                definition = HTTP_ENVD
+                recipe = {}
+                state = None
+            else:
+                assert environment.provider_id is not None
+                provider = await resolve_provider(
+                    session,
+                    principal,
+                    EnvironmentProviderRow,
+                    WorkspaceScope(environment.organization_id, environment.workspace_id),
+                    environment.provider_id,
+                    authority=authority,
+                )
+                definition = runtime.registry.get("environment", provider.type)
+                if environment.handle is None:
+                    template = await read_template(session, environment.template_id)
+                    recipe, state = template.config.recipe, None
+                else:
+                    handle = Handle.model_validate(environment.handle)
+                    recipe, state = handle.recipe, handle.state
+            descriptor = definition.describe_environment(definition.validate_environment(recipe))
+            # Service Local uses the shared Direct Local execution provider key.
+            provider_key = "direct_local" if definition.type == "local" else definition.type
+            sources.append(
+                Source(runtime, lease, principal, authority, mount, descriptor, provider_key, state, configuration)
             )
-        yield mounts
+    try:
+        yield {
+            source.mount.name: HarnessMount(
+                source=source,
+                working_directory=source.mount.working_directory,
+                mount_path=None if source.mount.name == PRIMARY else f"/mnt/{source.mount.name}",
+                provider_root=source.mount.working_directory or source.descriptor.working_directory,
+            )
+            for source in sources
+        }
+    finally:
+        await _mark_used(runtime, [source.mount.environment_id for source in sources if source.activated])
 
 
 class _DirectoryConnector(EnvironmentConnector):
@@ -180,6 +271,10 @@ class _DirectoryConnector(EnvironmentConnector):
                         await execution.close()
                     except BaseException as cleanup_error:
                         error.add_note(f"Environment execution cleanup also failed: {cleanup_error!r}")
+            if isinstance(error, ServiceError):
+                raise EnvironmentActivationError(
+                    "Host environment directory validation failed.", code="environment_activation_failed"
+                ) from error
             raise
 
 

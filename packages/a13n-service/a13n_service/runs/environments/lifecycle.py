@@ -146,7 +146,7 @@ async def reserve(
     limit: int,
     name: str | None = None,
 ) -> EnvironmentRow:
-    """A new workspace-managed instance in `creating`, from an enabled template of an enabled provider the principal
+    """A new workspace-managed instance in `reserved`, from an enabled template of an enabled provider the principal
     may run, while the workspace holds fewer than `limit` managed instances that are not deleted. Nothing external
     exists until its create operation is dispatched, which reads the template then."""
     template = await resolve_template(session, principal, scope, template_id)
@@ -171,9 +171,9 @@ async def reserve(
         template_id=template.id,
         name=name or template.name,
         generation=0,
+        status="reserved",
         created_by_id=principal.id,
     )
-    await begin(session, environment, "creating")
     session.add(environment)
     await session.flush()
     return environment
@@ -287,43 +287,56 @@ async def _refusal(
 
 async def claim(runtime: Runtime, environment_id: str, *, owner: str) -> Operation | None:
     """Claim the outstanding operation unless nobody needs to or someone else holds it."""
-    seconds = runtime.settings.environments.operation_seconds
     async with transaction(runtime.storage) as session:
         environment = await lock(session, EnvironmentRow, environment_id)
-        phase = None if environment is None else _PHASES.get(environment.status)
-        if environment is None or phase is None or environment.operation_id is None:
-            return None
-        current = await now(session)
-        if environment.lease_expires_at is not None and environment.lease_expires_at > current:
-            return None
-        assert environment.provider_id is not None, "only managed instances have operations"
-        failure = environment.failure or {}
-        unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
-        # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
+        return await claim_locked(runtime, session, environment, owner=owner)
+
+
+async def claim_locked(
+    runtime: Runtime,
+    session: AsyncSession,
+    environment: EnvironmentRow | None,
+    *,
+    owner: str,
+    provider: ResolvedProvider | None = None,
+) -> Operation | None:
+    """Claim under the caller's row lock, allowing begin and first claim to commit together."""
+    seconds = runtime.settings.environments.operation_seconds
+    phase = None if environment is None else _PHASES.get(environment.status)
+    if environment is None or phase is None or environment.operation_id is None:
+        return None
+    current = await now(session)
+    if environment.lease_expires_at is not None and environment.lease_expires_at > current:
+        return None
+    assert environment.provider_id is not None, "only managed instances have operations"
+    failure = environment.failure or {}
+    unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
+    # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
+    if provider is None:
         provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
-        if (fault := await _refusal(session, runtime, environment, provider)) is not None:
-            environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
-            record_failure(environment, fault, current, unresolved=unresolved)
-            return None
-        token = secrets.token_urlsafe(32)
-        environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
-        deadline = current + timedelta(seconds=seconds)
-        environment.operation_deadline = deadline
-        environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
-        handle = Handle.model_validate(environment.handle)
-        version, changed = reached_with(handle, provider)
-        return Operation(
-            environment_id=environment.id,
-            phase=phase,
-            generation=environment.generation,
-            operation_id=environment.operation_id,
-            token=token,
-            target=Target(environment.id, provider, handle.recipe, handle.state),
-            unresolved=unresolved,
-            seconds=seconds,
-            credential_version=version,
-            credential_changed=changed,
-        )
+    if (fault := await _refusal(session, runtime, environment, provider)) is not None:
+        environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
+        record_failure(environment, fault, current, unresolved=unresolved)
+        return None
+    token = secrets.token_urlsafe(32)
+    environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
+    deadline = current + timedelta(seconds=seconds)
+    environment.operation_deadline = deadline
+    environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
+    handle = Handle.model_validate(environment.handle)
+    version, changed = reached_with(handle, provider)
+    return Operation(
+        environment_id=environment.id,
+        phase=phase,
+        generation=environment.generation,
+        operation_id=environment.operation_id,
+        token=token,
+        target=Target(environment.id, provider, handle.recipe, handle.state),
+        unresolved=unresolved,
+        seconds=seconds,
+        credential_version=version,
+        credential_changed=changed,
+    )
 
 
 async def _call(provider: EnvironmentProvider, operation: Operation) -> EnvironmentState | None:
@@ -457,6 +470,11 @@ async def advance(runtime: Runtime, environment_id: str, *, owner: str) -> None:
     operation = await claim(runtime, environment_id, owner=owner)
     if operation is None:
         return
+    await dispatch(runtime, operation)
+
+
+async def dispatch(runtime: Runtime, operation: Operation) -> None:
+    """Perform a claimed operation here and publish its fenced outcome without retaining a transaction."""
     try:
         outcome = await perform(runtime, operation)
     except BaseException as error:

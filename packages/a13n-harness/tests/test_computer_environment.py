@@ -21,8 +21,8 @@ from a13n_environment.models import (
     EnvironmentPermissionSet,
 )
 from a13n_environment.operations import EnvironmentOperations
+from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import EnvironmentRuntimeMount
 from a13n_harness.toolsets.computer import ComputerToolset
 from pydantic_ai import BinaryContent, ToolReturn
 
@@ -80,9 +80,7 @@ def mount(actions):
     computer.binding = binding
     runtime = create_environment_runtime(
         mounts={
-            "desktop": EnvironmentRuntimeMount(
-                binding=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions)
-            )
+            "desktop": EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions))
         },
         default_mount="desktop",
     )
@@ -221,9 +219,7 @@ async def test_text_input_denial_explains_selected_alias_without_switching_deskt
         )
         computer.binding = binding
         computers[name] = computer
-        mounts[name] = EnvironmentRuntimeMount(
-            binding=binding, permission_ceiling=EnvironmentPermissionSet(operations=ceiling)
-        )
+        mounts[name] = EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=ceiling))
     runtime = create_environment_runtime(mounts=mounts, default_mount="linux-desktop")
     async with runtime.bind(
         thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}

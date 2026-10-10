@@ -46,13 +46,15 @@ A production Host publishes management state before opening execution. If a mana
 
 ## Use with Harness
 
-Pass the connector to an executable:
+Supply the connector through a Host source:
+
+Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
 ```python
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-Harness opens and closes a fresh execution per mount. Add `DynamicEnvironmentCapability` when the model should receive Environment tools. For a complete offline application, see the [Agent application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app).
+Harness opens and closes a fresh execution for each used mount. Add `DynamicEnvironmentCapability` when the model should receive Environment tools. For a complete offline application, see the [Agent application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app).
 
 ## HTTP and WebSocket Envd
 

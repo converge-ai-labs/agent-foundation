@@ -163,6 +163,8 @@ Modal 的停止会先保存文件系统快照，显式 `start()` 才从该快照
 
 E2B 通过原生异步 SDK 直接执行命令。有界 Python helper 只实现文件和端口检查。默认 `base` 模板无需安装 `a13n-envd`、上传可执行文件或构建自定义模板。自定义模板需要 Linux、Python 3.11+、Bash，以及配置的账号/根目录；git-ignore 查询还需要 Git。
 
+此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
+
 ```python
 import os
 
@@ -176,7 +178,7 @@ async with await E2B.open_provider(
     state = await provider.create(recipe, environment_id="env-example", operation_id="op-create")
     await state_store.publish(environment_key, state)
     connector = provider.execution_connector(recipe, environment_id="env-example", state=state)
-result = await executable.run("Inspect the sandbox", environment=connector)
+result = await executable.run("Inspect the sandbox", environment=PreparedSource(connector))
 ```
 
 `close()` 保留沙箱和用户文件，断开当前执行的输出观测，不终止命令。管理端显式调用 `stop()`、`start()`、`keepalive()` 和 `destroy()`。打开执行通过只读查询连接已运行目标，不续期或恢复；不接受会自动恢复的 E2B 目标。库不读取 `.env`，凭据由 Host 提供。

@@ -46,13 +46,15 @@ uv run environment-provider-example docker
 
 ## 用于 Harness
 
-把 connector 传给可执行 Agent：
+通过 Host 来源提供 connector：
+
+此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
 
 ```python
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-Harness 为每个挂载打开并关闭独立执行对象。模型需要环境工具时，添加 `DynamicEnvironmentCapability`。完整离线应用见 [Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)。
+Harness 为每个实际使用的挂载打开并关闭独立 execution。模型需要环境工具时，添加 `DynamicEnvironmentCapability`。完整离线应用见 [Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)。
 
 ## HTTP 和 WebSocket Envd
 

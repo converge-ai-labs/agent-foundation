@@ -18138,7 +18138,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "pattern": "^(creating|starting|ready|stopping|stopped|deleting|deleted)$",
+                  "pattern": "^(reserved|creating|starting|ready|stopping|stopped|deleting|deleted)$",
                   "type": "string"
                 },
                 {

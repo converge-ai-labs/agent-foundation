@@ -55,12 +55,16 @@ flowchart TB
     State --> Connector[EnvironmentConnector]
     Connector --> Execution[EnvironmentExecution]
     Execution --> Operations[Files, commands, processes, and output]
-    Harness[Harness Run] --> Connector
+    Host --> Source[EnvironmentSource]
+    Source --> Connector
+    Harness[Harness Run] --> Source
 ```
 
 ## Use with Harness
 
 The working directory must already exist:
+
+Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
 ```python
 from pathlib import Path
@@ -70,10 +74,10 @@ connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},
     environment_id="env-workspace",
 )
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-Harness opens all executions before publishing mounts. If one fails, it closes every execution already opened and publishes no partial mount set. Connectors can serve later Runs; opened executions cannot be shared with another Run.
+Harness validates and publishes the static mount set without opening executions. First use prepares and opens only the selected mount. Each used mount has its own execution; Run exit closes these executions without destroying targets.
 
 Enable `DynamicEnvironmentCapability` to expose permitted tools to the model. Use `EnvironmentMount` for mount paths and permission ceilings; Harness owns these policies, and they do not enter shared Environment state.
 

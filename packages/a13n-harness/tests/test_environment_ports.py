@@ -6,8 +6,8 @@ import pytest
 from a13n_environment.commands import PortObservation, PortTarget
 from a13n_environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from a13n_environment.operations import EnvironmentOperations
+from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import EnvironmentRuntimeMount
 from pydantic import ValidationError
 
 from .test_environment_core import _Binding, _instance
@@ -33,8 +33,8 @@ async def test_port_alias_stays_in_harness_routing():
     actions = frozenset({EnvironmentAction.PORT_INSPECT, EnvironmentAction.PORT_WAIT})
     runtime = create_environment_runtime(
         mounts={
-            name: EnvironmentRuntimeMount(
-                binding=_Binding(
+            name: EnvironmentMount(
+                source=_Binding(
                     name,
                     families=frozenset({"ports"}),
                     operations=EnvironmentOperations(ports=facet),

@@ -23,10 +23,11 @@ from a13n_harness import RunBindings
 from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentError,
+    EnvironmentMount,
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntimeMount
+from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
     _ProcessController,
@@ -35,7 +36,7 @@ from a13n_harness.toolsets.process_manager import (
 )
 from a13n_harness.toolsets.shell import ShellToolset
 
-from .environment_helpers import DirectLocalEnvironmentProviderBinding
+from .environment_helpers import DirectLocalSource
 
 pytestmark = [
     pytest.mark.anyio,
@@ -87,8 +88,8 @@ async def _bound_process_environment(
 ) -> AsyncIterator[BoundEnvironment]:
     runtime = create_environment_runtime(
         mounts={
-            "local": EnvironmentRuntimeMount(
-                binding=DirectLocalEnvironmentProviderBinding(
+            "local": EnvironmentMount(
+                source=DirectLocalSource(
                     DirectLocalEnvironmentConfiguration(
                         root=DirectLocalRootConfiguration(path=root),
                         shell_profiles=(

@@ -95,7 +95,7 @@ from .extensions import (
     EnvironmentRunExtensionContext,
 )
 from .providers import FileScopeSelection
-from .sources import EnvironmentEntry, EnvironmentMount
+from .sources import EnvironmentEntry, EnvironmentMount, EnvironmentSource
 from .virtual_files import VirtualFileOperator
 
 if TYPE_CHECKING:
@@ -164,6 +164,7 @@ __all__ = [
     "EnvironmentRunExtensionFactoryReference",
     "EnvironmentRunExtensionFactoryRegistration",
     "EnvironmentSnapshot",
+    "EnvironmentSource",
     "EnvironmentState",
     "FileCopyResult",
     "FileEntriesResult",

@@ -54,12 +54,14 @@ Connector construction and validation perform no I/O. `open()` returns one ready
 
 ## Use the connector with Harness
 
-Pass the connector to Harness. Each Run opens a fresh execution; do not pass an already opened execution as a Run input:
+Wrap the connector in a Host source. Each Run opens a fresh execution only on first use; already opened executions are not Run inputs:
+
+Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
 ```python
-result = await executable.run("Inspect the workspace", environment=connector)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-This fragment assumes the directory still exists and `executable` enables `DynamicEnvironmentCapability`. Harness opens executions before publishing mounts and closes them at Run exit. Supplying an Environment alone does not expose tools to the model.
+This fragment assumes the directory still exists and `executable` enables `DynamicEnvironmentCapability`. Harness opens an execution on first use and closes it at Run exit. Supplying an Environment alone does not expose tools to the model.
 
 Continue with [Lifecycle and state](lifecycle.md), [Operations](operations.md), and [Harness integration](../a13n-harness/environments.md).

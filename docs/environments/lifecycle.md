@@ -3,7 +3,7 @@ title: Lifecycle and state
 description: Manage targets separately from reusable connectors and independent executions.
 ---
 
-The Host manages a target and saves the result before passing a fixed-target connector to Harness. The independent `a13n-environment` package also works directly in ordinary applications.
+The Host manages a target and saves the result before its source returns a fixed-target connector to Harness. The independent `a13n-environment` package also works directly in ordinary applications.
 
 ## Three objects
 
@@ -20,6 +20,8 @@ A connector can serve several Runs. Every `open()` creates a separate execution.
 ## Manage and publish before execution
 
 In this fragment, the Host supplies state storage, concurrency control, and cancellation protection:
+
+Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
 ```python
 from a13n_environment.docker.provider import DOCKER
@@ -40,7 +42,7 @@ async with await DOCKER.open_provider(configuration=account_configuration) as pr
     await state_store.publish(environment_key, state)
     connector = provider.execution_connector(recipe, environment_id="env-workspace", state=state)
 
-result = await executable.run("Continue the task", environment=connector)
+result = await executable.run("Continue the task", environment=PreparedSource(connector))
 ```
 
 `EnvironmentState` retains its existing credential-free format. It contains no live client, execution handle, Harness mount policy, or destruction authority. Management methods return the current reference; `inspect()` returns both status and reference.

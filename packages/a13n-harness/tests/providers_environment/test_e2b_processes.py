@@ -27,6 +27,8 @@ from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
 from protobuf import Oneof
 from pydantic import SecretStr
 
+from ..environment_helpers import Source
+
 pytestmark = pytest.mark.anyio
 
 
@@ -662,7 +664,9 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
         adapter = E2B.execution_connector(config, environment_id="shared", state=target.state, runtime=owner)
         runtime = create_environment_runtime(
             mounts={
-                "workspace": EnvironmentMount(adapter, working_directory=f"/{directory}", provider_root=f"/{directory}")
+                "workspace": EnvironmentMount(
+                    Source(adapter), working_directory=f"/{directory}", provider_root=f"/{directory}"
+                )
             },
             default_mount="workspace",
         )
