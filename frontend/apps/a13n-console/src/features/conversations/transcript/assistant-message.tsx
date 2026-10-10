@@ -79,6 +79,8 @@ export function AgentTurn({
             />
           ) : block.kind === "guidance" ? (
             <GuidanceMessage
+              sourceId={block.entry.sourceId}
+              steeringSource={block.entry.steeringSource}
               key={block.id}
               text={block.entry.text}
               itemId={block.entry.id}

@@ -12,7 +12,13 @@ import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { ErrorNotice, ErrorToast } from "../../../shared/feedback";
-import { conversationQueries, isActiveRun, runPath } from "../api";
+import {
+  conversationQueries,
+  isActiveRun,
+  runPath,
+  type ViewLevel,
+} from "../api";
+import { ForkRun } from "../fork-run";
 import { Composer } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
@@ -45,6 +51,7 @@ export function RunDock({
   onResubmitted,
   onSubmissionChange,
   pendingRunId,
+  level = "chat",
 }: {
   run: Schema["RunView"];
   thread: Schema["ThreadView"];
@@ -57,6 +64,7 @@ export function RunDock({
   onSubmissionChange?: (message: PendingMessage | null) => void;
   /** A receipt can update the Thread before the route transition commits. */
   pendingRunId?: string;
+  level?: ViewLevel;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -136,9 +144,10 @@ export function RunDock({
       <div className={styles.dock}>
         {above}
         {!current ? (
-          <p className={styles.dockNotice}>
+          <div className={styles.dockNotice}>
             <GitBranchIcon size={13} aria-hidden="true" />
-            {t("You are viewing earlier work.")}
+            <span>{t("You are viewing earlier work.")}</span>
+            <ForkRun run={run} thread={thread} level={level} compact />
             {latest && (
               <Link
                 className={styles.dockLink}
@@ -151,7 +160,7 @@ export function RunDock({
                 {t("Return to latest messages")}
               </Link>
             )}
-          </p>
+          </div>
         ) : (
           <>
             {interactive && !waiting && (

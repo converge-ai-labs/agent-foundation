@@ -27,6 +27,7 @@ import { useRun, useSession } from "./queries";
 import { useAnchoredLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
+import { ThreadBranches } from "./thread-branches";
 import styles from "./conversations.module.css";
 
 /**
@@ -53,8 +54,8 @@ export function SessionHeader({
   const { runs } = useThreadRuns(threadId);
   const collapse = useRunCollapseAll();
   const debugSession = isConsoleSession(session.data);
-  // Any Thread that branched from another reads under the Session's root.
-  const child = !!thread && thread.origin !== "new";
+  // Delegated children retain their execution breadcrumb beside conversation switching.
+  const child = thread?.origin === "child";
   const active =
     valid &&
     !!run.data &&
@@ -116,6 +117,9 @@ export function SessionHeader({
             <CaretRightIcon size={11} aria-hidden="true" />
             <span>{agent.data?.name ?? t("Child thread")}</span>
           </span>
+        )}
+        {thread && (
+          <ThreadBranches thread={thread} threads={threads} level={level} />
         )}
         <SegmentedControl
           label={t("Disclosure level")}

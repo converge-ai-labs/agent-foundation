@@ -10,7 +10,10 @@ import { fixtureThread } from "./transcript/fixture";
 
 let client: Client;
 let cache: QueryClient;
-vi.mock("../../auth/context", () => ({ useClient: () => client }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => client,
+  useAuth: () => ({ data: undefined }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "workspace" } }),
 }));

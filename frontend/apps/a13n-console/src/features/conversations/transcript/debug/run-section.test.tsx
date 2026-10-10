@@ -104,7 +104,7 @@ it("reads one run as a heading, its request and one timeline", () => {
   expect(screen.getByText("Run 2")).toBeTruthy();
   expect(screen.getByText("state.completed")).toBeTruthy();
   expect(screen.getByText("Run the checks")).toBeTruthy();
-  expect(screen.getByText("You")).toBeTruthy();
+  expect(screen.getByText("User")).toBeTruthy();
   // Totals come from reported usage; the duration is the run's own span.
   expect(screen.getByText("12s")).toBeTruthy();
   expect(screen.getByText("1 model calls")).toBeTruthy();

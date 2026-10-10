@@ -29,6 +29,7 @@ from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
+from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
 type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
@@ -50,6 +51,21 @@ def canonical_json(value: object) -> bytes:
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class MessageAuthorQuery(_Frozen):
+    entry_id: list[Annotated[str, Field(min_length=1, max_length=72)]] = Field(min_length=1, max_length=100)
+
+
+class MessageAuthor(_Frozen):
+    entry_id: str
+    principal_id: str
+    submitted_at: datetime
+    principal: PrincipalSummary | None
+
+
+class MessageAuthors(_Frozen):
+    items: list[MessageAuthor]
 
 
 class Failure(_Frozen):

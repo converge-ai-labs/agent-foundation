@@ -26,6 +26,7 @@ import {
   workState,
   type WorkState,
 } from "../entry-language";
+import { GuidanceMessage } from "../user-message";
 import { EntryPane } from "./entry-pane";
 import { bar, type RunScope } from "./scope";
 import styles from "./debug.module.css";
@@ -59,6 +60,18 @@ function TimelineRow({
 }) {
   if (entry.kind === "reply" && !entry.subagentRunId)
     return <ReplyBlock entry={entry} />;
+  if (
+    entry.kind === "guidance" &&
+    !entry.steeringSource &&
+    !entry.subagentRunId
+  )
+    return (
+      <GuidanceMessage
+        text={entry.text}
+        itemId={entry.id}
+        sourceId={entry.sourceId}
+      />
+    );
   if (entry.kind === "event") return <EventRow entry={entry} scope={scope} />;
   return <ExpandableRow entry={entry} scope={scope} />;
 }

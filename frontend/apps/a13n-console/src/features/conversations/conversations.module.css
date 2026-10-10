@@ -264,6 +264,26 @@ a.agentLink:focus-visible {
   }
 }
 @media (max-width: 760px) {
+  .sessionHeader {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 52px;
+    padding-block: 8px;
+  }
+  .sessionControls {
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    justify-content: flex-end;
+    margin-left: auto;
+    gap: 4px;
+    max-width: 100%;
+  }
+  .agentLink {
+    max-width: 100%;
+  }
+  .breadcrumb {
+    display: none;
+  }
   .agentFilter {
     width: 100%;
   }
