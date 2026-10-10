@@ -19,7 +19,9 @@
   display: none;
 }
 .supportingNav {
-  margin-top: 16px;
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
 }
 .sidebarHeader {
   display: flex;
@@ -55,26 +57,12 @@
   color: var(--a13n-secondary);
   padding: 0 12px 12px;
 }
-.sidebar nav {
-  display: grid;
-  gap: 4px;
-}
-.navLink,
-.activeNav {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 8px;
-  color: var(--a13n-text-supporting);
-  text-decoration: none;
-  font-size: 13px;
-}
-.navLink:hover {
-  background: var(--a13n-hover);
+.navLink {
+  composes: row from "./navigation-row.module.css";
 }
 .activeNav {
-  background: var(--a13n-elevated);
+  composes: row from "./navigation-row.module.css";
+  background: var(--a13n-selected);
   color: var(--a13n-text);
 }
 .profileButton {
@@ -515,10 +503,6 @@ a.resourceRow:hover {
   justify-content: space-between;
   gap: 8px;
   padding-right: 32px;
-}
-.mobileNavigation nav {
-  display: grid;
-  gap: 4px;
 }
 @media (max-width: 1100px) {
   .cardGrid {

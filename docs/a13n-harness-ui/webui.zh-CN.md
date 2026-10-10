@@ -328,7 +328,7 @@ TUI 和 WebUI 进程可在兼容的软件包升级之间共享同一本地数据
 
 ## 容器与安装资源
 
-GHCR 镜像为 `ghcr.io/converge-ai-labs/a13n-harness-ui`：`dev` 跟随 main，正式发布使用 `X.Y.Z`，RC 使用 `X.Y.Z-rc.N` 且不更新 `latest`。Python 和页面将 RC 元数据显示为 `X.Y.ZrcN`。开发构建显示源码版本 `0.0.0`，另列 Git 修订。需要持久配置、数据和工作挂载，并仅向回环地址发布端口时，使用仓库的 `deploy/docker/compose/a13n-harness-ui.yaml`。镜像以 UID/GID `10001:10001` 运行，bind mount 必须允许该账户写入。需要保留数据时，不要移除卷。重启会更换生成的实例密钥；需要稳定的实例密钥时，在运行时提供 `A13N_HARNESS_UI_API_KEY`。
+Harness UI 通过 Python wheel 和 sdist 分发，不再发布官方 Harness UI 容器镜像。请在承载工作台的计算机上安装 Python 分发包。如需容器化服务器，请基于固定版本的 Python 包自行构建镜像，并显式配置认证、监听地址和持久挂载。`a13n-sandbox` 是 Agent 执行镜像，不是替代 WebUI 服务器。
 
 WebUI 资源随 wheel 发布，最终用户无需 Node.js 或独立前端 checkout。仓库开发使用 `make webui`：构建并安装打包资源，再以 `var/harness-ui/` 下隔离的配置和数据启动前台服务器。无需手动准备实例密钥；未提供 CLI 或环境密钥时，stdout 会输出可直接登录的链接，认证仍然必需。使用 `make webui WEBUI_ARGS='--port 9000 --no-share-computer'` 转发服务器选项，`CLI_ARGS` 将全局选项传到子命令之前。配置初始化与环境覆盖参阅[开发指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/harness-ui/README.md)。
 

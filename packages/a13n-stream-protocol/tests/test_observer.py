@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import anyio
 import pytest
@@ -38,7 +39,7 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, PlainSerializer, PydanticSchemaGenerationError, TypeAdapter, model_serializer
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     CapabilityEvent,
@@ -60,7 +61,8 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.output import TextOutput
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError
 
@@ -72,11 +74,22 @@ class ExternalCapabilityProgressEvent(CapabilityEvent, namespace="test.external"
     progress: int
 
 
+@dataclass(kw_only=True)
+class ExternalCapabilityDetailsEvent(CapabilityEvent, namespace="test.external"):
+    delta: ThinkingPartDelta
+
+
 @dataclass(frozen=True, slots=True)
 class ExtendedAgentStreamEvent:
     event_kind: str = "capability"
     kind: str = "user.demo.progress"
     value: int = 1
+
+
+@dataclass
+class AliasedDataclassEvent:
+    event_kind: str = "external"
+    value: Annotated[int, Field(serialization_alias="progressValue")] = 1
 
 
 class AliasedExtendedAgentStreamEvent(BaseModel):
@@ -196,21 +209,86 @@ def test_extended_agent_stream_event_uses_generic_custom_event() -> None:
     }
 
 
-def test_extended_agent_stream_event_preserves_serialization_aliases() -> None:
-    event = HarnessAguiObserver().observe(_event(0, AliasedExtendedAgentStreamEvent()))[0]
+@pytest.mark.parametrize("event_type", [AliasedExtendedAgentStreamEvent, AliasedDataclassEvent])
+def test_extended_agent_stream_event_preserves_serialization_aliases(event_type: type) -> None:
+    source = event_type()
+    event = HarnessAguiObserver().observe(_event(0, source))[0]
 
     assert isinstance(event, CustomEvent)
     assert event.value["event"] == {
-        "event_kind": "capability",
+        "event_kind": source.event_kind,
         "progressValue": 1,
     }
 
 
-def test_unserializable_agent_stream_event_fails_atomically() -> None:
+@pytest.mark.parametrize("callback", [False, True])
+def test_thinking_metadata_delta_uses_native_json_serializer(callback: bool) -> None:
+    def merge_details(existing: dict[str, Any] | None) -> dict[str, Any]:
+        pytest.fail("Observation must not execute the provider details callback")
+
+    details = merge_details if callback else {"signature": "provider-signature"}
+    delta = ThinkingPartDelta(provider_name="test", provider_details=details)
+    source = PartDeltaEvent(index=0, delta=delta)
+    observer = HarnessAguiObserver()
+    observer.observe(_event(0, PartStartEvent(index=0, part=ThinkingPart("reasoning"))))
+
+    event = observer.observe(_event(1, source))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == "a13n.pydantic_ai.part_delta"
+    assert event.value == {
+        "thread_id": "thread-1",
+        "run_id": "run-1",
+        "sequence": 1,
+        "occurred_at": _OCCURRED_AT.isoformat(),
+        "event": {
+            "event_kind": "part_delta",
+            "index": 0,
+            "delta": {
+                "part_delta_kind": "thinking",
+                "content_delta": None,
+                "signature_delta": None,
+                "provider_name": "test",
+                "provider_details": None if callback else details,
+            },
+        },
+    }
+    TypeAdapter(Event).dump_json(event)
+    assert delta.provider_details is details
+    following = observer.observe(_event(2, PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta=" more"))))
+    assert len(following) == 1
+    assert isinstance(following[0], ReasoningMessageContentEvent)
+    assert following[0].delta == " more"
+
+
+def test_capability_event_uses_nested_field_serializer() -> None:
+    def merge_details(existing: dict[str, Any] | None) -> dict[str, Any]:
+        pytest.fail("Observation must not execute the provider details callback")
+
+    delta = ThinkingPartDelta(provider_name="test", provider_details=merge_details)
+    source = ExternalCapabilityDetailsEvent(capability_id="external-capability", delta=delta)
+    event = HarnessAguiObserver().observe(_event(0, source))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == source.kind
+    assert event.value["event"]["capability_id"] == "external-capability"
+    assert event.value["event"]["delta"]["provider_details"] is None
+    assert delta.provider_details is merge_details
+    TypeAdapter(Event).dump_json(event)
+
+
+@pytest.mark.parametrize(
+    ("source", "error"),
+    [
+        (UnserializableAgentStreamEvent(), PydanticSchemaGenerationError),
+        (ExtendedAgentStreamEvent(value=lambda: None), PydanticSerializationError),
+    ],
+)
+def test_unserializable_agent_stream_event_fails_atomically(source: object, error: type[Exception]) -> None:
     observer = HarnessAguiObserver()
 
-    with pytest.raises(PydanticSerializationError):
-        observer.observe(_event(0, UnserializableAgentStreamEvent()))
+    with pytest.raises(error):
+        observer.observe(_event(0, source))
 
     assert observer.thread_id is None
     assert observer.run_id is None
@@ -1127,3 +1205,127 @@ def test_non_success_lowered_tool_media_keeps_outcome_without_transporting_paylo
     assert event.value["event"]["part"]["content"] == {"error": "not completed"}
     assert "payload" not in event.model_dump_json()
     assert part.content == [{"error": "not completed"}, image]
+
+
+@dataclass
+class _PublicValue:
+    value: Annotated[int, PlainSerializer(lambda value: f"id-{value}", return_type=str, when_used="json")]
+
+
+@dataclass
+class _CallbackOutput:
+    value: str
+    callback: Annotated[Callable[[], None], PlainSerializer(lambda value: None, return_type=None, when_used="json")]
+
+
+def _callback_output(value: str) -> _CallbackOutput:
+    def callback() -> None:
+        raise AssertionError("Projection must not invoke the callback")
+
+    return _CallbackOutput(value, callback)
+
+
+def _annotated_output(
+    value: str,
+) -> list[Annotated[int, PlainSerializer(lambda value: f"id-{value}", return_type=str)]]:
+    return [int(value)]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("output_function", "expected"),
+    [(_callback_output, {"value": "7", "callback": None}), (_annotated_output, ["id-7"])],
+)
+async def test_terminal_projection_uses_the_run_output_contract(output_function, expected) -> None:
+    async def response(messages, info):
+        yield "7"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=TextOutput(output_function), model=FunctionModel(stream_function=response)
+    )
+    observer = HarnessAguiObserver()
+    sources = []
+    async with executable.stream("go", bindings=RunBindings.embedded()) as stream:
+        async for item in stream:
+            sources.append(item)
+            observer.observe(item)
+    terminal = observer.snapshot()[-1]
+    assert isinstance(terminal, RunFinishedEvent)
+    assert terminal.result == expected
+    assert "result_omitted" not in terminal.raw_event
+    assert stream.result is not None
+    assert stream.result.output_json() == expected
+    restored = HarnessAguiObserver()
+    await restored.resume(_history(*sources))
+    assert restored.snapshot() == observer.snapshot()
+
+
+@pytest.mark.anyio
+async def test_tool_result_projection_preserves_dataclass_serializer_and_media_omission() -> None:
+    from pydantic_ai.capabilities import Capability
+
+    native = {"values": [_PublicValue(7)], "raw": b"private bytes"}
+
+    def values() -> Any:
+        return native
+
+    async def response(messages, info):
+        if any(
+            isinstance(part, ToolReturnPart)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ):
+            yield "done"
+        else:
+            yield {0: DeltaToolCall(name="values", json_args="{}", tool_call_id="call-values")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=response),
+        capabilities=(Capability(tools=[values], id="values"),),
+    )
+    observer = HarnessAguiObserver()
+    async with executable.stream("go", bindings=RunBindings.embedded()) as stream:
+        async for item in stream:
+            observer.observe(item)
+    results = [event for event in observer.snapshot() if isinstance(event, ToolCallResultEvent)]
+    assert len(results) == 1
+    assert json.loads(results[0].content) == {
+        "values": [{"value": "id-7"}],
+        "raw": {"payload_omitted": True, "size_bytes": 13},
+    }
+    assert native == {"values": [_PublicValue(7)], "raw": b"private bytes"}
+
+
+@pytest.mark.parametrize("as_model", [False, True])
+def test_structured_tool_media_is_omitted_before_custom_serialization(as_model: bool) -> None:
+    from a13n_stream_protocol.content import tool_result_content
+    from pydantic_ai.messages import BinaryContent
+
+    calls = []
+
+    @dataclass
+    class Record:
+        value: Any
+
+        @model_serializer
+        def serialize(self):
+            calls.append(self)
+            return {"flattened": "private payload"}
+
+    class ModelRecord(BaseModel):
+        value: Any
+
+        @model_serializer
+        def serialize(self):
+            calls.append(self)
+            return {"flattened": "private payload"}
+
+    media = BinaryContent(data=b"private payload", media_type="image/png")
+    record = ModelRecord(value={"nested": [media]}) if as_model else Record(value={"nested": [media]})
+    content = tool_result_content({"record": record, "other": [_PublicValue(7)]})
+    assert json.loads(content) == {"record": {"payload_omitted": True}, "other": [{"value": "id-7"}]}
+    assert calls == []
+    assert media.data == b"private payload"

@@ -105,13 +105,13 @@ Docker needs a local Docker Engine. Build the repository sandbox image, then run
 
 ```bash
 # From the repository root
-make image-docker-environment
+make image-sandbox
 
 cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-The example defaults to `a13n-docker-environment:local`, the image built by that Make target. Use `--image IMAGE` to select another compatible sandbox image; ordinary Docker authentication and pull behavior apply.
+The example defaults to `a13n-sandbox:local`, the image built by that Make target. Use `--image IMAGE` to select another compatible sandbox image; ordinary Docker authentication and pull behavior apply.
 
 The example intentionally exercises the complete stateful lifecycle:
 

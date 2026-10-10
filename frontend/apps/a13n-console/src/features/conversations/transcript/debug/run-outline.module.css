@@ -1,4 +1,4 @@
-/* The Run tree, in either presentation: the outline panel in the stage's left
+/* The current Thread’s Run list, in either presentation: the outline panel in the stage's left
    gutter, and the list the pinned pill opens where there is no gutter. */
 .panel {
   position: absolute;
@@ -95,21 +95,4 @@
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-/* A Thread that branched from a Run ------------------------------------- */
-.group {
-  display: grid;
-  min-width: 0;
-}
-.group[data-nested] {
-  margin-left: 12px;
-  padding-left: 10px;
-  border-left: 1px solid var(--a13n-border-soft);
-}
-.groupLabel {
-  padding: 4px 8px 2px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-2xs);
-  font-weight: 500;
 }

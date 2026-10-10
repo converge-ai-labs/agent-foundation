@@ -144,6 +144,78 @@ async def test_store_load_forget_are_key_only_and_null_is_not_missing() -> None:
     assert _values(result.state) == {}
 
 
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+async def test_complex_values_cross_boundaries_only_as_json(runner: str, tmp_path: Path) -> None:
+    received: list[Any] = []
+
+    def echo(value: Any) -> Any:
+        received.append(value)
+        return value
+
+    source = (
+        "z = (1 + 2j) * 2\n"
+        'value = await echo(value={"real": z.real, "imag": z.imag})\n'
+        'await store(key="complex.parts", value=value)\n'
+    )
+    if runner == "run_program":
+        (tmp_path / "complex.codeact.py").write_text(
+            "async def main(inputs):\n"
+            + "".join(f"    {line}\n" for line in source.splitlines())
+            + "    return value\n"
+        )
+        calls = [(runner, {"path": "complex.codeact.py"})]
+    else:
+        calls = [_code(source + "value"), _code("[z.real, z.imag]")]
+    calls.append(_code('await load(key="complex.parts")'))
+    result, seen, _ = await _run(
+        calls,
+        capabilities=(_codeact_tools(echo, allowed=("echo",)),),
+        bindings=RunBindings.embedded(environment=_local_environment(tmp_path)),
+    )
+    expected = {"real": 2.0, "imag": 4.0}
+    assert received == [expected]
+    assert seen[0].content == seen[-1].content == expected
+    if runner == "run_code":
+        assert seen[1].content == [2.0, 4.0]
+    assert result.state is not None
+    restored = HarnessState.model_validate_json(result.state.model_dump_json())
+    assert _values(restored) == {"complex.parts": expected}
+
+
+@pytest.mark.parametrize("expression", ["z", '{"nested": [z]}'])
+async def test_complex_output_rejection_resets_inline_state_but_preserves_stored_values(expression: str) -> None:
+    result, seen, _ = await _run(
+        [
+            _code('await store(key="saved", value=7)\nz = 1 + 2j\n' + expression),
+            _code("z"),
+            _code('await load(key="saved")'),
+        ]
+    )
+    for response in seen[:2]:
+        assert isinstance(response, ToolReturnPart) and response.outcome == "failed"
+    assert seen[2].content == 7
+    assert _values(result.state) == {"saved": 7}
+
+
+@pytest.mark.parametrize("boundary", ["argument", "result"])
+async def test_complex_nested_tool_values_are_rejected(boundary: str) -> None:
+    invoked: list[Any] = []
+
+    def echo(value: Any) -> Any:
+        invoked.append(value)
+        return 1 + 2j if boundary == "result" else value
+
+    argument = '{"nested": [1 + 2j]}' if boundary == "argument" else "1"
+    _, seen, _ = await _run(
+        [_code(f"temporary = 9\nawait echo(value={argument})"), _code("temporary"), _code("2 + 2")],
+        capabilities=(_codeact_tools(echo, allowed=("echo",)),),
+    )
+    assert invoked == ([] if boundary == "argument" else [1])
+    for response in seen[:2]:
+        assert isinstance(response, ToolReturnPart) and response.outcome == "failed"
+    assert seen[2].content == 4
+
+
 async def test_monty_owns_python_scope_resolution() -> None:
     source = "def report():\n    return normalize(4)\ndef normalize(x):\n    return x + 1\nreport()"
     _, seen, _ = await _run([_code("saved = 7"), _code(source), _code("saved")])
@@ -182,6 +254,8 @@ async def test_concurrent_writes_do_not_lose_keys() -> None:
         (CodeActConfig(max_state_entries=1), 'await store(key="second", value=2)'),
         (CodeActConfig(max_state_bytes=64), 'await store(key="first", value="x" * 100)'),
         (CodeActConfig(), 'await store(key="first", value=float("inf"))'),
+        (CodeActConfig(), 'await store(key="first", value=1 + 2j)'),
+        (CodeActConfig(), 'await store(key="first", value={"nested": [1 + 2j]})'),
         (CodeActConfig(), 'await store(key="", value=1)'),
         (CodeActConfig(), 'await store(key="x" * 257, value=1)'),
     ],

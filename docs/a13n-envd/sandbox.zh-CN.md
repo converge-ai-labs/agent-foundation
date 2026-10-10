@@ -63,7 +63,9 @@ docker run --rm --name agent-sandbox \
 
 ## 日常开发
 
-镜像包含 Bash、Git、curl、SSH 客户端、jq、ripgrep、patch、zip/unzip、带 pip/venv 的 Python、进程工具、sudo 和 CA 证书。镜像还安装了可选出站网络所需的用户态命名空间与网络工具；安装工具并不会授予内核权限。编译器、Node.js 和项目专用运行时可通过 sudo 或派生镜像添加，不必为所有项目强制指定同一版本。
+镜像包含带 pip/venv 的 Python 3.13、uv、Node.js 24、npm、pnpm、C/C++ 构建工具、Bash、Git、curl、SSH 客户端、jq、ripgrep、patch、zip/unzip、进程工具、sudo 和 CA 证书。`sandbox` 可写入 `/workspace` 和 `/tmp/a13n`。镜像还安装了可选出站网络所需的用户态命名空间与网络工具；安装工具并不会授予内核权限。项目专用依赖可通过 sudo 或派生镜像添加。发布镜像支持 `linux/amd64` 和 `linux/arm64`。
+
+同一镜像也用于原生 Docker Environment Provider。该 provider 用保活进程替换守护进程入口，通过 Docker exec 执行文件与 shell 操作。除非 recipe 显式设置 `user`，镜像标签 `ai.a13n.environment.user=sandbox` 会选择非 root 容器用户；独立运行的 Envd 仍以 root 启动，并以 `sandbox` 执行 EIP 操作。原生 Docker 不启动 Envd，也不提供 EIP 监听端口。
 
 通过 EIP 执行的命令以 `sandbox` 身份启动，并设置 `HOME=/home/sandbox`。例如：
 
@@ -71,7 +73,7 @@ docker run --rm --name agent-sandbox \
 id -u                         # 1000
 sudo -n id -u                 # 0
 sudo -n apt-get update
-sudo -n apt-get install -y build-essential
+sudo -n apt-get install -y sqlite3
 python3 -m venv .venv
 .venv/bin/python -m pip install requests
 ```

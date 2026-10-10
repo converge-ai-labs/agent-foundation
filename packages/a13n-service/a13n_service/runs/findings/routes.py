@@ -56,7 +56,7 @@ async def start_analysis(
     return result
 
 
-@router.get("/finding-analyses", response_model=AnalysisPage)
+@router.get("/finding-analyses", response_model=AnalysisPage, openapi_extra={"x-a13n-mcp": True})
 async def list_analyses(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, limit: PageLimit = 20, cursor: str | None = None
 ) -> AnalysisPage:
@@ -70,7 +70,7 @@ async def create_finding(
     return tagged(response, await service.create_finding(runtime.storage, actor, workspace_id, body))
 
 
-@router.get("/findings", response_model=FindingPage)
+@router.get("/findings", response_model=FindingPage, openapi_extra={"x-a13n-mcp": True})
 async def list_findings(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -95,7 +95,7 @@ async def list_findings(
     )
 
 
-@router.get("/findings/{finding_id}", response_model=Finding)
+@router.get("/findings/{finding_id}", response_model=Finding, openapi_extra={"x-a13n-mcp": True})
 async def get_finding(
     response: Response, runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, finding_id: str
 ) -> Finding:

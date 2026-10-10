@@ -47,27 +47,15 @@
   gap: 2px;
 }
 .homeLink {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  min-height: 32px;
-  border-radius: 8px;
-  color: var(--a13n-text-supporting);
-  text-decoration: none;
-  font-size: 13px;
-}
-.homeLink:hover {
-  background: var(--a13n-hover);
+  composes: row from "../shell/navigation-row.module.css";
 }
 .homeLink.selected {
-  background: var(--a13n-elevated);
+  background: var(--a13n-selected);
 }
 .draftsTrigger {
+  composes: row from "../shell/navigation-row.module.css";
   width: 100%;
   flex-shrink: 0;
-  justify-content: flex-start;
-  color: var(--a13n-secondary);
 }
 .draftsTrigger[data-popup-open] {
   background: var(--a13n-hover);
@@ -154,47 +142,109 @@
   }
 }
 .projectGroup {
-  margin-bottom: 20px;
+  margin-bottom: 10px;
+}
+.projectSummary {
+  width: 280px;
+  max-width: calc(100vw - 48px);
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 4px;
+  text-align: start;
+  text-wrap: wrap;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.projectSummary strong,
+.projectSummary p {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.projectSummary strong {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.projectSummary svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--a13n-secondary);
+}
+.projectSummaryActivity {
+  padding: 6px 0 0 24px;
+  color: var(--a13n-secondary);
+}
+.projectPaths {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--a13n-border);
+  margin-top: 10px;
+  padding-top: 10px;
+  color: var(--a13n-secondary);
 }
 .groupHeading {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
   color: var(--a13n-text);
   font-size: 13px;
+  border-radius: 8px;
 }
-.groupHeading:not(:has(.projectDrag)) {
-  padding-inline-start: 22px;
+.groupHeading:hover {
+  background: var(--a13n-hover);
 }
 .groupActions {
   display: flex;
   flex-shrink: 0;
+  margin-inline-end: 28px;
 }
 .groupToggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 6px 0;
+  min-height: 34px;
+  padding: 7px 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: start;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 8px;
+  line-height: 20px;
 }
 .groupToggle > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: 600;
+  font-weight: 500;
 }
 .groupToggle > svg {
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
-  transition: transform 0.15s;
+  color: var(--a13n-secondary);
+}
+.groupChevron {
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 3px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 28px;
+  color: var(--a13n-secondary);
+}
+.groupChevron > svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms ease;
 }
 .groupToggle:focus-visible {
   outline: 2px solid var(--ring);
@@ -203,16 +253,41 @@
   transform: rotate(90deg);
 }
 .projectDrag {
+  position: absolute;
+  inset-inline-start: 3px;
+  top: 3px;
+  width: 28px;
+  height: 28px;
+  z-index: 1;
   touch-action: none;
   cursor: grab;
-  opacity: 0;
-  width: 16px;
-  flex-shrink: 0;
+  color: var(--a13n-secondary);
 }
-.groupHeading:hover .projectDrag,
-.groupHeading:focus-within .projectDrag,
-.projectDrag[aria-pressed="true"] {
-  opacity: 1;
+.groupHeading:has(.projectDrag) .projectIcon {
+  visibility: hidden;
+}
+@media (hover: hover) and (pointer: fine) {
+  .projectDrag {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .groupHeading:has(.projectDrag) .projectIcon {
+    visibility: visible;
+  }
+  .groupHeading:hover .projectDrag,
+  .groupHeading:focus-within .projectDrag,
+  .projectDrag[aria-pressed="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .groupHeading:has(.projectDrag):hover .projectIcon,
+  .groupHeading:has(.projectDrag):focus-within .projectIcon,
+  .groupHeading:has(.projectDrag[aria-pressed="true"]) .projectIcon {
+    visibility: hidden;
+  }
+}
+.groupThreads {
+  margin-inline-start: 16px;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -222,9 +297,6 @@
   box-shadow: 0 -2px 0 var(--ring);
   border-radius: 6px;
 }
-.groupThreads {
-  margin-inline-start: 22px;
-}
 .srOnly {
   position: absolute;
   width: 1px;
@@ -233,26 +305,49 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-@media (hover: none) {
-  .projectDrag {
-    opacity: 1;
-  }
-}
 .threadRow {
   display: flex;
+  align-items: flex-start;
+  min-height: 34px;
+  border-radius: 8px;
+}
+.threadDisclosure {
+  display: flex;
   align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 28px;
+  margin: 3px 4px 3px 0;
+  padding: 0;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  cursor: pointer;
+}
+.threadDisclosure:hover {
+  background: var(--a13n-hover);
+}
+.threadDisclosure:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.threadDisclosure svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms ease;
 }
 .threadRow:hover,
 .threadRow:has([data-popup-open]) {
   background: var(--a13n-hover);
 }
 .threadRow:has(.selected) {
-  background: var(--a13n-elevated);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  background: var(--a13n-selected);
 }
 .threadActions {
   flex-shrink: 0;
+  margin-top: 3px;
   margin-inline-end: 4px;
   color: var(--a13n-secondary);
   background: transparent;
@@ -261,8 +356,9 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  margin-inline: 4px;
-  color: var(--a13n-secondary);
+  height: 34px;
+  margin-inline: 3px;
+  color: var(--a13n-tertiary);
 }
 @media (hover: hover) and (pointer: fine) {
   .threadActions,
@@ -289,11 +385,12 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 7px 8px;
+  border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
   font-size: 13px;
+  line-height: 20px;
 }
 .threadLink:hover,
 .selected {
@@ -309,7 +406,8 @@
   flex: 0 0 18px;
   width: 18px;
   height: 18px;
-  margin-top: 2px;
+  margin-top: 1px;
+  color: var(--a13n-secondary);
 }
 .threadIcon > svg {
   width: 18px;
@@ -328,7 +426,7 @@
   color: var(--a13n-secondary);
 }
 .threadRow:has(.selected) .draftMarker {
-  background: var(--a13n-elevated);
+  background: var(--a13n-selected);
 }
 .threadLink > span {
   min-width: 0;
@@ -353,30 +451,22 @@
   font-size: 11px;
   margin-top: 2px;
 }
-/* Reserve the same line even when idle; refreshes never resize Coordinator rows. */
 .threadLink .coordinatorActivity {
   position: relative;
-  height: 16px;
   line-height: 16px;
-  font-size: 12px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.coordinatorActivity > span:last-child {
+.coordinatorActivity > span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.coordinatorStateIcon {
+.coordinatorActivity > svg {
   position: absolute;
-  inset-inline-start: -26px;
-  top: 0;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 16px;
-}
-.coordinatorStateIcon > svg {
+  inset-inline-start: -23px;
+  top: 2px;
   width: 12px;
   height: 12px;
 }
@@ -1089,27 +1179,47 @@
   line-height: 1.75;
 }
 
-.sectionHeading {
+.sectionHeading,
+.recentToggle {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 26px;
-  margin-block: 12px 2px;
+  margin-block: 4px 0;
   padding-inline: 8px 4px;
   color: var(--a13n-secondary);
   font-size: 11px;
   font-weight: 500;
 }
 .sectionHeading small {
+  margin-inline-start: 4px;
   color: var(--a13n-tertiary);
-  font-variant-numeric: tabular-nums;
   font-size: inherit;
 }
 .sectionHeading > button {
   margin-inline-start: auto;
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  font-size: 11px;
+  width: 24px;
+  height: 24px;
+}
+.recentToggle {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: start;
+}
+.recentToggle:hover {
+  background: var(--a13n-hover);
+}
+.recentToggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.recentToggle > svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease;
 }
 .showMore {
   margin: 4px 0 0 8px;

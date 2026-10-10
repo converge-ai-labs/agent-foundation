@@ -45,13 +45,13 @@ Projects under `examples/` may carry their own manifests and lock files when rea
 
 `a13n-harness-ui` is the independently versioned Python library/distribution supplying the `a13n-harness-ui` executable. Bare invocation starts the native full-terminal CLI; `a13n-harness-ui webui` starts the foreground browser server over the same reusable `HarnessUiApp` boundary. Its wheel and sdist contain both adapters, the compiled browser asset tree and hash manifest, and the project license. `frontend/apps/a13n-harness-ui` is private frontend build input, not an independent npm package. Repository/release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
 
-The [Harness UI development image](a13n-harness-ui/webui/03-distribution.md#docker-development-image) is a container delivery of the same workbench, including its bundled browser. Its build and deployment definitions belong under `deploy/`. It creates neither an independent frontend release line nor an Agent Environment Provider; existing Harness UI version and cross-group dependency ownership remain unchanged.
+Harness UI distributes its bundled browser through the Python wheel and sdist, with no official server image. [WebUI distribution](a13n-harness-ui/webui/03-distribution.md) owns that boundary. The Envd-owned `a13n-sandbox` image serves Agent execution; it does not contain or start Harness UI.
 
 Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-harness` and `a13n-harness`. Python imports normalize hyphens to underscores, such as `a13n_harness`; the same rule applies to Harness UI, Stream Protocol, Envd client, Service, and logging. Independent Service SDK repositories own their package identities and publication metadata.
 
 ## Frontend Workspace
 
-`frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the React/TypeScript/Vite Service Console with English as the default and fallback language and Simplified Chinese translation resources. It consumes the public Service contract through its own private client and uses the shared design system; its product navigation and interaction boundary are owned by [Console](frontend/console.md). `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
+`frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the React/TypeScript/Vite Service Console with English and Simplified Chinese translation resources. It consumes the public Service contract through its own private client and uses the shared design system; its product navigation, language selection and interaction boundary are owned by [Console](frontend/console.md). `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
 
 `frontend/apps/a13n-harness-ui` is build input of the Harness UI Python distribution, and `frontend/apps/a13n-console` of the Service distribution and image, which serve them; neither has a release identity of its own, and neither distribution carries a frontend runtime. Both applications use the workspace build tooling; standalone SDK projects remain outside this workspace. The root Make targets integrate frontend installation, checks, and builds. Compiled assets and dependency directories are not committed.
 
@@ -118,8 +118,8 @@ The current cross-group requirements are:
 
 | Consumer                     | Dependency               | Published requirement                |
 | ---------------------------- | ------------------------ | ------------------------------------ |
-| Harness UI                   | Harness, Stream Protocol | `>=0.8.0,<0.9.0`, identical for both |
-| Service                      | Harness, Stream Protocol | `>=0.6.0,<0.7.0`, identical for both |
+| Harness UI                   | Harness, Stream Protocol | `>=0.8.1,<0.9.0`, identical for both |
+| Service                      | Harness, Stream Protocol | `>=0.8.1,<0.9.0`, identical for both |
 | Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                     |
 | Harness, Harness UI          | `a13n-envd-client`       | `>=0.1.0,<0.2.0`                     |
 
@@ -129,7 +129,7 @@ Independent release lines do not force consumer releases or lower-bound bumps fo
 
 Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-rc.N` identity, where `N` is a positive integer without leading zeroes. The canonical identity appears in release tags, GitHub Release titles, Rust package metadata, binary archive names, and exact container tags. Python package metadata, lock entries, and artifact names use the PEP 440-normalized `X.Y.ZrcN` spelling for the same RC identity.
 
-The Service release channel also publishes the `a13n-docker-environment` companion image at the same exact canonical tag for `linux/amd64` and `linux/arm64`, before publishing the Service Python distribution that defaults to it. This companion has no independent release channel or `latest` selector; `main` development builds continue publishing `dev`. Installed Service metadata owns default selection as specified by [Service environment providers](a13n-service/08-providers.md#environment-providers); the independently released Harness default is unchanged.
+The Envd release channel owns `a13n-sandbox` for `linux/amd64` and `linux/arm64`, including the daemon and the common development toolchain. It supports both native Docker execution and Envd sessions without merging their provider lifecycles. Service releases publish only the Service application image and select an independently reviewed sandbox release under [Service environment providers](a13n-service/08-providers.md#environment-providers). Main development publication owns the two mutable `dev` images: Service and sandbox. Harness UI has no image publication channel.
 
 An RC runs the owning release workflow, publishes its normal immutable artifacts to the owning registries, and creates a GitHub prerelease. It never advances a stable mutable selector: a13n Service and a13n-envd RCs do not modify the corresponding container `latest` tag. A stable release creates a normal GitHub Release and advances only the mutable `latest` selectors defined by its owning channel. Standalone a13n-envd installers resolve only stable `release/a13n-envd-v*` releases by default; an RC requires an explicit canonical version.
 

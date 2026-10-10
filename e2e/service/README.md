@@ -29,7 +29,7 @@ make service-e2e-docker                # build the native Docker image, then run
 make service-e2e-check                          # code, fixture, configuration and selection checks without Docker
 ```
 
-The `docker` environment journey needs the native execution image (`make image-docker-environment`, or `DOCKER_ENVIRONMENT_IMAGE`) and uses the Engine the Docker CLI uses. A hosted journey needs its vendor account in the environment and creates billable sandboxes, which it deletes, after a failure too. Hosted journeys are marked `hosted` with their type and run only when asked for: with `--hosted`, a `-m` expression naming `hosted`, or a `-k` expression naming their type, such as `-k e2b`; any other selection, `-k environments` say, leaves them out.
+The `docker` environment journey needs the native execution image (`make image-sandbox`, or `SANDBOX_IMAGE`) and uses the Engine the Docker CLI uses. A hosted journey needs its vendor account in the environment and creates billable sandboxes, which it deletes, after a failure too. Hosted journeys are marked `hosted` with their type and run only when asked for: with `--hosted`, a `-m` expression naming `hosted`, or a `-k` expression naming their type, such as `-k e2b`; any other selection, `-k environments` say, leaves them out.
 
 | Type      | Variables                                                                                                                           |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------- |

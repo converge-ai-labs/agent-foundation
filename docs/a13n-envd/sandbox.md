@@ -63,7 +63,9 @@ The persistent installation directory is `/var/lib/a13n-envd`. Standalone genera
 
 ## Everyday development
 
-The image includes Bash, Git, curl, SSH client, jq, ripgrep, patch, zip/unzip, Python with pip/venv, process tools, sudo and CA certificates. It also installs the userspace namespace/network tools needed by opt-in egress; installing them does not grant kernel privileges. Compilers, Node.js and project-specific runtimes can be added with sudo or in a derived image rather than forcing one version on every project.
+The image includes Python 3.13 with pip/venv, uv, Node.js 24, npm, pnpm, C/C++ build tools, Bash, Git, curl, SSH client, jq, ripgrep, patch, zip/unzip, process tools, sudo and CA certificates. `/workspace` and `/tmp/a13n` are writable by `sandbox`. It also installs the userspace namespace/network tools needed by opt-in egress; installing them does not grant kernel privileges. Add project-specific dependencies with sudo or a derived image. Published sandbox images support `linux/amd64` and `linux/arm64`.
+
+The same image supports the native Docker Environment Provider. That provider replaces the daemon entrypoint with its keepalive and uses Docker exec for file and shell operations. The image label `ai.a13n.environment.user=sandbox` selects the non-root container user unless a recipe explicitly overrides `user`; standalone Envd still starts as root and launches EIP operations as `sandbox`. Native Docker does not expose an EIP listener or start Envd.
 
 Commands executed through EIP start as `sandbox`, with `HOME=/home/sandbox`. For example:
 
@@ -71,7 +73,7 @@ Commands executed through EIP start as `sandbox`, with `HOME=/home/sandbox`. For
 id -u                         # 1000
 sudo -n id -u                 # 0
 sudo -n apt-get update
-sudo -n apt-get install -y build-essential
+sudo -n apt-get install -y sqlite3
 python3 -m venv .venv
 .venv/bin/python -m pip install requests
 ```

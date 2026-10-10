@@ -240,12 +240,14 @@ impl Drop for Client {
 }
 
 async fn read_replies(
-    mut reader: tokio::net::unix::OwnedReadHalf,
+    reader: tokio::net::unix::OwnedReadHalf,
     shared: Arc<Shared>,
     mut route: watch::Receiver<Option<mpsc::Sender<DataFrame>>>,
     max_control: usize,
     max_data: usize,
 ) -> io::Result<()> {
+    // Buffer bytewise header reads and retain prefetched bytes across frames.
+    let mut reader = tokio::io::BufReader::new(reader);
     loop {
         match stdio::read_frame(&mut reader, max_control, max_data).await? {
             None => return Err(broken()),
@@ -299,7 +301,7 @@ mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
 
-    async fn reply(socket: &mut UnixStream, ticket: u64) {
+    fn reply_frame(ticket: u64) -> Vec<u8> {
         let body = serde_json::to_vec(&Reply {
             ticket,
             payload: if ticket == 0 {
@@ -309,11 +311,12 @@ mod tests {
             },
         })
         .unwrap();
-        socket
-            .write_all(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes())
-            .await
-            .unwrap();
-        socket.write_all(&body).await.unwrap();
+        let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        frame.extend(body);
+        frame
+    }
+    async fn reply(socket: &mut UnixStream, ticket: u64) {
+        socket.write_all(&reply_frame(ticket)).await.unwrap();
     }
     async fn command(socket: &mut UnixStream) -> Command {
         loop {
@@ -328,6 +331,51 @@ mod tests {
             }
             return command;
         }
+    }
+
+    #[tokio::test]
+    async fn coalesced_replies_preserve_prefetched_frames() {
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let worker = tokio::spawn(async move {
+            reply(&mut peer, 0).await;
+            let mut tickets = Vec::new();
+            for _ in 0..2 {
+                let Command::Request { ticket, .. } = command(&mut peer).await else {
+                    panic!("expected request");
+                };
+                tickets.push(ticket);
+            }
+            // Both replies fit in one read; the second must survive the first dispatch.
+            let frames: Vec<u8> = tickets
+                .iter()
+                .flat_map(|&ticket| reply_frame(ticket))
+                .collect();
+            peer.write_all(&frames).await.unwrap();
+            for ticket in tickets {
+                assert!(
+                    matches!(command(&mut peer).await, Command::Finish { ticket: actual, delivered: true } if actual == ticket)
+                );
+            }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            let client = Client::connect(socket, &DaemonLimits::default())
+                .await
+                .unwrap();
+            let (first, second) = tokio::join!(
+                client.request(serde_json::json!({}), Default::default()),
+                client.request(serde_json::json!({}), Default::default()),
+            );
+            for response in [first.unwrap(), second.unwrap()] {
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&response.payload).unwrap(),
+                    serde_json::json!({"ok":true})
+                );
+                response.handoff.complete();
+            }
+            worker.await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { GitBranchIcon } from "@phosphor-icons/react";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
 import { MarkdownContent } from "../../../shared/markdown";
 import { runRequest } from "../request";
+import { ForkRun } from "../fork-run";
 import type { RunTimeline } from "../timeline";
 import { AgentTurn } from "./assistant-message";
 import { hasDelegation, transcriptBlocks } from "./items";
@@ -39,6 +42,7 @@ export function RunBlock({
   children?: ReactNode;
 }) {
   const { basePath } = useWorkspace();
+  const { t } = useTranslation();
   const blocks = transcriptBlocks(timeline.entries, run.status);
   // Only a run that delegated has a child thread to resolve; nothing else asks
   // the session for its threads.
@@ -52,10 +56,20 @@ export function RunBlock({
   );
   return (
     <article className={styles.turn} data-run-id={run.id}>
+      {run.lineage === "fork" && (
+        <div className={styles.branchBoundary}>
+          <GitBranchIcon size={14} aria-hidden="true" />
+          {t("New branch starts here")}
+        </div>
+      )}
       {separatorAction && (
         <div className={styles.turnAction}>{separatorAction}</div>
       )}
-      <UserMessage request={runRequest(run, thread)} />
+      <UserMessage
+        request={runRequest(run, thread)}
+        entryId={run.source_entry_id}
+        principalId={run.principal_id}
+      />
       {earlier}
       <AgentTurn
         blocks={blocks}
@@ -70,6 +84,9 @@ export function RunBlock({
           <MarkdownContent text={run.output} />
         )}
         {children}
+        <div className={styles.runActions}>
+          <ForkRun run={run} thread={thread} level="chat" />
+        </div>
       </AgentTurn>
     </article>
   );

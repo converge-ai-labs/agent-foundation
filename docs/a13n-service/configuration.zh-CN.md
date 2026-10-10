@@ -234,6 +234,6 @@ Local 必须显式提供 Service 所在机器的绝对根目录，没有通用�
 
 Docker 使用现有运维 Engine 设置 `environments.docker_host`，或进程的 Docker 环境。Compose 内运行需要访问 Engine，通常通过提供的单机部署挂载 socket。仅安装 Docker CLI 不够。Docker 自动配置不影响手动创建的 Docker provider。
 
-环境变量为每个嵌套节使用一个 JSON 对象，例如 `A13N_PROVISIONING__DOCKER='{"enabled":true}'`。默认 Docker 模板固定使用与已安装 Service 版本匹配的 GHCR 配套镜像；首次创建实例时按需拉取。提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local；其中 `A13N_DOCKER_ENVIRONMENT_IMAGE` 可覆盖初始模板镜像。
+环境变量为每个嵌套节使用一个 JSON 对象，例如 `A13N_PROVISIONING__DOCKER='{"enabled":true}'`。默认 Docker 模板固定使用Service 审定的独立版本 GHCR sandbox 镜像；首次创建实例时按需拉取。提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local；其中 `A13N_DOCKER_ENVIRONMENT_IMAGE` 可覆盖初始模板镜像。
 
-使用本地构建镜像时，运行 `make image-docker-environment`。然后在 `[provisioning.docker]` 中设置 `image = "a13n-docker-environment:local"` 和 `pull_policy = "never"`。设置只初始化资源一次；要改变未来实例，请通过 Console 或 API 修改已有模板。已有实例保留原始镜像。重试和职责规则请参阅[工作空间自动配置](environments.md#workspace-provisioning)。
+使用本地构建镜像时，运行 `make image-sandbox`。然后在 `[provisioning.docker]` 中设置 `image = "a13n-sandbox:local"` 和 `pull_policy = "never"`。设置只初始化资源一次；要改变未来实例，请通过 Console 或 API 修改已有模板。已有实例保留原始镜像。重试和职责规则请参阅[工作空间自动配置](environments.md#workspace-provisioning)。

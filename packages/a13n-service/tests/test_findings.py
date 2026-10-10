@@ -791,3 +791,41 @@ async def test_unreviewed_diagnosis_is_context_not_confirmation_and_retry_keeps_
     assert new.status_code == 201, new.text
     current = feedback_in(await analysis_input(service, new.json()["run_id"]))["items"][0]
     assert current["id"] == row["id"] and current["closed"] and current["assessment"] == "unreviewed"
+
+
+async def test_findings_mcp_reads_preserve_review_filters_history_and_workspace_confinement(
+    service, scripted_model, runs_kit
+):
+    from a13n_service.api_tools import tool_name
+
+    from .mcp_support import call, client, key, rpc
+
+    agent, run = await target(service, scripted_model, runs_kit)
+    row = await reviewed(service, runs_kit, finding(agent, run))
+    runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    service.app.state.runtime = runtime
+    await service.client.post("/api/v1/finding-agent")
+    result = await service.client.post(
+        "/api/v1/finding-analyses", json={"trace_id": TRACE}, headers={"Idempotency-Key": "mcp-history"}
+    )
+    assert result.status_code == 201, result.text
+    credential = await key(service)
+    async with client(service, credential) as http:
+        names = {item["name"] for item in (await rpc(http, "tools/list")).json()["result"]["tools"]}
+        operations = service.app.openapi()["paths"]
+        assert tool_name(operations["/api/v1/findings"]["get"]["operationId"]) in names
+        assert tool_name(operations["/api/v1/findings"]["post"]["operationId"]) not in names
+        listed = await call(http, service, "GET", "/findings", assessment="false_positive", closed=True, limit=1)
+        assert [item["id"] for item in listed["body"]["items"]] == [row["id"]]
+        read = await call(http, service, "GET", "/findings/{finding_id}", finding_id=row["id"])
+        assert read["body"]["assessment_note"] == row["assessment_note"]
+        assert read["headers"]["etag"] == f'"{row["id"]}:{row["version"]}"'
+        history = await call(http, service, "GET", "/finding-analyses", limit=1)
+        assert history["body"]["items"][0]["id"] == result.json()["id"]
+        assert history["body"]["items"][0]["selected_traces"] == result.json()["selected_traces"]
+    other = await service.client.post(f"{service.organization}/workspaces", json={"name": "MCP other"})
+    async with client(service, await key(service, other.json()["id"])) as http:
+        hidden = await call(http, service, "GET", "/findings/{finding_id}", finding_id=row["id"])
+        assert hidden["status"] == 404
+        empty = await call(http, service, "GET", "/finding-analyses")
+        assert empty["body"]["items"] == []

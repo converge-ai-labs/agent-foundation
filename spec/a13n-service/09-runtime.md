@@ -21,17 +21,18 @@ The executable takes an optional `--config PATH` settings file before the comman
 
 What each role runs:
 
-| Component                                                                  | `all` | `control` | `worker` |
-| -------------------------------------------------------------------------- | ----- | --------- | -------- |
-| API routes, `/api/v1/openapi.json`, API docs                               | yes   | yes       | no       |
-| [Console](#console)                                                        | yes   | yes       | no       |
-| Thread stream hub ([07](07-facts-and-delivery.md#the-thread-stream))       | yes   | yes       | no       |
-| Control [sweeps](#sweeps)                                                  | yes   | yes       | no       |
-| [Worker](#worker)                                                          | yes   | no        | yes      |
-| Automatic migration when `database.auto_migrate`                           | yes   | yes       | never    |
-| Harness trace export                                                       | yes   | no        | yes      |
-| `/healthz`, `/readyz`                                                      | yes   | yes       | yes      |
-| `/metrics` on `telemetry.metrics_port` ([12](12-observability.md#metrics)) | yes   | yes       | yes      |
+| Component                                                                                | `all` | `control` | `worker` |
+| ---------------------------------------------------------------------------------------- | ----- | --------- | -------- |
+| API routes, `/api/v1/openapi.json`, API docs                                             | yes   | yes       | no       |
+| MCP management and bundled documentation search ([10](10-api.md#mcp-management-surface)) | yes   | yes       | no       |
+| [Console](#console)                                                                      | yes   | yes       | no       |
+| Thread stream hub ([07](07-facts-and-delivery.md#the-thread-stream))                     | yes   | yes       | no       |
+| Control [sweeps](#sweeps)                                                                | yes   | yes       | no       |
+| [Worker](#worker)                                                                        | yes   | no        | yes      |
+| Automatic migration when `database.auto_migrate`                                         | yes   | yes       | never    |
+| Harness trace export                                                                     | yes   | no        | yes      |
+| `/healthz`, `/readyz`                                                                    | yes   | yes       | yes      |
+| `/metrics` on `telemetry.metrics_port` ([12](12-observability.md#metrics))               | yes   | yes       | yes      |
 
 Every replica of a role runs the same components; replicas coordinate only through PostgreSQL rows. The `a13n-service` executable assembles the built-in distribution. Another distribution provides its own entry point that loads settings with its sections, builds its application with `build_app(distribution, role=...)` and runs the migration runner with its composed graph ([Assembly](#assembly)).
 
@@ -44,7 +45,8 @@ A process starts in this order and serves nothing until it finishes:
 3. The process opens its runtime: the database pool (`database.pool_size` connections and no overflow; `database.connect_timeout` also bounds the wait for a pooled connection; `database.statement_timeout` bounds each statement), the Redis client (`redis.timeout` for connecting and every call), the object store, the encryption key ring ([03](03-tenancy.md#credential-encryption)), the provider registry, the access configuration, the installed Harness plugin factories (`plugins.keys`), the admission policy, the trace backend that queries read (none when tracing is off) and, on executing roles, trace export. The registry offers environment types by `provisioning.local.enabled`, `environments.docker_host` and `environments.docker_mount_roots` ([08](08-providers.md#registry)) and derives each calling API's settings schema as it is assembled. An invalid key ring, an `encryption.key_file` that cannot be read or created, or an invalid plugin key fails startup.
 4. Within `server.readiness_timeout` the process checks that the database is exactly at its build's migration head; otherwise startup fails with an instruction to run `a13n-service migrate`.
 5. The `all` role awaits one [workspace provisioning](#workspace-provisioning) catch-up after schema validation.
-6. The role's background tasks start: thread stream hub and sweeps, worker. API-serving roles also create the empty [model catalog](08-providers.md#model-catalog), which the first read fills.
+6. API-serving roles enter the stateless MCP transport lifespan against the existing Runtime, before readiness becomes true. Shutdown closes that transport before shared Runtime clients. MCP starts no second Runtime and owns no durable session state or worker; replicas need no sticky MCP sessions. Its mounted requests retain the parent request limits and error boundary, with Host/Origin protection configured from `server.public_url`.
+7. The role's background tasks start: thread stream hub and sweeps, worker. API-serving roles also create the empty [model catalog](08-providers.md#model-catalog), which the first read fills.
 
 `GET /healthz` answers 200 `{"status": "ok", "role": ...}` whenever the process serves HTTP; it is liveness only. `GET /readyz` answers 200 `{"status": "ready", "role": ...}` when startup completed, every background task of the role is still running and the schema check passes within `server.readiness_timeout`; otherwise it answers 503 `{"status": "unavailable", "dependency": "runtime" | "database"}`. A replica that cannot reach Redis stays ready and adds `"degraded": ["redis"]`, because Redis only accelerates work ([Redis](#redis)). Readiness never migrates and never calls a provider.
 
@@ -71,7 +73,7 @@ The schema is one Alembic graph composed from the distribution's migration direc
 
 ## Workspace provisioning
 
-`provisioning/` owns automatic preparation of initial environment resources on a single host. The generic configuration disables both components. `provisioning.local.enabled` also controls whether the registry offers Local execution; enabling it requires an absolute normalized `provisioning.local.root`. `provisioning.docker.enabled` controls only automatic registration: manually configured Docker providers remain available. The default Docker template pins the [Service release's companion image](08-providers.md#environment-providers) and uses `pull_policy = "if_missing"`, so a missing image is pulled when an instance is created. An operator may set `provisioning.docker.image` and `pull_policy` explicitly. Initialization itself never pulls an image or creates a container.
+`provisioning/` owns automatic preparation of initial environment resources on a single host. The generic configuration disables both components. `provisioning.local.enabled` also controls whether the registry offers Local execution; enabling it requires an absolute normalized `provisioning.local.root`. `provisioning.docker.enabled` controls only automatic registration: manually configured Docker providers remain available. The default Docker template pins the [Service-reviewed sandbox image](08-providers.md#environment-providers) and uses `pull_policy = "if_missing"`, so a missing image is pulled when an instance is created. An operator may set `provisioning.docker.image` and `pull_policy` explicitly. Initialization itself never pulls an image or creates a container.
 
 Only the `all` role wires the initializer. Workspace insertion is shared by bootstrap and ordinary workspace creation. Its post-commit callback runs after the session closes and awaits the first initialization attempt before returning. CLI bootstrap uses the same insertion path; the next `all` startup supplies initialization. Startup traverses existing active workspaces once in bounded pages and skips components already completed. `control` and `worker` never auto-provision; a split deployment explicitly configures shared execution resources. No periodic discovery, worker capability advertisement or new outbox delivery exists.
 

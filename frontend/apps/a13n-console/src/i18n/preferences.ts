@@ -1,15 +1,40 @@
 const key = "a13n-console-language";
-export function readLanguage(): string {
+export type LanguagePreference = "system" | "en" | "zh-CN";
+
+export function readLanguagePreference(): LanguagePreference {
   try {
-    return localStorage.getItem(key) === "zh-CN" ? "zh-CN" : "en";
+    const value = localStorage.getItem(key);
+    return value === "en" || value === "zh-CN" ? value : "system";
   } catch {
-    return "en";
+    return "system";
   }
 }
-export function saveLanguage(language: string): void {
+
+export function resolveLanguage(
+  preference: LanguagePreference,
+): "en" | "zh-CN" {
+  if (preference !== "system") return preference;
+  const languages =
+    typeof navigator === "undefined"
+      ? []
+      : navigator.languages?.length
+        ? navigator.languages
+        : [navigator.language];
+  for (const language of languages) {
+    if (/^zh(?:-|$)/i.test(language)) return "zh-CN";
+    if (/^en(?:-|$)/i.test(language)) return "en";
+  }
+  return "en";
+}
+
+export function readLanguage(): "en" | "zh-CN" {
+  return resolveLanguage(readLanguagePreference());
+}
+
+export function saveLanguage(preference: LanguagePreference): void {
   try {
-    localStorage.setItem(key, language);
+    localStorage.setItem(key, preference);
   } catch {
-    /* Keep the in-memory preference when storage is unavailable. */
+    /* The selected language still applies until this page is reloaded. */
   }
 }

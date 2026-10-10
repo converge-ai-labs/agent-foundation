@@ -36,6 +36,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import ValidationError
 
+from .mcp_support import call as mcp_call
+from .mcp_support import client as mcp_client
+from .mcp_support import key as mcp_key
+
 pytestmark = pytest.mark.anyio
 
 TRACE = "0af7651916cd43dd8448eb211c80319c"
@@ -283,7 +287,10 @@ def test_telemetry_settings_select_one_complete_backend() -> None:
     assert "sk-lf-1" not in repr(selected)
 
 
-async def test_attempt_trace_returns_only_the_attempts_spans_redacted(api: SimpleNamespace, backend: Backend) -> None:
+@pytest.mark.parametrize("transport", ["http", "mcp"])
+async def test_attempt_trace_returns_only_the_attempts_spans_redacted(
+    api: SimpleNamespace, backend: Backend, transport: str
+) -> None:
     run_id, attempt_id = await started_attempt(api)
     own = scope(api, run_id=run_id, run_attempt_id=attempt_id)
     rows = [
@@ -306,9 +313,17 @@ async def test_attempt_trace_returns_only_the_attempts_spans_redacted(api: Simpl
     ]
     query_through(api, backend.answer(httpx2.Response(200, json={"data": rows})).logfire())
 
-    response = await api.client.get(f"{api.api}/runs/{run_id}/attempts/{attempt_id}/trace")
-    assert response.status_code == 200, response.text
-    body = response.json()
+    if transport == "mcp":
+        async with mcp_client(api, await mcp_key(api)) as http:
+            result = await mcp_call(
+                http, api, "GET", "/runs/{run_id}/attempts/{attempt_id}/trace", run_id=run_id, attempt_id=attempt_id
+            )
+        assert result["status"] == 200
+        body = result["body"]
+    else:
+        response = await api.client.get(f"{api.api}/runs/{run_id}/attempts/{attempt_id}/trace")
+        assert response.status_code == 200, response.text
+        body = response.json()
     assert [item["id"] for item in body["items"]] == ["a" * 16, "b" * 16]
     assert body["next_cursor"] is None
     root, child = body["items"]
@@ -604,6 +619,22 @@ async def test_logfire_pages_continue_after_the_last_row(api: SimpleNamespace, b
         )
     assert error.value.code == "invalid_cursor"
     assert len(backend.requests) == 2
+
+
+async def test_mcp_trace_unavailable_and_foreign_run_do_not_bypass_http(api: SimpleNamespace, backend: Backend) -> None:
+    run_id, attempt_id = await started_attempt(api)
+    async with mcp_client(api, await mcp_key(api)) as http:
+        unavailable = await mcp_call(http, api, "GET", "/traces")
+        assert unavailable["status"] == 503
+        assert unavailable["body"]["error"]["details"] == {"dependency": "trace"}
+    other = await add_workspace(api)
+    query_through(api, backend.logfire())
+    async with mcp_client(api, await mcp_key(api, other)) as http:
+        foreign = await mcp_call(
+            http, api, "GET", "/runs/{run_id}/attempts/{attempt_id}/trace", run_id=run_id, attempt_id=attempt_id
+        )
+        assert foreign["status"] == 404
+    assert not backend.requests
 
 
 async def test_backend_failures_are_unavailable(api: SimpleNamespace, backend: Backend) -> None:

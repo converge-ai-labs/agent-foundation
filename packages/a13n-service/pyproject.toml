@@ -19,9 +19,10 @@ dependencies = [
     "click>=8.2,<9",
     "cryptography>=50,<51",
     "fastapi>=0.116,<1",
-    "fastmcp-slim[client]>=4.0,<5",
+    "fastmcp-slim[client,server]>=4.0,<5",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
+    "jsonschema-path>=0.5,<0.6",
     "mcp>=2.2,<3",
     "opentelemetry-api>=1.39,<2",
     "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
@@ -47,17 +48,28 @@ dependencies = [
 a13n-service = "a13n_service.cli:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "markdown-it-py>=4,<5", "pyyaml>=6,<7"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["a13n_service/static/**"]
+artifacts = ["a13n_service/static/**", "a13n_service/documentation.json"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_service"]
 
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
+
+# Editable wheels carry the generated index, so cached installs do not depend on
+# a previous build's checkout-side effects. Refresh when canonical inputs change.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "hatch_build.py" },
+    { file = "build_docs.py" },
+    { file = "../../docs/a13n-service/**/*.md" },
+    { file = "../../docs/a13n-service/meta.json" },
+]
 
 # SQLAlchemy loads psycopg through its configured driver; FastAPI loads
 # python-multipart to parse the upload endpoints' multipart forms.
@@ -70,5 +82,5 @@ package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = 
 
 [tool.a13n.release-dependencies]
 a13n-logging = ">=0.2.0,<0.3.0"
-a13n-harness = ">=0.6.0,<0.7.0"
-a13n-stream-protocol = ">=0.6.0,<0.7.0"
+a13n-harness = ">=0.8.1,<0.9.0"
+a13n-stream-protocol = ">=0.8.1,<0.9.0"

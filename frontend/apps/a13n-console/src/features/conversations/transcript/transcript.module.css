@@ -226,6 +226,12 @@
   opacity: 0;
   transition: opacity 120ms ease;
 }
+.runActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .agentMessage:hover .messageActions,
 .agentMessage:focus-within .messageActions {
   opacity: 1;
@@ -387,4 +393,17 @@
   .agentContent {
     padding-left: 0;
   }
+}
+.branchBoundary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  margin-bottom: 20px;
+}
+.branchBoundary::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--a13n-border);
 }

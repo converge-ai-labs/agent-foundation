@@ -35,6 +35,7 @@ from a13n_service.infra.objects.s3 import open_s3
 from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
+from a13n_service.mcp import WorkspaceKey, build_mcp
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
@@ -269,6 +270,7 @@ def build_app(
                     await initializer.existing()
                 runtime.tasks.start(run_official_catalog(runtime.endpoint_policy), name="official-model-catalog")
                 if serves_api:
+                    await stack.enter_async_context(mcp.lifespan(mcp))
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy
                     )
@@ -330,16 +332,21 @@ def build_app(
         return JSONResponse(body)
 
     seen = set(EXEMPT_ROUTES)
+    api_routes: list[APIRoute] = []
     for router in distribution.routers:
         for route in router.routes:
             if not isinstance(route, APIRoute):
                 raise ValueError("Distribution routers must declare direct HTTP API routes")
+            api_routes.append(route)
             for method in route.methods or ():
                 if (method, route.path) in seen:
                     raise ValueError(f"Duplicate route: {method} {route.path}")
                 seen.add((method, route.path))
         if serves_api:
             app.include_router(router)
+    if serves_api:
+        mcp = build_mcp(app, config, api_routes)
+        app.mount("/api/v1/mcp", WorkspaceKey(mcp))
     if serves_api and (console / "index.html").is_file():
         app.router.default = console_fallback(console, app.router.default)
     return app

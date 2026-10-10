@@ -30,6 +30,8 @@ export interface PresentedItem {
   display?: boolean;
   /** `a13n.steering-source` presentation provenance for enqueued user content. */
   steeringSource?: string;
+  sourceId?: string;
+  inputSource?: string;
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
@@ -38,6 +40,7 @@ export function presentItem(item: DisplayItem): PresentedItem {
   const { content } = item;
   const metadata = isRecord(content.metadata) ? content.metadata : {};
   const source = metadata["a13n.steering-source"];
+  const sourceId = text(metadata.source_id);
   return {
     id: item.id,
     kind: item.kind,
@@ -57,6 +60,9 @@ export function presentItem(item: DisplayItem): PresentedItem {
     resultParts: readContentParts(content.result_parts),
     subagentRunId: text(content.subagentRunId) || undefined,
     failure: content.failure,
+    // Harness input groups are not Service entry IDs. Service authorship lives in metadata.
+    sourceId: sourceId && sourceId.length <= 72 ? sourceId : undefined,
+    inputSource: text(content.input_source) || undefined,
     protectedReasoning: "encrypted_value" in content,
     ...(typeof metadata.display === "boolean"
       ? { display: metadata.display }

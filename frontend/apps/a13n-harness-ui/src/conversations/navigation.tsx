@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import {
   Button,
@@ -12,6 +12,9 @@ import {
   MenuTrigger,
   MenuPopup,
   MenuItem,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
 } from "a13n-ui";
 import {
   Plus,
@@ -25,6 +28,8 @@ import {
   ArrowUp,
   ArrowDown,
   PencilSimpleIcon,
+  Check,
+  ChatCircle,
 } from "@phosphor-icons/react";
 import { useProjects } from "../transport/context";
 import type { Schema } from "../transport/client";
@@ -44,6 +49,7 @@ type Group = {
   id: string;
   name: string;
   projectId?: string;
+  roots?: string[];
   scope?: "projectless" | "unavailable";
 };
 
@@ -68,7 +74,7 @@ export function ConversationNavigation() {
   );
   const groups: Group[] = order.ids.map((id) => {
     const project = projects.data!.find((item) => item.project_id === id)!;
-    return { id, projectId: id, name: project.name };
+    return { id, projectId: id, name: project.name, roots: project.roots };
   });
   groups.push({
     id: "@projectless",
@@ -268,6 +274,11 @@ function ProjectGroup({
   const navigate = useNavigate();
   const results = useResults();
   const [markingRead, setMarkingRead] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [recentExpanded, setRecentExpanded] = useState(true);
+  const summaryId = useId();
+  const headingRef = useRef<HTMLDivElement>(null);
+  const recentRef = useRef<HTMLButtonElement>(null);
   const projects = useProjects();
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
@@ -381,6 +392,15 @@ function ProjectGroup({
       activeWorkerCounts.set(owner, (activeWorkerCounts.get(owner) ?? 0) + 1);
     }
   }
+  const unreadOwners = new Set(
+    [...observed.values()]
+      .filter(
+        ({ thread }) =>
+          !thread.archived && results.tracker?.isUnread(thread.thread_id),
+      )
+      .map(({ thread }) => thread.coordinator_thread_id)
+      .filter(Boolean),
+  );
   const activeRows: Row[] = [];
   const unreadRows: Row[] = [];
   const recentRows: Row[] = [];
@@ -395,7 +415,7 @@ function ProjectGroup({
     (row.thread.role === "coordinator" &&
       activeWorkerCounts.has(row.thread.thread_id))
       ? activeRows
-      : unread
+      : unread || unreadOwners.has(row.thread.thread_id)
         ? unreadRows
         : recentRows
     ).push(row);
@@ -415,6 +435,31 @@ function ProjectGroup({
       Number(!!b.thread.starred) - Number(!!a.thread.starred) || byTouch(a, b),
   );
   const rows = [...activeRows, ...unreadRows, ...recentRows];
+  const selectedRootId = selected?.coordinator_thread_id ?? selected?.thread_id;
+  const recentStart = activeRows.length + unreadRows.length;
+  const isVisible = (row: Row, index: number) =>
+    index < recentStart ||
+    row.thread.thread_id === selectedRootId ||
+    (recentExpanded && (showAll || index < recentStart + 5));
+  const hasHiddenRows = rows.some((row, index) => !isVisible(row, index));
+  const showMore = () => {
+    setShowAll(true);
+    if (!hasHiddenRows) void list.fetchNextPage();
+  };
+  const recentToggle = (
+    <button
+      ref={recentRef}
+      className={styles.recentToggle}
+      aria-expanded={recentExpanded}
+      aria-label={`Recent conversations in ${group.name}`}
+      onClick={() => setRecentExpanded(!recentExpanded)}
+    >
+      <CaretRight
+        className={recentExpanded ? styles.expandedChevron : undefined}
+      />
+      Recent
+    </button>
+  );
   const markAllRead = async () => {
     if (!results.tracker || markingRead) return;
     // Capture the displayed group's versions before storage writes can yield.
@@ -435,7 +480,7 @@ function ProjectGroup({
       aria-label={group.name}
       className={`${styles.projectGroup} ${order.moving === group.id ? styles.movingProject : ""}`}
     >
-      <div className={styles.groupHeading}>
+      <div ref={headingRef} className={styles.groupHeading}>
         {group.projectId && (
           <Button
             variant="ghost"
@@ -449,26 +494,75 @@ function ProjectGroup({
             <DotsSixVertical />
           </Button>
         )}
-        <button
-          className={styles.groupToggle}
-          aria-expanded={expanded}
-          onClick={() => toggle(!expanded)}
-        >
-          <CaretRight
-            className={expanded ? styles.expandedChevron : undefined}
-          />
-          <Folder />
-          <span title={group.name}>{group.name}</span>
-          {unreadCount > 0 && (
-            <small
-              className={styles.resultCount}
-              aria-label={`${unreadCount} conversations with new results`}
-              title="Conversations with new results"
+        <Tooltip>
+          <TooltipTrigger
+            disabled={!group.projectId}
+            aria-describedby={group.projectId ? summaryId : undefined}
+            className={styles.groupToggle}
+            aria-expanded={expanded}
+            onClick={() => toggle(!expanded)}
+          >
+            <Folder className={styles.projectIcon} />
+            <span>{group.name}</span>
+            {unreadCount > 0 && (
+              <small
+                className={styles.resultCount}
+                aria-label={`${unreadCount} conversations with new results`}
+                title="Conversations with new results"
+              >
+                {unreadCount}
+              </small>
+            )}
+            <span className={styles.groupChevron} aria-hidden="true">
+              <CaretRight
+                className={expanded ? styles.expandedChevron : undefined}
+              />
+            </span>
+          </TooltipTrigger>
+          {group.projectId && (
+            <TooltipPopup
+              id={summaryId}
+              role="tooltip"
+              anchor={headingRef}
+              side="right"
+              align="start"
+              sideOffset={12}
             >
-              {unreadCount}
-            </small>
+              <div className={styles.projectSummary}>
+                <strong>
+                  <Folder size={18} />
+                  {group.name}
+                </strong>
+                {list.data && (
+                  <p>
+                    <ChatCircle size={16} />
+                    {list.data.pages[0].total} conversations
+                  </p>
+                )}
+                {(activeRows.length > 0 || unreadCount > 0) && (
+                  <p className={styles.projectSummaryActivity}>
+                    {[
+                      activeRows.length > 0 && `${activeRows.length} active`,
+                      unreadCount > 0 && `${unreadCount} with new results`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+                {!!group.roots?.length && (
+                  <div className={styles.projectPaths}>
+                    {group.roots.map((root) => (
+                      <p key={root}>
+                        <Folder size={16} />
+                        <span>{root}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TooltipPopup>
           )}
-        </button>
+        </Tooltip>
         <div className={styles.groupActions}>
           {expanded && list.isFetching && !!list.data && (
             <span
@@ -489,7 +583,7 @@ function ProjectGroup({
               <Plus />
             </Button>
           )}
-          {group.projectId && (
+          {(group.projectId || unreadCount > 0) && (
             <Menu>
               <MenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
@@ -498,39 +592,52 @@ function ProjectGroup({
                 <DotsThree />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
-                <MenuItem onClick={rename}>
-                  <PencilSimpleIcon />
-                  Rename project
-                </MenuItem>
-                <MenuItem
-                  onClick={() =>
-                    navigate(
-                      `/projects/${encodeURIComponent(group.projectId!)}`,
-                    )
-                  }
-                >
-                  <Gear />
-                  Project settings
-                </MenuItem>
-                <MenuItem
-                  disabled={order.ids.indexOf(group.id) === 0}
-                  onClick={() => order.moveBy(group.id, -1)}
-                >
-                  <ArrowUp />
-                  Move project up
-                </MenuItem>
-                <MenuItem
-                  disabled={
-                    order.ids.indexOf(group.id) === order.ids.length - 1
-                  }
-                  onClick={() => order.moveBy(group.id, 1)}
-                >
-                  <ArrowDown />
-                  Move project down
-                </MenuItem>
-                <MenuItem onClick={order.reset}>
-                  Reset project order in this browser
-                </MenuItem>
+                {unreadCount > 0 && (
+                  <MenuItem
+                    disabled={markingRead}
+                    onClick={() => void markAllRead()}
+                  >
+                    <Check />
+                    Mark all results read in {group.name}
+                  </MenuItem>
+                )}
+                {group.projectId && (
+                  <>
+                    <MenuItem onClick={rename}>
+                      <PencilSimpleIcon />
+                      Rename project
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() =>
+                        navigate(
+                          `/projects/${encodeURIComponent(group.projectId!)}`,
+                        )
+                      }
+                    >
+                      <Gear />
+                      Project settings
+                    </MenuItem>
+                    <MenuItem
+                      disabled={order.ids.indexOf(group.id) === 0}
+                      onClick={() => order.moveBy(group.id, -1)}
+                    >
+                      <ArrowUp />
+                      Move project up
+                    </MenuItem>
+                    <MenuItem
+                      disabled={
+                        order.ids.indexOf(group.id) === order.ids.length - 1
+                      }
+                      onClick={() => order.moveBy(group.id, 1)}
+                    >
+                      <ArrowDown />
+                      Move project down
+                    </MenuItem>
+                    <MenuItem onClick={order.reset}>
+                      Reset project order in this browser
+                    </MenuItem>
+                  </>
+                )}
               </MenuPopup>
             </Menu>
           )}
@@ -541,63 +648,46 @@ function ProjectGroup({
         <div>
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>
-              {activeRows.length > 0 && index === 0 && (
-                <div
-                  className={styles.sectionHeading}
-                  role="heading"
-                  aria-level={3}
-                  aria-label={`Running · ${activeRows.length}`}
-                >
-                  <span>Running</span>
-                  <small>{activeRows.length}</small>
-                </div>
-              )}
               {unreadRows.length > 0 && index === activeRows.length && (
-                <div
-                  className={styles.sectionHeading}
-                  role="heading"
-                  aria-level={3}
-                  aria-label={`New results · ${unreadRows.length}`}
-                >
-                  <span>New results</span>
-                  <small>{unreadRows.length}</small>
+                <div className={styles.sectionHeading}>
+                  <span
+                    role="heading"
+                    aria-level={3}
+                    aria-label={`New results · ${unreadRows.length}`}
+                  >
+                    New results <small>{unreadRows.length}</small>
+                  </span>
                   <Button
                     variant="ghost"
-                    size="xs"
+                    size="icon-sm"
                     loading={markingRead}
                     aria-label={`Mark all results read in ${group.name}`}
                     title="Mark all current results in this group as read"
                     onClick={() => void markAllRead()}
                   >
-                    Mark all read
+                    <Check />
                   </Button>
                 </div>
               )}
-              {recentRows.length > 0 &&
-                index === activeRows.length + unreadRows.length && (
-                  <div
-                    className={styles.sectionHeading}
-                    role="heading"
-                    aria-level={3}
-                  >
-                    Recent
-                  </div>
+              {recentRows.length > 0 && index === recentStart && recentToggle}
+              <div hidden={!isVisible(row, index)}>
+                {row.thread.role === "coordinator" ? (
+                  <CoordinatorEntry
+                    row={row}
+                    activeWorkerCount={
+                      activeWorkerCounts.get(row.thread.thread_id) ?? 0
+                    }
+                    enabled={enabled && expanded && isVisible(row, index)}
+                    selected={selected}
+                    selectedUpdatedAt={selectedUpdatedAt}
+                  />
+                ) : (
+                  <ThreadRow row={row} />
                 )}
-              {row.thread.role === "coordinator" ? (
-                <CoordinatorEntry
-                  row={row}
-                  activeWorkerCount={
-                    activeWorkerCounts.get(row.thread.thread_id) ?? 0
-                  }
-                  enabled={enabled && expanded}
-                  selected={selected}
-                  selectedUpdatedAt={selectedUpdatedAt}
-                />
-              ) : (
-                <ThreadRow row={row} />
-              )}
+              </div>
             </Fragment>
           ))}
+          {!recentRows.length && list.hasNextPage && recentToggle}
           {expanded && !rows.length && !list.data && list.isPending && (
             <div
               role="status"
@@ -612,17 +702,31 @@ function ProjectGroup({
             <small className={styles.emptyGroup}>No conversations yet</small>
           )}
           <ErrorNotice error={list.error} retry={() => void list.refetch()} />
-          {list.hasNextPage && (
+          {recentExpanded && (hasHiddenRows || list.hasNextPage) && (
             <Button
               variant="ghost"
               size="xs"
               className={styles.showMore}
               loading={list.isFetchingNextPage}
-              onClick={() => void list.fetchNextPage()}
+              onClick={showMore}
               aria-label={`Show more conversations in ${group.name}`}
               title={`Show more conversations in ${group.name}`}
             >
               Show more
+            </Button>
+          )}
+          {recentExpanded && showAll && recentRows.length > 5 && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className={styles.showMore}
+              onClick={() => {
+                setShowAll(false);
+                recentRef.current?.focus();
+              }}
+              aria-label={`Show fewer conversations in ${group.name}`}
+            >
+              Show less
             </Button>
           )}
         </div>

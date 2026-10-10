@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
-from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads
+from a13n_service.runs import archive, authors, entries, resume, runs, sessions, stream, submit, threads
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
@@ -19,6 +19,8 @@ from a13n_service.runs.schemas import (
     Fork,
     InboxOrder,
     Message,
+    MessageAuthorQuery,
+    MessageAuthors,
     NewThread,
     Resume,
     RunContent,
@@ -88,6 +90,17 @@ async def update_session(
 ) -> SessionView:
     result = await sessions.update_session(runtime.storage, actor, workspace_id, session_id, body, if_match=if_match)
     return tagged(response, result)
+
+
+@router.get("/sessions/{session_id}/message-authors", response_model=MessageAuthors)
+async def get_message_authors(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    session_id: str,
+    actor: Actor,
+    query: Annotated[MessageAuthorQuery, Query()],
+) -> MessageAuthors:
+    return await authors.message_authors(runtime.storage, actor, workspace_id, session_id, query)
 
 
 # Threads

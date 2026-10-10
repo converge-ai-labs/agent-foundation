@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
@@ -36,8 +36,8 @@ export function useThreadRuns(threadId: string) {
 }
 
 /**
- * The Threads that branched from this one, delegated children and forks, with
- * their own Runs: what the navigator lists beneath the Run they started from.
+ * The Threads that branched from this one, with their own Runs. Delegation
+ * links select their matching child with childThreadOf.
  */
 export function useChildThreads(sessionId: string, threadId: string) {
   const client = useClient(),
@@ -63,36 +63,6 @@ export function useChildThreads(sessionId: string, threadId: string) {
 }
 
 /**
- * The Threads this Run's lineage passes through before its own Thread — a
- * fork or child Thread reads on from them — oldest first, with their Runs.
- * Only the lineage pages read so far are consulted; reaching further back
- * extends them.
- */
-export function useLineageThreads(runId: string, threadId: string) {
-  const client = useClient(),
-    { workspace } = useWorkspace();
-  const queries = conversationQueries(client, workspace.id);
-  const lineage = useInfiniteQuery({
-    ...queries.lineage(runId),
-    enabled: !!runId,
-  });
-  // The lineage reads nearest first; its Threads are listed oldest first.
-  const ids = (lineage.data?.pages ?? [])
-    .flatMap((page) => page.items)
-    .reverse()
-    .map((entry) => entry.thread_id)
-    .filter((id, index, all) => id !== threadId && all.indexOf(id) === index);
-  const threads = useQueries({ queries: ids.map((id) => queries.thread(id)) });
-  const runs = useQueries({ queries: ids.map((id) => queries.runs(id)) });
-  return ids.flatMap((_, index): ThreadRuns[] => {
-    const thread = threads[index]?.data;
-    return thread
-      ? [{ thread, runs: chronological<Run>(runs[index]?.data ?? []) }]
-      : [];
-  });
-}
-
-/**
  * The child Thread an asynchronous delegation started. Threads carry the Run
  * they branched from, which is the only correlation the resource exposes.
  */
@@ -102,7 +72,8 @@ export function childThreadOf(
   offset = 0,
 ) {
   const matches = children.filter(
-    (child) => child.thread.origin_run_id === runId,
+    (child) =>
+      child.thread.origin === "child" && child.thread.origin_run_id === runId,
   );
   return matches[offset] ?? matches[0] ?? null;
 }

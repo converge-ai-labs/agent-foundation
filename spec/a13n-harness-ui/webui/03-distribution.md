@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The browser is bundled with Harness UI and runs against the same Python App as the CLI. A ready-to-use Docker image supplies a shared development machine; it is not an Agent Environment Provider or a separate hosted service product.
+The browser is bundled with Harness UI and runs against the same Python App as the CLI. Harness UI ships as a Python wheel and sdist, not an official container image. Agent execution images belong to the Environment boundary, not the workbench distribution.
 
 ## Browser Assets
 
@@ -20,29 +20,15 @@ General settings offers installation when the browser supplies an install prompt
 
 The installed window uses the existing authentication, navigation, and observation paths. Installation neither starts nor bundles the Python backend. The server must remain reachable. A separately opted-in notification-only Service Worker enables [closed-page Web Push](04-workbench-interaction.md#task-notifications). Its root-scoped `/sw.js` is public static delivery with revalidation, never an immutable hashed asset or HTML fallback. It contains no credentials, fetch interception, offline cache, or queued mutations. Installation alone does not opt into push or guarantee background execution. Browser installation and worker updates do not change draft or Run persistence and do not force page reloads.
 
-## Docker Development Image
-
-The image belongs to Harness UI's distribution boundary and contains the installed application and compiled browser assets. It starts the foreground WebUI server, includes a shell, Git, and development tooling, and runs as a non-root OS user. It does not require a13n Service, Redis, a separate collaboration service, privileged mode, or a mounted Docker socket.
-
-Inside the image, native computer sharing is enabled and the server listens on `0.0.0.0`. Authentication remains enabled by default, using the same key selection and startup output as the native executable. Container defaults do not imply the dangerous authentication bypass.
-
-The normal published-port example binds to host loopback. Exposing the instance to a team is deliberate and follows the listener's trusted-network/TLS boundary. A container listener on all interfaces is not proof that its host port is safely restricted.
-
-Working directories, configuration, and App data support explicit persistent mounts. Replacing a container preserves only data stored in those mounts; the container writable layer is not promised durable storage. Host Files and PTY operate inside the container and on its mounts. Mounting an external Host directory deliberately includes that directory in the shared computer's authority. The image does not mount an entire host filesystem implicitly.
-
-The foreground process receives termination signals and closes owned native PTY resources and child processes on orderly shutdown. Browser disconnect is not container shutdown. Container replacement or process loss does not recover prior live terminal sessions or Run receipts merely because conversation data was persisted.
-
 ## Compatibility and Boundaries
 
-The authenticated server status reports the actually installed `a13n-harness-ui` distribution version, independently of the API schema version. The bundled browser displays that server-reported running version rather than its private npm manifest version or an asset build timestamp. Release images contain the same UI wheel as the Python publication: image tag `X.Y.Z` corresponds to Python version `X.Y.Z`, and image tag `X.Y.Z-rc.N` corresponds to Python version `X.Y.ZrcN`. Development images retain the source package version and report their build revision separately. The image and bundled browser identify the Harness UI version they contain. They do not create another frontend release line or change the Harness group's dependency ownership. Existing wheel/sdist and bounded cross-group dependency rules remain in force. Image build definitions and deployment assets belong under `deploy/`; credentials are runtime inputs, not image layers or committed resources. RC artifacts do not advance a stable `latest` channel.
+The authenticated server status reports the actually installed `a13n-harness-ui` distribution version, independently of the API schema version. The bundled browser displays that server-reported running version rather than its private npm manifest version or an asset build timestamp. The browser creates no separate release line; wheel/sdist and bounded cross-group dependency rules remain in force.
 
-This development image is distinct from selecting a Docker or E2B Environment for an Agent. Agent Environment support remains governed by Provider and Host-adapter contracts and is not inferred from the server being containerized.
+Operators may install the Python distribution in their own containers. Containerization does not configure an Agent Environment, enable native computer sharing, disable authentication, or grant Docker-daemon access. Native file and terminal access remains inside the server's OS authority and explicit mounts. Persistent mounts preserve selected data, not live processes or execution authority; container shutdown and browser disconnect have distinct lifecycle effects.
 
 ## Invariants
 
 1. Installed WebUI operation and wheel rebuild from sdist require no Node.js runtime.
 2. Bundled frontend assets have no independent npm publication or application backend.
-3. Docker enables native computer sharing inside the container without disabling authentication.
-4. Persistent mounts preserve selected data, not live processes or execution authority.
-5. Container shutdown and browser disconnect have distinct lifecycle effects.
-6. Running the server image does not silently configure an Agent Environment or grant Docker-daemon access.
+3. Harness UI release automation publishes Python distributions, not a server image.
+4. Agent execution uses independently configured Environment Providers and their execution images.

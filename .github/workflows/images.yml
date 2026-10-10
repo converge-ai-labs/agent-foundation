@@ -12,7 +12,6 @@ on:
       - "deploy/docker/images/a13n-service/entrypoint.sh"
       - "deploy/docker/images/a13n-service/service.toml"
       - "deploy/docker/images/sandbox/Dockerfile"
-      - "deploy/docker/images/docker-environment/Dockerfile"
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/*"
@@ -21,10 +20,6 @@ on:
       - "packages/a13n-harness/a13n_harness/**"
       - "packages/a13n-stream-protocol/*"
       - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
-      - "packages/a13n-harness-ui/*"
-      - "packages/a13n-harness-ui/a13n_harness_ui/**"
-      - "docs/a13n-harness-ui/**"
-      - "frontend/apps/a13n-harness-ui/**"
       - "frontend/apps/a13n-console/**"
       - "proto/a13n-service/openapi.json"
       - "frontend/packages/a13n-ui/**"
@@ -32,12 +27,9 @@ on:
       - "frontend/pnpm-lock.yaml"
       - "frontend/pnpm-workspace.yaml"
       - "frontend/tsconfig.base.json"
-      - "deploy/docker/images/a13n-harness-ui/**"
-      - "scripts/prepare_harness_ui_image.py"
-      - "scripts/prepare-a13n-harness-ui-assets.py"
-      - "scripts/prepare_a13n_harness_ui_assets.py"
-      - "Makefile"
+      - "packages/a13n-harness-ui/pyproject.toml"
       - "packages/a13n-service/*"
+      - "docs/a13n-service/**"
       - "packages/a13n-service/a13n_service/**"
       - "packages/a13n-logging/*"
       - "packages/a13n-logging/a13n_logging/**"
@@ -92,6 +84,7 @@ jobs:
               - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
               - 'packages/a13n-harness-ui/pyproject.toml'
               - 'packages/a13n-service/*'
+              - 'docs/a13n-service/**'
               - 'packages/a13n-service/a13n_service/**'
               - 'packages/a13n-logging/*'
               - 'packages/a13n-logging/a13n_logging/**'
@@ -104,36 +97,6 @@ jobs:
               - 'frontend/pnpm-workspace.yaml'
               - 'frontend/tsconfig.base.json'
               - 'proto/a13n-service/openapi.json'
-            harness_ui:
-              - '.github/workflows/images.yml'
-              - 'deploy/docker/images/a13n-harness-ui/**'
-              - 'packages/a13n-envd-client/*'
-              - 'packages/a13n-envd-client/a13n_envd_client/**'
-              - 'packages/a13n-harness/*'
-              - 'packages/a13n-harness/a13n_harness/**'
-              - 'packages/a13n-stream-protocol/*'
-              - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
-              - 'packages/a13n-harness-ui/*'
-              - 'packages/a13n-harness-ui/a13n_harness_ui/**'
-              - 'docs/a13n-harness-ui/**'
-              - 'packages/a13n-logging/*'
-              - 'packages/a13n-logging/a13n_logging/**'
-              - 'frontend/apps/a13n-harness-ui/**'
-              - 'frontend/packages/a13n-ui/**'
-              - 'frontend/package.json'
-              - 'frontend/pnpm-lock.yaml'
-              - 'frontend/pnpm-workspace.yaml'
-              - 'frontend/tsconfig.base.json'
-              - 'scripts/prepare_harness_ui_image.py'
-              - 'scripts/prepare-a13n-harness-ui-assets.py'
-              - 'scripts/prepare_a13n_harness_ui_assets.py'
-              - 'pyproject.toml'
-              - 'uv.lock'
-              - 'Makefile'
-            docker_environment:
-              - ".github/workflows/images.yml"
-              - "deploy/docker/images/docker-environment/Dockerfile"
-              - "Makefile"
             sandbox:
               - '.dockerignore'
               - '.github/workflows/images.yml'
@@ -147,9 +110,7 @@ jobs:
         id: matrix
         env:
           A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
-          DOCKER_ENVIRONMENT_CHANGED: ${{ steps.filter.outputs.docker_environment }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
-          HARNESS_UI_CHANGED: ${{ steps.filter.outputs.harness_ui }}
         run: |
           python - <<'PY'
           import json
@@ -172,24 +133,6 @@ jobs:
                   "file": "deploy/docker/images/sandbox/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
                   "context": ".",
-                  "platforms": "linux/amd64",
-              })
-          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["HARNESS_UI_CHANGED"] == "true":
-              images.append({
-                  "name": "a13n-harness-ui",
-                  "runner": "ubuntu-latest",
-                  "file": "deploy/docker/images/a13n-harness-ui/Dockerfile",
-                  "image": "ghcr.io/converge-ai-labs/a13n-harness-ui",
-                  "context": "dist/a13n-harness-ui-image",
-                  "platforms": "linux/amd64",
-              })
-          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["DOCKER_ENVIRONMENT_CHANGED"] == "true":
-              images.append({
-                  "name": "a13n-docker-environment",
-                  "runner": "ubuntu-latest",
-                  "file": "deploy/docker/images/docker-environment/Dockerfile",
-                  "image": "ghcr.io/converge-ai-labs/a13n-docker-environment",
-                  "context": "deploy/docker/images/docker-environment",
                   "platforms": "linux/amd64,linux/arm64",
               })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
@@ -210,36 +153,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-
-      - name: Set up Python for Harness UI
-        if: matrix.name == 'a13n-harness-ui'
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Set up uv for Harness UI
-        if: matrix.name == 'a13n-harness-ui'
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Set up pnpm for Harness UI
-        if: matrix.name == 'a13n-harness-ui'
-        uses: pnpm/action-setup@v4
-        with:
-          package_json_file: frontend/package.json
-
-      - name: Set up Node.js for Harness UI
-        if: matrix.name == 'a13n-harness-ui'
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Prepare Harness UI image context
-        if: matrix.name == 'a13n-harness-ui'
-        run: make a13n-harness-ui-image-context
 
       - name: Set up QEMU for arm64
         if: contains(matrix.platforms, 'arm64')
@@ -268,8 +181,6 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
-          # The Service and its Docker environment run on amd64 and arm64 hosts; the sandbox and Harness UI
-          # images publish native amd64 only, and other architectures build locally.
           platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}

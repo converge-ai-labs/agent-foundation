@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
     response_model=Asset,
     status_code=201,
     responses={200: {"model": Asset, "description": "The asset already created from this upload"}},
+    openapi_extra={"x-a13n-mcp": True},
 )
 async def create_asset(
     response: Response, workspace_id: WorkspaceId, body: AssetCreate, actor: Actor, runtime: CurrentRuntime
@@ -25,7 +26,7 @@ async def create_asset(
     return tagged(response, result)
 
 
-@router.get("", response_model=AssetPage)
+@router.get("", response_model=AssetPage, openapi_extra={"x-a13n-mcp": True})
 async def list_assets(
     workspace_id: WorkspaceId,
     actor: Actor,
@@ -36,14 +37,14 @@ async def list_assets(
     return await service.list_assets(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
 
 
-@router.get("/{asset_id}", response_model=Asset)
+@router.get("/{asset_id}", response_model=Asset, openapi_extra={"x-a13n-mcp": True})
 async def get_asset(
     response: Response, workspace_id: WorkspaceId, asset_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Asset:
     return tagged(response, await service.get_asset(runtime.storage, actor, workspace_id, asset_id))
 
 
-@router.delete("/{asset_id}", response_model=Asset)
+@router.delete("/{asset_id}", response_model=Asset, openapi_extra={"x-a13n-mcp": True})
 async def retire_asset(
     response: Response,
     workspace_id: WorkspaceId,

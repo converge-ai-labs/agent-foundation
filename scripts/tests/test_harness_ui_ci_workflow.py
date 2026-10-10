@@ -251,11 +251,11 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
         assert f"packages/a13n-harness/tests/providers_environment/{name}" in shlex.split(lifecycle["run"])
 
 
-def test_bundled_documentation_is_a_ui_image_input() -> None:
+def test_bundled_documentation_does_not_trigger_image_publication() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
-    inputs = {"docs/a13n-harness-ui/**"}
-    assert inputs <= set(workflow[True]["push"]["paths"])
+    path = Path("docs/a13n-harness-ui/configuration.md")
+    assert not any(path.full_match(pattern) for pattern in workflow[True]["push"]["paths"])
     step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
     filters = yaml.safe_load(step["with"]["filters"])
-    assert inputs <= set(filters["harness_ui"])
-    assert not inputs.intersection(filters["service"])
+    assert "harness_ui" not in filters
+    assert not any(path.full_match(pattern) for patterns in filters.values() for pattern in patterns)

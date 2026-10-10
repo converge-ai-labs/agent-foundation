@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from dataclasses import fields, is_dataclass
 
+from a13n_harness._json import project_json
 from a13n_harness.content import ContentItem, project_input_content
 from ag_ui.core import AudioPart, ContentPart, DocumentPart, FileSource, ImagePart, TextPart, UrlSource, VideoPart
-from pydantic import TypeAdapter
+from pydantic import BaseModel
 from pydantic_ai.messages import AudioUrl, BinaryContent, DocumentUrl, ImageUrl, TextContent, UploadedFile, VideoUrl
 
-_ANY = TypeAdapter(Any)
+_NATIVE_CONTENT = (
+    ContentItem | BinaryContent | ImageUrl | AudioUrl | VideoUrl | DocumentUrl | UploadedFile | TextContent
+)
 
 
 def tool_result_content(value: object) -> str | list[ContentPart]:
@@ -20,28 +23,11 @@ def tool_result_content(value: object) -> str | list[ContentPart]:
     AG-UI parts; bytes are described, never embedded or materialized here.
     """
     values = value if isinstance(value, list | tuple) else [value]
-    if not any(
-        isinstance(
-            item,
-            ContentItem | BinaryContent | ImageUrl | AudioUrl | VideoUrl | DocumentUrl | UploadedFile | TextContent,
-        )
-        for item in values
-    ):
+    if not any(isinstance(item, _NATIVE_CONTENT) for item in values):
         return _text(value)
     parts: list[ContentPart] = []
     for item in values:
-        if not isinstance(
-            item,
-            ContentItem
-            | BinaryContent
-            | ImageUrl
-            | AudioUrl
-            | VideoUrl
-            | DocumentUrl
-            | UploadedFile
-            | TextContent
-            | str,
-        ):
+        if not isinstance(item, _NATIVE_CONTENT | str):
             parts.append(TextPart(text=_text(item)))
             continue
         projection = project_input_content(item)
@@ -79,23 +65,47 @@ def tool_result_content(value: object) -> str | list[ContentPart]:
 def public_tool_value(value: object) -> object:
     if isinstance(value, bytes | bytearray):
         return {"payload_omitted": True, "size_bytes": len(value)}
-    if isinstance(
-        value, ContentItem | BinaryContent | ImageUrl | AudioUrl | VideoUrl | DocumentUrl | UploadedFile | TextContent
-    ):
+    if isinstance(value, _NATIVE_CONTENT):
         projected = project_input_content(value)
         return projected[0] if projected is not None and projected[1].display else {"payload_omitted": True}
     if isinstance(value, dict):
         return {key: public_tool_value(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
         return [public_tool_value(item) for item in value]
+    if isinstance(value, BaseModel) or (is_dataclass(value) and not isinstance(value, type)):
+        # A custom serializer can flatten or rename media fields, so filtering
+        # its JSON output is too late. Keep media-bearing records payload-free.
+        if _contains_native_content(value, set()):
+            return {"payload_omitted": True}
+        return project_json(value)
     return value
+
+
+def _contains_native_content(value: object, seen: set[int]) -> bool:
+    if isinstance(value, bytes | bytearray | _NATIVE_CONTENT):
+        return True
+    if id(value) in seen:
+        return False
+    seen.add(id(value))
+    if isinstance(value, BaseModel):
+        children = [getattr(value, name) for name in type(value).model_fields]
+        children.extend((value.model_extra or {}).values())
+    elif is_dataclass(value) and not isinstance(value, type):
+        children = [getattr(value, field.name) for field in fields(value)]
+    elif isinstance(value, dict):
+        children = value.values()
+    elif isinstance(value, list | tuple):
+        children = value
+    else:
+        return False
+    return any(_contains_native_content(child, seen) for child in children)
 
 
 def _text(value: object) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(
-        _ANY.dump_python(public_tool_value(value), mode="json"),
+        project_json(public_tool_value(value)),
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,

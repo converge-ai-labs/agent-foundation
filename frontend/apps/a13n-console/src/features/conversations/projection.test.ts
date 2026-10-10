@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { DisplayItem } from "./display";
+import { applyDelta, type DisplayItem } from "./display";
 import { parseItemValue, presentItem, presentItems } from "./projection";
 
 const item = (fields: Partial<DisplayItem>): DisplayItem => ({
@@ -101,4 +101,92 @@ it("parses a JSON value and keeps any other text as it is", () => {
   expect(parseItemValue('{"path":"a.md"}')).toEqual({ path: "a.md" });
   expect(parseItemValue('{"path":')).toBe('{"path":');
   expect(parseItemValue({ already: true })).toEqual({ already: true });
+});
+
+it("preserves source entry references from persisted user and steering content", () => {
+  for (const input_source of ["user", "steering"]) {
+    expect(
+      presentItem(
+        item({
+          content: {
+            role: "user",
+            input_source,
+            input_group: "model-attempt-group",
+            metadata: { source_id: "inb_1234567890abcdef1234567890ab" },
+          },
+        }),
+      ),
+    ).toMatchObject({
+      sourceId: "inb_1234567890abcdef1234567890ab",
+      inputSource: input_source,
+    });
+  }
+});
+
+it("resolves live steering through Service metadata rather than the Harness input group", () => {
+  const items = new Map<string, DisplayItem>();
+  applyDelta(items, {
+    run_id: "run_a",
+    attempt: 1,
+    sequence: 18,
+    item: {
+      id: "itm_steer",
+      kind: "text_message",
+      state: "completed",
+      ordinal: 2,
+    },
+    event: {
+      type: "CUSTOM",
+      name: "a13n.input.steering",
+      metadata: {
+        display: true,
+        source_id: "inb_abcdef1234567890abcdef123456",
+      },
+      value: {
+        event: {
+          input_id: "01a12147-bd16-73f2-b290-80198647ebc8",
+          source: "steering",
+          content: "Use revised numbers",
+          message_id: "run-a:input:18",
+          role: "user",
+        },
+      },
+    },
+  });
+  expect(presentItems(items.values())).toMatchObject([
+    {
+      sourceId: "inb_abcdef1234567890abcdef123456",
+      inputSource: "steering",
+      text: "Use revised numbers",
+    },
+  ]);
+});
+
+it("preserves opaque source references for session-scoped author lookup", () => {
+  for (const source_id of [
+    "legacy-source",
+    "model-attempt-a",
+    "run_abcdef1234567890abcdef123456",
+  ]) {
+    expect(
+      presentItem(
+        item({
+          content: {
+            role: "user",
+            input_group: "group",
+            metadata: { source_id },
+          },
+        }),
+      ).sourceId,
+    ).toBe(source_id);
+  }
+});
+
+it("keeps missing or oversized source references out of the author batch", () => {
+  for (const source_id of [undefined, "", "a".repeat(73)]) {
+    expect(
+      presentItem(item({ content: { role: "user", metadata: { source_id } } }))
+        .sourceId,
+    ).toBeUndefined();
+  }
 });

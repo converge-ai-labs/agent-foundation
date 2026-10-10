@@ -9,7 +9,7 @@ on:
       - "conftest.py"
       - "dev/fixtures/**"
       - "e2e/**"
-      - "deploy/docker/images/docker-environment/**"
+      - "deploy/docker/images/sandbox/**"
       - "scripts/tests/test_service_e2e_tooling.py"
       - "packages/a13n-service/**"
       - "packages/a13n-harness/**"
@@ -26,7 +26,7 @@ on:
       - "conftest.py"
       - "dev/fixtures/**"
       - "e2e/**"
-      - "deploy/docker/images/docker-environment/**"
+      - "deploy/docker/images/sandbox/**"
       - "scripts/tests/test_service_e2e_tooling.py"
       - "packages/a13n-service/**"
       - "packages/a13n-harness/**"
@@ -84,7 +84,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Build the native Docker execution image
-        run: make image-docker-environment
+        run: make image-sandbox
       - name: Run every journey but the opt-in hosted ones; an unavailable dependency fails it
         run: make service-e2e SERVICE_E2E_ARGS="--require-all --junitxml=test-results/service-e2e.xml"
       - name: Report collected, executed and skipped journeys

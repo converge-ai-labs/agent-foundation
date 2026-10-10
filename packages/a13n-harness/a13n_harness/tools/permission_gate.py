@@ -14,7 +14,7 @@ from pydantic_ai.messages import ModelRequest, TextContent
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ToolsetTool
 
-from a13n_harness._json import dump_json_bytes, redact_json
+from a13n_harness._json import dump_json_bytes, project_json, redact_json
 from a13n_harness._review_context import (
     ReviewEvidence,
     append_review_evidence,
@@ -46,7 +46,6 @@ from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolP
 from a13n_harness.tools.policy import InvocationDecisionKind
 
 _JSON = TypeAdapter(dict[str, JsonValue])
-_ANY = TypeAdapter(Any)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +67,7 @@ def permission_mode(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> 
 
 def _arguments(args: dict[str, Any]) -> dict[str, JsonValue]:
     try:
-        return _JSON.validate_python(_ANY.dump_python(args, mode="json", warnings="error"), strict=True)
+        return _JSON.validate_python(project_json(args), strict=True)
     except (TypeError, ValueError) as exc:
         raise ToolFailed("Tool arguments cannot be represented for permission checks.") from exc
 

@@ -14,9 +14,9 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 ## 工作空间自动配置
 
-挂载 Docker socket 的单机 Compose 部署在 Engine 可访问时，为每个工作空间自动添加 **Docker** provider 和 **Linux Sandbox** 模板。模板固定使用[与已安装 Service 版本匹配的配套镜像](#docker-image-versions)，并设置 `pull_policy: if_missing`。如果本地没有镜像，Engine 在创建首个实例时拉取；工作空间初始化不会拉取镜像。Linux 镜像包含 Python 3.13、pip、venv、uv、Node.js 24、npm、pnpm、Git、Bash、curl、ripgrep、jq、归档工具和 C/C++ 构建工具。命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。项目依赖可以安装到虚拟环境或项目目录中。
+挂载 Docker socket 的单机 Compose 部署在 Engine 可访问时，为每个工作空间自动添加 **Docker** provider 和 **Linux Sandbox** 模板。模板固定使用[Service 审定的独立版本 sandbox 镜像](#docker-image-versions)，并设置 `pull_policy: if_missing`。如果本地没有镜像，Engine 在创建首个实例时拉取；工作空间初始化不会拉取镜像。Linux 镜像包含 Python 3.13、pip、venv、uv、Node.js 24、npm、pnpm、Git、Bash、curl、ripgrep、jq、归档工具和 C/C++ 构建工具。命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。项目依赖可以安装到虚拟环境或项目目录中。
 
-新工作空间要使用本地构建镜像，运行 `make image-docker-environment`，启动 Compose 时设置 `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-docker-environment:local`。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
+新工作空间要使用本地构建镜像，运行 `make image-sandbox`，启动 Compose 时设置 `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-sandbox:local`。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
 
 不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 进程的操作系统用户身份运行命令，不提供隔离。
 
@@ -68,17 +68,16 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 ### Docker 镜像版本
 
-不设置 `recipe.image` 时，使用与已安装 Service 版本对应的 `ghcr.io/converge-ai-labs/a13n-docker-environment`：
+不设置 `recipe.image` 时，使用 Service 审定的 `ghcr.io/converge-ai-labs/a13n-sandbox` 版本。sandbox 版本由 Envd 管理，不跟随 Service 版本号：
 
-| Service 构建                            | 镜像标签     |
-| --------------------------------------- | ------------ |
-| 稳定版，例如 `0.1.0`                    | `0.1.0`      |
-| RC，例如 Python 版本 `0.1.0rc1`         | `0.1.0-rc.1` |
-| 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`        |
+| Service 构建                            | 镜像标签 |
+| --------------------------------------- | -------- |
+| 稳定版或 RC                             | `0.1.3`  |
+| 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
-发布镜像支持 `linux/amd64` 和 `linux/arm64`。显式设置 `recipe.image` 可在 Service 升级后保留指定标签，也可用 digest 固定精确内容。Docker recipe 默认 `pull_policy: if_missing`：Engine 优先使用本地镜像，缺失时拉取。设置 `never` 可要求镜像必须在本地。自动配置的模板显式保存匹配发布版本的镜像，因此后续 Service 升级不会悄悄修改它。
+发布镜像支持 `linux/amd64` 和 `linux/arm64`。显式设置 `recipe.image` 可在 Service 升级后保留指定标签，也可用 digest 固定精确内容。Docker recipe 默认 `pull_policy: if_missing`：Engine 优先使用本地镜像，缺失时拉取。设置 `never` 可要求镜像必须在本地。自动配置的模板显式保存审定的 sandbox 镜像，因此后续 Service 升级不会悄悄修改它。
 
-每个实例在首次创建前保存解析后的镜像；升级和中断后的创建仍使用该镜像。没有已保存镜像的旧实例保留 `:dev`。要使用新镜像或修改后的模板，请创建新环境。
+每个实例在首次创建前保存解析后的镜像；升级和中断后的创建仍使用该镜像。没有已保存镜像的旧实例保留历史默认值 `a13n-docker-environment:dev`；删除旧镜像前请重新创建这些实例以完成迁移。要使用新镜像或修改后的模板，请创建新环境。
 
 ## 实例
 

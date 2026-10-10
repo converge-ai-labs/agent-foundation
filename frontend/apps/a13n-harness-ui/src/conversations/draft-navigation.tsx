@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import {
-  Button,
   Popover,
   PopoverTrigger,
   PopoverPopup,
@@ -28,7 +27,6 @@ export function DraftNavigation() {
       }}
     >
       <PopoverTrigger
-        render={<Button variant="ghost" size="sm" />}
         className={styles.draftsTrigger}
         aria-label={
           error

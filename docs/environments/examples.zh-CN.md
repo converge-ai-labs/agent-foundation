@@ -93,13 +93,13 @@ uv run environment-provider-example local_envd \
 
 ```bash
 # From the repository root
-make image-docker-environment
+make image-sandbox
 
 cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-示例选择 `make image-docker-environment` 生成的镜像 `a13n-docker-environment:local`。传入 `--image IMAGE` 可使用其他兼容镜像；遵循普通 Docker 身份验证和拉取行为。
+示例选择 `make image-sandbox` 生成的镜像 `a13n-sandbox:local`。传入 `--image IMAGE` 可使用其他兼容镜像；遵循普通 Docker 身份验证和拉取行为。
 
 Docker 路径显式展示状态和保留：
 

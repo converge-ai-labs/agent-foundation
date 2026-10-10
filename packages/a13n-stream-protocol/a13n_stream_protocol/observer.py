@@ -6,12 +6,14 @@ import json
 from collections.abc import AsyncIterable, Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from typing import Any, Literal, Self, cast
 
 from a13n_harness import (
     AgentStreamEventProtocol,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessRunResult,
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
@@ -67,7 +69,6 @@ from a13n_stream_protocol.fragments import fragment_custom_event
 
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
-_JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 _SOURCE_CORRELATION_FIELDS = ("thread_id", "run_id", "sequence", "occurred_at")
 _MUTABLE_FIELDS_BY_EVENT_TYPE: dict[object, frozenset[str]] = {
     TextMessageContentEvent.model_fields["type"].default: frozenset({"delta"}),
@@ -301,7 +302,7 @@ class HarnessAguiObserver:
                 value=_source_value(
                     item,
                     (
-                        TypeAdapter(CapabilityEvent) if isinstance(source, UnknownCapabilityEvent) else _ANY_ADAPTER
+                        _event_adapter(CapabilityEvent if isinstance(source, UnknownCapabilityEvent) else type(source))
                     ).dump_python(source, mode="json", by_alias=True, warnings="error"),
                 ),
             )
@@ -330,7 +331,7 @@ class HarnessAguiObserver:
             "status": result.status,
         }
         if result.status == "completed":
-            output, omitted = _json_safe_output(result.output)
+            output, omitted = _json_safe_output(result)
             if omitted:
                 raw_event["result_omitted"] = True
             return RunFinishedEvent(
@@ -737,8 +738,15 @@ def _custom_harness_event(item: HarnessEvent, event: HarnessExtensionEvent) -> C
     )
 
 
+@lru_cache(maxsize=128)
+def _event_adapter(event_type: type[Any]) -> TypeAdapter[Any]:
+    # Any-mode serialization skips field serializers on standard dataclasses,
+    # including Pydantic AI's transient provider-details callbacks.
+    return TypeAdapter(event_type)
+
+
 def _custom_pydantic_event(item: HarnessEvent, event: AgentStreamEventProtocol) -> CustomEvent:
-    source = _ANY_ADAPTER.dump_python(event, mode="json", by_alias=True, warnings="error")
+    source = _event_adapter(type(event)).dump_python(event, mode="json", by_alias=True, warnings="error")
     return CustomEvent(
         timestamp=_timestamp_ms(item),
         name=f"a13n.pydantic_ai.{event.event_kind}",
@@ -824,10 +832,9 @@ def _tool_args_text(value: object) -> str:
     return json.dumps(serialized, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def _json_safe_output(value: object) -> tuple[JsonValue, bool]:
+def _json_safe_output(result: HarnessRunResult[Any]) -> tuple[JsonValue, bool]:
     try:
-        serialized = _ANY_ADAPTER.dump_python(value, mode="json", warnings="error")
-        return _JSON_VALUE_ADAPTER.validate_python(serialized, strict=True), False
+        return result.output_json(), False
     except (TypeError, ValueError):
         return None, True
 

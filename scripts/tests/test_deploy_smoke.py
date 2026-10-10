@@ -63,7 +63,7 @@ def test_compose_smoke_checks_both_starts_and_always_removes_the_stack(monkeypat
             "created_by_id": None,
             "config": {
                 "recipe": {
-                    "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
+                    "image": "ghcr.io/converge-ai-labs/a13n-sandbox:dev",
                     "pull_policy": "if_missing",
                 }
             },
