@@ -305,16 +305,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download release version patch
+      - name: Download Linux binary archives
         uses: actions/download-artifact@v4
         with:
-          name: release-version-a13n-envd
-          path: .
+          pattern: a13n-envd-*-unknown-linux-gnu
+          path: dist/linux
+          merge-multiple: true
 
-      - name: Apply release version patch
+      - name: Stage sandbox binaries
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          git apply --whitespace=error release-version.patch
-          git clean -f -- release-version.patch
+          for platform in amd64:x86_64-unknown-linux-gnu arm64:aarch64-unknown-linux-gnu; do
+            arch="${platform%%:*}"
+            target="${platform#*:}"
+            mkdir -p "tmp/sandbox-binaries/$arch"
+            tar -xzf "dist/linux/a13n-envd-${VERSION}-${target}.tar.gz" \
+              -C "tmp/sandbox-binaries/$arch" a13n-envd
+          done
 
       - name: Set up QEMU for arm64
         uses: docker/setup-qemu-action@v3
@@ -353,6 +361,7 @@ jobs:
           push: true
           tags: ${{ steps.image-tags.outputs.tags }}
           build-args: |
+            ENVD_BINARY_SOURCE=prebuilt
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             BUILD_REVISION=${{ github.sha }}
           cache-from: type=gha,scope=release-sandbox
