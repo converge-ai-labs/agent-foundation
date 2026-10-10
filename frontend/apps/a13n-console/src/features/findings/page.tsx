@@ -251,6 +251,7 @@ export function FindingsPage() {
                 query.isSuccess &&
                 (query.data.items.length ? (
                   <ResourceTable
+                    className={styles.findingsTable}
                     items={query.data.items}
                     caption={t("Findings")}
                     onRowActivate={(finding) =>
@@ -259,38 +260,45 @@ export function FindingsPage() {
                     columns={[
                       {
                         label: t("Finding"),
+                        dataColumn: "finding",
                         tone: "primary",
                         render: (finding) => (
                           <Link
                             to={`${basePath}/findings/${finding.id}`}
                             className={styles.title}
+                            title={finding.title}
                           >
                             {finding.title}
-                            <span className={styles.hint}>
-                              {finding.category}
-                            </span>
                           </Link>
                         ),
                       },
                       {
                         label: t("Agent"),
+                        dataColumn: "agent",
                         render: (finding) => (
-                          <Link to={`${basePath}/agents/${finding.agent_id}`}>
+                          <Link
+                            className={styles.agentName}
+                            title={agentName(finding.agent_id)}
+                            to={`${basePath}/agents/${finding.agent_id}`}
+                          >
                             {agentName(finding.agent_id)}
                           </Link>
                         ),
                       },
                       {
                         label: t("Severity"),
+                        dataColumn: "severity",
                         render: (finding) => <Severity finding={finding} />,
                       },
                       {
                         label: t("Assessment"),
+                        dataColumn: "assessment",
                         render: (finding) =>
                           t(assessmentLabels[finding.assessment]),
                       },
                       {
                         label: t("Updated"),
+                        dataColumn: "updated",
                         render: (finding) => (
                           <Timestamp value={finding.updated_at} relative />
                         ),

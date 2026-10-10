@@ -1890,7 +1890,6 @@
   "Analysis runs on demand using ordinary Service execution. At most 100 trace roots are scanned; selected traces are capped at 20. No changes are applied to the target Agent.": "按需使用普通 Service Run 分析。最多扫描 100 个 trace 根节点，最多选择 20 条 trace，不会修改目标 Agent。",
   "Start analysis": "开始分析",
   "Starting…": "正在启动…",
-  "Fix with Composer": "通过 Composer 修复",
   "Severity describes impact. Assessment records your review of the evidence.": "严重程度描述影响，审阅结论记录你对证据的判断。",
   "Reopen finding": "重新打开发现项",
   "Close finding": "关闭发现项",
@@ -1968,5 +1967,12 @@
   "Copy email": "复制邮箱",
   "Copy principal ID": "复制账号 ID",
   "Retry": "重试",
-  "User account": "用户账号"
+  "User account": "用户账号",
+  "Technical references": "技术引用",
+  "Trace references": "Trace 引用",
+  "Agent version": "Agent 版本",
+  "Next step": "下一步",
+  "Review with Composer": "交给 Composer 审阅",
+  "No review note yet.": "尚无审阅备注。",
+  "Edit assessment": "编辑判断"
 }

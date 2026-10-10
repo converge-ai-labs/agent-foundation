@@ -217,6 +217,7 @@ it("reviews impact independently and sends the exact revision and evidence to Co
   }));
   const user = mount("/workspace/ws_test/findings/fnd_test");
   await screen.findByText(/Critical.*Unconfirmed/);
+  await user.click(screen.getByRole("button", { name: "Edit assessment" }));
   await user.click(screen.getByRole("combobox", { name: "Assessment" }));
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
   await user.click(screen.getByRole("button", { name: "Save assessment" }));
@@ -232,7 +233,9 @@ it("reviews impact independently and sends the exact revision and evidence to Co
       }),
     ),
   );
-  await user.click(screen.getByRole("button", { name: "Fix with Composer" }));
+  await user.click(
+    screen.getByRole("button", { name: "Review with Composer" }),
+  );
   expect(composer.start).toHaveBeenCalledWith(
     expect.objectContaining({
       agent: { id: "ap_target", name: "Research" },
@@ -313,7 +316,7 @@ it("switches collections without stacking tables and preserves analysis evidence
   );
 });
 
-it("edits a false-positive assessment and its rationale together, clears stale rationale on a new outcome, and preserves saved feedback on close", async () => {
+it("reads saved feedback, edits outcome and rationale atomically, cancels edits, and preserves review on close", async () => {
   let current = {
     ...finding,
     assessment: "false_positive",
@@ -330,20 +333,26 @@ it("edits a false-positive assessment and its rationale together, clears stale r
     return { data: current };
   });
   const user = mount("/workspace/ws_test/findings/fnd_test");
-  const note = await screen.findByRole("textbox", { name: "Review note" });
-  expect((note as HTMLTextAreaElement).value).toBe("The tool recovered.");
+  await screen.findByText("The tool recovered.");
+  expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull();
   expect(
     (
       screen.getByRole("button", {
-        name: "Fix with Composer",
+        name: "Review with Composer",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Edit assessment" }));
+  let note = screen.getByRole("textbox", { name: "Review note" });
   await user.click(screen.getByRole("combobox", { name: "Assessment" }));
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
   expect((note as HTMLTextAreaElement).value).toBe("");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
-  expect((note as HTMLTextAreaElement).value).toBe("The tool recovered.");
+  expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull();
+  expect(screen.getByText("The tool recovered.")).toBeTruthy();
+  expect(http.PATCH).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Edit assessment" }));
+  note = screen.getByRole("textbox", { name: "Review note" });
   await user.clear(note);
   await user.type(note, "The retry succeeded, so this diagnosis is incorrect.");
   await user.click(screen.getByRole("button", { name: "Save assessment" }));
@@ -363,23 +372,14 @@ it("edits a false-positive assessment and its rationale together, clears stale r
       }),
     ),
   );
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Save assessment",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true),
+  await screen.findByText(
+    "The retry succeeded, so this diagnosis is incorrect.",
   );
+  expect(screen.queryByRole("textbox", { name: "Review note" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Close finding" }));
   await screen.findByRole("button", { name: "Reopen finding" });
   expect(
-    (
-      screen.getByRole("textbox", {
-        name: "Review note",
-      }) as HTMLTextAreaElement
-    ).value,
-  ).toBe("The retry succeeded, so this diagnosis is incorrect.");
+    screen.getByText("The retry succeeded, so this diagnosis is incorrect."),
+  ).toBeTruthy();
   expect(screen.getByText(finding.explanation)).toBeTruthy();
 });

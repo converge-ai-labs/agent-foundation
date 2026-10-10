@@ -1890,7 +1890,6 @@
   "Analysis runs on demand using ordinary Service execution. At most 100 trace roots are scanned; selected traces are capped at 20. No changes are applied to the target Agent.": "Analysis runs on demand using ordinary Service execution. At most 100 trace roots are scanned; selected traces are capped at 20. No changes are applied to the target Agent.",
   "Start analysis": "Start analysis",
   "Starting…": "Starting…",
-  "Fix with Composer": "Fix with Composer",
   "Severity describes impact. Assessment records your review of the evidence.": "Severity describes impact. Assessment records your review of the evidence.",
   "Reopen finding": "Reopen finding",
   "Close finding": "Close finding",
@@ -1968,5 +1967,12 @@
   "Copy email": "Copy email",
   "Copy principal ID": "Copy principal ID",
   "Retry": "Retry",
-  "User account": "User account"
+  "User account": "User account",
+  "Technical references": "Technical references",
+  "Trace references": "Trace references",
+  "Agent version": "Agent version",
+  "Next step": "Next step",
+  "Review with Composer": "Review with Composer",
+  "No review note yet.": "No review note yet.",
+  "Edit assessment": "Edit assessment"
 }

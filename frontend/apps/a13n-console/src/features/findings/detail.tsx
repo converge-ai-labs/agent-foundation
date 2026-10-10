@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
+import { MarkdownContent } from "../../shared/markdown";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Page, Section } from "../../shared/page";
 import { useAgentComposer } from "../agents/composer";
@@ -87,125 +88,166 @@ export function FindingDetail() {
   };
   return (
     <Page
+      className={styles.detailPage}
       title={finding.title}
       back={`${basePath}/findings`}
       backLabel={t("Findings")}
-      actions={
-        can("run") && composer.available ? (
-          <Button
-            disabled={
-              !revision.data ||
-              composer.pending ||
-              ["expected", "false_positive"].includes(finding.assessment)
-            }
-            onClick={fix}
-          >
-            {t("Fix with Composer")}
-          </Button>
-        ) : undefined
-      }
     >
       {composer.setup}
       <ErrorNotice error={update.error ?? composer.error ?? revision.error} />
+      <div className={styles.metadata}>
+        <Severity finding={finding} />
+        <span>{finding.closed ? t("Closed") : t("Open")}</span>
+        <Link to={`${basePath}/agents/${finding.agent_id}`}>
+          {agent?.name ?? finding.agent_id} ·{" "}
+          {revision.data
+            ? `v${revision.data.number}`
+            : finding.agent_revision_id}
+        </Link>
+        <Timestamp value={finding.updated_at} relative />
+      </div>
       <div className={styles.detail}>
-        <div className={styles.metadata}>
-          <Severity finding={finding} />
-          <span>{finding.category}</span>
-          <span>{finding.closed ? t("Closed") : t("Open")}</span>
-          <Timestamp value={finding.created_at} />
-          <Link to={`${basePath}/agents/${finding.agent_id}`}>
-            {agent?.name ?? finding.agent_id} ·{" "}
-            {revision.data
-              ? `v${revision.data.number}`
-              : finding.agent_revision_id}
-          </Link>
-        </div>
-        <Section
-          title={t("Assessment")}
-          description={t(
-            "Severity describes impact. Assessment records your review of the evidence.",
-          )}
-          actions={
-            <Button
-              variant="outline"
-              disabled={!can("write") || update.isPending}
-              onClick={() => update.mutate({ closed: !finding.closed })}
-            >
-              {finding.closed ? t("Reopen finding") : t("Close finding")}
-            </Button>
-          }
-        >
-          <AssessmentEditor
-            key={`${finding.id}:${finding.version}`}
-            finding={finding}
-            canWrite={can("write")}
-            pending={update.isPending}
-            onSave={(body) => update.mutate(body)}
-          />
-        </Section>
-        <Section title={t("What happened")}>
-          <p className={styles.prose}>{finding.explanation}</p>
-        </Section>
-        <Section
-          title={t("Suggested improvement")}
-          description={t(
-            "Composer opens with this evidence and the cited version. Review the proposed change before approving it.",
-          )}
-        >
-          <p className={styles.prose}>{finding.suggestion}</p>
-        </Section>
-        {finding.limitations && (
-          <Section title={t("Evidence limitations")}>
-            <p className={styles.prose}>{finding.limitations}</p>
+        <div className={styles.narrative}>
+          <Section title={t("What happened")}>
+            <MarkdownContent text={finding.explanation} />
           </Section>
-        )}
-        <Section
-          title={t("Evidence")}
-          description={t(
-            "Trace availability depends on backend retention and capture. External producers are responsible for their trace and span references.",
+          <Section
+            title={t("Evidence")}
+            description={t(
+              "Trace availability depends on backend retention and capture. External producers are responsible for their trace and span references.",
+            )}
+          >
+            <div className={styles.evidenceList}>
+              {finding.evidence.map((evidence, index) => (
+                <Evidence key={index} evidence={evidence} number={index + 1} />
+              ))}
+            </div>
+          </Section>
+          <Section title={t("Suggested improvement")}>
+            <MarkdownContent text={finding.suggestion} />
+          </Section>
+          {finding.limitations && (
+            <Section title={t("Evidence limitations")}>
+              <MarkdownContent text={finding.limitations} />
+            </Section>
           )}
-        >
-          <div className="grid gap-4">
-            {finding.evidence.map((evidence, index) => (
-              <Evidence key={index} evidence={evidence} />
-            ))}
-          </div>
-        </Section>
-        <Section title={t("Source")}>
-          <p className={styles.prose}>
-            {finding.analysis_id
-              ? `${t("Analysis")}: ${finding.analysis_id}`
-              : t("Submitted through the findings API or an Agent tool.")}
-          </p>
-          {finding.source_run_id && (
-            <RunEvidence runId={finding.source_run_id} />
-          )}
-        </Section>
+          <details className={styles.references}>
+            <summary>{t("Technical references")}</summary>
+            <dl className={styles.referenceList}>
+              <dt>{t("Finding")}</dt>
+              <dd>{finding.id}</dd>
+              <dt>{t("Category")}</dt>
+              <dd>{finding.category}</dd>
+              <dt>{t("Agent version")}</dt>
+              <dd>{finding.agent_revision_id}</dd>
+              {finding.analysis_id && (
+                <>
+                  <dt>{t("Analysis")}</dt>
+                  <dd>{finding.analysis_id}</dd>
+                </>
+              )}
+            </dl>
+            {finding.source_run_id && (
+              <RunEvidence
+                runId={finding.source_run_id}
+                label={t("Open analysis run")}
+              />
+            )}
+            {!finding.source_run_id && (
+              <p className={styles.hint}>
+                {t("Submitted through the findings API or an Agent tool.")}
+              </p>
+            )}
+          </details>
+        </div>
+        <aside className={styles.reviewSidebar}>
+          <Section
+            title={t("Review")}
+            description={t(
+              "Severity describes impact. Assessment records your review of the evidence.",
+            )}
+          >
+            <AssessmentEditor
+              key={`${finding.id}:${finding.version}`}
+              finding={finding}
+              canWrite={can("write")}
+              pending={update.isPending}
+              onSave={(body) => update.mutate(body)}
+            />
+          </Section>
+          <Section
+            title={t("Next step")}
+            description={t(
+              "Composer opens with this evidence and the cited version. Review the proposed change before approving it.",
+            )}
+          >
+            {can("run") && composer.available && (
+              <Button
+                disabled={
+                  !revision.data ||
+                  composer.pending ||
+                  ["expected", "false_positive"].includes(finding.assessment)
+                }
+                onClick={fix}
+              >
+                {t("Review with Composer")}
+              </Button>
+            )}
+            {can("write") && (
+              <Button
+                variant="outline"
+                disabled={update.isPending}
+                onClick={() => update.mutate({ closed: !finding.closed })}
+              >
+                {finding.closed ? t("Reopen finding") : t("Close finding")}
+              </Button>
+            )}
+          </Section>
+        </aside>
       </div>
     </Page>
   );
 }
-function Evidence({ evidence }: { evidence: Schema["Evidence"] }) {
+function Evidence({
+  evidence,
+  number,
+}: {
+  evidence: Schema["Evidence"];
+  number: number;
+}) {
   const { basePath } = useWorkspace(),
     { t } = useTranslation();
   return (
-    <div className="grid gap-2">
-      <Link
-        className={styles.link}
-        to={`${basePath}/traces/${evidence.trace_id}`}
-      >
-        {t("Trace")} · {evidence.trace_id}
-      </Link>
-      <RunEvidence runId={evidence.run_id} />
-      {evidence.span_ids?.length ? (
-        <p className={styles.hint}>
-          {t("Steps")}: {evidence.span_ids.join(", ")}
-        </p>
-      ) : null}
+    <div className={styles.evidenceCard}>
+      <div className={styles.evidenceActions}>
+        <Link
+          className={styles.link}
+          to={`${basePath}/traces/${evidence.trace_id}`}
+          title={evidence.trace_id}
+        >
+          {t("Trace")} {number}
+        </Link>
+        <RunEvidence runId={evidence.run_id} />
+      </div>
+      <details className={styles.references}>
+        <summary>{t("Trace references")}</summary>
+        <dl className={styles.referenceList}>
+          <dt>{t("Trace")}</dt>
+          <dd>{evidence.trace_id}</dd>
+          <dt>{t("Run")}</dt>
+          <dd>{evidence.run_id}</dd>
+          {evidence.span_ids?.length ? (
+            <>
+              <dt>{t("Steps")}</dt>
+              <dd>{evidence.span_ids.join(", ")}</dd>
+            </>
+          ) : null}
+        </dl>
+      </details>
     </div>
   );
 }
-function RunEvidence({ runId }: { runId: string }) {
+function RunEvidence({ runId, label }: { runId: string; label?: string }) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
@@ -226,12 +268,13 @@ function RunEvidence({ runId }: { runId: string }) {
       {query.data ? (
         <Link
           className={styles.link}
+          title={runId}
           to={`${basePath}/sessions/${query.data.session_id}/threads/${query.data.thread_id}/runs/${runId}`}
         >
-          {t("Run")} · {runId}
+          {label ?? t("Open run")}
         </Link>
       ) : (
-        <span className={styles.hint}>{runId}</span>
+        <span className={styles.hint}>{t("Run")}</span>
       )}
     </>
   );
@@ -251,8 +294,29 @@ function AssessmentEditor({
   const { t } = useTranslation();
   const [assessment, setAssessment] = useState(finding.assessment);
   const [note, setNote] = useState(finding.assessment_note);
+  const [editing, setEditing] = useState(false);
   const dirty =
     assessment !== finding.assessment || note !== finding.assessment_note;
+  if (!editing)
+    return (
+      <div className={styles.reviewSummary}>
+        <strong>{t(assessmentLabels[finding.assessment])}</strong>
+        {finding.assessment_note ? (
+          <MarkdownContent text={finding.assessment_note} />
+        ) : (
+          <p className={styles.hint}>{t("No review note yet.")}</p>
+        )}
+        {canWrite && (
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => setEditing(true)}
+          >
+            {t("Edit assessment")}
+          </Button>
+        )}
+      </div>
+    );
   return (
     <form
       className={styles.form}
@@ -297,10 +361,11 @@ function AssessmentEditor({
           <Button
             type="button"
             variant="outline"
-            disabled={!dirty || pending}
+            disabled={pending}
             onClick={() => {
               setAssessment(finding.assessment);
               setNote(finding.assessment_note);
+              setEditing(false);
             }}
           >
             {t("Cancel")}
