@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 from a13n_environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_environment._guest.files import execute
-from a13n_environment.direct_local.provider import DIRECT_LOCAL, DirectLocalTarget
+from a13n_environment.direct_local.execution import DirectLocalExecution
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
 from a13n_environment.e2b.commands import GuestCommands
 from a13n_environment.e2b.configuration import E2BEnvironmentConfiguration
 from a13n_environment.files import FileQueryRequest, FileTextSearchRequest
@@ -46,7 +47,7 @@ def test_content_pattern_conformance(case):
 async def search_files(request, tmp_path):
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment({"root": {"path": str(tmp_path)}})
-    environment = DirectLocalTarget(
+    environment = DirectLocalExecution(
         environment_id="conformance",
         configuration=configuration,
     )

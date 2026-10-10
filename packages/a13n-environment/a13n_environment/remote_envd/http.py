@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from a13n_environment._transport_policy import outbound_tls_verify
 
-from .._backend import BackendTarget
+from .._backend import ExecutionBackend
 from .._backend_factory import BackendFactory
 from ..attachments import DeviceEIPSessionSource
 from ..authentication import Authentication, CredentialMode
@@ -33,7 +33,7 @@ from ..models import EnvironmentState
 from .configuration import HttpEnvdConnectionConfiguration, HttpEnvdCredential, RemoteEnvdEnvironmentConfiguration
 from .environment import (
     REQUIRED_METHODS,
-    RemoteEnvdTarget,
+    RemoteEnvdExecution,
     decode_state,
     describe_environment,
     target_identity,
@@ -172,14 +172,12 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
-    operation_id: str,
-) -> BackendTarget:
-    del operation_id
+) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
     data = decode_state(HTTP_PROVIDER_KEY, state)
     assert state is not None
-    return RemoteEnvdTarget(
+    return RemoteEnvdExecution(
         provider_key=HTTP_PROVIDER_KEY,
         environment_id=environment_id,
         working_directory=configuration.working_directory,
@@ -197,7 +195,7 @@ def _construct(
 _factory = BackendFactory(
     key=HTTP_PROVIDER_KEY,
     environment_model=RemoteEnvdEnvironmentConfiguration,
-    target=_construct,
+    execution=_construct,
     describe=describe_environment,
     target_identity=lambda **kwargs: target_identity(HTTP_PROVIDER_KEY, **kwargs),
     runtime_factory=_runtime,

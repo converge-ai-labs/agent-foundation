@@ -11,7 +11,9 @@ from a13n_environment.docker.configuration import (
     DockerEnvironmentConfiguration,
     DockerMountConfiguration,
 )
-from a13n_environment.docker.provider import DOCKER, DockerTarget
+from a13n_environment.docker.execution import DockerExecution
+from a13n_environment.docker.management import DockerManagement
+from a13n_environment.docker.provider import DOCKER
 from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_environment.errors import EnvironmentProviderError
 from a13n_environment.models import EnvironmentError
@@ -34,7 +36,7 @@ def native(monkeypatch):
     engine.client.images.pull.return_value.id = "sha256:" + "e" * 64
     monkeypatch.setattr(DockerCommands, "execute", AsyncMock(return_value=b""))
     config = DockerEnvironmentConfiguration(image="python:3.13-slim", memory_gb=0.25)
-    env = DockerTarget(config, "env_test", None, DockerProviderRuntime(engine))
+    env = DockerManagement(config, "env_test", None, DockerProviderRuntime(engine))
     container.labels = env.labels
     return env, engine, container
 
@@ -54,7 +56,7 @@ async def test_create_native_container_records_state_and_overrides_entrypoint(na
         engine.client.images.pull.assert_not_called()
         assert "ports" not in options and "volumes" not in options
         assert env.state.state["container_id"] == container.id
-        assert env.descriptor.backing_identity == container.id
+        assert env.target.container_id == container.id
     finally:
         await env.close()
     container.remove.assert_not_called()
@@ -139,7 +141,7 @@ def test_decimal_memory_preserves_docker_minimum_and_64_bit_limit():
 
 async def test_decimal_memory_minimum_reaches_docker_as_bytes(native):
     env, engine, _ = native
-    env = DockerTarget(
+    env = DockerManagement(
         DockerEnvironmentConfiguration(image=env.config.image, memory_gb=0.006291456),
         env.environment_id,
         None,
@@ -190,7 +192,7 @@ async def test_reentry_reuses_container_without_replaying_initialization(native)
     await env.close()
     engine.client.containers.get.side_effect = None
     engine.client.containers.get.return_value = container
-    fresh = DockerTarget(env.config, env.environment_id, env.state, env.runtime)
+    fresh = DockerExecution(env.config, env.environment_id, env.state, env.runtime)
     DockerCommands.execute.reset_mock()
     await fresh.open(execution_id="exec-reentry")
     assert DockerCommands.execute.await_count == 1
@@ -202,7 +204,7 @@ async def test_reentry_reuses_container_without_replaying_initialization(native)
 async def test_confirmed_absence_never_rebuilds_a_saved_target(native):
     env, engine, _container = native
     await env.create()
-    fresh = DockerTarget(env.config, env.environment_id, env.state, env.runtime)
+    fresh = DockerManagement(env.config, env.environment_id, env.state, env.runtime)
     with pytest.raises(EnvironmentProviderError) as missing:
         await fresh.create()
     assert missing.value.category == "missing"
@@ -247,7 +249,7 @@ async def test_external_registration_keeps_allocation_identity(native):
     container.status = "running"
     engine.client.containers.get.side_effect = None
     engine.client.containers.get.return_value = container
-    external = DockerTarget(env.config, "env_registered", env.state, DockerProviderRuntime(engine))
+    external = DockerExecution(env.config, "env_registered", env.state, DockerProviderRuntime(engine))
     await external.open(execution_id="exec-external")
     assert external.environment_id == "env_registered"
     assert external.state.state["environment_id"] == env.environment_id
@@ -261,7 +263,7 @@ async def test_unknown_remove_outcome_preserves_state(native):
     engine.client.containers.get.side_effect = None
     engine.client.containers.get.return_value = container
     container.remove.side_effect = ConnectionError("lost response")
-    fresh = DockerTarget(env.config, env.environment_id, env.state, env.runtime)
+    fresh = DockerManagement(env.config, env.environment_id, env.state, env.runtime)
     with pytest.raises(EnvironmentProviderError) as error:
         await fresh.destroy()
     assert error.value.certainty == "unknown"
@@ -290,8 +292,8 @@ async def test_missing_external_target_never_adopts_same_name_replacement(native
     await env.create()
     await env.close()
     engine.client.containers.get.reset_mock()
-    external = DockerTarget(env.config, "env_registered", env.state, DockerProviderRuntime(engine))
-    assert await external.inspect() == "absent"
+    external = DockerExecution(env.config, "env_registered", env.state, DockerProviderRuntime(engine))
+    assert await asyncio.to_thread(external._lookup) is None
     engine.client.containers.get.assert_called_once_with(env.state.state["container_id"])
     with pytest.raises(EnvironmentProviderError) as error:
         await external.open(execution_id="exec-external")
@@ -340,7 +342,7 @@ async def test_connector_requires_state_before_acquiring_a_client(native):
 async def test_image_policy_controls_missing_image_pull(native, policy):
     env, engine, _ = native
     config = env.config.model_copy(update={"pull_policy": policy})
-    candidate = DockerTarget(config, "env_test", None, env.runtime)
+    candidate = DockerManagement(config, "env_test", None, env.runtime)
     assert candidate.fingerprint == env.fingerprint
     engine.client.images.get.side_effect = ImageNotFound("missing")
     try:
@@ -364,7 +366,7 @@ async def test_image_policy_controls_missing_image_pull(native, policy):
 async def test_native_execution_user_prefers_recipe_then_image_label(native, configured, label, expected):
     original, engine, container = native
     engine.client.images.get.return_value.labels = {} if label is None else {"ai.a13n.environment.user": label}
-    env = DockerTarget(
+    env = DockerManagement(
         original.config.model_copy(update={"user": configured}),
         "env_identity",
         None,

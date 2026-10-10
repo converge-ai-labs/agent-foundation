@@ -7,7 +7,7 @@ import os
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
-from .._backend import BackendTarget
+from .._backend import ExecutionBackend
 from .._backend_factory import BackendFactory
 from .._local_identity import local_backing_identity
 from ..attachments import DeviceEIPSessionSource
@@ -52,20 +52,18 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: LocalEnvdProviderRuntime | None,
-    operation_id: str,
-) -> BackendTarget:
-    del operation_id
+) -> ExecutionBackend:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Local Envd requires LocalEnvdEnvironmentConfiguration")
     if state is not None:
         raise provider_error(_PROVIDER_KEY, "provider_state_invalid", Category.INVALID)
     if runtime is None:
         raise provider_error(_PROVIDER_KEY, "provider_runtime_required", Category.INVALID)
-    return LocalEnvdTarget(configuration, runtime, environment_id=environment_id)
+    return LocalEnvdExecution(configuration, runtime, environment_id=environment_id)
 
 
 _factory = BackendFactory(
-    key=_PROVIDER_KEY, environment_model=LocalEnvdEnvironmentConfiguration, target=_construct, describe=_describe
+    key=_PROVIDER_KEY, environment_model=LocalEnvdEnvironmentConfiguration, execution=_construct, describe=_describe
 )
 
 
@@ -83,7 +81,7 @@ LOCAL_ENVD = EnvironmentProviderDefinition(
 )
 
 
-class LocalEnvdTarget(BackendTarget):
+class LocalEnvdExecution(ExecutionBackend):
     """One fixed-cwd Session on a shared Device; a borrowed daemon runtime outlives it."""
 
     def __init__(

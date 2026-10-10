@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from .._windows_job import WindowsJob
     from .configuration import DirectLocalShellProfile
     from .files import LocalFileOperator
-    from .provider import (
+    from .shared import (
         _DirectLocalOutputPolicy,
         _DirectLocalPortPolicy,
         _DirectLocalProcessPolicy,

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
-from .._backend import BackendTarget
+from .._backend import ExecutionBackend
 from .._backend_factory import BackendFactory
 from ..definition import EnvironmentProviderDefinition
 from ..errors import EnvironmentProviderErrorCategory as Category
@@ -14,7 +14,7 @@ from .configuration import RemoteEnvdEnvironmentConfiguration, WebSocketEnvdConn
 from .connections import WEBSOCKET_PROVIDER_KEY, WebSocketEnvdConnections
 from .environment import (
     REQUIRED_METHODS,
-    RemoteEnvdTarget,
+    RemoteEnvdExecution,
     decode_state,
     describe_environment,
     target_identity,
@@ -52,14 +52,12 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WebSocketEnvdProviderRuntime | None,
-    operation_id: str,
-) -> BackendTarget:
-    del operation_id
+) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("WebSocket Envd requires RemoteEnvdEnvironmentConfiguration and WebSocketEnvdProviderRuntime")
     data = decode_state(WEBSOCKET_PROVIDER_KEY, state)
     assert state is not None
-    return RemoteEnvdTarget(
+    return RemoteEnvdExecution(
         provider_key=WEBSOCKET_PROVIDER_KEY,
         environment_id=environment_id,
         working_directory=configuration.working_directory,
@@ -78,7 +76,7 @@ def _construct(
 _factory = BackendFactory(
     key=WEBSOCKET_PROVIDER_KEY,
     environment_model=RemoteEnvdEnvironmentConfiguration,
-    target=_construct,
+    execution=_construct,
     describe=describe_environment,
     target_identity=lambda **kwargs: target_identity(WEBSOCKET_PROVIDER_KEY, **kwargs),
     runtime_factory=_runtime,

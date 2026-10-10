@@ -10,7 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 from a13n_environment.docker.configuration import DockerEnvironmentConfiguration
-from a13n_environment.docker.provider import DockerTarget
+from a13n_environment.docker.management import DockerManagement
 from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_environment.models import EnvironmentState
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -111,7 +111,7 @@ async def template(service: SimpleNamespace, recipe: dict) -> dict:
 
 
 def retained_state(recipe: dict, environment_id: str) -> EnvironmentState:
-    target = DockerTarget(
+    target = DockerManagement(
         DockerEnvironmentConfiguration.model_validate(recipe),
         environment_id,
         None,

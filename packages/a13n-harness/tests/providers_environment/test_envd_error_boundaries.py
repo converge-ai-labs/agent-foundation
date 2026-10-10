@@ -8,14 +8,14 @@ import pytest
 from a13n_envd_client import EIPSessionStateError
 from a13n_environment.errors import EnvironmentProviderError
 from a13n_environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
-from a13n_environment.local_envd.provider import LocalEnvdTarget
+from a13n_environment.local_envd.provider import LocalEnvdExecution
 from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
 from a13n_environment.models import EnvironmentError, EnvironmentState
 from a13n_environment.remote_envd import environment as remote_module
-from a13n_environment.remote_envd.environment import RemoteEnvdTarget
+from a13n_environment.remote_envd.environment import RemoteEnvdExecution
 
 pytestmark = pytest.mark.anyio
 
@@ -23,7 +23,7 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture(params=["local", "remote"])
 def adapter(request, tmp_path):
     if request.param == "local":
-        return LocalEnvdTarget(
+        return LocalEnvdExecution(
             LocalEnvdEnvironmentConfiguration(),
             LocalEnvdProviderRuntime(
                 executable=tmp_path / "unused",
@@ -36,7 +36,7 @@ def adapter(request, tmp_path):
     async def session():
         yield SimpleNamespace()
 
-    return RemoteEnvdTarget(
+    return RemoteEnvdExecution(
         provider_key="http_envd",
         environment_id="test",
         state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),
@@ -45,7 +45,7 @@ def adapter(request, tmp_path):
 
 
 def install_scope(adapter, scope):
-    if isinstance(adapter, LocalEnvdTarget):
+    if isinstance(adapter, LocalEnvdExecution):
         adapter._eip_scope = scope
     else:
         adapter._session_context = scope
@@ -89,7 +89,7 @@ async def test_prepare_failure_stays_primary_when_cleanup_also_fails(adapter, mo
         raise cleanup
 
     monkeypatch.setattr(adapter, "close", fail_cleanup)
-    if isinstance(adapter, LocalEnvdTarget):
+    if isinstance(adapter, LocalEnvdExecution):
 
         async def acquire():
             raise original
@@ -222,7 +222,7 @@ async def test_remote_cleanup_attempts_both_owners_and_retains_all_failures():
 
     scope = session()
     await scope.__aenter__()
-    adapter = RemoteEnvdTarget(
+    adapter = RemoteEnvdExecution(
         provider_key="http_envd",
         environment_id="test",
         state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),

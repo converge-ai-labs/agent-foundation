@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from a13n_envd_client import EIPSession
 from pydantic import BaseModel
 
-from .._backend import BackendTarget
+from .._backend import ExecutionBackend
 from ..eip.binding import EIPEnvironmentSession, configured_descriptor
 from ..errors import EnvironmentProviderError, provider_error
 from ..errors import EnvironmentProviderErrorCategory as Category
@@ -39,7 +39,7 @@ def target_identity(provider_type: str, *, configuration: BaseModel, state: Envi
     return decode_state(provider_type, state).device_id
 
 
-class RemoteEnvdTarget(BackendTarget):
+class RemoteEnvdExecution(ExecutionBackend):
     def __init__(
         self,
         *,

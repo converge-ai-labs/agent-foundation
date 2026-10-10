@@ -55,6 +55,6 @@ sequenceDiagram
     Host->>Provider: Independently scheduled keepalive, stop, or destroy
 ```
 
-Management and execution can run in different processes. The Host carries portable state between them, not a shared live client. An Environment connector can open only its selected target and has no target-management methods. Opening, checking, and reconnecting an Environment execution never create, resume, replace, or renew that target.
+Each Provider implements management and execution with separate internal objects and construction paths. Common configuration, identity validation, and transport support do not carry both roles. Management and execution can run in different processes. The Host carries portable state between them, not a shared live client. An Environment connector can open only its selected target and has no target-management methods. Opening, checking, and reconnecting an Environment execution never create, resume, replace, or renew that target.
 
 Opening a scope, completing a command, closing a scope, and retiring a target are separate outcomes. A Run ending does not authorize target destruction, and an execution connection does not guarantee continued target survival. [The shared contract](01-environment-contract.md) owns cancellation, uncertain outcomes, reconnection, and resource lifetime.

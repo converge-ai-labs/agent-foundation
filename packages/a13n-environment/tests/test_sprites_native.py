@@ -12,7 +12,7 @@ from a13n_environment.commands import CommandRequest, ShellCommand
 from a13n_environment.models import EnvironmentState
 from a13n_environment.native.http import NativeHTTP
 from a13n_environment.retention import EnvironmentOutputPolicy
-from a13n_environment.sprites import provider as sprites
+from a13n_environment.sprites import execution as sprites
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 

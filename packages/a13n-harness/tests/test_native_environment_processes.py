@@ -11,7 +11,8 @@ import pytest
 from a13n_environment._guest_files import GuestFiles
 from a13n_environment.e2b.commands import GuestCommands
 from a13n_environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_environment.e2b.provider import E2B, E2BProviderRuntime, E2BTarget
+from a13n_environment.e2b.management import E2BManagement
+from a13n_environment.e2b.provider import E2B, E2BProviderRuntime
 from a13n_environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
@@ -83,7 +84,9 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
 
     configuration = E2BEnvironmentConfiguration()
     runtime = E2BProviderRuntime(SecretStr("test-only"))
-    target = E2BTarget(configuration, environment_id="env-test", state=None, runtime=runtime)
+    target = E2BManagement(
+        configuration, environment_id="env-test", state=None, runtime=runtime, operation_id="op-test"
+    )
     target._remember(sandbox.sandbox_id)
     state = target.state
 
@@ -96,8 +99,8 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
     async def close(*args, **kwargs):
         pass
 
-    monkeypatch.setattr("a13n_environment.e2b.provider.open_sandbox", attach)
-    monkeypatch.setattr("a13n_environment.e2b.provider.close_sandbox", close)
+    monkeypatch.setattr("a13n_environment.e2b.execution.open_sandbox", attach)
+    monkeypatch.setattr("a13n_environment.e2b.execution.close_sandbox", close)
     sandbox.is_running = ready
     policy_resources = []
 

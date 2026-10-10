@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import a13n_environment.e2b.provider as provider_module
+import a13n_environment.e2b.execution as provider_module
 import e2b
 import pytest
 from a13n_environment.builtins import select_builtin_environment_providers
@@ -16,7 +16,10 @@ from a13n_environment.e2b.configuration import (
     E2BCredential,
     E2BEnvironmentConfiguration,
 )
-from a13n_environment.e2b.provider import E2B, E2BProviderRuntime, E2BTarget, descriptor
+from a13n_environment.e2b.execution import E2BExecution
+from a13n_environment.e2b.management import E2BManagement
+from a13n_environment.e2b.provider import E2B, E2BProviderRuntime
+from a13n_environment.e2b.shared import descriptor
 from a13n_environment.errors import EnvironmentProviderError
 from a13n_environment.models import EnvironmentAvailability, EnvironmentError, EnvironmentState
 from e2b.api.client.models import SandboxState
@@ -139,13 +142,13 @@ def api(monkeypatch):
         return api.sandbox(sandbox_id)
 
     monkeypatch.setattr(provider_module, "open_sandbox", attach)
-    monkeypatch.setattr(E2BTarget, "check_ready", AsyncMock())
-    monkeypatch.setattr(E2BTarget, "_open_operations", opened)
+    monkeypatch.setattr(E2BExecution, "check_ready", AsyncMock())
+    monkeypatch.setattr(E2BExecution, "_open_operations", opened)
     return api
 
 
 def environment(state=None, *, configuration=None, identity="env-test"):
-    return E2BTarget(
+    return E2BManagement(
         configuration or E2BEnvironmentConfiguration(),
         environment_id=identity,
         state=state,
@@ -194,7 +197,7 @@ async def test_failed_execution_open_keeps_the_selected_target_and_releases_scop
     async def fail(*args):
         raise RuntimeError("readiness")
 
-    monkeypatch.setattr(E2BTarget, "_open_operations", fail)
+    monkeypatch.setattr(E2BExecution, "_open_operations", fail)
     with pytest.raises(RuntimeError, match="readiness"):
         await connector.open()
     assert connector.state == state

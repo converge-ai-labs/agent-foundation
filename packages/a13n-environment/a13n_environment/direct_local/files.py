@@ -40,7 +40,7 @@ from ..models import EnvironmentError, EnvironmentOperationReceipt
 from ..text import apply_unified_diff
 
 if TYPE_CHECKING:
-    from .provider import _DirectLocalFilePolicy
+    from .shared import _DirectLocalFilePolicy
 
 
 class _LocalWriter:

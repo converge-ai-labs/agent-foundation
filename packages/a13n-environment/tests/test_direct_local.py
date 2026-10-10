@@ -15,28 +15,26 @@ from a13n_environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
+from a13n_environment.direct_local.execution import DirectLocalExecution
 from a13n_environment.direct_local.processes import LocalProcessManager
-from a13n_environment.direct_local.provider import (
-    DIRECT_LOCAL,
-    DirectLocalTarget,
-)
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
 from a13n_environment.errors import EnvironmentProviderError
 from a13n_environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
 
 pytestmark = pytest.mark.anyio
 
 
-def _environment(root: Path, *, max_value_bytes: int | None = None) -> DirectLocalTarget:
+def _environment(root: Path, *, max_value_bytes: int | None = None) -> DirectLocalExecution:
     provider = DIRECT_LOCAL
     value: dict[str, object] = {"root": {"path": str(root)}}
     if max_value_bytes is not None:
         value["max_value_bytes"] = max_value_bytes
     configuration = provider.validate_environment(value)
-    environment = DirectLocalTarget(
+    environment = DirectLocalExecution(
         environment_id="local-test",
         configuration=configuration,
     )
-    assert isinstance(environment, DirectLocalTarget)
+    assert isinstance(environment, DirectLocalExecution)
     return environment
 
 
@@ -198,7 +196,13 @@ async def test_direct_local_destroy_is_non_destructive(tmp_path: Path) -> None:
     marker.write_text("preserve")
     environment = _environment(tmp_path)
 
-    await environment.destroy()
+    async with await DIRECT_LOCAL.open_provider() as provider:
+        await provider.destroy(
+            {"root": {"path": str(tmp_path)}},
+            environment_id=environment.environment_id,
+            state=None,
+            operation_id="op-destroy",
+        )
     await environment.close()
 
     assert marker.read_text() == "preserve"

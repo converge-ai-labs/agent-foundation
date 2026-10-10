@@ -57,6 +57,8 @@ class EnvironmentExecution:
     async def close(self): ...
 ```
 
+Provider implementations preserve this separation internally. Management and execution use distinct constructors and concrete objects; neither object inherits or delegates to a combined implementation containing both roles. Shared support may hold configuration, target identity, transport primitives, and read-only queries. Only management records newly observed target state or implements target lifecycle operations. Execution validates observations against its selected state and owns only its execution resources. Explicit management may run initialization or readiness probes without constructing an execution scope.
+
 The management provider holds account-scoped clients. Its `execution_connector()` constructs inert connection inputs for one fixed target; it performs no target I/O and allocates no live execution client. Connect-only providers can construct `EnvironmentConnector` objects directly without implementing management operations.
 
 An `EnvironmentConnector` captures the validated target selector, execution options, and Host-authorized connection material. It cannot select arbitrary model-supplied targets, expose management methods, or hide management calls behind a credential callback. A Host-owned credential source may supply refreshed connection material under the same authority; the library owns no credential store. A narrow Python interface is not a vendor credential privilege boundary.

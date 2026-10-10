@@ -8,7 +8,7 @@ from a13n_environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
+from a13n_environment.direct_local.shared import _DirectLocalFilePolicy
 from a13n_environment.models import EnvironmentError
 
 pytestmark = pytest.mark.anyio

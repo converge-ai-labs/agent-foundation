@@ -18,8 +18,9 @@ from a13n_environment.commands import (
     CommandRequest,
     ShellCommand,
 )
+from a13n_environment.direct_local.execution import DirectLocalExecution
 from a13n_environment.direct_local.processes import LocalProcessManager
-from a13n_environment.direct_local.provider import DIRECT_LOCAL, DirectLocalTarget
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
 from a13n_environment.models import EnvironmentError
 from a13n_environment.retention import EnvironmentOutputPolicy
 
@@ -63,7 +64,7 @@ async def _processes(
             "max_wall_time_seconds": max_wall_time_seconds,
         },
     )
-    environment = DirectLocalTarget(
+    environment = DirectLocalExecution(
         configuration=configuration,
         environment_id="native-test",
     )
@@ -118,7 +119,7 @@ async def test_native_background_stdin_and_output(tmp_path: Path) -> None:
 
 
 async def test_process_identity_follows_a_retyped_provider(tmp_path: Path) -> None:
-    class Workspace(DirectLocalTarget):
+    class Workspace(DirectLocalExecution):
         @property
         def provider_key(self) -> str:
             return "custom_workspace"

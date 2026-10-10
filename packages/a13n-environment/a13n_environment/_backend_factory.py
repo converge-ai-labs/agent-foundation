@@ -13,7 +13,7 @@ from uuid import uuid4
 import anyio
 from pydantic import BaseModel
 
-from ._backend import BackendTarget
+from ._backend import ExecutionBackend, ManagementBackend
 from .definition import TargetIdentity, _no_target_identity
 from .errors import EnvironmentManagementCancelled, EnvironmentManagementError, EnvironmentProviderError, provider_error
 from .errors import EnvironmentProviderErrorCategory as Category
@@ -34,7 +34,7 @@ class RuntimeFactory[C: BaseModel, K: BaseModel, R](Protocol):
     def __call__(self, *, configuration: C, credential: K | None) -> Awaitable[R]: ...
 
 
-class TargetFactory[E: BaseModel, R](Protocol):
+class ManagementFactory[E: BaseModel, R](Protocol):
     def __call__(
         self,
         *,
@@ -43,10 +43,21 @@ class TargetFactory[E: BaseModel, R](Protocol):
         state: EnvironmentState | None,
         runtime: R | None,
         operation_id: str,
-    ) -> BackendTarget: ...
+    ) -> ManagementBackend: ...
 
 
-async def _release(target: BackendTarget | None, runtime: ClosableRuntime | None) -> None:
+class ExecutionFactory[E: BaseModel, R](Protocol):
+    def __call__(
+        self,
+        *,
+        configuration: E,
+        environment_id: str,
+        state: EnvironmentState | None,
+        runtime: R | None,
+    ) -> ExecutionBackend: ...
+
+
+async def _release(target: ClosableRuntime | None, runtime: ClosableRuntime | None) -> None:
     """Attempt every owned cleanup even when the first one fails."""
     with anyio.CancelScope(shield=True):
         try:
@@ -61,8 +72,9 @@ async def _release(target: BackendTarget | None, runtime: ClosableRuntime | None
 class BackendFactory[C: BaseModel, K: BaseModel, E: BaseModel, R]:
     key: str
     environment_model: type[E]
-    target: TargetFactory[E, R]
+    execution: ExecutionFactory[E, R]
     describe: Callable[[E], EnvironmentDescriptor]
+    management: ManagementFactory[E, R] | None = None
     runtime_factory: RuntimeFactory[C, K, R] | None = None
     target_identity: TargetIdentity[E] = _no_target_identity
 
@@ -75,6 +87,8 @@ class BackendFactory[C: BaseModel, K: BaseModel, E: BaseModel, R]:
         return acquired, acquired if isinstance(acquired, ClosableRuntime) else None
 
     async def provider(self, *, configuration: C, credential: K | None, runtime: R | None) -> EnvironmentProvider[E]:
+        if self.management is None:
+            raise provider_error(self.key, "provider_operation_unsupported", Category.UNSUPPORTED)
         acquired, owned = await self.acquire(configuration, credential, runtime)
         return BackendProvider(self, configuration, credential, runtime, acquired, owned)
 
@@ -128,14 +142,13 @@ class BackendConnector[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentC
 
     async def open(self) -> EnvironmentExecution:
         runtime, owned = await self.factory.acquire(self.configuration, self.credential, self.runtime)
-        target: BackendTarget | None = None
+        target: ExecutionBackend | None = None
         try:
-            target = self.factory.target(
+            target = self.factory.execution(
                 configuration=self.environment,
                 environment_id=self.environment_id,
                 state=self.state,
                 runtime=runtime,
-                operation_id="op-" + uuid4().hex,
             )
             execution_id = "exec-" + uuid4().hex
             await target.open(execution_id=execution_id)
@@ -154,7 +167,11 @@ class BackendConnector[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentC
 
 class BackendExecution(EnvironmentExecution):
     def __init__(
-        self, target: BackendTarget, execution_id: str, state: EnvironmentState | None, runtime: ClosableRuntime | None
+        self,
+        target: ExecutionBackend,
+        execution_id: str,
+        state: EnvironmentState | None,
+        runtime: ClosableRuntime | None,
     ):
         self._target = target
         self._execution_id = execution_id
@@ -237,8 +254,10 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
 
     def _target(
         self, environment: object, environment_id: str, state: EnvironmentState | None, operation_id: str
-    ) -> BackendTarget:
-        return self._factory.target(
+    ) -> ManagementBackend:
+        if self._factory.management is None:
+            raise provider_error(self._factory.key, "provider_operation_unsupported", Category.UNSUPPORTED)
+        return self._factory.management(
             configuration=self._recipe(environment),
             environment_id=environment_id,
             state=state,
@@ -249,7 +268,7 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
     @asynccontextmanager
     async def _operation(
         self, environment: object, environment_id: str, state: EnvironmentState | None, operation_id: str
-    ) -> AsyncIterator[BackendTarget]:
+    ) -> AsyncIterator[ManagementBackend]:
         target = self._target(environment, environment_id, state, operation_id)
         primary: BaseException | None = None
         try:

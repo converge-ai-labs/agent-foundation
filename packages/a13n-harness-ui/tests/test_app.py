@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from a13n_environment.commands import CommandRequest, ShellCommand
 from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.local_envd.provider import LocalEnvdTarget
+from a13n_environment.local_envd.provider import LocalEnvdExecution
 from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
@@ -630,13 +630,13 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    prepared: list[LocalEnvdTarget] = []
+    prepared: list[LocalEnvdExecution] = []
 
-    async def prepare_local_envd(environment: LocalEnvdTarget, **scope: object) -> None:
+    async def prepare_local_envd(environment: LocalEnvdExecution, **scope: object) -> None:
         del scope
         prepared.append(environment)
 
-    monkeypatch.setattr(LocalEnvdTarget, "open", prepare_local_envd)
+    monkeypatch.setattr(LocalEnvdExecution, "open", prepare_local_envd)
     root = _write_configuration(tmp_path)
     root.write_text(f"{root.read_text()}  environment_profile: {SANDBOX_PROFILE_ID}\n")
     agent = tmp_path / "agents" / "assistant.yaml"

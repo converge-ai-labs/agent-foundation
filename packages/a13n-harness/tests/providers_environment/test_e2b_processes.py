@@ -626,7 +626,8 @@ async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries():
 @pytest.mark.skipif(sys.platform == "win32", reason="The E2B guest filesystem uses POSIX paths")
 async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path, monkeypatch):
     """Real guest helper/path mapping; the cloud API and native command event source are simulated."""
-    from a13n_environment.e2b.provider import E2B, E2BProviderRuntime, E2BTarget
+    from a13n_environment.e2b.management import E2BManagement
+    from a13n_environment.e2b.provider import E2B, E2BProviderRuntime
     from a13n_harness import EnvironmentMount, RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
 
@@ -651,11 +652,11 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
     async def close(*args, **kwargs):
         pass
 
-    monkeypatch.setattr("a13n_environment.e2b.provider.open_sandbox", attach)
-    monkeypatch.setattr("a13n_environment.e2b.provider.close_sandbox", close)
+    monkeypatch.setattr("a13n_environment.e2b.execution.open_sandbox", attach)
+    monkeypatch.setattr("a13n_environment.e2b.execution.close_sandbox", close)
     config = E2BEnvironmentConfiguration(root=str(tmp_path), python=sys.executable)
     owner = E2BProviderRuntime(api_key=SecretStr("test-key"))
-    target = E2BTarget(config, environment_id="shared", state=None, runtime=owner)
+    target = E2BManagement(config, environment_id="shared", state=None, runtime=owner, operation_id="op-test")
     target._remember(sandbox.sandbox_id)
     for directory in ("a", "b", "a"):
         adapter = E2B.execution_connector(config, environment_id="shared", state=target.state, runtime=owner)
