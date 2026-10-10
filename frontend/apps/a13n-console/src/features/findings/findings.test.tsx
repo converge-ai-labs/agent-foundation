@@ -46,6 +46,7 @@ const finding = {
   title: "Tool unavailable",
   severity: "critical",
   assessment: "unreviewed",
+  assessment_note: "",
   closed: false,
   category: "execution",
   explanation: "The tool could not complete the task.",
@@ -218,11 +219,12 @@ it("reviews impact independently and sends the exact revision and evidence to Co
   await screen.findByText(/Critical.*Unconfirmed/);
   await user.click(screen.getByRole("combobox", { name: "Assessment" }));
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
+  await user.click(screen.getByRole("button", { name: "Save assessment" }));
   await waitFor(() =>
     expect(http.PATCH).toHaveBeenCalledWith(
       "/api/v1/findings/{finding_id}",
       expect.objectContaining({
-        body: { assessment: "confirmed" },
+        body: { assessment: "confirmed", assessment_note: "" },
         params: {
           path: { finding_id: "fnd_test" },
           header: { "If-Match": '"fnd_test:1"' },
@@ -309,4 +311,75 @@ it("switches collections without stacking tables and preserves analysis evidence
       screen.queryByRole("table", { name: "Analysis history" }),
     ).toBeNull(),
   );
+});
+
+it("edits a false-positive assessment and its rationale together, clears stale rationale on a new outcome, and preserves saved feedback on close", async () => {
+  let current = {
+    ...finding,
+    assessment: "false_positive",
+    assessment_note: "The tool recovered.",
+  };
+  const original = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) =>
+    path === "/api/v1/findings/{finding_id}"
+      ? { data: current }
+      : original(path, ...args),
+  );
+  http.PATCH.mockImplementation(async (_path, options) => {
+    current = { ...current, ...options.body, version: current.version + 1 };
+    return { data: current };
+  });
+  const user = mount("/workspace/ws_test/findings/fnd_test");
+  const note = await screen.findByRole("textbox", { name: "Review note" });
+  expect((note as HTMLTextAreaElement).value).toBe("The tool recovered.");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Fix with Composer",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("combobox", { name: "Assessment" }));
+  await user.click(await screen.findByRole("option", { name: "Confirmed" }));
+  expect((note as HTMLTextAreaElement).value).toBe("");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect((note as HTMLTextAreaElement).value).toBe("The tool recovered.");
+  await user.clear(note);
+  await user.type(note, "The retry succeeded, so this diagnosis is incorrect.");
+  await user.click(screen.getByRole("button", { name: "Save assessment" }));
+  await waitFor(() =>
+    expect(http.PATCH).toHaveBeenCalledWith(
+      "/api/v1/findings/{finding_id}",
+      expect.objectContaining({
+        body: {
+          assessment: "false_positive",
+          assessment_note:
+            "The retry succeeded, so this diagnosis is incorrect.",
+        },
+        params: {
+          path: { finding_id: "fnd_test" },
+          header: { "If-Match": '"fnd_test:1"' },
+        },
+      }),
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save assessment",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true),
+  );
+  await user.click(screen.getByRole("button", { name: "Close finding" }));
+  await screen.findByRole("button", { name: "Reopen finding" });
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Review note",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("The retry succeeded, so this diagnosis is incorrect.");
+  expect(screen.getByText(finding.explanation)).toBeTruthy();
 });

@@ -1710,7 +1710,8 @@
           "unreviewed",
           "confirmed",
           "expected",
-          "insufficient"
+          "insufficient",
+          "false_positive"
         ],
         "type": "string"
       },
@@ -4495,6 +4496,10 @@
           "assessment": {
             "$ref": "#/components/schemas/Assessment"
           },
+          "assessment_note": {
+            "title": "Assessment Note",
+            "type": "string"
+          },
           "category": {
             "maxLength": 64,
             "minLength": 1,
@@ -4601,6 +4606,7 @@
           "source_run_id",
           "created_by_id",
           "assessment",
+          "assessment_note",
           "closed",
           "version",
           "created_at",
@@ -4727,6 +4733,18 @@
                 "type": "null"
               }
             ]
+          },
+          "assessment_note": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Note"
           },
           "closed": {
             "anyOf": [

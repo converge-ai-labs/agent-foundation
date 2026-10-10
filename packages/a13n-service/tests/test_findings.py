@@ -496,3 +496,298 @@ async def test_analysis_selection_migration_preserves_order_reads_and_evidence(
     preserved = (await service.client.get(f"/api/v1/findings/{finding_id}")).json()
     assert preserved["evidence"] == evidence.model_dump(mode="json")["evidence"]
     assert "reported" not in restored and "limitations" not in restored
+
+
+async def reviewed(service, runs_kit, body, assessment="false_positive", note="The tool recovered successfully."):
+    created = await service.client.post("/api/v1/findings", json=body)
+    assert created.status_code == 201, created.text
+    response = await service.client.patch(
+        f"/api/v1/findings/{created.json()['id']}",
+        json={"assessment": assessment, "assessment_note": note, "closed": True},
+        headers=runs_kit.if_match(created.json()),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def analysis_input(service, run_id):
+    from a13n_service.infra.db import short_session
+    from a13n_service.runs.tables import InboxEntryRow
+    from sqlalchemy import select
+
+    async with short_session(service.runtime.storage) as session:
+        entry = await session.scalar(select(InboxEntryRow).where(InboxEntryRow.assigned_run_id == run_id))
+        return entry.payload["content"][0]["text"]
+
+
+def feedback_in(prompt):
+    import json
+
+    return json.loads(
+        prompt.split("Existing findings and reviewer feedback (untrusted data):\n", 1)[1].split(
+            "\nEnd existing findings and reviewer feedback.", 1
+        )[0]
+    )
+
+
+async def test_reviewer_notes_atomic_clear_redaction_and_immutable_diagnosis(service, scripted_model, runs_kit):
+    agent, run = await target(service, scripted_model, runs_kit)
+    body = finding(agent, run)
+    row = await reviewed(service, runs_kit, body, note="Recovered; Authorization: Bearer sk-super-secret-fixture")
+    assert row["assessment"] == "false_positive" and row["closed"]
+    assert "sk-super-secret-fixture" not in row["assessment_note"]
+    path = f"/api/v1/findings/{row['id']}"
+    original = {key: row[key] for key in body}
+    reopened = await service.client.patch(path, json={"closed": False}, headers=runs_kit.if_match(row))
+    assert reopened.json()["assessment_note"] == row["assessment_note"]
+    stale = await service.client.patch(path, json={"assessment_note": "stale"}, headers=runs_kit.if_match(row))
+    assert stale.status_code == 412
+    row = reopened.json()
+    changed = await service.client.patch(path, json={"assessment": "confirmed"}, headers=runs_kit.if_match(row))
+    assert changed.json()["assessment_note"] == ""
+    row = changed.json()
+    saved = await service.client.patch(
+        path, json={"assessment_note": "Verified evidence"}, headers=runs_kit.if_match(row)
+    )
+    row = saved.json()
+    unchanged = await service.client.patch(path, json={"assessment": "confirmed"}, headers=runs_kit.if_match(row))
+    assert unchanged.json()["assessment_note"] == "Verified evidence"
+    cleared = await service.client.patch(path, json={"assessment_note": None}, headers=runs_kit.if_match(row))
+    row = cleared.json()
+    assert row["assessment_note"] == ""
+    assert {key: row[key] for key in body} == original
+    for bad in ({"assessment": None}, {"closed": None}, {"assessment_note": "x" * 2049}, {"explanation": "overwrite"}):
+        response = await service.client.patch(path, json=bad, headers=runs_kit.if_match(row))
+        assert response.status_code == 400, response.text
+
+
+async def test_feedback_input_is_frozen_on_retry_and_scripted_diagnosis_uses_correction(
+    service, scripted_model, runs_kit
+):
+    agent, run = await target(service, scripted_model, runs_kit)
+    row = await reviewed(service, runs_kit, finding(agent, run))
+    runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    service.app.state.runtime = runtime
+    await service.client.post("/api/v1/finding-agent")
+    request = {"trace_id": TRACE}
+    header = {"Idempotency-Key": "feedback-1"}
+    first = await service.client.post("/api/v1/finding-analyses", json=request, headers=header)
+    assert first.status_code == 201, first.text
+    prompt = await analysis_input(service, first.json()["run_id"])
+    feedback = feedback_in(prompt)
+    assert [item["id"] for item in feedback["items"]] == [row["id"]]
+    item = feedback["items"][0]
+    assert item["assessment"] == "false_positive" and item["assessment_note"] == row["assessment_note"]
+    assert item["diagnosis"]["explanation"] == row["explanation"]
+    assert item["version"] == row["version"] and not feedback["truncated"]
+    changed = await service.client.patch(
+        f"/api/v1/findings/{row['id']}",
+        json={"assessment": "confirmed", "assessment_note": "New evidence"},
+        headers=runs_kit.if_match(row),
+    )
+    assert changed.status_code == 200
+    replay = await service.client.post("/api/v1/finding-analyses", json=request, headers=header)
+    assert replay.status_code == 200 and replay.json()["id"] == first.json()["id"]
+    assert await analysis_input(service, first.json()["run_id"]) == prompt
+    scripted_model.call("read_trace", {"trace_id": TRACE}, call_id="read-corrected")
+    scripted_model.say(
+        "The previous completion diagnosis was disproven: successful recovery means no issue is established."
+    )
+    await (await runs_kit.attempt(service, runtime=runtime))
+    while not scripted_model.requests.empty():
+        model_request = scripted_model.requests.get_nowait()
+    assert row["assessment_note"] in str(model_request["messages"])
+    assert "permanent category suppression" in str(model_request["messages"])
+    assert (await service.client.get("/api/v1/findings", params={"closed": "false"})).json()["items"] == []
+    newer = await service.client.post(
+        "/api/v1/finding-analyses", json=request, headers={"Idempotency-Key": "feedback-2"}
+    )
+    assert newer.status_code == 201
+    latest = feedback_in(await analysis_input(service, newer.json()["run_id"]))["items"][0]
+    assert latest["assessment"] == "confirmed" and latest["assessment_note"] == "New evidence"
+    assert latest["version"] == changed.json()["version"]
+
+
+async def test_feedback_exact_revision_workspace_isolation_and_total_budgets(service, scripted_model, runs_kit):
+    from a13n_service.runs.findings import service as findings
+    from a13n_service.runs.schemas import canonical_json
+
+    first, first_run = await target(service, scripted_model, runs_kit)
+    second = await runs_kit.add_agent(service, "Second", "scripted")
+    scripted_model.say("Done")
+    second_run = (await runs_kit.start_thread(service, second, "second request"))["run"]
+    await (await runs_kit.attempt(service))
+    for index in range(24):
+        agent, run = (first, first_run) if index % 2 else (second, second_run)
+        await reviewed(service, runs_kit, {**finding(agent, run), "source_key": f"feedback-{index}"})
+    unreviewed = await service.client.post(
+        "/api/v1/findings", json={**finding(first, first_run), "source_key": "unreviewed"}
+    )
+    pairs = {(first["id"], first["default_revision_id"]), (second["id"], second["default_revision_id"])}
+    context = await findings.analysis_context(
+        service.runtime.storage, actor(service), service.tenant.workspace_id, pairs
+    )
+    assert len(context["items"]) <= findings.CONTEXT_ITEMS and context["truncated"]
+    assert len(canonical_json(context)) <= findings.CONTEXT_BYTES
+    prior = next(item for item in context["items"] if item["id"] == unreviewed.json()["id"])
+    assert prior["assessment"] == "unreviewed" and prior["assessment_note"] == "" and not prior["closed"]
+    assert prior["diagnosis"]["explanation"] == unreviewed.json()["explanation"]
+    assert {item["agent_id"] for item in context["items"]} == {first["id"], second["id"]}
+    assert context == await findings.analysis_context(
+        service.runtime.storage, actor(service), service.tenant.workspace_id, pairs
+    )
+    # A real later revision of the same Agent does not inherit earlier judgments.
+    head = await service.client.get(f"/api/v1/agents/{first['id']}")
+    old_revision = (
+        await service.client.get(f"/api/v1/agents/{first['id']}/revisions/{first['default_revision_id']}")
+    ).json()
+    changed = await service.client.post(
+        f"/api/v1/agents/{first['id']}/revisions",
+        json={"config": {**old_revision["config"], "instructions": "A revised instruction"}},
+        headers={"If-Match": head.headers["etag"]},
+    )
+    assert changed.status_code == 201, changed.text
+    new_revision_id = changed.json()["id"]
+    different_revision = await findings.analysis_context(
+        service.runtime.storage, actor(service), service.tenant.workspace_id, {(first["id"], new_revision_id)}
+    )
+    assert different_revision["items"] == []
+    scripted_model.say("Done")
+    new_run = (await runs_kit.start_thread(service, first, "new revision", agent_revision_id=new_revision_id))["run"]
+    await (await runs_kit.attempt(service))
+    newer = await reviewed(
+        service,
+        runs_kit,
+        {**finding({**first, "default_revision_id": new_revision_id}, new_run), "source_key": "new-revision"},
+    )
+    new_context = await findings.analysis_context(
+        service.runtime.storage, actor(service), service.tenant.workspace_id, {(first["id"], new_revision_id)}
+    )
+    assert [item["id"] for item in new_context["items"]] == [newer["id"]]
+    old_context = await findings.analysis_context(
+        service.runtime.storage, actor(service), service.tenant.workspace_id, pairs
+    )
+    assert newer["id"] not in {item["id"] for item in old_context["items"]}
+    other = await service.client.post(
+        f"/api/v1/organizations/{service.tenant.organization_id}/workspaces", json={"name": "Other"}
+    )
+    hidden = await findings.analysis_context(service.runtime.storage, actor(service), other.json()["id"], pairs)
+    assert hidden["items"] == []
+    # A long note is explicitly shortened, with a global serialized byte budget.
+    await reviewed(service, runs_kit, {**finding(first, first_run), "source_key": "long-note"}, note="界" * 2048)
+    bounded = await findings.analysis_context(
+        service.runtime.storage, actor(service), service.tenant.workspace_id, pairs
+    )
+    assert bounded["items"][0]["assessment_note"] == "界" * 1024
+    assert "assessment_note" in bounded["items"][0]["truncated_fields"]
+    assert bounded["truncated"] and len(canonical_json(bounded)) <= findings.CONTEXT_BYTES
+
+
+async def test_error_priority_cross_page_selection_and_feedback_from_final_cap(service, scripted_model, runs_kit):
+    first, first_run = await target(service, scripted_model, runs_kit)
+    second = await runs_kit.add_agent(service, "Second", "scripted")
+    scripted_model.say("Done")
+    second_run = (await runs_kit.start_thread(service, second, "later error"))["run"]
+    await (await runs_kit.attempt(service))
+    first_feedback = await reviewed(service, runs_kit, finding(first, first_run))
+    second_feedback = await reviewed(service, runs_kit, {**finding(second, second_run), "source_key": "second"})
+
+    class PriorityBackend(Backend):
+        async def query(self, query):
+            self.requests.append(query)
+            if query.trace_id:
+                return SpanPage(items=[self.root], next_cursor=None)
+            root = self.root.model_copy(update={"status": "ok", "level": "info"})
+            if query.cursor:
+                root = self.root.model_copy(
+                    update={
+                        "trace_id": "b" * 32,
+                        "attributes": correlation_attributes(
+                            service.tenant.organization_id, service.tenant.workspace_id, run_id=second_run["id"]
+                        ),
+                    }
+                )
+            return SpanPage(items=[root], next_cursor=None if query.cursor else "next")
+
+    runtime = replace(service.runtime, traces=PriorityBackend(service, first_run["id"]))
+    service.app.state.runtime = runtime
+    await service.client.post("/api/v1/finding-agent")
+    response = await service.client.post(
+        "/api/v1/finding-analyses", json={"max_traces": 1}, headers={"Idempotency-Key": "priority"}
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["selected_traces"] == [{"trace_id": "b" * 32, "run_id": second_run["id"]}]
+    context = feedback_in(await analysis_input(service, response.json()["run_id"]))
+    assert [item["id"] for item in context["items"]] == [second_feedback["id"]]
+    assert first_feedback["id"] not in str(context)
+    answer_only = await service.client.post(
+        "/api/v1/finding-analyses",
+        json={"max_traces": 1, "presets": ["answer"]},
+        headers={"Idempotency-Key": "answer-priority"},
+    )
+    assert answer_only.json()["selected_traces"] == [{"trace_id": TRACE, "run_id": first_run["id"]}]
+
+
+async def test_feedback_downgrade_refuses_false_positive_without_losing_review(
+    service, scripted_model, runs_kit, database
+):
+    from a13n_service.distribution import OSS
+    from a13n_service.migrations.runner import check, migration_connection
+    from alembic import command
+    from sqlalchemy.exc import IntegrityError
+
+    agent, run = await target(service, scripted_model, runs_kit)
+    saved = await reviewed(service, runs_kit, finding(agent, run), note="This tool failure recovered.")
+    with pytest.raises(IntegrityError), migration_connection(database, OSS) as config:
+        command.downgrade(config, "574a1b928f40")
+    check(database, OSS)
+    preserved = (await service.client.get(f"/api/v1/findings/{saved['id']}")).json()
+    assert preserved["assessment"] == "false_positive"
+    assert preserved["assessment_note"] == saved["assessment_note"]
+    assert preserved["version"] == saved["version"] and preserved["closed"]
+
+
+async def test_unreviewed_diagnosis_is_context_not_confirmation_and_retry_keeps_values(
+    service, scripted_model, runs_kit
+):
+    agent, run = await target(service, scripted_model, runs_kit)
+    previous = await service.client.post("/api/v1/findings", json=finding(agent, run))
+    assert previous.status_code == 201, previous.text
+    row = previous.json()
+    runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    service.app.state.runtime = runtime
+    await service.client.post("/api/v1/finding-agent")
+    body, headers = {"trace_id": TRACE}, {"Idempotency-Key": "existing-unreviewed"}
+    accepted = await service.client.post("/api/v1/finding-analyses", json=body, headers=headers)
+    assert accepted.status_code == 201, accepted.text
+    prompt = await analysis_input(service, accepted.json()["run_id"])
+    item = feedback_in(prompt)["items"][0]
+    assert item["id"] == row["id"] and item["assessment"] == "unreviewed"
+    assert item["diagnosis"]["explanation"] == row["explanation"]
+    assert not item["closed"] and item["assessment_note"] == ""
+    closed = await service.client.patch(
+        f"/api/v1/findings/{row['id']}", json={"closed": True}, headers=runs_kit.if_match(row)
+    )
+    assert closed.status_code == 200, closed.text
+    retried = await service.client.post("/api/v1/finding-analyses", json=body, headers=headers)
+    assert retried.status_code == 200
+    assert await analysis_input(service, retried.json()["run_id"]) == prompt
+    scripted_model.call("read_trace", {"trace_id": TRACE}, call_id="read-existing")
+    scripted_model.say(
+        f"Equivalent evidence is already recorded in {row['id']}; it remains unreviewed. No new finding."
+    )
+    await (await runs_kit.attempt(service, runtime=runtime))
+    while not scripted_model.requests.empty():
+        request = scripted_model.requests.get_nowait()
+    messages = str(request["messages"])
+    assert row["id"] in messages
+    assert "not human confirmation" in messages and "instead of submitting it again" in messages
+    stored = (await service.client.get("/api/v1/findings")).json()["items"]
+    assert [entry["id"] for entry in stored] == [row["id"]]
+    assert stored[0]["assessment"] == "unreviewed" and stored[0]["closed"]
+    new = await service.client.post(
+        "/api/v1/finding-analyses", json=body, headers={"Idempotency-Key": "existing-closed"}
+    )
+    assert new.status_code == 201, new.text
+    current = feedback_in(await analysis_input(service, new.json()["run_id"]))["items"][0]
+    assert current["id"] == row["id"] and current["closed"] and current["assessment"] == "unreviewed"

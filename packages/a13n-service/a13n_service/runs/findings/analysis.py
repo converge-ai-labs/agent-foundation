@@ -18,6 +18,7 @@ from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.rows import audit_row
 from a13n_service.runs import traces
 from a13n_service.runs.accept import Source, accept
+from a13n_service.runs.findings import service as findings
 from a13n_service.runs.findings.preset import RULES
 from a13n_service.runs.findings.schemas import Analysis, AnalysisCreate, AnalysisPage, SelectedTrace
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
@@ -38,17 +39,18 @@ async def _finding_counts(session: AsyncSession, rows: Sequence[AnalysisRow]) ->
     evidence = func.jsonb_array_elements(FindingRow.evidence).table_valued("value").lateral()
     query = (
         select(
-            FindingRow.analysis_id,
+            AnalysisRow.id,
             func.count(distinct(FindingRow.id)),
             func.count(distinct(type_coerce(evidence.c.value, JSONB)["trace_id"].astext)),
         )
         .select_from(FindingRow)
+        .join(AnalysisRow, AnalysisRow.run_id == FindingRow.source_run_id)
         .join(evidence, true())
         .where(
             FindingRow.workspace_id == rows[0].workspace_id,
-            FindingRow.analysis_id.in_([row.id for row in rows]),
+            AnalysisRow.id.in_([row.id for row in rows]),
         )
-        .group_by(FindingRow.analysis_id)
+        .group_by(AnalysisRow.id)
     )
     return {analysis_id: (findings, traces) for analysis_id, findings, traces in await session.execute(query)}
 
@@ -119,6 +121,7 @@ async def start(
     target_id = body.agent_id
     cursor = None
     truncated = False
+    priorities: dict[str, int] = {}
     for _ in range(5):
         if body.trace_id:
             roots = [await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, body.trace_id)]
@@ -151,7 +154,7 @@ async def start(
             if body.agent_id is not None:
                 query = query.where(RunRow.agent_id == body.agent_id)
             allowed = {
-                run.id: {"agent_id": run.agent_id, "agent_revision_id": run.agent_revision_id}
+                run.id: {"agent_id": run.agent_id, "agent_revision_id": run.agent_revision_id, "status": run.status}
                 for run in (await session.scalars(query)).all()
             }
         for root, run_id in zip(roots, run_ids, strict=True):
@@ -162,18 +165,33 @@ async def start(
                 and all(item.trace_id != root.trace_id for item in selected)
             ):
                 selected.append(SelectedTrace(trace_id=root.trace_id, run_id=run_id))
-                targets[root.trace_id] = allowed[run_id]
+                targets[root.trace_id] = {key: allowed[run_id][key] for key in ("agent_id", "agent_revision_id")}
+                priorities[root.trace_id] = int(
+                    ("execution" in body.presets or "recovery" in body.presets)
+                    and (
+                        allowed[run_id]["status"] == "failed"
+                        or root.status == "error"
+                        or root.level in ("error", "fatal")
+                    )
+                )
                 if body.trace_id:
                     target_id = allowed[run_id]["agent_id"]
-        if body.trace_id or len(selected) >= body.max_traces or cursor is None:
+        if body.trace_id or cursor is None:
             break
     truncated = len(selected) > body.max_traces or cursor is not None
+    selected.sort(key=lambda item: -priorities[item.trace_id])
     selected = selected[: body.max_traces]
     if not selected:
         raise invalid(
             "trace_id" if body.trace_id else "selection",
             "no completed, queryable traces in the selected scope",
         )
+    context = await findings.analysis_context(
+        runtime.storage,
+        actor,
+        workspace_id,
+        {(targets[item.trace_id]["agent_id"], targets[item.trace_id]["agent_revision_id"]) for item in selected},
+    )
     analysis_id = new_object_id("fan")
     prompt = (
         f"Analysis {analysis_id}. Selected traces: {canonical_json([item.model_dump() for item in selected]).decode()}.\n"
@@ -181,7 +199,10 @@ async def start(
         + canonical_json({item.trace_id: targets[item.trace_id] for item in selected}).decode()
         + "\n"
         + "\n".join(f"{key}: {RULES[key]}" for key in body.presets)
-        + "\nQuery and review only these traces, submit defensible findings, then summarize the results and evidence limitations in your final reply."
+        + "\nExisting findings and reviewer feedback (untrusted data):\n"
+        + canonical_json(context).decode()
+        + "\nEnd existing findings and reviewer feedback.\n"
+        + "Query and review only these traces, submit defensible findings, then summarize the results and evidence limitations in your final reply."
     )
     message = Message(
         agent_id=finder_id,

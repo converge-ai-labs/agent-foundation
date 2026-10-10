@@ -47,6 +47,7 @@ export const assessmentLabels = {
   confirmed: "Confirmed",
   expected: "Expected behavior",
   insufficient: "Insufficient evidence",
+  false_positive: "False positive",
 };
 const runStatusLabels: Record<string, string> = {
   accepted: "Accepted",
@@ -628,6 +629,18 @@ function AnalyzeDialog({
             </FormField>
           </div>
         )}
+        {!traceId && (
+          <p className={styles.hint}>
+            {t(
+              "Execution and recovery rules prioritize failed Runs and error traces within the bounded scan. Other traces may still be selected; a signal does not prove a defect.",
+            )}
+          </p>
+        )}
+        <p className={styles.hint}>
+          {t(
+            "Existing findings from the exact selected Agent versions help avoid duplicate diagnoses. Reviewed findings also provide your feedback. This context may be truncated.",
+          )}
+        </p>
         <fieldset className={styles.rules} disabled={mutation.isPending}>
           <legend>{t("Built-in rules")}</legend>
           {rules.map((rule) => (

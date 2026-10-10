@@ -8,7 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstrai
 from a13n_service.infra.ids import ObjectId
 
 type Severity = Literal["critical", "warning", "suggestion"]
-type Assessment = Literal["unreviewed", "confirmed", "expected", "insufficient"]
+type Assessment = Literal["unreviewed", "confirmed", "expected", "insufficient", "false_positive"]
 type Preset = Literal["execution", "recovery", "answer"]
 TraceId = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{32}$")]
 SpanId = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{16}$")]
@@ -41,6 +41,14 @@ class FindingCreate(_Input):
 class FindingUpdate(_Input):
     assessment: Assessment | None = None
     closed: bool | None = None
+    assessment_note: str | None = Field(default=None, max_length=2048)
+
+    @model_validator(mode="after")
+    def nonnullable_updates(self) -> Self:
+        for name in ("assessment", "closed"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 class Finding(FindingCreate):
@@ -51,6 +59,7 @@ class Finding(FindingCreate):
     source_run_id: str | None
     created_by_id: str
     assessment: Assessment
+    assessment_note: str
     closed: bool
     version: int
     created_at: datetime

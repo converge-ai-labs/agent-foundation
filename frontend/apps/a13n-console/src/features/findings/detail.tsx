@@ -1,5 +1,6 @@
-import { Button, ChoiceField } from "a13n-ui";
+import { Button, ChoiceField, FormField, Textarea } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import { useClient } from "../../auth/context";
@@ -95,7 +96,7 @@ export function FindingDetail() {
             disabled={
               !revision.data ||
               composer.pending ||
-              finding.assessment === "expected"
+              ["expected", "false_positive"].includes(finding.assessment)
             }
             onClick={fix}
           >
@@ -134,21 +135,12 @@ export function FindingDetail() {
             </Button>
           }
         >
-          <ChoiceField
-            label={t("Assessment")}
-            hideLabel
-            value={finding.assessment}
-            readOnly={!can("write")}
-            disabled={update.isPending}
-            options={Object.entries(assessmentLabels).map(([value, label]) => ({
-              value,
-              label: t(label),
-            }))}
-            onValueChange={(assessment) =>
-              update.mutate({
-                assessment: assessment as Schema["Finding"]["assessment"],
-              })
-            }
+          <AssessmentEditor
+            key={`${finding.id}:${finding.version}`}
+            finding={finding}
+            canWrite={can("write")}
+            pending={update.isPending}
+            onSave={(body) => update.mutate(body)}
           />
         </Section>
         <Section title={t("What happened")}>
@@ -242,5 +234,82 @@ function RunEvidence({ runId }: { runId: string }) {
         <span className={styles.hint}>{runId}</span>
       )}
     </>
+  );
+}
+
+function AssessmentEditor({
+  finding,
+  canWrite,
+  pending,
+  onSave,
+}: {
+  finding: Schema["Finding"];
+  canWrite: boolean;
+  pending: boolean;
+  onSave: (body: Schema["FindingUpdate"]) => void;
+}) {
+  const { t } = useTranslation();
+  const [assessment, setAssessment] = useState(finding.assessment);
+  const [note, setNote] = useState(finding.assessment_note);
+  const dirty =
+    assessment !== finding.assessment || note !== finding.assessment_note;
+  return (
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canWrite && dirty && !pending)
+          onSave({ assessment, assessment_note: note });
+      }}
+    >
+      <ChoiceField
+        label={t("Assessment")}
+        value={assessment}
+        readOnly={!canWrite}
+        disabled={pending}
+        options={Object.entries(assessmentLabels).map(([value, label]) => ({
+          value,
+          label: t(label),
+        }))}
+        onValueChange={(value) => {
+          if (value !== assessment) setNote("");
+          setAssessment(value as Schema["Finding"]["assessment"]);
+        }}
+      />
+      <FormField
+        label={t("Review note")}
+        description={t(
+          "Explain your judgment. Later analyses of this Agent version will receive reviewed findings and their notes.",
+        )}
+      >
+        <Textarea
+          rows={3}
+          maxLength={2048}
+          value={note}
+          readOnly={!canWrite}
+          disabled={pending}
+          placeholder={t("What did the analysis miss or misunderstand?")}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      </FormField>
+      {canWrite && (
+        <div className={styles.actions}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!dirty || pending}
+            onClick={() => {
+              setAssessment(finding.assessment);
+              setNote(finding.assessment_note);
+            }}
+          >
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" disabled={!dirty || pending} loading={pending}>
+            {t("Save assessment")}
+          </Button>
+        </div>
+      )}
+    </form>
   );
 }

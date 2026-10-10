@@ -44,10 +44,12 @@ class FindingRow(Stamped, Base):
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "agent_id"], ["agents.workspace_id", "agents.id"]),
         ForeignKeyConstraint(["agent_id", "agent_revision_id"], ["agent_revisions.agent_id", "agent_revisions.id"]),
-        ForeignKeyConstraint(["workspace_id", "analysis_id"], ["finding_analyses.workspace_id", "finding_analyses.id"]),
         CheckConstraint("severity IN ('critical', 'warning', 'suggestion')", name="severity"),
-        CheckConstraint("assessment IN ('unreviewed', 'confirmed', 'expected', 'insufficient')", name="assessment"),
+        CheckConstraint(
+            "assessment IN ('unreviewed', 'confirmed', 'expected', 'insufficient', 'false_positive')", name="assessment"
+        ),
         Index("ix_findings_workspace_created", "workspace_id", "created_at", "id"),
+        Index("ix_findings_revision_feedback", "workspace_id", "agent_id", "agent_revision_id", "updated_at", "id"),
         rules(identity_guarded("findings")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -63,9 +65,9 @@ class FindingRow(Stamped, Base):
     evidence: Mapped[list] = mapped_column(JSONB)
     limitations: Mapped[str]
     source_key: Mapped[str]
-    analysis_id: Mapped[str | None]
     source_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"))
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     assessment: Mapped[str]
+    assessment_note: Mapped[str]
     closed: Mapped[bool] = mapped_column(Boolean)

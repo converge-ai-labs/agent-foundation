@@ -3600,7 +3600,12 @@ export interface components {
       action: "approve";
     };
     /** @enum {string} */
-    Assessment: "unreviewed" | "confirmed" | "expected" | "insufficient";
+    Assessment:
+      | "unreviewed"
+      | "confirmed"
+      | "expected"
+      | "insufficient"
+      | "false_positive";
     /** Asset */
     Asset: {
       /** Content Type */
@@ -4555,6 +4560,8 @@ export interface components {
       /** Analysis Id */
       analysis_id: string | null;
       assessment: components["schemas"]["Assessment"];
+      /** Assessment Note */
+      assessment_note: string;
       /** Category */
       category: string;
       /** Closed */
@@ -4633,6 +4640,8 @@ export interface components {
     /** FindingUpdate */
     FindingUpdate: {
       assessment?: components["schemas"]["Assessment"] | null;
+      /** Assessment Note */
+      assessment_note?: string | null;
       /** Closed */
       closed?: boolean | null;
     };
