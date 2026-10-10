@@ -1982,5 +1982,6 @@
   "Tool execution": "工具执行",
   "Context gap": "上下文缺失",
   "Workflow issue": "流程问题",
-  "Boundary violation": "边界违规"
+  "Boundary violation": "边界违规",
+  "Category": "类型"
 }
