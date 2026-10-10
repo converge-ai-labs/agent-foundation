@@ -2,8 +2,10 @@
 
 import asyncio
 import functools
+import gc
 import shutil
 import sys
+import weakref
 
 import pytest
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -261,6 +263,12 @@ def test_missing_modal_app_closes_each_client_without_shutdown_task(tmp_path, mo
                 finally:
                     await env.close()
                 assert len(_shutdown_tasks) == before
+                assert env.client is not None
+                client_reference = weakref.ref(env.client)
+                del caught, env
+                await asyncio.sleep(0)
+                gc.collect()
+                assert client_reference() is None
             assert cloud.calls.count("AppGetOrCreate") == 3
             assert cloud.created == 0
         finally:
