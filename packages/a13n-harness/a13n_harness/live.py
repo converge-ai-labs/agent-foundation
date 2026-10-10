@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import TypeAdapter
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs
+from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapperCapability
 from pydantic_ai.capabilities.abstract import WrapToolExecuteHandler
-from pydantic_ai.exceptions import RunCancelled, UsageLimitExceeded
+from pydantic_ai.exceptions import ModelRetry, RunCancelled, ToolFailed, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
     EnqueuedMessagesEvent,
@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RetryPromptPart,
     SpeechPart,
     SpeechPartDelta,
     ToolCallPart,
@@ -32,7 +33,7 @@ from pydantic_ai.realtime import (
     RealtimeSession,
     RealtimeSessionInput,
 )
-from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._run_stream import HarnessRunStream
@@ -51,6 +52,7 @@ from a13n_harness.model_context import (
 from a13n_harness.plugins import PluginRunExchange
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
+from a13n_harness.tools._output import _render_tool_return
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, _stable_id
 
 if TYPE_CHECKING:
@@ -78,6 +80,13 @@ class _LiveCapability(AbstractCapability[AgentContext]):
 
     async def instructions(self, ctx: RunContext[AgentContext]) -> str:
         self.stream._native_context = ctx
+        manager = ctx.tool_manager
+        assert manager is not None and manager.root_capability is not None
+        # Decorate only the prepared native tool dispatcher, not the Agent's
+        # registered capability tree. This stateless adapter adds no lifecycle,
+        # tools, or ordering requirements; run-step managers retain the wrapper.
+        if not isinstance(manager.root_capability, _LiveDeferredResults):
+            manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
         if self.stream._cancel_event.is_set():
             ctx.cancel()
         projection = await _project_model_context(
@@ -101,11 +110,14 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         result = await handler(args)
         if ctx.run_id != self.stream.run_id:
             return result
+        return await self._with_context(ctx, call.tool_call_id, result)
+
+    async def _with_context(self, ctx: RunContext[AgentContext], call_id: str, result: Any) -> Any:
         projection = await _project_model_context(
             ctx,
             ModelContextProjectionRequest(
                 kind=ModelContextRequestKind.TOOL_RESULTS,
-                tool_call_ids=(call.tool_call_id,),
+                tool_call_ids=(call_id,),
             ),
         )
         if not projection.blocks:
@@ -127,6 +139,31 @@ class _LiveCapability(AbstractCapability[AgentContext]):
     async def on_event(self, ctx: RunContext[AgentContext], *, event: Any) -> None:
         if ctx.run_id == self.stream.run_id and (semantic := _semantic_event(event)) is not None:
             self.stream._emitter.observe(semantic)
+
+
+class _LiveDeferredResults(WrapperCapability[AgentContext]):
+    """Adapt resolved external values before native normalization and wire send."""
+
+    def __init__(self, wrapped: AbstractCapability[AgentContext], bridge: _LiveCapability) -> None:
+        super().__init__(wrapped)
+        self.bridge = bridge
+
+    async def handle_deferred_tool_calls(
+        self, ctx: RunContext[AgentContext], *, requests: DeferredToolRequests
+    ) -> DeferredToolResults | None:
+        results = await self.wrapped.handle_deferred_tool_calls(ctx, requests=requests)
+        if results is not None and ctx.run_id == self.bridge.stream.run_id:
+            for call in requests.calls:
+                if call.tool_call_id not in results.calls:
+                    continue
+                result = results.calls[call.tool_call_id]
+                # Denials and retries are control signals, not successful values.
+                if isinstance(result, (ToolDenied, ModelRetry, RetryPromptPart, ToolFailed)):
+                    continue
+                if isinstance(result, ToolReturn):
+                    result = _render_tool_return(result)
+                results.calls[call.tool_call_id] = await self.bridge._with_context(ctx, call.tool_call_id, result)
+        return results
 
 
 class HarnessLiveStream(HarnessRunStream[None]):
@@ -176,6 +213,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
         self._native_context: RunContext[AgentContext] | None = None
         self._session_ready = asyncio.Event()
         self._response_records: dict[int, ModelUsageRecord] = {}
+        self._usage_refusal: UsageLimitExceeded | None = None
         if self._bindings.model_call_check is not None:
             raise RunError(
                 "Live does not support per-request Host model reservations.",
@@ -192,6 +230,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
             try:
                 await asyncio.wait((ready, execution), return_when=asyncio.FIRST_COMPLETED)
                 if execution.done() and not self._session_ready.is_set():
+                    self._execution_task = None
                     execution.result()
                     raise RunError("Live execution ended before connecting.", code="live_session_unavailable")
             finally:
@@ -230,9 +269,14 @@ class HarnessLiveStream(HarnessRunStream[None]):
     async def create_response(self) -> None:
         await self._active_session().create_response()
 
-    async def interrupt(self, *, played_ms: int | None = None) -> None:
-        """Interrupt speech; this does not undo tool effects or stop detached processes."""
-        await self._active_session().interrupt(played_ms=played_ms)
+    async def interrupt(self, *, played_ms: int | None = None, played_bytes: int | None = None) -> bool | None:
+        """Interrupt speech without undoing tools; native playback accounting applies."""
+        session = self._active_session()
+        if played_bytes is None:
+            return await session.interrupt(played_ms=played_ms)
+        if played_ms is not None:
+            raise UserError("interrupt() accepts either played_ms or played_bytes, not both.")
+        return await session.interrupt(played_bytes=played_bytes)
 
     async def close(self) -> None:
         """End the native session normally; terminal delivery follows event consumption."""
@@ -243,6 +287,15 @@ class HarnessLiveStream(HarnessRunStream[None]):
         super().cancel()
         if not self._closed and self._native_context is not None:
             self._native_context.cancel()
+
+    @property
+    def native_usage(self) -> RunUsage:
+        """Detached native accumulator, not an attributed Run accounting total.
+
+        Includes session-only usage, caller baseline and any work sharing the
+        native accumulator. Do not add it to ``usage`` or use it as a receipt.
+        """
+        return deepcopy(self._usage)
 
     def _refresh_live_messages(self) -> None:
         if self._session is not None:
@@ -255,7 +308,6 @@ class HarnessLiveStream(HarnessRunStream[None]):
         ledger = self.context.usage_attribution
         assert ledger.cost_capability is not None
         responses = (message for message in self._session.new_messages() if isinstance(message, ModelResponse))
-        refusal: UsageLimitExceeded | None = None
         for index, response in enumerate(responses):
             previous = self._response_records.get(index)
             value = deepcopy(response)
@@ -293,13 +345,15 @@ class HarnessLiveStream(HarnessRunStream[None]):
             )
             if record == previous:
                 continue
-            refusal = ledger.finish(call_id, record) or refusal
+            # Checkpoint capture may defer raising, but cannot consume a refusal.
+            self._usage_refusal = ledger.finish(call_id, record) or self._usage_refusal
             self._response_records[index] = record
-        if check_limits and refusal is not None:
-            raise refusal
+        if check_limits and self._usage_refusal is not None:
+            raise self._usage_refusal
 
     async def export_state(self) -> HarnessState:
         if not self._closed:
+            self._refresh_live_messages()
             self._capture_usage(check_limits=False)
         return await super().export_state()
 
@@ -309,6 +363,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
         initial_input = exchange.input.value
         if initial_input is not None and not isinstance(initial_input, str):
             raise RunError("Live plugin input must be text.", code="live_input_unsupported")
+        self.context.usage_attribution.model_usage_coverage = "responses_only"
         self._latest_messages = await self.context._storage.resolve_messages(self._initial_history)
         bridge = _LiveCapability(self)
         status = "completed"
@@ -334,6 +389,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
                         await self.context._steering.mark_applied(event.enqueue_id)
                     self._refresh_live_messages()
                     self._capture_usage()
+                    await self.context.usage_attribution._flush(reason="model_request")
                     if (semantic := _semantic_event(event)) is not None:
                         await self._emitter._put(self._adapt_event(cast(AgentStreamEvent, semantic)))
                     if isinstance(event, EnqueuedMessagesEvent):
@@ -348,7 +404,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
             # Capture the settled state before constructing any terminal result.
             self._refresh_live_messages()
             self._capture_usage(check_limits=False)
-        if status == "failed":
+        if status == "failed" or (status == "completed" and self._usage_refusal is not None):
             return await self._failed_candidate(code="usage_limit_exceeded", message="Run usage limit exceeded.")
         return self._record_inner_candidate(
             HarnessRunResult(

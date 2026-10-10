@@ -15,6 +15,12 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 
 It does not add a hosted input wire format, durable model registry, serialized settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
 
+## Native Live Input and Output
+
+`ExecutableAgent.live()` accepts a native `RealtimeModel` and native realtime settings, rather than resolving an ordinary request/response Model. Its `send`, `send_audio`, `stream_audio`, `commit_audio`, `clear_audio`, `create_response`, and `interrupt` methods delegate to the native session and preserve provider-profile restrictions. `interrupt` accepts mutually exclusive `played_ms` and `played_bytes`; native byte-based playback accounting requires one audio subscriber. Live is conversational and returns no validated business output; ordinary `run` and `stream` retain their output contracts.
+
+Initial model-context projection supplies connection instructions. Successful local tool execution and accepted external deferred results receive refreshed model-context blocks as supplemental native tool-result content before automatic continuation. Existing return values, supplemental evidence, and metadata remain intact through Harness rendering. Approved calls use the normal local execution boundary rather than projecting a second time through their approval result. Tool schemas are fixed when the native session opens; local preparation and policy can still refuse later calls, but Live does not promise mid-session tool-schema advertisement or graph/model-request hooks.
+
 ## Input
 
 ```python

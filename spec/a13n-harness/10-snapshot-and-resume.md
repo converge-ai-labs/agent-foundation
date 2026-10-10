@@ -23,6 +23,12 @@ flowchart LR
     Host -->|selected state and fresh bindings| Run2[New Harness Run]
 ```
 
+## Live Continuation
+
+A Live Run exports native conversation messages and the same portable Capability and Environment state as an ordinary Run. Active export refreshes accepted native history, including sent text that has not received a provider reply. Session teardown settles interrupted history before terminal export. `audio_retention` defaults to native `transcript_only`; opting into input/output audio or `all` changes retained message data, not the semantic event channel.
+
+Passing a Live checkpoint to another Run preserves the Thread ID but creates a new Run and fresh bindings. Passing it to another Live Run opens a new native session and seeds supported history; it does not restore a socket, playback position, pending approval waiter, or provider reconnect token. Providers that cannot seed history reject that operation through the native profile contract. Explicitly stored CodeAct values survive through Capability state; temporary interpreter bindings do not.
+
 ## State Schema
 
 ```python
