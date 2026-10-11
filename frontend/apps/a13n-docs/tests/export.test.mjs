@@ -38,6 +38,10 @@ test("every human document has a Chinese static page with matching section ancho
     );
     assert.match(english, /<html lang="en"/);
     assert.match(chinese, /<html lang="zh-CN"/);
+    for (const html of [english, chinese]) {
+      assert.match(html, /<title>[^<]+ \| a13n<\/title>/, path);
+      assert.match(html, /<meta property="og:site_name" content="a13n"/, path);
+    }
     const headings = (html) =>
       [...html.matchAll(/<h[2-6]\s[^>]*id="([^"]+)"/g)].map(
         (match) => match[1],

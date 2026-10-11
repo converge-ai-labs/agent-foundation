@@ -8,7 +8,7 @@ import { type Locale } from "@/lib/i18n";
 
 export const baseMetadata: Metadata = {
   metadataBase: new URL(site.url),
-  title: site.name,
+  title: { default: site.name, template: `%s | ${site.name}` },
   description: site.description,
   icons: { icon: { url: logo.src, type: "image/svg+xml" } },
   openGraph: { siteName: site.name, type: "website" },

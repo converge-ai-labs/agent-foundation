@@ -10,6 +10,31 @@
     />
     <meta name="theme-color" content="#fbfbfd" />
     <link rel="canonical" href="https://a13n.converge.ai/" />
+    <!-- the site name search results show, and where the project lives -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "name": "a13n",
+            "alternateName": "Agent Foundation",
+            "url": "https://a13n.converge.ai/"
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "name": "a13n",
+            "alternateName": "Agent Foundation",
+            "url": "https://a13n.converge.ai/",
+            "codeRepository": "https://github.com/converge-ai-labs/agent-foundation",
+            "sameAs": [
+              "https://pypi.org/project/a13n-harness/",
+              "https://pypi.org/project/a13n-service/"
+            ]
+          }
+        ]
+      }
+    </script>
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://a13n.converge.ai/" />
     <meta
@@ -86,6 +111,7 @@
           aria-expanded="false"
           aria-label="a13n, short for agent foundation"
         >
+          <span class="vh">a13n</span>
           <span class="glyphs" id="glyphs" aria-hidden="true"></span>
         </h1>
         <div class="pitch wrap">

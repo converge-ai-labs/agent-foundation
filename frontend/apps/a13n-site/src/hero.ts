@@ -157,7 +157,8 @@ export class Hero {
     this.glyphs = chars.map(([ch, adv, kind], i) => {
       const el = document.createElement("span");
       el.className = "g";
-      el.textContent = ch;
+      // Drawn by CSS, so the page text keeps the heading's plain "a13n".
+      el.dataset.ch = ch;
       const fold = new Spring(kind === "mid" ? 90 : 0, 170, 17);
       return { el, adv, kind, fold, sign: i % 2 ? -1 : 1, ox: 0 };
     });
@@ -174,7 +175,7 @@ export class Hero {
       gl.length,
       gl.map((g) => (g.kind === "digit" ? 0 : 1)),
     );
-    this.space = gl.findIndex((g) => g.el.textContent === " ");
+    this.space = gl.findIndex((g) => g.el.dataset.ch === " ");
     this.first = this.chain(
       this.space,
       gl.map((g, i) => (g.kind !== "digit" && i < this.space ? 1 : 0)),
