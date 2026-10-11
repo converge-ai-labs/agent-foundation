@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Local and dev builds compile this checkout; releases select workflow artifacts.
+# Local builds compile this checkout; CI publications select same-run artifacts.
 ARG ENVD_BINARY_SOURCE=source
 
 FROM rust:1.96-trixie AS builder
@@ -29,16 +29,6 @@ FROM python:3.13.12-slim-trixie AS runtime
 COPY --from=node /usr/local/ /usr/local/
 COPY --from=uv /uv /uvx /usr/local/bin/
 
-ARG BUILD_VERSION=dev
-ARG BUILD_REVISION=unknown
-LABEL ai.a13n.environment.user="sandbox" \
-      org.opencontainers.image.title="a13n-sandbox" \
-      org.opencontainers.image.description="Agent Foundation development sandbox for native Docker and Envd" \
-      org.opencontainers.image.source="https://github.com/converge-ai-labs/agent-foundation" \
-      org.opencontainers.image.revision="${BUILD_REVISION}" \
-      org.opencontainers.image.version="${BUILD_VERSION}" \
-      org.opencontainers.image.licenses="Apache-2.0"
-
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash build-essential ca-certificates curl git iproute2 jq libc-bin nftables openssh-client patch \
@@ -55,6 +45,18 @@ RUN apt-get update \
 
 COPY --from=envd /a13n-envd /usr/local/bin/a13n-envd
 COPY LICENSE /usr/share/licenses/a13n-envd/LICENSE
+
+# Source identity must not invalidate the stable toolchain installation layer.
+ARG BUILD_VERSION=dev
+ARG BUILD_REVISION=unknown
+LABEL ai.a13n.environment.user="sandbox" \
+      org.opencontainers.image.title="a13n-sandbox" \
+      org.opencontainers.image.description="Agent Foundation development sandbox for native Docker and Envd" \
+      org.opencontainers.image.source="https://github.com/converge-ai-labs/agent-foundation" \
+      org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 # A release label must agree with the version compiled into the daemon.
 RUN test "$BUILD_VERSION" = dev || test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"
 
