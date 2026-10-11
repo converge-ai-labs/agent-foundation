@@ -3,11 +3,12 @@
 from pathlib import Path
 
 import pytest
+from a13n_harness.providers.environment.direct_local import files as local_files
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
-from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator, _load_git_ignore
 from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
 from a13n_harness.providers.environment.models import EnvironmentError
 
@@ -21,6 +22,47 @@ def _files(root: Path, budget: int = 1024) -> LocalFileOperator:
         mount_id="workspace",
         generation="test",
     )
+
+
+@pytest.mark.parametrize("invalid_line", ["!", "trailing\\"])
+async def test_invalid_gitignore_warning_is_bounded_and_preserves_valid_rules(tmp_path, caplog, invalid_line):
+    path = tmp_path / ".gitignore"
+    path.write_text("*.tmp\n" + (invalid_line + "\n") * 25 + "!keep.tmp\n")
+    spec = _load_git_ignore(path)
+    assert spec is not None
+    assert spec.match_file("skip.tmp")
+    assert not spec.match_file("keep.tmp")
+    assert len(caplog.records) == 1
+    warning = caplog.records[0]
+    assert warning.levelname == "WARNING"
+    assert warning.message == "gitignore_invalid_pattern"
+    assert warning.path == str(path)
+    assert warning.invalid_count == 25
+    assert warning.lines == list(range(2, 12))
+    assert "remaining rules" in warning.action
+    assert warning.exc_info is None
+
+
+async def test_gitignore_with_only_invalid_rules_has_an_empty_matcher(tmp_path, caplog):
+    path = tmp_path / ".gitignore"
+    path.write_text("!\ntrailing\\\n")
+    spec = _load_git_ignore(path)
+    assert spec is not None
+    assert not spec.match_file("visible.txt")
+    assert len(caplog.records) == 1
+    assert caplog.records[0].invalid_count == 2
+
+
+async def test_gitignore_does_not_swallow_unexpected_parser_errors(tmp_path, monkeypatch):
+    path = tmp_path / ".gitignore"
+    path.write_text("*.tmp\n")
+
+    def broken_parser(line):
+        raise RuntimeError("unexpected parser failure")
+
+    monkeypatch.setattr(local_files, "GitIgnoreSpecPattern", broken_parser)
+    with pytest.raises(RuntimeError, match="unexpected parser failure"):
+        _load_git_ignore(path)
 
 
 @pytest.mark.parametrize("exists", [False, True])

@@ -17,7 +17,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from a13n_logging import get_logger
 from pathspec.gitignore import GitIgnoreSpec
+from pathspec.patterns.gitignore import GitIgnorePatternError
+from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
 from .._file_patterns import PathPattern, PatternError, content_pattern
 from .._file_search import search_text_file
@@ -1049,8 +1052,29 @@ def _load_git_ignore(path: Path) -> GitIgnoreSpec | None:
     try:
         if not path.is_file() or path.stat().st_size > 1024 * 1024:
             return None
+        patterns: list[GitIgnoreSpecPattern] = []
+        invalid_count = 0
+        invalid_lines: list[int] = []
         with path.open("r", encoding="utf-8", errors="replace") as file:
-            return GitIgnoreSpec.from_lines(file)
+            for line_number, line in enumerate(file, start=1):
+                try:
+                    patterns.append(GitIgnoreSpecPattern(line))
+                except GitIgnorePatternError:
+                    # Ignore only the rejected rule, not valid rules before or after it.
+                    invalid_count += 1
+                    if len(invalid_lines) < 10:
+                        invalid_lines.append(line_number)
+        if invalid_count:
+            get_logger(__name__).warning(
+                "gitignore_invalid_pattern",
+                extra={
+                    "path": str(path),
+                    "invalid_count": invalid_count,
+                    "lines": invalid_lines,
+                    "action": "Skipped invalid rules; remaining rules remain active.",
+                },
+            )
+        return GitIgnoreSpec(patterns)
     except OSError:
         return None
 

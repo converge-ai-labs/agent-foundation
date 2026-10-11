@@ -253,6 +253,23 @@ async def test_hidden_nested_ignore_and_unignore(tmp_path, search_files, reposit
     assert [match["path"] for match in result["matches"]] == ["/.hidden.py", "/src/a.py", "/src/keep.tmp"]
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("action", ["query", "search"])
+@pytest.mark.parametrize("root", ["/", "/src"])
+async def test_invalid_gitignore_lines_preserve_valid_rules(tmp_path, search_files, action, root):
+    (tmp_path / ".gitignore").write_text("ignored/\n!\n*.tmp\ntrailing\\\n")
+    for path in ["ignored/a.py", "src/a.py", "src/b.tmp", "src/keep.tmp", "src/skip.log", "src/z.py"]:
+        file = tmp_path / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("needle\n")
+    (tmp_path / "src/.gitignore").write_text("*.log\n!\n!keep.tmp\ntrailing\\\n")
+    arguments = {"pattern": "**/*", "kinds": ["file"]} if action == "query" else {"pattern": "needle"}
+    result = await search_files(action, root=root, ignore_mode="git", **arguments)
+    entries = result["entries"] if action == "query" else result["matches"]
+    assert [item["path"] for item in entries] == ["/src/a.py", "/src/keep.tmp", "/src/z.py"]
+    assert not result["has_more"]
+
+
 def test_guest_embedded_source_compiles_with_posix_configuration():
     configuration = E2BEnvironmentConfiguration(root="/workspace", python="/usr/bin/python3")
     commands = GuestCommands(None, configuration)

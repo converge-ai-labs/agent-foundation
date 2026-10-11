@@ -30,6 +30,21 @@ def file_tools(tmp_path: Path):
     return FileToolset(files), context
 
 
+@pytest.mark.parametrize("include_ignored", [False, True])
+async def test_glob_and_grep_continue_after_invalid_gitignore(tmp_path, file_tools, caplog, include_ignored):
+    tools, ctx = file_tools
+    (tmp_path / ".gitignore").write_text("ignored.txt\n!\ntrailing\\\n")
+    (tmp_path / "ignored.txt").write_text("needle\n")
+    (tmp_path / "visible.txt").write_text("needle\n")
+    found = await tools.glob(ctx, "*.txt", root="/", include_ignored=include_ignored)
+    searched = await tools.grep(ctx, "needle", root="/", include_ignored=include_ignored)
+    assert found["ok"] and searched["ok"]
+    expected = ["/ignored.txt", "/visible.txt"] if include_ignored else ["/visible.txt"]
+    assert found["files"] == expected
+    assert [match["file_path"] for match in searched["matches"].values()] == expected
+    assert len(caplog.records) == (0 if include_ignored else 2)
+
+
 async def test_incomplete_oversized_sequence_spills_before_preserving_provider_cursor() -> None:
     spilled: list[bytes] = []
 
