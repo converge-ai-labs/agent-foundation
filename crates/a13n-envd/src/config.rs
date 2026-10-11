@@ -221,6 +221,7 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) computer_use: bool,
     pub(crate) computer_use_permission_timeout: Duration,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[serde(skip)]
     pub(crate) managed: bool,
     pub(crate) execution: Option<crate::execution::Identity>,
@@ -436,6 +437,7 @@ impl Config {
         Ok(Self {
             computer_use,
             computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             managed: false,
             execution,
             allow_sudo,
@@ -463,6 +465,7 @@ impl Config {
         Self {
             computer_use: false,
             computer_use_permission_timeout: Duration::from_secs(120),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             managed: false,
             execution: None,
             allow_sudo: true,
