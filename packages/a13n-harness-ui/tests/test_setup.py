@@ -961,25 +961,51 @@ async def test_setup_new_subscription_model_does_not_rewrite_shared_model(tmp_pa
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("enabled", [True, False])
-async def test_api_key_setup_publishes_root_shell_review_not_agent_capabilities(tmp_path: Path, enabled: bool) -> None:
+@pytest.mark.parametrize("reviewer", [None, "gpt-5.4-mini", "gpt-5", "custom/reviewer"])
+async def test_api_key_setup_publishes_explicit_shell_reviewer(
+    tmp_path: Path, enabled: bool, reviewer: str | None
+) -> None:
     path = tmp_path / "config.yaml"
     selection = _selection(
         tmp_path,
         default_agent="agent-api-key",
         shell_review=enabled,
-        model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "TEST_KEY"}},
+        shell_review_model=reviewer,
+        model={
+            "route": "openai:gpt-5",
+            "authentication": {"kind": "api_key", "env": "TEST_KEY"},
+            "settings": {"thinking": "high"},
+            "model_configuration": {
+                "base_url": "https://gateway.example/v1",
+                "session_affinity_header": "x-session-id",
+            },
+        },
     )
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     shortcut = yaml.safe_load(preview.files[path.name])["security"]["shell_review"]
-    assert shortcut["enable"] is enabled
+    assert shortcut["enable"] is (enabled and reviewer is not None)
     assert shortcut["guardian_credits"] is False
     assert shortcut["risk_threshold"] == "extra_high"
-    if enabled:
-        assert shortcut["model"] == "model-api-key"
+    if enabled and reviewer is not None:
+        assert shortcut["model"] == "model-api-key-review"
+        review = yaml.safe_load(preview.files["models/api-key-review.yaml"])
+        assert review["route"] == f"openai:{reviewer}"
+        assert review["authentication"] == {"kind": "api_key", "env": "TEST_KEY"}
+        assert review["model_configuration"] == selection.model.model_configuration
+        assert review.get("settings", {}) == {}
+    else:
+        assert "model" not in shortcut
+        assert "models/api-key-review.yaml" not in preview.files
     agent = yaml.safe_load(preview.files["agents/api-key.yaml"])
     assert not any(c["capability"] in {"ToolPermissionsCapability"} for c in agent["capabilities"])
-    assert set(p for p in preview.files if p.startswith("models/")) == {"models/api-key.yaml"}
+    assert set(p for p in preview.files if p.startswith("models/")) == {
+        "models/api-key.yaml",
+        *({"models/api-key-review.yaml"} if enabled and reviewer is not None else set()),
+    }
     assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    assert not (await preview_setup(path, selection, validate_candidate=_validate())).files.get(
+        "models/api-key-review.yaml"
+    )
 
 
 @pytest.mark.anyio

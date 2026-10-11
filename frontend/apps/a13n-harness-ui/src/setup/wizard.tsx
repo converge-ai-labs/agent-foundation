@@ -28,9 +28,8 @@ import {
   saveWizardDraft,
   type WizardDraft,
 } from "./wizard-state";
+import { ShellReviewModel } from "./shell-review";
 import styles from "./wizard.module.css";
-
-const steps = ["Model", "Workspace"];
 type Selection = Schema<"SetupSelection">;
 
 export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
@@ -87,6 +86,12 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
     heading.current?.focus();
   }, [draft.step]);
   const selection: Selection = draft.selection;
+  const apiKey = selection.model?.authentication.kind === "api_key";
+  const steps = apiKey
+    ? ["Model", "Shell review", "Workspace"]
+    : ["Model", "Workspace"];
+  const workspaceStep = steps.length - 1;
+  const reviewStep = apiKey && draft.step === 1;
   const selectionKey = JSON.stringify(selection);
   const currentPreview =
     preview?.key === selectionKey ? preview.value : undefined;
@@ -296,11 +301,11 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         <DialogPanel scrollFade={false}>
           <div className={styles.content}>
             <h2 ref={heading} tabIndex={-1}>
-              {
-                ["Choose your everyday model", "Decide where your agent works"][
-                  draft.step
-                ]
-              }
+              {draft.step === 0
+                ? "Choose your everyday model"
+                : reviewStep
+                  ? "Choose a shell review model"
+                  : "Decide where your agent works"}
             </h2>
             <ErrorNotice error={error} />
             {!storageAvailable && (
@@ -359,7 +364,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                       draft={draft.modelDraft}
                       onDraftChange={changeModelDraft}
                       value={selection.model ?? null}
-                      onChange={(model) => changeSelection({ model })}
+                      onChange={(model) =>
+                        changeSelection({
+                          model,
+                          shell_review_model: null,
+                          shell_review: model.authentication.kind !== "api_key",
+                        })
+                      }
                       onReady={setModelReady}
                     />
                     <details className={styles.advanced}>
@@ -408,7 +419,21 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     </details>
                   </div>
                 )}
-                {draft.step === 1 && (
+                {reviewStep && selection.model && (
+                  <div className={styles.stack}>
+                    <ShellReviewModel
+                      model={selection.model}
+                      value={selection.shell_review_model ?? ""}
+                      onChange={(value) =>
+                        changeSelection({
+                          shell_review_model: value || null,
+                          shell_review: !!value.trim(),
+                        })
+                      }
+                    />
+                  </div>
+                )}
+                {draft.step === workspaceStep && (
                   <div className={styles.stack}>
                     <div
                       className={styles.environments}
@@ -457,25 +482,34 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                       }
                       description="Existing directory on the server. Leave blank to start without a Project; the conversation gets its own working directory."
                     />
-                    <details className={styles.advanced}>
-                      <summary>Shell review</summary>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={selection.shell_review ?? true}
-                          onChange={(event) =>
-                            changeSelection({
-                              shell_review: event.target.checked,
-                            })
-                          }
-                        />{" "}
-                        Review shell commands before execution
-                      </label>
+                    {!apiKey && (
+                      <details className={styles.advanced}>
+                        <summary>Shell review</summary>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={selection.shell_review ?? true}
+                            onChange={(event) =>
+                              changeSelection({
+                                shell_review: event.target.checked,
+                              })
+                            }
+                          />{" "}
+                          Review shell commands before execution
+                        </label>
+                        <p>
+                          Review is not isolation and uses model requests when
+                          you work. Existing root settings stay unchanged.
+                        </p>
+                      </details>
+                    )}
+                    {apiKey && (
                       <p>
-                        Review is not isolation and uses model requests when you
-                        work. Existing root settings stay unchanged.
+                        Shell review:{" "}
+                        {selection.shell_review_model ||
+                          "Off — no model selected"}
                       </p>
-                    </details>
+                    )}
                     <div className={styles.summary}>
                       <strong>{selection.model?.route}</strong>
                       <span>
@@ -561,7 +595,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             Set up later
           </Button>
           <div>
-            <span className={styles.stepCount}>Step {draft.step + 1} of 2</span>
+            <span className={styles.stepCount}>
+              Step {draft.step + 1} of {steps.length}
+            </span>
             {draft.step > 0 && !draft.pending && (
               <Button
                 variant="outline"
@@ -572,7 +608,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               </Button>
             )}
             {!draft.pending &&
-              (draft.step === 1 ? (
+              (draft.step === workspaceStep ? (
                 <Button
                   loading={busy}
                   disabled={!currentPreview || (sandbox && !sandboxReady)}
@@ -582,10 +618,19 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                 </Button>
               ) : (
                 <Button
-                  disabled={busy || !modelReady}
-                  onClick={() => patch({ step: 1 })}
+                  disabled={
+                    busy ||
+                    (draft.step === 0 && !modelReady) ||
+                    (reviewStep &&
+                      !!selection.shell_review_model &&
+                      /\s/.test(selection.shell_review_model))
+                  }
+                  onClick={() => patch({ step: draft.step + 1 })}
                 >
-                  Continue <ArrowRight />
+                  {reviewStep && !selection.shell_review_model
+                    ? "Skip shell review"
+                    : "Continue"}{" "}
+                  <ArrowRight />
                 </Button>
               ))}
           </div>

@@ -121,6 +121,10 @@ async function fetcher(request: Request): Promise<Response> {
       context_window: 350000,
       known_context_window: null,
       native_tools: [],
+      shell_review_models: [
+        { value: "gpt-5.4-mini", label: "GPT-5.4 mini" },
+        { value: "gpt-5.4", label: "GPT-5.4" },
+      ],
     });
   if (path === "/api/models/prepare")
     return json({
@@ -515,6 +519,78 @@ it("offers affinity presets and captures a custom replacement alongside the endp
   });
   expect(model?.settings).not.toHaveProperty("extra_headers");
 });
+
+it.each([null, "custom/reviewer"])(
+  "explicitly chooses or skips the API reviewer (%s) and retains the choice on refresh",
+  async (reviewer) => {
+    saveWizardDraft(status.draft_scope!, {
+      version: 2,
+      step: 1,
+      threadId: `thread_${"a".repeat(32)}`,
+      selection: {
+        environment_profile: "environment-native",
+        default_agent: "agent-primary",
+        shell_review: false,
+        model: {
+          route: "openai-responses:gpt-5.4",
+          authentication: { kind: "api_key", env: "TEST_KEY" },
+          model_configuration: { base_url: "https://gateway.example/v1" },
+        },
+      },
+    });
+    const first = mount();
+    const input = await screen.findByLabelText("Review model ID (optional)");
+    expect((input as HTMLInputElement).value).toBe("");
+    expect(screen.getByText(/No model selected/)).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("combobox", { name: "Shell review model" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: /GPT-5.4 mini/ }),
+    );
+    expect((input as HTMLInputElement).value).toBe("gpt-5.4-mini");
+    fireEvent.change(input, { target: { value: reviewer ?? "" } });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: reviewer ? "Continue" : "Skip shell review",
+      }),
+    );
+    await screen.findByText("Decide where your agent works");
+    expect(
+      readWizardDraft(status.draft_scope!)?.selection.shell_review_model,
+    ).toBe(reviewer);
+    first.unmount();
+    mount();
+    await screen.findByText("Decide where your agent works");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(
+      (
+        (await screen.findByLabelText(
+          "Review model ID (optional)",
+        )) as HTMLInputElement
+      ).value,
+    ).toBe(reviewer ?? "");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: reviewer ? "Continue" : "Skip shell review",
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Review configuration" }),
+    );
+    await waitFor(() =>
+      expect(calls.some((call) => call.path === "/api/setup/preview")).toBe(
+        true,
+      ),
+    );
+    const body = calls.findLast(
+      (call) => call.path === "/api/setup/preview",
+    )!.body!;
+    expect(body.shell_review_model).toBe(reviewer);
+    expect(body.shell_review).toBe(!!reviewer);
+  },
+);
 
 async function selectApi() {
   const user = userEvent.setup();

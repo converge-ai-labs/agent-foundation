@@ -3937,6 +3937,11 @@ export interface components {
              * @default []
              */
             native_tools?: components["schemas"]["ModelToolChoice"][];
+            /**
+             * Shell Review Models
+             * @default []
+             */
+            shell_review_models?: components["schemas"]["ModelChoice"][];
         };
         /** ModelRecipe */
         ModelRecipe: {
@@ -4680,6 +4685,8 @@ export interface components {
              * @default true
              */
             shell_review?: boolean;
+            /** Shell Review Model */
+            shell_review_model?: string | null;
             /** Include Default Subagents */
             include_default_subagents?: boolean | null;
         };

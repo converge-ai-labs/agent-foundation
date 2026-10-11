@@ -24,7 +24,8 @@ export function readWizardDraft(scope: string): WizardDraft | undefined {
       /^thread[-_][a-f0-9]{32}$/.test(value.threadId) &&
       Number.isInteger(value.step) &&
       value.step >= 0 &&
-      value.step <= 1
+      value.step <=
+        (value.selection.model?.authentication?.kind === "api_key" ? 2 : 1)
     )
       return value;
   } catch {

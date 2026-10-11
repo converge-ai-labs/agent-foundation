@@ -52,6 +52,7 @@ class SetupSelection(StrictModel):
     project_path: str | None = Field(default=None, min_length=1, max_length=4096)
     environment_profile: Literal["environment-native", "environment-sandbox"]
     shell_review: bool = True
+    shell_review_model: str | None = Field(default=None, min_length=1, max_length=480, pattern=r"^\S+$")
     include_default_subagents: bool | None = None
 
     @property
@@ -68,6 +69,10 @@ class SetupSelection(StrictModel):
             raise ValueError("Tools belong to an Agent; configure them when adding an Agent for this Model")
         if self.existing_model_id is not None and (self.new_agent_id is None or self.model is not None):
             raise ValueError("An existing Model can only be selected when adding an Agent without a new connection")
+        if self.shell_review_model is not None and (
+            self.model is None or self.model.authentication.kind != "api_key" or self.new_model_id is not None
+        ):
+            raise ValueError("A shell review model requires an API-key setup connection")
         return self
 
 
@@ -160,6 +165,21 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
         "capabilities": capabilities,
         **({"instructions": selection.instructions} if selection.instructions.strip() else {}),
     }
+    if selection.shell_review and kind == "api_key" and selection.shell_review_model is not None:
+        review = ModelRecipe.model_validate(
+            {
+                "route": f"{route.partition(':')[0]}:{selection.shell_review_model}",
+                "authentication": authentication,
+                "model_configuration": configuration,
+            }
+        )
+        resources["models/api-key-review.yaml"] = {
+            "schema_version": "1",
+            "kind": "model",
+            "id": "model-api-key-review",
+            "name": f"Shell review · {selection.shell_review_model}",
+            **recipe_document(review),
+        }
     if selection.shell_review and kind in {"codex_subscription", "grok_subscription"}:
         codex = kind == "codex_subscription"
         reviewer = "codex-review" if codex else "grok-shell-review"
@@ -287,6 +307,11 @@ async def preview_setup(
     for name, text in templates.items():
         resource_id = yaml.safe_load(text)["id"]
         if resource_id in existing:
+            if name == "models/api-key-review.yaml" and existing[resource_id][1] != yaml.safe_load(text):
+                raise ConfigurationError(
+                    "The shell review Model already exists with different settings. Configure shell review explicitly.",
+                    code="configuration_mutation_conflict",
+                )
             continue
         if name in baseline:
             raise ConfigurationError(
@@ -321,9 +346,11 @@ async def preview_setup(
             (
                 yaml.safe_load(text)["id"]
                 for name, text in templates.items()
-                if name in {"models/codex-review.yaml", "models/grok-shell-review.yaml"}
+                if name in {"models/codex-review.yaml", "models/grok-shell-review.yaml", "models/api-key-review.yaml"}
             ),
-            selection.existing_model_id or connection_model,
+            None
+            if isinstance(authentication, dict) and authentication.get("kind") == "api_key"
+            else selection.existing_model_id or connection_model,
         )
         root["security"] = {
             **security,

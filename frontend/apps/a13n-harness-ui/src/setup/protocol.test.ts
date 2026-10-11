@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { startApp } from "../../tests/app-fixture";
 import type { Schema } from "../transport/client";
+import { parse } from "yaml";
 
 let app: Awaited<ReturnType<typeof startApp>>;
 beforeAll(async () => {
@@ -69,9 +70,36 @@ it("takes an untouched real App from offline choices to saved configuration and 
     default_agent: "agent-api-key",
     model: recipe,
   };
+  const skipped: Schema<"SetupPreview"> = await (
+    await request("/api/setup/preview", selection)
+  ).json();
+  const rootPath = Object.keys(skipped.files).find(
+    (path) => !path.includes("/"),
+  )!;
+  expect(parse(skipped.files[rootPath]!).security.shell_review.enable).toBe(
+    false,
+  );
+  const options: Schema<"ModelOptions"> = await (
+    await request("/api/models/options", {
+      connection: provider.id,
+      model_id: model,
+    })
+  ).json();
+  selection.shell_review_model = options.shell_review_models![0]!.value;
+  selection.shell_review = true;
   const preview: Schema<"SetupPreview"> = await (
     await request("/api/setup/preview", selection)
   ).json();
+  const reviewer = parse(preview.files["models/api-key-review.yaml"]!);
+  expect(reviewer.route).toBe(
+    `${provider.provider}:${selection.shell_review_model}`,
+  );
+  expect(reviewer.authentication.credential_ref).toBe("key-onboarding-fixture");
+  expect(reviewer.model_configuration.base_url).toBe(provider.base_url);
+  expect(parse(preview.files[rootPath]!).security.shell_review).toMatchObject({
+    enable: true,
+    model: reviewer.id,
+  });
   expect(Object.keys(preview.files).length).toBeGreaterThan(2);
   expect(JSON.stringify(preview)).not.toContain("fake-local-test-key");
   expect((await request("/api/setup/apply", { selection })).ok).toBe(true);

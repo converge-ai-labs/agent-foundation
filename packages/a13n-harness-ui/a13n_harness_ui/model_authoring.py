@@ -7,6 +7,7 @@ logs in, or constructs an executable Model.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
@@ -266,6 +267,7 @@ class ModelOptions(StrictModel):
     supports_service_tier: bool
     reasoning_mode: ReasoningModeControl
     native_tools: tuple[ModelToolChoice, ...] = ()
+    shell_review_models: tuple[ModelChoice, ...] = ()
 
 
 def _base_url(connection: ModelConnection, value: str | None) -> str:
@@ -318,6 +320,30 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
     return settings_presets(connection.provider, model_id)
 
 
+def shell_review_models(connection: ModelConnection, model_id: str) -> tuple[ModelChoice, ...]:
+    """Order existing suggestions, not a benchmark or endpoint entitlement claim."""
+    if connection.authentication != "api_key":
+        return ()
+
+    def family(value: str) -> str:
+        return re.split(r"[-\d]", value.rsplit("/", 1)[-1].lower(), maxsplit=1)[0]
+
+    def priority(choice: ModelChoice) -> tuple[bool, int]:
+        name = choice.value.lower()
+        tokens = set(re.split(r"[-_/.]", name))
+        tier = (
+            0
+            if tokens & {"luna", "nano", "mini", "haiku", "lite"}
+            else 1
+            if tokens & {"flash", "flashx", "small", "20b"}
+            else 2
+        )
+        return family(choice.value) != family(model_id), tier
+
+    # Stable sorting retains release-owned preference order within each tier.
+    return tuple(sorted(connection.models, key=priority))
+
+
 def model_options(request: ModelOptionsRequest) -> ModelOptions:
     connection = model_connection(request.connection)
     base_url = _base_url(connection, request.base_url)
@@ -361,6 +387,7 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         supports_service_tier=connection.id in {"codex", "openai-responses", "openai-chat"},
         reasoning_mode=describe_reasoning_mode(route, request.settings or {}),
         native_tools=model_tool_choices(route, connection.authentication, base_url),
+        shell_review_models=shell_review_models(connection, request.model_id),
     )
 
 

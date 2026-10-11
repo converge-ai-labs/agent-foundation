@@ -160,7 +160,7 @@ CodeAct 默认开启，提供受限 Python `run_code`/`run_program` 和 `store`/
 
 ### 审批与提问
 
-设置向导为 shell 启动初始化根 `security.shell_review`，采用 `extra_high` 阈值，并对标记调用请求审批。适用于所有 Agent，包括 API 密钥连接。只有非超时审查错误不会单独触发审批；其他工具策略要求仍适用。现有根设置和 Agent 文件保留。关闭快捷配置不会改变显式 Agent 策略。见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
+选择启用审查时，设置向导为 shell 启动初始化根 `security.shell_review`，采用 `extra_high` 阈值，并对标记调用请求审批。API 密钥设置需要显式选择审查模型；跳过则关闭快捷配置。适用于所有 Agent，包括 API 密钥连接。只有非超时审查错误不会单独触发审批；其他工具策略要求仍适用。现有根设置和 Agent 文件保留。关闭快捷配置不会改变显式 Agent 策略。见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
 
 按显示编号或方向键与 Enter 选择 **Approve once**、**Deny** 或 **Deny with reason**。原因编辑器用 Enter 提交，Ctrl+J/Alt+Enter 换行，Esc 返回。支持时，**Approve with edited arguments** 接受完整 JSON 对象。绑定 shell 审批不能替换参数，应拒绝并说明原因以请求新命令。参数省略时不能批准。不预选答案，自由文本也不能批准。先检查风险、原因和命令，`/review request-id` 打开保留详情。
 

@@ -319,3 +319,44 @@ def test_recipe_document_preserves_image_input_policy(policy):
         assert document["model_characteristics"]["image_input"] is None
     elif policy == {}:
         assert "image_input" not in document["model_characteristics"]
+
+
+@pytest.mark.parametrize(
+    ("connection", "main", "first"),
+    [
+        ("openai-responses", "gpt-6.1-sol", "gpt-6-luna"),
+        ("anthropic", "claude-opus-5-5", "claude-haiku-5-5"),
+        ("google", "gemini-3.1-pro-preview", "gemini-3.5-flash-lite"),
+        ("deepseek", "deepseek-v4-pro", "deepseek-flash"),
+        ("groq", "openai/gpt-oss-120b", "openai/gpt-oss-20b"),
+        ("mistral", "mistral-large-4", "mistral-small-latest"),
+    ],
+)
+def test_shell_review_suggestions_prefer_lightweight_family_models(connection: str, main: str, first: str) -> None:
+    from a13n_harness_ui.model_authoring import model_connection
+
+    options = model_options(ModelOptionsRequest(connection=connection, model_id=main))
+    suggestions = options.shell_review_models
+    assert suggestions[0].value == first
+    assert {item.value for item in suggestions} == {item.value for item in model_connection(connection).models}
+    assert model_options(ModelOptionsRequest(connection="codex", model_id="gpt-6.1-sol")).shell_review_models == ()
+
+
+def test_shell_review_suggestions_keep_gateway_family_and_custom_ids_separate() -> None:
+    from a13n_harness_ui.model_authoring import ModelChoice, model_connection, shell_review_models
+
+    connection = model_connection("openrouter").model_copy(
+        update={
+            "models": (
+                ModelChoice(value="anthropic/claude-haiku-4.5", label="Haiku"),
+                ModelChoice(value="openai/gpt-5.4", label="GPT"),
+                ModelChoice(value="openai/gpt-5.4-mini", label="Mini"),
+            )
+        }
+    )
+    assert [item.value for item in shell_review_models(connection, "openai/gpt-5.4")] == [
+        "openai/gpt-5.4-mini",
+        "openai/gpt-5.4",
+        "anthropic/claude-haiku-4.5",
+    ]
+    assert all(item.value != "private-model" for item in shell_review_models(connection, "private-model"))

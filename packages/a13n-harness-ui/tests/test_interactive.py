@@ -1372,3 +1372,28 @@ def test_status_fragments_keep_primary_state_and_plain_text_identical(state, sty
 def test_idle_status_uses_execution_outcome_not_operation_text(execution, state):
     status = Status(execution_status=execution)
     assert status.idle_state == state
+
+
+@pytest.mark.parametrize("reviewer", ["skip", "custom/reviewer"])
+def test_api_setup_requires_explicit_review_model_even_without_advanced(reviewer: str) -> None:
+    wizard = SetupWizard()
+    answers = {"provider": "api", "credential_source": "env:OPENAI_API_KEY", "review_model": reviewer}
+    seen = []
+    while wizard.question is not None:
+        question = wizard.question
+        seen.append(question.key)
+        if question.key == "review_model":
+            assert question.default == "skip"
+            assert question.choices[0] == "skip"
+            assert question.choices[1] == "gpt-6-luna"
+        wizard.accept(answers.get(question.key, ""))
+    assert "review_model" in seen
+    assert "review" not in seen
+    selection = wizard.selection("/tmp")
+    assert selection["shell_review"] is (reviewer != "skip")
+    assert selection["shell_review_model"] == (None if reviewer == "skip" else reviewer)
+    assert wizard.back()
+    assert wizard.back()
+    assert wizard.question.key == "review_model"
+    wizard.accept("skip")
+    assert wizard.selection("/tmp")["shell_review_model"] is None
