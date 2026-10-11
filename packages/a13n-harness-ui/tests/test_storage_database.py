@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+import sys
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,12 +16,86 @@ from a13n_harness_ui.storage.migration import DatabaseMigrator, DatabaseSchemaEr
 from a13n_harness_ui.storage.models import AcceptedConfigurationRecord
 from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from anyio import fail_after, sleep_forever
 from sqlalchemy import DateTime, Engine, bindparam, create_engine, event, inspect, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("timeout_seconds", [None, 1.25])
+def test_migrator_configures_busy_timeout(tmp_path: Path, timeout_seconds: float | None) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = (
+        DatabaseMigrator(path)
+        if timeout_seconds is None
+        else DatabaseMigrator(path, busy_timeout_seconds=timeout_seconds)
+    )
+    expected_timeout_ms = 30000 if timeout_seconds is None else 1250
+
+    def check_timeout(config: Config) -> None:
+        connection = DatabaseMigrator._connection(config)
+        assert connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one() == expected_timeout_ms
+
+    migrator._run(check_timeout)
+
+
+@pytest.mark.parametrize("timeout_seconds,hold_seconds", [(None, 6.0), (0.05, None)])
+async def test_database_waits_for_external_writer(
+    tmp_path: Path, timeout_seconds: float | None, hold_seconds: float | None
+) -> None:
+    settings = StorageSettings(data_root=tmp_path)
+    if timeout_seconds is not None:
+        settings = settings.model_copy(update={"busy_timeout_seconds": timeout_seconds})
+    path = tmp_path / "metadata.sqlite3"
+    async with open_database(path, settings) as database:
+        # A separate interpreter exercises OS-level locking on Windows as well
+        # as POSIX, without sharing the App's process-local writer queue.
+        writer = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import sqlite3, sys, time\n"
+            "with sqlite3.connect(sys.argv[1]) as connection:\n"
+            "    connection.execute('BEGIN IMMEDIATE')\n"
+            "    print('locked', flush=True)\n"
+            "    if sys.argv[2] == 'wait':\n"
+            "        sys.stdin.readline()\n"
+            "    else:\n"
+            "        time.sleep(float(sys.argv[2]))\n",
+            str(path),
+            "wait" if hold_seconds is None else str(hold_seconds),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            assert writer.stdout is not None
+            assert (await asyncio.wait_for(writer.stdout.readline(), timeout=10)).strip() == b"locked"
+            expectation = (
+                nullcontext()
+                if timeout_seconds is None
+                else pytest.raises(OperationalError, match="database is locked")
+            )
+            with expectation:
+                async with transaction(database.sessions) as session:
+                    await session.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
+        finally:
+            try:
+                _, stderr = await asyncio.wait_for(writer.communicate(b"release\n"), timeout=15)
+            except TimeoutError:
+                writer.kill()
+                await writer.wait()
+                raise
+        assert writer.returncode == 0, stderr.decode()
+        async with short_session(database.sessions) as session:
+            count = (await session.execute(text("SELECT count(*) FROM planned_restart"))).scalar_one()
+            assert count == (1 if timeout_seconds is None else 0)
+        # Exhausting an explicit short budget must not leak a connection or lock.
+        async with transaction(database.sessions) as session:
+            await session.execute(text("DELETE FROM planned_restart"))
 
 
 def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> None:
@@ -258,15 +334,19 @@ async def test_database_startup_still_rejects_missing_required_schema(tmp_path):
     assert "missing required table project_model_preference" in str(error.value.__cause__)
 
 
-async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path) -> None:
-    settings = StorageSettings(data_root=tmp_path, busy_timeout_seconds=1.25)
+@pytest.mark.parametrize("timeout_seconds", [None, 1.25])
+async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path, timeout_seconds: float | None) -> None:
+    settings = StorageSettings(data_root=tmp_path)
+    if timeout_seconds is not None:
+        settings = settings.model_copy(update={"busy_timeout_seconds": timeout_seconds})
+    expected_timeout_ms = 30000 if timeout_seconds is None else 1250
     path = tmp_path / "metadata.sqlite3"
 
     async with open_database(path, settings) as database:
         async with database.engine.connect() as connection:
             assert (await connection.execute(text("PRAGMA journal_mode"))).scalar_one() == "wal"
             assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
-            assert (await connection.execute(text("PRAGMA busy_timeout"))).scalar_one() == 1250
+            assert (await connection.execute(text("PRAGMA busy_timeout"))).scalar_one() == expected_timeout_ms
             assert (await connection.execute(text("PRAGMA synchronous"))).scalar_one() == 2
 
         now = datetime.now(UTC)
