@@ -10,6 +10,11 @@ dependencies = [
     "rich>=15,<16",
 ]
 
+[project.urls]
+Homepage = "https://a13n.converge.ai/"
+Documentation = "https://a13n.converge.ai/docs/a13n-logging/"
+Repository = "https://github.com/converge-ai-labs/agent-foundation"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

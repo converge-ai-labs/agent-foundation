@@ -51,6 +51,11 @@ dependencies = [
     "cryptography>=45",
 ]
 
+[project.urls]
+Homepage = "https://a13n.converge.ai/"
+Documentation = "https://a13n.converge.ai/docs/a13n-harness-ui/"
+Repository = "https://github.com/converge-ai-labs/agent-foundation"
+
 [project.scripts]
 a13n-harness-ui = "a13n_harness_ui.cli:main"
 

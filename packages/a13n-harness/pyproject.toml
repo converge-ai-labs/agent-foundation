@@ -35,6 +35,11 @@ dependencies = [
     "typesafe-sdk>=0.7.1,<1",
 ]
 
+[project.urls]
+Homepage = "https://a13n.converge.ai/"
+Documentation = "https://a13n.converge.ai/docs/a13n-harness/"
+Repository = "https://github.com/converge-ai-labs/agent-foundation"
+
 [project.optional-dependencies]
 docker = ["docker>=7.2,<8"]
 e2b = ["e2b>=2.46.4,<3"]

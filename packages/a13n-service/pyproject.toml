@@ -44,6 +44,11 @@ dependencies = [
     "zstandard>=0.25,<0.26",
 ]
 
+[project.urls]
+Homepage = "https://a13n.converge.ai/"
+Documentation = "https://a13n.converge.ai/docs/a13n-service/"
+Repository = "https://github.com/converge-ai-labs/agent-foundation"
+
 [project.scripts]
 a13n-service = "a13n_service.cli:main"
 

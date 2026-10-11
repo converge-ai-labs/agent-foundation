@@ -22,13 +22,15 @@ async function files(folder, prefix = "") {
 const canonicalPages = (await files(docs)).filter(
   (path) => /\.mdx?$/.test(path) && !path.includes(".zh-CN."),
 );
+/** Output directory of a document: `a13n-harness/sandbox/`, or `` for the home page. */
+function pageDirectory(path) {
+  const url = path.replace(/\.mdx?$/, "").replace(/(?:^|\/)index$/, "");
+  return url ? `${url}/` : "";
+}
 
 test("every human document has a Chinese static page with matching section anchors", async () => {
   for (const path of canonicalPages) {
-    const url = path.replace(/\.mdx?$/, "").replace(/(?:^|\/)index$/, "");
-    const pagePath = url
-      ? `${url.replace(/\/$/, "")}/index.html`
-      : "index.html";
+    const pagePath = `${pageDirectory(path)}index.html`;
     const english = await readFile(new URL(pagePath, output), "utf8");
     const chinese = await readFile(
       new URL(`zh-CN/${pagePath}`, output),
@@ -47,6 +49,28 @@ test("every human document has a Chinese static page with matching section ancho
       chinese,
       /<link rel="canonical" href="https:\/\/a13n\.converge\.ai\/docs\/zh-CN\//,
     );
+  }
+});
+
+test("the sitemap lists every page in both languages at its canonical URL", async () => {
+  const site = "https://a13n.converge.ai/docs/";
+  const sitemap = await readFile(new URL("sitemap.xml", output), "utf8");
+  const urls = [...sitemap.matchAll(/<loc>(.+?)<\/loc>/g)].map(
+    (match) => match[1],
+  );
+  for (const path of canonicalPages)
+    for (const locale of ["", "zh-CN/"])
+      assert.ok(
+        urls.includes(`${site}${locale}${pageDirectory(path)}`),
+        `${locale}${path}`,
+      );
+  for (const url of urls) {
+    assert.ok(url.startsWith(site), url);
+    const html = await readFile(
+      new URL(`${url.slice(site.length)}index.html`, output),
+      "utf8",
+    );
+    assert.ok(html.includes(`<link rel="canonical" href="${url}"/>`), url);
   }
 });
 
