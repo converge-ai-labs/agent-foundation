@@ -50,6 +50,7 @@ from pydantic_ai.messages import (
     DeferredToolResultsEvent,
     EnqueuedMessagesEvent,
     FunctionToolResultEvent,
+    NativeToolCallPart,
     OutputToolResultEvent,
     PartDeltaEvent,
     PartEndEvent,
@@ -567,7 +568,9 @@ def _convert_part_start(item: HarnessEvent, event: PartStartEvent, state: _Obser
                 )
             )
         return events
-    if isinstance(part, ToolCallPart):
+    if isinstance(part, ToolCallPart | NativeToolCallPart):
+        # Both kinds emit ToolCallPartDelta. A native start must replace any
+        # previous request's cursor too, even though its events stay CUSTOM.
         state.parts[event.index] = _PartCursor(
             kind="tool_call",
             part_id=part.tool_call_id,

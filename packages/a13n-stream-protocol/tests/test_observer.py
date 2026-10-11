@@ -48,6 +48,8 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
@@ -493,6 +495,65 @@ def test_reasoning_tool_and_tool_result_use_standard_agui_events() -> None:
     assert isinstance(tool_result[0], ToolCallResultEvent)
     assert tool_result[0].message_id == "call-1:result"
     assert tool_result[0].content == '{"found":1}'
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_native_tool_start_replaces_late_reasoning_from_previous_request(restore: bool) -> None:
+    observer = HarnessAguiObserver()
+    first = ThinkingPart("first summary", id="rs-shared")
+    second = ThinkingPart("second summary", id="rs-shared")
+    previous = [
+        PartStartEvent(index=0, part=first),
+        PartEndEvent(index=0, part=first),
+        PartStartEvent(index=1, part=second),
+        # Responses can attach the signature to the first summary after its end.
+        PartDeltaEvent(index=0, delta=ThinkingPartDelta(signature_delta="signature")),
+        PartEndEvent(index=1, part=second),
+        HarnessExtensionEvent(kind="lifecycle", payload={"type": "model_request_started", "request_index": 1}),
+    ]
+    for sequence, source in enumerate(previous):
+        observer.observe(_event(sequence, source))
+
+    call = NativeToolCallPart(tool_name="web_search", tool_call_id="native-1", provider_name="openai")
+    native = [
+        PartStartEvent(index=0, part=call),
+        PartDeltaEvent(index=0, delta=ToolCallPartDelta(args_delta={"query": "example"})),
+        PartEndEvent(
+            index=0,
+            part=NativeToolCallPart(
+                tool_name="web_search", args={"query": "example"}, tool_call_id="native-1", provider_name="openai"
+            ),
+        ),
+        PartStartEvent(
+            index=1,
+            part=NativeToolReturnPart(
+                tool_name="web_search", content={"status": "completed"}, tool_call_id="native-1", provider_name="openai"
+            ),
+        ),
+    ]
+    for sequence, source in enumerate(native, start=len(previous)):
+        if restore:
+            saved = observer.export()
+            observer = HarnessAguiObserver.restore(type(saved).model_validate_json(saved.model_dump_json()))
+        converted = observer.observe(_event(sequence, source))
+        assert len(converted) == 1
+        assert isinstance(converted[0], CustomEvent)
+        assert converted[0].name == f"a13n.pydantic_ai.{source.event_kind}"
+        assert converted[0].value["event"] == TypeAdapter(type(source)).dump_python(source, mode="json")
+
+    # The native end settles its cursor; subsequent text remains independently valid.
+    following = observer.observe(_event(10, PartDeltaEvent(index=0, delta=TextPartDelta("answer"))))
+    assert [type(event) for event in following] == [TextMessageStartEvent, TextMessageContentEvent]
+
+
+def test_native_tool_start_establishes_identity_before_argument_deltas() -> None:
+    observer = HarnessAguiObserver()
+    call = NativeToolCallPart(tool_name="web_search", tool_call_id="native-1", provider_name="openai")
+    observer.observe(_event(0, PartStartEvent(index=0, part=call)))
+    before = observer.snapshot()
+    with pytest.raises(AguiObservationError, match="tool-call identity changed"):
+        observer.observe(_event(1, PartDeltaEvent(index=0, delta=ToolCallPartDelta(tool_call_id="different"))))
+    assert observer.snapshot() == before
 
 
 def test_native_tool_media_is_a_tool_result_not_user_input_or_binary_transport() -> None:
