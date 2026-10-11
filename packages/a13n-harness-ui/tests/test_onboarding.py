@@ -227,6 +227,7 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
             "default",
             "",
             "",
+            "skip",
             "full-control",
         ]
     )

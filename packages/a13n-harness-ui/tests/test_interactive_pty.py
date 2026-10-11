@@ -125,6 +125,8 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         os.write(master, b"\r")
         output += _read_until(master, b"Choose native Agent tools")
         os.write(master, b"\r")
+        output += _read_until(master, b"Shell review model (optional")
+        os.write(master, b"\r")  # Skip review without implicitly selecting the main model.
         output += _read_until(master, b"Execution permissions")
         os.write(master, b"\r")
         if not command:

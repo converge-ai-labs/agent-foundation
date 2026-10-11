@@ -301,11 +301,15 @@ def test_resource_steps_change_progress_when_selected_and_removed():
     for key, answer in [("file_stores", "vs_docs"), ("mcp_url", "https://mcp.example"), ("mcp_id", "docs")]:
         assert wizard.question.key == key
         wizard.accept(answer)
-    assert wizard.progress[0] == wizard.progress[1]
+    assert wizard.question.key == "review_model"
+    assert wizard.progress[0] == wizard.progress[1] - 1
     for _ in range(4):
         assert wizard.back()
     assert wizard.question.key == "tools"
     wizard.accept("none")
+    assert wizard.question.key == "review_model"
+    assert wizard.progress == (total - 1, total)
+    wizard.accept("skip")
     assert wizard.question.key == "environment"
     assert wizard.progress == (total, total)
 
