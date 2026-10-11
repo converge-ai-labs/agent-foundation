@@ -20,7 +20,7 @@ from . import findings as finding_fixture
 from .api import router as fixture_router
 from .mem0 import keep as keep_mem0_records
 from .mem0 import router as mem0_router
-from .process import fixture_process
+from .process import add_listener_arguments, fixture_process, serve_fixture
 
 MODEL_PORT = 18080
 MODEL_URL = f"http://127.0.0.1:{MODEL_PORT}/v1"
@@ -76,7 +76,7 @@ async def completion(request: Request):
     )
     tool_calls = tool_call if isinstance(tool_call, list) else [tool_call] if tool_call is not None else []
     observation["tool_call_selected"] = bool(tool_calls)
-    document = Path(__file__).with_name("response.md").read_text()
+    document = Path(__file__).with_name("response.md").read_text(encoding="utf-8")
     text = (
         document
         if "[long]" in prompt
@@ -383,6 +383,6 @@ def serve_model(port: int = MODEL_PORT, mem0_records: str | None = None) -> None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fd", type=int)
+    add_listener_arguments(parser, required=False)
     args = parser.parse_args()
-    uvicorn.run(app, fd=args.fd, host="127.0.0.1", port=MODEL_PORT, log_level="warning", access_log=False)
+    serve_fixture(app, fd=args.fd, shared_socket=args.shared_socket, port=MODEL_PORT)

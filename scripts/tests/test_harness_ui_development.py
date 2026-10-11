@@ -115,6 +115,17 @@ async def test_first_launch_reuses_models_keys_and_guidance_but_not_history(
     assert "fictional-api-key" not in capsys.readouterr().err
 
 
+def test_published_file_has_complete_directory_metadata(development: Path) -> None:
+    content = b'schema_version: "1"\n'
+    launcher._write_missing(development, content)
+    # Inspect the directory before opening/stat-ing the destination, which can
+    # refresh stale Windows hard-link metadata and conceal an incomplete publish.
+    with os.scandir(development.parent) as entries:
+        sizes = {entry.name: entry.stat(follow_symlinks=False).st_size for entry in entries}
+    assert sizes == {development.name: len(content)}
+    assert development.read_bytes() == content
+
+
 def test_only_immediate_supported_resource_files_are_copied(development: Path) -> None:
     source = write_source()
     included = (

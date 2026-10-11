@@ -15,10 +15,11 @@ from collections.abc import Callable
 from itertools import count
 from typing import Any, Literal
 
-import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
+from .process import add_listener_arguments, serve_fixture
 
 # How long a request waits for a matching turn before the fixture answers with an error.
 TURN_WAIT_SECONDS = 30
@@ -181,6 +182,6 @@ def _message(turn: Turn) -> dict[str, Any]:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fd", type=int, required=True)
+    add_listener_arguments(parser)
     args = parser.parse_args()
-    uvicorn.run(app, fd=args.fd, log_level="warning", access_log=False)
+    serve_fixture(app, fd=args.fd, shared_socket=args.shared_socket)
