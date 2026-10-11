@@ -146,11 +146,12 @@ async def test_history_ctrl_c_does_not_answer_or_cancel_a_pending_approval() -> 
 
 
 @pytest.mark.anyio
-async def test_usage_without_a_selected_thread_does_not_create_one_or_open_reset() -> None:
+@pytest.mark.parametrize("command", ["/usage", "/usage all", "/usage root", "/usage subagents", "/usage details"])
+async def test_usage_without_a_selected_thread_does_not_create_one_or_open_reset(command: str) -> None:
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest(), status=Status(model="openai:test"))
         shell.backend = SimpleNamespace(thread_id=None, app=SimpleNamespace(thread_usage=AsyncMock()))
-        await shell.command(shell.registry.parse("/usage", busy=True))
+        await shell.command(shell.registry.parse(command, busy=True))
         assert "No session selected" in "\n".join(block.source for block in shell.renderer.transcript.blocks.values())
         shell.backend.app.thread_usage.assert_not_awaited()
         assert shell.job is None and shell.menu_handler is None and shell.pending_codex_reset is None

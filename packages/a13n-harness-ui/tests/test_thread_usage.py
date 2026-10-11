@@ -221,15 +221,13 @@ async def test_reports_terminal_and_receipts_deduplicate_across_root_inline_and_
         with pytest.raises(ValueError, match="root Threads"):
             await repository.snapshot(thread_id="thread-child")
         summary = thread_usage_text(snapshot)
-        assert len(summary.splitlines()) < 12
-        assert "Cache read   240 (50.0%)" in summary
-        assert "Recorded so far" not in summary and "not a provider invoice" not in summary
-        assert "of input + output" not in summary
-        assert "Recent Runs" not in summary and "Audio:" not in summary
+        assert "Thread usage · All" in summary and "### By model" in summary
+        assert "Cache read 240 (50.0%)" in summary
+        assert "Recent Runs" not in summary and "### Coverage" not in summary
         assert "3 unknown-cost responses" in summary and "EUR 0.2" in summary
-        assert "/usage details" in summary and "root 1 / children 3" in summary
+        assert "/usage details" in summary and "Root 1 / Subagents 3" in summary
         text = thread_usage_text(snapshot, details=True)
-        assert "50.0%" in text and "0.125000 known subtotal" in text
+        assert "50.0%" in text and "$0.125" in text
         assert "3 unknown-cost responses" in text and "EUR 0.2" in text
         assert "Recent Runs" in text and "run-inline" in text
         assert "Not a provider invoice" in text
@@ -260,7 +258,8 @@ async def test_bounded_batches_keep_all_totals_and_recent_run_details(tmp_path: 
         repository = ThreadUsageRepository(database.sessions)
         empty = await repository.snapshot(thread_id="thread-root")
         assert empty.first_observed_at is None
-        assert thread_usage_text(empty) == "Usage · this conversation\nNo recorded usage yet."
+        assert "No recorded usage yet." in thread_usage_text(empty)
+        assert "not proven zero" in thread_usage_text(empty)
         assert "not proven zero" in thread_usage_text(empty, details=True)
         for batch in range(3):
             await repository.append(
@@ -411,7 +410,7 @@ async def test_legacy_and_auxiliary_records_reaggregate_without_repricing_or_con
         fresh = ThreadUsageRepository(database.sessions)
         assert await fresh.snapshot(thread_id="thread-root") == view
         assert "media-model" in thread_usage_text(view)
-        assert "files.media_understanding" in thread_usage_text(view, details=True)
+        assert "Media understanding · view" in thread_usage_text(view, details=True)
 
 
 async def test_auxiliary_group_overflow_preserves_all_scope_totals(tmp_path: Path) -> None:

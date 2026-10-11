@@ -1908,12 +1908,22 @@ class CliShell:
         elif name == "usage":
             from .usage import choose_codex_reset, show_subscription_usage, thread_usage_text
 
-            if argument in {None, "details"}:
+            if argument in {None, "all", "root", "subagents", "details"}:
                 if self.backend.thread_id is None:
                     self.emit("No session selected. Send a message or /resume.")
                     return
                 view = await self.backend.app.thread_usage(thread_id=self.backend.thread_id)
-                self.emit(thread_usage_text(view, details=argument == "details"), kind="info")
+                self.renderer.finish()
+                self.renderer.append(
+                    thread_usage_text(
+                        view,
+                        scope="root" if argument == "root" else "subagents" if argument == "subagents" else "all",
+                        details=argument == "details",
+                    )
+                    + "\n",
+                    markdown=True,
+                    kind="info",
+                )
             else:
                 if not self.status.model.startswith(("openai-codex:", "openai-chatgpt:")):
                     raise ValueError("Subscription usage is available for Codex and ChatGPT Models only.")
