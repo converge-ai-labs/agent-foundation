@@ -13846,7 +13846,7 @@
         "type": "object"
       },
       "UsageLimits-Input": {
-        "description": "Limits on model usage.\n\nThe request count is tracked by pydantic_ai, and the request limit is checked before each request to the model.\nToken counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.",
+        "description": "Limits on model usage.\n\nThe request count is tracked by Pydantic AI, and the request limit is checked at the start of each step of the\nagent loop. Token counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.",
         "properties": {
           "cost_limit": {
             "anyOf": [
@@ -13940,7 +13940,7 @@
         "type": "object"
       },
       "UsageLimits-Output": {
-        "description": "Limits on model usage.\n\nThe request count is tracked by pydantic_ai, and the request limit is checked before each request to the model.\nToken counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.",
+        "description": "Limits on model usage.\n\nThe request count is tracked by Pydantic AI, and the request limit is checked at the start of each step of the\nagent loop. Token counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.",
         "properties": {
           "cost_limit": {
             "anyOf": [
