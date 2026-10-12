@@ -259,6 +259,14 @@ def execute(request: dict) -> dict:
         else:
             if mode == "replace":
                 require_regular_file(path)
+            try:
+                original_mode = path.stat().st_mode
+            except FileNotFoundError:
+                pass
+            else:
+                if stat.S_ISREG(original_mode):
+                    # Apply access/executable bits to the candidate before atomic publication, never set-ID bits.
+                    staged.chmod(original_mode & 0o777)
             os.replace(staged, path)
         return {}
     if action == "mkdir":
