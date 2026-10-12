@@ -30,7 +30,7 @@ The SDKs have two layers over the same transport and authentication:
 
 An Interaction observes the run that actually incorporates its input, including time spent queued. The Interaction follows a run only after that run consumes the queued entry; an entry assigned to a run returns to `pending` if the run completes or waits without incorporating it. Iteration ends when that run completes, fails, is cancelled or waits for human input, approval or a client-tool result; it does not follow later runs on the thread. Waiting is an outcome to handle explicitly, not permission for the SDK to approve or resume automatically. Applications that only need the result can wait for it without opening the stream.
 
-The stream carries provisional observations, not a complete transcript or the durable result. Retention, gaps and changes to the thread's current run can limit replay; use the durable result and committed run items for readback. The low-level API retains access to the underlying thread stream, but it is not a second high-level interaction mode.
+The stream carries provisional observations, not a complete transcript or the durable result. Lost output and bounded retention can leave gaps in live output; use the durable result and committed run items for readback. The low-level API retains access to the underlying session stream, but it is not a second high-level interaction mode.
 
 Service owns authorization and durable execution. Closing an Interaction, timing out or disconnecting stops local observation, not the run; interrupting a run is a separate explicit operation. Follow the selected client's guide for native cleanup, conditional writes, structured inputs and recovery.
 

@@ -1,14 +1,12 @@
-"""The runs HTTP surface: sessions, threads, their inbox and stream, and runs."""
+"""The runs HTTP surface: sessions and their stream, threads and their inbox, and runs."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
-from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.runs import archive, authors, entries, resume, runs, sessions, stream, submit, threads
-from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,
@@ -90,6 +88,24 @@ async def update_session(
 ) -> SessionView:
     result = await sessions.update_session(runtime.storage, actor, workspace_id, session_id, body, if_match=if_match)
     return tagged(response, result)
+
+
+@router.get(
+    "/sessions/{session_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def session_stream(
+    request: Request, runtime: CurrentRuntime, workspace_id: WorkspaceId, session_id: str, credential: Credential
+) -> StreamingResponse:
+    """The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
+    frames. Every connection starts from a snapshot."""
+    reader = await stream.open_stream(runtime, credential, workspace_id, session_id)
+    return StreamingResponse(
+        stream.frames(request.app.state.session_hub, reader),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/sessions/{session_id}/message-authors", response_model=MessageAuthors)
@@ -190,36 +206,6 @@ async def list_thread_runs(
 ) -> RunPage:
     """Newest first."""
     return await runs.list_thread_runs(runtime.storage, actor, workspace_id, thread_id, limit=limit, cursor=cursor)
-
-
-@router.get(
-    "/threads/{thread_id}/stream",
-    response_class=StreamingResponse,
-    responses={200: {"content": {"text/event-stream": {}}}},
-)
-async def thread_stream(
-    request: Request,
-    runtime: CurrentRuntime,
-    workspace_id: WorkspaceId,
-    thread_id: str,
-    credential: Credential,
-    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", pattern=stream.EVENT_ID)] = None,
-    run: str | None = None,
-    position: Annotated[str | None, Query(pattern=stream.POSITION)] = None,
-) -> StreamingResponse:
-    """Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`."""
-    if (run is None) != (position is None):
-        raise invalid("position", "run and position must be provided together")
-    resume = None
-    if run is not None and position is not None:
-        attempt, sequence = map(int, position.split("-"))
-        resume = stream.Resume(run, StreamPosition(attempt=attempt, sequence=sequence))
-    reader = await stream.open_stream(runtime, credential, workspace_id, thread_id, resume)
-    return StreamingResponse(
-        stream.frames(request.app.state.thread_hub, reader, last_event_id, resume),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-    )
 
 
 # Inbox
@@ -397,7 +383,7 @@ async def run_items(
     actor: Actor,
     before: Annotated[int | None, Query(ge=1, description="Return the items just before this ordinal")] = None,
     after: Annotated[int | None, Query(ge=0, description="Return the items just after this ordinal")] = None,
-    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    limit: Annotated[int, Query(ge=1, le=500)] = runs.NEWEST_ITEMS,
 ) -> RunItems:
     """A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose
     items live output can still change; `before` and `after` page from an ordinal and exclude each other."""

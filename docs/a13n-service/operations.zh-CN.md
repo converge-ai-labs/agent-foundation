@@ -14,7 +14,7 @@ a13n-service --config service.toml run --role worker
 
 | 角色          | 提供服务                                                                                  | 后台任务                                    |
 | ------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `control`     | Console、HTTP API、线程事件流、`/api/v1/openapi.json` 和 `/api/v1/docs` 交互式 API 页面。 | 全部维护扫描和投递。                        |
+| `control`     | Console、HTTP API、会话事件流、`/api/v1/openapi.json` 和 `/api/v1/docs` 交互式 API 页面。 | 全部维护扫描和投递。                        |
 | `worker`      | 仅 `/healthz` 和 `/readyz`。                                                              | 领取已接收的运行，并使用 Harness 执行。     |
 | `all`（默认） | 与 `control` 相同。                                                                       | 同时执行 `control` 和 `worker` 的全部任务。 |
 
@@ -52,7 +52,7 @@ a13n-service --config service.toml migrate --check
 | `GET /healthz` | 进程提供 HTTP 服务期间始终返回 `200 {"status": "ok", "role": "<role>"}`。                        |
 | `GET /readyz`  | 启动完成、后台任务运行且数据库 schema 可用后，返回 `200 {"status": "ready", "role": "<role>"}`。 |
 
-启动未完成或后台任务停止后，就绪检查返回 `503 {"status": "unavailable", "dependency": "runtime"}`；无法在 `server.readiness_timeout` 内检查 schema 时，返回 `"dependency": "database"`。Redis 不可用时仍保持就绪，并添加 `"degraded": ["redis"]`，因为 PostgreSQL 保存全部持久状态；Redis 恢复前，实时线程事件流和限流都会停止。
+启动未完成或后台任务停止后，就绪检查返回 `503 {"status": "unavailable", "dependency": "runtime"}`；无法在 `server.readiness_timeout` 内检查 schema 时，返回 `"dependency": "database"`。Redis 不可用时仍保持就绪，并添加 `"degraded": ["redis"]`，因为 PostgreSQL 保存全部持久状态；Redis 恢复前，会话事件流不含实时输出，限流也会停止。
 
 ## 后台任务
 

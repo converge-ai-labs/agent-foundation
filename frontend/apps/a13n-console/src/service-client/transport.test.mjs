@@ -221,147 +221,142 @@ test("SSE handles split UTF-8, CRLF, multiline payloads and cancellation", async
   assert.equal(canceled, true);
 });
 
-test("Thread stream resumes after its last cursor and reports control frames", async () => {
-  const requests = [];
-  const delta = {
+const sse = (body) =>
+  new Response(chunks(body), {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+const item = {
+  id: "item_one",
+  ordinal: 1,
+  kind: "text_message",
+  state: "in_progress",
+  first_stream_id: "1-1",
+  last_stream_id: "1-1",
+  started_at: "2026-10-12T10:00:00Z",
+  content: { text: "Hi" },
+};
+const frames = {
+  thread: {
+    thread: { id: "th_one" },
+    current_run: { id: "run_one" },
+    last_run: null,
+    entries: [],
+  },
+  items: {
+    thread_id: "th_one",
+    run_id: "run_one",
+    first: 1,
+    items: [item],
+    continuation: null,
+    complete: false,
+  },
+  delta: {
+    thread_id: "th_one",
     run_id: "run_one",
     attempt: 1,
     sequence: 2,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "tail" },
+    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "!" },
     item: null,
-  };
+  },
+  gap: { thread_id: "th_one", run_id: "run_one" },
+};
+const frame = (event, data = frames[event]) =>
+  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+test("Session stream reports its connection and frames, ignoring unknown events", async () => {
+  const requests = [];
   const client = createClient({
     baseUrl,
     auth: { type: "session" },
     fetch: async (request) => {
       requests.push(request);
-      return new Response(
-        chunks(
-          `id: 5-0\nevent: delta\ndata: ${JSON.stringify(delta)}\n\nevent: gap\ndata: {"run_id":"run_one"}\n\nevent: changed\ndata: {"version":4}\n\nevent: delta\ndata: {}\n\n`,
-        ),
-        { headers: { "Content-Type": "text/event-stream" } },
+      return sse(
+        frame("thread") +
+          frame("items") +
+          ": keepalive\n\n" +
+          frame("later", {}) +
+          frame("delta") +
+          frame("gap"),
       );
     },
   });
-  const stream = client.streamThread("ws_one", "th_one", { after: "4-0" });
-  assert.deepEqual((await stream.next()).value, {
-    type: "delta",
-    cursor: "5-0",
-    delta,
-  });
-  assert.deepEqual((await stream.next()).value, {
-    type: "gap",
-    run_id: "run_one",
-  });
-  assert.deepEqual((await stream.next()).value, {
-    type: "changed",
-    version: 4,
-  });
-  await assert.rejects(stream.next(), ProtocolError);
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].url, `${baseUrl}/api/v1/threads/th_one/stream`);
+  const stream = client.streamSession("ws_one", "ses_one");
+  const received = [];
+  for (let index = 0; index < 6; index++)
+    received.push((await stream.next()).value);
+  await stream.return();
+  assert.deepEqual(received, [
+    { type: "connection", state: "connecting" },
+    { type: "connection", state: "live" },
+    { type: "thread", data: frames.thread },
+    { type: "items", data: frames.items },
+    { type: "delta", data: frames.delta },
+    { type: "gap", data: frames.gap },
+  ]);
+  assert.equal(requests[0].url, `${baseUrl}/api/v1/sessions/ses_one/stream`);
   assert.equal(requests[0].headers.get("X-Workspace-ID"), "ws_one");
-  assert.equal(requests[0].headers.get("Last-Event-ID"), "4-0");
+  assert.equal(requests[0].headers.get("Last-Event-ID"), null);
 });
 
-test("reconnects with the consumer's current complete position and matching hint", async () => {
-  const requests = [];
-  let resume = { run: "run_one", position: "1-100", after: "4-0" };
-  const encoder = new TextEncoder();
+test("Session stream reconnects from a fresh snapshot after an end or a busy Service", async (context) => {
+  context.onTestFinished(() => (Math.random = random));
+  const random = Math.random;
+  Math.random = () => 0;
+  const responses = [
+    () => sse(frame("thread")),
+    () => new Response(null, { status: 503, headers: { "Retry-After": "0" } }),
+    () => sse(frame("thread")),
+  ];
   const client = createClient({
     baseUrl,
     auth: { type: "session" },
-    fetch: async (request) => {
-      requests.push(request);
-      if (requests.length === 1) {
-        let sent = false;
-        return new Response(
-          new ReadableStream({
-            pull(controller) {
-              if (sent) controller.error(new Error("Disconnected"));
-              else {
-                sent = true;
-                controller.enqueue(
-                  encoder.encode(
-                    'event: gap\ndata: {"run_id":"run_one","position":"1-150"}\n\n',
-                  ),
-                );
-              }
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        );
-      }
-      return new Response(chunks('event: changed\ndata: {"version":5}\n\n'), {
-        headers: { "Content-Type": "text/event-stream" },
-      });
-    },
+    maxReadRetries: 0,
+    fetch: async () => responses.shift()(),
   });
-  const stream = client.streamThread("ws_one", "th_one", {
-    resume: () => resume,
-  });
-  assert.deepEqual((await stream.next()).value, {
-    type: "gap",
-    run_id: "run_one",
-    position: "1-150",
-  });
-  // A snapshot read healed the missing range before the transport reconnects.
-  resume = { run: "run_one", position: "1-160", after: "8-0" };
-  assert.deepEqual((await stream.next()).value, {
-    type: "changed",
-    version: 5,
-  });
+  const stream = client.streamSession("ws_one", "ses_one");
+  const events = [];
+  while (events.filter((event) => event.type === "thread").length < 2)
+    events.push((await stream.next()).value);
   await stream.return();
-  assert.equal(requests.length, 2);
-  assert.equal(new URL(requests[0].url).searchParams.get("position"), "1-100");
-  assert.equal(new URL(requests[1].url).searchParams.get("run"), "run_one");
-  assert.equal(new URL(requests[1].url).searchParams.get("position"), "1-160");
-  assert.equal(requests[1].headers.get("Last-Event-ID"), "8-0");
+  assert.deepEqual(
+    events.map((event) =>
+      event.type === "connection" ? event.state : event.type,
+    ),
+    [
+      "connecting",
+      "live",
+      "thread",
+      "reconnecting",
+      "reconnecting",
+      "live",
+      "thread",
+    ],
+  );
+  assert.equal(events[4].error.status, 503);
 });
 
-for (const ending of ["clean", "truncated"]) {
-  test(`reconnects after ${ending} EOF using applied coverage`, async () => {
-    const requests = [];
-    const client = createClient({
-      baseUrl,
-      auth: { type: "session" },
-      fetch: async (request) => {
-        requests.push(request);
-        return new Response(
-          chunks(
-            requests.length === 1
-              ? 'event: changed\ndata: {"version":1}\n\n' +
-                  (ending === "truncated" ? 'data: {"unfinished"' : "")
-              : 'event: changed\ndata: {"version":2}\n\n',
-          ),
-          { headers: { "Content-Type": "text/event-stream" } },
-        );
-      },
-    });
-    let resume = { run: "run_one", position: "1-1", after: "1-0" };
-    const stream = client.streamThread("ws_one", "th_one", {
-      resume: () => resume,
-    });
-    assert.equal((await stream.next()).value.version, 1);
-    resume = { run: "run_one", position: "1-2", after: "2-0" };
-    assert.equal((await stream.next()).value.version, 2);
-    assert.equal(requests[1].headers.get("Last-Event-ID"), "2-0");
-    await stream.return();
-  });
-}
-
-test("rejects raw-event deltas at the explicit compact-format boundary", async () => {
-  const client = createClient({
+test("Session stream stops at a refusal or an invalid frame", async () => {
+  const refused = createClient({
     baseUrl,
     auth: { type: "session" },
     fetch: async () =>
       new Response(
-        chunks(
-          'id: 1-0\nevent: delta\ndata: {"run_id":"run","attempt":1,"sequence":1,"event":{"type":"RUN_STARTED"},"item":null}\n\n',
-        ),
-        { headers: { "Content-Type": "text/event-stream" } },
+        JSON.stringify({ error: { code: "not_found", message: "No session" } }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
       ),
   });
-  const stream = client.streamThread("ws", "thread");
-  await assert.rejects(stream.next(), ProtocolError);
+  const stream = refused.streamSession("ws", "ses_missing");
+  await stream.next();
+  await assert.rejects(stream.next(), ApiError);
+  const invalid = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    // A raw event must be valid AG-UI within its envelope.
+    fetch: async () =>
+      sse(frame("delta", { ...frames.delta, event: { type: "RUN_STARTED" } })),
+  });
+  const deltas = invalid.streamSession("ws", "ses_one");
+  await deltas.next();
+  await deltas.next();
+  await assert.rejects(deltas.next(), ProtocolError);
 });

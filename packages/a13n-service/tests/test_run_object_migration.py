@@ -158,8 +158,10 @@ async def test_conversion_restores_run_and_items_apis_preserves_state_and_is_rep
     before = await runtime.objects.keys("orgs", limit=1000)
     with pytest.raises(RuntimeError, match="migrate-run-objects"):
         await run_objects.require_current(runtime.storage)
+    # The run view never reads display pointers; its items need the converted tail.
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
     with pytest.raises(ValidationError):
-        await runs_kit.get_run(service, run_id)
+        await runs_kit.items(service, run_id)
     assert await run_objects.migrate(runtime.storage, runtime.objects, backup_dir=backup) == 1
     assert not backup.exists() and await runtime.objects.keys("orgs", limit=1000) == before
     assert await pointers(service, run_id) == (legacy_run["tail"], legacy_run["state"])

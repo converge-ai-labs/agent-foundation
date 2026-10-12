@@ -1,8 +1,9 @@
 import { readDisplay } from "./display";
-import type { Client, paths } from "../../service-client";
+import type { Client, paths, ThreadState } from "../../service-client";
 import {
   infiniteQueryOptions,
   queryOptions,
+  replaceEqualDeep,
   skipToken,
   type QueryClient,
 } from "@tanstack/react-query";
@@ -31,6 +32,16 @@ export function conversationKeys(workspaceId: string) {
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
   };
+}
+
+const version = (view: unknown) =>
+  (view as { version?: number } | undefined)?.version ?? -1;
+
+/** A view never goes back to an older version, whether a read or a session stream frame lands last. */
+function newer(previous: unknown, next: unknown) {
+  return version(previous) > version(next)
+    ? previous
+    : replaceEqualDeep(previous, next);
 }
 
 /** Query owns request cancellation; delivery attachments never abort shared reads. */
@@ -66,6 +77,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
     run: (run_id: string) =>
       queryOptions({
         queryKey: keys.run(run_id),
+        structuralSharing: newer,
         queryFn: ({ signal }) =>
           client
             .workspace(workspaceId)
@@ -78,6 +90,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
     thread: (thread_id: string) =>
       queryOptions({
         queryKey: keys.thread(thread_id),
+        structuralSharing: newer,
         queryFn: ({ signal }) =>
           client
             .workspace(workspaceId)
@@ -213,7 +226,7 @@ export interface ConversationChange {
   runId?: string | null;
 }
 
-/** One invalidation map for command receipts and Thread stream changes. */
+/** One invalidation map for command receipts. */
 export function invalidateConversation(
   cache: QueryClient,
   workspaceId: string,
@@ -243,6 +256,42 @@ export function invalidateConversation(
         }
       }),
   });
+}
+
+/**
+ * Write a thread's state from its session stream: the thread and the runs it
+ * names. A changed thread also marks the lists that hold it or its inbox
+ * stale.
+ */
+export function applyThreadState(
+  cache: QueryClient,
+  workspaceId: string,
+  { thread, current_run, last_run }: ThreadState,
+) {
+  const keys = conversationKeys(workspaceId);
+  for (const run of [current_run, last_run]) {
+    if (!run) continue;
+    const held = version(cache.getQueryData(keys.run(run.id)));
+    cache.setQueryData(keys.run(run.id), run);
+    // A run's version moves with its attempts.
+    if (held >= 0 && held < run.version)
+      void cache.invalidateQueries({ queryKey: keys.attempts(run.id) });
+  }
+  const held = version(cache.getQueryData(keys.thread(thread.id)));
+  cache.setQueryData(keys.thread(thread.id), thread);
+  if (held >= thread.version) return;
+  void cache.invalidateQueries(
+    {
+      queryKey: keys.root,
+      predicate: ({ queryKey: [, , kind, id] }) =>
+        kind === "sessions" ||
+        ((kind === "session" || kind === "threads") &&
+          id === thread.session_id) ||
+        ((kind === "runs" || kind === "inbox") && id === thread.id),
+    },
+    // A thread seen first does not restart the reads that load the page.
+    { cancelRefetch: held >= 0 },
+  );
 }
 
 /**

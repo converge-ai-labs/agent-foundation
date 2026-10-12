@@ -6,9 +6,9 @@ import {
   type ClientOptions,
 } from "./transport.js";
 import {
-  threadStream,
-  type ThreadStreamOptions,
-} from "./streams/thread-stream.js";
+  sessionStream,
+  type SessionStreamOptions,
+} from "./streams/session-stream.js";
 
 /** One typed HTTP boundary; resource operations stay defined by Service OpenAPI. */
 export function createClient(options: ClientOptions) {
@@ -37,11 +37,11 @@ export function createClient(options: ClientOptions) {
       return response.blob();
     },
     setCsrfToken: (token: string | undefined) => transport.setCsrfToken(token),
-    streamThread: (
+    streamSession: (
       workspaceId: string,
-      threadId: string,
-      streamOptions?: ThreadStreamOptions,
-    ) => threadStream(transport, workspaceId, threadId, streamOptions),
+      sessionId: string,
+      streamOptions?: SessionStreamOptions,
+    ) => sessionStream(transport, workspaceId, sessionId, streamOptions),
     close: () => transport.close(),
   };
 }

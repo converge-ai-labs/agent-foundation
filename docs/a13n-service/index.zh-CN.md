@@ -34,7 +34,7 @@ flowchart TB
     Worker --> External["模型、工具和环境"]
     Worker -->|"实时事件"| Redis[(Redis)]
     Redis -->|"实时输出"| Control
-    Control -->|"线程事件流"| Client
+    Control -->|"会话事件流"| Client
 
     class Client app
     class Control,Worker a13n

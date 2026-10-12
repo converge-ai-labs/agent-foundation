@@ -34,7 +34,7 @@ flowchart TB
     Worker --> External["Models, tools and environments"]
     Worker -->|"Live events"| Redis[(Redis)]
     Redis -->|"Live output"| Control
-    Control -->|"Thread stream"| Client
+    Control -->|"Session stream"| Client
 
     class Client app
     class Control,Worker a13n

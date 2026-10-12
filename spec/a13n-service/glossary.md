@@ -111,17 +111,18 @@ One word, one meaning. If a new word is needed, add it here first. Definitions a
 
 ## Facts, delivery and runtime
 
-| Word               | Meaning                                                                                                                                       | Not                                                |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **usage record**   | one immutable Harness usage report with its model and price snapshot ([07](07-facts-and-delivery.md#usage-records))                           | a cost ledger, a budget                            |
-| **lifecycle kind** | the name of a run or attempt status transition, such as `run.completed`, that a subscription selects                                          | a stored event log, a stream entry, an audit event |
-| **stream**         | the bounded, provisional Redis feed of one thread's output and boundary markers ([07](07-facts-and-delivery.md#the-thread-stream))            | durable output, the display                        |
-| **outbox**         | durable delivery intents: webhooks, child results and identity mail ([07](07-facts-and-delivery.md#outbox))                                   | an event log, object reclamation                   |
-| **sweep**          | a periodic background function that finds its work by a `WHERE` clause ([09](09-runtime.md#sweeps))                                           | a job, a reconciler                                |
-| **wake marker**    | the single Redis list entry that makes an idle worker scan sooner; it carries no run                                                          | a task, a claim                                    |
-| **infra**          | shared database, storage, transport, audit, outbox and scheduling mechanisms under `infra/`, without business-package dependencies            | assembly, a home for business handlers             |
-| **role** (process) | `all`, `control` or `worker` ([09](09-runtime.md#roles))                                                                                      | a tenancy role                                     |
-| **distribution**   | typed contributions to assembly: routers, tables, migrations, settings, sweeps, providers, roles, grant sources, authentication and admission | an edition, a plugin                               |
+| Word               | Meaning                                                                                                                                                                           | Not                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **usage record**   | one immutable Harness usage report with its model and price snapshot ([07](07-facts-and-delivery.md#usage-records))                                                               | a cost ledger, a budget                            |
+| **lifecycle kind** | the name of a run or attempt status transition, such as `run.completed`, that a subscription selects                                                                              | a stored event log, a stream entry, an audit event |
+| **stream**         | the bounded, provisional Redis feed of one thread's output and boundary markers ([07](07-facts-and-delivery.md#the-session-stream))                                               | durable output, the display                        |
+| **session stream** | the SSE feed of a session's thread states and its active runs' items and output, starting from a snapshot on every connection ([07](07-facts-and-delivery.md#the-session-stream)) | a resumable log, a cursor                          |
+| **outbox**         | durable delivery intents: webhooks, child results and identity mail ([07](07-facts-and-delivery.md#outbox))                                                                       | an event log, object reclamation                   |
+| **sweep**          | a periodic background function that finds its work by a `WHERE` clause ([09](09-runtime.md#sweeps))                                                                               | a job, a reconciler                                |
+| **wake marker**    | the single Redis list entry that makes an idle worker scan sooner; it carries no run                                                                                              | a task, a claim                                    |
+| **infra**          | shared database, storage, transport, audit, outbox and scheduling mechanisms under `infra/`, without business-package dependencies                                                | assembly, a home for business handlers             |
+| **role** (process) | `all`, `control` or `worker` ([09](09-runtime.md#roles))                                                                                                                          | a tenancy role                                     |
+| **distribution**   | typed contributions to assembly: routers, tables, migrations, settings, sweeps, providers, roles, grant sources, authentication and admission                                     | an edition, a plugin                               |
 
 ## Providers
 

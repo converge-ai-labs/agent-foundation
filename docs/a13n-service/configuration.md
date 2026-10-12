@@ -58,7 +58,7 @@ PostgreSQL stores the Service's durable state. Set connection and statement time
 
 ### Redis
 
-Redis holds rate-limit counters, worker wakeups and provisional thread-stream events; PostgreSQL retains the durable state. If Redis is unavailable, stored results remain readable and workers scan for work, but live streams are unavailable and rate limits are skipped. Readiness reports `"degraded": ["redis"]`.
+Redis holds rate-limit counters, worker wakeups and provisional run output for session streams; PostgreSQL retains the durable state. If Redis is unavailable, stored results remain readable and workers scan for work, but session streams carry no live output and rate limits are skipped. Readiness reports `"degraded": ["redis"]`.
 
 ### Objects
 

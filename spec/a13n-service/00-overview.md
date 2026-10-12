@@ -15,7 +15,7 @@ flowchart LR
     Harness -->|calls| Providers[Providers<br/>models, environments,<br/>tools, web]
     Harness -->|boundaries| Checkpoint[Checkpoint and display objects]
     Attempt -->|seal| Facts[Sealed run, usage, audit]
-    Facts --> Delivery[Webhooks, thread stream, trace queries]
+    Facts --> Delivery[Webhooks, session stream, trace queries]
     Delivery --> Caller
 ```
 
@@ -23,7 +23,7 @@ flowchart LR
 2. The caller configures resources: agents and their immutable revisions, skills, provider accounts, models, environment templates, connections, assets and webhook subscriptions ([04](04-resources.md)), and memories ([11](11-memory.md)).
 3. Input is appended to a thread's inbox. Acceptance selects a queued entry and creates the thread's next run, freezing the agent revision, pins, overrides and mounts it needs ([05](05-runs.md)).
 4. A worker claims the run as a leased, fenced attempt and executes it through the Harness against the run's environments ([06](06-environments.md)) and the providers its resources select ([08](08-providers.md)). At each safe boundary it commits a checkpoint that makes the consumed input and the resumable state durable together.
-5. Sealing records the terminal outcome, or a wait for approval, client tools or user input, and schedules any successor or parent delivery. Usage records, audit events, lifecycle webhooks, the provisional thread stream and trace queries report what happened ([07](07-facts-and-delivery.md)).
+5. Sealing records the terminal outcome, or a wait for approval, client tools or user input, and schedules any successor or parent delivery. Usage records, audit events, lifecycle webhooks, the provisional session stream and trace queries report what happened ([07](07-facts-and-delivery.md)).
 
 ## Boundaries
 
@@ -35,8 +35,8 @@ The Service owns tenancy, configured resources, durable run ownership and histor
 | Language SDKs and the remote CLI                            | independent repositories that consume the exported contract in `proto/a13n-service/` ([repository model](../repository-model.md#repository-surfaces))             |
 | The agent loop, tool execution and provider implementations | the [Harness](../a13n-harness/README.md), embedded in executing processes; the Service registers its provider definitions and never implements a second catalogue |
 | An environment daemon                                       | `a13n-envd`, reached over HTTP(S) as a connect-only external target ([06](06-environments.md#external-targets))                                                   |
-| Chat platforms, schedules and event ingress                 | callers outside the Service, which submit input through the API and observe runs through the thread stream and webhooks                                           |
-| Hosted AG-UI or A2A endpoints                               | not provided; the thread stream uses AG-UI events as its vocabulary, and input goes through the native API                                                        |
+| Chat platforms, schedules and event ingress                 | callers outside the Service, which submit input through the API and observe runs through the session stream and webhooks                                          |
+| Hosted AG-UI or A2A endpoints                               | not provided; the session stream uses AG-UI events as its vocabulary, and input goes through the native API                                                       |
 | Monetary budgets and billing                                | not provided; usage records carry price snapshots, and a distribution's admission policy may refuse paid calls ([09](09-runtime.md#extension-points))             |
 | Trace storage                                               | the operator's trace backend, which the Service exports to and queries ([08](08-providers.md#trace-backends))                                                     |
 
@@ -53,7 +53,7 @@ Operators read the user documentation in `docs/a13n-service/`, including the gen
 - **Layered packages.** Five business packages separate responsibilities: `tenancy` (who is asking and what they may do), `resources` (what the tenant configured), `runs` (how input becomes a sealed run), `providers` (what the Service calls) and `usage` (how recorded consumption is queried). They sit on shared mechanisms in `infra/`, depend in one direction, and are assembled once by `build_app` from a `Distribution` ([02](02-layout.md#import-direction), [09](09-runtime.md#assembly)).
 - **One owner per rule.** Each rule is implemented once and every path calls it: `authorize` is the only scope and verb check, `start_run` the only function that creates runs, one worker predicate fences every execution write, one outbox delivers webhooks, child results and mail, one endpoint policy guards every outbound request, and one error type carries every refusal.
 - **Constraints carried by structure.** Where a rule can be a database constraint, trigger, type or fence, it is one: immutable revisions, audit events and usage records; composite tenant foreign keys and same-scope provider triggers; status CHECKs; frozen configuration types; lease tokens, operation IDs and environment generations. Code paths that happen to be correct are not the guarantee.
-- **PostgreSQL decides.** Run ownership, input consumption, credentials and every durable fact live in PostgreSQL. Redis only accelerates: claim wakeups, the provisional thread stream, discovery caches and best-effort rate limits. Losing it delays or degrades, never decides ([09](09-runtime.md#redis)).
+- **PostgreSQL decides.** Run ownership, input consumption, credentials and every durable fact live in PostgreSQL. Redis only accelerates: claim wakeups, provisional run output, discovery caches and best-effort rate limits. Losing it delays or degrades, never decides ([09](09-runtime.md#redis)).
 - **Short transactions.** No database session, lock or transaction is held across model calls, tool calls, environment operations, object I/O or streams ([DEVELOPMENT.md](../../DEVELOPMENT.md#database-sessions-and-transactions)).
 - **Frozen only what defines behavior.** A run freezes its agent revision, pins, override and mounts; everything else is resolved and authorized when used ([04](04-resources.md#two-lifecycles)).
 - **Explicit uncertainty.** An external operation that may have taken effect without a known result is recorded as unknown and never blindly repeated: connection authorization steps, environment operations and connector actions ([04](04-resources.md#connections), [06](06-environments.md)).

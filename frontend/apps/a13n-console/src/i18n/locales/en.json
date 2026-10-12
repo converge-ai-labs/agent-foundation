@@ -356,7 +356,6 @@
   "Lifecycle command": "Lifecycle command",
   "Light": "Light",
   "Lineage": "Lineage",
-  "Live connection disconnected.": "Live connection disconnected.",
   "Some live output was skipped. It appears when the run reaches its next checkpoint.": "Some live output was skipped. It appears when the run reaches its next checkpoint.",
   "Saved message history is incomplete or unconfirmed. Some output may be unavailable.": "Saved message history is incomplete or unconfirmed. Some output may be unavailable.",
   "Load current version and keep my draft": "Load current version and keep my draft",

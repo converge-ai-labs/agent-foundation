@@ -135,6 +135,12 @@ def assert_imported_wire_order(request):  # type: ignore[no-untyped-def]
     assert result["content"] == '{"zz":{"yy":42,"b":2},"a":3}'
 
 
+async def _history(service, thread_id: str) -> list:  # type: ignore[no-untyped-def]
+    """The imported history as stored; no view returns it."""
+    async with transaction(service.runtime.storage) as session:
+        return (await session.get_one(ThreadRow, thread_id)).message_history
+
+
 async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -143,11 +149,9 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     response = await service.client.post(f"{service.api}/threads", json=body, headers=headers)
     assert response.status_code == 201, response.text
     first = response.json()
-    assert first["thread"]["message_history"] == HISTORY_INPUT
-    imported = ModelMessagesTypeAdapter.validate_python(first["thread"]["message_history"])
-    assert imported[0].parts[0].content == "Imported question"
-    readback = await runs_kit.get_thread(service, first["thread"]["id"])
-    assert json.dumps(readback["message_history"]) == json.dumps(HISTORY_INPUT)
+    stored = await _history(service, first["thread"]["id"])
+    assert json.dumps(stored) == json.dumps(HISTORY_INPUT)
+    assert ModelMessagesTypeAdapter.validate_python(stored)[0].parts[0].content == "Imported question"
     replay = await service.client.post(f"{service.api}/threads", json=body, headers=headers)
     assert replay.status_code == 200 and replay.json() == first
     changed = {**body, "message_history": []}
@@ -185,7 +189,7 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
         headers=runs_kit.fresh_key(),
     )
     assert fork.status_code == 201, fork.text
-    assert fork.json()["thread"]["message_history"] == []
+    assert await _history(service, fork.json()["thread"]["id"]) == []
     scripted_model.say("Branch answer")
     await (await runs_kit.attempt(service))
     branched = await scripted_model.request()

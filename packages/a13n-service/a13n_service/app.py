@@ -44,7 +44,7 @@ from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.stream import ThreadHub
+from a13n_service.runs.stream import SessionHub
 from a13n_service.runs.worker import Worker
 from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
@@ -278,8 +278,8 @@ def build_app(
                     )
                     app.state.model_catalog = catalog
                     runtime.tasks.start(catalog.run(), name="model-catalog", service=True)
-                    app.state.thread_hub = ThreadHub(runtime)
-                    runtime.tasks.start(app.state.thread_hub.run(), name="thread-hub", service=True)
+                    app.state.session_hub = SessionHub(runtime)
+                    runtime.tasks.start(app.state.session_hub.run(), name="session-hub", service=True)
                     sweeps = [factory(runtime) for factory in distribution.sweeps]
                     require_unique(sweeps)
                     runtime.tasks.start(run_sweeps(sweeps), name="control-sweeps", service=True)

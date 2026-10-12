@@ -3,7 +3,7 @@ title: HTTP 约定
 description: 所有端点共用的认证、错误、并发、幂等、分页和流式规则。
 ---
 
-所有 API 操作位于 Service 公共 URL 的 `/api/v1` 下。除非操作另有说明（上传、文件内容、图片和线程事件流），请求和响应均为 JSON。运行中的 Service 在 `/api/v1/openapi.json` 发布 OpenAPI 文档，在 `/api/v1/docs` 提供交互式页面；[HTTP 参考](api-reference/index.md)从同一文档生成。
+所有 API 操作位于 Service 公共 URL 的 `/api/v1` 下。除非操作另有说明（上传、文件内容、图片和会话事件流），请求和响应均为 JSON。运行中的 Service 在 `/api/v1/openapi.json` 发布 OpenAPI 文档，在 `/api/v1/docs` 提供交互式页面；[HTTP 参考](api-reference/index.md)从同一文档生成。
 
 请求体采用严格校验，未知字段会被拒绝。语言集成或 shell 脚本请参阅 [SDK 与 CLI](sdks.md)；详细用法由各客户端自己的 Markdown 文档维护。
 
@@ -111,4 +111,4 @@ ID 是带类型前缀的不透明字符串，例如 `ws_`、`ap_`（agent）、`
 
 ## 事件流
 
-`GET …/threads/{thread_id}/stream` 是线程实时输出和状态变化的 server-sent event 流。参阅[线程事件流](agents-and-runs.md#follow-a-thread-stream)。
+`GET …/sessions/{session_id}/stream` 是会话中线程状态及其活跃运行实时输出的 server-sent event 流。参阅[会话事件流](agents-and-runs.md#follow-a-session-stream)。
