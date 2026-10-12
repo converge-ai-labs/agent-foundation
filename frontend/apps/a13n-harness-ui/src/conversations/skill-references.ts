@@ -109,8 +109,6 @@ export function skillCompletion(load: LoadSkills) {
   ): Promise<CompletionResult | null> => {
     const token = context.matchBefore(/(?:^|\s)\$[^\s]*/);
     if (!token || context.view?.compositionStarted) return null;
-    const from = token.from + token.text.indexOf("$");
-    const prefix = context.state.sliceDoc(from + 1, context.pos);
     let catalog: SkillCatalog;
     try {
       catalog = await load();
@@ -119,18 +117,29 @@ export function skillCompletion(load: LoadSkills) {
       return null;
     }
     if (context.aborted) return null;
-    return {
-      from,
-      filter: false,
-      options: catalog.items
-        .filter((item) => !/\s/.test(item.name) && item.name.startsWith(prefix))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((item) => ({
-          label: `$${item.name}`,
-          detail: item.description.replace(/\s+/g, " ").slice(0, 160),
-          apply: `$${item.name} `,
-          type: "text",
-        })),
+    const options = catalog.items
+      .filter((item) => !/\s/.test(item.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((item) => ({
+        label: `$${item.name}`,
+        detail: item.description.replace(/\s+/g, " ").slice(0, 160),
+        apply: `$${item.name} `,
+        type: "text",
+      }));
+    const complete = (current: CompletionContext): CompletionResult | null => {
+      const token = current.matchBefore(/(?:^|\s)\$[^\s]*/);
+      if (!token || current.view?.compositionStarted) return null;
+      const from = token.from + token.text.indexOf("$");
+      const prefix = current.state.sliceDoc(from, current.pos);
+      return {
+        from,
+        filter: false,
+        options: options.filter((item) => item.label.startsWith(prefix)),
+        // Keep exact prefix matching while updating locally on typing/deletion.
+        // validFor cannot be combined with filter: false.
+        update: (_result, _from, _to, next) => complete(next),
+      };
     };
+    return complete(context);
   };
 }

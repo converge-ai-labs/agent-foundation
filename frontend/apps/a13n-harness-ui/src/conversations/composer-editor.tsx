@@ -315,6 +315,7 @@ export function ComposerEditor({
               }),
               autocompletion({
                 override: [skillCompletion(loadCatalog)],
+                activateOnTypingDelay: 0,
                 defaultKeymap: false,
                 icons: false,
                 aboveCursor: true,
