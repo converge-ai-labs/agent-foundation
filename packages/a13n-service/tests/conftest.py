@@ -9,8 +9,9 @@ import asyncio
 import base64
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,9 +21,11 @@ from uuid import uuid4
 import httpx2
 import pytest
 import uvicorn
+from a13n_service import app as app_module
 from a13n_service.app import build_app, open_runtime
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
+from a13n_service.mcp import build_mcp
 from a13n_service.migrations.runner import heads
 from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.claim import claim
@@ -35,6 +38,8 @@ from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstr
 from argon2 import PasswordHasher
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
+from fastapi.routing import APIRoute
+from fastmcp.server.http import StarletteWithLifespan
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
@@ -176,11 +181,41 @@ async def tenant(runtime: Runtime) -> Bootstrapped:
     return await bootstrap(runtime.storage, BootstrapInput(email=EMAIL, password=SecretStr(PASSWORD)))
 
 
+@pytest.fixture(scope="session")
+def service_app() -> Callable[..., FastAPI]:
+    """Compile the fixed OSS contract once per worker, not once per database-backed test.
+
+    Only schema data is reused; applications, MCP tools and lifespans remain independent. Extensions and
+    direct build_app calls (including contract tests) still compile their own contracts through production code.
+    """
+    schema: dict[str, Any] | None = None
+
+    def build(distribution: Distribution = OSS, *, role: ProcessRole = "control", settings: Settings) -> FastAPI:
+        if distribution is not OSS or role == "worker":
+            return build_app(distribution, role=role, settings=settings)
+
+        def assemble(app: FastAPI, config: Settings, routes: Sequence[APIRoute]) -> StarletteWithLifespan:
+            nonlocal schema
+            if schema is not None:
+                app.openapi_schema = deepcopy(schema)
+            mcp = build_mcp(app, config, routes)
+            if schema is None:
+                schema = deepcopy(app.openapi())
+            return mcp
+
+        # Assembly is synchronous: restore the production builder before entering any asynchronous lifespan.
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(app_module, "build_mcp", assemble)
+            return build_app(distribution, role=role, settings=settings)
+
+    return build
+
+
 @asynccontextmanager
 async def _serve(
-    settings: Settings, role: ProcessRole, distribution: Distribution = OSS
+    settings: Settings, role: ProcessRole, service_app: Callable[..., FastAPI], distribution: Distribution = OSS
 ) -> AsyncIterator[SimpleNamespace]:
-    app = build_app(distribution, role=role, settings=settings)
+    app = service_app(distribution, role=role, settings=settings)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
         await runtime.redis.flushdb()
@@ -209,25 +244,27 @@ async def _serve(
 
 
 @pytest.fixture
-async def service(settings: Settings) -> AsyncIterator[SimpleNamespace]:
+async def service(settings: Settings, service_app: Callable[..., FastAPI]) -> AsyncIterator[SimpleNamespace]:
     """The control-role application with a bootstrapped tenant and a logged-in administrator."""
-    async with _serve(settings, "control") as served:
+    async with _serve(settings, "control", service_app) as served:
         yield served
 
 
 @pytest.fixture
-def serve(settings: Settings) -> Callable[..., AbstractAsyncContextManager[SimpleNamespace]]:
+def serve(
+    settings: Settings, service_app: Callable[..., FastAPI]
+) -> Callable[..., AbstractAsyncContextManager[SimpleNamespace]]:
     """`service` for another `distribution` or other `settings`, entered by the test."""
-    return partial(_serve, settings=settings, role="control")
+    return partial(_serve, settings=settings, role="control", service_app=service_app)
 
 
 @pytest.fixture
-async def executing(settings: Settings) -> AsyncIterator[SimpleNamespace]:
+async def executing(settings: Settings, service_app: Callable[..., FastAPI]) -> AsyncIterator[SimpleNamespace]:
     """The all-role application: `service` plus a worker executing runs, polling at test speed."""
     worker = settings.worker.model_copy(update={"scan_seconds": 0.05, "authority_seconds": 0.05})
     control = settings.control.model_copy(update={"scan_seconds": 0.05, "stream_refresh_seconds": 0.1})
     fast = settings.model_copy(update={"worker": worker, "control": control})
-    async with _serve(fast, "all") as served:
+    async with _serve(fast, "all", service_app) as served:
         yield served
 
 
