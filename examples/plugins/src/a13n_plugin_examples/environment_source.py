@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
 
 
 @dataclass(frozen=True)

@@ -7,10 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
 from a13n_harness import HarnessBuilder, HarnessInstrumentation, HarnessTraceContent, RunBindings
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capabilities import CodeActCapability
@@ -24,6 +20,10 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.observation import record_tool_outcome_unknown, set_tool_span_attributes
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
 from a13n_harness.toolsets.files import _environment_error_result as file_error_result
 from a13n_harness.toolsets.shell import _environment_error_result as shell_error_result
 from opentelemetry.sdk.metrics import MeterProvider

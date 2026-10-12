@@ -6,8 +6,8 @@ only the endpoint, the device ID and the token, encrypted for the row; every lat
 """
 
 import anyio
-from a13n_environment.errors import EnvironmentProviderError
-from a13n_environment.models import EnvironmentError as OperationError
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentError as OperationError
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.infra.errors import ServiceError, conflict

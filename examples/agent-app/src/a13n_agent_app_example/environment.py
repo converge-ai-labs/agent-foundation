@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 
 @dataclass(frozen=True)

@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
-from a13n_environment.local_envd.provider import LOCAL_ENVD
-from a13n_environment.models import EnvironmentError
 from a13n_harness import RunBindings
 from a13n_harness.environment import EnvironmentMount, EnvironmentPermissionSet
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_runtime import _PreparedMount
 from a13n_harness_ui.errors import EnvironmentLifecycleError

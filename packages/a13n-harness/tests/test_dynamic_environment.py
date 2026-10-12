@@ -16,20 +16,6 @@ import a13n_harness.environment.dynamic as dynamic_environment_module
 import a13n_harness.toolsets.file_media as file_media_module
 import a13n_harness.toolsets.files as file_toolset_module
 import pytest
-from a13n_environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-)
-from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.files import (
-    FileEntriesResult,
-    FileMetadata,
-    FileTextMatch,
-    FileTextSearchResult,
-    FileWriteResult,
-)
-from a13n_environment.models import EnvironmentOperationReceipt
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
     HarnessBuilder,
@@ -56,6 +42,14 @@ from a13n_harness.environment.advanced import (
     create_environment_runtime,
 )
 from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
+from a13n_harness.environment.files import (
+    FileEntriesResult,
+    FileMetadata,
+    FileTextMatch,
+    FileTextSearchResult,
+    FileWriteResult,
+)
+from a13n_harness.environment.models import EnvironmentOperationReceipt
 from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
 from a13n_harness.metering import ModelUsageBinding
@@ -65,6 +59,12 @@ from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
 )
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,

@@ -19,8 +19,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-from a13n_environment.models import EnvironmentError
 from a13n_harness import ModelCapability
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.media_types import is_text_media_type
 from pydantic_ai.messages import (

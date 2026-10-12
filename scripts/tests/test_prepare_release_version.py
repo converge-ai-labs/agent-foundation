@@ -15,7 +15,6 @@ RELEASE_FILES = (
     Path("pyproject.toml"),
     Path("uv.lock"),
     Path("packages/a13n-harness/pyproject.toml"),
-    Path("packages/a13n-environment/pyproject.toml"),
     Path("packages/a13n-stream-protocol/pyproject.toml"),
     Path("packages/a13n-harness-ui/pyproject.toml"),
     Path("packages/a13n-logging/pyproject.toml"),
@@ -85,10 +84,6 @@ def run_script(
             },
         ),
         (
-            "a13n-environment",
-            {Path("uv.lock"), Path("packages/a13n-environment/pyproject.toml")},
-        ),
-        (
             "a13n-logging",
             {
                 Path("uv.lock"),
@@ -147,7 +142,6 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
         "a13n-harness",
         "a13n-harness-ui",
         "a13n-logging",
-        "a13n-environment",
         "a13n-service",
         "a13n-envd",
     ):
@@ -162,7 +156,7 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert 'version = "9.8.7rc2"' in harness_manifest
     assert '"a13n-harness==9.8.7rc2"' in protocol_manifest
     assert 'version = "9.8.7rc2"' in ui_manifest
-    assert '"a13n-harness>=3.2.1rc4,<4.0.0"' in ui_manifest
+    assert '"a13n-harness[docker,e2b,modal]>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert '"a13n-stream-protocol>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-logging/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
@@ -198,7 +192,6 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.1.0"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-environment", "0.1.0"),
         ("a13n-harness", "0.3.0"),
         ("a13n-harness-ui", "0.3.0"),
     )
@@ -211,8 +204,7 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
 
     for package in ("a13n-harness", "a13n-harness-ui"):
         manifest = tomllib.loads((tmp_path / f"packages/{package}/pyproject.toml").read_text())
-        requirement = "a13n-environment" + ("[docker,e2b,modal]" if package == "a13n-harness-ui" else "")
-        assert requirement + ">=0.1.0,<0.2.0" in manifest["project"]["dependencies"]
+        assert "a13n-envd-client>=0.1.0,<0.2.0" in manifest["project"]["dependencies"]
         assert "a13n-logging>=0.2.0,<0.3.0" in manifest["project"]["dependencies"]
     service = tomllib.loads((tmp_path / "packages/a13n-service/pyproject.toml").read_text())
     assert service["project"]["version"] == "0.0.0"
@@ -414,9 +406,7 @@ def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     ("component", "manifest", "dependency", "constraint"),
     [
-        ("a13n-harness", "a13n-harness", "a13n-environment", ">=0.1.0,<0.2.0"),
-        ("a13n-environment", "a13n-environment", "a13n-envd-client", ">=0.1.0,<0.2.0"),
-        ("a13n-environment", "a13n-environment", "a13n-logging", ">=0.2.0,<0.3.0"),
+        ("a13n-harness", "a13n-harness", "a13n-envd-client", ">=0.1.0,<0.2.0"),
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-service", "a13n-service", "a13n-logging", ">=0.2.0,<0.3.0"),
@@ -457,7 +447,7 @@ def test_range_order_is_normalized_without_changing_policy(tmp_path: Path) -> No
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
     assert result.returncode == 0, result.stderr
     content = (tmp_path / "packages/a13n-harness-ui/pyproject.toml").read_text()
-    assert '"a13n-harness>=3.2.1,<4.0.0"' in content
+    assert '"a13n-harness[docker,e2b,modal]>=3.2.1,<4.0.0"' in content
 
 
 @pytest.mark.parametrize("version", ["9.8.7", "9.8.7-rc.2"])

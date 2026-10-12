@@ -6,8 +6,10 @@ import asyncio
 from collections.abc import Callable
 from itertools import count
 
-from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
-from a13n_environment.models import (
+from a13n_logging import get_logger
+
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.environment.models import (
     ENVIRONMENT_ACTION_DISPATCH,
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -15,9 +17,7 @@ from a13n_environment.models import (
     EnvironmentOperationFamily,
     EnvironmentState,
 )
-from a13n_environment.operations import EnvironmentOperations
-from a13n_logging import get_logger
-
+from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.errors import EnvironmentActivationError
 
 from ._cleanup import _await_cleanup_shielded

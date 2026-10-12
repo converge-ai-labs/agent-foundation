@@ -675,10 +675,10 @@ async def local_instance(env: SimpleNamespace, tmp_path: Path) -> tuple[str, Pat
 
 
 async def test_shared_local_mounts_route_files_and_commands_per_thread(env, local_instance) -> None:  # type: ignore[no-untyped-def]
-    from a13n_environment.commands import CommandRequest, ShellCommand
-    from a13n_environment.retention import EnvironmentOutputPolicy
     from a13n_harness import RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.environment.commands import CommandRequest, ShellCommand
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
 
     identity, root = local_instance
     other = await env.client.post(f"{env.api}/agents", json={"name": "Collaborator", "config": {"model": "unused"}})
@@ -776,8 +776,8 @@ async def test_invalid_directory_fails_only_its_mount(env, local_instance, monke
 
 
 async def test_directory_check_preserves_transient_provider_errors(env, local_instance, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from a13n_environment.direct_local.files import LocalFileOperator
-    from a13n_environment.models import EnvironmentError
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 
     async def unavailable(*args, **kwargs):
         raise EnvironmentError("Connection interrupted", code="environment_unavailable")
@@ -796,7 +796,7 @@ async def test_directory_check_preserves_transient_provider_errors(env, local_in
 
 
 async def test_cancelled_management_publishes_observed_state_before_reraising(env, monkeypatch) -> None:
-    from a13n_environment.errors import EnvironmentManagementCancelled
+    from a13n_service.providers.environment.errors import EnvironmentManagementCancelled
 
     from .environments_support import FakeProvider, _state, stored
 
@@ -817,7 +817,7 @@ async def test_cancelled_management_publishes_observed_state_before_reraising(en
 async def test_timed_out_management_publishes_observed_state(env, monkeypatch) -> None:
     import asyncio
 
-    from a13n_environment.errors import EnvironmentManagementCancelled
+    from a13n_service.providers.environment.errors import EnvironmentManagementCancelled
 
     from .environments_support import FakeProvider, _state, stored
 
@@ -960,7 +960,7 @@ async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_mode
 async def test_eager_preparation_leaves_execution_opening_to_first_tool(
     env, local_instance, scripted_model, runs_kit, monkeypatch
 ) -> None:
-    from a13n_environment.direct_local.execution import DirectLocalExecution
+    from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 
     identity, root = local_instance
     (root / "proof.txt").write_text("prepared once")

@@ -20,7 +20,6 @@ from functools import partial
 from typing import Literal
 
 import anyio
-from a13n_environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness import (
     DeferredToolResume,
     HarnessError,
@@ -38,6 +37,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids
+from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.usage import without_usage

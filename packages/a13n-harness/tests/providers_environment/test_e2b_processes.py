@@ -8,19 +8,19 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_environment.commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     CommandEnvironment,
     CommandLimits,
     CommandRequest,
     ShellCommand,
 )
-from a13n_environment.e2b.commands import GuestCommands
-from a13n_environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_environment.e2b.processes import E2BProcesses
-from a13n_environment.errors import EnvironmentProviderError
-from a13n_environment.models import EnvironmentError
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.e2b.commands import GuestCommands
+from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.processes import E2BProcesses
 from e2b.envd.process import process_pb
 from e2b.sandbox.commands.main import ProcessInfo
 from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
@@ -521,7 +521,7 @@ async def test_reconnect_backpressures_a_ready_batch_before_handle_publication(e
 
 
 async def test_metadata_guard_is_separate_from_active_and_output_budgets(monkeypatch):
-    monkeypatch.setattr("a13n_environment.e2b.processes._MAX_PROCESS_RECORDS", 2)
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._MAX_PROCESS_RECORDS", 2)
     native = NativeCommands()
     process = adapter(native)
     first = await process.start(request())
@@ -548,7 +548,7 @@ async def test_metadata_guard_is_separate_from_active_and_output_budgets(monkeyp
 
 
 async def test_wait_after_output_cap_polls_process_without_reattaching(monkeypatch):
-    monkeypatch.setattr("a13n_environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
     native = NativeCommands()
     process = adapter(native, max_observation_bytes=16)
     started = await process.start(request("immediate"))
@@ -584,7 +584,7 @@ async def test_wait_budget_includes_native_requests(slow_operation):
 
 
 async def test_exec_does_not_complete_when_output_is_capped(monkeypatch):
-    monkeypatch.setattr("a13n_environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
     native = NativeCommands()
     process = adapter(native, max_observation_bytes=16)
     executing = asyncio.create_task(process.exec(request("immediate")))
@@ -628,10 +628,11 @@ async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries():
 @pytest.mark.skipif(sys.platform == "win32", reason="The E2B guest filesystem uses POSIX paths")
 async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path, monkeypatch):
     """Real guest helper/path mapping; the cloud API and native command event source are simulated."""
-    from a13n_environment.e2b.management import E2BManagement
-    from a13n_environment.e2b.provider import E2B, E2BProviderRuntime
     from a13n_harness import EnvironmentMount, RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.environment.models import EnvironmentState
+    from a13n_harness.providers.environment.e2b.configuration import E2BProviderStateData
+    from a13n_harness.providers.environment.e2b.provider import E2B, E2BProviderRuntime
 
     class Commands(NativeCommands):
         async def run(self, script, **kwargs):
@@ -654,14 +655,19 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
     async def close(*args, **kwargs):
         pass
 
-    monkeypatch.setattr("a13n_environment.e2b.execution.open_sandbox", attach)
-    monkeypatch.setattr("a13n_environment.e2b.execution.close_sandbox", close)
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.execution.open_sandbox", attach)
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.execution.close_sandbox", close)
     config = E2BEnvironmentConfiguration(root=str(tmp_path), python=sys.executable)
     owner = E2BProviderRuntime(api_key=SecretStr("test-key"))
-    target = E2BManagement(config, environment_id="shared", state=None, runtime=owner, operation_id="op-test")
-    target._remember(sandbox.sandbox_id)
+    state = EnvironmentState(
+        provider_key="e2b",
+        state_version="1",
+        state=E2BProviderStateData(
+            sandbox_id=sandbox.sandbox_id, environment_id="shared", configuration_fingerprint=config.fingerprint
+        ).model_dump(mode="json"),
+    )
     for directory in ("a", "b", "a"):
-        adapter = E2B.execution_connector(config, environment_id="shared", state=target.state, runtime=owner)
+        adapter = E2B.execution_connector(config, environment_id="shared", state=state, runtime=owner)
         runtime = create_environment_runtime(
             mounts={
                 "workspace": EnvironmentMount(

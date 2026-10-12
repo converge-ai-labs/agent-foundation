@@ -11,13 +11,12 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
-from a13n_environment.commands import (
-    BoundProcessHandle,
-    CommandRequest,
-    ProcessIdentity,
-)
-from a13n_environment.files import FileOperator
-from a13n_environment.models import (
+from pydantic import JsonValue
+
+from a13n_harness._json import dump_json_bytes
+from a13n_harness.environment.commands import BoundProcessHandle, CommandRequest, ProcessIdentity
+from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_DISPATCH,
@@ -29,11 +28,7 @@ from a13n_environment.models import (
     EnvironmentPermissionSet,
     EnvironmentState,
 )
-from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
-from pydantic import JsonValue
-
-from a13n_harness._json import dump_json_bytes
-from a13n_harness.environment.models import (
+from a13n_harness.environment.mounts import (
     EnvironmentChange,
     EnvironmentMountInfo,
     EnvironmentMountObservation,
@@ -41,6 +36,7 @@ from a13n_harness.environment.models import (
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
 )
+from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.identity import AgentInstanceContext
 

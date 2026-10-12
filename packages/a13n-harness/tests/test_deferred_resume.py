@@ -438,7 +438,7 @@ async def test_current_resources_are_resolved_without_historical_attestation(rep
 )
 async def test_environment_approval_ignores_connection_identity(kind, change):
     from a13n_harness.environment._resources import selection_resource
-    from a13n_harness.environment.models import EnvironmentPath
+    from a13n_harness.environment.mounts import EnvironmentPath
     from a13n_harness.environment.providers import FileScopeSelection
 
     executed = []

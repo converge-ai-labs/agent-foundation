@@ -4,13 +4,13 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from a13n_environment import EnvironmentConnector, EnvironmentExecution
-from a13n_environment.direct_local.configuration import (
+from a13n_harness import RunError
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_harness import RunError
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 

@@ -19,16 +19,13 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 import anyio
-from a13n_environment.definition import EnvironmentProviderDefinition
-from a13n_environment.errors import (
+from a13n_harness.environment.errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderOutcomeCertainty,
-    observed_environment_state,
 )
-from a13n_environment.management import EnvironmentProvider
-from a13n_environment.models import EnvironmentError as OperationError
-from a13n_environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentError as OperationError
+from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +35,9 @@ from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import advisory_lock, lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
+from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+from a13n_service.providers.environment.errors import observed_environment_state
+from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
@@ -104,7 +104,7 @@ async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase
     environment.failure = environment.renew_at = environment.expires_at = None
 
 
-def supports(definition: EnvironmentProviderDefinition, phase: Literal["stopping", "deleting"]) -> bool:
+def supports(definition: EnvironmentManagementDefinition, phase: Literal["stopping", "deleting"]) -> bool:
     """Whether the type can take its instances through `phase`; an instance begun in any other would stick in it."""
     return definition.supports_stop if phase == "stopping" else definition.supports_destroy
 

@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from a13n_environment.commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandEnvironment,
@@ -24,8 +24,8 @@ from a13n_environment.commands import (
     ShellCommand,
     ShellExecResult,
 )
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.files import (
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileIgnoreMode,
@@ -41,7 +41,7 @@ from a13n_environment.files import (
     FileWriteMode,
     FileWriteResult,
 )
-from a13n_environment.models import (
+from a13n_harness.environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_CATALOG_VERSION,
     ENVIRONMENT_ACTION_DISPATCH,
@@ -57,7 +57,15 @@ from a13n_environment.models import (
     EnvironmentPermissionSet,
     EnvironmentState,
 )
-from a13n_environment.retention import (
+from a13n_harness.environment.mounts import (
+    EnvironmentChange,
+    EnvironmentMountInfo,
+    EnvironmentMountObservation,
+    EnvironmentPath,
+    EnvironmentReadinessRequirement,
+    EnvironmentSnapshot,
+)
+from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
@@ -67,15 +75,6 @@ from a13n_environment.retention import (
     OpaqueOutputCursor,
     OpaqueOutputReference,
     OpaqueProcessHandle,
-)
-
-from a13n_harness.environment.models import (
-    EnvironmentChange,
-    EnvironmentMountInfo,
-    EnvironmentMountObservation,
-    EnvironmentPath,
-    EnvironmentReadinessRequirement,
-    EnvironmentSnapshot,
 )
 
 from .extension_factories import (
@@ -142,6 +141,7 @@ __all__ = [
     "EnvironmentDescriptor",
     "EnvironmentEntry",
     "EnvironmentError",
+    "EnvironmentExecution",
     "EnvironmentMount",
     "EnvironmentMountDescriptor",
     "EnvironmentMountInfo",

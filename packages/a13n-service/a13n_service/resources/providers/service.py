@@ -11,9 +11,6 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 
-from a13n_environment.credential_policy import CredentialPolicy
-from a13n_environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
@@ -28,6 +25,7 @@ from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
+from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry, web_operations
 from a13n_service.resources.providers.probe import probe, supports_probe
 from a13n_service.resources.providers.schemas import (
@@ -277,12 +275,6 @@ def list_provider_types(registry: Registry, kind: ProviderKind) -> ProviderTypeP
     )
 
 
-def _credential_policy(definition: RegisteredProvider) -> CredentialPolicy | Authentication:
-    if isinstance(definition, EnvironmentProviderDefinition):
-        return definition.credential_policy
-    return definition.authentication
-
-
 def _validated_config(
     definition: RegisteredProvider,
     config: Mapping[str, JsonValue],
@@ -302,7 +294,7 @@ def _validated_config(
         raise invalid("config", rejection_reason(error)) from None
     try:
         if credential is None and stored_credential:
-            _credential_policy(definition).validate_presence(parsed, True)
+            definition.authentication.validate_presence(parsed, True)
         else:
             definition.parse_credential(parsed, credential)
     except ValueError as error:
@@ -390,7 +382,7 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         display_name=definition.display_name,
         configuration_schema=definition.configuration_model.model_json_schema(),
         credential_schema=None if credential is None else credential.model_json_schema(),
-        authentication=Authentication.model_validate(_credential_policy(definition).model_dump(mode="json")),
+        authentication=definition.authentication,
         setup_url=definition.setup_url,
         setup_label=definition.setup_label,
         supports_test=supports_probe(definition),
@@ -407,7 +399,7 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         described.catalog_providers = list(definition.catalog_providers)
     elif isinstance(definition, WebProviderDefinition):
         described.operations = list(web_operations(definition))
-    elif isinstance(definition, EnvironmentProviderDefinition):
+    elif isinstance(definition, EnvironmentManagementDefinition):
         described.environment_schema = definition.environment_model.model_json_schema()
         described.supports_stop = definition.supports_stop
         described.supports_destroy = definition.supports_destroy

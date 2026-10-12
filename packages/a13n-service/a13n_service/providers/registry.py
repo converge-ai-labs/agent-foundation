@@ -8,7 +8,6 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal, overload
 
-from a13n_environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.connector.definition import ConnectorProviderDefinition
 from a13n_harness.providers.definition import ProviderDefinition
@@ -20,9 +19,10 @@ from pydantic import JsonValue
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.endpoints import check_endpoint, dialed_endpoint
+from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.model_settings import check_settings, settings_schema
 
-type RegisteredProvider = ProviderDefinition | EnvironmentProviderDefinition
+type RegisteredProvider = ProviderDefinition
 
 type ProviderKind = Literal["model", "environment", "connector", "web", "memory"]
 type WebOperation = Literal["search", "scrape"]
@@ -40,7 +40,7 @@ def web_operations(definition: WebProviderDefinition) -> tuple[WebOperation, ...
 @dataclass(frozen=True)
 class Registry:
     models: ProviderCatalog[ModelProviderDefinition]
-    environments: ProviderCatalog[EnvironmentProviderDefinition]
+    environments: ProviderCatalog[EnvironmentManagementDefinition]
     connectors: ProviderCatalog[ConnectorProviderDefinition]
     web: ProviderCatalog[WebProviderDefinition]
     memory: ProviderCatalog[MemoryProviderDefinition]
@@ -54,7 +54,7 @@ class Registry:
         Deriving the settings schemas imports each calling API's SDK, here rather than inside a request.
         """
         models: list[ModelProviderDefinition] = []
-        environments: list[EnvironmentProviderDefinition] = []
+        environments: list[EnvironmentManagementDefinition] = []
         connectors: list[ConnectorProviderDefinition] = []
         web: list[WebProviderDefinition] = []
         memory: list[MemoryProviderDefinition] = []
@@ -62,7 +62,7 @@ class Registry:
             match definition:
                 case ModelProviderDefinition():
                     models.append(definition)
-                case EnvironmentProviderDefinition():
+                case EnvironmentManagementDefinition():
                     environments.append(definition)
                 case ConnectorProviderDefinition():
                     connectors.append(definition)
@@ -101,7 +101,7 @@ class Registry:
     @overload
     def get(self, kind: Literal["model"], type_: str) -> ModelProviderDefinition: ...
     @overload
-    def get(self, kind: Literal["environment"], type_: str) -> EnvironmentProviderDefinition: ...
+    def get(self, kind: Literal["environment"], type_: str) -> EnvironmentManagementDefinition: ...
     @overload
     def get(self, kind: Literal["connector"], type_: str) -> ConnectorProviderDefinition: ...
     @overload

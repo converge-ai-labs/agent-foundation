@@ -1,6 +1,6 @@
 # Environment Provider Example
 
-This standalone project demonstrates how a Host selects and drives the built-in `a13n_environment` backends without involving Agent Harness or a model.
+This standalone project demonstrates how a Host uses Harness execution definitions and Service management drivers without an Agent or a model.
 
 The Host explicitly manages backing targets through `EnvironmentProvider`, records the returned state, and builds a reusable `EnvironmentConnector`. Each `open()` returns an independent `EnvironmentExecution` with ready operations. Execution close releases its connection and local resources; target deletion requires an explicit management call.
 

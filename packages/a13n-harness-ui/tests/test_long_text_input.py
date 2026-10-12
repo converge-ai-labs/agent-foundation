@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
-from a13n_environment.models import EnvironmentAction, EnvironmentPermissionSet
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.configuration import HarnessUiDocument, InputConfiguration

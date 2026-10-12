@@ -14,17 +14,17 @@ from typing import Literal
 from a13n_envd_client import EIPClientError
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
-from a13n_environment.errors import EnvironmentProviderError
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import EnvironmentState
-from a13n_environment.remote_envd.configuration import (
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdCredential,
     RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_environment.remote_envd.connections import WebSocketEnvdConnections
-from a13n_environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
-from a13n_environment.remote_envd.pairing import credential_matches
-from a13n_environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.pairing import credential_matches
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr, ValidationError
 
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding

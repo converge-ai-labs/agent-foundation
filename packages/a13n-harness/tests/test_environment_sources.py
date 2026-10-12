@@ -4,11 +4,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from a13n_environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -24,6 +19,11 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
 from a13n_harness.environment.sources import EnvironmentScope
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel

@@ -14,7 +14,7 @@ The recipe describes the target; the runtime holds its clients and credentials.
 
 ```python
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 from a13n_harness.providers.plugins import load_provider_plugins
 
 plugins = load_provider_plugins(("acme",))
@@ -41,18 +41,18 @@ acme = "acme_agent_environment:manifest"
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=3, environment=(ACME_SANDBOX,))
 ```
 
 An `EnvironmentProviderDefinition` should:
 
 1. declare a stable `type`, display name, and optional HTTPS setup link;
 2. declare separate models for account configuration, credentials, and target recipes;
-3. return an account-scoped `EnvironmentProvider` from `provider_factory` for explicit management;
+3. expose execution metadata only; Service composes a separate `EnvironmentManagementDefinition` for management;
 4. return a fixed-target `EnvironmentConnector` from the pure `connector_factory`;
 5. return a fresh ready `EnvironmentExecution` from every `open()`, with its own `execution_id` and operations;
-6. validate references and preserve known state on management failure or cancellation; execution does not change it;
-7. declare management capabilities truthfully. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
+6. validate fixed target references without changing authoritative state;
+7. leave target management to Service or the embedding Host. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
 
 The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
 
@@ -82,14 +82,14 @@ For separately deployed Envd, see the [sandbox validation record](../a13n-envd/e
 
 Multi-tenant authorization and container allocation remain Host responsibilities. One Device supports concurrent independent Sessions; Sessions are not tenant partitions. Hosts share the Device connection and select a fixed cwd for each adapter, closing the shared runtime only at Host shutdown.
 
-Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require a Host-supplied `EnvironmentState` that names the Device, declare `supports_managed=False`, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
+Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require a Host-supplied `EnvironmentState` that names the Device, expose execution definitions only, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
 
 ## Local Envd runtime
 
 The Host selects one compatible `a13n-envd` executable and private-runtime allocator:
 
 ```python
-from a13n_environment.local_envd.runtime import (
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
@@ -111,7 +111,7 @@ Docker uses an Engine connection from the Host process. No bootstrap store, gues
 
 ```python
 import docker
-from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 
 engine = DockerSDKEngine(docker.from_env())
 runtime = DockerProviderRuntime(engine=engine)
@@ -168,16 +168,17 @@ Use the Host-owned `PreparedSource` implementation from the [Harness environment
 ```python
 import os
 
-from a13n_environment.builtins import select_builtin_environment_providers
-
-(E2B,) = select_builtin_environment_providers(("e2b",))
+from a13n_service.providers.environments.e2b.definition import E2B
 recipe = {"template": "base", "timeout_seconds": 300}
 async with await E2B.open_provider(
     configuration={"domain": "e2b.dev"}, credential={"api_key": os.environ["E2B_API_KEY"]}
 ) as provider:
     state = await provider.create(recipe, environment_id="env-example", operation_id="op-create")
     await state_store.publish(environment_key, state)
-    connector = provider.execution_connector(recipe, environment_id="env-example", state=state)
+    connector = E2B.execution.execution_connector(
+        E2B.execution_environment(recipe), credential={"api_key": os.environ["E2B_API_KEY"]},
+        environment_id="env-example", state=state
+    )
 result = await executable.run("Inspect the sandbox", environment=PreparedSource(connector))
 ```
 
@@ -239,7 +240,7 @@ Default root: `/home/user`; Python: guest-PATH `python3`. Runloop documents its 
 Use the same catalog and typed runtime construction as Service:
 
 ```python
-from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
 (DAYTONA,) = select_builtin_environment_providers(("daytona",))
 connector = DAYTONA.execution_connector(
@@ -259,7 +260,7 @@ Deterministic tests run the adapters through catalog construction, native HTTP r
 
 ```sh
 A13N_TEST_CLOUD_PROVIDERS=daytona make test \
-  PYTHON_TEST_DIRS=packages/a13n-environment/tests/test_cloud_live.py
+  PYTHON_TEST_DIRS=packages/a13n-service/tests/environment_providers/test_cloud_live.py
 ```
 
 Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` through your private test environment; the corresponding uppercase Provider prefixes work for the other four. Optional `A13N_TEST_<PROVIDER>_RECIPE_JSON` overrides the recipe. The fixture allocates billable targets and attempts deletion in cleanup, including after failures. Never commit credential JSON. Missing opt-in or credentials produces a skip, not live validation.

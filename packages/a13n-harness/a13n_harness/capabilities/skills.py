@@ -11,7 +11,18 @@ from types import MappingProxyType
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import yaml
-from a13n_environment.files import (
+from a13n_logging import get_logger
+from anyio import CancelScope
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic_ai import RunContext, ToolReturn
+from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapToolExecuteHandler
+from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.tools import ToolDefinition
+
+from a13n_harness.context import AgentContext, SkillPath
+from a13n_harness.environment._mount_path import parse_mount_path
+from a13n_harness.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -25,19 +36,8 @@ from a13n_environment.files import (
     FileWriteMode,
     FileWriteResult,
 )
-from a13n_environment.models import EnvironmentError
-from a13n_logging import get_logger
-from anyio import CancelScope
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
-from pydantic_ai import RunContext, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapToolExecuteHandler
-from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.tools import ToolDefinition
-
-from a13n_harness.context import AgentContext, SkillPath
-from a13n_harness.environment._mount_path import parse_mount_path
-from a13n_harness.environment.models import EnvironmentPath
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent

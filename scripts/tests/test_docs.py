@@ -184,7 +184,7 @@ def test_service_generated_references_match_current_definitions() -> None:
     environment_reference = (ROOT / "docs/environments/configuration-reference.md").read_text(encoding="utf-8")
     assert normalized(environment_reference) == normalized(namespace["render_environment_configuration"]())
     for model in (
-        "E2BEnvironmentConfiguration",
+        "E2BRecipe",
         "DaytonaEnvironmentConfiguration",
         "ModalEnvironmentConfiguration",
         "VercelEnvironmentConfiguration",

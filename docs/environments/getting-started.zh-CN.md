@@ -11,10 +11,10 @@ description: 不使用 Harness、模型、Docker 或云账号，直接读写文�
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
 cd agent-foundation
-uv sync --locked --package a13n-environment
+uv sync --locked --package a13n-harness
 ```
 
-环境库是独立的 `a13n-environment` 包，不依赖 Harness。Docker、E2B 和 Modal 的 SDK 分别位于该包的可选依赖中。
+环境执行属于 `a13n-harness`，可以不创建 Agent、不调用模型而直接使用。Docker、E2B 和 Modal 的 SDK 分别位于该包的可选依赖中。
 
 ## 运行完整文件示例
 
@@ -25,7 +25,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 
 async def main() -> None:

@@ -233,6 +233,8 @@ adapter_configuration: {}
 
 除通用资源结构外，所有字段如上。provider 负责 `provider_configuration`；adapter 负责 `adapter_configuration` 和 Project 到 Environment 映射。空映射是默认值，不是所有 provider 通用配置。仅安装 provider 包不意味着全部 Project adapter 已安装或兼容。
 
+自定义 `EnvironmentProjectAdapter.bind()` 返回 Harness 执行连接配置。如果目标准备在观察到新状态后失败，应抛出 `a13n_harness_ui.extensions` 中的 `EnvironmentBindingError(message, state)` 或 `EnvironmentBindingCancelled(state)`；Harness UI 会先发布该状态，再传播失败。目标管理由 adapter 负责，Harness 执行定义不提供生命周期方法。
+
 使用 `defaults.environment_profile: environment-team` 或显式启动选项，再运行 `config validate` 和 `doctor`。不要把 profile 标签当作隔离证明。Provider 就绪情况和实际执行契约决定行为。
 
 本地 Envd profile 将不可变 Device `launch` 配置与仅含引用的 `session` 配置分开。例如限制文件系统但继承网络的执行：

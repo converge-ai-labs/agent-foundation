@@ -184,16 +184,11 @@ async def test_management_state_is_published_before_execution_and_after_partial_
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, Mock
 
-    from a13n_environment import EnvironmentConnector
-    from a13n_environment.direct_local.provider import DIRECT_LOCAL
-    from a13n_environment.errors import (
-        EnvironmentManagementCancelled,
-        EnvironmentManagementError,
-        EnvironmentProviderErrorCategory,
-        provider_error,
-    )
-    from a13n_environment.models import EnvironmentError, EnvironmentState
     from a13n_harness import RunBindings
+    from a13n_harness.environment.execution import EnvironmentConnector
+    from a13n_harness.environment.models import EnvironmentError, EnvironmentState
+    from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+    from a13n_harness_ui.extensions.environment_adapters import EnvironmentBindingCancelled, EnvironmentBindingError
     from a13n_harness_ui.storage import EnvironmentBindingKey, StoredEnvironmentState
 
     async with open_harness_ui_app(
@@ -229,12 +224,9 @@ async def test_management_state_is_published_before_execution_and_after_partial_
 
         async def bind(*args, **kwargs):
             if failure == "cancel":
-                raise EnvironmentManagementCancelled(observed, "op-create")
+                raise EnvironmentBindingCancelled(observed)
             if failure == "management_error":
-                error = provider_error(
-                    "test_managed", "provider_unknown_outcome", EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME
-                )
-                raise EnvironmentManagementError(error, observed, "op-create", "env-test")
+                raise EnvironmentBindingError("Target creation failed", observed)
             return connector
 
         monkeypatch.setattr(service._reconstructor, "bind", bind)
@@ -250,7 +242,7 @@ async def test_management_state_is_published_before_execution_and_after_partial_
                 ) as environment:
                     await environment.files.stat("/workspace/value.txt")
         else:
-            with pytest.raises(asyncio.CancelledError if failure == "cancel" else EnvironmentManagementError):
+            with pytest.raises(asyncio.CancelledError if failure == "cancel" else EnvironmentBindingError):
                 await service.prepare(composition)
             connector.open.assert_not_awaited()
         head = await app._store.environment_states.get(key)

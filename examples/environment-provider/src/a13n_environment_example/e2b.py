@@ -4,18 +4,23 @@ import asyncio
 import os
 import secrets
 
-from a13n_environment.commands import CommandRequest, ShellCommand
-from a13n_environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_environment.e2b.provider import E2B
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environments.e2b.definition import E2B
 
 
 async def main() -> None:
-    configuration = E2BEnvironmentConfiguration()
+    configuration = E2BRecipe()
     identity = "env-example-" + secrets.token_hex(8)
     async with await E2B.open_provider(credential={"api_key": os.environ["E2B_API_KEY"]}) as provider:
         state = await provider.create(configuration, environment_id=identity, operation_id="op-create")
-        connector = provider.execution_connector(configuration, environment_id=identity, state=state)
+        connector = E2B.execution.execution_connector(
+            E2B.execution_environment(configuration),
+            credential={"api_key": os.environ["E2B_API_KEY"]},
+            environment_id=identity,
+            state=state,
+        )
         try:
             async with await connector.open() as environment:
                 files = environment.operations.files

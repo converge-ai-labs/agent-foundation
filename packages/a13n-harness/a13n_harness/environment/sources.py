@@ -6,8 +6,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import (
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import (
     FILE_EXECUTION_ACTIONS,
     EnvironmentDescriptor,
     EnvironmentError,

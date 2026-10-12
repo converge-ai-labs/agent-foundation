@@ -10,19 +10,19 @@ import tempfile
 from pathlib import Path
 
 from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox, SandboxGrant
-from a13n_environment.commands import CommandRequest, ShellCommand
-from a13n_environment.envd_policy import EnvdNetworkConfiguration
-from a13n_environment.local_envd.configuration import (
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
     LocalEnvdShellProfile,
 )
-from a13n_environment.local_envd.provider import LOCAL_ENVD
-from a13n_environment.local_envd.runtime import (
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_environment.retention import EnvironmentOutputPolicy
 from anyio import CancelScope, to_thread
 
 from a13n_harness_ui.errors import EnvironmentLifecycleError
@@ -117,7 +117,7 @@ async def validate_sandbox_runtime(
             environment = await connector.open()
             files, processes = environment.operations.files, environment.operations.processes
             assert files is not None and processes is not None
-            from a13n_environment.models import EnvironmentError
+            from a13n_harness.environment.models import EnvironmentError
 
             try:
                 await files.read_text(sentinel.as_posix())

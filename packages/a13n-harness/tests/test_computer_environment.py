@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from a13n_environment.computer import (
+from a13n_harness.environment import EnvironmentMount
+from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
     ComputerDescription,
@@ -12,7 +14,7 @@ from a13n_environment.computer import (
     ComputerScreenshot,
     ComputerTypeText,
 )
-from a13n_environment.models import (
+from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
     FILE_EXECUTION_ACTIONS,
     EnvironmentAction,
@@ -20,9 +22,7 @@ from a13n_environment.models import (
     EnvironmentOperationReceipt,
     EnvironmentPermissionSet,
 )
-from a13n_environment.operations import EnvironmentOperations
-from a13n_harness.environment import EnvironmentMount
-from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.toolsets.computer import ComputerToolset
 from pydantic_ai import BinaryContent, ToolReturn
 
@@ -156,8 +156,8 @@ async def test_step_scroll_is_explicit_and_bounded_before_dispatch():
 
 async def test_eip_scroll_preserves_legacy_pixels_and_requires_step_advertisement(monkeypatch):
     from a13n_envd_client.eip import v1 as eip
-    from a13n_environment.computer import ComputerScroll
-    from a13n_environment.eip import computer as adapter
+    from a13n_harness.environment.computer import ComputerScroll
+    from a13n_harness.providers.environment.eip import computer as adapter
 
     units = ()
     sent = []
@@ -297,7 +297,7 @@ async def test_incomplete_input_explains_reconciliation_and_never_replays(monkey
 
 async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch):
     from a13n_envd_client import EIPTransportClosedError
-    from a13n_environment.eip import computer as adapter
+    from a13n_harness.providers.environment.eip import computer as adapter
 
     sent = []
 

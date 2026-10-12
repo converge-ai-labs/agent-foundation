@@ -3,11 +3,11 @@
 from datetime import UTC, datetime
 
 import pytest
-from a13n_environment.commands import PortObservation, PortTarget
-from a13n_environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
-from a13n_environment.operations import EnvironmentOperations
 from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.commands import PortObservation, PortTarget
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
+from a13n_harness.environment.operations import EnvironmentOperations
 from pydantic import ValidationError
 
 from .test_environment_core import _Binding, _instance

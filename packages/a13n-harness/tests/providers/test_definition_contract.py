@@ -3,11 +3,10 @@
 from dataclasses import replace
 
 import pytest
-from a13n_environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
-from a13n_environment.credential_policy import CredentialPolicy, CredentialPolicyCase
-from a13n_environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.authentication import Authentication, AuthenticationCase, CredentialMode
 from a13n_harness.providers.connector.builtins import COMPOSIO
+from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.web.builtins import built_in_web_providers
 
@@ -29,7 +28,7 @@ NO_CREDENTIAL = [
 
 def credential_contract(definition):
     if isinstance(definition, EnvironmentProviderDefinition):
-        return "credential_policy", CredentialPolicy, CredentialPolicyCase
+        return "authentication", Authentication, AuthenticationCase
     return "authentication", Authentication, AuthenticationCase
 
 

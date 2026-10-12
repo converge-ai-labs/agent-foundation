@@ -18,7 +18,6 @@ on:
       - "scripts/export-a13n-service-openapi.py"
       - "scripts/tests/test_service_contract.py"
       - "packages/a13n-harness/**"
-      - "packages/a13n-environment/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-envd-client/**"
       - "uv.lock"
@@ -39,7 +38,6 @@ on:
       - "scripts/export-a13n-service-openapi.py"
       - "scripts/tests/test_service_contract.py"
       - "packages/a13n-harness/**"
-      - "packages/a13n-environment/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-envd-client/**"
       - "uv.lock"
@@ -129,7 +127,12 @@ jobs:
           -o faulthandler_timeout=120
           -o faulthandler_exit_on_timeout=true
           --ignore=packages/a13n-service/tests/test_environments_envd.py
+          --ignore=packages/a13n-service/tests/environment_providers
           packages/a13n-service/tests
+
+      - name: Test native Environment management drivers
+        if: matrix.name == 'tests'
+        run: uv run --locked python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
 
       - name: Require Service execution without skips
         if: matrix.name == 'tests'

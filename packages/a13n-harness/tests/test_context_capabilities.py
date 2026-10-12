@@ -11,10 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
     HarnessBuilder,
@@ -62,6 +58,10 @@ from a13n_harness.model_context import (
     _commit_projection,
     _requires_exact_history,
     user_prompt_content,
+)
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
 )
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry

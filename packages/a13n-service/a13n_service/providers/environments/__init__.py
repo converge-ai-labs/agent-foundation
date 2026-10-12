@@ -9,15 +9,14 @@ directory on the worker host. External envd targets are no provider type (`provi
 from collections.abc import Iterable, Sequence
 from pathlib import PurePosixPath
 
-from a13n_environment.daytona.provider import DAYTONA
-from a13n_environment.modal.provider import MODAL
-from a13n_environment.runloop.provider import RUNLOOP
-from a13n_environment.sprites.provider import SPRITES
-from a13n_environment.vercel.provider import VERCEL
-
+from a13n_service.providers.environments.daytona import DAYTONA
 from a13n_service.providers.environments.docker import DOCKER, docker
 from a13n_service.providers.environments.e2b import E2B
 from a13n_service.providers.environments.local import LOCAL
+from a13n_service.providers.environments.modal import MODAL
+from a13n_service.providers.environments.runloop import RUNLOOP
+from a13n_service.providers.environments.sprites import SPRITES
+from a13n_service.providers.environments.vercel import VERCEL
 from a13n_service.providers.registry import RegisteredProvider
 
 BUILT_IN_ENVIRONMENT_PROVIDERS = (DOCKER, E2B, DAYTONA, MODAL, VERCEL, SPRITES, RUNLOOP, LOCAL)

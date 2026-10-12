@@ -20,7 +20,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
-from a13n_harness.environment.models import EnvironmentPath
+from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.errors import HarnessError
 from a13n_harness.filters.image import ImageFilterCapability
 from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability

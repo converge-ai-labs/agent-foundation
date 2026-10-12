@@ -9,13 +9,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from a13n_environment.docker.configuration import DockerEnvironmentConfiguration
-from a13n_environment.docker.management import DockerManagement
-from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
-from a13n_environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_service.infra.db import transaction
 from a13n_service.providers.environments.docker import DEFAULT_SANDBOX_IMAGE, default_image, docker
+from a13n_service.providers.environments.docker.configuration import DockerRecipe
+from a13n_service.providers.environments.docker.management import DockerManagement
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.runs.environments.adapters import execution_connector
 from a13n_service.runs.environments.lifecycle import claim
@@ -61,7 +61,7 @@ def test_service_version_selects_a_reviewed_sandbox_independent_of_its_version(
     assert model.model_json_schema()["properties"]["image"]["default"] == expected
     assert model.model_validate({"image": "custom@sha256:" + "a" * 64}).image == "custom@sha256:" + "a" * 64
     # Service policy does not change the independently released Harness provider.
-    assert DockerEnvironmentConfiguration().image == f"{IMAGE}:dev"
+    assert DockerRecipe().image == f"{IMAGE}:dev"
 
 
 def test_invalid_metadata_does_not_fall_back_to_dev(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,7 +112,7 @@ async def template(service: SimpleNamespace, recipe: dict) -> dict:
 
 def retained_state(recipe: dict, environment_id: str) -> EnvironmentState:
     target = DockerManagement(
-        DockerEnvironmentConfiguration.model_validate(recipe),
+        DockerRecipe.model_validate(recipe),
         environment_id,
         None,
         DockerProviderRuntime(DockerSDKEngine(Mock())),

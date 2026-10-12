@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from a13n_environment.models import EnvironmentError, EnvironmentOperationFamily
-
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.models import EnvironmentReadinessRequirement
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationFamily
+from a13n_harness.environment.mounts import EnvironmentReadinessRequirement
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
 from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 

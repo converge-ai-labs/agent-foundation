@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
-    from a13n_environment.definition import EnvironmentProviderDefinition
+    from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 
     from .authentication import Authentication, AuthenticationCase, CredentialMode
     from .catalog import ProviderCatalog, ProviderNotSelected
@@ -22,7 +22,7 @@ _EXPORTS = {
     "a13n_harness.providers.catalog": ("ProviderCatalog", "ProviderNotSelected"),
     "a13n_harness.providers.connector.definition": ("ConnectorProviderDefinition",),
     "a13n_harness.providers.definition": ("ProviderDefinition",),
-    "a13n_environment.definition": ("EnvironmentProviderDefinition",),
+    "a13n_harness.providers.environment.definition": ("EnvironmentProviderDefinition",),
     "a13n_harness.providers.memory.definition": ("MemoryProviderDefinition",),
     "a13n_harness.providers.model.definition": ("ModelProviderDefinition",),
     "a13n_harness.providers.plugins": ("ProviderManifest",),

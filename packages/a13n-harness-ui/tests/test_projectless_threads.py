@@ -2,11 +2,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment.commands import CommandRequest, ShellCommand
-from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.capabilities import SkillsCapability
 from a13n_harness.environment import FILE_ACTIONS, EnvironmentError
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
 from a13n_harness_ui.configuration.setup import SetupSelection
@@ -220,8 +220,8 @@ def test_projectless_migration_preserves_existing_threads(tmp_path: Path) -> Non
 async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_not_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from a13n_environment.local_envd.provider import LocalEnvdExecution
-    from a13n_environment.local_envd.runtime import (
+    from a13n_harness.providers.environment.local_envd.provider import LocalEnvdExecution
+    from a13n_harness.providers.environment.local_envd.runtime import (
         LocalEnvdProviderRuntime,
         TemporaryLocalEnvdRuntimeAllocator,
     )

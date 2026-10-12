@@ -14,7 +14,7 @@ description: 注册 provider 插件，并配置每个内置 provider 的运行�
 
 ```python
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 from a13n_harness.providers.plugins import load_provider_plugins
 
 plugins = load_provider_plugins(("acme",))
@@ -41,18 +41,18 @@ acme = "acme_agent_environment:manifest"
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=3, environment=(ACME_SANDBOX,))
 ```
 
 `EnvironmentProviderDefinition` 应当：
 
 1. 声明稳定的 `type`、显示名称和可选 HTTPS 设置链接；
 2. 分别声明账号配置、凭据和目标配置模型；
-3. 通过 `provider_factory` 返回账号级 `EnvironmentProvider`，显式执行管理操作；
+3. 只声明执行元数据；Service 组合独立的 `EnvironmentManagementDefinition` 提供管理；
 4. 通过纯 `connector_factory` 返回固定目标的 `EnvironmentConnector`；
 5. 每次 `open()` 返回新的已就绪 `EnvironmentExecution`，包含独立的 `execution_id` 和操作对象；
-6. 验证目标引用，在管理失败或取消时保留已知引用；执行期间不修改它；
-7. 如实声明管理能力。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
+6. 验证固定目标引用，不修改权威状态；
+7. 由 Service 或嵌入方 Host 管理目标。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
 
 可运行的 [provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)展示单个已安装 manifest 使用相同的目录、验证、构建和 Harness 路径。共享编写契约见[插件与扩展](../a13n-harness/plugins.md#provider-plugins)。
 
@@ -82,14 +82,14 @@ Direct Local 共享 Host 账号。Docker 使用原生 Engine 操作；六个云 
 
 多租户授权和容器分配仍由 Host 负责。一个设备支持多个并发独立会话；会话不是租户分区。Host 共享设备连接，为每个适配器选择固定 cwd，只有 Host 关闭时才关闭共享运行时。
 
-从[内置示例](examples.md)或[本地运行两种远程传输](remote-envd.md)开始。HTTP/WebSocket provider 要求 Host 提供指明设备的 `EnvironmentState`，声明 `supports_managed=False`，不供应或销毁基础设施。WebSocket SDK 接收 Host 提供的已验证连接，绝不打开监听器。
+从[内置示例](examples.md)或[本地运行两种远程传输](remote-envd.md)开始。HTTP/WebSocket provider 要求 Host 提供指明设备的 `EnvironmentState`，只提供执行定义，不供应或销毁基础设施。WebSocket SDK 接收 Host 提供的已验证连接，绝不打开监听器。
 
 ## Local Envd 运行时
 
 Host 选择一个兼容的 `a13n-envd` 可执行文件和私有运行时分配器：
 
 ```python
-from a13n_environment.local_envd.runtime import (
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
@@ -111,7 +111,7 @@ Docker 使用 Host 进程的 Engine 连接。无需启动存储、客体守护�
 
 ```python
 import docker
-from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 
 engine = DockerSDKEngine(docker.from_env())
 runtime = DockerProviderRuntime(engine=engine)
@@ -168,16 +168,17 @@ E2B 通过原生异步 SDK 直接执行命令。有界 Python helper 只实现�
 ```python
 import os
 
-from a13n_environment.builtins import select_builtin_environment_providers
-
-(E2B,) = select_builtin_environment_providers(("e2b",))
+from a13n_service.providers.environments.e2b.definition import E2B
 recipe = {"template": "base", "timeout_seconds": 300}
 async with await E2B.open_provider(
     configuration={"domain": "e2b.dev"}, credential={"api_key": os.environ["E2B_API_KEY"]}
 ) as provider:
     state = await provider.create(recipe, environment_id="env-example", operation_id="op-create")
     await state_store.publish(environment_key, state)
-    connector = provider.execution_connector(recipe, environment_id="env-example", state=state)
+    connector = E2B.execution.execution_connector(
+        E2B.execution_environment(recipe), credential={"api_key": os.environ["E2B_API_KEY"]},
+        environment_id="env-example", state=state
+    )
 result = await executable.run("Inspect the sandbox", environment=PreparedSource(connector))
 ```
 
@@ -239,7 +240,7 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 使用与 Service 相同的目录和带类型的运行时构建：
 
 ```python
-from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
 (DAYTONA,) = select_builtin_environment_providers(("daytona",))
 connector = DAYTONA.execution_connector(
@@ -259,7 +260,7 @@ async with await connector.open() as execution:
 
 ```sh
 A13N_TEST_CLOUD_PROVIDERS=daytona make test \
-  PYTHON_TEST_DIRS=packages/a13n-environment/tests/test_cloud_live.py
+  PYTHON_TEST_DIRS=packages/a13n-service/tests/environment_providers/test_cloud_live.py
 ```
 
 通过私有测试环境提供 `A13N_TEST_DAYTONA_BACKEND_JSON` 和 `A13N_TEST_DAYTONA_CREDENTIAL_JSON`；其他四个 provider 使用对应大写前缀。可选 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 分配计费目标，并在清理中尝试删除，包括失败后。绝不能提交凭据 JSON。未主动启用或缺少凭据时跳过，不代表完成云端验证。

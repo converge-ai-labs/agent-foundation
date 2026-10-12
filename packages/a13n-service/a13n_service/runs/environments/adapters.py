@@ -4,15 +4,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import anyio
-from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
-from a13n_environment.management import EnvironmentProvider
-from a13n_environment.models import EnvironmentState
 from a13n_harness import RunConfiguration
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.providers import envd
+from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.providers.service import ResolvedProvider
 from a13n_service.runs.runtime import Runtime
@@ -80,8 +80,9 @@ async def execution_connector(
             policy=policy,
         )
     await runtime.registry.check_environment_endpoint(account.type, account.config, policy)
-    return runtime.registry.get("environment", account.type).execution_connector(
-        dict(target.recipe),
+    definition = runtime.registry.get("environment", account.type)
+    return definition.execution.execution_connector(
+        definition.execution_environment(dict(target.recipe)),
         configuration=account.config,
         credential=account.reveal_credential(runtime.keys),
         environment_id=target.environment_id,

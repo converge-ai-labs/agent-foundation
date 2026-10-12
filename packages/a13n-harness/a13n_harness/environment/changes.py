@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from a13n_environment.models import EnvironmentError
-
-from a13n_harness.environment.models import EnvironmentChange
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.mounts import EnvironmentChange
 
 
 class EnvironmentChangeJournal:

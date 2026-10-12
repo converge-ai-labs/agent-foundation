@@ -1,4 +1,4 @@
-"""Standalone management and execution examples; Harness is not required."""
+"""Harness execution and Service management examples without an Agent or model."""
 
 from __future__ import annotations
 
@@ -8,17 +8,17 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_environment import EnvironmentExecution
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.docker.provider import DOCKER
-from a13n_environment.errors import observed_environment_state
-from a13n_environment.local_envd.provider import LOCAL_ENVD
-from a13n_environment.local_envd.runtime import (
+from a13n_harness.environment.execution import EnvironmentExecution
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
 )
-from a13n_environment.models import EnvironmentState
+from a13n_service.providers.environment.errors import observed_environment_state
+from a13n_service.providers.environments.docker.definition import DOCKER
 
 DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-sandbox:local"
 _MESSAGE_PATH = "/provider-example.txt"
@@ -91,7 +91,9 @@ async def run_docker(*, image: str = DEFAULT_EXAMPLE_DOCKER_IMAGE) -> DockerExam
                 raise
             assert state is not None
             state_version = state.state_version
-            connector = provider.execution_connector(recipe, environment_id="docker-example", state=state)
+            connector = DOCKER.execution.execution_connector(
+                DOCKER.execution_environment(recipe), environment_id="docker-example", state=state
+            )
             async with await connector.open() as first:
                 first_text = await _write_and_read(first)
             async with await connector.open() as second:

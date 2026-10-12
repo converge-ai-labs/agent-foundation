@@ -13,7 +13,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Literal, cast
 
-from a13n_environment.commands import (
+from pydantic import JsonValue
+from pydantic_ai import RunContext
+
+from a13n_harness.context import AgentContext
+from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     ProcessInfo,
@@ -22,13 +26,9 @@ from a13n_environment.commands import (
     ProcessStatus,
     ProcessStreamRead,
 )
-from a13n_environment.models import EnvironmentAction, EnvironmentError
-from a13n_environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
-from pydantic import JsonValue
-from pydantic_ai import RunContext
-
-from a13n_harness.context import AgentContext
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 
 from .events import ShellStatusEvent
 from .output import tool_output_size

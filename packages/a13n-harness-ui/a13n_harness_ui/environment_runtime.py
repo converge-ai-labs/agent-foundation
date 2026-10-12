@@ -15,15 +15,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
-from a13n_environment.definition import EnvironmentProviderDefinition
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.errors import observed_environment_state
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.local_envd.runtime import (
-    LocalEnvdProviderRuntime,
-    resolve_a13n_envd_executable,
-)
-from a13n_environment.models import FILE_EXECUTION_ACTIONS, EnvironmentDescriptor, EnvironmentState
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -34,7 +25,12 @@ from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
 )
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentDescriptor, EnvironmentState
 from a13n_harness.environment.providers import EnvironmentRuntime
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime, resolve_a13n_envd_executable
 from anyio import CancelScope, Lock, fail_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
@@ -54,6 +50,7 @@ from a13n_harness_ui.extensions.environment_adapters import (
     LocalEnvdProjectAdapter,
     LocalEnvdProjectConfiguration,
     NativeProjectAdapter,
+    observed_binding_state,
 )
 from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
 from a13n_harness_ui.sandbox import create_sandbox_runtime
@@ -376,7 +373,7 @@ class EnvironmentRunService:
             except BaseException as error:
                 with CancelScope(shield=True):
                     try:
-                        await self._publish_state(key, expected, state, observed_environment_state(error, state))
+                        await self._publish_state(key, expected, state, observed_binding_state(error, state))
                     except Exception as publication_error:
                         error.add_note(f"Environment state publication also failed: {publication_error!r}")
                 raise

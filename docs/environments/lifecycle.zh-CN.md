@@ -3,7 +3,7 @@ title: 生命周期与状态
 description: 分别管理环境目标、连接配置和独立执行对象。
 ---
 
-Host 先管理目标并保存结果，再由其来源向 Harness 返回固定目标的 connector。独立的 `a13n-environment` 包也可直接用于普通应用。
+Host 先管理目标并保存结果，再由其来源向 Harness 返回固定目标的 connector。Harness 提供执行能力，Service 提供管理驱动。
 
 ## 三个对象
 
@@ -24,8 +24,8 @@ Host 先管理目标并保存结果，再由其来源向 Harness 返回固定目
 此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
 
 ```python
-from a13n_environment.docker.provider import DOCKER
-from a13n_environment.errors import observed_environment_state
+from a13n_service.providers.environments.docker.definition import DOCKER
+from a13n_service.providers.environment.errors import observed_environment_state
 
 recipe = {"image": "ghcr.io/converge-ai-labs/a13n-sandbox:dev"}
 state = await state_store.load(environment_key)
@@ -40,7 +40,10 @@ async with await DOCKER.open_provider(configuration=account_configuration) as pr
         await state_store.publish(environment_key, observed)
         raise
     await state_store.publish(environment_key, state)
-    connector = provider.execution_connector(recipe, environment_id="env-workspace", state=state)
+    connector = DOCKER.execution.execution_connector(
+        DOCKER.execution_environment(recipe), configuration=account_configuration,
+        environment_id="env-workspace", state=state
+    )
 
 result = await executable.run("Continue the task", environment=PreparedSource(connector))
 ```
@@ -69,18 +72,18 @@ async with await definition.open_provider(
 
 ## 管理与执行方法
 
-| 方法                                                                        | 作用                                             |
-| --------------------------------------------------------------------------- | ------------------------------------------------ |
-| `definition.open_provider(...)`                                             | 获取账号级管理客户端，不选择或改变目标           |
-| `provider.create(recipe, ..., operation_id=...)`                            | 显式创建或核对管理目标                           |
-| `provider.start(recipe, ..., state=..., operation_id=...)`                  | 显式启动已有目标；不重建丢失目标                 |
-| `provider.inspect(recipe, ..., state=...)`                                  | 只读返回 `running`、`stopped` 或 `absent` 及引用 |
-| `provider.stop(...)` / `destroy(...)`                                       | 按 provider 能力显式停止或销毁                   |
-| `provider.keepalive(...)`                                                   | 显式续期；调度由 Host 负责                       |
-| `definition.execution_connector(...)` / `provider.execution_connector(...)` | 纯构造固定目标连接配置                           |
-| `connector.open()`                                                          | 打开新的、已就绪的执行对象                       |
-| `execution.check_ready(families)`                                           | 只读检查当前执行，不进行目标恢复                 |
-| `execution.close()`                                                         | 幂等释放该执行的资源                             |
+| 方法                                                       | 作用                                             |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| `definition.open_provider(...)`                            | 获取账号级管理客户端，不选择或改变目标           |
+| `provider.create(recipe, ..., operation_id=...)`           | 显式创建或核对管理目标                           |
+| `provider.start(recipe, ..., state=..., operation_id=...)` | 显式启动已有目标；不重建丢失目标                 |
+| `provider.inspect(recipe, ..., state=...)`                 | 只读返回 `running`、`stopped` 或 `absent` 及引用 |
+| `provider.stop(...)` / `destroy(...)`                      | 按 provider 能力显式停止或销毁                   |
+| `provider.keepalive(...)`                                  | 显式续期；调度由 Host 负责                       |
+| `definition.execution.execution_connector(...)`            | 纯构造固定目标连接配置                           |
+| `connector.open()`                                         | 打开新的、已就绪的执行对象                       |
+| `execution.check_ready(families)`                          | 只读检查当前执行，不进行目标恢复                 |
+| `execution.close()`                                        | 幂等释放该执行的资源                             |
 
 关闭管理客户端不影响它先前生成的连接配置。借用的运行时仍由 Host 关闭；传入运行时时可以同时提供账号配置，但不能再传凭据。Local Envd 必须借用 Host 运行时；HTTP 和 WebSocket Envd 只提供连接能力，不提供目标管理。
 

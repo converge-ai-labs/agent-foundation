@@ -106,8 +106,8 @@ Code mode prints the same result with `selection mode: code`.
 - Use one stable entry-point name and one stable Provider `type`.
 - Keep definition construction, recipe validation, and Environment construction strict, bounded, and side-effect free.
 - Declare one account model, one optional credential model, and one target recipe model; support exact state versions without fallback or shape inference.
-- Acquire live clients only in the management `provider_factory` or connector `open()`. The `connector_factory` must remain inert.
-- Construct one fresh Environment per independent Run or explicit Host lifecycle operation.
+- Acquire live clients only in connector `open()`. The `connector_factory` must remain inert.
+- Construct one fresh Environment per independent Run.
 - Validate supplied state before target mutation; create a replacement only after authoritative absence.
 - Update cached state as soon as changed target identity is known, before later readiness can fail.
 - Keep `close()` process-local and non-destructive; expose backing-target removal only through explicit `destroy()` on a fresh adapter.

@@ -12,7 +12,6 @@ from traceback import walk_tb
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
-from a13n_environment.models import EnvironmentError
 from a13n_logging import get_logger
 from anyio import CancelScope
 from opentelemetry.trace import StatusCode
@@ -54,7 +53,8 @@ from a13n_harness.context import (
     RunBindings,
     _CapabilityProvenance,
 )
-from a13n_harness.environment.models import EnvironmentChange
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.mounts import EnvironmentChange
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (

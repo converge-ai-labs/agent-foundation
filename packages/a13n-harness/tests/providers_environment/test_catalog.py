@@ -3,8 +3,8 @@
 from dataclasses import replace
 
 import pytest
-from a13n_environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 
 
 def test_all_native_definitions_have_typed_schemas():
@@ -30,5 +30,5 @@ def test_all_native_definitions_have_typed_schemas():
 
 def test_capability_declaration_is_the_single_source_and_must_be_consistent():
     connect_only = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["http_envd"]
-    with pytest.raises(ValueError, match="Connect-only"):
+    with pytest.raises(TypeError, match="supports_stop"):
         replace(connect_only, supports_stop=True)

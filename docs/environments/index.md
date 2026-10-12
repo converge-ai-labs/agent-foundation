@@ -4,7 +4,7 @@ sidebarTitle: Overview
 description: Independent target management and portable execution across local, container, cloud, and remote backends.
 ---
 
-`a13n-environment` provides files, commands, processes, output, and ports without depending on Harness, an Agent, or a model. Applications can use it directly or pass an `EnvironmentConnector` to Harness, which opens an independent execution for each Run. Optional SDKs belong to this package's `docker`, `e2b`, and `modal` extras.
+`a13n-harness` provides files, commands, processes, output, and ports without requiring an Agent or a model. Service owns managed target creation, stop, renewal, and destruction. Applications can use it directly or pass an `EnvironmentConnector` to Harness, which opens an independent execution for each Run. Optional SDKs belong to this package's `docker`, `e2b`, and `modal` extras.
 
 ## Start here
 
@@ -68,7 +68,7 @@ Use the Host-owned `PreparedSource` implementation from the [Harness environment
 
 ```python
 from pathlib import Path
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},

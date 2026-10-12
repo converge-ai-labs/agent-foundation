@@ -13,12 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.execution import EnvironmentConnector
 from a13n_harness import (
     AgentContext,
     AgentSpec,
@@ -30,8 +24,14 @@ from a13n_harness import (
     RunError,
 )
 from a13n_harness.capabilities.web import WebCapability, WebSearchRequest, WebSearchResponse, WebSearchResult
+from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.errors import DefinitionError
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.web.definition import WebProviderDefinition
 from a13n_harness.providers.web.options import SearchOptions
 from a13n_harness.providers.web.transport import WebProviderTransport

@@ -275,11 +275,11 @@ For grouped tools, see [ToolProxy plugin-contributed sources](tool-proxy.md#plug
 
 Provider plugins publish Environment definitions for Host selection. Compose Model, Web, Connector, and Memory definitions in code through `ProviderCatalog`.
 
-Declare the Provider type, configuration, credentials, and separate management and connector factories:
+Declare the Provider type, configuration, credentials, and an execution connector factory:
 
 ```python
-from a13n_environment.authentication import Authentication, CredentialMode
-from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 
 ACME_SANDBOX = EnvironmentProviderDefinition(
     type="acme_sandbox",
@@ -287,14 +287,11 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
     configuration_model=AcmeConnectionConfiguration,
     credential_model=AcmeCredential,
     environment_model=AcmeEnvironmentConfiguration,
-    provider_factory=_open_provider,
     connector_factory=_connector,
     describe_environment=_describe,
     authentication=Authentication(mode=CredentialMode.required),
     setup_url="https://acme.example/dashboard",
     setup_label="Acme dashboard",
-    supports_stop=True,
-    supports_destroy=True,
 )
 ```
 
@@ -303,7 +300,7 @@ One distribution exports one `ProviderManifest` per entry point:
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=3, environment=(ACME_SANDBOX,))
 ```
 
 ```toml
@@ -330,7 +327,7 @@ The runnable [plugin example](https://github.com/converge-ai-labs/agent-foundati
 
 ## Harness Extras
 
-Environment definitions ship in the independent `a13n-environment` package. Install its extra when opening a backend:
+Execution definitions ship with Harness. Install its extra when opening a backend:
 
 | Extra    | Adds                      | Needed by                         |
 | -------- | ------------------------- | --------------------------------- |
@@ -339,7 +336,7 @@ Environment definitions ship in the independent `a13n-environment` package. Inst
 | `modal`  | The Modal SDK             | The `modal` Environment Provider  |
 
 ```console
-uv add a13n-harness "a13n-environment[docker,e2b]"
+uv add "a13n-harness[docker,e2b]"
 ```
 
 Reading Provider metadata needs no vendor SDK. A missing extra fails when the Provider opens.

@@ -5,7 +5,7 @@ daemon are in `test_environments_envd.py`.
 from types import SimpleNamespace
 
 import pytest
-from a13n_environment.errors import EnvironmentProviderError
+from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.environments import external

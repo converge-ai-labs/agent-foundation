@@ -5,13 +5,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
-from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
-from a13n_environment.files import FileOperator
-from a13n_environment.models import EnvironmentDescriptor, EnvironmentError, EnvironmentState
-from a13n_environment.remote_envd.http import HTTP_ENVD
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentError, EnvironmentState
 from a13n_harness.errors import EnvironmentActivationError
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 

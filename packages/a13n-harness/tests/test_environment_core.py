@@ -9,24 +9,6 @@ from uuid import uuid4
 
 import a13n_harness.environment.coordinator as environment_coordinator
 import pytest
-from a13n_environment.commands import (
-    ArgvCommand,
-    BoundProcessHandle,
-    CommandRequest,
-    ProcessIdentity,
-    ProcessInfo,
-    ProcessOutputSnapshot,
-    ProcessStartResult,
-    ProcessStatus,
-)
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import EnvironmentOperationReceipt, EnvironmentState
-from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
-from a13n_environment.retention import (
-    EnvironmentOutputCapture,
-    EnvironmentOutputPolicy,
-    OpaqueProcessHandle,
-)
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -50,6 +32,20 @@ from a13n_harness.environment.advanced import (
     create_empty_environment_runtime,
     create_environment_runtime,
 )
+from a13n_harness.environment.commands import (
+    ArgvCommand,
+    BoundProcessHandle,
+    CommandRequest,
+    ProcessIdentity,
+    ProcessInfo,
+    ProcessOutputSnapshot,
+    ProcessStartResult,
+    ProcessStatus,
+)
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentOperationReceipt, EnvironmentState
+from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy, OpaqueProcessHandle
 
 pytestmark = pytest.mark.anyio
 
@@ -1898,8 +1894,8 @@ async def test_foreground_entry_points_share_dispatch_and_reject_retained_output
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from a13n_environment.commands import ShellExecResult
-    from a13n_environment.retention import BoundOutputReference, OpaqueOutputReference
+    from a13n_harness.environment.commands import ShellExecResult
+    from a13n_harness.environment.retention import BoundOutputReference, OpaqueOutputReference
 
     async def execute(request):
         assert request.cwd == "/"

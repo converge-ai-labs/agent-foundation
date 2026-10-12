@@ -4,7 +4,7 @@ sidebarTitle: 概览
 description: 独立的环境管理、连接和执行接口，支持本地、容器、云端与远程目标。
 ---
 
-`a13n-environment` 提供文件、命令、进程、输出和端口操作，不依赖 Harness、Agent 或模型。应用可以直接使用，也可以将 `EnvironmentConnector` 交给 Harness，由每个 Run 打开独立执行对象。可选 SDK 位于该包的 `docker`、`e2b` 和 `modal` extras 中。
+`a13n-harness` 提供文件、命令、进程、输出和端口操作，无需创建 Agent 或调用模型。Service 负责目标创建、停止、续期和销毁。应用可以直接使用，也可以将 `EnvironmentConnector` 交给 Harness，由每个 Run 打开独立执行对象。可选 SDK 位于该包的 `docker`、`e2b` 和 `modal` extras 中。
 
 ## 从这里开始
 
@@ -68,7 +68,7 @@ flowchart TB
 
 ```python
 from pathlib import Path
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},

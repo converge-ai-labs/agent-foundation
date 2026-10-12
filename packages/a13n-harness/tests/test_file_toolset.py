@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.files import FileEntriesResult, FileMetadata
+from a13n_harness.environment.files import FileEntriesResult, FileMetadata
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.toolsets.files import FileTextEdit, FileToolset
 from a13n_harness.toolsets.output import disclose_sequence_field
 

@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from a13n_environment.commands import (
+from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -21,7 +21,7 @@ from a13n_environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from a13n_environment.computer import (
+from a13n_harness.environment.computer import (
     COMPUTER_INPUT_ACTIONS,
     ComputerActionResult,
     ComputerClick,
@@ -32,12 +32,8 @@ from a13n_environment.computer import (
     ComputerScreenshot,
     ComputerScroll,
 )
-from a13n_environment.models import (
-    EnvironmentAction,
-    EnvironmentError,
-    EnvironmentOperationReceipt,
-)
-from a13n_environment.retention import (
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,

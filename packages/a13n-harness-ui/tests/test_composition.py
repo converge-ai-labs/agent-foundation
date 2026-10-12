@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.capabilities import SubagentOperator
 from a13n_harness.capabilities.skills import SkillsCapability
 from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness_ui.composition import (
     IMPLICIT_NATIVE_PROFILE,
     PACKAGE_SYSTEM_PROMPT,
@@ -1138,8 +1138,8 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
     import shlex
     import sys
 
-    from a13n_environment.commands import CommandEnvironment, CommandRequest, ShellCommand
-    from a13n_environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.environment.commands import CommandEnvironment, CommandRequest, ShellCommand
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
 
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())

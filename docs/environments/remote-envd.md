@@ -43,8 +43,8 @@ Read the small, copyable [Host integration](https://github.com/converge-ai-labs/
 The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_DEVICE_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths.
 
 ```python
-from a13n_environment.builtins import select_builtin_environment_providers
-from a13n_environment.models import EnvironmentState
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.environment.models import EnvironmentState
 
 (http_envd,) = select_builtin_environment_providers(("http_envd",))
 state = EnvironmentState(
@@ -64,7 +64,7 @@ environment = http_envd.execution_connector(
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
-HTTP and WebSocket Envd both declare `supports_managed=False`. They provide fixed-device connectors only and reject `open_provider()` before any external request.
+HTTP and WebSocket Envd expose fixed-device connectors only; their definitions have no management factory or lifecycle methods.
 
 Outside Harness, use `async with await environment.open() as execution` and call the execution's operations. A shared `HttpEnvdProviderRuntime` stays open until Host shutdown.
 
@@ -129,12 +129,12 @@ Await `attach()` for the handler's entire lifetime. The SDK immediately performs
 To use one of those connections:
 
 ```python
-from a13n_environment.builtins import select_builtin_environment_providers
-from a13n_environment.models import EnvironmentState
-from a13n_environment.remote_envd.configuration import (
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
 )
-from a13n_environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
 
 (websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
 environment = websocket_envd.execution_connector(

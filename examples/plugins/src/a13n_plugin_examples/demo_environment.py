@@ -9,7 +9,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from a13n_environment import EnvironmentProviderDefinition
 from a13n_harness import (
     AgentSpec,
     EnvironmentMount,
@@ -18,6 +17,7 @@ from a13n_harness import (
 )
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.plugins import load_provider_plugins
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel

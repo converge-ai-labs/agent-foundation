@@ -9,13 +9,13 @@ from pathlib import PurePosixPath
 from typing import Annotated, Literal, NotRequired, Protocol, TypedDict, runtime_checkable
 from uuid import uuid4
 
-from a13n_environment.files import FileOperator
-from a13n_environment.models import EnvironmentError
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import FileScopeProvider
 from a13n_harness.errors import RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy

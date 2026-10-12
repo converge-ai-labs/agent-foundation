@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment.errors import EnvironmentProviderError
+from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.catalog import ProviderCatalog, ProviderNotSelected
 
 from a13n_plugin_examples.demo_environment import (

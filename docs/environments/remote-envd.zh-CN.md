@@ -43,8 +43,8 @@ provider close preserved remote daemon and workspace
 运维人员通过受保护渠道提供 HTTP(S) origin、配置的 `A13N_ENVD_DEVICE_ID` 和凭据。origin 不含 `/eip/control` 后缀：客户端自行构造 EIP 资源路径。
 
 ```python
-from a13n_environment.builtins import select_builtin_environment_providers
-from a13n_environment.models import EnvironmentState
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.environment.models import EnvironmentState
 
 (http_envd,) = select_builtin_environment_providers(("http_envd",))
 state = EnvironmentState(
@@ -64,7 +64,7 @@ environment = http_envd.execution_connector(
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
-必须设置 HTTP 和 WebSocket Envd 都声明 `supports_managed=False`，只提供固定设备的连接配置；调用 `open_provider()` 会在任何外部请求之前被拒绝。
+HTTP 和 WebSocket Envd 只提供固定设备的连接配置；其定义不包含管理工厂或生命周期方法。
 
 不用 Harness 时，按 `remote.py` 进入适配器、确保就绪、使用操作接口，再在 `finally` 关闭适配器。共享 `HttpEnvdProviderRuntime` 保持打开，直到 Host 关闭。
 
@@ -129,12 +129,12 @@ async def authenticated_envd_handler(connection):
 使用其中一个连接：
 
 ```python
-from a13n_environment.builtins import select_builtin_environment_providers
-from a13n_environment.models import EnvironmentState
-from a13n_environment.remote_envd.configuration import (
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
 )
-from a13n_environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
 
 (websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
 environment = websocket_envd.execution_connector(

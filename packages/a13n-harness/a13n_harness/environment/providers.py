@@ -8,7 +8,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from a13n_environment.commands import (
+from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -23,32 +23,27 @@ from a13n_environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from a13n_environment.computer import (
+from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerDescription,
     ComputerInput,
     ComputerScreenshot,
 )
-from a13n_environment.execution import EnvironmentExecution
-from a13n_environment.files import FileOperator
-from a13n_environment.models import (
-    EnvironmentAction,
-    EnvironmentOperationReceipt,
-    EnvironmentState,
-)
-from a13n_environment.retention import (
-    BoundOutputCursor,
-    BoundOutputReference,
-    EnvironmentOutputPolicy,
-    EnvironmentOutputReadResult,
-)
-
-from a13n_harness.environment.models import (
+from a13n_harness.environment.execution import EnvironmentExecution
+from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentOperationReceipt, EnvironmentState
+from a13n_harness.environment.mounts import (
     EnvironmentChange,
     EnvironmentMountObservation,
     EnvironmentPath,
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
+)
+from a13n_harness.environment.retention import (
+    BoundOutputCursor,
+    BoundOutputReference,
+    EnvironmentOutputPolicy,
+    EnvironmentOutputReadResult,
 )
 
 if TYPE_CHECKING:

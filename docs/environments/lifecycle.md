@@ -3,7 +3,7 @@ title: Lifecycle and state
 description: Manage targets separately from reusable connectors and independent executions.
 ---
 
-The Host manages a target and saves the result before its source returns a fixed-target connector to Harness. The independent `a13n-environment` package also works directly in ordinary applications.
+The Host manages a target and saves the result before its source returns a fixed-target connector to Harness. Harness supplies execution, while Service supplies management drivers.
 
 ## Three objects
 
@@ -24,8 +24,8 @@ In this fragment, the Host supplies state storage, concurrency control, and canc
 Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
 ```python
-from a13n_environment.docker.provider import DOCKER
-from a13n_environment.errors import observed_environment_state
+from a13n_service.providers.environments.docker.definition import DOCKER
+from a13n_service.providers.environment.errors import observed_environment_state
 
 recipe = {"image": "ghcr.io/converge-ai-labs/a13n-sandbox:dev"}
 state = await state_store.load(environment_key)
@@ -40,7 +40,10 @@ async with await DOCKER.open_provider(configuration=account_configuration) as pr
         await state_store.publish(environment_key, observed)
         raise
     await state_store.publish(environment_key, state)
-    connector = provider.execution_connector(recipe, environment_id="env-workspace", state=state)
+    connector = DOCKER.execution.execution_connector(
+        DOCKER.execution_environment(recipe), configuration=account_configuration,
+        environment_id="env-workspace", state=state
+    )
 
 result = await executable.run("Continue the task", environment=PreparedSource(connector))
 ```
@@ -69,18 +72,18 @@ Clear state only after confirmed destruction. Unknown outcomes retain the known 
 
 ## Management and execution methods
 
-| Method                                                                      | Effect                                                                    |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `definition.open_provider(...)`                                             | Acquire account management clients without selecting or changing a target |
-| `provider.create(recipe, ..., operation_id=...)`                            | Explicitly create or reconcile a managed target                           |
-| `provider.start(recipe, ..., state=..., operation_id=...)`                  | Explicitly start an existing target; never recreate a lost target         |
-| `provider.inspect(recipe, ..., state=...)`                                  | Read-only `running`, `stopped`, or `absent` status plus reference         |
-| `provider.stop(...)` / `destroy(...)`                                       | Explicit lifecycle mutation when supported                                |
-| `provider.keepalive(...)`                                                   | Explicit renewal scheduled by the Host                                    |
-| `definition.execution_connector(...)` / `provider.execution_connector(...)` | Pure construction of fixed-target connection inputs                       |
-| `connector.open()`                                                          | Open a new ready execution                                                |
-| `execution.check_ready(families)`                                           | Read-only check of the current execution without target recovery          |
-| `execution.close()`                                                         | Idempotent cleanup of this execution's resources                          |
+| Method                                                     | Effect                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `definition.open_provider(...)`                            | Acquire account management clients without selecting or changing a target |
+| `provider.create(recipe, ..., operation_id=...)`           | Explicitly create or reconcile a managed target                           |
+| `provider.start(recipe, ..., state=..., operation_id=...)` | Explicitly start an existing target; never recreate a lost target         |
+| `provider.inspect(recipe, ..., state=...)`                 | Read-only `running`, `stopped`, or `absent` status plus reference         |
+| `provider.stop(...)` / `destroy(...)`                      | Explicit lifecycle mutation when supported                                |
+| `provider.keepalive(...)`                                  | Explicit renewal scheduled by the Host                                    |
+| `definition.execution.execution_connector(...)`            | Pure construction of fixed-target connection inputs                       |
+| `connector.open()`                                         | Open a new ready execution                                                |
+| `execution.check_ready(families)`                          | Read-only check of the current execution without target recovery          |
+| `execution.close()`                                        | Idempotent cleanup of this execution's resources                          |
 
 Closing a management client leaves its previously generated connectors usable. The Host closes borrowed runtimes; account configuration may accompany a borrowed runtime, but credentials may not. Local Envd requires a Host runtime. HTTP and WebSocket Envd expose connection only, with no target management.
 

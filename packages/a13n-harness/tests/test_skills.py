@@ -8,11 +8,6 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
-from a13n_environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_environment.direct_local.files import LocalFileOperator
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -46,6 +41,11 @@ from a13n_harness.environment.advanced import (
     EnvironmentRuntime,
     create_environment_runtime,
 )
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision

@@ -5,17 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from a13n_environment.definition import EnvironmentProviderDefinition
-from a13n_environment.models import EnvironmentState
-from a13n_environment.remote_envd.configuration import (
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
     RemoteEnvdEnvironmentConfiguration,
     WebSocketEnvdConnectionConfiguration,
 )
-from a13n_environment.remote_envd.connections import WebSocketEnvdConnections
-from a13n_environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
-from a13n_environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response

@@ -18,9 +18,9 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_environment.builtins import select_builtin_environment_providers
-from a13n_environment.commands import ArgvCommand, CommandRequest
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 
 
 async def main() -> None:

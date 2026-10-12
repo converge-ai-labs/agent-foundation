@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
-from a13n_environment import EnvironmentProviderDefinition
-from a13n_environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.capabilities import DocumentsCapability, ToolReviewConfig, WebCapability
 from a13n_harness.capabilities.codeact import CodeActCapability, CodeActConfig
 from a13n_harness.capabilities.context import (
@@ -44,6 +42,8 @@ from a13n_harness.plugin_factories import (
     discover_harness_plugin_factory_references,
 )
 from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.plugins import load_provider_plugins
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator

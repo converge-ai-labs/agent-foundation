@@ -3,7 +3,7 @@ title: 环境
 description: 通过 Host 提供的来源，在首次使用时准备环境。
 ---
 
-独立的 `a13n-environment` 库负责单环境管理和执行。Host 提供 `EnvironmentSource`，通过 `ensure_ready()` 完成管理并返回固定目标的 `EnvironmentConnector`。Harness 负责 Run 内的挂载、权限、路由和执行清理。
+Harness 负责环境执行与共享类型，Service 负责目标管理。Host 提供 `EnvironmentSource`，通过 `ensure_ready()` 完成管理并返回固定目标的 `EnvironmentConnector`。Harness 负责 Run 内的挂载、权限、路由和执行清理。
 
 ## 不使用环境
 
@@ -17,12 +17,12 @@ result = await executable.run("Answer without using a workspace")
 
 ```python
 from pathlib import Path
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 from dataclasses import dataclass
 
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
 
 
 @dataclass(frozen=True)

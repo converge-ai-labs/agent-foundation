@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from a13n_environment.remote_envd.pairing import (
+from a13n_harness.providers.environment.remote_envd.pairing import (
     MAX_PENDING_PAIRINGS,
     PairingApproved,
     PairingChallenge,

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from a13n_environment.errors import EnvironmentProviderError
+from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_service.runs.environments.adapters import execution_connector
 
 from .environments_support import EXTERNAL_TOKEN as TOKEN

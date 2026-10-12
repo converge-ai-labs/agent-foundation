@@ -7,28 +7,30 @@ from typing import Literal
 from uuid import uuid4
 
 import httpx2
-from a13n_environment.credential_policy import CredentialMode, CredentialPolicy
-from a13n_environment.definition import EnvironmentProviderDefinition
-from a13n_environment.errors import (
-    EnvironmentManagementError,
+from a13n_harness.environment.errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderOutcomeCertainty,
     provider_error,
 )
-from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
-from a13n_environment.management import EnvironmentProvider, EnvironmentProviderConfiguration, EnvironmentStatus
-from a13n_environment.models import (
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
     EnvironmentState,
 )
-from a13n_environment.operations import EnvironmentOperations
+from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_service.distribution import OSS
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import transaction
+from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.errors import EnvironmentManagementError
+from a13n_service.providers.environment.management import EnvironmentProvider, EnvironmentStatus
 from a13n_service.providers.registry import Registry
 from a13n_service.runs.environments import external
 from a13n_service.runs.environments.adapters import Target
@@ -145,11 +147,6 @@ class FakeProvider(EnvironmentProvider[FakeRecipe]):
         BACKEND.expiries[environment_id] = deadline
         return deadline
 
-    def execution_connector(
-        self, environment: object, *, environment_id: str, state: EnvironmentState | None
-    ) -> EnvironmentConnector:
-        return FakeConnector(environment_id, state)
-
     async def close(self) -> None:
         pass
 
@@ -228,16 +225,18 @@ def _connector(*, environment_id: str, state: EnvironmentState | None, **_: obje
     return FakeConnector(environment_id, state)
 
 
-FAKE = EnvironmentProviderDefinition(
+_FAKE_EXECUTION = EnvironmentProviderDefinition(
     type="fake",
     display_name="Fake",
     configuration_model=EnvironmentProviderConfiguration,
     environment_model=FakeRecipe,
-    provider_factory=_provider,
     connector_factory=_connector,
     describe_environment=lambda recipe: DESCRIPTOR,
-    supports_stop=True,
-    supports_destroy=True,
+)
+
+
+FAKE = management_definition(
+    _FAKE_EXECUTION, environment_model=FakeRecipe, provider_factory=_provider, supports_stop=True, supports_destroy=True
 )
 
 
@@ -252,8 +251,15 @@ EXPIRING = replace(
     type="expiring",
     display_name="Expiring",
     requires_keepalive=True,
+    execution=replace(
+        FAKE.execution,
+        type="expiring",
+        display_name="Expiring",
+        credential_model=FakeCredential,
+        authentication=Authentication(mode=CredentialMode.optional),
+    ),
     credential_model=FakeCredential,
-    credential_policy=CredentialPolicy(mode=CredentialMode.optional),
+    authentication=Authentication(mode=CredentialMode.optional),
 )
 
 

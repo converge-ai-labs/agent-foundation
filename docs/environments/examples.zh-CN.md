@@ -4,7 +4,7 @@ sidebarTitle: 内置示例
 description: 直接使用 Direct Local、Local Envd、Docker 和远程 Envd provider 的可运行示例。
 ---
 
-可运行的 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) 项目直接使用 `a13n-environment`，不依赖 Harness 或模型凭据。云端后端见[云端 Provider](providers.md#cloud-providers)。
+可运行的 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) 项目直接使用 `a13n-harness`，无需 Agent 或模型凭据。云端后端见[云端 Provider](providers.md#cloud-providers)。
 
 ## 安装
 
@@ -13,7 +13,7 @@ cd examples/environment-provider
 uv sync --locked
 ```
 
-外部应用可以安装已发布的 `a13n-environment` 包。
+外部应用可以安装已发布的 `a13n-harness` 包。
 
 ## Direct Local
 

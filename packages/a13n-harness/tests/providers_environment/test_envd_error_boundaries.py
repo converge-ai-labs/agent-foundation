@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 from a13n_envd_client import EIPSessionStateError
-from a13n_environment.errors import EnvironmentProviderError
-from a13n_environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
-from a13n_environment.local_envd.provider import LocalEnvdExecution
-from a13n_environment.local_envd.runtime import (
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.local_envd.provider import LocalEnvdExecution
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_environment.models import EnvironmentError, EnvironmentState
-from a13n_environment.remote_envd import environment as remote_module
-from a13n_environment.remote_envd.environment import RemoteEnvdExecution
+from a13n_harness.providers.environment.remote_envd import environment as remote_module
+from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
 
 from ..environment_helpers import Source
 
@@ -176,8 +176,11 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
         finally:
             closed.append(True)
 
-    from a13n_environment.remote_envd.configuration import HttpEnvdConnectionConfiguration, HttpEnvdCredential
-    from a13n_environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+    from a13n_harness.providers.environment.remote_envd.configuration import (
+        HttpEnvdConnectionConfiguration,
+        HttpEnvdCredential,
+    )
+    from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
 
     class Runtime(HttpEnvdProviderRuntime):
         def open_session(self, **kwargs):

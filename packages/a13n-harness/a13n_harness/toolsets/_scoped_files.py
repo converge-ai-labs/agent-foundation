@@ -7,12 +7,11 @@ from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
-from a13n_environment.files import FileCopyResult, FileMutationResult, FileOperator
-from a13n_environment.models import EnvironmentError
-
 from a13n_harness.context import AgentContext
 from a13n_harness.environment._resources import selection_resource
-from a13n_harness.environment.models import EnvironmentPath
+from a13n_harness.environment.files import FileCopyResult, FileMutationResult, FileOperator
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider, FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator
 from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver

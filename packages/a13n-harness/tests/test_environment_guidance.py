@@ -6,19 +6,19 @@ import json
 from pathlib import Path
 
 import pytest
-from a13n_environment.computer import ComputerPoint
-from a13n_environment.models import (
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.content import request_input_content
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration, EnvironmentMount
+from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
+from a13n_harness.environment.computer import ComputerPoint
+from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
     FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentError,
     EnvironmentPermissionSet,
 )
-from a13n_environment.operations import EnvironmentOperations
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
-from a13n_harness.content import request_input_content
-from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration, EnvironmentMount
-from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
+from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.model_context import ModelContextProjectionRequest, ModelContextRequestKind, user_prompt_content
 from a13n_harness.toolsets.computer import ComputerToolset
 from pydantic_ai.capabilities import Capability

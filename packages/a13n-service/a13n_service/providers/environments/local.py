@@ -5,20 +5,22 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from a13n_environment import EnvironmentConnector, EnvironmentProvider, EnvironmentStatus
-from a13n_environment.definition import EnvironmentProviderDefinition
-from a13n_environment.direct_local.configuration import (
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.errors import EnvironmentProviderErrorCategory, provider_error
-from a13n_environment.management import EnvironmentProviderConfiguration
-from a13n_environment.models import EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from anyio import to_thread
 from pydantic import BaseModel
 
 from a13n_service.infra.ids import OBJECT_ID_PATTERN
+from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.management import EnvironmentProvider, EnvironmentStatus
 
 LOCAL_TYPE = "local"
 _ENVIRONMENT_ID = re.compile(OBJECT_ID_PATTERN)
@@ -88,13 +90,6 @@ class LocalProvider(EnvironmentProvider[DirectLocalEnvironmentConfiguration]):
     ) -> datetime | None:
         raise provider_error(LOCAL_TYPE, "provider_unsupported", EnvironmentProviderErrorCategory.UNSUPPORTED)
 
-    def execution_connector(
-        self, environment: object, *, environment_id: str, state: EnvironmentState | None
-    ) -> EnvironmentConnector:
-        return DIRECT_LOCAL.execution_connector(
-            _recipe(environment, environment_id, state), environment_id=environment_id
-        )
-
     async def close(self) -> None:
         pass
 
@@ -121,17 +116,22 @@ def _connector(
     state: EnvironmentState | None,
     runtime: object | None,
 ) -> EnvironmentConnector:
-    return LocalProvider().execution_connector(environment, environment_id=environment_id, state=state)
+    return DIRECT_LOCAL.execution_connector(_recipe(environment, environment_id, state), environment_id=environment_id)
 
 
-LOCAL = EnvironmentProviderDefinition(
+_EXECUTION = EnvironmentProviderDefinition(
     type=LOCAL_TYPE,
     display_name="Local directory (development only)",
     configuration_model=EnvironmentProviderConfiguration,
     environment_model=DirectLocalEnvironmentConfiguration,
-    provider_factory=_provider,
     connector_factory=_connector,
     describe_environment=DIRECT_LOCAL.describe_environment,
+)
+
+LOCAL = management_definition(
+    _EXECUTION,
+    environment_model=DirectLocalEnvironmentConfiguration,
+    provider_factory=_provider,
     supports_stop=True,
     supports_destroy=True,
 )

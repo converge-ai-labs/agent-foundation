@@ -11,10 +11,10 @@ The examples track `main`. Use Python 3.13 and the repository lockfile:
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
 cd agent-foundation
-uv sync --locked --package a13n-environment
+uv sync --locked --package a13n-harness
 ```
 
-`a13n-environment` is an independent package with no Harness dependency. Its `docker`, `e2b`, and `modal` extras provide the optional vendor SDKs.
+Environment execution is part of `a13n-harness`; no Agent or model is required. Its `docker`, `e2b`, and `modal` extras provide the optional vendor SDKs.
 
 ## Run a complete file example
 
@@ -25,7 +25,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 
 async def main() -> None:

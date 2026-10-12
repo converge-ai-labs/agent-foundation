@@ -4,11 +4,11 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
-from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.environment import EnvironmentError, EnvironmentReadinessRequirement
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 from .environment_helpers import Source
 

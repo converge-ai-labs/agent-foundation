@@ -3,7 +3,7 @@ title: Environments
 description: Supply Host-owned sources that prepare Environments on first use.
 ---
 
-The independent `a13n-environment` library owns single-environment management and execution. The Host supplies an `EnvironmentSource`: its `ensure_ready()` completes management and returns a fixed-target `EnvironmentConnector`. Harness owns Run-local mounts, permissions, routing, and execution cleanup.
+Harness owns Environment execution and shared types; Service owns target management. The Host supplies an `EnvironmentSource`: its `ensure_ready()` completes management and returns a fixed-target `EnvironmentConnector`. Harness owns Run-local mounts, permissions, routing, and execution cleanup.
 
 ## Start without an Environment
 
@@ -17,12 +17,12 @@ Environment input is optional. A Run without mounts receives an empty facade and
 
 ```python
 from pathlib import Path
-from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 from dataclasses import dataclass
 
-from a13n_environment.execution import EnvironmentConnector
-from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
 
 
 @dataclass(frozen=True)

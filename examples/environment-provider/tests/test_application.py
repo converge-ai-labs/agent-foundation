@@ -65,8 +65,9 @@ def test_docker_partial_creation_is_cleaned_up(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from a13n_environment.errors import EnvironmentManagementError, EnvironmentProviderErrorCategory, provider_error
-    from a13n_environment.models import EnvironmentState
+    from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
+    from a13n_harness.environment.models import EnvironmentState
+    from a13n_service.providers.environment.errors import EnvironmentManagementError
 
     state = EnvironmentState(provider_key="docker", state_version="1", state={"container_id": "allocated"})
     failure = provider_error("docker", "provider_unknown_outcome", EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME)
