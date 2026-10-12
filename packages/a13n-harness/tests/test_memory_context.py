@@ -182,7 +182,10 @@ async def test_nothing_is_added_while_a_memory_is_unchanged() -> None:
 
     assert _blocks(model.calls[0]) == []
     assert payloads == [
-        {"type": "memory_context", "memories": [{"memory": "user", "context": "unchanged", "bytes": 0}]}
+        {
+            "type": "memory_context",
+            "memories": [{"memory": "user", "context": "unchanged", "bytes": 0, "cursor": "1", "files": []}],
+        }
     ]
 
 
@@ -469,7 +472,9 @@ async def test_small_budgets_deliver_one_cleanup_hint_and_advance_without_interr
     assert payloads == [
         {
             "type": "memory_context",
-            "memories": [{"memory": mount.name, "context": "omitted", "bytes": 0} for mount in mounts],
+            "memories": [
+                {"memory": mount.name, "context": "omitted", "bytes": 0, "cursor": "2", "files": []} for mount in mounts
+            ],
             "fallback_bytes": fallback_bytes,
         }
     ]
@@ -791,7 +796,7 @@ async def test_an_unavailable_memory_is_skipped_and_keeps_its_cursor() -> None:
             "type": "memory_context",
             "memories": [
                 {"memory": "team", "context": "unavailable"},
-                {"memory": "user", "context": "full", "bytes": len(block.encode())},
+                {"memory": "user", "context": "full", "bytes": len(block.encode()), "cursor": "1", "files": []},
             ],
         }
     ]
@@ -834,3 +839,28 @@ def test_instructions_list_each_memory_with_its_guide() -> None:
 def test_invalid_mounts_are_rejected(build: Callable[[], object], error: type[Exception]) -> None:
     with pytest.raises(error):
         build()
+
+
+async def test_source_evidence_reports_only_delivered_file_prefixes() -> None:
+    import hashlib
+
+    store = FakeFileStore({"rules.md": "Rules " * 1000, "index-only.md": "not loaded"})
+    model = _Model()
+    executable = _build(
+        model,
+        FileMemoryCapability(
+            [FileMount("team", store, "read", always_load=("rules.md",))],
+            limits=FileMemoryLimits(always_load_bytes=512),
+        ),
+    )
+    [event] = await _events(executable, "hi")
+    [block] = _blocks(model.calls[0])
+    [loaded] = _parse(block)[1]["files"]
+    [source] = event["memories"][0]["files"]
+    assert source == {
+        "path": "rules.md",
+        "sha256": hashlib.sha256(loaded["content"].encode()).hexdigest(),
+        "bytes": len(loaded["content"].encode()),
+        "truncated": True,
+    }
+    assert "content" not in source

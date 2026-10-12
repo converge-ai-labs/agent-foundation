@@ -1,9 +1,11 @@
 """Service-owned immutable display pages and mutable checkpoint tail."""
 
-from collections.abc import Collection
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import Any
 
+from a13n_harness import HarnessEvent, HarnessExtensionEvent, HarnessStreamEvent
 from a13n_stream_protocol.display import (
     FRAGMENTS,
     MAX_FIELD_CHARS,
@@ -87,7 +89,16 @@ def _size(item: Item) -> int:
 class DisplayFold(SemanticDisplayFold):
     """Add Service page selection and retirement to the shared semantic fold."""
 
-    def __init__(self, run_id: str, tail: Tail, *, attempt: int, page_items: int, page_bytes: int):
+    def __init__(
+        self,
+        run_id: str,
+        tail: Tail,
+        *,
+        attempt: int,
+        page_items: int,
+        page_bytes: int,
+        memory_ids: Mapping[str, str] | None = None,
+    ):
         super().__init__(
             run_id,
             tail.items,
@@ -96,10 +107,37 @@ class DisplayFold(SemanticDisplayFold):
             continuation=tail.continuation if tail.position.attempt == attempt else None,
             retain_content=True,
         )
+        self.memory_ids = memory_ids or {}
+        # Parser identities reset on takeover; memory delivery evidence belongs to the same Service Run.
+        if tail.continuation is not None and tail.continuation.run_id == run_id:
+            self.memory_sources = tail.continuation.memory_sources.copy()
         self.first = tail.first
         self.page_items, self.page_bytes = page_items, page_bytes
         self.paged: set[str] = set()
         self.sizes: dict[str, int] = {}
+
+    def events(self, source: HarnessStreamEvent[Any]) -> list[dict[str, Any]]:
+        if isinstance(source, HarnessEvent) and isinstance(source.event, HarnessExtensionEvent):
+            event = source.event
+            if (
+                event.kind == "context"
+                and isinstance(event.payload, dict)
+                and event.payload.get("type") in {"memory_recall", "memory_context"}
+                and source.run_id == (self.observer.run_id or source.run_id)
+            ):
+                memories = event.payload.get("memories")
+                if isinstance(memories, list):
+                    payload = {
+                        **event.payload,
+                        "memories": [
+                            {**memory, "memory_id": self.memory_ids.get(str(memory.get("memory")))}
+                            if isinstance(memory, dict)
+                            else memory
+                            for memory in memories
+                        ],
+                    }
+                    source = replace(source, event=event.model_copy(update={"payload": payload}))
+        return super().events(source)
 
     def interrupt(self, open_calls: Collection[str] = ()) -> None:
         """Host terminal/retry policy, separate from pure checkpoint capture."""

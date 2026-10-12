@@ -338,7 +338,12 @@ class _Attempt:
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
-            lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
+            lease.run_id,
+            plan.tail,
+            attempt=lease.number,
+            page_items=worker.page_items,
+            page_bytes=worker.page_bytes,
+            memory_ids={memory.mount.name: memory.mount.memory_id for memory in plan.host.memories},
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))

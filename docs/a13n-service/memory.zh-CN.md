@@ -165,3 +165,13 @@ Worker 可能在写入记忆后、记录运行进度前停止。恢复后的尝�
 每个修订版本记录修改者：始终记录 `principal_id`（agent 的修改记录运行的主体），agent 工具调用还记录 `run_id` 和 `tool_call_id`。每次修改都改变文件 ETag，因此基于旧读取结果的编辑返回 `412 precondition_failed`。
 
 单文件最多 `memory.max_file_bytes`（默认 64 KiB）。每个文件保留最近 `memory.revisions_per_file` 次修改（默认 10）；一份记忆的内容和历史合计不得超过 `memory.max_total_bytes`（默认 32 MiB）：优先清理最旧历史，只有内容本身超限才拒绝修改，返回 `409 conflict`，原因为 `memory_full`。全部 `memory.*` 设置请参阅[设置参考](configuration-reference.md#memory)。
+
+## 查看回复加载的记忆
+
+助手回复可以包含 `memory_sources`。线程 SSE 流在 `TEXT_MESSAGE_END` 对应的 `delta.item.memory_sources` 中发送此数组；运行条目 API 在该回复的 `content.memory_sources` 中返回相同数据。应用可以将它与回复一起保存或展示。检查点的持久化由流中的 boundary 确认，仅收到消息结束事件不代表已经保存。
+
+每个来源包含挂载名 `memory` 和 Service 资源 ID `memory_id`。记录来源包含实际进入召回预算的记录 ID 与文本 SHA-256 摘要值。文件来源区分上下文状态和真正加载的文件：`files` 列出路径、摘要值、字节数，以及加载的前缀是否被截断。出现在文件索引中不等于已读取文件内容。`sources_truncated` 表示来源引用列表不完整。
+
+此信息描述本次运行自动加载的记忆，不证明模型实际引用了哪条记忆，也不列举继承的历史上下文或显式记忆工具读取。字段缺失表示未捕获来源信息；空的 `records` 或 `files` 列表需结合来源的 `status` 理解。旧回复不会回填来源。
+
+历史查询读取已保存的信息，不会重新检索记忆供应商。修改或删除记忆不会改写之前的来源记录。摘要值无法还原原文；读取当前记忆内容仍需通过记忆 API 的授权检查，且依赖资源仍然可用。来源如何展示、是否提供编辑入口，由应用决定。

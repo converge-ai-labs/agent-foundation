@@ -123,6 +123,14 @@ Raw AG-UI events remain the live wire representation. A Host may attach stream p
 
 A compact baseline and its parser continuation plus an intact raw-event suffix reconstruct the same items as the fold. It is not execution history, a terminal authority, or a promise that uncommitted output survives transport loss. The memory target is retained display content plus active conversion state and bounded delivery buffers, not constant total conversation memory.
 
+### Reply memory sources
+
+At `TEXT_MESSAGE_END`, assistant text items receive `content.memory_sources` from automatic memory delivery observations seen in their own inline scope during this Run. The corresponding live item reference carries the same `memory_sources` array once, rather than repeating it on each text delta. Sources are historical delivery evidence, not model citations, a promise that all supplied content remains in the current model context, or an inventory of inherited history and explicit memory tool reads.
+
+Each source contains `kind` (`file` or `record`), mount name `memory`, nullable Host-enriched `memory_id`, delivery `status`, `records: [{id, sha256}]`, `files: [{path, sha256, bytes, truncated}]`, nullable change-feed `cursor`, and `sources_truncated`. Record status is `recalled`, `failed` or `timeout`; file status is `full`, `changes`, `unchanged`, `omitted` or `unavailable`. Empty arrays do not turn unavailable or omitted delivery into successful loading. Digests identify the delivered text or file prefix; they are neither retrievable content nor proof of model use. The Harness memory contracts own delivery selection and source bounds.
+
+The fold retains current delivery evidence per inline scope in continuation, replacing observations of the same memory kind without rewriting completed messages. A Host may carry this evidence across replacement attempts of the same Run while resetting parser identities. Old observations without record/file references do not fabricate empty evidence; old snapshots remain readable, and an absent reply field means source evidence was not captured. Consumers merge live item metadata into message content and retrieve committed items after a delivery gap; they do not reconstruct historical sources by searching current memory.
+
 ## Standard Event Conversion
 
 The observer uses standard AG-UI events for direct semantic matches:
@@ -225,7 +233,7 @@ A Host derives a compact display with one stream observer per independently exec
 
 A normalized snapshot contains completed blocks, active blocks with accumulated text or arguments, and the continuation required to interpret the next event. Stable block IDs, ordinals, source positions, timestamps and lifecycle state survive export and restore. Completed blocks replace their accumulated fragments; token boundaries are not retained. Export is detached and pure: it does not synthesize END, interrupt a block, finish a tool, or imply execution completion.
 
-Continuation includes the next ordinal and semantic position, response grouping, unfinished argument observations, incomplete custom assemblies and, for producer conversion, native observer cursors. An AG-UI consumer needs the normalization continuation but does not execute the native converter. Incomplete JSON or custom fragments are not valid completed domain content.
+Continuation includes the next ordinal and semantic position, response grouping, per-scope memory delivery evidence, unfinished argument observations, incomplete custom assemblies and, for producer conversion, native observer cursors. An AG-UI consumer needs the normalization continuation but does not execute the native converter. Incomplete JSON or custom fragments are not valid completed domain content.
 
 For every supported ordered event cut, normalizing the full stream equals restoring the exported prefix and normalizing the intact suffix. Equality covers content, identities, ordering and lifecycle, not original token boundaries. Interleaved inline scopes and fragmented custom events obey the same invariant. Host page retirement must preserve the next ordinal and may retire only immutable blocks; a historical window alone is not a resumable baseline.
 

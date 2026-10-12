@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import AsyncIterator, Callable
 from copy import deepcopy
@@ -175,7 +176,13 @@ async def test_a_failed_or_slow_recall_is_skipped_and_observed() -> None:
             "memories": [
                 {"memory": "failing", "recall": "failed"},
                 {"memory": "slow", "recall": "timeout"},
-                {"memory": "fine", "recall": "recalled", "count": 1, "bytes": len(block.encode())},
+                {
+                    "memory": "fine",
+                    "recall": "recalled",
+                    "count": 1,
+                    "bytes": len(block.encode()),
+                    "records": [{"id": "r1", "sha256": hashlib.sha256(b"c").hexdigest()}],
+                },
             ],
         }
     ]
@@ -223,7 +230,16 @@ async def test_recall_keeps_the_leading_records_that_fit_its_bytes() -> None:
     assert [record["id"] for record in _records(block)] == ["r1", "r2"]
     assert len(block.encode()) <= 520
     assert payloads[0]["memories"] == [
-        {"memory": "facts", "recall": "recalled", "count": 2, "bytes": len(block.encode())}
+        {
+            "memory": "facts",
+            "recall": "recalled",
+            "count": 2,
+            "bytes": len(block.encode()),
+            "records": [
+                {"id": f"r{i}", "sha256": hashlib.sha256((letter * 100).encode()).hexdigest()}
+                for i, letter in enumerate("ab", 1)
+            ],
+        }
     ]
 
 
@@ -237,7 +253,7 @@ async def test_nothing_is_recalled_without_records_that_fit_or_input_text() -> N
 
     payloads = await _observed(executable, "hi")
     assert _recalls(model.calls[0]) == []
-    assert payloads[0]["memories"] == [{"memory": "facts", "recall": "recalled", "count": 0, "bytes": 0}]
+    assert payloads[0]["memories"] == [{"memory": "facts", "recall": "recalled", "count": 0, "bytes": 0, "records": []}]
 
     await executable.run([ImageUrl("https://example.com/cat.png"), "  "], bindings=RunBindings.embedded())
     assert store.searches == [("hi", 5)]
@@ -318,3 +334,22 @@ def test_instructions_list_each_record_memory_with_its_guide() -> None:
 def test_invalid_record_mounts_are_rejected(build: Callable[[], object], error: type[Exception]) -> None:
     with pytest.raises(error):
         build()
+
+
+async def test_large_source_lists_are_explicitly_partial_without_failing_recall() -> None:
+    store = FakeRecordStore(["a"] * 500)
+    model = _Model()
+    [event] = await _observed(
+        _build(
+            model,
+            RecordMemoryCapability(
+                [RecordMount("facts", store, "read")],
+                limits=RecordMemoryLimits(recall_limit=500, recall_bytes=65536),
+            ),
+        ),
+        "hi",
+    )
+    [source] = event["memories"]
+    assert source["sources_truncated"] is True
+    assert 0 < len(source["records"]) < source["count"] == 500
+    assert len(_records(_recalls(model.calls[0])[0])) == 500

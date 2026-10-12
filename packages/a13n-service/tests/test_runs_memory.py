@@ -251,6 +251,14 @@ async def test_a_recovered_attempt_continues_from_the_committed_cursors(
     recovered = text(await scripted_model.request())
     # The recovered attempt continues the committed history: its context is not delivered again.
     assert recovered.count(BLOCK) == 1 and "notes/juice.md" not in recovered
+    replies = [
+        item
+        for item in (await runs_kit.items(service, run_id))["items"]
+        if item["kind"] == "text_message" and item["content"].get("role") == "assistant"
+    ]
+    [source] = replies[-1]["content"]["memory_sources"]
+    assert source["memory_id"] == memory["id"] and source["cursor"] == "2"
+    assert [file["path"] for file in source["files"]] == ["README.md"]
     assert await cursors(service, run_id) == {memory["id"]: "2"}
 
 

@@ -3704,6 +3704,16 @@
             "title": "Full Content",
             "type": "boolean"
           },
+          "memory_sources": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/MemorySource"
+              },
+              "type": "array"
+            },
+            "title": "Memory Sources",
+            "type": "object"
+          },
           "next_ordinal": {
             "minimum": 1.0,
             "title": "Next Ordinal",
@@ -4511,6 +4521,36 @@
           "message"
         ],
         "title": "Failure",
+        "type": "object"
+      },
+      "FileSource": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "title": "FileSource",
         "type": "object"
       },
       "Finding": {
@@ -7306,6 +7346,88 @@
         "title": "MemoryRevisionPage",
         "type": "object"
       },
+      "MemorySource": {
+        "additionalProperties": false,
+        "description": "One automatic delivery in this Run; content remains in the memory or execution archive.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FileSource"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "record",
+              "file"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory": {
+            "title": "Memory",
+            "type": "string"
+          },
+          "memory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Id"
+          },
+          "records": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RecordSource"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "sources_truncated": {
+            "default": false,
+            "title": "Sources Truncated",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "recalled",
+              "failed",
+              "timeout",
+              "full",
+              "changes",
+              "unchanged",
+              "omitted",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "memory",
+          "status"
+        ],
+        "title": "MemorySource",
+        "type": "object"
+      },
       "MemoryUpdate": {
         "additionalProperties": false,
         "description": "Fields left out stay unchanged; `description: null` clears it and `guide: null` inherits the default.",
@@ -10078,6 +10200,25 @@
           }
         },
         "title": "ProviderUpdate",
+        "type": "object"
+      },
+      "RecordSource": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sha256"
+        ],
+        "title": "RecordSource",
         "type": "object"
       },
       "Resume": {

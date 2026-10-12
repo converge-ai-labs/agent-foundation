@@ -4334,6 +4334,10 @@ export interface components {
        * @default false
        */
       full_content?: boolean;
+      /** Memory Sources */
+      memory_sources?: {
+        [key: string]: components["schemas"]["MemorySource"][];
+      };
       /** Next Ordinal */
       next_ordinal: number;
       observer?: components["schemas"]["ObserverContinuation"];
@@ -4592,6 +4596,20 @@ export interface components {
       code: string;
       /** Message */
       message: string;
+    };
+    /** FileSource */
+    FileSource: {
+      /** Bytes */
+      bytes: number;
+      /** Path */
+      path: string;
+      /** Sha256 */
+      sha256: string;
+      /**
+       * Truncated
+       * @default false
+       */
+      truncated?: boolean;
     };
     /** Finding */
     Finding: {
@@ -5569,6 +5587,51 @@ export interface components {
       next_cursor: string | null;
     };
     /**
+     * MemorySource
+     * @description One automatic delivery in this Run; content remains in the memory or execution archive.
+     */
+    MemorySource: {
+      /** Cursor */
+      cursor?: string | null;
+      /**
+       * Files
+       * @default []
+       */
+      files?: components["schemas"]["FileSource"][];
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "record" | "file";
+      /** Memory */
+      memory: string;
+      /** Memory Id */
+      memory_id?: string | null;
+      /**
+       * Records
+       * @default []
+       */
+      records?: components["schemas"]["RecordSource"][];
+      /**
+       * Sources Truncated
+       * @default false
+       */
+      sources_truncated?: boolean;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "recalled"
+        | "failed"
+        | "timeout"
+        | "full"
+        | "changes"
+        | "unchanged"
+        | "omitted"
+        | "unavailable";
+    };
+    /**
      * MemoryUpdate
      * @description Fields left out stay unchanged; `description: null` clears it and `guide: null` inherits the default.
      */
@@ -6446,6 +6509,13 @@ export interface components {
       };
       /** Name */
       name?: string | null;
+    };
+    /** RecordSource */
+    RecordSource: {
+      /** Id */
+      id: string;
+      /** Sha256 */
+      sha256: string;
     };
     /**
      * Resume

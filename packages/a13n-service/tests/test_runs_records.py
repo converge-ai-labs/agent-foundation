@@ -226,3 +226,39 @@ async def test_record_memory_uses_the_accepted_run_configuration(service, script
     )
     await (await runs_kit.attempt(service))
     assert seen == [configuration]
+
+
+async def test_reply_sources_match_live_end_and_saved_history(service, scripted_model, runs_kit):
+    import hashlib
+    import json
+
+    from a13n_service.runs.stream import stream_key
+
+    memory = await facts(service, "likes green tea", "lives in Lisbon")
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.say("Have some tea")
+    started = await runs_kit.start_thread(service, agent, "tea", memories=[mount(memory)])
+    await (await runs_kit.attempt(service))
+    run_id = started["run"]["id"]
+    result = await runs_kit.get_run(service, run_id)
+    assert result["status"] == "completed", result
+    items = (await runs_kit.items(service, run_id))["items"]
+    [reply] = [item for item in items if item["kind"] == "text_message" and item["content"].get("role") == "assistant"]
+    [source] = reply["content"]["memory_sources"]
+    assert source["memory_id"] == memory["id"] and source["memory"] == "facts"
+    [record] = source["records"]
+    assert BACKEND.records[record["id"]] == (memory["namespace"], "likes green tea")
+    assert record["sha256"] == hashlib.sha256(b"likes green tea").hexdigest()
+    entries = await service.runtime.redis.xrange(stream_key(result["thread_id"]))
+    ends = [
+        json.loads(fields["item"])
+        for _, fields in entries
+        if "event" in fields and json.loads(fields["event"])["type"] == "TEXT_MESSAGE_END"
+    ]
+    [live] = [item for item in ends if item["id"] == reply["id"]]
+    assert live["memory_sources"] == reply["content"]["memory_sources"]
+    calls = list(BACKEND.calls)
+    BACKEND.records[record["id"]] = (memory["namespace"], "now prefers coffee")
+    again = (await runs_kit.items(service, run_id))["items"]
+    assert next(item for item in again if item["id"] == reply["id"]) == reply
+    assert BACKEND.calls == calls  # No search or provider read while loading history.
