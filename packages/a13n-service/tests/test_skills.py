@@ -657,7 +657,7 @@ async def _skilled_run(service, runs_kit, scripted_model, tmp_path) -> tuple[dic
     )
     run = (await runs_kit.start_thread(service, agent, "review it"))["run"]
     [mount] = run["environment_mounts"]
-    return run, tmp_path / mount["environment_id"] / ".a13n" / "skills"
+    return run, tmp_path / mount["environment_id"] / ".agents" / "skills"
 
 
 def _with_local_environments(settings: Settings) -> Settings:
@@ -687,15 +687,17 @@ async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_
         assert released["status"] == "accepted", released
         attempts = (await service.client.get(f"{service.api}/runs/{run['id']}/attempts")).json()["items"]
         assert [(item["status"], item["failure"]["code"]) for item in attempts] == [("failed", "attempt_failed")]
-        assert not list(skills_root.glob("*.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob("*/.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob(".cache/pins/*/*"))
 
         monkeypatch.undo()
         scripted_model.say("Reviewed")
         await (await runs_kit.attempt(service))
         completed = await runs_kit.get_run(service, run["id"])
         assert (completed["status"], completed["attempts"]) == ("completed", 2), completed
-        [document] = skills_root.glob("*/SKILL.md")
-        assert document.read_bytes() == DOCUMENT and (skills_root / f"{document.parent.name}.complete").exists()
+        [document] = skills_root.glob("*/*/SKILL.md")
+        assert document.read_bytes() == DOCUMENT and (document.parent.parent / ".complete").exists()
+        assert not list(skills_root.glob(".cache/pins/*/*"))
 
 
 async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
@@ -713,4 +715,32 @@ async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
             await (await runs_kit.attempt(service))
         running = await runs_kit.get_run(service, run["id"])
         assert running["status"] == "running", running
-        assert not list(skills_root.glob("*.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob("*/.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob(".cache/pins/*/*"))
+
+
+async def test_worker_reclaims_idle_cache_and_releases_its_reader_pin(
+    serve, settings: Settings, scripted_model, runs_kit, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    configured = _with_local_environments(settings)
+    configured = configured.model_copy(
+        update={"environments": configured.environments.model_copy(update={"skill_cache_bytes": 1})}
+    )
+    async with serve(settings=configured) as service:
+        run, root = await _skilled_run(service, runs_kit, scripted_model, tmp_path)
+        old = "a" * 64
+        (root / old / "old").mkdir(parents=True)
+        (root / old / "old" / "SKILL.md").write_bytes(b"old package")
+        (root / old / ".complete").write_text(old)
+        (root / ".cache" / "pins" / old).mkdir(parents=True)
+        (root / ".cache" / "entries").mkdir(parents=True)
+        (root / ".cache" / "entries" / old).write_text('{"size":11,"acquired":1}')
+        scripted_model.say("Reviewed")
+        await (await runs_kit.attempt(service))
+        completed = await runs_kit.get_run(service, run["id"])
+        assert completed["status"] == "completed", completed
+        assert not (root / old).exists()
+        [document] = root.glob("*/*/SKILL.md")
+        assert document.read_bytes() == DOCUMENT
+        assert not list(root.glob(".cache/pins/*/*"))
+        assert not list(root.glob(".cache/evict/*"))

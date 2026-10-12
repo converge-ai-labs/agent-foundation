@@ -156,6 +156,20 @@ The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; 
 - `PATCH` changes `name`, `description` and `labels`.
 - Revisions: `POST` with a source and `If-Match`, list, get, `set-default`, `GET …/revisions/{rev}/content` (the zip) and `GET …/revisions/{rev}/files/{path}` (one file of the package). Both reads serve the bytes as an attachment ([10](10-api.md#representations)).
 
+### Runtime package cache
+
+The primary Environment exposes each pinned package at `/workspace/.agents/skills/<package-digest>/<name>/SKILL.md`, subject to the primary mount's provider-root mapping. The digest is the archive SHA-256 in `SkillManifest.package_digest`, independently of the revision's configuration digest. Identical archives share a directory; different packages with the same skill name coexist. Each Agent, including an inline child, receives only its own pinned catalog. The shared directory is not an ambient discovery source.
+
+A skill name must be one portable filename component: no path separators, traversal components, Windows-reserved names or characters, trailing dot or space, or more than 255 UTF-8 bytes. Import and historical-manifest resolution apply the same rule. Safe existing names retain their spelling.
+
+The Service verifies package bytes and prepares a complete unique candidate before publishing it through atomic no-replace directory movement. A concurrent publisher reuses the completed winner. Published files are immutable dependencies by contract; outputs and modifications belong elsewhere. An uncertain publication retains its candidate and reader protection because the provider may still finish the move. Existing incomplete destinations are refused, never overwritten or repaired under readers.
+
+`environments.skill_cache_bytes` sets a soft expanded-byte budget per physical cache root (default 256 MiB; zero disables eviction). Acquisition updates recency and initiates a bounded LRU-like pass when the recorded package bytes exceed the budget. It pages through the cache metadata and evicts at most 32 unused packages per pass. Active packages, oversized individual packages, concurrent admissions and deferred cleanup can exceed the budget; capacity is not an admission quota. A later acquisition rematerializes an evicted revision from its verified archive. Filesystem exhaustion remains an Environment error.
+
+Durable reader pins protect packages from before the first cache check until the primary execution closes, covering root and inline-child use. Independent Runs acquire independent pins. Per-package eviction gates coordinate collectors with readers in the same filesystem namespace. Only the collector that created a gate removes it, once, after destructive work has known completion. Pins and gates have no timed takeover: crashes can leave pins that defer reclamation, and uncertain deletion leaves a gate that makes acquisition of that digest unavailable after a bounded wait. Other digests remain usable. Recovery requires quiescing all readers and outstanding mutations before removing stale coordination state; a Run becoming terminal alone is insufficient evidence.
+
+Automatic reclamation requires coherent cross-client filesystem observations, atomic no-replace creation, single-dispatch mutation operations, and shared access to the coordination namespace. All Service workers sharing a root use this protocol. Operators disable eviction on every sharing worker for roots that do not meet those requirements or are read independently outside Service execution lifetimes. Background processes surviving execution close are outside reader-pin protection. The cache preserves older `.a13n/skills` directories; attachment and other placement paths remain under `.a13n`.
+
 ## Provider resources
 
 A provider resource is a tenant-configured backend account: a model provider, an environment provider, a connector provider, a web provider or a memory provider. [08](08-providers.md) owns the definitions its `type` selects.

@@ -56,3 +56,31 @@ curl -X POST "$A13N_URL/api/v1/skills" \
 - `POST …/archive` stops new agent revisions from pinning the skill and refuses changes; agents that already pin it keep working. `POST …/unarchive` reverses it.
 
 An agent revision selects skills in `skills` as `{"skill_id": "sk_…", "revision_id": ...}`; without `revision_id`, saving pins the skill's current default revision. `GET /api/v1/agents?skill_id=sk_…` lists the agents with a revision that pins the skill; `skill_revision_id` filters by one skill revision.
+
+## Runtime files and cache
+
+The primary environment makes each selected skill available at:
+
+```text
+/workspace/.agents/skills/<package-digest>/<name>/SKILL.md
+```
+
+The digest identifies the archive bytes. Identical packages reuse the same files across revisions and runs; different versions of the same name coexist. Each agent, including an inline child, sees only the versions it pins. The package is published as a complete directory, so concurrent runs do not observe a partially installed skill.
+
+The directory immediately containing `SKILL.md` matches its declared `name`. Other tools can read that explicit path during execution; automatic discovery and duplicate-name handling depend on the tool. Service does not install symlinks or select versions for other agent CLIs. Names must be portable filename components: no separators, traversal, Windows-reserved names or characters, trailing dot or space, or more than 255 UTF-8 bytes.
+
+Treat package files as immutable dependencies. Write generated files and local modifications outside the cache. This is a usage contract, not a filesystem permission boundary. Existing `.a13n/skills` directories are left in place, and attachments continue using `.a13n`.
+
+### Capacity and reclamation
+
+`environments.skill_cache_bytes` (environment override `A13N_ENVIRONMENTS__SKILL_CACHE_BYTES`) defaults to **268435456 bytes (256 MiB)** per physical cache root. It counts expanded package content. A skill acquisition updates recency and, above budget, runs a bounded LRU-like cleanup of unused packages. An evicted version is downloaded again when next needed.
+
+The budget is soft: active packages remain available, and a new skill can load even when no package can safely be reclaimed or the new package itself exceeds the budget. A later acquisition retries reclamation. Actual disk exhaustion can still fail a run. Set the budget to `0` on all workers sharing a root to disable automatic eviction.
+
+Reader protection lasts through the primary execution, including inline children. Use a coherently shared filesystem and the same access to its cache metadata on all workers. Disable eviction for other storage semantics or for independent consumers that need these paths after execution ends; surviving background processes are not protected.
+
+### Interrupted cleanup
+
+Hidden `.cache` metadata coordinates readers and collectors; `.staging` holds unpublished candidates. A crash can leave reader pins that keep a package from being reclaimed. An uncertain deletion keeps its package gate, so that digest can fail acquisition rather than risk being deleted after reuse; unrelated skills continue loading.
+
+Before clearing stale pins, gates, incomplete packages or staging directories, stop all users of the cache root and establish that outstanding filesystem operations have ended. Do not clear coordination files by age alone. Once the root is quiescent, removing its cache allows selected revisions to be restored on their next run.

@@ -40,6 +40,7 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.web import ResolvedWeb, open_web, resolve_web
@@ -104,6 +105,7 @@ class Host:
     authority: ExecutionAuthority
     plan: HostPlan
     models: Mapping[str, Model]
+    skill_cache: Cache
     tools: Mapping[str, tuple[AbstractCapability[AgentContext], ...]]
     webs: Mapping[str, WebBinding]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
@@ -116,6 +118,7 @@ class Host:
             features.append(
                 skills_capability(
                     skills,
+                    cache=self.skill_cache,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
                     prove_lease=partial(prove, self.runtime.storage, self.lease),
@@ -156,6 +159,7 @@ async def open_host(
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
     configuration: RunConfiguration,
+    skill_cache: Cache,
 ) -> AsyncIterator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
@@ -201,4 +205,4 @@ async def open_host(
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, principal, authority, plan, models, tools, webs, memory)
+        yield Host(runtime, lease, principal, authority, plan, models, skill_cache, tools, webs, memory)
