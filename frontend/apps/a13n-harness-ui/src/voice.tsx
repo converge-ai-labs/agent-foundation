@@ -11,7 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Microphone, Stop, Waveform } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useTransport } from "./transport/context";
-import { result } from "./transport/client";
+import { isConnectionError, result } from "./transport/client";
+import { ConnectionNoticeContext } from "./shell/connection";
 import { VoiceSession } from "./voice-session";
 import styles from "./voice.module.css";
 
@@ -49,7 +50,11 @@ export function VoiceIndicator() {
   const voice = useVoice();
   const settings = useVoiceSettings();
   const running = ["starting", "connecting", "active"].includes(voice.status);
-  const error = voice.error || settings.error?.message;
+  const connectionNotice = useContext(ConnectionNoticeContext);
+  const error =
+    voice.error ||
+    (!(connectionNotice && isConnectionError(settings.error)) &&
+      settings.error?.message);
   return (
     <div className={styles.workspaceVoice}>
       <div className={styles.indicator} data-active={voice.status === "active"}>
