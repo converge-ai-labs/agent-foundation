@@ -5,6 +5,100 @@
     "version": "1"
   },
   "paths": {
+    "/api/voice": {
+      "get": {
+        "summary": "Status",
+        "operationId": "status_api_voice_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/start": {
+      "post": {
+        "summary": "Start",
+        "operationId": "start_api_voice_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/stop": {
+      "post": {
+        "summary": "Stop",
+        "operationId": "stop_api_voice_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceStop"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/push/configuration": {
       "get": {
         "summary": "Push Configuration",
@@ -5746,6 +5840,9 @@
           },
           {
             "$ref": "#/components/schemas/MemoryAgentSource"
+          },
+          {
+            "$ref": "#/components/schemas/LiveAgentSource"
           }
         ]
       },
@@ -5756,7 +5853,8 @@
             "enum": [
               "agent",
               "markdown",
-              "memory"
+              "memory",
+              "live"
             ],
             "title": "Kind",
             "type": "string"
@@ -6786,7 +6884,8 @@
             "enum": [
               "agent",
               "markdown",
-              "memory"
+              "memory",
+              "live"
             ],
             "title": "Source Kind"
           },
@@ -10337,6 +10436,26 @@
         ],
         "title": "ListenerStatus"
       },
+      "LiveAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "live",
+            "title": "Kind",
+            "default": "live"
+          },
+          "id": {
+            "type": "string",
+            "const": "live",
+            "title": "Id",
+            "default": "live"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LiveAgentSource",
+        "description": "Application-owned voice executor; not a selectable Agent resource."
+      },
       "LocalRoots": {
         "items": {
           "type": "string"
@@ -11442,6 +11561,7 @@
           "run-composition",
           "thread-initial-state",
           "continuation",
+          "live-transcript",
           "child-checkpoint",
           "environment-state",
           "mcp-app-resource",
@@ -13254,6 +13374,11 @@
           "shell_review": {
             "type": "boolean",
             "title": "Shell Review",
+            "default": true
+          },
+          "enable_live": {
+            "type": "boolean",
+            "title": "Enable Live",
             "default": true
           },
           "shell_review_model": {
@@ -16081,6 +16206,189 @@
         "title": "VideoInputPolicy",
         "description": "Base64-after byte budget for both one video and all inline videos in a request."
       },
+      "VoiceSnapshot": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "starting",
+              "connecting",
+              "active",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "idle"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "start_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Id"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "answer_sdp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Sdp"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "transcript": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceTurn"
+            },
+            "type": "array",
+            "title": "Transcript",
+            "default": []
+          },
+          "user_text": {
+            "type": "string",
+            "title": "User Text",
+            "default": ""
+          },
+          "assistant_text": {
+            "type": "string",
+            "title": "Assistant Text",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VoiceSnapshot"
+      },
+      "VoiceStart": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Owner Id"
+          },
+          "start_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Start Id"
+          },
+          "offer_sdp": {
+            "type": "string",
+            "maxLength": 131072,
+            "minLength": 3,
+            "title": "Offer Sdp"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "start_id",
+          "offer_sdp"
+        ],
+        "title": "VoiceStart"
+      },
+      "VoiceStop": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Owner Id"
+          },
+          "start_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Start Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "start_id"
+        ],
+        "title": "VoiceStop"
+      },
+      "VoiceTurn": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 262144,
+            "title": "Text"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "text",
+          "occurred_at"
+        ],
+        "title": "VoiceTurn"
+      },
       "WorkbenchPage": {
         "additionalProperties": false,
         "properties": {
@@ -16993,6 +17301,61 @@
           }
         },
         "title": "RealtimePing",
+        "type": "object"
+      },
+      "VoiceCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "media_connected",
+              "stop",
+              "pong"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "start_id": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Start Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "VoiceCommand",
+        "type": "object"
+      },
+      "VoiceOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "owner_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Owner Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_id"
+        ],
+        "title": "VoiceOwner",
+        "type": "object"
+      },
+      "VoicePing": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "ping",
+            "default": "ping",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "VoicePing",
         "type": "object"
       },
       "TerminalCommand": {
@@ -19106,6 +19469,21 @@
   "x-interactive": {
     "authentication": {
       "$ref": "#/components/schemas/InteractiveAuthentication"
+    },
+    "voice": {
+      "path": "/api/voice/connect",
+      "owner": {
+        "$ref": "#/components/schemas/VoiceOwner"
+      },
+      "input": {
+        "$ref": "#/components/schemas/VoiceCommand"
+      },
+      "output": {
+        "$ref": "#/components/schemas/VoiceSnapshot"
+      },
+      "heartbeat": {
+        "$ref": "#/components/schemas/VoicePing"
+      }
     },
     "realtime": {
       "path": "/api/realtime/connect",

@@ -615,6 +615,14 @@ class TerminalProjectionService:
             local_roots = thread.configuration.local_roots
         if project_id is not None and project_id not in source.projects:
             raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
+        if thread is not None and thread.configuration.agent_source.kind == "live":
+            return SkillCatalogView(
+                catalog_id=source.source_digest,
+                context_kind=context_kind,
+                thread_id=thread_id,
+                receipt_id=receipt_id,
+                items=(),
+            )
         if agent_id is None or agent_id not in source.agents:
             raise ThreadError("A Skill catalog requires an available Agent.", code="thread_agent_missing")
         catalog = await to_thread.run_sync(

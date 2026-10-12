@@ -76,6 +76,7 @@ function mount({
   running = false,
   selected = true,
   coordinator = false,
+  live = false,
   starred = false,
   worker = false,
   waiting = false,
@@ -98,7 +99,13 @@ function mount({
       archived,
       starred,
       metadata_version: 3,
-      configuration: { project_id: "project-one" },
+      configuration: {
+        project_id: live ? null : "project-one",
+        agent_source: {
+          kind: live ? "live" : "configured",
+          id: live ? "live" : "assistant",
+        },
+      },
       root_activity: { state: running ? "running" : "inactive" },
     },
   } as Schema<"ThreadActivityView">;
@@ -141,6 +148,17 @@ it("archives directly from the menu with its observed version and opens the New 
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe("/new"),
   );
+});
+it("keeps the persistent Live destination out of archive actions", async () => {
+  mount({ live: true });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await screen.findByRole("menu");
+  expect(
+    screen.queryByRole("menuitem", { name: "Archive conversation" }),
+  ).toBeNull();
+  expect(requests).toHaveLength(0);
 });
 it("does not change the current page when archiving another conversation", async () => {
   mount({ selected: false });

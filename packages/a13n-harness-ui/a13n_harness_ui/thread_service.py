@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
 
 from a13n_harness import HarnessState
 from a13n_harness import __version__ as harness_version
 from anyio import CancelScope, to_thread
+from filelock import AsyncFileLock
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
@@ -30,7 +32,7 @@ from a13n_harness_ui.storage import (
     ThreadConfiguration,
     ThreadConfigurationMutation,
 )
-from a13n_harness_ui.storage.contracts import MemoryAgentSource
+from a13n_harness_ui.storage.contracts import LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
     ConfigurationOrigin,
@@ -106,6 +108,27 @@ class ThreadService:
             coordinator_thread_id=coordinator_thread_id,
             coordinator=coordinator,
         )
+
+    async def live_thread(self, *, configuration_root: Path) -> Thread:
+        """One persistent projectless executor for the selected configuration root."""
+        root = configuration_root.expanduser().resolve()
+        thread_id = "thread_" + canonical_digest({"builtin": "live", "configuration_root": str(root)})[:32]
+        workspace = root / "live-workspace"
+        await to_thread.run_sync(lambda: workspace.mkdir(parents=True, exist_ok=True))
+        async with AsyncFileLock(root / ".live-thread.lock"):
+            existing = await self._store.threads.get(thread_id)
+            if existing is not None:
+                return existing
+            return await self._create(
+                configuration=ThreadConfiguration(
+                    version=1,
+                    agent_source=LiveAgentSource(),
+                    local_roots=(str(workspace),),
+                    environment_profile_id=FULL_CONTROL_PROFILE_ID,
+                ),
+                title="Live",
+                thread_id=thread_id,
+            )
 
     async def memory_thread(self, *, scope: str, project_id: str | None, model_id: str) -> Thread:
         """Create once under the organizer's cross-process scope lock."""
@@ -288,6 +311,8 @@ class ThreadService:
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         patch = mutation.patch
+        if thread.configuration.agent_source.kind == "live" and patch.archived:
+            raise ThreadError("The Live Thread stays available for voice sessions.", code="live_thread_reserved")
         if "starred" in patch.model_fields_set and await self._store.threads.worker_owners((thread_id,)):
             raise ThreadError("Star the Coordinator rather than its workers.", code="worker_star_unsupported")
         title = patch.title if "title" in patch.model_fields_set else thread.title
@@ -308,6 +333,8 @@ class ThreadService:
         mutation: ThreadConfigurationMutation,
     ) -> Thread:
         thread = await self.get(thread_id)
+        if thread.configuration.agent_source.kind == "live":
+            raise ThreadError("Configure the built-in executor in Live settings.", code="live_thread_reserved")
         if thread.configuration.version != mutation.expected_version:
             raise ThreadError(
                 "Thread configuration version changed; read it again.", code="thread_configuration_conflict"

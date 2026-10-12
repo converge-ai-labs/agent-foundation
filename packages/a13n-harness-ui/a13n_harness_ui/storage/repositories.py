@@ -1065,11 +1065,13 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import MemoryAgentSource
+    from .contracts import LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
         if record.agent_source_kind == "memory"
+        else LiveAgentSource()
+        if record.agent_source_kind == "live"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)

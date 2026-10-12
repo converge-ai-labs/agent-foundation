@@ -1075,3 +1075,30 @@ async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path,
         path, _selection(tmp_path, new_model_id="model-added", new_model_name="Added"), validate_candidate=_validate()
     )
     assert yaml.safe_load(path.read_text())["memory"] == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "existing", [None, {"enabled": False}, {"enabled": True, "model": "model-codex", "voice": "cedar"}]
+)
+async def test_live_setup_opt_in_and_add_model_preserves_explicit_settings(tmp_path, existing):
+    path = tmp_path / "config.yaml"
+    assert (
+        await publish_setup(path, _selection(tmp_path, enable_live=False), validate_candidate=_validate())
+    ).completed
+    root = yaml.safe_load(path.read_text())
+    assert "live" not in root
+    if existing is not None:
+        root["live"] = existing
+        path.write_text(yaml.safe_dump(root))
+    selection = _selection(tmp_path, new_model_id="model-another-codex", new_model_name="Another Codex")
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    result = await publish_setup(path, selection, validate_candidate=_validate())
+    assert result.completed
+    live = yaml.safe_load(path.read_text())["live"]
+    if existing is None:
+        assert live["enabled"] and live["model"] == "model-another-codex"
+        assert path.name in preview.files
+    else:
+        assert live == existing
+        assert path.name not in preview.files

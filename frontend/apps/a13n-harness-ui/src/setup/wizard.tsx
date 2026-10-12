@@ -29,6 +29,7 @@ import {
   type WizardDraft,
 } from "./wizard-state";
 import { ShellReviewModel } from "./shell-review";
+import { LiveOptIn } from "./live-opt-in";
 import styles from "./wizard.module.css";
 type Selection = Schema<"SetupSelection">;
 
@@ -481,6 +482,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                         })
                       }
                       description="Existing directory on the server. Leave blank to start without a Project; the conversation gets its own working directory."
+                    />
+                    <LiveOptIn
+                      model={selection.model}
+                      enabled={selection.enable_live ?? true}
+                      onChange={(enable_live) =>
+                        changeSelection({ enable_live })
+                      }
                     />
                     {!apiKey && (
                       <details className={styles.advanced}>

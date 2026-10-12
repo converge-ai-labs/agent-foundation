@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     data: [{ value: "account-chat", label: "Account chat" }],
   })),
   put: vi.fn(async () => ({ data: {} })),
+  apply: vi.fn(async (_body: unknown) => ({ data: { completed: true } })),
   get: vi.fn(async (path: string) => ({
     data:
       path === "/api/models/choices"
@@ -93,27 +94,29 @@ vi.mock("../transport/context", () => ({
       POST: (path: string, body: unknown) =>
         path === "/api/models/prepare"
           ? mocks.prepare(body)
-          : path === "/api/auth/accounts/{provider}/models"
-            ? mocks.discover()
-            : Promise.resolve({
-                data: {
-                  name: "Reviewed model",
-                  presets: [
-                    {
-                      value: "high",
-                      label: "High reasoning",
-                      settings: { thinking: "high", max_tokens: 4000 },
-                    },
-                    {
-                      value: "default",
-                      label: "Provider defaults",
-                      settings: {},
-                    },
-                  ],
-                  native_tools: [],
-                  reasoning_mode: { supported: true, state: "default" },
-                },
-              }),
+          : path === "/api/setup/apply"
+            ? mocks.apply(body)
+            : path === "/api/auth/accounts/{provider}/models"
+              ? mocks.discover()
+              : Promise.resolve({
+                  data: {
+                    name: "Reviewed model",
+                    presets: [
+                      {
+                        value: "high",
+                        label: "High reasoning",
+                        settings: { thinking: "high", max_tokens: 4000 },
+                      },
+                      {
+                        value: "default",
+                        label: "Provider defaults",
+                        settings: {},
+                      },
+                    ],
+                    native_tools: [],
+                    reasoning_mode: { supported: true, state: "default" },
+                  },
+                }),
     },
   }),
 }));
@@ -339,14 +342,23 @@ it("saves an unauthenticated subscription recipe independently of the Agent draf
   ).toBeTruthy();
   fireEvent.click(save);
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-  expect(mocks.put).toHaveBeenCalledTimes(1);
-  const [path, request] = mocks.put.mock.calls[0] as unknown as [
-    string,
-    { body: { content: string }; params: { path: { relative_path: string } } },
-  ];
-  expect(path).toBe("/api/configuration/sources/{relative_path}");
-  expect(request.params.path.relative_path).toMatch(/^models\/model-.+\.yaml$/);
-  expect(parse(request.body.content).route).toBe("openai-codex:reviewed");
+  expect(mocks.apply).toHaveBeenCalledExactlyOnceWith({
+    body: {
+      selection: {
+        model: {
+          route: "openai-codex:reviewed",
+          authentication: { kind: "codex_subscription" },
+          settings: {},
+          model_configuration: {},
+        },
+        new_model_id: onSaved.mock.calls[0]![0],
+        new_model_name: "openai-codex:reviewed",
+        environment_profile: "environment-native",
+        enable_live: true,
+      },
+    },
+  });
+  expect(mocks.put).not.toHaveBeenCalled();
 });
 
 it("cannot save the previous recipe after changing the visible connection or model", async () => {
@@ -386,7 +398,7 @@ it("cannot save the previous recipe after changing the visible connection or mod
   );
   await waitFor(() => expect(save.disabled).toBe(true));
   await user.click(save);
-  expect(mocks.put).not.toHaveBeenCalled();
+  expect(mocks.apply).not.toHaveBeenCalled();
 });
 
 const copilotSource = `schema_version: '1'

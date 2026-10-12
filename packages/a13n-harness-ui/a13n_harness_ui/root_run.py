@@ -517,7 +517,14 @@ class RootRunCoordinator:
                 await done.wait()
         return await self.get(receipt_id)
 
-    async def steer(self, *, receipt_id: str, message: RunInputValue, touch: bool = False) -> RootControlResult:
+    async def steer(
+        self,
+        *,
+        receipt_id: str,
+        message: RunInputValue,
+        touch: bool = False,
+        authorize: Callable[[], Awaitable[None]] | None = None,
+    ) -> RootControlResult:
         message = detach_input(message)
         operation = self._operations.get(receipt_id)
         if operation is None:
@@ -532,6 +539,8 @@ class RootRunCoordinator:
             )
             if self._restart is not None:
                 self._restart.require_input()
+            if authorize is not None:
+                await authorize()
             enqueue_id = await stream.steer(prepared)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)

@@ -116,7 +116,12 @@ class MarkdownSubagentSource(BaseModel):
     markdown: SubagentId
 
 
-AgentSource = AgentResourceSource | MarkdownSubagentSource
+class LiveAgentSource(BaseModel):
+    kind: Literal["live"]
+    id: Literal["live"]
+
+
+AgentSource = AgentResourceSource | MarkdownSubagentSource | LiveAgentSource
 
 
 class ThreadConfiguration(BaseModel):
@@ -135,13 +140,15 @@ class ThreadConfiguration(BaseModel):
 
 The stored value is exact. It contains no omitted or globally enabled state. `default_model_id` is an optional Model resource ID: null follows the selected Agent's current Model, while a non-null ID persists independently of Agent edits. Effective root Model precedence is explicit per-Run override, then Thread default, then Agent Model. An override containing only thinking, fast, or service-tier settings retains that precedence. Missing selected Models fail admission without silently falling back. Explicit Run overrides never change the stored default or historical captures. A configuration patch can set the default, explicitly clear it with null, or omit it to retain the current value. A null `project_id` means no Project, not an unresolved reference or a request to inherit a global default. A configuration patch can explicitly clear the Project with null; omission retains the current selection.
 
+The internal `LiveAgentSource` is created only for the persistent projectless [Live executor](10-live-mode.md#configuration-and-executor). It cannot be selected by ordinary Thread creation or mutation. Its workspace and restricted composition are App-owned.
+
 A new root Thread resolves its Agent resource from explicit creation input, the selected Project's Agent default, or the root YAML Agent default into `AgentResourceSource`, then resolves other axes under the shared creation precedence and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
 
 A child Thread stores the selected roster entry as either an Agent resource or Markdown subagent source. Project, local roots, Environment profile, remote bindings, default mount, and Run Extensions default from the admitting parent capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the admitting parent capture's exact Plugin and MCP lists. After creation the child owns these stored selections independently. Agent-resource children start with a null default Model and retain their independent Model selection. Markdown children inherit the admitting parent Model and reject a non-null `default_model_id` rather than silently ignoring it.
 
 ## Configuration Patch and Run Admission
 
-A Thread can change configuration before or after any Run:
+Ordinary and child Threads can change configuration before or after any Run. The internal [Live Thread](10-live-mode.md#configuration-and-executor) instead follows root Live settings and rejects ordinary configuration or Run-only Model/Environment overrides:
 
 ```python
 class ThreadConfigurationPatch(BaseModel):

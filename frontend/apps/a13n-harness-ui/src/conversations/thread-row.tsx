@@ -321,18 +321,20 @@ export function ThreadRow({
                   : "Enable automatic follow-up"}
               </MenuItem>
             )}
-            <MenuItem
-              disabled={
-                archive.isPending ||
-                row.thread.root_activity.state !== "inactive"
-              }
-              onClick={() => archive.mutate()}
-            >
-              <Archive />
-              {row.thread.archived
-                ? "Restore conversation"
-                : "Archive conversation"}
-            </MenuItem>
+            {row.thread.configuration.agent_source.kind !== "live" && (
+              <MenuItem
+                disabled={
+                  archive.isPending ||
+                  row.thread.root_activity.state !== "inactive"
+                }
+                onClick={() => archive.mutate()}
+              >
+                <Archive />
+                {row.thread.archived
+                  ? "Restore conversation"
+                  : "Archive conversation"}
+              </MenuItem>
+            )}
           </MenuPopup>
         </Menu>
         {disclosure && (

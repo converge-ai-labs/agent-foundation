@@ -18,7 +18,7 @@ from a13n_harness_ui.surfaces import SurfaceModel, ThreadConfigurationResolution
 
 class CapturedAgentSelection(SurfaceModel):
     name: str
-    source_kind: Literal["agent", "markdown", "memory"]
+    source_kind: Literal["agent", "markdown", "memory", "live"]
     source_id: str
     model_id: str
     thinking_summary: str | None = None
