@@ -431,7 +431,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
             if self._restart is None
             else (RestartPauseCapability(self._restart, state.thread_id),),
         )
-        environment = await self._environments.prepare(published.value)
         initial = await self._store.objects.publish_model(
             object_kind=ObjectKind.thread_initial_state,
             value=StoredThreadInitialState(harness_state=state, created_at=datetime.now(UTC)),
@@ -443,6 +442,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             initial_state=initial.ref,
             title=request.subagent_name,
         )
+        # Preparation publishes binding state against this Thread, before execution is admitted.
+        environment = await self._environments.prepare(published.value)
 
         execution_id = _public_id("execution")
         agent_instance_id = _public_id("agent")

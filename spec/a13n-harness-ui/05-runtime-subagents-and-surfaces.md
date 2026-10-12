@@ -249,6 +249,8 @@ The Harness resolves the selected child roster entry before calling the operator
 4. commits segment zero as `running` before returning its execution ID;
 5. starts the segment under App ownership.
 
+The child Thread is committed before Environment preparation can publish binding state. If preparation fails or is cancelled, the Thread and any already-published Environment state remain, but no child execution is accepted or started.
+
 A surface can update the retained child Thread through the ordinary required-version configuration command before resume. `resume_subagent` then loads that Host-authorized sticky configuration, requires a selected terminal child checkpoint, increments `segment_index`, captures the new composition, commits the execution, and starts it. The new composition need not equal either the one that produced the prior checkpoint or the current parent roster definition. Harness still requires the same stable roster name and current plan context. Harness UI reapplies that roster edge's Identity policy to the selected replacement definition and intersects the plan usage ceiling with the replacement's own limits; the model cannot select the replacement Agent source.
 
 An accepted child execution can outlive the parent Run. Parent closure never cancels it by implication. App shutdown is the process-local ownership boundary.
