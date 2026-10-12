@@ -31,9 +31,10 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
         "DefinitionError",
         "DeferredToolResume",
         "DelegationContextPolicy",
-        "Environment",
+        "EnvironmentConnector",
         "EnvironmentEntry",
         "EnvironmentMount",
+        "EnvironmentSource",
         "ExecutableAgent",
         "HarnessBuilder",
         "HarnessError",
@@ -317,9 +318,10 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     expected_environment = {
         "DynamicEnvironmentCapability",
         "ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP",
-        "Environment",
+        "EnvironmentConnector",
         "EnvironmentEntry",
         "EnvironmentMount",
+        "EnvironmentSource",
         "EnvironmentRunCallback",
         "EnvironmentRunCallbacks",
         "EnvironmentRunExtension",
@@ -362,7 +364,7 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     assert removed_harness_provider_symbols.isdisjoint(harness.__all__)
     # The Provider domain package exports authoring contracts only; vendor definitions,
     # their schemas and the built-in catalog stay in their own owning modules.
-    assert set(environment_provider.__all__) == {"Environment", "EnvironmentProviderDefinition"}
+    assert set(environment_provider.__all__) == {"EnvironmentProviderDefinition"}
     assert set(providers.__all__) == {
         "Authentication",
         "AuthenticationCase",

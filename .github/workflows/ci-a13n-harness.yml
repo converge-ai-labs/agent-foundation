@@ -71,6 +71,7 @@ jobs:
               packages/a13n-harness/tests/test_environment_core.py
               packages/a13n-harness/tests/test_monitored_process.py
               packages/a13n-harness/tests/providers_environment
+
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
@@ -114,4 +115,5 @@ jobs:
 
       - name: Build a13n Harness distribution
         if: matrix.name == 'Linux'
-        run: uv build --package a13n-harness --out-dir dist/harness
+        run: |
+          uv build --package a13n-harness --out-dir dist/harness

@@ -4,8 +4,8 @@ import socket
 
 import pytest
 from a13n_harness import RunConfiguration
+from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_service.providers.endpoints import check_endpoint
 
 pytestmark = pytest.mark.anyio

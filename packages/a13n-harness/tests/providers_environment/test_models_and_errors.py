@@ -3,14 +3,14 @@ from __future__ import annotations
 import math
 
 import pytest
-from a13n_harness.providers.environment.errors import (
+from a13n_harness.environment.errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderErrorContext,
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from a13n_harness.providers.environment.models import EnvironmentProviderSpec, EnvironmentState
+from a13n_harness.environment.models import EnvironmentProviderSpec, EnvironmentState
 from pydantic import ValidationError
 
 

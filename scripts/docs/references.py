@@ -7,23 +7,18 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from a13n_harness.providers.environment.configuration import HostLocalProviderConfiguration
 from a13n_harness.providers.environment.daytona.provider import (
     DaytonaConnectionConfiguration,
     DaytonaEnvironmentConfiguration,
 )
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
-from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
 from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
-from a13n_harness.providers.environment.e2b.configuration import (
-    E2BConnectionConfiguration,
-    E2BCredential,
-    E2BEnvironmentConfiguration,
-)
+from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration, E2BCredential
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
 )
-from a13n_harness.providers.environment.management import HostLocalProviderConfiguration
 from a13n_harness.providers.environment.modal.provider import (
     ModalConnectionConfiguration,
     ModalCredential,
@@ -48,6 +43,8 @@ from a13n_harness.providers.environment.vercel.provider import (
     VercelConnectionConfiguration,
     VercelEnvironmentConfiguration,
 )
+from a13n_service.providers.environments.docker.configuration import DockerRecipe
+from a13n_service.providers.environments.e2b.configuration import E2BRecipe
 from a13n_service.settings import Settings
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -154,8 +151,8 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     DirectLocalEnvironmentConfiguration,
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
-    DockerEnvironmentConfiguration,
-    E2BEnvironmentConfiguration,
+    DockerRecipe,
+    E2BRecipe,
     DaytonaEnvironmentConfiguration,
     ModalEnvironmentConfiguration,
     VercelEnvironmentConfiguration,
@@ -198,7 +195,7 @@ All six cloud Providers use the same recipe, backend, and private-credential bou
 
 | Provider | Recipe | Backend | Credential |
 | --- | --- | --- | --- |
-| E2B | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration) | [E2BConnectionConfiguration](#e2bconnectionconfiguration) | [E2BCredential](#e2bcredential) |
+| E2B | [E2BRecipe](#e2brecipe) | [E2BConnectionConfiguration](#e2bconnectionconfiguration) | [E2BCredential](#e2bcredential) |
 | Daytona | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Modal | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration) | [ModalConnectionConfiguration](#modalconnectionconfiguration) | [ModalCredential](#modalcredential) |
 | Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration) | [VercelConnectionConfiguration](#vercelconnectionconfiguration) | [TokenCredential](#tokencredential) |

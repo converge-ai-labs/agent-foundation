@@ -301,7 +301,7 @@ eip-integration-test: sync ## Run EIP generation, runtime, cross-language, wire-
 	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip.xml) scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-harness/tests/providers_environment/test_local_envd.py packages/a13n-harness/tests/providers_environment/test_local_envd_e2e.py packages/a13n-harness/tests/providers_environment/test_remote_envd.py packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py
 	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip-example.xml) examples/environment-provider/tests
 	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip-service.xml) packages/a13n-service/tests/test_environments_envd.py
-	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-harness/a13n_harness/providers/environment
+	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-harness/a13n_harness/environment packages/a13n-harness/a13n_harness/providers/environment
 
 .PHONY: eip-test
 eip-test: eip-integration-test ## Run complete EIP integration and daemon tests
@@ -319,11 +319,11 @@ local-envd-test: sync ## Build a13n-envd and run Local Envd provider tests
 
 .PHONY: e2b-provider-test
 e2b-provider-test: sync ## Run native E2B unit and opt-in live integration tests
-	@uv run --locked pytest -q packages/a13n-harness/tests/providers_environment/test_e2b*.py packages/a13n-harness/tests/test_e2b_environment_live.py
+	@uv run --locked pytest -q packages/a13n-harness/tests/providers_environment/test_e2b*.py packages/a13n-service/tests/environment_providers/test_e2b*.py
 
 .PHONY: docker-provider-test
 docker-provider-test: sync ## Run Docker Provider tests
-	@uv run --locked python -m pytest packages/a13n-harness/tests/providers_environment/test_docker.py
+	@uv run --locked python -m pytest packages/a13n-service/tests/environment_providers/test_docker.py
 
 .PHONY: eip-check
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate

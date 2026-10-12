@@ -11,36 +11,30 @@ from typing import Any, cast
 import a13n_harness.providers.environment.direct_local.files as files_module
 import a13n_harness.providers.environment.direct_local.processes as process_module
 import pytest
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
+from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
-from a13n_harness.providers.environment.direct_local.provider import (
-    DIRECT_LOCAL,
-    DirectLocalEnvironment,
-)
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 pytestmark = pytest.mark.anyio
 
 
-def _environment(root: Path, *, max_value_bytes: int | None = None) -> DirectLocalEnvironment:
+def _environment(root: Path, *, max_value_bytes: int | None = None) -> DirectLocalExecution:
     provider = DIRECT_LOCAL
     value: dict[str, object] = {"root": {"path": str(root)}}
     if max_value_bytes is not None:
         value["max_value_bytes"] = max_value_bytes
     configuration = provider.validate_environment(value)
-    environment = provider.construct(
-        operation_id="op-test",
-        allow_create=True,
+    environment = DirectLocalExecution(
         environment_id="local-test",
         configuration=configuration,
-        state=None,
-        runtime=None,
     )
-    assert isinstance(environment, DirectLocalEnvironment)
+    assert isinstance(environment, DirectLocalExecution)
     return environment
 
 
@@ -49,15 +43,15 @@ async def test_direct_local_entry_exposes_provider_owned_file_operations(tmp_pat
     marker.write_text("preserve")
     environment = _environment(tmp_path)
 
-    await environment.enter(mount_id="workspace")
-    await environment.prepare()
+    await environment.open(execution_id="workspace")
+
     await environment.operations.files.write_text("/created.txt", "created", mode="create")  # type: ignore[union-attr]
 
     assert environment.environment_id == "local-test"
     assert environment.availability.status == "available"
     assert EnvironmentAction.FILE_WRITE_TEXT in environment.descriptor.permissions.operations
     assert (tmp_path / "created.txt").read_text() == "created"
-    assert environment.dump_state() is None
+    assert environment.state is None
 
     await environment.close()
     assert marker.read_text() == "preserve"
@@ -87,9 +81,8 @@ async def test_move_preserves_destination_published_after_precheck(
 
     monkeypatch.setattr(files_module, "_rename_no_replace", publish_other_first)
     environment = _environment(tmp_path)
-    await environment.enter(mount_id="workspace")
+    await environment.open(execution_id="workspace")
     try:
-        await environment.prepare()
         files = environment.operations.files
         assert files is not None
         with pytest.raises(EnvironmentError) as captured:
@@ -123,8 +116,8 @@ async def test_independent_moves_publish_one_winner_without_overwriting(
     first, second = _environment(tmp_path), _environment(tmp_path)
     try:
         for environment in (first, second):
-            await environment.enter(mount_id="workspace")
-            await environment.prepare()
+            await environment.open(execution_id="workspace")
+
         first_files, second_files = first.operations.files, second.operations.files
         assert first_files is not None and second_files is not None
         results = await asyncio.gather(
@@ -154,10 +147,8 @@ async def test_direct_local_backing_survives_reentry_but_not_replacement_or_poli
     async def observe(*, max_value_bytes: int | None = None) -> tuple[str, str | None]:
         environment = _environment(root, max_value_bytes=max_value_bytes)
         assert environment.descriptor.backing_identity is None
-        await environment.enter(mount_id="mount")
-        assert environment.descriptor.backing_identity is None
+        await environment.open(execution_id="mount")
         try:
-            await environment.prepare()
             return environment.descriptor.generation, environment.descriptor.backing_identity
         finally:
             await environment.close()
@@ -200,16 +191,16 @@ async def test_process_group_cleanup_treats_permission_denial_as_terminal(
     )
 
 
-async def test_direct_local_destroy_is_non_destructive(tmp_path: Path) -> None:
+async def test_direct_local_close_preserves_host_directory_without_management(tmp_path: Path) -> None:
     marker = tmp_path / "host-owned.txt"
     marker.write_text("preserve")
     environment = _environment(tmp_path)
 
-    await environment.destroy()
+    assert not hasattr(DIRECT_LOCAL, "open_provider")
     await environment.close()
 
     assert marker.read_text() == "preserve"
-    assert environment.dump_state() is None
+    assert environment.state is None
 
 
 def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> None:
@@ -221,17 +212,10 @@ def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> Non
     assert configuration.root == DirectLocalRootConfiguration(path=tmp_path)
 
     with pytest.raises(EnvironmentProviderError) as captured:
-        provider.construct(
-            operation_id="op-test",
-            allow_create=True,
+        provider.execution_connector(
+            configuration,
             environment_id="local-test",
-            configuration=configuration,
-            state=EnvironmentState(
-                provider_key="direct_local",
-                state_version="1",
-                state={"target": "invalid"},
-            ),
-            runtime=None,
+            state=EnvironmentState(provider_key="direct_local", state_version="1", state={"target": "invalid"}),
         )
     assert captured.value.code == "provider_state_invalid"
 

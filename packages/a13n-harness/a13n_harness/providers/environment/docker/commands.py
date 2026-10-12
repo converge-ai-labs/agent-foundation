@@ -12,12 +12,12 @@ from typing import BinaryIO
 
 from pydantic import JsonValue, TypeAdapter
 
-from .._guest_commands import decoded_bytes, file_helper_source
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from .configuration import DockerEnvironmentConfiguration
-from .errors import engine_errors
-from .observation import attach, disconnect, frames
-from .runtime import DockerSDKEngine
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.providers.environment._guest_commands import decoded_bytes, file_helper_source
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.errors import engine_errors
+from a13n_harness.providers.environment.docker.observation import attach, disconnect, frames
+from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
 
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 
@@ -34,13 +34,13 @@ class DockerCommands:
         self.container_id = container_id
         self.config = config
         self.configuration = DockerFileConfiguration(config.max_file_bytes)
-        self.mount_id = "workspace"
+        self.execution_id = "workspace"
         self._operations = itertools.count(1)
         self._source = file_helper_source()
 
     def receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            mount_id=self.mount_id,
+            execution_id=self.execution_id,
             observed_generation=self.container_id,
             operation_id=f"op-{next(self._operations)}",
             stage="completed",

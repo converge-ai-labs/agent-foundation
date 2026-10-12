@@ -31,6 +31,8 @@ Workspace membership does not by itself select a release group. The Harness rele
 
 `packages/a13n-logging` is a shared library with an independent `release/a13n-logging-v<version>` release channel. Its workflow versions and publishes only the `a13n-logging` Python distribution through the existing `foundation-pypi` environment. a13n Service releases neither version nor republish logging. Consumers retain unversioned source workspace dependencies and consume published logging independently of their own release versions.
 
+Environment execution contracts, portable state and codecs, operation helpers, native/EIP connectors, and execution implementations belong to `packages/a13n-harness` under `a13n_harness`. Target management contracts and vendor lifecycle implementations belong to `packages/a13n-service` under `a13n_service`; Service reuses the Harness execution definitions and shared types. There is no independent `a13n-environment` distribution, source package, or release channel. Execution support follows Harness releases and management support follows Service releases. Existing persisted state and EIP formats remain unchanged. [Environment Execution](a13n-harness/08a-environment-execution.md) and [Service Environment Management](a13n-service/06a-environment-management.md) own the boundary.
+
 `packages/a13n-envd-client` participates in root Python development and validation but is versioned and published with `crates/a13n-envd` by the a13n-envd release workflow. Harness and Harness UI consume a compatible published version. The client owns only EIP transport/session behavior and never discovers, downloads, installs, or launches the native executable. Other release-group exceptions require an explicit owning specification and release workflow rather than inference from directory placement.
 
 a13n-envd native releases publish immutable archives for Linux, macOS, and Windows x86_64/ARM64 plus `SHA256SUMS`. Repository-owned POSIX shell and Windows PowerShell installers select and verify one release archive and publish the executable to an absolute user-selected directory; they do not define a self-updater, service installation, or install database. The detailed installer contract is owned by [Protocol Source, Client, and Generation](a13n-envd/08-protocol-source-client-and-generation.md#executable-distribution-and-installation).
@@ -119,7 +121,7 @@ The current cross-group requirements are:
 | Consumer                     | Dependency               | Published requirement                 |
 | ---------------------------- | ------------------------ | ------------------------------------- |
 | Harness UI                   | Harness, Stream Protocol | `>=0.9.0,<0.10.0`, identical for both |
-| Service                      | Harness, Stream Protocol | `>=0.8.1,<0.9.0`, identical for both  |
+| Service                      | Harness, Stream Protocol | `>=0.9.0,<0.10.0`, identical for both |
 | Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                      |
 | Harness, Harness UI          | `a13n-envd-client`       | `>=0.1.0,<0.2.0`                      |
 

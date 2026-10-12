@@ -30,8 +30,8 @@ RELEASE_NOTES_DIRECTORY = Path(".github/release-notes")
 COMPONENT_PATHS = {
     "a13n-harness": (
         "packages/a13n-harness",
-        "packages/a13n-stream-protocol",
         "docs/environments",
+        "packages/a13n-stream-protocol",
         "docs/a13n-stream-protocol",
         "spec/a13n-stream-protocol",
     ),
@@ -44,6 +44,7 @@ COMPONENT_PATHS = {
     "a13n-logging": ("packages/a13n-logging",),
     "a13n-service": (
         "packages/a13n-service",
+        "docs/environments",
         "proto/a13n-service",
         "frontend/apps/a13n-console",
         "frontend/packages/a13n-ui",

@@ -16,7 +16,7 @@ All six cloud Providers use the same recipe, backend, and private-credential bou
 
 | Provider       | Recipe                                                              | Backend                                                           | Credential                          |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
+| E2B            | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
 | Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
 | Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
@@ -199,12 +199,11 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `allow_login`      | false    | boolean         | default=false                       |
 | `max_script_bytes` | false    | integer         | exclusiveMinimum=0; default=1048576 |
 
-## `DockerEnvironmentConfiguration`
+## `DockerRecipe`
 
 | Field                         | Required | Type / choices                    | Constraints and default                                                          |
 | ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
 | `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
-| `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
 | `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
 | `environment`                 | false    | object                            | —; default from model factory                                                    |
 | `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
@@ -223,6 +222,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
+| `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
 
 ## `DockerMountConfiguration`
 
@@ -232,7 +232,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `target`    | true     | string         | format="path"           |
 | `read_only` | false    | boolean        | default=true            |
 
-## `E2BEnvironmentConfiguration`
+## `E2BRecipe`
 
 | Field                       | Required | Type / choices | Constraints and default                                   |
 | --------------------------- | -------- | -------------- | --------------------------------------------------------- |
@@ -240,7 +240,6 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `root`                      | false    | string         | default="/home/user"                                      |
 | `user`                      | false    | string         | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false    | string         | default="/usr/bin/python3"                                |
-| `timeout_seconds`           | false    | integer        | minimum=30; maximum=86400; default=3600                   |
 | `request_timeout_seconds`   | false    | number         | maximum=300; exclusiveMinimum=0; default=30               |
 | `allow_internet_access`     | false    | boolean        | default=true                                              |
 | `max_file_bytes`            | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=16777216  |
@@ -248,6 +247,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `max_active_observations`   | false    | integer        | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `timeout_seconds`           | false    | integer        | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`
 

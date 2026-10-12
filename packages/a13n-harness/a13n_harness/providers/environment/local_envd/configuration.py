@@ -6,8 +6,8 @@ from typing import Annotated, Self
 from a13n_envd_client.eip.v1 import DisabledSandbox, SandboxPolicy
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..envd_policy import EnvdExecutionConfiguration, EnvdNetworkConfiguration
-from ..remote_envd.configuration import RemoteEnvdEnvironmentConfiguration
+from a13n_harness.environment.envd_policy import EnvdExecutionConfiguration, EnvdNetworkConfiguration
+from a13n_harness.providers.environment.remote_envd.configuration import RemoteEnvdEnvironmentConfiguration
 
 _MIB = 1024 * 1024
 _GIB = 1024 * _MIB

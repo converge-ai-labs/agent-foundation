@@ -10,13 +10,13 @@ from pathlib import Path
 
 from a13n_harness import (
     AgentSpec,
+    EnvironmentSource,
     HarnessBuilder,
     HarnessEvent,
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessState,
 )
-from a13n_harness.providers.environment.management import Environment
 from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 from pydantic_ai.models import Model
 
@@ -31,7 +31,7 @@ class ConversationApplication:
         *,
         model: Model,
         state_path: Path,
-        environment_factory: Callable[[], Environment],
+        environment_factory: Callable[[], EnvironmentSource],
         instructions: str = _DEFAULT_INSTRUCTIONS,
     ) -> None:
         self._state_path = state_path

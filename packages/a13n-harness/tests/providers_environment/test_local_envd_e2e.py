@@ -10,19 +10,19 @@ from pathlib import Path
 import pytest
 from a13n_envd_client import EIPMethodError
 from a13n_envd_client.eip.v1 import DirectoryListParams
-from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
 )
-from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_harness.providers.environment.models import EnvironmentError
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 pytestmark = pytest.mark.anyio
 
@@ -59,9 +59,9 @@ async def test_local_shared_device_owns_daemon_not_adapter(binary, tmp_path):
         ),
     )
     first, second = [
-        LocalEnvdEnvironment(
+        LOCAL_ENVD.execution_connector(
             LocalEnvdEnvironmentConfiguration(working_directory=device_path(root)),
-            runtime,
+            runtime=runtime,
             environment_id=f"local-{index}",
         )
         for index, root in enumerate((first_root, second_root))
@@ -82,7 +82,7 @@ async def test_local_shared_device_owns_daemon_not_adapter(binary, tmp_path):
         assert {entry.name for entry in listing.entries} >= {"first", "second"}
         assert not device._sessions
         try:
-            await asyncio.gather(first.prepare(), second.prepare())
+            first, second = await asyncio.gather(first.open(), second.open())
             assert len(list(allocation_parent.iterdir())) == 1
             assert len(device._sessions) == 2
             assert first.descriptor.generation != second.descriptor.generation
@@ -109,27 +109,26 @@ async def test_local_shared_device_owns_daemon_not_adapter(binary, tmp_path):
             assert result.status.exit_code == 0
             assert (await runtime.describe()).generation == descriptor.generation
             await processes.release(started.process.handle)
-            invalid = LocalEnvdEnvironment(
+            invalid = LOCAL_ENVD.execution_connector(
                 LocalEnvdEnvironmentConfiguration(working_directory=device_path(tmp_path / "missing")),
-                runtime,
+                runtime=runtime,
                 environment_id="invalid",
             )
             with pytest.raises(EnvironmentProviderError) as failure:
-                await invalid.prepare()
+                await invalid.open()
             assert isinstance(failure.value.__cause__, EIPMethodError)
-            await invalid.close()
             assert len(device._sessions) == 1
             assert (await files.read_text(device_path(first_root / "outside-cwd"))).text == "allowed"
         finally:
             await asyncio.gather(first.close(), second.close())
         assert not device._sessions
-        again = LocalEnvdEnvironment(
+        again = LOCAL_ENVD.execution_connector(
             LocalEnvdEnvironmentConfiguration(working_directory=device_path(second_root)),
-            runtime,
+            runtime=runtime,
             environment_id="again",
         )
         try:
-            await again.prepare()
+            again = await again.open()
             assert again.descriptor.backing_identity == second.descriptor.backing_identity
             assert again.descriptor.generation != second.descriptor.generation
             assert (await runtime.describe()).generation == descriptor.generation
@@ -145,8 +144,10 @@ async def test_host_shutdown_closes_remaining_adapter_sessions(binary, tmp_path)
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
         configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
     )
-    adapter = LocalEnvdEnvironment(LocalEnvdEnvironmentConfiguration(), runtime, environment_id="local")
-    await adapter.prepare()
+    adapter = LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(), runtime=runtime, environment_id="local"
+    )
+    adapter = await adapter.open()
     files = adapter.operations.files
     assert files is not None
     await runtime.close()

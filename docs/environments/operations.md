@@ -16,7 +16,7 @@ Environment operations are typed Python interfaces usable without an Agent. The 
 | Outputs   | Read retained stdout/stderr at explicit offsets               | Observation may be partial or evicted; not a durable log                    |
 | Ports     | Observe supported targets                                     | Not a public ingress or automatic port-sharing service                      |
 
-Use [Getting started](getting-started.md) for a complete file example. Entering an adapter does not prepare its backing target; call `ensure_ready()` before using the required facet. A facet can be absent even though other operations work.
+Use [Getting started](getting-started.md) for a complete file example. Connector `open()` returns an execution whose advertised operation families are ready. Use `check_ready()` for a later read-only readiness check; it never repairs or replaces the target. A facet can be absent even though other operations work.
 
 ## Paths belong to the boundary you are calling
 
@@ -32,7 +32,7 @@ Harness applies mount names, access ceilings, routing, operation timeouts, state
 
 ## File operation reference
 
-After `ensure_ready({"files"})`, use the optional `environment.operations.files` facet. Paths in this table follow the selected Provider's contract; Envd paths are Device-absolute.
+After opening an execution, use its optional `execution.operations.files` facet. Paths in this table follow the selected Provider's contract; Envd paths are Device-absolute.
 
 | Method                                                                 | Inputs and result                                                               |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |

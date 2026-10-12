@@ -1,30 +1,30 @@
 # Installed Environment Provider plugin example
 
-This independent package depends only on Harness and Pydantic. It exports an immutable `ProviderManifest` with one Environment definition, `acme_workspace`, through the `a13n_harness.providers.plugins` entry-point group. Installation makes it discoverable; a Host must explicitly select `acme` to load it. Selecting it imports the definition without Agent orchestration or optional sandbox SDKs.
+This independent package depends on Harness and Pydantic. It exports an immutable `ProviderManifest` with one Environment definition, `acme_workspace`, through the `a13n_harness.providers.plugins` entry-point group. Installation makes it discoverable; a Host must explicitly select `acme` to load it. Selecting it imports the definition without Agent orchestration or optional sandbox SDKs.
 
 `acme_workspace` is a project workspace backed by Direct Local operations. Its account configuration names an absolute `root`; each Environment configuration selects a `directory` beneath it, and each Environment owns `<root>/<directory>/<environment_id>`.
 
 ## Direct use
 
-The installed manifest and a direct import share one definition. Harness validates both configurations, runs the definition's `runtime_factory`, and constructs a fresh adapter:
+The installed manifest and a direct import share one definition. Construction validates configuration without performing I/O. The Host explicitly creates the workspace; execution only opens an existing directory.
 
 ```python
 from a13n_harness.providers.plugins import load_provider_plugins
 
 definition = load_provider_plugins(("acme",))[0].manifest.environment[0]
-workspace = await definition.create({"directory": "notes"}, configuration={"root": "/srv/acme"})
-async with workspace:
-    await workspace.operations.files.write_text("/hello.txt", "persistent", mode="create")
+recipe = {"directory": "notes"}
+from pathlib import Path
 
-again = await definition.create(
-    {"directory": "notes"},
-    configuration={"root": "/srv/acme"},
-    environment_id=workspace.environment_id,
-    allow_create=False,
-)
+Path("/srv/acme/notes/env_notes").mkdir(parents=True, exist_ok=True)
+connector = definition.execution_connector(recipe, configuration={"root": "/srv/acme"}, environment_id="env_notes")
+
+async with await connector.open() as execution:
+    await execution.operations.files.write_text("/hello.txt", "persistent", mode="create")
+async with await connector.open() as execution:
+    assert (await execution.operations.files.read_text("/hello.txt")).text == "persistent"
 ```
 
-`allow_create=False` reuses the existing workspace and refuses to create a missing one. Leaving the adapter context is non-destructive; the workspace directory remains for the next adapter with the same `environment_id`.
+Execution close preserves the directory. This sample provider does not support stop, destruction, or renewal; those actions belong to its Host.
 
 ## Harness UI loading
 

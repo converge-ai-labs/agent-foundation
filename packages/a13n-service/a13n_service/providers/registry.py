@@ -12,7 +12,6 @@ from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.connector.definition import ConnectorProviderDefinition
 from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.memory.definition import MemoryProviderDefinition
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.web.definition import WebProviderDefinition
@@ -20,7 +19,10 @@ from pydantic import JsonValue
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.endpoints import check_endpoint, dialed_endpoint
+from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.model_settings import check_settings, settings_schema
+
+type RegisteredProvider = ProviderDefinition
 
 type ProviderKind = Literal["model", "environment", "connector", "web", "memory"]
 type WebOperation = Literal["search", "scrape"]
@@ -38,7 +40,7 @@ def web_operations(definition: WebProviderDefinition) -> tuple[WebOperation, ...
 @dataclass(frozen=True)
 class Registry:
     models: ProviderCatalog[ModelProviderDefinition]
-    environments: ProviderCatalog[EnvironmentProviderDefinition]
+    environments: ProviderCatalog[EnvironmentManagementDefinition]
     connectors: ProviderCatalog[ConnectorProviderDefinition]
     web: ProviderCatalog[WebProviderDefinition]
     memory: ProviderCatalog[MemoryProviderDefinition]
@@ -46,13 +48,13 @@ class Registry:
     model_settings: Mapping[str, Mapping[str, JsonValue]]
 
     @classmethod
-    def of(cls, definitions: Iterable[ProviderDefinition]) -> "Registry":
+    def of(cls, definitions: Iterable[RegisteredProvider]) -> "Registry":
         """Group definitions by domain; a duplicate type within a domain or an unknown domain fails assembly.
 
         Deriving the settings schemas imports each calling API's SDK, here rather than inside a request.
         """
         models: list[ModelProviderDefinition] = []
-        environments: list[EnvironmentProviderDefinition] = []
+        environments: list[EnvironmentManagementDefinition] = []
         connectors: list[ConnectorProviderDefinition] = []
         web: list[WebProviderDefinition] = []
         memory: list[MemoryProviderDefinition] = []
@@ -60,7 +62,7 @@ class Registry:
             match definition:
                 case ModelProviderDefinition():
                     models.append(definition)
-                case EnvironmentProviderDefinition():
+                case EnvironmentManagementDefinition():
                     environments.append(definition)
                 case ConnectorProviderDefinition():
                     connectors.append(definition)
@@ -80,7 +82,7 @@ class Registry:
             {api: settings_schema(api) for api in sorted(apis)},
         )
 
-    def catalog(self, kind: ProviderKind) -> Mapping[str, ProviderDefinition]:
+    def catalog(self, kind: ProviderKind) -> Mapping[str, RegisteredProvider]:
         match kind:
             case "model":
                 return self.models
@@ -93,13 +95,13 @@ class Registry:
             case "memory":
                 return self.memory
 
-    def types(self, kind: ProviderKind) -> list[ProviderDefinition]:
+    def types(self, kind: ProviderKind) -> list[RegisteredProvider]:
         return sorted(self.catalog(kind).values(), key=lambda definition: definition.type)
 
     @overload
     def get(self, kind: Literal["model"], type_: str) -> ModelProviderDefinition: ...
     @overload
-    def get(self, kind: Literal["environment"], type_: str) -> EnvironmentProviderDefinition: ...
+    def get(self, kind: Literal["environment"], type_: str) -> EnvironmentManagementDefinition: ...
     @overload
     def get(self, kind: Literal["connector"], type_: str) -> ConnectorProviderDefinition: ...
     @overload
@@ -107,8 +109,8 @@ class Registry:
     @overload
     def get(self, kind: Literal["memory"], type_: str) -> MemoryProviderDefinition: ...
     @overload
-    def get(self, kind: ProviderKind, type_: str) -> ProviderDefinition: ...
-    def get(self, kind: ProviderKind, type_: str) -> ProviderDefinition:
+    def get(self, kind: ProviderKind, type_: str) -> RegisteredProvider: ...
+    def get(self, kind: ProviderKind, type_: str) -> RegisteredProvider:
         """The definition a resource's `type` selects; an unregistered type is an unavailable dependency."""
         definition = self.catalog(kind).get(type_)
         if definition is None:

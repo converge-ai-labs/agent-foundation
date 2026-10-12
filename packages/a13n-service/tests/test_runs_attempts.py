@@ -851,7 +851,7 @@ async def test_slow_object_deletion_does_not_block_tool_boundaries_or_successor_
         await cleanup
 
 
-async def test_mount_handoff_returns_while_process_keeps_the_cancelled_child_owned(
+async def test_environment_handoff_returns_while_process_keeps_the_cancelled_child_owned(
     service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.runs.schemas import EnvironmentMount
@@ -875,15 +875,17 @@ async def test_mount_handoff_returns_while_process_keeps_the_cancelled_child_own
             cleaning.set()
             await finish.wait()
 
-    monkeypatch.setattr(execute_module, "prepare_mounts", prepare)
+    monkeypatch.setattr(execute_module, "prepare", prepare)
     attempt = execute_module._Attempt(service.runtime, lease, control, plan)
-    waiting = asyncio.create_task(attempt._prepare_mounts())
+    waiting = asyncio.create_task(attempt._prepare_environments())
     try:
         await started.wait()
         control.handoff.set()
-        assert await waiting is None
+        assert await waiting is False
         await cleaning.wait()
-        assert any(task.get_name() == f"prepare-mounts-{lease.attempt_id}" for task in service.runtime.tasks.pending)
+        assert any(
+            task.get_name() == f"prepare-environments-{lease.attempt_id}" for task in service.runtime.tasks.pending
+        )
     finally:
         finish.set()
         await asyncio.gather(waiting, return_exceptions=True)

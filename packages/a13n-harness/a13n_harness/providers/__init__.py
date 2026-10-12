@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING, Any
 from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
+    from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+
     from .authentication import Authentication, AuthenticationCase, CredentialMode
     from .catalog import ProviderCatalog, ProviderNotSelected
     from .connector.definition import ConnectorProviderDefinition
     from .definition import ProviderDefinition
-    from .environment.definition import EnvironmentProviderDefinition
     from .memory.definition import MemoryProviderDefinition
     from .model.definition import ModelProviderDefinition
     from .plugins import ProviderManifest

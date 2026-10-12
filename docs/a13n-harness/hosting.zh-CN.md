@@ -48,7 +48,7 @@ result = await executable.run(
 
 ## 每次执行都使用当前权限
 
-每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建新的 Environment 适配器。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。
+每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建当前 Environment 来源。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。
 
 ### 发起模型调用前检查
 
@@ -60,7 +60,7 @@ Host 可以通过 `RunBindings.model_call_check` 提供实现了 `ModelCallCheck
 
 ## 执行尝试与恢复
 
-启用 `ModelRecoveryPolicy` 时，Harness 可以在同一次 Run 中重试中断的模型尝试，这些模型尝试共用同一个 `run_id`。替代 worker 发起的执行尝试则是一次**新的** Run：使用新的 `run_id`、当前绑定、新的 Environment 适配器，以及 Host 选定的检查点。如果上一次工具操作可能已修改数据，但结果无法确定，应先核实并处理实际状态，再决定是否重放。参阅[状态与恢复](state-and-resume.md)。
+启用 `ModelRecoveryPolicy` 时，Harness 可以在同一次 Run 中重试中断的模型尝试，这些模型尝试共用同一个 `run_id`。替代 worker 发起的执行尝试则是一次**新的** Run：使用新的 `run_id`、当前绑定、当前 Environment 来源，以及 Host 选定的检查点。如果上一次工具操作可能已修改数据，但结果无法确定，应先核实并处理实际状态，再决定是否重放。参阅[状态与恢复](state-and-resume.md)。
 
 ## 事件与流式输出
 
@@ -74,7 +74,7 @@ Host 可以通过 `RunBindings.model_call_check` 提供实现了 `ModelCallCheck
 
 ## 环境
 
-每次 Run 都创建一个新的 `Environment`，通过 `environment=` 或具名的 `environments=` 映射传入。Harness 会进入并关闭适配器，但不会销毁其背后的目标资源。Provider 配置、权威 `EnvironmentState`、保留策略和显式 `destroy()` 都由 Host 管理。挂载多个环境时，如果需要默认路由，请显式选择 `default_environment`。[环境](environments.md)中有可运行的示例。
+Host 为每个目标提供 `EnvironmentSource`，通过 `environment=` 或具名的 `environments=` 映射传入。Harness 在首次使用时准备目标、打开独立 execution，并在结束时关闭 execution，不销毁目标。Provider 配置、权威 `EnvironmentState`、保留策略和显式 `destroy()` 都由 Host 管理。挂载多个环境时，如果需要默认路由，请显式选择 `default_environment`。[环境](environments.md)中有可运行的示例。
 
 ## 当前 Run 中的 Shell 观测
 

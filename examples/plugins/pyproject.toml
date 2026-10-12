@@ -47,6 +47,7 @@ build-backend = "hatchling.build"
 packages = ["src/a13n_plugin_examples"]
 
 [tool.uv.sources]
+a13n-logging = { path = "../../packages/a13n-logging", editable = true }
 a13n-envd-client = { path = "../../packages/a13n-envd-client", editable = true }
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 

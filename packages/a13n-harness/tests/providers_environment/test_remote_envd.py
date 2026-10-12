@@ -9,15 +9,13 @@ import pytest
 from a13n_envd_client import EIPSessionStateError
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import EIPMethodError
-from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.providers.environment.remote_envd import connections as module
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    RemoteEnvdEnvironmentConfiguration,
 )
 from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
@@ -55,9 +53,7 @@ def test_http_rejects_unsafe_or_invalid_backend(endpoint):
 
 @pytest.mark.parametrize("directory", [None, "/project"])
 async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, directory):
-    from a13n_harness.environment.sources import EnvironmentMount
-
-    catalog = ProviderCatalog(select_builtin_environment_providers(("http_envd", "websocket_envd")))
+    definitions = select_builtin_environment_providers(("http_envd", "websocket_envd"))
     hub = WebSocketEnvdConnections()
     runtimes = (
         HttpEnvdProviderRuntime(
@@ -66,35 +62,25 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, direc
         ),
         WebSocketEnvdProviderRuntime(hub),
     )
-    for provider, runtime in zip(catalog.values(), runtimes, strict=True):
+    for provider, runtime in zip(definitions, runtimes, strict=True):
         recipe = provider.validate_environment({"working_directory": directory})
-        assert not provider.supports_managed
-        assert not provider.supports_stop and not provider.supports_destroy and not provider.requires_keepalive
+        assert not hasattr(provider, "open_provider")
         assert provider.target_identity(configuration=recipe, state=state(provider.type)) == "env-native"
-        environment = provider.construct(
-            operation_id="op-test",
-            allow_create=False,
-            configuration=recipe,
+        environment = provider.execution_connector(
+            recipe,
+            configuration=runtime.configuration,
             environment_id="env-logical",
             state=state(provider.type),
             runtime=runtime,
         )
         assert provider.describe_environment(recipe).working_directory == (directory or "/")
         assert environment.descriptor.working_directory == (directory or "/")
-        assert EnvironmentMount(environment).working_directory == (directory or "/")
-        assert EnvironmentMount(environment, working_directory="/override").working_directory == "/override"
-        await environment.enter(mount_id="m")
         assert environment.environment_id == "env-logical"
-        assert environment.descriptor.generation == "unprepared"
-        assert environment.operations.files is None
-        assert environment.dump_state() == state(provider.type)
-        await environment.close()
-        assert environment.dump_state() == state(provider.type)
+        assert environment.state == state(provider.type)
         with pytest.raises(EnvironmentProviderError):
-            provider.construct(
-                operation_id="op-test",
-                allow_create=False,
-                configuration=recipe,
+            provider.execution_connector(
+                recipe,
+                configuration=runtime.configuration,
                 environment_id="env-logical",
                 state=None,
                 runtime=runtime,
@@ -115,45 +101,19 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, direc
     await hub.close()
 
 
-async def test_lifecycle_never_prepares_or_destroys_external_daemon():
-    provider = HTTP_ENVD
-    runtime = HttpEnvdProviderRuntime(
-        HttpEnvdConnectionConfiguration(endpoint="https://example.com"), HttpEnvdCredential(token=SecretStr("secret"))
-    )
-    for action in ("stop", "destroy", "reconcile"):
-        env = provider.construct(
-            operation_id="op-test",
-            allow_create=False,
-            configuration=RemoteEnvdEnvironmentConfiguration(),
-            environment_id="env-logical",
-            state=state(),
-            runtime=runtime,
-        )
-        with pytest.raises(EnvironmentProviderError) as failure:
-            if action == "stop":
-                await env.stop()
-            elif action == "destroy":
-                await env.destroy()
-            else:
-                await env.reconcile()
-        assert failure.value.code == "provider_operation_unsupported"
-        assert env.dump_state() == state()
-        await env.close()
+async def test_external_daemons_expose_no_management():
+    for definition in (HTTP_ENVD, WEBSOCKET_ENVD):
+        assert not hasattr(definition, "open_provider")
 
 
-async def test_host_runtime_injection_and_managed_rejection():
-    provider = WEBSOCKET_ENVD
+async def test_host_runtime_injection():
     with pytest.raises(EnvironmentProviderError) as error:
-        await provider.create({}, state=state("websocket_envd"), allow_create=False)
+        await WEBSOCKET_ENVD.execution_connector({}, state=state("websocket_envd")).open()
     assert error.value.code == "provider_runtime_required"
     async with WebSocketEnvdConnections() as hub:
         runtime = WebSocketEnvdProviderRuntime(hub)
-        environment = await provider.create({}, state=state("websocket_envd"), allow_create=False, runtime=runtime)
-        assert environment.provider_key == "websocket_envd"
-        await environment.close()
-        with pytest.raises(EnvironmentProviderError) as error:
-            await provider.create({}, state=state("websocket_envd"), runtime=runtime)
-        assert error.value.code == "provider_external_only"
+        connector = WEBSOCKET_ENVD.execution_connector({}, state=state("websocket_envd"), runtime=runtime)
+        assert connector.provider_key == "websocket_envd"
 
 
 class Connection:
@@ -400,7 +360,7 @@ async def test_websocket_scope_exit_closes_only_its_session(initialized):
     assert not hub._attachments
 
 
-async def test_http_failed_preparation_never_replays_connection_attempt(monkeypatch):
+async def test_http_each_explicit_open_attempts_one_connection(monkeypatch):
     from a13n_harness.providers.environment.remote_envd import http as http_module
 
     calls = []
@@ -410,25 +370,14 @@ async def test_http_failed_preparation_never_replays_connection_attempt(monkeypa
         raise OSError("private endpoint")
 
     monkeypatch.setattr(http_module.EIPDeviceConnection, "initialize", unavailable)
-    provider = HTTP_ENVD
-    runtime = HttpEnvdProviderRuntime(
-        HttpEnvdConnectionConfiguration(endpoint="https://envd.example"),
-        HttpEnvdCredential(token=SecretStr("test-token")),
+    connector = HTTP_ENVD.execution_connector(
+        {}, configuration={"endpoint": "https://envd.example"}, credential={"token": "test-token"}, state=state()
     )
-    environment = provider.construct(
-        operation_id="op-test",
-        allow_create=False,
-        configuration=RemoteEnvdEnvironmentConfiguration(),
-        environment_id="env-logical",
-        state=state(),
-        runtime=runtime,
-    )
-    for _ in range(2):
+    assert calls == []
+    for attempt in range(2):
         with pytest.raises(EnvironmentProviderError):
-            await environment.prepare()
-    await environment.close()
-    assert calls == ["connect"]
-    assert not environment.recover_on_unavailable
+            await connector.open()
+        assert len(calls) == attempt + 1
 
 
 @pytest.mark.parametrize(

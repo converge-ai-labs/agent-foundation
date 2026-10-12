@@ -14,16 +14,16 @@ from pathlib import Path
 from a13n_envd_client import EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 
-from ..envd_policy import EnvdCredentialResolver, EnvironmentEnvdCredentialResolver
-from ..errors import (
+from a13n_harness.environment.envd_policy import EnvdCredentialResolver, EnvironmentEnvdCredentialResolver
+from a13n_harness.environment.errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderErrorContext,
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ._daemon import LocalDaemon
-from .configuration import LocalEnvdLaunchConfiguration
+from a13n_harness.providers.environment.local_envd._daemon import LocalDaemon
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
 
 A13N_ENVD_EXECUTABLE = "A13N_ENVD_EXECUTABLE"
 _PROVIDER_KEY = "local_envd"

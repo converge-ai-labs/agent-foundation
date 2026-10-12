@@ -3,14 +3,14 @@
 from pathlib import Path
 
 import pytest
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.direct_local import files as local_files
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator, _load_git_ignore
-from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_harness.providers.environment.models import EnvironmentError
+from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
 
 pytestmark = pytest.mark.anyio
 
@@ -19,7 +19,7 @@ def _files(root: Path, budget: int = 1024) -> LocalFileOperator:
     return LocalFileOperator(
         root=root,
         policy=_DirectLocalFilePolicy(max_value_bytes=budget),
-        mount_id="workspace",
+        execution_id="workspace",
         generation="test",
     )
 

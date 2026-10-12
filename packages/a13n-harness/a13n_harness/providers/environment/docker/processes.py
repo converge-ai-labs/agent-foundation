@@ -10,8 +10,7 @@ import socket
 from typing import Literal
 from uuid import uuid4
 
-from .._local_retention import LocalRetentionStore
-from ..commands import (
+from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     ProcessControlResult,
@@ -27,11 +26,22 @@ from ..commands import (
     ShellCommand,
     ShellExecResult,
 )
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import BoundOutputCursor, EnvironmentOutputPolicy, OpaqueProcessHandle, _unwrap_opaque
-from .commands import DockerCommands
-from .errors import engine_errors
-from .observation import ByteBudget, ProcessObservation, StreamObservation, attach
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
+    BoundOutputCursor,
+    EnvironmentOutputPolicy,
+    OpaqueProcessHandle,
+    _unwrap_opaque,
+)
+from a13n_harness.providers.environment._local_retention import LocalRetentionStore
+from a13n_harness.providers.environment.docker.commands import DockerCommands
+from a13n_harness.providers.environment.docker.errors import engine_errors
+from a13n_harness.providers.environment.docker.observation import (
+    ByteBudget,
+    ProcessObservation,
+    StreamObservation,
+    attach,
+)
 
 # A command launcher, not a resident agent. Docker owns the resulting exec.
 _LAUNCH = """import json,os,sys
@@ -55,7 +65,7 @@ class DockerProcesses:
     def handle(self, token: str) -> BoundProcessHandle:
         generation = self.commands.container_id
         return BoundProcessHandle(
-            mount_id=self.commands.mount_id,
+            execution_id=self.commands.execution_id,
             observed_generation=generation,
             identity=ProcessIdentity(
                 provider_type="docker", environment_id=self.environment_id, generation=generation, process_id=token

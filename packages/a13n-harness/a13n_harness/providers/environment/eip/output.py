@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import (
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
@@ -18,7 +18,13 @@ from ..retention import (
     OpaqueOutputReference,
     _unwrap_opaque,
 )
-from ._common import convert_receipt, decode_bytes, new_context, raise_converted, seconds_to_milliseconds
+from a13n_harness.providers.environment.eip._common import (
+    convert_receipt,
+    decode_bytes,
+    new_context,
+    raise_converted,
+    seconds_to_milliseconds,
+)
 
 
 @dataclass(slots=True)
@@ -42,12 +48,12 @@ class EIPOutputRegistry:
         *,
         session: EIPSession,
         environment_id: str,
-        mount_id: str,
+        execution_id: str,
         generation: str,
     ) -> None:
         self._session = session
         self._environment_id = environment_id
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
         self._records: dict[str, _OutputRecord] = {}
         self._raw_tokens: dict[eip.OutputReference, str] = {}
@@ -135,7 +141,7 @@ class EIPOutputRegistry:
                 projection_end=projection_end,
             )
             next_cursor = BoundOutputCursor(
-                mount_id=self._mount_id,
+                execution_id=self._execution_id,
                 observed_generation=self._generation,
                 cursor=OpaqueOutputCursor._from_payload(cursor_token),
             )
@@ -238,7 +244,7 @@ class EIPOutputRegistry:
         receipt = convert_receipt(
             result.receipt,
             session=self._session,
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             generation=self._generation,
         )
         return result.released, receipt
@@ -270,7 +276,7 @@ class EIPOutputRegistry:
         elif policy.overflow == "retain":
             kind = "retained"
             reference = BoundOutputReference(
-                mount_id=self._mount_id,
+                execution_id=self._execution_id,
                 observed_generation=self._generation,
                 reference=OpaqueOutputReference._from_payload(token),
             )
@@ -293,11 +299,11 @@ class EIPOutputRegistry:
         )
 
     def _validate_reference(self, reference: BoundOutputReference) -> str:
-        self._validate_bound_identity(reference.mount_id, reference.observed_generation)
+        self._validate_bound_identity(reference.execution_id, reference.observed_generation)
         return _unwrap_opaque(reference.reference, OpaqueOutputReference)
 
     def _validate_bound_cursor(self, cursor: BoundOutputCursor) -> str:
-        self._validate_bound_identity(cursor.mount_id, cursor.observed_generation)
+        self._validate_bound_identity(cursor.execution_id, cursor.observed_generation)
         return _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
 
     def _validate_cursor(self, cursor: BoundOutputCursor, output_token: str) -> _CursorRecord:
@@ -307,8 +313,8 @@ class EIPOutputRegistry:
             raise EnvironmentError("Output cursor is invalid", code="environment_cursor_invalid")
         return record
 
-    def _validate_bound_identity(self, mount_id: str, generation: str) -> None:
-        if mount_id != self._mount_id or generation != self._generation:
+    def _validate_bound_identity(self, execution_id: str, generation: str) -> None:
+        if execution_id != self._execution_id or generation != self._generation:
             raise EnvironmentError("Output selector is foreign or stale", code="environment_stale_mount")
 
     @staticmethod

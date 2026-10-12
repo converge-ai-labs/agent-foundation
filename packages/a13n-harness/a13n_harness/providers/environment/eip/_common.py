@@ -19,12 +19,12 @@ from a13n_envd_client.errors import (
 )
 from pydantic import JsonValue
 
-from .._file_patterns import PATTERN_HINTS
-from ..models import (
+from a13n_harness.environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     EnvironmentError,
     EnvironmentOperationReceipt,
 )
+from a13n_harness.providers.environment._file_patterns import PATTERN_HINTS
 
 _UINT64_MAX = 2**64 - 1
 
@@ -76,7 +76,7 @@ def convert_receipt(
     receipt: eip.OperationReceipt,
     *,
     session: EIPSession,
-    mount_id: str,
+    execution_id: str,
     generation: str,
 ) -> EnvironmentOperationReceipt:
     descriptor = session.descriptor
@@ -91,7 +91,7 @@ def convert_receipt(
             retry_hint="new_run",
         )
     return EnvironmentOperationReceipt(
-        mount_id=mount_id,
+        execution_id=execution_id,
         observed_generation=generation,
         operation_id=receipt.operation_id,
         stage=receipt.stage.value,

@@ -127,7 +127,12 @@ jobs:
           -o faulthandler_timeout=120
           -o faulthandler_exit_on_timeout=true
           --ignore=packages/a13n-service/tests/test_environments_envd.py
+          --ignore=packages/a13n-service/tests/environment_providers
           packages/a13n-service/tests
+
+      - name: Test native Environment management drivers
+        if: matrix.name == 'tests'
+        run: uv run --locked python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
 
       - name: Require Service execution without skips
         if: matrix.name == 'tests'

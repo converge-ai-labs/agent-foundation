@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, BinaryIO, Literal
 
 from pydantic import JsonValue, TypeAdapter
 
-from .._guest_commands import file_helper_source
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from .configuration import E2BEnvironmentConfiguration
-from .errors import sdk_errors
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.providers.environment._guest_commands import file_helper_source
+from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.errors import sdk_errors
 
 if TYPE_CHECKING:
     from e2b import AsyncSandbox
@@ -27,7 +27,7 @@ class GuestCommands:
         self.sandbox = sandbox
         self.configuration = configuration
         self.generation = "unprepared"
-        self.mount_id = "mount-prepare"
+        self.execution_id = "exec-unopened"
         self.closed = False
         self._operations = itertools.count(1)
         self._sources = {
@@ -118,7 +118,7 @@ class GuestCommands:
 
     def receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            mount_id=self.mount_id,
+            execution_id=self.execution_id,
             observed_generation=self.generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

@@ -2,15 +2,21 @@
 
 from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
+from typing import ClassVar, Protocol
 
-from .definition import ProviderDefinition
+
+class CatalogDefinition(Protocol):
+    DOMAIN: ClassVar[str]
+
+    @property
+    def type(self) -> str: ...
 
 
 class ProviderNotSelected(ValueError):
     """A referenced Provider type is not selected by this deployment."""
 
 
-class ProviderCatalog[D: ProviderDefinition](Mapping[str, D]):
+class ProviderCatalog[D: CatalogDefinition](Mapping[str, D]):
     """Own the unique-type-per-domain rule; selection never opens a Provider."""
 
     def __init__(self, definitions: Iterable[D] = ()) -> None:

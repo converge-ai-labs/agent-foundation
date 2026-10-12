@@ -14,7 +14,7 @@ from a13n_envd_client.eip.v1 import (
     RestrictedSandbox,
     SandboxGrant,
 )
-from a13n_harness.providers.environment.envd_policy import (
+from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdEgressConfiguration,
     EnvironmentEnvdCredentialResolver,

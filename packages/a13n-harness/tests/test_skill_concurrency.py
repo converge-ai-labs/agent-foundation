@@ -29,7 +29,7 @@ def _files(root: Path) -> LocalFileOperator:
     return LocalFileOperator(
         root=root,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="skills",
+        execution_id="skills",
         generation="generation-1",
     )
 

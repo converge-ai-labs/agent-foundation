@@ -58,6 +58,10 @@ class RunError(HarnessError):
     """A Harness run failed or was used incorrectly."""
 
 
+class EnvironmentActivationError(RunError):
+    """Host readiness failed; preserve its cause and abort the dependent Run operation."""
+
+
 class RunCleanupError(HarnessError):
     """Run teardown failed after zero or one primary outcome was available."""
 

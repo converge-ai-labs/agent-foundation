@@ -7,8 +7,11 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
+    "docker>=7.2,<8",
+    "e2b>=2.46.4,<3",
+    "modal>=1.5.5,<2",
     "a13n-logging",
-    "a13n-harness[docker,e2b,modal]",
+    "a13n-harness",
     "a13n-stream-protocol",
     "ag-ui-protocol>=1.0.0,<2",
     "aiobotocore[httpx2]>=3.9,<4",
@@ -87,5 +90,5 @@ package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = 
 
 [tool.a13n.release-dependencies]
 a13n-logging = ">=0.2.0,<0.3.0"
-a13n-harness = ">=0.8.1,<0.9.0"
-a13n-stream-protocol = ">=0.8.1,<0.9.0"
+a13n-harness = ">=0.9.0,<0.10.0"
+a13n-stream-protocol = ">=0.9.0,<0.10.0"

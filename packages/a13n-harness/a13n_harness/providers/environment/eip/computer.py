@@ -3,7 +3,7 @@ from __future__ import annotations
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 
-from ..computer import (
+from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
     ComputerDescription,
@@ -16,14 +16,14 @@ from ..computer import (
     ComputerScroll,
     ComputerTypeText,
 )
-from ..models import EnvironmentError
-from ._common import convert_receipt, invoke, new_context, session_client
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.providers.environment.eip._common import convert_receipt, invoke, new_context, session_client
 
 
 class EIPComputerOperations:
-    def __init__(self, session: EIPSession, *, mount_id: str, generation: str) -> None:
+    def __init__(self, session: EIPSession, *, execution_id: str, generation: str) -> None:
         self._session = session
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
 
     async def describe(self) -> ComputerDescription:
@@ -44,7 +44,7 @@ class EIPComputerOperations:
             observation = ComputerObservation.model_validate(
                 {
                     **reader.opened.observation.model_dump(),
-                    "mount_id": self._mount_id,
+                    "execution_id": self._execution_id,
                     "observed_generation": self._generation,
                 }
             )
@@ -77,7 +77,7 @@ class EIPComputerOperations:
         context = new_context()
         if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):
             observation = request.observation
-            if (observation.mount_id, observation.observed_generation) != (self._mount_id, self._generation):
+            if (observation.execution_id, observation.observed_generation) != (self._execution_id, self._generation):
                 raise EnvironmentError("Computer observation is stale", code="environment_stale_mount")
         if isinstance(request, ComputerClick):
             result = await invoke(
@@ -141,7 +141,7 @@ class EIPComputerOperations:
             raise EnvironmentError("Unsupported computer input", code="environment_request_invalid")
         return ComputerActionResult(
             receipt=convert_receipt(
-                result.receipt, session=self._session, mount_id=self._mount_id, generation=self._generation
+                result.receipt, session=self._session, execution_id=self._execution_id, generation=self._generation
             ),
             effect=result.effect.value,
             input_cleanup_complete=result.input_cleanup_complete,

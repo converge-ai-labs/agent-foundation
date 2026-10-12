@@ -16,8 +16,7 @@ from pathlib import Path
 from secrets import token_hex
 from typing import TYPE_CHECKING, Literal
 
-from .._local_retention import LocalRetentionStore, LocalRetentionWriter
-from ..commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandRequest,
@@ -37,8 +36,8 @@ from ..commands import (
     ShellCommand,
     ShellExecResult,
 )
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import (
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
@@ -48,12 +47,13 @@ from ..retention import (
     _unwrap_opaque,
     materialize_capture,
 )
+from a13n_harness.providers.environment._local_retention import LocalRetentionStore, LocalRetentionWriter
 
 if TYPE_CHECKING:
-    from .._windows_job import WindowsJob
-    from .configuration import DirectLocalShellProfile
-    from .files import LocalFileOperator
-    from .provider import (
+    from a13n_harness.providers.environment._windows_job import WindowsJob
+    from a13n_harness.providers.environment.direct_local.configuration import DirectLocalShellProfile
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+    from a13n_harness.providers.environment.direct_local.shared import (
         _DirectLocalOutputPolicy,
         _DirectLocalPortPolicy,
         _DirectLocalProcessPolicy,
@@ -196,7 +196,7 @@ class LocalProcessManager:
         shell_profiles: tuple[DirectLocalShellProfile, ...],
         provider_type: str,
         environment_id: str,
-        mount_id: str,
+        execution_id: str,
         generation: str,
     ) -> None:
         self._files = files
@@ -212,7 +212,7 @@ class LocalProcessManager:
         self._allowed_executables = {_resolve_configured_executable(path) for path in policy.allowed_executables}
         self._provider_type = provider_type
         self._environment_id = environment_id
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._windows_trees: dict[int, _WindowsTree] = {}
@@ -220,9 +220,6 @@ class LocalProcessManager:
         self._operations = itertools.count(1)
         self._lock = asyncio.Lock()
         self._closed = False
-
-    def bind_mount(self, mount_id: str) -> None:
-        self._mount_id = mount_id
 
     async def exec(self, request: CommandRequest) -> ShellExecResult:
         started = await self.start(request)
@@ -321,7 +318,7 @@ class LocalProcessManager:
             assert process is not None
             token = token_hex(16)
             handle = BoundProcessHandle(
-                mount_id=self._mount_id,
+                execution_id=self._execution_id,
                 identity=ProcessIdentity(
                     provider_type=self._provider_type,
                     environment_id=self._environment_id,
@@ -382,7 +379,7 @@ class LocalProcessManager:
         job: WindowsJob | None = None
         process: asyncio.subprocess.Process | None = None
         if os.name == "nt":
-            from .._windows_job import WindowsJob
+            from a13n_harness.providers.environment._windows_job import WindowsJob
 
             job = WindowsJob.create()
         try:
@@ -776,7 +773,7 @@ class LocalProcessManager:
             return self._receipt()
 
     def _record(self, handle: BoundProcessHandle) -> _ProcessRecord:
-        if handle.mount_id != self._mount_id or handle.observed_generation != self._generation:
+        if handle.execution_id != self._execution_id or handle.observed_generation != self._generation:
             raise EnvironmentError("Process handle is foreign or stale.", code="environment_stale_mount")
         token = _unwrap_opaque(handle.handle, OpaqueProcessHandle)
         record = self._records.get(token)
@@ -853,7 +850,7 @@ class LocalProcessManager:
 
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

@@ -16,7 +16,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 | Provider       | 目标配置                                                            | 后端                                                              | 凭据                                |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
+| E2B            | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
 | Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
 | Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
@@ -199,7 +199,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `allow_login`      | false | boolean       | default=false                       |
 | `max_script_bytes` | false | integer       | exclusiveMinimum=0; default=1048576 |
 
-## `DockerEnvironmentConfiguration`
+## `DockerRecipe`
 
 | 字段                          | 必填  | 类型 / 可选值                             | 约束与默认值                                                                     |
 | ----------------------------- | ----- | ----------------------------------------- | -------------------------------------------------------------------------------- |
@@ -232,7 +232,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `target`    | true  | string        | format="path" |
 | `read_only` | false | boolean       | default=true  |
 
-## `E2BEnvironmentConfiguration`
+## `E2BRecipe`
 
 | 字段                        | 必填  | 类型 / 可选值 | 约束与默认值                                              |
 | --------------------------- | ----- | ------------- | --------------------------------------------------------- |

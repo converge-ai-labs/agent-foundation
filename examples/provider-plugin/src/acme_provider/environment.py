@@ -1,13 +1,11 @@
-"""A project workspace provider usable directly or through a Host that selects the manifest, such as Harness UI."""
+"""A Host-managed workspace with independent Direct Local execution connectors."""
 
-import asyncio
-from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_harness.providers.environment import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
-from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -28,66 +26,31 @@ class WorkspaceConfiguration(BaseModel):
     directory: str = Field(default="projects", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
 
 
-@dataclass(frozen=True)
-class WorkspaceRuntime:
-    root: Path
+def workspace(account: WorkspaceConnection, recipe: WorkspaceConfiguration, environment_id: str) -> Path:
+    if Path(environment_id).name != environment_id or environment_id in {".", ".."}:
+        raise ValueError("Environment identity must be one path component")
+    return account.root / recipe.directory / environment_id
 
 
-class Workspace(DirectLocalEnvironment):
-    def __init__(
-        self,
-        configuration: WorkspaceConfiguration,
-        environment_id: str,
-        runtime: WorkspaceRuntime,
-        *,
-        allow_create: bool,
-    ):
-        self.workspace = runtime.root / configuration.directory / environment_id
-        self.allow_create = allow_create
-        super().__init__(
-            DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": self.workspace}}),
-            environment_id=environment_id,
-        )
-
-    @property
-    def provider_key(self) -> str:
-        return "acme_workspace"
-
-    async def _prepare(self, *, mount_id: str) -> None:
-        if self.allow_create:
-            await asyncio.to_thread(self.workspace.mkdir, parents=True, exist_ok=True)
-        await super()._prepare(mount_id=mount_id)
-
-
-async def runtime(
+def connector(
     *,
     configuration: WorkspaceConnection,
-    credential: object | None,
-) -> WorkspaceRuntime:
-    del credential
-    return WorkspaceRuntime(configuration.root)
-
-
-def construct(
-    *,
-    configuration: WorkspaceConfiguration,
+    credential: object,
+    environment: WorkspaceConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
-    runtime: WorkspaceRuntime | None,
-    operation_id: str,
-    allow_create: bool,
-) -> Workspace:
-    del operation_id
-    if runtime is None or state is not None:
-        raise ValueError("Workspace requires a stateless local runtime")
-    return Workspace(configuration, environment_id, runtime, allow_create=allow_create)
+    runtime: object,
+) -> EnvironmentConnector:
+    del credential, runtime
+    return DIRECT_LOCAL.execution_connector(
+        {"root": {"path": str(workspace(configuration, environment, environment_id))}},
+        environment_id=environment_id,
+        state=state,
+    )
 
 
 def describe(configuration: WorkspaceConfiguration) -> EnvironmentDescriptor:
-    del configuration
-    return DIRECT_LOCAL.describe_environment(
-        DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": "/"}})
-    )
+    return DIRECT_LOCAL.describe_environment(DIRECT_LOCAL.validate_environment({"root": {"path": "/"}}))
 
 
 acme_environment = EnvironmentProviderDefinition(
@@ -95,9 +58,6 @@ acme_environment = EnvironmentProviderDefinition(
     display_name="Acme project workspace",
     configuration_model=WorkspaceConnection,
     environment_model=WorkspaceConfiguration,
-    construct=construct,
+    connector_factory=connector,
     describe_environment=describe,
-    runtime_factory=runtime,
-    supports_stop=True,
-    supports_destroy=True,
 )

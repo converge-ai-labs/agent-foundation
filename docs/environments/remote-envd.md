@@ -44,7 +44,7 @@ The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_DEVICE_ID`, a
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentState
 
 (http_envd,) = select_builtin_environment_providers(("http_envd",))
 state = EnvironmentState(
@@ -52,22 +52,21 @@ state = EnvironmentState(
     state_version="1",
     state={"device_id": "env-remote-machine"},
 )
-environment = await http_envd.create(
+environment = http_envd.execution_connector(
     {"working_directory": "/work/project"},
     configuration={"endpoint": "https://envd.example.com"},
     credential={"token": token_from_your_secret_store},
     environment_id="env-my-project",  # Your Host's logical identity.
     state=state,
-    allow_create=False,
 )
 
 # Harness binds, uses and closes this fresh adapter for the Run.
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
-`allow_create=False` is required: both remote Providers declare `supports_managed=False` and refuse a managed creation before any external call.
+HTTP and WebSocket Envd expose fixed-device connectors only; their definitions have no management factory or lifecycle methods.
 
-Outside Harness, follow `remote.py`: enter the adapter, ensure readiness, use its operations, and close it in `finally`. A shared `HttpEnvdProviderRuntime` stays open until Host shutdown.
+Outside Harness, use `async with await environment.open() as execution` and call the execution's operations. A shared `HttpEnvdProviderRuntime` stays open until Host shutdown.
 
 The example CLI can connect to an existing daemon too:
 
@@ -131,14 +130,14 @@ To use one of those connections:
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
 )
 from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
 
 (websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
-environment = await websocket_envd.create(
+environment = websocket_envd.execution_connector(
     {"working_directory": "/work/project"},
     environment_id="env-my-project",
     state=EnvironmentState(
@@ -146,7 +145,6 @@ environment = await websocket_envd.create(
         state_version="1",
         state={"device_id": "env-remote-machine"},
     ),
-    allow_create=False,
     runtime=WebSocketEnvdProviderRuntime(
         connections,
         WebSocketEnvdConnectionConfiguration(connection_timeout=30),

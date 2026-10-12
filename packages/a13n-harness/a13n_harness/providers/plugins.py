@@ -8,9 +8,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from .environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 
-PROVIDER_API_VERSION = 1
+PROVIDER_API_VERSION = 3
 ENTRY_POINT_GROUP = "a13n_harness.providers.plugins"
 
 

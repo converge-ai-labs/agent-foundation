@@ -6,7 +6,7 @@
 
 The Host selects an immutable Device execution identity, Sandbox and egress mode. A Session has a fixed default working directory and owns its operations, processes, output and transfers. Its working directory supplies defaults, not confinement: restricted grants constrain the complete worker, while disabled Sandbox retains native filesystem authority. Envd owns the worker lifecycle; the Host owns the outer account, container or VM and product authorization.
 
-Envd is not an Agent runtime, product authorization service, provisioner, scheduler or durable execution database. Harness consumes fresh provider-neutral Environment adapters; it does not select Devices or own their sockets. Direct Local, Docker and native cloud Providers use their own operation and lifecycle contracts.
+Envd is not an Agent runtime, product authorization service, provisioner, scheduler or durable execution database. Harness opens a provider-neutral Environment execution through a connector fixed to the Host-selected environment; it does not select Devices or own their sockets. Direct Local, Docker and native cloud Providers use their own operation and lifecycle contracts.
 
 ## Architecture
 
@@ -47,7 +47,7 @@ HTTP, reverse WebSocket and stdio implement the same Session semantics. HTTP req
 
 1. The operator or Host launches envd under the chosen OS identity or outer sandbox.
 2. A trusted requester initializes the Device connection, reads its default directory and optionally discovers directories before selecting a working path.
-3. Each fresh Environment adapter opens a Session with its captured working directory and verifies readiness.
+3. Each Environment connector opens an EIP Session with its captured working directory and verifies readiness.
 4. Requests and binary transfers route to that Session. Its client maintains liveness while the owning scope exists, including during quiet long-running commands.
 5. Scope close cleans that Session, not the daemon, shared carrier or sibling Sessions.
 6. Lost owners expire; a short disconnect grace permits same-Session reattachment. Periodic and high-water collection remove abandoned Sessions and eligible completed history.

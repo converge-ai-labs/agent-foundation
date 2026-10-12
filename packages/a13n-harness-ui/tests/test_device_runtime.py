@@ -221,7 +221,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                     *[app._devices.bind(binding, environment_id=name) for name in ("first", "second")]
                 )
                 try:
-                    await asyncio.gather(first.prepare(), second.prepare())
+                    first, second = await asyncio.gather(first.open(), second.open())
                     assert len(set(opened)) == 2
                     assert first.descriptor.generation != second.descriptor.generation
                     assert first.operations.files is not None and second.operations.files is not None
@@ -233,7 +233,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                     await second.close()
                     third = await app._devices.bind(binding, environment_id="third")
                     try:
-                        await third.prepare()
+                        third = await third.open()
                         assert len(set(opened)) == 3
                     finally:
                         await third.close()
@@ -265,7 +265,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                         assert bound.resolve_path("retained.txt").path == device_path(root / "retained.txt")
                         assert (await bound.files.read_text("retained.txt")).text == "retained"
                 finally:
-                    finalized = await plan.finalize()
+                    finalized = plan.finalization
                 assert finalized.cleanup_errors == ()
                 publication = next(item for item in finalized.state_publications if item.key.alias == "build")
                 assert publication.status == "published"
@@ -274,9 +274,9 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                 # A second owner restores only Device identity, never a live Session.
                 restored = await service.prepare(captured.value)
                 try:
-                    assert len(set(opened)) == 5
+                    assert len(set(opened)) == 4
                 finally:
-                    finalized = await restored.finalize()
+                    finalized = restored.finalization
                 assert (
                     next(item for item in finalized.state_publications if item.key.alias == "build").status
                     == "unchanged"

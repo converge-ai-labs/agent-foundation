@@ -4,7 +4,7 @@ Write the usual PR title and push the component's release tag as usual. PR label
 
 ## Automatic Changelog
 
-`scripts/release_notes.py` owns the component path mapping. It includes each component's source, shipped assets, documentation, specifications, and release workflow. The Harness channel includes Environment and Stream Protocol. Harness UI and Service include their browser applications and shared UI package; a13n-envd includes its Python client, protocol, installers, and sandbox image. Language SDKs remain independent, and the Rust SDK excludes the Service CLI. Shared root Python/frontend lockfiles and unrelated component changes do not select an entry. This is a source-change summary, not a transitive dependency-impact analysis.
+`scripts/release_notes.py` owns the component path mapping. It includes each component's source, shipped assets, documentation, specifications, and release workflow. The Harness channel includes Stream Protocol. Environment has its own release channel. Harness UI and Service include their browser applications and shared UI package; a13n-envd includes its Python client, protocol, installers, and sandbox image. Language SDKs remain independent, and the Rust SDK excludes the Service CLI. Shared root Python/frontend lockfiles and unrelated component changes do not select an entry. This is a source-change summary, not a transitive dependency-impact analysis.
 
 The generator reads first-parent history between the comparison tag and the release tag. A merged PR appears once, using its title; direct commits appear with commit links. Selection is based on changed files, not the title's scope. Entries retain the existing titles rather than inventing user-impact summaries.
 
