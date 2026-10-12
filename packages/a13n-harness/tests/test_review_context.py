@@ -27,7 +27,7 @@ from a13n_harness.capabilities import (
     ToolRiskLevel,
 )
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
-from pydantic_ai import ToolApproved
+from pydantic_ai import ApprovalRequired, RunContext, ToolApproved
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -335,15 +335,17 @@ async def test_shell_model_receives_same_xml_task_schema_history_and_approval_co
 
 
 @pytest.mark.parametrize("inline", [False, True])
-@pytest.mark.parametrize("native", [False, True])
-async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(inline, native):
+@pytest.mark.parametrize("business_confirmation", [False, True])
+async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(inline, business_confirmation):
     from pydantic_ai import Tool, ToolDenied
     from pydantic_ai.capabilities import HandleDeferredToolCalls
 
-    reviewer = Reviewer(risk=ToolRiskLevel.LOW if native else ToolRiskLevel.EXTRA_HIGH)
+    reviewer = Reviewer(risk=ToolRiskLevel.LOW if business_confirmation else ToolRiskLevel.EXTRA_HIGH)
     executed = []
 
-    def execute() -> str:
+    def execute(ctx: RunContext[AgentContext]) -> str:
+        if business_confirmation and not ctx.tool_call_approved:
+            raise ApprovalRequired()
         executed.append(True)
         return "ok"
 
@@ -351,7 +353,7 @@ async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(
         return DeferredToolResults(approvals={item.tool_call_id: False for item in requests.approvals})
 
     capabilities = [
-        Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=native)], id="business")]),
+        Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=business_confirmation)], id="business")]),
         ToolPermissionsCapability(
             ToolPermissions(default="review"),
             reviewer=reviewer,
@@ -363,6 +365,7 @@ async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(
     agent = HarnessBuilder().build(AgentSpec(), model=_model(), output_type=str, capabilities=tuple(capabilities))
     result = await agent.run("Go", bindings=RunBindings.embedded())
     if not inline:
+        assert result.status == "suspended" and not executed
         result = await agent.run(
             previous_state=result.state,
             deferred_resume=DeferredToolResume(
