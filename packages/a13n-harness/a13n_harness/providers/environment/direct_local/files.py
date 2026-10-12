@@ -68,15 +68,17 @@ class _LocalWriter:
 
     async def open(self) -> None:
         try:
-            fd, name = await asyncio.to_thread(
-                tempfile.mkstemp,
+            # Keep candidates private while allowing ordinary file creation to
+            # apply the Host's umask. mkstemp's fixed 0600 is not a file default.
+            name = await asyncio.to_thread(
+                tempfile.mkdtemp,
                 prefix=".a13n-write-",
                 dir=self._native_path.parent,
             )
+            self._temp_path = Path(name) / "content"
+            self._file = await asyncio.to_thread(self._temp_path.open, "xb")
         except OSError as exc:
             raise _environment_error_from_os(exc, action="open a staged file") from exc
-        self._temp_path = Path(name)
-        self._file = os.fdopen(fd, "wb")
         if self._mode == "append" and await asyncio.to_thread(self._native_path.exists):
             await self._copy_append_source()
 
@@ -178,6 +180,7 @@ class _LocalWriter:
         if self._temp_path is not None:
             try:
                 await asyncio.to_thread(self._temp_path.unlink, missing_ok=True)
+                await asyncio.to_thread(self._temp_path.parent.rmdir)
             except OSError as exc:
                 cleanup = _environment_error_from_os(exc, action="remove a staged file")
                 if failure is None:
@@ -342,14 +345,20 @@ class LocalFileOperator:
             if mode == "create":
                 os.link(staged, destination)
             else:
+                if exists:
+                    # Content edits retain access/executable bits, not the private
+                    # staging mode. Do not transfer set-ID bits to a new inode.
+                    os.chmod(staged, stat_module.S_IMODE(destination.stat().st_mode) & 0o777)
                 os.replace(staged, destination)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="publish a staged file") from exc
-        if mode == "create":
-            try:
+        try:
+            if mode == "create":
                 staged.unlink()
-            except OSError:
-                pass
+            staged.parent.rmdir()
+        except OSError:
+            # Publication has succeeded; staging cleanup cannot undo it.
+            pass
 
     async def read_text(
         self,

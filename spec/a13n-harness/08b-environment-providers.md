@@ -38,6 +38,8 @@ Live descriptors expose bounded `backing_identity` evidence binding the Provider
 
 Direct Local makes no sandbox, account-isolation, network-isolation, or race-free filesystem-broker claim; its confinement is a provider operation policy over one Host-selected root. File writes stage complete candidates before publication, and `move(replace=False)` uses one native no-replace rename on Linux, macOS, and Windows, so a concurrent destination publication is a conflict that preserves the losing source. Platforms without that primitive return `environment_unsupported`; cross-filesystem moves are unsupported.
 
+On POSIX hosts, new files use ordinary `0666` creation permissions filtered by the Host process umask; Direct Local does not change that process-wide mask. Replacing an existing file, including append and patch publication, preserves its ordinary access and executable bits without transferring special set-ID bits. Candidates remain private until publication. File writes do not promise ownership or ACL preservation.
+
 ### Local Envd
 
 `local_envd` provides local EIP operations through a Host-owned daemon. Its reference-only recipe contains a working directory, required methods and optional Session egress configuration under the [remote path contract](#remote-envd). The working directory is an existing Device path, not a filesystem access boundary.

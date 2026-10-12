@@ -1,5 +1,10 @@
 """Bounded text pages are successful observations, not oversized requests."""
 
+import asyncio
+import os
+import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -239,3 +244,126 @@ async def test_closed_file_facet_rejects_native_access(tmp_path: Path, action: s
             await files.write_text("/file", "replacement", mode="replace")
     assert error.value.code == "environment_stale_mount"
     assert (tmp_path / "file").read_bytes() == b"original"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+@pytest.mark.parametrize("permissions", [0o644, 0o755, 0o640, 0o600])
+@pytest.mark.parametrize("operation", ["replace", "upsert", "append", "patch", "stream", "copy"])
+async def test_content_update_preserves_existing_permissions(tmp_path: Path, permissions: int, operation: str) -> None:
+    path = tmp_path / "file"
+    path.write_bytes(b"old\n")
+    path.chmod(permissions)
+    files = _files(tmp_path)
+    try:
+        if operation == "patch":
+            await files.patch_text("/file", "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
+        elif operation == "stream":
+
+            async def chunks():
+                yield b"new\n"
+
+            await files.write_bytes_stream("/file", chunks(), mode="replace")
+        elif operation == "copy":
+            (tmp_path / "source").write_bytes(b"new\n")
+            await files.copy("/source", "/file", replace=True)
+        else:
+            await files.write_text("/file", "new\n", mode=operation)
+        assert path.read_bytes() == (b"old\nnew\n" if operation == "append" else b"new\n")
+        assert stat.S_IMODE(path.stat().st_mode) == permissions
+        assert not list(tmp_path.glob(".a13n-write-*"))
+    finally:
+        files.close()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+async def test_failed_permission_preservation_does_not_publish(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "file"
+    path.write_bytes(b"old\n")
+    path.chmod(0o644)
+
+    def deny_chmod(*args, **kwargs):
+        raise PermissionError("cannot preserve permissions")
+
+    monkeypatch.setattr(local_files.os, "chmod", deny_chmod)
+    with pytest.raises(EnvironmentError) as error:
+        await _files(tmp_path).write_text("/file", "new\n", mode="replace")
+    assert error.value.code == "environment_denied"
+    assert path.read_bytes() == b"old\n"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+async def test_content_update_does_not_transfer_special_mode_bits(tmp_path: Path) -> None:
+    path = tmp_path / "file"
+    path.write_bytes(b"old\n")
+    path.chmod(0o6755)
+    await _files(tmp_path).write_text("/file", "new\n", mode="replace")
+    assert stat.S_IMODE(path.stat().st_mode) == 0o755
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+@pytest.mark.parametrize("mask", [0o022, 0o027, 0o077])
+async def test_new_file_uses_host_creation_permissions(tmp_path: Path, mask: int) -> None:
+    # umask is process-global: never change it in the threaded test runner.
+    script = """
+import asyncio, os, stat, sys
+from pathlib import Path
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
+root = Path(sys.argv[1])
+mask = int(sys.argv[2])
+os.umask(mask)
+async def main():
+    files = LocalFileOperator(root=root, policy=_DirectLocalFilePolicy(max_value_bytes=1024),
+                              execution_id='workspace', generation='test')
+    try:
+        for mode in ['create', 'upsert']:
+            for operation in ['text', 'stream', 'copy']:
+                name = f'{mode}-{operation}'
+                if operation == 'text':
+                    await files.write_text('/' + name, 'new', mode=mode)
+                elif operation == 'stream':
+                    async def chunks():
+                        yield b'new'
+                    await files.write_bytes_stream('/' + name, chunks(), mode=mode)
+                else:
+                    (root / 'source').write_bytes(b'new')
+                    await files.copy('/source', '/' + name, replace=mode == 'upsert')
+                assert (root / name).read_bytes() == b'new'
+                assert stat.S_IMODE((root / name).stat().st_mode) == 0o666 & ~mask
+        assert not list(root.glob('.a13n-write-*'))
+    finally:
+        files.close()
+asyncio.run(main())
+"""
+    result = await asyncio.to_thread(
+        subprocess.run,
+        [sys.executable, "-c", script, str(tmp_path), str(mask)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+async def test_staging_is_private_and_aborted_stream_is_removed(tmp_path: Path, failure_type) -> None:
+    path = tmp_path / "file"
+    path.write_bytes(b"original")
+    path.chmod(0o600)
+
+    async def chunks():
+        yield b"private candidate"
+        staging = next(tmp_path.glob(".a13n-write-*"))
+        assert staging.is_dir()
+        assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+        assert path.read_bytes() == b"original"
+        raise failure_type("incomplete stream")
+
+    with pytest.raises(failure_type, match="incomplete stream"):
+        await _files(tmp_path).write_bytes_stream("/file", chunks(), mode="replace")
+    assert list(tmp_path.iterdir()) == [path]
+    assert path.read_bytes() == b"original"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
