@@ -22,7 +22,7 @@ ROOT = Path(__file__).parents[2]
         ("push", "false", "false", set()),
     ],
 )
-def test_development_images_publish_only_dev_without_smoke_or_sha_tags(
+def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_tags(
     tmp_path, monkeypatch, event, service_changed, sandbox_changed, expected
 ) -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
@@ -33,7 +33,7 @@ def test_development_images_publish_only_dev_without_smoke_or_sha_tags(
     assert workflow["jobs"]["changes"]["if"] == "github.ref == 'refs/heads/main'"
     steps = workflow["jobs"]["publish"]["steps"]
     metadata = next(step for step in steps if step.get("id") == "meta")
-    assert metadata["with"]["tags"].strip() == "type=raw,value=dev"
+    assert metadata["with"]["tags"].strip() == "type=raw,value=${{ matrix.tag }}"
     build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
     assert build["with"]["push"] is True
     assert "BUILD_REVISION=${{ github.sha }}" in build["with"]["build-args"]
@@ -48,6 +48,13 @@ def test_development_images_publish_only_dev_without_smoke_or_sha_tags(
     images = json.loads(output.read_text().removeprefix("images="))
     assert {image["name"] for image in images} == expected
     assert all(image["platforms"] == "linux/amd64,linux/arm64" for image in images)
+    sandbox = [image for image in images if image["name"] == "a13n-sandbox"]
+    assert {(image["variant"], image["tag"]) for image in sandbox} == (
+        {("standard", "dev"), ("slim", "dev-slim")} if "a13n-sandbox" in expected else set()
+    )
+    assert all(image["tag"] == "dev" for image in images if image["name"] == "a13n-service")
+    assert "SANDBOX_VARIANT={0}" in build["with"]["build-args"]
+    assert "matrix.variant" in build["with"]["cache-to"]
 
 
 def test_development_sandbox_builds_native_binaries_and_copies_same_run_artifacts() -> None:
@@ -110,9 +117,11 @@ def test_development_sandbox_publication_requires_both_binary_builds(result, mon
     assert (completed.returncode == 0) is (result == "success")
 
 
-@pytest.mark.parametrize("component", ["a13n-service", "a13n-envd"])
+@pytest.mark.parametrize(
+    "component,variant", [("a13n-service", "standard"), ("a13n-envd", "standard"), ("a13n-envd", "slim")]
+)
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.2"])
-def test_all_release_image_tags_follow_one_channel_policy(component, version, tmp_path, monkeypatch) -> None:
+def test_all_release_image_tags_follow_one_channel_policy(component, variant, version, tmp_path, monkeypatch) -> None:
     jobs = yaml.safe_load((ROOT / f".github/workflows/release-{component}.yml").read_text())["jobs"]
     steps = jobs["publish-image"]["steps"]
     script = next(step["run"] for step in steps if step["name"] == "Resolve image tags")
@@ -120,10 +129,16 @@ def test_all_release_image_tags_follow_one_channel_policy(component, version, tm
     image = f"ghcr.io/example/{component}"
     monkeypatch.setenv("IMAGE", image)
     monkeypatch.setenv("VERSION", version)
+    monkeypatch.setenv("VARIANT", variant)
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     subprocess.run(["bash", "-eu", "-c", script], check=True)
     tags = [line for line in output.read_text().splitlines() if line.startswith(image)]
-    assert tags == ([f"{image}:{version}"] if "-rc." in version else [f"{image}:{version}", f"{image}:latest"])
+    suffix = "-slim" if variant == "slim" else ""
+    stable = "slim" if variant == "slim" else "latest"
+    expected = [f"{image}:{version}{suffix}"]
+    if "-rc." not in version:
+        expected.append(f"{image}:{stable}")
+    assert tags == expected
 
 
 @pytest.mark.parametrize("component", ["a13n-service"])
@@ -189,7 +204,10 @@ def test_sandbox_shares_trixie_runtime_with_source_and_prebuilt_binaries() -> No
     assert "ARG ENVD_BINARY_SOURCE=source" in dockerfile
     assert "FROM rust:1.96-trixie AS builder" in dockerfile
     assert "FROM node:24-trixie-slim AS node" in dockerfile
-    assert "FROM python:3.13.12-slim-trixie AS runtime" in dockerfile
+    assert "FROM python:3.13.12-slim-trixie AS standard-runtime" in dockerfile
+    assert "FROM debian:trixie-slim AS slim-runtime" in dockerfile
+    assert "ARG SANDBOX_VARIANT=standard" in dockerfile
+    assert "FROM ${SANDBOX_VARIANT}-runtime AS runtime" in dockerfile
     assert "cargo build --release --locked --package a13n-envd" in dockerfile
     assert "COPY --from=builder /src/target/release/a13n-envd /a13n-envd" in dockerfile
     assert "COPY --chmod=0755 tmp/sandbox-binaries/${TARGETARCH}/a13n-envd /a13n-envd" in dockerfile
@@ -248,6 +266,8 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
         ("deploy/docker/images/a13n-service/service.toml", {"service"}),
         ("deploy/docker/images/a13n-service/entrypoint.sh", {"service"}),
         ("deploy/docker/images/sandbox/Dockerfile", {"sandbox"}),
+        ("deploy/docker/images/sandbox/entrypoint.sh", {"sandbox"}),
+        ("deploy/docker/images/sandbox/init-skills.sh", {"sandbox"}),
         ("crates/a13n-envd/src/main.rs", {"sandbox"}),
         ("uv.lock", {"service"}),
         ("frontend/apps/a13n-console/src/app.tsx", {"service"}),
@@ -395,3 +415,57 @@ def test_quickstart_initializer_propagates_failures(
     result = subprocess.run([*command[:2], command[2].replace("$$", "$")], check=False)
     assert result.returncode == expected
     assert calls.read_text().splitlines() == (["migrate"] if migration_status else ["migrate", "bootstrap"])
+
+
+@pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
+@pytest.mark.parametrize("variant", ["standard", "slim"])
+def test_sandbox_release_checks_each_variant_digest(version, variant, tmp_path, monkeypatch):
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release-a13n-envd.yml").read_text())["jobs"]
+    publish = jobs["publish-image"]
+    assert publish["strategy"]["matrix"] == {"variant": ["standard", "slim"]}
+    steps = publish["steps"]
+    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
+    assert "SANDBOX_VARIANT=${{ matrix.variant }}" in build["with"]["build-args"]
+    assert "matrix.variant" in build["with"]["cache-to"]
+    step = next(step for step in steps if step["name"] == "Verify published image tags")
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text('#!/bin/sh\necho "$4" >> images\necho sha256:same\n')
+    fake_docker.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("IMAGE", "example/sandbox")
+    monkeypatch.setenv("VERSION", version)
+    monkeypatch.setenv("VARIANT", variant)
+    subprocess.run(["bash", "-eu", "-c", step["run"]], cwd=tmp_path, check=True)
+    suffix = "-slim" if variant == "slim" else ""
+    expected = [f"example/sandbox:{version}{suffix}"]
+    if "-rc." not in version:
+        expected.append(f"example/sandbox:{'slim' if variant == 'slim' else 'latest'}")
+    assert (tmp_path / "images").read_text().splitlines() == expected
+
+
+def test_container_ci_checks_both_variants_on_both_native_architectures(tmp_path, monkeypatch):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-containers.yml").read_text())
+    steps = workflow["jobs"]["changes"]["steps"]
+    matrix = next(step for step in steps if step.get("id") == "matrix")
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("A13N_SERVICE_CHANGED", "false")
+    monkeypatch.setenv("SANDBOX_CHANGED", "true")
+    subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
+    images = json.loads(output.read_text().removeprefix("images="))
+    assert {image["runner"] for image in images} == {"ubuntu-24.04", "ubuntu-24.04-arm"}
+    for image in images:
+        assert image["build_target"] == "image-sandbox image-sandbox-slim"
+        assert image["check_target"] == "image-check-sandbox image-check-sandbox-slim"
+    filters = yaml.safe_load(next(step for step in steps if step.get("id") == "filter")["with"]["filters"])
+    for name in (
+        "deploy/docker/images/sandbox/init-skills.sh",
+        "deploy/docker/images/sandbox/entrypoint.sh",
+        "scripts/sandbox_smoke.py",
+    ):
+        assert any(Path(name).full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])
+        assert any(Path(name).full_match(pattern) for pattern in filters["sandbox"])
+    makefile = (ROOT / "Makefile").read_text()
+    assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_IMAGE)" --variant standard' in makefile
+    assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_SLIM_IMAGE)" --variant slim' in makefile

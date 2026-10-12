@@ -13,8 +13,9 @@ on:
       - "deploy/docker/images/a13n-service/service.toml"
       - "deploy/docker/compose/**"
       - "scripts/deploy_smoke.py"
+      - "scripts/sandbox_smoke.py"
       - "scripts/k8s_local.py"
-      - "deploy/docker/images/sandbox/Dockerfile"
+      - "deploy/docker/images/sandbox/**"
       - "LICENSE"
       - "Makefile"
       - "crates/a13n-envd/**"
@@ -101,7 +102,8 @@ jobs:
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'crates/a13n-envd/**'
-              - 'deploy/docker/images/sandbox/Dockerfile'
+              - 'scripts/sandbox_smoke.py'
+              - 'deploy/docker/images/sandbox/**'
               - 'LICENSE'
 
       - name: Build image matrix
@@ -125,12 +127,13 @@ jobs:
                   "smoke_target": "compose-smoke",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
-              images.append({
-                  "name": "a13n-sandbox",
-                  "runner": "ubuntu-24.04",
-                  "build_target": "image-sandbox",
-                  "check_target": "image-check-sandbox",
-              })
+              for arch, runner in (("amd64", "ubuntu-24.04"), ("arm64", "ubuntu-24.04-arm")):
+                  images.append({
+                      "name": f"a13n-sandbox-{arch}",
+                      "runner": runner,
+                      "build_target": "image-sandbox image-sandbox-slim",
+                      "check_target": "image-check-sandbox image-check-sandbox-slim",
+                  })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
           PY
@@ -141,7 +144,7 @@ jobs:
     if: needs.changes.outputs.images != '[]'
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.images) }}
     env:

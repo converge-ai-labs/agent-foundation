@@ -2,6 +2,7 @@
 
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
+SANDBOX_SLIM_IMAGE ?= a13n-sandbox:local-slim
 COMPOSE_PULL ?= always
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin examples/mcp-apps
 PYTHON_TEST_DIRS ?=
@@ -473,11 +474,15 @@ image-a13n-service: ## Build the local a13n-service container image, which serve
 	@docker build -f deploy/docker/images/a13n-service/Dockerfile -t "$(A13N_SERVICE_IMAGE)" .
 
 .PHONY: image-sandbox
-image-sandbox: ## Build the local sandbox image with a13n-envd
+image-sandbox: ## Build the standard sandbox with a13n-envd and agent-browser
 	@docker build -f deploy/docker/images/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
 
+.PHONY: image-sandbox-slim
+image-sandbox-slim: ## Build the minimal a13n-envd runtime image
+	@docker build -f deploy/docker/images/sandbox/Dockerfile --build-arg SANDBOX_VARIANT=slim -t "$(SANDBOX_SLIM_IMAGE)" .
+
 .PHONY: images
-images: image-a13n-service image-sandbox ## Build all local container images
+images: image-a13n-service image-sandbox image-sandbox-slim ## Build all local container images
 
 .PHONY: image-check-a13n-service
 image-check-a13n-service: ## Smoke-check the existing a13n-service container image
@@ -499,10 +504,15 @@ image-check-sandbox: ## Smoke-check sandbox defaults, development account, sudo 
 		test "$$(sudo -n id -u)" = "0"'
 	@docker run --rm --user sandbox --entrypoint sh "$(SANDBOX_IMAGE)" -ec 'python3 --version; python3 -m pip --version; python3 -m venv /tmp/a13n/venv; uv --version; node --version; npm --version; pnpm --version; git --version; cc --version; c++ --version; make --version; pkg-config --version; a13n-envd --version'
 	@docker run --rm "$(SANDBOX_IMAGE)"
+	@python3 scripts/sandbox_smoke.py --image "$(SANDBOX_IMAGE)" --variant standard
+
+.PHONY: image-check-sandbox-slim
+image-check-sandbox-slim: ## Smoke-check the minimal daemon image without development tools
+	@python3 scripts/sandbox_smoke.py --image "$(SANDBOX_SLIM_IMAGE)" --variant slim
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-sandbox-slim
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks

@@ -293,8 +293,12 @@ jobs:
         run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish-image:
-    name: Publish sandbox image
+    name: Publish sandbox image (${{ matrix.variant }})
     needs: [prepare, build-binaries, publish-crate, publish-client]
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [standard, slim]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -342,12 +346,19 @@ jobs:
         env:
           IMAGE: ${{ env.SANDBOX_IMAGE }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
         run: |
+          suffix=""
+          stable=latest
+          if [[ "$VARIANT" == slim ]]; then
+            suffix=-slim
+            stable=slim
+          fi
           {
             echo "tags<<EOF"
-            echo "$IMAGE:$VERSION"
+            echo "$IMAGE:$VERSION$suffix"
             if [[ "$VERSION" != *-rc.* ]]; then
-              echo "$IMAGE:latest"
+              echo "$IMAGE:$stable"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -362,20 +373,28 @@ jobs:
           tags: ${{ steps.image-tags.outputs.tags }}
           build-args: |
             ENVD_BINARY_SOURCE=prebuilt
+            SANDBOX_VARIANT=${{ matrix.variant }}
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             BUILD_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=release-sandbox
-          cache-to: type=gha,mode=max,scope=release-sandbox
+          cache-from: type=gha,scope=release-sandbox-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=release-sandbox-${{ matrix.variant }}
 
       - name: Verify published image tags
         env:
           IMAGE: ${{ env.SANDBOX_IMAGE }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
         run: |
-          version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}')"
+          suffix=""
+          stable=latest
+          if [[ "$VARIANT" == slim ]]; then
+            suffix=-slim
+            stable=slim
+          fi
+          version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION$suffix" --format '{{json .Manifest.Digest}}')"
           test -n "$version_digest"
           if [[ "$VERSION" != *-rc.* ]]; then
-            latest_digest="$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest.Digest}}')"
+            latest_digest="$(docker buildx imagetools inspect "$IMAGE:$stable" --format '{{json .Manifest.Digest}}')"
             test "$version_digest" = "$latest_digest"
           fi
 
