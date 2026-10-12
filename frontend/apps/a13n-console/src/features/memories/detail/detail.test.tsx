@@ -479,12 +479,12 @@ it("offers no purge to people who may only run agents", async () => {
 
 it("switches the guide between inherited, custom and none", async () => {
   const { user, sent } = setup("?tab=configuration");
-  expect((await screen.findByLabelText("Inherited guide")).textContent).toBe(
-    "Keep one topic per file.",
-  );
+  expect(
+    (await screen.findByLabelText("Default memory instructions")).textContent,
+  ).toBe("Keep one topic per file.");
   // Customizing starts from the guide the memory inherited.
   await user.click(screen.getByRole("button", { name: "Custom" }));
-  const guide = screen.getByRole("textbox", { name: "Guide" });
+  const guide = screen.getByRole("textbox", { name: "Memory instructions" });
   expect((guide as HTMLTextAreaElement).value).toBe("Keep one topic per file.");
   await user.type(guide, " Link related files.");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -501,7 +501,9 @@ it("switches the guide between inherited, custom and none", async () => {
 
   await user.click(screen.getByRole("button", { name: "None" }));
   expect(
-    screen.getByText("Runs receive no guide for this memory."),
+    screen.getByText(
+      "No usage instructions are added for this memory. Agents can still use it according to their permissions.",
+    ),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(2));
@@ -515,7 +517,7 @@ it("switches the guide between inherited, custom and none", async () => {
       screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull(),
   );
-  await user.click(screen.getByRole("button", { name: "Inherit" }));
+  await user.click(screen.getByRole("button", { name: "Use default" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(3));
   expect(sent("PATCH")[2]?.body).toEqual({ guide: null });
