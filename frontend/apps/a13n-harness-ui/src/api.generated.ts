@@ -5845,6 +5845,20 @@ export interface components {
              */
             after?: string | null;
         };
+        /** FileSource */
+        FileSource: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+            /** Bytes */
+            bytes: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated?: boolean;
+        };
         /** FocusEventFrame */
         FocusEventFrame: {
             /**
@@ -5917,6 +5931,11 @@ export interface components {
             failure?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
+            /**
+             * Memory Sources
+             * @default null
+             */
+            memory_sources?: components["schemas"]["MemorySource"][] | null;
         };
         /** @enum {string} */
         ItemState: "in_progress" | "completed" | "interrupted" | "failed";
@@ -5962,6 +5981,56 @@ export interface components {
             display_position?: components["schemas"]["StreamPosition"] | null;
             /** @default null */
             item?: components["schemas"]["ItemRef"] | null;
+        };
+        /**
+         * MemorySource
+         * @description One automatic delivery in this Run; content remains in the memory or execution archive.
+         */
+        MemorySource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "record" | "file";
+            /** Memory */
+            memory: string;
+            /**
+             * Memory Id
+             * @default null
+             */
+            memory_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "recalled" | "failed" | "timeout" | "full" | "changes" | "unchanged" | "omitted" | "unavailable";
+            /**
+             * Records
+             * @default []
+             */
+            records?: components["schemas"]["RecordSource"][];
+            /**
+             * Files
+             * @default []
+             */
+            files?: components["schemas"]["FileSource"][];
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor?: string | null;
+            /**
+             * Sources Truncated
+             * @default false
+             */
+            sources_truncated?: boolean;
+        };
+        /** RecordSource */
+        RecordSource: {
+            /** Id */
+            id: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** ResetFrame */
         ResetFrame: {

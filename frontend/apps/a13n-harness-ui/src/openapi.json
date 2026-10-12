@@ -16184,6 +16184,36 @@
         "title": "RealtimeCommand",
         "type": "object"
       },
+      "FileSource": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "bytes": {
+            "minimum": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "title": "FileSource",
+        "type": "object"
+      },
       "FocusEventFrame": {
         "additionalProperties": false,
         "properties": {
@@ -16350,6 +16380,21 @@
             ],
             "default": null,
             "title": "Failure"
+          },
+          "memory_sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MemorySource"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Memory Sources"
           }
         },
         "required": [
@@ -16497,6 +16542,109 @@
           "payload_omitted"
         ],
         "title": "LiveEvent",
+        "type": "object"
+      },
+      "MemorySource": {
+        "additionalProperties": false,
+        "description": "One automatic delivery in this Run; content remains in the memory or execution archive.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "record",
+              "file"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory": {
+            "title": "Memory",
+            "type": "string"
+          },
+          "memory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Memory Id"
+          },
+          "status": {
+            "enum": [
+              "recalled",
+              "failed",
+              "timeout",
+              "full",
+              "changes",
+              "unchanged",
+              "omitted",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "records": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RecordSource"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FileSource"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "sources_truncated": {
+            "default": false,
+            "title": "Sources Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "memory",
+          "status"
+        ],
+        "title": "MemorySource",
+        "type": "object"
+      },
+      "RecordSource": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sha256"
+        ],
+        "title": "RecordSource",
         "type": "object"
       },
       "ResetFrame": {
