@@ -62,9 +62,11 @@ function rejectedFields(error: ApiError): string[] {
 
 /**
  * The Service answers a wrong email or password with 401
- * `unauthenticated`, and rejects a password below its 8 character minimum
- * with 400 `invalid_argument` naming the field. A failed fetch reaches
- * the mutation as a `TypeError` with no response at all.
+ * `unauthenticated`, and so an invitation whose email already has an
+ * account when the password is not that account's. It rejects a password
+ * below its 8 character minimum with 400 `invalid_argument` naming the
+ * field. A failed fetch reaches the mutation as a `TypeError` with no
+ * response at all.
  */
 function readFailure(
   error: unknown,
@@ -91,6 +93,13 @@ function readFailure(
       : [];
   if (mode === "login" && (error.status === 401 || rejected.length > 0))
     return { field: true, message: t("Email or password is incorrect") };
+  if (mode === "invite" && error.status === 401)
+    return {
+      field: true,
+      message: t(
+        "The invited email already has an account. Enter its password.",
+      ),
+    };
   if (rejected.includes("password"))
     return {
       field: true,
@@ -239,7 +248,9 @@ export function AuthPage() {
   const descriptions: Record<Mode, string> = {
     login: t("Build, run, and observe your agents."),
     setup: t("The first account administers this Service."),
-    invite: t("Create your account to accept this invitation."),
+    invite: t(
+      "Set a password to create your account. If the invited email already has an account, enter its password.",
+    ),
     forgot: t("We'll send a recovery link if your email is eligible."),
     reset: t("Use at least 8 characters for your new password."),
     email: t("Confirm this address while signed in to your account."),
