@@ -10,8 +10,7 @@ from pathlib import PurePosixPath
 
 from pydantic import JsonValue
 
-from ._guest_commands import FileCommands, decoded_bytes
-from .files import (
+from a13n_harness.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -24,8 +23,9 @@ from .files import (
     FileWriteMode,
     FileWriteResult,
 )
-from .models import EnvironmentError
-from .text import apply_unified_diff, iter_lf_lines
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.text import apply_unified_diff, iter_lf_lines
+from a13n_harness.providers.environment._guest_commands import FileCommands, decoded_bytes
 
 
 class GuestFiles:

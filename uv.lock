@@ -62,6 +62,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "openai" },
     { name = "opentelemetry-api" },
+    { name = "packaging" },
     { name = "pathspec" },
     { name = "pillow" },
     { name = "pydantic" },
@@ -112,6 +113,7 @@ requires-dist = [
     { name = "modal", marker = "extra == 'modal'", specifier = ">=1.5.5,<2" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
+    { name = "packaging", specifier = ">=24,<27" },
     { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "pydantic", specifier = ">=2.12,<3" },
@@ -263,7 +265,7 @@ name = "a13n-service"
 version = "0.0.0"
 source = { editable = "packages/a13n-service" }
 dependencies = [
-    { name = "a13n-harness", extra = ["docker", "e2b", "modal"] },
+    { name = "a13n-harness" },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "ag-ui-protocol" },
@@ -274,12 +276,15 @@ dependencies = [
     { name = "botocore" },
     { name = "click" },
     { name = "cryptography" },
+    { name = "docker" },
+    { name = "e2b" },
     { name = "fastapi" },
     { name = "fastmcp-slim", extra = ["client", "server"] },
     { name = "httpx2" },
     { name = "jsonschema" },
     { name = "jsonschema-path" },
     { name = "mcp" },
+    { name = "modal" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-exporter-prometheus" },
@@ -302,7 +307,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
+    { name = "a13n-harness", editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
@@ -313,12 +318,15 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
     { name = "click", specifier = ">=8.2,<9" },
     { name = "cryptography", specifier = ">=50,<51" },
+    { name = "docker", specifier = ">=7.2,<8" },
+    { name = "e2b", specifier = ">=2.46.4,<3" },
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "fastmcp-slim", extras = ["client", "server"], specifier = ">=4.0,<5" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "jsonschema-path", specifier = ">=0.5,<0.6" },
     { name = "mcp", specifier = ">=2.2,<3" },
+    { name = "modal", specifier = ">=1.5.5,<2" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39,<2" },
     { name = "opentelemetry-exporter-prometheus", specifier = ">=0.60b0,<1" },
@@ -4441,8 +4449,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

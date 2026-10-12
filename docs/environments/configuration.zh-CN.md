@@ -5,15 +5,15 @@ description: 分别配置 provider 的目标、后端连接和凭据。
 
 分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。
 
-| 值                                | 职责                               | 示例                                      |
-| --------------------------------- | ---------------------------------- | ----------------------------------------- |
-| 目标配置（`environment_model`）   | 该环境应开放什么                   | 根目录、Docker 挂载、E2B 模板             |
-| 账号配置（`configuration_model`） | Host 从哪里连接后端                | Docker 守护进程、E2B 域名、HTTP 端点      |
-| 凭据（`credential_model`）        | 当前访问后端的权限                 | E2B API key 或 HTTP EIP token             |
-| 运行时协作对象                    | 活跃客户端、会话和 Host 分配的资源 | 由 Host 提供，或由 `runtime_factory` 获取 |
-| `EnvironmentState`                | 已验证、指向精确保留目标的引用     | 容器/沙箱身份和配置指纹                   |
+| 值                                | 职责                               | 示例                                 |
+| --------------------------------- | ---------------------------------- | ------------------------------------ |
+| 目标配置（`environment_model`）   | 该环境应开放什么                   | 根目录、Docker 挂载、E2B 模板        |
+| 账号配置（`configuration_model`） | Host 从哪里连接后端                | Docker 守护进程、E2B 域名、HTTP 端点 |
+| 凭据（`credential_model`）        | 当前访问后端的权限                 | E2B API key 或 HTTP EIP token        |
+| 运行时协作对象                    | 活跃客户端、会话和 Host 分配的资源 | 由 Host 提供，或在显式打开时获取     |
+| `EnvironmentState`                | 已验证、指向精确保留目标的引用     | 容器/沙箱身份和配置指纹              |
 
-调用 `definition.create(recipe, configuration=..., credential=..., state=...)` 获取运行时，或传入 `runtime=...` 借用自己已管理的运行时。借用运行时时，省略账号配置和凭据。创建过程先验证目标配置，再验证账号输入，验证完成后才获取运行时。目录选择和构建见 [Provider 与运行时](providers.md)。
+`management.open_provider(configuration=..., credential=...)` 获取管理客户端。`definition.execution_connector(recipe, configuration=..., credential=..., state=...)` 只验证输入并构造连接配置，`open()` 才获取执行资源。Host 也可传入 `runtime=...` 借用共享连接，此时允许提供账号配置，但不能同时提供凭据。
 
 每个定义对每种类别只管理一个模型。没有配置 schema 版本：改变输入含义就改变了 provider 类型。
 
@@ -51,7 +51,7 @@ Host 管理一个共享 `LocalEnvdProviderRuntime`、其二进制文件、启动
 
 省略 `user` 时，provider 使用镜像标签 `ai.a13n.environment.user`；没有该标签的自定义镜像沿用镜像 USER。`a13n-sandbox` 选择 `sandbox`（UID/GID 1000）；recipe 显式设置的 `user` 优先。
 
-`DockerEnvironmentConfiguration` 使用原生 Docker exec，不启动镜像内的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
+Service 的 `DockerRecipe` 使用原生 Docker exec，不启动镜像内的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
 
 私有容器文件系统提供 `/workspace`。可选绑定挂载包含 Docker Engine 所在机器上已存在的绝对 `source`、容器 `target` 和 `read_only` 标志（默认 true）。不能替换 `/workspace` 或私有命令元数据。命名卷不是目标配置选项；销毁时保留外部数据。
 
@@ -67,7 +67,7 @@ E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 使用相同
 
 ### E2B
 
-`E2BEnvironmentConfiguration` 默认使用模板 `base`、根目录 `/home/user`、用户 `user` 和 Python `/usr/bin/python3`；路径必须为绝对路径且不能包含路径穿越。默认允许互联网访问。
+Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用户 `user` 和 Python `/usr/bin/python3`；路径必须为绝对路径且不能包含路径穿越。默认允许互联网访问。
 
 沙箱超时默认 3,600 秒（30–86,400）；请求超时默认 30 秒（最多 300）。两者都不是逐命令执行期限。文件值默认 16 MiB、观测字节 1 MiB、活跃观测 128、保留输出总量 128 MiB、查询条目 10,000。[运行时限制](providers.md#e2b-runtime)介绍基于文本的观测和支持的命令控制。
 

@@ -22,9 +22,7 @@ from pathspec.gitignore import GitIgnoreSpec
 from pathspec.patterns.gitignore import GitIgnorePatternError
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
-from .._file_patterns import PathPattern, PatternError, content_pattern
-from .._file_search import search_text_file
-from ..files import (
+from a13n_harness.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileKind,
@@ -39,11 +37,13 @@ from ..files import (
     FileWriteMode,
     FileWriteResult,
 )
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..text import apply_unified_diff
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.text import apply_unified_diff
+from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
+from a13n_harness.providers.environment._file_search import search_text_file
 
 if TYPE_CHECKING:
-    from .provider import _DirectLocalFilePolicy
+    from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
 
 
 class _LocalWriter:
@@ -198,12 +198,12 @@ class LocalFileOperator:
         *,
         root: Path,
         policy: _DirectLocalFilePolicy,
-        mount_id: str,
+        execution_id: str,
         generation: str,
     ) -> None:
         self._root = root.resolve(strict=True)
         self._policy = policy
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
         self._operations = itertools.count(1)
         self._closed = False
@@ -215,12 +215,9 @@ class LocalFileOperator:
         if self._closed:
             raise EnvironmentError("Direct Local file scope is closed.", code="environment_stale_mount")
 
-    def bind_mount(self, mount_id: str) -> None:
-        self._mount_id = mount_id
-
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

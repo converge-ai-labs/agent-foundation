@@ -6,46 +6,30 @@ import asyncio
 import os
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel
-
-from .._local_identity import local_backing_identity
-from ..attachments import DeviceEIPSessionSource
-from ..definition import EnvironmentProviderDefinition
-from ..eip import EIPEnvironmentSession, open_eip_environment
-from ..eip.binding import configured_descriptor
-from ..envd_policy import resolve_egress
-from ..errors import EnvironmentProviderError, provider_error
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..management import Environment, HostLocalProviderConfiguration
-from ..models import (
+from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.envd_policy import resolve_egress
+from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentOperationFamily,
     EnvironmentState,
 )
-from ..operations import EnvironmentOperations
-from .configuration import LocalEnvdEnvironmentConfiguration
-from .runtime import LocalEnvdProviderRuntime
+from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment._backend import ExecutionBackend
+from a13n_harness.providers.environment._backend_factory import BackendFactory
+from a13n_harness.providers.environment._local_identity import local_backing_identity
+from a13n_harness.providers.environment.configuration import HostLocalProviderConfiguration
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.eip import EIPEnvironmentSession, open_eip_environment
+from a13n_harness.providers.environment.eip.binding import configured_descriptor
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime
 
 _PROVIDER_KEY = "local_envd"
-
-
-async def _runtime(
-    *,
-    configuration: HostLocalProviderConfiguration,
-    credential: BaseModel | None,
-) -> LocalEnvdProviderRuntime:
-    """Local Envd allocates a private daemon runtime directory for the Host."""
-    del configuration, credential
-    from .runtime import TemporaryLocalEnvdRuntimeAllocator, resolve_a13n_envd_executable
-
-    executable = await asyncio.to_thread(resolve_a13n_envd_executable)
-    return LocalEnvdProviderRuntime(
-        executable=executable, allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator()
-    )
 
 
 def _describe(configuration: LocalEnvdEnvironmentConfiguration) -> EnvironmentDescriptor:
@@ -68,17 +52,19 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: LocalEnvdProviderRuntime | None,
-    operation_id: str,
-    allow_create: bool,
-) -> Environment:
-    del operation_id, allow_create
+) -> ExecutionBackend:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Local Envd requires LocalEnvdEnvironmentConfiguration")
     if state is not None:
         raise provider_error(_PROVIDER_KEY, "provider_state_invalid", Category.INVALID)
     if runtime is None:
-        raise TypeError("Local Envd requires LocalEnvdProviderRuntime")
-    return LocalEnvdEnvironment(configuration, runtime, environment_id=environment_id)
+        raise provider_error(_PROVIDER_KEY, "provider_runtime_required", Category.INVALID)
+    return LocalEnvdExecution(configuration, runtime, environment_id=environment_id)
+
+
+_factory = BackendFactory(
+    key=_PROVIDER_KEY, environment_model=LocalEnvdEnvironmentConfiguration, execution=_construct, describe=_describe
+)
 
 
 LOCAL_ENVD = EnvironmentProviderDefinition(
@@ -86,16 +72,13 @@ LOCAL_ENVD = EnvironmentProviderDefinition(
     display_name="Local Envd",
     configuration_model=HostLocalProviderConfiguration,
     environment_model=LocalEnvdEnvironmentConfiguration,
-    construct=_construct,
+    connector_factory=_factory.connector,
     describe_environment=_describe,
     target_identity=_identity,
-    supports_stop=False,
-    supports_destroy=False,
-    runtime_factory=_runtime,
 )
 
 
-class LocalEnvdEnvironment(Environment):
+class LocalEnvdExecution(ExecutionBackend):
     """One fixed-cwd Session on a shared Device; a borrowed daemon runtime outlives it."""
 
     def __init__(
@@ -136,7 +119,7 @@ class LocalEnvdEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return self._operations
 
-    async def _prepare(self, *, mount_id: str) -> None:
+    async def open(self, *, execution_id: str) -> None:
         if self._attempted:
             raise provider_error(self.provider_key, "provider_runtime_consumed", Category.UNAVAILABLE)
         self._attempted = True
@@ -146,7 +129,7 @@ class LocalEnvdEnvironment(Environment):
                 provider_key=self.provider_key,
                 environment_id=self.environment_id,
                 session_source=DeviceEIPSessionSource(device),
-                mount_id=mount_id,
+                execution_id=execution_id,
                 device_id=device.descriptor.device_id,
                 working_directory=self._configuration.working_directory,
                 required_methods=frozenset(self._configuration.required_methods),
@@ -171,7 +154,7 @@ class LocalEnvdEnvironment(Environment):
             self._availability = self._bound.availability
         except BaseException as error:
             try:
-                await self._close()
+                await self.close()
             except Exception as cleanup_error:
                 # Keep the preparation failure primary and retain cleanup evidence.
                 error.__cause__ = cleanup_error
@@ -179,20 +162,15 @@ class LocalEnvdEnvironment(Environment):
                 raise
             raise provider_error(self.provider_key, "provider_session_failed", Category.UNAVAILABLE) from error
 
-    def _bind_mount(self, mount_id: str) -> None:
-        if self._bound is not None:
-            self._bound.bind_mount(mount_id)
-            self._operations = self._bound.operations
-
-    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if self._bound is None:
             raise EnvironmentError("Local Envd Session is unavailable", code="environment_unavailable")
         try:
-            await self._bound.ensure_ready(operations)
+            await self._bound.check_ready(operations)
         finally:
             self._availability = self._bound.availability
 
-    async def _close(self) -> None:
+    async def close(self) -> None:
         self._availability = EnvironmentAvailability(status="unavailable")
         self._operations = EnvironmentOperations()
         scope, self._eip_scope = self._eip_scope, None
@@ -206,10 +184,6 @@ class LocalEnvdEnvironment(Environment):
                 raise provider_error(
                     self.provider_key, "provider_session_close_failed", Category.UNAVAILABLE
                 ) from error
-
-    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
-        # The Session owns no durable target; the Host runtime owns the Device.
-        return "stopped"
 
 
 def _native_directory(directory: str) -> Path:

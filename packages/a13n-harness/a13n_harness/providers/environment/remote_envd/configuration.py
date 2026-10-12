@@ -6,7 +6,7 @@ from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_envd_client.http import normalize_http_endpoint
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from ..envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
 
 
 class RemoteEnvdEnvironmentConfiguration(BaseModel):

@@ -49,6 +49,7 @@ import instanceStyles from "./environments.module.css";
 import { EnvironmentPanel } from "./instance-details";
 
 const STATUSES = [
+  "reserved",
   "creating",
   "starting",
   "ready",

@@ -1,6 +1,5 @@
-"""Reusable Environment operations, lifecycle and immutable provider definitions."""
+"""Execution-only Environment Provider definitions."""
 
 from .definition import EnvironmentProviderDefinition
-from .management import Environment
 
-__all__ = ["Environment", "EnvironmentProviderDefinition"]
+__all__ = ["EnvironmentProviderDefinition"]

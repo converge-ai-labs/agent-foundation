@@ -3,9 +3,9 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
-from ..errors import provider_error
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.environment.errors import provider_error
 
 
 @contextmanager

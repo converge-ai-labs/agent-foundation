@@ -18,8 +18,9 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [05-plugin-system.md](05-plugin-system.md)                                               | Plugin document/Build Context, selected factories, concrete middleware, ordering, binding, result/state composition, and cleanup |
 | [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Logical run lifecycle, inner model attempts, cancellation, terminal results, and cleanup                                         |
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
-| [08-environment-integration.md](08-environment-integration.md)                           | Fresh Environment inputs, aggregate path roots and routing, Run Extensions, mutation, model projection, state, and cleanup       |
-| [08a-environment-providers.md](08a-environment-providers.md)                             | Environment Provider definitions, adapter lifecycle, portable state, built-in Providers, and remote Envd                         |
+| [08-environment-integration.md](08-environment-integration.md)                           | Environment sources, first-use readiness, routes, Run Extensions, mutation, model projection, state, and cleanup                 |
+| [08a: Environment Execution](08a-environment-execution.md)                               | Fixed-target connectors, execution scopes, shared state, operations, errors, and database-free ownership                         |
+| [08b: Environment Providers](08b-environment-providers.md)                               | Native and Envd execution, local/remote Device support, and backend-specific guarantees                                          |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, and compaction                                   |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, Harness-private inline execution, standard async Toolsets, and the Host operator boundary                        |
@@ -50,7 +51,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Servic
 
 ### Author or Select a Provider
 
-Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, `08a` for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, [Environment Execution](08a-environment-execution.md) for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
 
 ### Understand Models and Recovery
 
@@ -58,7 +59,7 @@ Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host cr
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then `08a` for Provider definitions, adapter lifecycle, and built-ins, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run receives fresh Environment adapters and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
+Read `07`, `08`, `13`, and `15`, then `08a` and `08b` for connection and provider guarantees, [Service Environment Management](../a13n-service/06a-environment-management.md) for target lifecycle, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run calls its Host sources' `ensure_ready()` on first use, opens independent executions from the returned connectors, and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
 
 ### Add Agent Memory
 
@@ -80,7 +81,7 @@ Read `06`, `19`, `13`, and `15`. Read `12` separately for process-local events a
 - The Harness owns process-local code-first construction and logical-Run behavior.
 - A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Run lifecycle, execution lifecycle, and delivery.
 - Provider definitions are inert immutable values; a definition's runtime factory is the only place it acquires a live collaborator.
-- Environment Providers construct fresh adapters without I/O; Provider implementations own preparation, connections and effect evidence, while Hosts own current state and lifecycle policy.
+- Environment definitions and Environment connectors are inert; Harness implements opening and using an Environment execution without database access; Service owns built-in management drivers, and each Host owns its state and lifecycle policy.
 - A telemetry backend observes execution but never becomes lifecycle authority.
 
 ## Specification Conventions

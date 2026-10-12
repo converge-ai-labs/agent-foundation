@@ -6,8 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 from a13n_envd_client.errors import EIPSessionStateError
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.eip.files import EIPFileOperator
-from a13n_harness.providers.environment.models import EnvironmentError
 
 pytestmark = pytest.mark.anyio
 
@@ -15,13 +15,13 @@ pytestmark = pytest.mark.anyio
 def operator(*, methods=(), failure=None):
     session = SimpleNamespace(
         descriptor=SimpleNamespace(
-            mounts=[SimpleNamespace(mount_id="workspace", logical_root="/")],
+            mounts=[SimpleNamespace(execution_id="workspace", logical_root="/")],
             available_methods=methods,
         ),
         open_reader=Mock(side_effect=failure),
         open_writer=Mock(side_effect=failure),
     )
-    return EIPFileOperator(session=session, environment_id="env", mount_id="workspace", generation="1"), session
+    return EIPFileOperator(session=session, environment_id="env", execution_id="workspace", generation="1"), session
 
 
 @pytest.mark.parametrize("path", ["/../outside", "/a/../../outside", "/a//b", "/a/./b", "/a/"])
@@ -73,13 +73,13 @@ async def test_cancelled_transfer_setup_preserves_cancellation(action):
 @pytest.mark.parametrize("action", ["read", "stat", "write"])
 async def test_closed_session_control_setup_is_converted(action):
     class ClosedSession:
-        descriptor = SimpleNamespace(mounts=[SimpleNamespace(mount_id="workspace", logical_root="/")])
+        descriptor = SimpleNamespace(mounts=[SimpleNamespace(execution_id="workspace", logical_root="/")])
 
         @property
         def client(self):
             raise EIPSessionStateError("closed")
 
-    files = EIPFileOperator(session=ClosedSession(), environment_id="env", mount_id="workspace", generation="1")
+    files = EIPFileOperator(session=ClosedSession(), environment_id="env", execution_id="workspace", generation="1")
     with pytest.raises(EnvironmentError) as error:
         if action == "read":
             await files.read_text("/file")

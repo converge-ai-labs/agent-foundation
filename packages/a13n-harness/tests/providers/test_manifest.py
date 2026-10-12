@@ -65,8 +65,9 @@ def test_the_catalog_is_the_single_owner_of_one_type_per_domain(builtin):
 
 def test_manifest_rejects_other_domains_and_unsupported_api_versions():
     assert ProviderManifest(api_version=1, environment=(ENVIRONMENT, ENVIRONMENT))
-    with pytest.raises(ValueError, match="API version"):
-        ProviderManifest(api_version=2, environment=(ENVIRONMENT,))
+    for version in (0, 2, 3, 999):
+        with pytest.raises(ValueError, match="API version"):
+            ProviderManifest(api_version=version, environment=(ENVIRONMENT,))
     with pytest.raises(TypeError, match="immutable tuple"):
         ProviderManifest(api_version=1, environment=[ENVIRONMENT])
     with pytest.raises(TypeError, match="immutable tuple"):

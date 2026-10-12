@@ -6,11 +6,10 @@ from contextlib import asynccontextmanager
 import httpx2
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from a13n_harness.http import outbound_tls_verify
-
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
-from .errors import failure
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.providers.environment._transport_policy import outbound_tls_verify
+from a13n_harness.providers.environment.native.errors import failure
 
 
 class NativeHTTP:

@@ -8,10 +8,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from .._local_retention import LocalRetentionStore
-from ..commands import ProcessStreamRead
-from ..models import EnvironmentError
-from ..retention import EnvironmentOutputCapture, EnvironmentOutputPolicy, EnvironmentOutputSegment
+from a13n_harness.environment.commands import ProcessStreamRead
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import (
+    EnvironmentOutputCapture,
+    EnvironmentOutputPolicy,
+    EnvironmentOutputSegment,
+)
+from a13n_harness.providers.environment._local_retention import LocalRetentionStore
 
 
 def frames(connection: Any) -> Iterator[tuple[int, bytes]]:

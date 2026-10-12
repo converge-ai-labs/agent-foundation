@@ -44,6 +44,8 @@ from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
+from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
     ContextOperationCompletedPayload,
@@ -65,8 +67,6 @@ from a13n_harness.model_context import (
     _requires_exact_boundary,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
-from a13n_harness.providers.environment.files import FileOperator
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools.invocation import disabled_tool_execution
 from a13n_harness.toolsets.context import HandoffToolset
 

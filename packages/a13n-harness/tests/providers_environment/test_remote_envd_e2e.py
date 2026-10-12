@@ -12,10 +12,11 @@ from pathlib import Path
 
 import pytest
 from a13n_envd_client.eip.v1 import DirectoryListParams
-from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest, PortTarget
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.files import FileQueryRequest, FileTextSearchRequest
-from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.environment.commands import ArgvCommand, CommandRequest, PortTarget
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.files import FileQueryRequest, FileTextSearchRequest
+from a13n_harness.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -24,7 +25,6 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from pydantic import SecretStr
 from websockets.asyncio.server import serve
 
@@ -134,13 +134,17 @@ def free_port():
         return listener.getsockname()[1]
 
 
+def connector(provider, recipe, *, environment_id, state, runtime):
+    return provider.execution_connector(
+        recipe, configuration=runtime.configuration, environment_id=environment_id, state=state, runtime=runtime
+    )
+
+
 async def exercise(environment):
-    await environment.prepare()
     generation = environment.descriptor.generation
     root = environment.descriptor.working_directory
     assert root is not None
-    await environment.enter(mount_id="mount-test")
-    await environment.ensure_ready(frozenset({"files", "shell", "processes", "outputs"}))
+    await environment.check_ready(frozenset({"files", "shell", "processes", "outputs"}))
     files = environment.operations.files
     assert files is not None
     await files.write_text(f"{root}/text.txt", "remote envd\n", mode="create")
@@ -197,7 +201,7 @@ async def exercise(environment):
     started = await processes.start(request)
     handle = started.process.handle
     assert handle.identity.environment_id == LOGICAL_ID
-    assert handle.mount_id == "mount-test"
+    assert handle.execution_id == environment.execution_id
     info = await processes.wait(handle, condition="tree_cleaned", timeout_seconds=5)
     assert info.status.exit_code == 0
     await processes.release(handle)
@@ -262,30 +266,29 @@ async def test_http_provider_operations_identity_and_sequential_reentry(binary, 
     endpoint = f"http://127.0.0.1:{port}"
     provider = HTTP_ENVD
     async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}") as (process, workspace):
-        env = provider.construct(
-            operation_id="op-test",
-            allow_create=False,
-            configuration=RemoteEnvdEnvironmentConfiguration(),
+        env = connector(
+            provider,
+            RemoteEnvdEnvironmentConfiguration(),
             environment_id=LOGICAL_ID,
             state=state(provider),
             runtime=http_runtime(endpoint),
         )
         try:
+            env = await env.open()
             generation = await exercise(env)
         finally:
             await env.close()
         assert process.returncode is None
         assert (workspace / "text.txt").read_text() == "remote envd\n"
-        again = provider.construct(
-            operation_id="op-test",
-            allow_create=False,
-            configuration=RemoteEnvdEnvironmentConfiguration(),
+        again = connector(
+            provider,
+            RemoteEnvdEnvironmentConfiguration(),
             environment_id=LOGICAL_ID,
-            state=env.dump_state(),
+            state=env.state,
             runtime=http_runtime(endpoint),
         )
         try:
-            await again.prepare()
+            again = await again.open()
             assert again.descriptor.generation != generation
             assert again.descriptor.generation.split(":")[0] == generation.split(":")[0]
         finally:
@@ -296,16 +299,15 @@ async def test_closed_eip_process_and_port_facets_raise_environment_errors(binar
     port = free_port()
     provider = HTTP_ENVD
     async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}"):
-        environment = provider.construct(
-            operation_id="op-test",
-            allow_create=False,
-            configuration=RemoteEnvdEnvironmentConfiguration(),
+        environment = connector(
+            provider,
+            RemoteEnvdEnvironmentConfiguration(),
             environment_id=LOGICAL_ID,
             state=state(provider),
             runtime=http_runtime(f"http://127.0.0.1:{port}"),
         )
         try:
-            await environment.prepare()
+            environment = await environment.open()
             processes, ports, shell = (
                 environment.operations.processes,
                 environment.operations.ports,
@@ -349,21 +351,17 @@ async def test_http_provider_rejects_untrusted_or_incompatible_peer(binary, tmp_
     endpoint = f"http://127.0.0.1:{port}"
     async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}"):
         selected = state(provider, "wrong-env" if failure == "identity" else NATIVE_ID)
-        env = provider.construct(
-            operation_id="op-test",
-            allow_create=False,
-            configuration=RemoteEnvdEnvironmentConfiguration(
-                required_methods=("missing.method",) if failure == "methods" else ()
-            ),
+        env = connector(
+            provider,
+            RemoteEnvdEnvironmentConfiguration(required_methods=("missing.method",) if failure == "methods" else ()),
             environment_id=LOGICAL_ID,
             state=selected,
             runtime=http_runtime(endpoint, "wrong-token" if failure == "credential" else TOKEN),
         )
         with pytest.raises(EnvironmentProviderError) as error:
-            await env.prepare()
+            await env.open()
         assert TOKEN not in str(error.value)
-        assert env.operations.files is None and env.dump_state() == selected
-        await env.close()
+        assert env.state == selected
 
 
 async def test_http_device_discovery_and_independent_session_ownership(binary, tmp_path, http_runtime):
@@ -384,10 +382,9 @@ async def test_http_device_discovery_and_independent_session_ownership(binary, t
         )
         assert listing.path == str(workspace) and not device._sessions
         first, second = [
-            provider.construct(
-                operation_id="op-test",
-                allow_create=False,
-                configuration=RemoteEnvdEnvironmentConfiguration(working_directory=str(workspace)),
+            connector(
+                provider,
+                RemoteEnvdEnvironmentConfiguration(working_directory=str(workspace)),
                 environment_id=LOGICAL_ID,
                 state=state(provider),
                 runtime=runtime,
@@ -395,7 +392,7 @@ async def test_http_device_discovery_and_independent_session_ownership(binary, t
             for _ in range(2)
         ]
         try:
-            await asyncio.gather(first.prepare(), second.prepare())
+            first, second = await asyncio.gather(first.open(), second.open())
             assert len(device._sessions) == 2
             assert first.descriptor.generation != second.descriptor.generation
             await first.close()
@@ -419,10 +416,9 @@ async def test_websocket_concurrent_scopes_keep_one_carrier_and_independent_proc
             async with daemon(binary, tmp_path, "reverse_websocket", f"ws://127.0.0.1:{port}/envd"):
                 provider = WEBSOCKET_ENVD
                 environments = [
-                    provider.construct(
-                        operation_id="op-test",
-                        allow_create=False,
-                        configuration=RemoteEnvdEnvironmentConfiguration(),
+                    connector(
+                        provider,
+                        RemoteEnvdEnvironmentConfiguration(),
                         environment_id=f"env-scope-{index}",
                         state=state(provider),
                         runtime=WebSocketEnvdProviderRuntime(hub),
@@ -431,7 +427,8 @@ async def test_websocket_concurrent_scopes_keep_one_carrier_and_independent_proc
                 ]
                 first, second = environments
                 try:
-                    await asyncio.gather(*(environment.prepare() for environment in environments))
+                    environments = await asyncio.gather(*(environment.open() for environment in environments))
+                    first, second = environments
                     attachment = hub._attachments[NATIVE_ID]
                     assert first.operations.processes is not second.operations.processes
                     processes = second.operations.processes
@@ -482,29 +479,28 @@ async def test_websocket_host_sdk_real_daemon_operations_and_reconnection(binary
             async with daemon(binary, tmp_path, "reverse_websocket", f"ws://127.0.0.1:{port}/envd") as (process, _):
                 provider = WEBSOCKET_ENVD
                 runtime = WebSocketEnvdProviderRuntime(hub)
-                env = provider.construct(
-                    operation_id="op-test",
-                    allow_create=False,
-                    configuration=RemoteEnvdEnvironmentConfiguration(),
+                env = connector(
+                    provider,
+                    RemoteEnvdEnvironmentConfiguration(),
                     environment_id=LOGICAL_ID,
                     state=state(provider),
                     runtime=runtime,
                 )
                 try:
+                    env = await env.open()
                     generation = await exercise(env)
                 finally:
                     await env.close()
                 assert process.returncode is None
-                again = provider.construct(
-                    operation_id="op-test",
-                    allow_create=False,
-                    configuration=RemoteEnvdEnvironmentConfiguration(),
+                again = connector(
+                    provider,
+                    RemoteEnvdEnvironmentConfiguration(),
                     environment_id=LOGICAL_ID,
-                    state=env.dump_state(),
+                    state=env.state,
                     runtime=runtime,
                 )
                 try:
-                    await again.prepare()
+                    again = await again.open()
                     assert again.descriptor.generation != generation
                     assert again.descriptor.generation.split(":")[0] == generation.split(":")[0]
                 finally:

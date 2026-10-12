@@ -204,10 +204,10 @@ For an admitted prompt or deferred response, the App:
 04. captures the current accepted generation and the Thread's local roots with any explicit Run-only environment patch;
 05. resolves the exact Agent graph, Capabilities, tool visibility, Harness Plugins, Content Plugin snapshot, MCP servers, Environment Provider, and Environment Run Extensions;
 06. publishes the immutable resolved Run composition;
-07. creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
+07. completes required Environment management and publishes its observed state, supplies authorized Environment sources implementing `ensure_ready()`, and creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
 08. starts one Harness stream and observer from the selected `HarnessState`;
 09. saves complete root model-request checkpoints after input consumption and context transformation, advances its expected continuation after each successful selection, and forwards public live events best effort;
-10. finalizes Environment adapters and publishes changed state;
+10. completes execution-scope cleanup through Harness and records its outcome independently of management-state publication;
 11. publishes and compare-and-selects any available valid terminal checkpoint, including failed or interrupted execution, under the [continuation policy](03-local-storage-and-recovery.md#run-composition-and-continuation);
 12. selects a detached terminal operation outcome with independent execution, continuation, Environment-state, and cleanup facts.
 
@@ -249,6 +249,8 @@ The Harness resolves the selected child roster entry before calling the operator
 4. commits segment zero as `running` before returning its execution ID;
 5. starts the segment under App ownership.
 
+The child Thread is committed before Environment preparation can publish binding state. If preparation fails or is cancelled, the Thread and any already-published Environment state remain, but no child execution is accepted or started.
+
 A surface can update the retained child Thread through the ordinary required-version configuration command before resume. `resume_subagent` then loads that Host-authorized sticky configuration, requires a selected terminal child checkpoint, increments `segment_index`, captures the new composition, commits the execution, and starts it. The new composition need not equal either the one that produced the prior checkpoint or the current parent roster definition. Harness still requires the same stable roster name and current plan context. Harness UI reapplies that roster edge's Identity policy to the selected replacement definition and intersects the plan usage ceiling with the replacement's own limits; the model cannot select the replacement Agent source.
 
 An accepted child execution can outlive the parent Run. Parent closure never cancels it by implication. App shutdown is the process-local ownership boundary.
@@ -260,7 +262,7 @@ Each segment receives:
 - the child Thread's resolved Agent-resource or Markdown-subagent graph and Capabilities; a Markdown source resolves its explicit inheritance from the parent Run authorizing that linked admission;
 - fresh Model, Harness Plugin, and MCP collaborators;
 - captured Project roots and Environment profile selection;
-- fresh Provider runtimes, Environment adapters, and Environment Run Extensions;
+- authorized Environment sources, independent Environment executions opened on first use, and fresh Provider runtimes and Run Extensions;
 - the child Thread's newly published empty `initial_state` for delegate or selected child checkpoint state for resume;
 - one `HarnessAguiStreamObserver` bound to the child Thread and Run.
 

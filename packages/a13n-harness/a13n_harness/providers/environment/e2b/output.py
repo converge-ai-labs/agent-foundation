@@ -7,9 +7,13 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from ..commands import ProcessStatus, ProcessStreamRead
-from ..models import EnvironmentError
-from ..retention import EnvironmentOutputCapture, EnvironmentOutputPolicy, EnvironmentOutputSegment
+from a13n_harness.environment.commands import ProcessStatus, ProcessStreamRead
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import (
+    EnvironmentOutputCapture,
+    EnvironmentOutputPolicy,
+    EnvironmentOutputSegment,
+)
 
 if TYPE_CHECKING:
     from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle

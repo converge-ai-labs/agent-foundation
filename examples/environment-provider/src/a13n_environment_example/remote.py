@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -56,28 +56,17 @@ async def use_remote[R: HttpEnvdProviderRuntime | WebSocketEnvdProviderRuntime](
     )
     generations: list[str] = []
     text = ""
+    connector = provider.execution_connector(
+        configuration, configuration=runtime.configuration, environment_id="env-example", state=state, runtime=runtime
+    )
     for index in range(2):
-        environment = await provider.create(
-            environment=configuration,
-            allow_create=False,
-            environment_id="env-example",  # Host identity, distinct from daemon identity.
-            state=state,
-            runtime=runtime,
-        )
-        try:
-            await environment.enter(mount_id="workspace")
-            await environment.ensure_ready(frozenset({"files"}))
-            files = environment.operations.files
+        async with await connector.open() as execution:
+            files = execution.operations.files
             assert files is not None
             if index == 0:
                 await files.write_text(path, "hello from remote envd\n", mode="upsert")
             text = (await files.read_text(path)).text
-            generations.append(environment.descriptor.generation)
-        finally:
-            current = environment.dump_state()
-            assert current is not None
-            state = current  # Persist this under your Host's authority, not in the Provider.
-            await environment.close()  # Does not stop the remote daemon.
+            generations.append(execution.descriptor.generation)
     return RemoteExampleResult(provider.type, text, generations[0] != generations[1], state)
 
 

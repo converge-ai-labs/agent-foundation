@@ -30,20 +30,33 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 *图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*
 
-| 类型      | 环境                              | 账号                                                                                                            | 停止行为                   |
-| --------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。         | 停止容器                   |
-| `e2b`     | E2B 沙箱                          | 无配置；凭据为 `{"api_key": ...}`。账号始终使用 E2B 云。Recipe 的 `timeout_seconds` 至少为 300。                | 暂停，保留内存和文件       |
-| `daytona` | Daytona 沙箱                      | `organization_id`、可选 `target` 区域；凭据为 `{"api_key": ...}`                                                | 停止，保留文件             |
-| `modal`   | Modal 沙箱                        | `workspace`、`app_name`（托管沙箱的已部署 App）、可选 `environment_name`；凭据为 `{"token_id", "token_secret"}` | 保存文件快照后终止         |
-| `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                       | 停止，保留文件             |
-| `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                       | 不支持；Sprites 空闲时休眠 |
-| `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                       | 挂起，保留文件             |
-| `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                    | 无需停止                   |
+| 类型      | 环境                              | 账号                                                                                                                                 | 停止行为                   |
+| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
+| `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
+| `daytona` | Daytona 沙箱                      | `organization_id`、可选 `target` 区域；凭据为 `{"api_key": ...}`                                                                     | 停止，保留文件             |
+| `modal`   | Modal 沙箱                        | `workspace`、`app_name`（托管沙箱的已部署 App）、可选 `environment_name`；凭据为 `{"token_id", "token_secret"}`                      | 保存文件快照后终止         |
+| `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
+| `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
+| `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
+| `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                         | 无需停止                   |
 
 Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
 
-云托管类型访问厂商固定的 API：账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
+云托管类型访问厂商持有的 API。E2B 可选择官方云或其他兼容 E2B 协议的服务；其他云托管账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
+
+接入其他兼容 E2B 协议的服务时，使用它提供的沙箱域名和 API Key 创建 `e2b` provider：
+
+```json
+{
+  "type": "e2b",
+  "name": "Compatible E2B",
+  "config": {"domain": "sandboxes.example.com"},
+  "credential": {"api_key": "YOUR_SANDBOX_API_KEY"}
+}
+```
+
+Service 从配置的沙箱域名推导 HTTPS 控制 API `https://api.<domain>`；域名须为小写 DNS 名称，不含协议、端口或路径，不支持单独覆盖 `api_url`。原生 SDK 负责控制 API 和沙箱请求，包括所选服务返回的端点；Service 不会逐个检查 SDK 请求，网络路由限制由运维基础设施负责。更换域名时，需要替换或移除凭据并创建新的环境实例。使用该服务提供的模板，并验证它与仓库锁定的 E2B SDK `2.46.4` 兼容，包括创建、连接、续期、命令和文件操作、暂停与恢复以及销毁。
 
 只有 Docker provider 可以测试（`POST …/{provider_id}/test`）：Engine 响应一次 ping。远程 Engine 无法解析时，失败消息为 `provider_unavailable`；只有策略拒绝时才返回 `provider_endpoint_denied`。
 
@@ -59,12 +72,12 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
-- `provider_id` 指定工作空间中的环境 provider，`config.recipe` 按该类型的 recipe schema 校验。Docker 中可设置 `image`、宿主机目录 `mounts`（源目录必须位于 `environments.docker_mount_roots` 下）、`environment` 变量、`init_script`、`disable_network`、`user` 和资源限制；参阅 [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration)。Recipe 被拒绝时，会指出无效字段，不会返回提交的值。
+- `provider_id` 指定工作空间中的环境 provider，`config.recipe` 按该类型的 recipe schema 校验。Docker 中可设置 `image`、宿主机目录 `mounts`（源目录必须位于 `environments.docker_mount_roots` 下）、`environment` 变量、`init_script`、`disable_network`、`user` 和资源限制；参阅 [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerrecipe)。Recipe 被拒绝时，会指出无效字段，不会返回提交的值。
 - `stop_after_seconds`（默认 1800，范围 60–2,592,000）停止在指定时间内未被运行使用的环境。`delete_after_seconds`（60–31,536,000）删除在指定时间内未被运行使用且没有线程挂载的环境。设为 `null` 可关闭对应策略。两者均从最后使用时间计起。
 - `PATCH` 使用模板的 `If-Match` 修改名称、描述、provider、config 和标签。新 provider 或 recipe 仅影响之后创建的环境：环境使用创建任务派发时的模板构建，并保留该 recipe。空闲策略始终使用当前设置。
 - `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。
 
-要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。
+要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
 
 ### Docker 镜像版本
 
@@ -85,6 +98,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 | 状态                   | 含义                                       |
 | ---------------------- | ------------------------------------------ |
+| `reserved`             | 已预留，等待首次使用；尚无厂商资源。       |
 | `creating`, `starting` | 正在创建或启动。                           |
 | `ready`                | 可用。                                     |
 | `stopping`, `stopped`  | 停止后保留文件；挂载它的运行会再次启动。   |
@@ -153,7 +167,17 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 - 新线程和分叉线程通过 `environments` 字段指定初始挂载。分叉默认共享源线程挂载，除非设置 `fresh_environments`。归档线程会移除挂载。
 - 多个线程可以同时挂载和使用同一环境。
 
-每次尝试执行前，最多等待 `environments.wait_seconds` 让运行的环境就绪，并启动已停止的环境。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
+`AgentConfig.lazy_environment` 默认为 `true`。每个挂载首次使用时，Worker 最多等待 `environments.wait_seconds` 让环境就绪，创建预留目标或启动已停止目标。其他实例持有操作 claim 时，Worker 会等待其发布结果；有实例正在处理不代表已经就绪。输入附件和依赖环境的技能可在调用模型前触发首次使用。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
+
+将 agent 配置中的 `lazy_environment` 设为 `false`，Service 会在进入 Harness 前创建或启动全部挂载的实例并等待就绪，即使工具不会使用它们。这个开关只控制实例准备时机。Harness 仍在首次实际使用时打开执行连接，并检查操作是否就绪及选定的工作目录。运行未使用某个环境时，就不会打开该环境的执行连接。没有挂载的运行无需准备。通过 `POST …/environments` 显式创建环境的行为保持不变。
+
+消息可以通过以下选项仅覆盖本次运行：
+
+```json
+{"options": {"overrides": {"lazy_environment": false}}}
+```
+
+省略覆盖值或设为 `null` 时，沿用 agent 修订版本的配置。运行被接收后，重试和后续继续运行保持已接受的配置。异步子运行使用各自 agent 的配置；内联子 agent 共享父运行的环境。
 
 异步[子 agent](agents-and-runs.md#subagents) 按调用边的策略获得环境：共享父运行挂载（`shared`）、根据模板新建（`dedicated`），或不使用环境。
 
@@ -161,6 +185,6 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 在新会话的 **Options（选项）** 中选择 **Reuse existing（复用现有实例）**，可填写 **Working directory（工作目录）**。已有会话的 **Add environment（添加环境）** 表单也提供该字段。留空使用 Provider 默认目录。切换实例会清空上一次选择；会话的环境详情会显示已保存的目录。
 
-目录必须已存在于所选环境内。Local 的 `/projects/app` 映射到 `{模板根目录}/{环境 ID}/projects/app`，不是浏览器所在电脑上的路径。其他 Provider 使用其环境内部的文件路径空间。Service 在执行前检查显式选择的目录；目录不存在或不可访问时会报错，不会自动创建目录，也不会将共享实例标记为故障。
+目录必须已存在于所选环境内。Local 的 `/projects/app` 映射到 `{模板根目录}/{环境 ID}/projects/app`，不是浏览器所在电脑上的路径。其他 Provider 使用其环境内部的文件路径空间。Service 在首次激活时检查显式选择的目录；目录不存在或不可访问时会报错，不会自动创建目录，也不会将共享实例标记为故障。
 
 两个会话可以在同一实例中使用不同项目目录，也可以主动选择同一目录共享文件。相对文件路径、`/workspace` 路由和命令默认工作目录均使用所选目录。进程、端口、已安装软件及系统权限仍然共享：这用于组织文件，不提供安全隔离。移除挂载不会删除目录；已接受的 Run 保留其捕获的目录选择。

@@ -9,7 +9,7 @@ from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import EIPMethodError
 
-from ..commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandRequest,
@@ -29,8 +29,8 @@ from ..commands import (
     ShellCommand,
     ShellExecResult,
 )
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import (
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
     BoundOutputCursor,
     EnvironmentOutputPolicy,
     EnvironmentOutputSegment,
@@ -38,7 +38,7 @@ from ..retention import (
     _unwrap_opaque,
     materialize_capture,
 )
-from ._common import (
+from a13n_harness.providers.environment.eip._common import (
     convert_receipt,
     encode_bytes,
     invoke,
@@ -48,8 +48,8 @@ from ._common import (
     seconds_to_milliseconds,
     session_client,
 )
-from .files import EIPFileOperator
-from .output import EIPOutputRegistry
+from a13n_harness.providers.environment.eip.files import EIPFileOperator
+from a13n_harness.providers.environment.eip.output import EIPOutputRegistry
 
 
 @dataclass(slots=True)
@@ -121,7 +121,7 @@ class _ProcessConversions:
         outputs: EIPOutputRegistry,
         provider_type: str,
         environment_id: str,
-        mount_id: str,
+        execution_id: str,
         generation: str,
     ) -> None:
         self._session = session
@@ -129,7 +129,7 @@ class _ProcessConversions:
         self._outputs = outputs
         self._provider_type = provider_type
         self._environment_id = environment_id
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._raw_tokens: dict[eip.ProcessHandle, str] = {}
@@ -148,7 +148,7 @@ class _ProcessConversions:
         stderr = self._outputs.capture(process.output.stderr, policy=observation_policy)
         info = ProcessInfo(
             handle=BoundProcessHandle(
-                mount_id=self._mount_id,
+                execution_id=self._execution_id,
                 identity=ProcessIdentity(
                     provider_type=self._provider_type,
                     environment_id=self._environment_id,
@@ -192,7 +192,7 @@ class _ProcessConversions:
         return token
 
     def resolve(self, handle: BoundProcessHandle) -> tuple[str, _ProcessRecord]:
-        if handle.mount_id != self._mount_id or handle.observed_generation != self._generation:
+        if handle.execution_id != self._execution_id or handle.observed_generation != self._generation:
             raise EnvironmentError("Process handle is foreign or stale", code="environment_stale_mount")
         token = _unwrap_opaque(handle.handle, OpaqueProcessHandle)
         record = self._records.get(token)
@@ -204,7 +204,7 @@ class _ProcessConversions:
         return convert_receipt(
             receipt,
             session=self._session,
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             generation=self._generation,
         )
 
@@ -593,7 +593,7 @@ class EIPProcessOperations:
         record.cleanup_owned = True
         if info.status.phase in {"starting", "running"}:
             return EnvironmentOperationReceipt(
-                mount_id=handle.mount_id,
+                execution_id=handle.execution_id,
                 observed_generation=handle.observed_generation,
                 operation_id="observation-release",
                 stage="completed",

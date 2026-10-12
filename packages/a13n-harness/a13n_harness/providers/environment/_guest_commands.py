@@ -8,7 +8,7 @@ from typing import BinaryIO, Protocol
 
 from pydantic import JsonValue
 
-from .models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 
 
 class FileConfiguration(Protocol):
@@ -46,7 +46,7 @@ def file_helper_source() -> str:
         ("_file_search", "search_text_file"),
     ):
         source = source.replace(
-            f"from ..{module} import {names}",
+            f"from a13n_harness.providers.environment.{module} import {names}",
             files("a13n_harness.providers.environment").joinpath(f"{module}.py").read_text(),
         )
     return source

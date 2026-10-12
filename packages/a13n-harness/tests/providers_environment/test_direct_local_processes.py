@@ -11,17 +11,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-from a13n_harness.providers.environment.commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     CommandEnvironment,
     CommandLimits,
     CommandRequest,
     ShellCommand,
 )
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
-from a13n_harness.providers.environment.models import EnvironmentError
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 pytestmark = pytest.mark.anyio
 OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, overflow="retain")
@@ -63,17 +64,12 @@ async def _processes(
             "max_wall_time_seconds": max_wall_time_seconds,
         },
     )
-    environment = provider.construct(
-        operation_id="op-test",
-        allow_create=True,
+    environment = DirectLocalExecution(
         configuration=configuration,
         environment_id="native-test",
-        state=None,
-        runtime=None,
     )
-    await environment.enter(mount_id="root")
+    await environment.open(execution_id="root")
     try:
-        await environment.prepare()
         processes = environment.operations.processes
         assert isinstance(processes, LocalProcessManager)
         yield processes
@@ -123,7 +119,7 @@ async def test_native_background_stdin_and_output(tmp_path: Path) -> None:
 
 
 async def test_process_identity_follows_a_retyped_provider(tmp_path: Path) -> None:
-    class Workspace(DirectLocalEnvironment):
+    class Workspace(DirectLocalExecution):
         @property
         def provider_key(self) -> str:
             return "custom_workspace"
@@ -136,9 +132,8 @@ async def test_process_identity_follows_a_retyped_provider(tmp_path: Path) -> No
         }
     )
     environment = Workspace(configuration, environment_id="w")
-    await environment.enter(mount_id="root")
+    await environment.open(execution_id="root")
     try:
-        await environment.prepare()
         processes = environment.operations.processes
         assert processes is not None
         started = await processes.start(_request("pass"))

@@ -12,17 +12,20 @@ from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection, EI
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 
-from ..attachments import DeviceEIPSessionSource
-from ..envd_policy import (
+from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
     EnvdEgressConfiguration,
     EnvironmentEnvdCredentialResolver,
     resolve_egress,
 )
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import provider_error
-from .configuration import RemoteEnvdConnectionConfiguration, RemoteEnvdStateData
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import provider_error
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    RemoteEnvdConnectionConfiguration,
+    RemoteEnvdStateData,
+)
 
 WEBSOCKET_PROVIDER_KEY = "websocket_envd"
 

@@ -7,6 +7,7 @@ test("ordinary editing preserves hidden configuration and leaves omission distin
   const original = {
     ...initialConfig(),
     model,
+    lazy_environment: false,
     plugins: [{ plugin_key: "example", instance_name: "example", config: {} }],
   };
   const config = buildConfig(
@@ -16,6 +17,7 @@ test("ordinary editing preserves hidden configuration and leaves omission distin
   );
   expect(config.plugins).toEqual(original.plugins);
   expect(config.instructions).toBe("Updated instructions");
+  expect(config.lazy_environment).toBe(false);
   expect(config.output_spec).toBeUndefined();
   const advanced = JSON.parse(advancedConfig(original));
   advanced.output_spec = null;

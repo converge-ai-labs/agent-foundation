@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import shutil
@@ -12,16 +13,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox
+from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
-from a13n_harness.providers.environment.envd_policy import EnvdNetworkConfiguration
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.environment_profiles import (
@@ -45,6 +46,34 @@ class ValidatedAdapterConfiguration(BaseModel):
 
 class _EmptyAdapterConfiguration(ValidatedAdapterConfiguration):
     pass
+
+
+class EnvironmentBindingError(Exception):
+    """A Host adapter failed after observing a state that must be published."""
+
+    def __init__(self, message: str, state: EnvironmentState | None):
+        super().__init__(message)
+        self.state = state.model_copy(deep=True) if state is not None else None
+
+
+class EnvironmentBindingCancelled(asyncio.CancelledError):
+    """A cancelled Host adapter retains its last observed state."""
+
+    def __init__(self, state: EnvironmentState | None):
+        super().__init__("Environment binding cancelled")
+        self.state = state.model_copy(deep=True) if state is not None else None
+
+
+def observed_binding_state(error: BaseException, fallback: EnvironmentState | None) -> EnvironmentState | None:
+    """Follow cancellation/timeout causes without depending on a management implementation."""
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, (EnvironmentBindingError, EnvironmentBindingCancelled)):
+            return current.state
+        current = current.__cause__ or current.__context__
+    return fallback
 
 
 class EnvironmentProjectAdapter(ABC):
@@ -73,8 +102,11 @@ class EnvironmentProjectAdapter(ABC):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-    ) -> Environment:
-        """Create one fresh pre-entry-inert root-specific Environment."""
+    ) -> EnvironmentConnector:
+        """Prepare the Host-selected target and return its inert execution connector.
+
+        Raise EnvironmentBindingError or EnvironmentBindingCancelled with any observed state for Host publication.
+        """
 
 
 class NativeProjectAdapter(EnvironmentProjectAdapter):
@@ -101,7 +133,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-    ) -> Environment:
+    ) -> EnvironmentConnector:
         _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
@@ -125,13 +157,11 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
             "allowed_environment_keys": None,
         }
         configuration = provider.validate_environment(value)
-        return provider.construct(
-            configuration=configuration,
+        return provider.execution_connector(
+            environment=configuration,
             environment_id=_environment_id(self.key, root),
             state=state,
             runtime=runtime,
-            operation_id=_environment_id(self.key, root),
-            allow_create=False,
         )
 
 
@@ -187,17 +217,15 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-    ) -> Environment:
+    ) -> EnvironmentConnector:
         _require_provider(provider, LOCAL_ENVD)
         selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
         configuration = selected.session.model_copy(update={"working_directory": root.as_posix()})
-        return provider.construct(
-            configuration=configuration,
+        return provider.execution_connector(
+            environment=configuration,
             environment_id=_environment_id(self.key, root),
             state=state,
             runtime=runtime,
-            operation_id=_environment_id(self.key, root),
-            allow_create=False,
         )
 
 
@@ -240,6 +268,8 @@ __all__ = [
     "LOCAL_ENVD_PROVIDER_KEY",
     "NATIVE_ADAPTER_KEY",
     "NATIVE_PROVIDER_KEY",
+    "EnvironmentBindingCancelled",
+    "EnvironmentBindingError",
     "EnvironmentProjectAdapter",
     "LocalEnvdProjectAdapter",
     "NativeProjectAdapter",

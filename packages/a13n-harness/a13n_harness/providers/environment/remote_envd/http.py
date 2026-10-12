@@ -13,26 +13,30 @@ from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, Direc
 from a13n_envd_client.errors import EIPMethodError
 from pydantic import BaseModel
 
-from a13n_harness.http import outbound_tls_verify
-
-from ...authentication import Authentication, CredentialMode
-from ..attachments import DeviceEIPSessionSource
-from ..definition import EnvironmentProviderDefinition
-from ..envd_policy import (
+from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
     EnvdEgressConfiguration,
     EnvironmentEnvdCredentialResolver,
     resolve_egress,
 )
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import provider_error
-from ..management import Environment
-from ..models import EnvironmentState
-from .configuration import HttpEnvdConnectionConfiguration, HttpEnvdCredential, RemoteEnvdEnvironmentConfiguration
-from .environment import (
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import provider_error
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.environment._backend import ExecutionBackend
+from a13n_harness.providers.environment._backend_factory import BackendFactory
+from a13n_harness.providers.environment._transport_policy import outbound_tls_verify
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    HttpEnvdCredential,
+    RemoteEnvdEnvironmentConfiguration,
+)
+from a13n_harness.providers.environment.remote_envd.environment import (
     REQUIRED_METHODS,
-    RemoteEnvdEnvironment,
+    RemoteEnvdExecution,
     decode_state,
     describe_environment,
     target_identity,
@@ -171,15 +175,12 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
-    operation_id: str,
-    allow_create: bool,
-) -> Environment:
-    del operation_id, allow_create
+) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
     data = decode_state(HTTP_PROVIDER_KEY, state)
     assert state is not None
-    return RemoteEnvdEnvironment(
+    return RemoteEnvdExecution(
         provider_key=HTTP_PROVIDER_KEY,
         environment_id=environment_id,
         working_directory=configuration.working_directory,
@@ -194,17 +195,25 @@ def _construct(
     )
 
 
+_factory = BackendFactory(
+    key=HTTP_PROVIDER_KEY,
+    environment_model=RemoteEnvdEnvironmentConfiguration,
+    execution=_construct,
+    describe=describe_environment,
+    target_identity=lambda **kwargs: target_identity(HTTP_PROVIDER_KEY, **kwargs),
+    runtime_factory=_runtime,
+)
+
+
 HTTP_ENVD = EnvironmentProviderDefinition(
     type=HTTP_PROVIDER_KEY,
     display_name="HTTP Envd",
     configuration_model=HttpEnvdConnectionConfiguration,
     credential_model=HttpEnvdCredential,
     environment_model=RemoteEnvdEnvironmentConfiguration,
-    construct=_construct,
+    connector_factory=_factory.connector,
     describe_environment=describe_environment,
     target_identity=lambda **kwargs: target_identity(HTTP_PROVIDER_KEY, **kwargs),
     backend_identity=_backend_identity,
-    runtime_factory=_runtime,
-    supports_managed=False,
     authentication=Authentication(mode=CredentialMode.required),
 )

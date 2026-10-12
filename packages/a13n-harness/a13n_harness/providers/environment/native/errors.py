@@ -1,9 +1,9 @@
 """Safe native transport errors with explicit uncertain-mutation outcomes."""
 
-from ..errors import EnvironmentProviderError, provider_error
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
-from ..errors import EnvironmentProviderRecoveryHint as Recovery
+from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.environment.errors import EnvironmentProviderRecoveryHint as Recovery
 
 
 def failure(

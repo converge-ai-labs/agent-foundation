@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 from a13n_harness.capabilities import SkillCatalogItem, SkillManager, SkillsCapability, SkillsPolicy
-from a13n_harness.providers.environment.files import FileOperator
+from a13n_harness.environment.files import FileOperator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

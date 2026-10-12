@@ -10,8 +10,8 @@ from pathlib import Path
 from secrets import token_hex
 from typing import BinaryIO
 
-from .models import EnvironmentError, EnvironmentOperationReceipt
-from .retention import (
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
@@ -141,12 +141,12 @@ class LocalRetentionStore:
         self,
         *,
         root: Path,
-        mount_id: str,
+        execution_id: str,
         generation: str,
         max_spool_bytes: int,
     ) -> None:
         self._root = root
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
         self._max_spool_bytes = max_spool_bytes
         self._records: dict[str, _Record] = {}
@@ -154,9 +154,6 @@ class LocalRetentionStore:
         self._lock = asyncio.Lock()
         self._operations = itertools.count(1)
         self._closed = False
-
-    def bind_mount(self, mount_id: str) -> None:
-        self._mount_id = mount_id
 
     async def reserve(self, *, max_bytes: int) -> LocalRetentionWriter:
         """Open a candidate without reserving its worst-case byte count."""
@@ -214,7 +211,7 @@ class LocalRetentionStore:
                 dropped_bytes=dropped_bytes,
             )
         return BoundOutputReference(
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             observed_generation=self._generation,
             reference=OpaqueOutputReference._from_payload(token),
         )
@@ -226,7 +223,7 @@ class LocalRetentionStore:
             await self._refund(written)
 
     def _validate_reference(self, reference: BoundOutputReference) -> str:
-        if reference.mount_id != self._mount_id or reference.observed_generation != self._generation:
+        if reference.execution_id != self._execution_id or reference.observed_generation != self._generation:
             raise EnvironmentError("Retained-output reference is foreign or stale.", code="environment_stale_mount")
         return _unwrap_opaque(reference.reference, OpaqueOutputReference)
 
@@ -242,7 +239,7 @@ class LocalRetentionStore:
             raise EnvironmentError("Specify cursor or start_offset, not both.", code="environment_request_invalid")
         token = self._validate_reference(reference)
         if cursor is not None:
-            if cursor.mount_id != self._mount_id or cursor.observed_generation != self._generation:
+            if cursor.execution_id != self._execution_id or cursor.observed_generation != self._generation:
                 raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_mount")
             raw = _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
             try:
@@ -271,7 +268,7 @@ class LocalRetentionStore:
         next_cursor = None
         if not complete:
             next_cursor = BoundOutputCursor(
-                mount_id=self._mount_id,
+                execution_id=self._execution_id,
                 observed_generation=self._generation,
                 cursor=OpaqueOutputCursor._from_payload(f"{token}:{end}"),
             )
@@ -310,7 +307,7 @@ class LocalRetentionStore:
             token = self._validate_reference(reference)
         else:
             assert cursor is not None
-            if cursor.mount_id != self._mount_id or cursor.observed_generation != self._generation:
+            if cursor.execution_id != self._execution_id or cursor.observed_generation != self._generation:
                 raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_mount")
             raw = _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
             token, separator, raw_offset = raw.partition(":")
@@ -327,7 +324,7 @@ class LocalRetentionStore:
 
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",
@@ -346,3 +343,30 @@ def _read_range(path: Path, offset: int, size: int) -> bytes:
     with path.open("rb") as file:
         file.seek(offset)
         return file.read(size)
+
+
+async def create_retention_root(*, prefix: str) -> Path:
+    """Own a temporary directory even when cancellation races thread completion."""
+    import shutil
+    import tempfile
+
+    allocation = asyncio.create_task(asyncio.to_thread(tempfile.mkdtemp, prefix=prefix))
+    try:
+        return Path(await asyncio.shield(allocation))
+    except asyncio.CancelledError as cancellation:
+        while True:
+            try:
+                allocated = await asyncio.shield(allocation)
+                break
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                raise cancellation from None
+        cleanup = asyncio.create_task(asyncio.to_thread(shutil.rmtree, allocated, True))
+        while True:
+            try:
+                await asyncio.shield(cleanup)
+                break
+            except asyncio.CancelledError:
+                continue
+        raise cancellation

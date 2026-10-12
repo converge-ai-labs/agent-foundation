@@ -117,7 +117,9 @@ async def export_state(
 ) -> HarnessState: ...
 ```
 
-The method calls provider-defined `dump_state()`; its only persistence side effect is saving large content through a bound [Host state store](#host-state-store). Each call is an infallible synchronous process-local read of the adapter's last validated cache; it performs no target refresh. The method captures the current mount set under the aggregate operation fence, so `environment_states` contains entries from one complete mount-set observation rather than a mixture before and after mutation. Values are imported `EnvironmentState` envelopes; mounts that return `None` are omitted. Export cancellation, an adapter contract violation, invalid canonical JSON, an invalid state envelope, or a Host-admitted size violation fails the complete export rather than silently dropping a stateful mount. Host unconditional finalization can still read each adapter cache independently from this continuation export. While active, `HarnessRunStream.export_state()` selects the latest complete message view owned by the stream and delegates to this method. Shutdown retains a validated result state or attempts a final complete export after execution stops and before state-owning resources close. Closed-stream export returns this detached checkpoint without invoking closed adapters; a failed capture remains an explicit export failure, never a silently incomplete state.
+The method reads each bound execution's detached `EnvironmentState | None`; its only persistence side effect is saving large content through a bound [Host state store](#host-state-store). Target-state reads perform no I/O. The current mount set is captured under the aggregate operation fence so the mapping cannot mix incarnations. Provider-key consistency, canonical JSON, and Host-admitted size bounds are validated; stateless mounts are omitted. Cancellation or a contract violation fails the whole export, never silently drops a stateful mount. Management outcomes are published independently by the Host; no execution-state finalizer is needed to recover a newly created target.
+
+While active, `HarnessRunStream.export_state()` delegates with the latest complete message view. Shutdown captures a final complete state after execution stops and before resources close. Closed-stream export returns that detached checkpoint without invoking closed Environment executions; a failed capture remains an explicit export failure.
 
 State export does not require `HarnessState.message_history` to equal a result object's private message view. Normal inner execution produces aligned values, but trusted result middleware may intentionally transfer or replace state. Structural validity is enforced; semantic provenance is part of the trusted plugin contract. A plugin that replaces `environment_states` remains trusted code but cannot make the mapping authorize or construct an Environment on resume.
 
@@ -229,7 +231,7 @@ A provider-suspended response is continuation of an already issued model request
 
 A new run receives `previous_state` separately from fresh `RunBindings`. Stream construction deep-copies the supplied state. Entry then:
 
-1. receives fresh Environment instances already constructed from Host-selected state and atomically enters/publishes the initial mount set;
+1. registers Host-authorized Environment sources and atomically publishes the initial mount set without forcing activation;
 2. validates that portable `environment_states` is observation only and does not restore or replace adapter state after entry;
 3. invokes the optional `RunInputFactory` against that entered Environment;
 4. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
@@ -239,7 +241,7 @@ A new run receives `previous_state` separately from fresh `RunBindings`. Stream 
 8. passes the resulting messages, with saved content parts loaded, to the first `ModelAttempt`;
 9. lets each Capability read and validate only the namespaces it understands.
 
-Initial Environment entry and complete mount publication finish before input production and never overlap mount mutation. Harness does not apply saved Environment state to an entered adapter: the Host must select state before constructing each Environment. An unmatched portable mapping entry is inert; an explicit unmanaged/import flow can adopt it only before Run construction. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
+Initial Environment registration and complete mount publication finish before input production and never overlap mount mutation. Required executions open on first use, including dependent input production. Harness does not apply saved state to a source or live execution: the Host selects authoritative state and prepares targets through its readiness boundary. Export never activates an unused mount. An unmatched portable mapping entry is inert; an explicit unmanaged/import flow can adopt it only before Run construction. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
 
 Identity, policy, credentials, model resolution, Environment authority, desired mounts, tool grants, provider sessions, and Host ownership always come from fresh trusted bindings. Message metadata, Thread identity, Capability state, and portable Environment state grant none of them.
 

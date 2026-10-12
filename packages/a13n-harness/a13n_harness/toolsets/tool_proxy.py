@@ -29,6 +29,7 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._review_context import record_approval_denials
 from a13n_harness.context import AgentContext
+from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.tools.tool_proxy import (
     PROXY_CONTROL_KEY,
     PROXY_MEMBERSHIP_KEY,
@@ -314,7 +315,7 @@ class ToolProxySurfaceToolset(WrapperToolset[AgentContext]):
                 f"Tool {group}/{tool} requires unresolved Host interaction. Expose it directly for cross-turn approval "
                 "or external execution. Do not assume completion or blindly retry."
             ) from None
-        except (ModelRetry, ToolFailed, UsageLimitExceeded, UnexpectedModelBehavior):
+        except (ModelRetry, ToolFailed, UsageLimitExceeded, UnexpectedModelBehavior, EnvironmentActivationError):
             raise
         except Exception as exc:
             raise ToolFailed(

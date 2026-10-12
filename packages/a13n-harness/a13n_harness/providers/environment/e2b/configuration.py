@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from ..models import EnvironmentTargetState
+from a13n_harness.environment.models import EnvironmentTargetState
 
 PROVIDER_KEY = "e2b"
 
@@ -58,7 +58,7 @@ class E2BEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        json_schema_extra={"x-primary-fields": ["template", "timeout_seconds", "allow_internet_access"]},
+        json_schema_extra={"x-primary-fields": ["template", "allow_internet_access"]},
     )
 
     template: str = Field(
@@ -71,7 +71,6 @@ class E2BEnvironmentConfiguration(BaseModel):
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
-    timeout_seconds: int = Field(default=3600, ge=30, le=86_400, title="Sandbox timeout (seconds)")
     request_timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
     allow_internet_access: bool = Field(default=True, title="Allow internet access")
     max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)

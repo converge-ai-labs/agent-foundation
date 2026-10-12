@@ -7,8 +7,8 @@ from typing import Literal, Protocol
 
 from pydantic import JsonValue
 
-from .commands import PortObservation, PortTarget
-from .models import EnvironmentError
+from a13n_harness.environment.commands import PortObservation, PortTarget
+from a13n_harness.environment.models import EnvironmentError
 
 
 class PortCommands(Protocol):
@@ -20,7 +20,7 @@ class GuestPorts:
         self.commands = commands
 
     async def inspect(self, target: PortTarget) -> PortObservation:
-        if target.address != "loopback" or target.alias is not None:
+        if target.address != "loopback":
             raise EnvironmentError("Guest port inspection requires a loopback port.", code="environment_unsupported")
         result = await self.commands.port(target.port)
         return PortObservation(

@@ -5,8 +5,8 @@ import json
 import pytest
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import EIPMethodError
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.eip._common import convert_error
-from a13n_harness.providers.environment.models import EnvironmentError
 
 
 def test_operation_projection_keeps_only_bounded_safe_fields():

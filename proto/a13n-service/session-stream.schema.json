@@ -91,6 +91,18 @@
           "default": null,
           "title": "Instructions"
         },
+        "lazy_environment": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lazy Environment"
+        },
         "media_understanding": {
           "anyOf": [
             {

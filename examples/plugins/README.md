@@ -52,7 +52,9 @@ The project is intentionally outside the root release workspace. Its independent
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 ```
 
-A standalone integration distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
+This checkout targets Harness 0.10; the unversioned local dependency resolves source version `0.0.0`, not an arbitrary released version. Before publishing this integration package, remove those development sources and declare `a13n-harness>=0.10.0,<0.11.0`.
+
+The Environment plugin declares `ProviderManifest(api_version=1)` and uses execution connectors with Host-owned preparation. Harness middleware configuration uses `schema_version="1"`.
 
 ## Environment Provider
 
@@ -67,9 +69,9 @@ workspace = "a13n_plugin_examples.environment:manifest"
 
 - a strict package-owned schema-version-1 `WorkspaceEnvironmentConfiguration` model;
 - a constant immutable `WORKSPACE_ENVIRONMENT` definition exported through `ProviderManifest`;
-- a fresh `WorkspaceEnvironment` adapter backed by Direct Local operations.
+- an inert connector factory delegating to `DIRECT_LOCAL.execution_connector`.
 
-Manifest import, configuration validation, and `construct()` perform no filesystem I/O. The workspace is checked when the Host explicitly prepares the adapter or its first operation requests readiness; scope entry performs no target I/O. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
+Manifest import, configuration validation, and connector construction perform no filesystem I/O. Each connector `open()` checks the existing workspace and returns an independently owned execution. State is `None` because the target is the deterministic Host-selected directory. Execution close does not delete that directory.
 
 ### Installed entry-point mode
 
@@ -87,7 +89,7 @@ uv run plugin-example-environment-entrypoint
 uv run plugin-example-environment-code
 ```
 
-Both paths pass two already constructed adapters to a real offline Harness Run, verify default and qualified routing, export no state for the stateless mounts, close both adapters non-destructively, and preserve both Host directories:
+Both paths wrap two prepared connectors in Host-owned sources and pass them to a real offline Harness Run, verify default and qualified routing, export no state for the stateless mounts, close both executions non-destructively, and preserve both Host directories:
 
 ```text
 selection mode: entrypoint
@@ -104,16 +106,16 @@ Code mode prints the same result with `selection mode: code`.
 ### Real Provider checklist
 
 - Use one stable entry-point name and one stable Provider `type`.
-- Keep definition construction, recipe validation, and Environment construction strict, bounded, and side-effect free.
+- Keep definition construction, recipe validation, and connector construction strict, bounded, and side-effect free.
 - Declare one account model, one optional credential model, and one target recipe model; support exact state versions without fallback or shape inference.
-- Acquire current credentials, SDK clients, bootstrap stores, and transport factories only inside `runtime_factory`.
-- Construct one fresh Environment per independent Run or explicit Host lifecycle operation.
-- Validate supplied state before target mutation; create a replacement only after authoritative absence.
-- Update cached state as soon as changed target identity is known, before later readiness can fail.
-- Keep `close()` process-local and non-destructive; expose backing-target removal only through explicit `destroy()` on a fresh adapter.
+- Acquire live clients only in connector `open()`. The `connector_factory` must remain inert.
+- Return one independently owned execution from each connector `open()`.
+- Let the Host's `EnvironmentSource.ensure_ready()` prepare the target and return its connector; execution does not allocate or replace targets.
+- Keep durable binding state and target-identity publication under Host control, including failed preparation and recovery.
+- Keep execution `close()` process-local and non-destructive; backing-target removal belongs to explicit Host management.
 - Keep mount names, access ceilings, desired configuration, state authority, retention, authorization, and scheduling under Host control.
 
-The example subclasses the public Direct Local adapter to stay focused on Provider packaging. A remote sandbox Provider can expose the same Provider-neutral operation surface through EIP without creating another Harness lifecycle layer.
+The example delegates to the public Direct Local execution definition to stay focused on Provider packaging. A remote sandbox Provider can expose the same Provider-neutral operation surface through EIP without creating another Harness lifecycle layer.
 
 ## Environment Run Extension
 
@@ -132,7 +134,7 @@ The distribution registers a separate aggregate-lifecycle factory:
 
 The factory receives an `EnvironmentRunExtensionFactoryContext` with separate `extension_key`, `extension_id`, and detached JSON configuration. It returns a fresh pre-entry-inert extension. All file I/O occurs only inside `EnvironmentRunExtension.bind()`.
 
-The demo passes the Provider's Environment through `EnvironmentMount` with an exact text-read, text-write, and remove ceiling. The same mount input works with `run()` and `create_environment_runtime()`; Harness owns single-use transfer, entry, and cleanup without an example-specific lifecycle adapter.
+The demo wraps an already prepared connector in a Host-owned `EnvironmentSource` and passes it through `EnvironmentMount` with an exact text-read, text-write, and remove ceiling. The same mount input works with `run()` and `create_environment_runtime()`; Harness owns each opened execution and its cleanup on first use.
 
 ### Installed entry-point mode
 

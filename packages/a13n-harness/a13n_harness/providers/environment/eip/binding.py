@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 
-from ..attachments import EIPSessionSource
-from ..envd_policy import EnvdBoundaryRequirement
-from ..models import (
+from a13n_harness.environment.attachments import EIPSessionSource
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
+from a13n_harness.environment.models import (
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -16,12 +16,17 @@ from ..models import (
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
 )
-from ..operations import EnvironmentOperations
-from ._common import invoke
-from .computer import EIPComputerOperations
-from .files import EIPFileOperator
-from .output import EIPOutputOperations, EIPOutputRegistry
-from .processes import EIPPortOperations, EIPProcessOperations, EIPShellOperations, _ProcessConversions
+from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment.eip._common import invoke
+from a13n_harness.providers.environment.eip.computer import EIPComputerOperations
+from a13n_harness.providers.environment.eip.files import EIPFileOperator
+from a13n_harness.providers.environment.eip.output import EIPOutputOperations, EIPOutputRegistry
+from a13n_harness.providers.environment.eip.processes import (
+    EIPPortOperations,
+    EIPProcessOperations,
+    EIPShellOperations,
+    _ProcessConversions,
+)
 
 _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
     "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
@@ -67,7 +72,7 @@ async def open_eip_environment(
     provider_key: str,
     environment_id: str,
     session_source: EIPSessionSource,
-    mount_id: str,
+    execution_id: str,
     device_id: str,
     working_directory: str | None = None,
     required_methods: frozenset[str] = frozenset(),
@@ -92,7 +97,7 @@ async def open_eip_environment(
             session=session,
             provider_key=provider_key,
             environment_id=environment_id,
-            mount_id=mount_id,
+            execution_id=execution_id,
         )
         try:
             yield environment
@@ -109,30 +114,24 @@ class EIPEnvironmentSession:
         session: EIPSession,
         provider_key: str,
         environment_id: str,
-        mount_id: str,
+        execution_id: str,
     ) -> None:
         self._session = session
         self._provider_key = provider_key
         self._environment_id = environment_id
         self._descriptor = _convert_descriptor(session.descriptor)
         self._generation = self._descriptor.generation
-        self.bind_mount(mount_id)
-
-    def bind_mount(self, mount_id: str) -> None:
-        session = self._session
-        provider_key = self._provider_key
-        environment_id = self._environment_id
         methods = set(session.descriptor.available_methods)
         files = EIPFileOperator(
             session=session,
             environment_id=environment_id,
-            mount_id=mount_id,
+            execution_id=execution_id,
             generation=self._generation,
         )
         outputs = EIPOutputRegistry(
             session=session,
             environment_id=environment_id,
-            mount_id=mount_id,
+            execution_id=execution_id,
             generation=self._generation,
         )
         self._outputs = outputs
@@ -142,7 +141,7 @@ class EIPEnvironmentSession:
             outputs=outputs,
             provider_type=provider_key,
             environment_id=environment_id,
-            mount_id=mount_id,
+            execution_id=execution_id,
             generation=self._generation,
         )
         self._conversions = conversions
@@ -152,7 +151,7 @@ class EIPEnvironmentSession:
             processes=EIPProcessOperations(conversions) if "process.start" in methods else None,
             ports=EIPPortOperations(conversions) if {"port.inspect", "port.wait"} & methods else None,
             outputs=EIPOutputOperations(outputs) if "output.read" in methods else None,
-            computer=EIPComputerOperations(session, mount_id=mount_id, generation=self._generation)
+            computer=EIPComputerOperations(session, execution_id=execution_id, generation=self._generation)
             if any(method.startswith("computer.") for method in methods)
             else None,
         )
@@ -173,7 +172,7 @@ class EIPEnvironmentSession:
     def operations(self) -> EnvironmentOperations:
         return self._operations
 
-    async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         missing = operations - self._descriptor.operation_families
         if missing:
             raise EnvironmentError(
@@ -257,7 +256,7 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
 def configured_descriptor(*, working_directory: str | None = None) -> EnvironmentDescriptor:
     actions = {action for values in _METHOD_ACTIONS.values() for action in values}
     actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
-    from ..models import ENVIRONMENT_ACTION_DISPATCH
+    from a13n_harness.environment.models import ENVIRONMENT_ACTION_DISPATCH
 
     return EnvironmentDescriptor(
         generation="unprepared",

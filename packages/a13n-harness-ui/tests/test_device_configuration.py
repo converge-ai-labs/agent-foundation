@@ -165,10 +165,11 @@ async def test_remote_binding_state_identity_tracks_behavior_not_presentation(tm
         service = app._root_runs._executor._environments
         selected = ResolvedEnvironmentBinding(device=device(), selection=binding())
 
+        thread = await app.create_thread()
+
         async def key(value):
-            mount = await service._prepare_device_mount("thread-test", value)
-            await mount.environment.close()
-            return mount.key
+            _mount, publication = await service._prepare_device_mount(thread.thread_id, value)
+            return publication.key
 
         original = await key(selected)
         assert (

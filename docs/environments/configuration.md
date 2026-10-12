@@ -10,10 +10,10 @@ Configure the target, backend connection, and credentials separately. Keep runti
 | Target recipe (`environment_model`)           | What this Environment should expose             | Root directory, Docker mounts, E2B template              |
 | Account configuration (`configuration_model`) | Where the Host reaches the backend              | Docker daemon, E2B domain, HTTP endpoint                 |
 | Credential (`credential_model`)               | Current access to that backend                  | E2B API key or HTTP EIP token                            |
-| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Supplied by the Host or acquired by `runtime_factory`    |
+| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Supplied by the Host or acquired on explicit open        |
 | `EnvironmentState`                            | Validated reference to an exact retained target | Container/sandbox identity and configuration fingerprint |
 
-Call `definition.create(recipe, configuration=..., credential=..., state=...)` to acquire a runtime, or pass `runtime=...` to borrow one you already manage. With a borrowed runtime, omit account configuration and credentials. Creation validates the recipe before account inputs and acquires the runtime after validation. See [Providers and runtime](providers.md) for catalog selection and construction.
+`management.open_provider(configuration=..., credential=...)` acquires management clients. `definition.execution_connector(recipe, configuration=..., credential=..., state=...)` only validates inputs and builds a connector; `open()` acquires execution resources. A Host may pass `runtime=...` to borrow a shared connection, together with account configuration but without credentials.
 
 A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 
@@ -51,7 +51,7 @@ The Host owns one shared `LocalEnvdProviderRuntime`, its binary/bootstrap and sh
 
 When `user` is omitted, the provider uses the image label `ai.a13n.environment.user`, falling back to the image USER for unlabeled custom images. `a13n-sandbox` selects `sandbox` (UID/GID 1000); an explicit recipe `user` takes precedence.
 
-`DockerEnvironmentConfiguration` uses native Docker exec without starting the bundled Envd daemon. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
+Service’s `DockerRecipe` uses native Docker exec without starting the bundled Envd daemon. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
 
 The private container filesystem supplies `/workspace`. Optional bind mounts have an existing absolute `source` on the Docker Engine's machine, a container `target`, and a `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a recipe option; external data is preserved on destruction.
 
@@ -67,9 +67,9 @@ E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop use the same ba
 
 ### E2B
 
-`E2BEnvironmentConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true.
+Service’s `E2BRecipe` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true.
 
-Sandbox timeout defaults to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
+Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
 
 `E2BConnectionConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
 

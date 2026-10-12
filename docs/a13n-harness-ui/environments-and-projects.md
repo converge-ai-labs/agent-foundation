@@ -233,6 +233,8 @@ adapter_configuration: {}
 
 Beyond the common resource envelope, all fields are shown above. The provider owns `provider_configuration`; the adapter owns `adapter_configuration` and Project-to-Environment mapping. Empty mappings are defaults, not a universal configuration for every provider. A provider package alone does not imply that every Project adapter is installed or compatible.
 
+A custom `EnvironmentProjectAdapter.bind()` returns a Harness execution connector. If target preparation fails after observing new state, raise `EnvironmentBindingError(message, state)` or `EnvironmentBindingCancelled(state)` from `a13n_harness_ui.extensions`; Harness UI publishes that observation before propagating the failure. The adapter owns any target management and does not obtain lifecycle methods from the Harness execution definition.
+
 Use `defaults.environment_profile: environment-team` or the explicit launch option, then run `config validate` and `doctor`. Never treat a profile label as proof of isolation. Provider readiness and the actual execution contract determine that behavior.
 
 Local Envd profiles separate immutable Device `launch` configuration from reference-only `session` configuration. For example, filesystem-restricted execution with inherited networking:

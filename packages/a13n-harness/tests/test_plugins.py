@@ -23,14 +23,11 @@ from a13n_harness import (
     SemanticRunInput,
     StateError,
 )
-from a13n_harness.environment import EnvironmentError
+from a13n_harness.environment import EnvironmentError, EnvironmentMount
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
     EnvironmentRuntime,
     create_empty_environment_runtime,
-)
-from a13n_harness.environment.providers import (
-    EnvironmentRuntimeMount,
 )
 from a13n_harness.plugins import (
     PluginRunExchange,
@@ -468,13 +465,13 @@ class TaskAffineEnvironment(EnvironmentRuntime):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentMount,
         *,
         make_default: bool = False,
     ):
         return await self.delegate.mount(name, mount, make_default=make_default)
 
-    async def replace(self, name: str, mount: EnvironmentRuntimeMount):
+    async def replace(self, name: str, mount: EnvironmentMount):
         return await self.delegate.replace(name, mount)
 
     async def unmount(self, name: str):

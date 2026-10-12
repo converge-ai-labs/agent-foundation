@@ -17,8 +17,7 @@ from pydantic import JsonValue
 from pydantic_ai import RunContext
 
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.providers import BoundEnvironment
-from a13n_harness.providers.environment.commands import (
+from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     ProcessInfo,
@@ -27,8 +26,9 @@ from a13n_harness.providers.environment.commands import (
     ProcessStatus,
     ProcessStreamRead,
 )
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
-from a13n_harness.providers.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 
 from .events import ShellStatusEvent
 from .output import tool_output_size
@@ -122,7 +122,7 @@ class _ProcessController:
     def resource_id(self, process_id: str) -> str:
         """Resolve a model selector to a private provider process identity."""
         handle = self._entry(process_id).handle
-        identity = f"{handle.mount_id}:{handle.identity.model_dump_json()}"
+        identity = f"{handle.execution_id}:{handle.identity.model_dump_json()}"
         return "process-" + hashlib.sha256(identity.encode()).hexdigest()[:24]
 
     async def start(
@@ -224,7 +224,7 @@ class _ProcessController:
             entry = self._entry(process_id)
             if alias is not None:
                 selected = self._environment.resolve_path(".", alias=alias)
-                if selected.mount_id != entry.handle.mount_id:
+                if selected.execution_id != entry.handle.execution_id:
                     raise EnvironmentError(
                         "Process reference conflicts with alias.", code="environment_request_invalid"
                     )

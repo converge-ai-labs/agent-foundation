@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ..commands import (
+from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     ProcessControlResult,
@@ -23,11 +23,16 @@ from ..commands import (
     ShellCommand,
     ShellExecResult,
 )
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import BoundOutputCursor, EnvironmentOutputPolicy, OpaqueProcessHandle, _unwrap_opaque
-from .commands import GuestCommands
-from .errors import sdk_errors
-from .output import CommandObservation, ObservationPool
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
+    BoundOutputCursor,
+    EnvironmentOutputPolicy,
+    OpaqueProcessHandle,
+    _unwrap_opaque,
+)
+from a13n_harness.providers.environment.e2b.commands import GuestCommands
+from a13n_harness.providers.environment.e2b.errors import sdk_errors
+from a13n_harness.providers.environment.e2b.output import CommandObservation, ObservationPool
 
 _MAX_PROCESS_RECORDS = 100_000
 _STATUS_POLL_SECONDS = 0.1
@@ -110,7 +115,7 @@ class E2BProcesses:
 
     def _handle(self, token: str) -> BoundProcessHandle:
         return BoundProcessHandle(
-            mount_id=self.commands.mount_id,
+            execution_id=self.commands.execution_id,
             observed_generation=self.commands.generation,
             identity=ProcessIdentity(
                 provider_type="e2b",

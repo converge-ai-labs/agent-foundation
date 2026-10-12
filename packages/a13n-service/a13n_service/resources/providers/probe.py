@@ -12,17 +12,15 @@ from dataclasses import dataclass
 from typing import Literal
 
 import httpx2
+from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
+from a13n_harness.environment.errors import provider_error as environment_error
 from a13n_harness.providers.connector.contracts import ConnectorProviderError
 from a13n_harness.providers.connector.definition import ConnectorProviderDefinition
 from a13n_harness.providers.connector.http import ConnectorHttpClient
-from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.provider import DOCKER, DockerConnectionConfiguration
 from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
-from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
-from a13n_harness.providers.environment.errors import provider_error as environment_error
 from a13n_harness.providers.memory import MemoryProviderDefinition, MemoryStoreError
 from a13n_harness.providers.model.definition import ModelProviderDefinition, ProviderOperationError
 from anyio import fail_after, to_thread
@@ -30,7 +28,8 @@ from pydantic import JsonValue
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbound import open_http
-from a13n_service.providers.registry import ProviderKind, Registry
+from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry
 
 type ProbeStatus = Literal["succeeded", "failed", "unsupported"]
 
@@ -52,7 +51,7 @@ def _engine_unavailable() -> EnvironmentProviderError:
 
 
 async def _ping_engine(
-    definition: EnvironmentProviderDefinition,
+    definition: EnvironmentManagementDefinition,
     config: Mapping[str, JsonValue],
     endpoint: str | None,
     *,
@@ -92,10 +91,10 @@ async def _ping_engine(
             raise _engine_unavailable()
 
 
-def supports_probe(definition: ProviderDefinition) -> bool:
+def supports_probe(definition: RegisteredProvider) -> bool:
     if isinstance(definition, ModelProviderDefinition):
         return definition.supports_connection_probe
-    if isinstance(definition, EnvironmentProviderDefinition):
+    if isinstance(definition, EnvironmentManagementDefinition):
         return definition.type in _ENVIRONMENT_PROBES
     return isinstance(definition, ConnectorProviderDefinition | MemoryProviderDefinition)
 
@@ -117,7 +116,7 @@ async def probe(
         return ProbeResult("unsupported", "This provider type has no non-billable test; verify it through a run")
     try:
         with fail_after(timeout):
-            if isinstance(definition, EnvironmentProviderDefinition):
+            if isinstance(definition, EnvironmentManagementDefinition):
                 await registry.check_environment_endpoint(type_, config, policy)
                 endpoint = registry.environment_endpoint(type_, config)
                 await _ping_engine(definition, config, endpoint, policy=policy, timeout=timeout, max_bytes=max_bytes)

@@ -7,7 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import (
+    EnvironmentAvailability,
+    EnvironmentDescriptor,
+    EnvironmentPermissionSet,
+    EnvironmentState,
+)
+from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.providers.environment.local_envd import _daemon as daemon_module
 from a13n_harness.providers.environment.local_envd import provider as provider_module
 from a13n_harness.providers.environment.local_envd import runtime as runtime_module
@@ -15,18 +22,11 @@ from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
 )
-from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD, LocalEnvdEnvironment
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_harness.providers.environment.models import (
-    EnvironmentAvailability,
-    EnvironmentDescriptor,
-    EnvironmentPermissionSet,
-    EnvironmentState,
-)
-from a13n_harness.providers.environment.operations import EnvironmentOperations
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
@@ -44,10 +44,7 @@ class BoundEIP:
         self.availability = EnvironmentAvailability(status="available")
         self.closed = False
 
-    def bind_mount(self, mount_id):
-        pass
-
-    async def ensure_ready(self, operations):
+    async def check_ready(self, operations):
         pass
 
 
@@ -63,8 +60,8 @@ def environment(owner, directory):
     if isinstance(directory, Path):
         value = directory.as_posix()
         directory = "/UNC/" + value[2:] if value.startswith("//") else "/" + value if directory.drive else value
-    return LocalEnvdEnvironment(
-        LocalEnvdEnvironmentConfiguration(working_directory=directory), owner, environment_id="local-test"
+    return LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(working_directory=directory), runtime=owner, environment_id="local-test"
     )
 
 
@@ -115,13 +112,11 @@ async def test_local_adapters_share_device_but_own_distinct_scopes(tmp_path, own
     first = environment(owner, tmp_path)
     second = environment(owner, tmp_path)
     assert owners == []
-    await first.enter(mount_id="m")
-    assert owners == []
-    await asyncio.gather(first.prepare(), second.prepare())
+    first, second = await asyncio.gather(first.open(), second.open())
     assert len(owners) == 1
     assert first.descriptor.generation != second.descriptor.generation
     assert first.descriptor.backing_identity == second.descriptor.backing_identity
-    assert first.dump_state() is None
+    assert first.state is None
     await first.close()
     assert scopes[0].closed and not scopes[1].closed and not owners[0].closed
     await second.close()
@@ -140,11 +135,11 @@ async def test_backing_identity_tracks_filesystem_and_launch_not_sessions(tmp_pa
         async with runtime(tmp_path, discovery=discovery) as owner:
             adapter = environment(owner, root)
             assert adapter.descriptor.backing_identity is None
+            execution = await adapter.open()
             try:
-                await adapter.prepare()
-                return adapter.descriptor.backing_identity
+                return execution.descriptor.backing_identity
             finally:
-                await adapter.close()
+                await execution.close()
 
     identity = await observe()
     assert identity is not None
@@ -167,7 +162,7 @@ async def test_local_session_open_failure_does_not_close_shared_device(tmp_path,
     monkeypatch.setattr(provider_module, "open_eip_environment", failed)
     adapter = environment(owner, "/missing")
     with pytest.raises(EnvironmentProviderError) as failure:
-        await adapter.prepare()
+        await adapter.open()
     assert failure.value.code == "provider_session_failed"
     assert isinstance(failure.value.__cause__, ValueError)
     assert len(owners) == 1 and not owners[0].closed
@@ -187,12 +182,11 @@ async def test_local_session_open_cancellation_preserves_shared_device(tmp_path,
     monkeypatch.setattr(provider_module, "open_eip_environment", pending)
     async with runtime(tmp_path) as owner:
         adapter = environment(owner, tmp_path)
-        task = asyncio.create_task(adapter.prepare())
+        task = asyncio.create_task(adapter.open())
         await started.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        await adapter.close()
         assert not owners[0].closed
         assert await owner.acquire_device() is owners[0].device
 
@@ -220,17 +214,11 @@ async def test_local_runtime_shutdown_waits_for_launch_and_fences_acquisition(tm
         await owner.acquire_device()
 
 
-async def test_local_lifecycle_never_destroys_host_files(tmp_path):
-    marker = tmp_path / "host-owned.txt"
-    marker.write_text("preserve")
-    async with runtime(tmp_path) as owner:
-        adapter = environment(owner, tmp_path)
-        for operation in (adapter.stop, adapter.destroy):
-            with pytest.raises(EnvironmentProviderError) as failure:
-                await operation()
-            assert failure.value.code == "provider_operation_unsupported"
-        await adapter.close()
-        assert marker.read_text() == "preserve" and adapter.dump_state() is None
+async def test_local_envd_requires_host_runtime_and_has_no_management(tmp_path):
+    assert not hasattr(LOCAL_ENVD, "open_provider")
+    with pytest.raises(EnvironmentProviderError) as failure:
+        await LOCAL_ENVD.execution_connector({}).open()
+    assert failure.value.code == "provider_runtime_required"
 
 
 def test_local_configuration_contains_only_session_selection(tmp_path):
@@ -240,10 +228,8 @@ def test_local_configuration_contains_only_session_selection(tmp_path):
     with pytest.raises(ValidationError):
         LocalEnvdEnvironmentConfiguration.model_validate({"execution_network": "deny"})
     with pytest.raises(EnvironmentProviderError) as failure:
-        LOCAL_ENVD.construct(
-            operation_id="op-test",
-            allow_create=True,
-            configuration=LocalEnvdEnvironmentConfiguration(),
+        LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(),
             environment_id="logical",
             state=EnvironmentState(provider_key=LOCAL_ENVD.type, state_version="1", state={"pid": 12}),
             runtime=runtime(tmp_path),
@@ -295,14 +281,9 @@ async def test_cancelled_runtime_validation_stops_its_process_group(tmp_path):
 
 @pytest.mark.parametrize("directory", [None, "/project"])
 async def test_lazy_descriptor_preserves_recipe_working_directory(tmp_path, directory):
-    from a13n_harness.environment.sources import EnvironmentMount
-
     owner = runtime(tmp_path)
     recipe = LocalEnvdEnvironmentConfiguration(working_directory=directory)
-    adapter = LocalEnvdEnvironment(recipe, owner, environment_id="local-test")
+    connector = LOCAL_ENVD.execution_connector(recipe, runtime=owner, environment_id="local-test")
     assert LOCAL_ENVD.describe_environment(recipe).working_directory == (directory or "/")
-    assert adapter.descriptor.working_directory == (directory or "/")
-    assert EnvironmentMount(adapter).working_directory == (directory or "/")
-    assert EnvironmentMount(adapter, working_directory="/override").working_directory == "/override"
-    await adapter.close()
+    assert connector.descriptor.working_directory == (directory or "/")
     await owner.close()

@@ -8,24 +8,26 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness.providers.environment.commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     CommandEnvironment,
     CommandLimits,
     CommandRequest,
     ShellCommand,
 )
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
 from a13n_harness.providers.environment.e2b.processes import E2BProcesses
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.models import EnvironmentError
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from e2b.envd.process import process_pb
 from e2b.sandbox.commands.main import ProcessInfo
 from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
 from protobuf import Oneof
 from pydantic import SecretStr
+
+from ..environment_helpers import Source
 
 pytestmark = pytest.mark.anyio
 
@@ -628,7 +630,9 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
     """Real guest helper/path mapping; the cloud API and native command event source are simulated."""
     from a13n_harness import EnvironmentMount, RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
-    from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
+    from a13n_harness.environment.models import EnvironmentState
+    from a13n_harness.providers.environment.e2b.configuration import E2BProviderStateData
+    from a13n_harness.providers.environment.e2b.provider import E2B, E2BProviderRuntime
 
     class Commands(NativeCommands):
         async def run(self, script, **kwargs):
@@ -644,25 +648,31 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
     for directory in ("a", "b"):
         (tmp_path / directory).mkdir()
         (tmp_path / directory / "README").write_text(directory)
+
+    async def attach(*args, **kwargs):
+        return sandbox
+
+    async def close(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.execution.open_sandbox", attach)
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.execution.close_sandbox", close)
+    config = E2BEnvironmentConfiguration(root=str(tmp_path), python=sys.executable)
+    owner = E2BProviderRuntime(api_key=SecretStr("test-key"))
+    state = EnvironmentState(
+        provider_key="e2b",
+        state_version="1",
+        state=E2BProviderStateData(
+            sandbox_id=sandbox.sandbox_id, environment_id="shared", configuration_fingerprint=config.fingerprint
+        ).model_dump(mode="json"),
+    )
     for directory in ("a", "b", "a"):
-        adapter = E2BEnvironment(
-            E2BEnvironmentConfiguration(root=str(tmp_path), python=sys.executable),
-            environment_id="shared",
-            state=None,
-            runtime=E2BProviderRuntime(api_key=SecretStr("test-key")),
-            allow_create=False,
-        )
-
-        async def prepare(*, mount_id, adapter=adapter):
-            await adapter._open_operations(sandbox, mount_id)
-
-        monkeypatch.setattr(adapter, "_prepare", prepare)
-        # Service prepares an explicitly selected directory before transferring the still-unentered adapter.
-        await adapter.prepare()
-        await adapter.operations.files.list(f"/{directory}", max_results=1)
+        adapter = E2B.execution_connector(config, environment_id="shared", state=state, runtime=owner)
         runtime = create_environment_runtime(
             mounts={
-                "workspace": EnvironmentMount(adapter, working_directory=f"/{directory}", provider_root=f"/{directory}")
+                "workspace": EnvironmentMount(
+                    Source(adapter), working_directory=f"/{directory}", provider_root=f"/{directory}"
+                )
             },
             default_mount="workspace",
         )

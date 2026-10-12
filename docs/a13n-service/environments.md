@@ -30,20 +30,33 @@ An environment provider is the account environments run on. Create it like any o
 
 *Provider selection in a seeded workspace. Local directory appears only when `provisioning.local.enabled` is set, which is meant for development.*
 
-| Type      | Environments                                    | Account                                                                                                                                   | Stop                                   |
-| --------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `docker`  | Containers                                      | `docker_host`, optionally a remote `tcp://host:port` or `https://host:port` engine the outbound endpoint policy allows. No credential.    | Stops the container                    |
-| `e2b`     | E2B sandboxes                                   | No configuration; credential `{"api_key": ...}`. The account always uses the E2B cloud. A recipe's `timeout_seconds` is at least 300.     | Pauses, keeping memory and files       |
-| `daytona` | Daytona sandboxes                               | `organization_id`, optional `target` region; credential `{"api_key": ...}`                                                                | Stops, keeping files                   |
-| `modal`   | Modal sandboxes                                 | `workspace`, `app_name` (a deployed App that holds the sandboxes), optional `environment_name`; credential `{"token_id", "token_secret"}` | Snapshots the files, then terminates   |
-| `vercel`  | Persistent Vercel sandboxes                     | `team_id`, `project_id`; credential `{"api_key": ...}` (a Vercel access token)                                                            | Stops, keeping files                   |
-| `sprites` | Fly.io Sprites                                  | `organization`; credential `{"api_key": ...}`                                                                                             | Not supported; Sprites sleep when idle |
-| `runloop` | Runloop devboxes                                | `organization`; credential `{"api_key": ...}`                                                                                             | Suspends, keeping files                |
-| `local`   | Directories on the worker host, for development | Offered only with `provisioning.local.enabled`. Commands run directly on the worker host, which is no isolation boundary.                 | Nothing to stop                        |
+| Type      | Environments                                    | Account                                                                                                                                                        | Stop                                   |
+| --------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `docker`  | Containers                                      | `docker_host`, optionally a remote `tcp://host:port` or `https://host:port` engine the outbound endpoint policy allows. No credential.                         | Stops the container                    |
+| `e2b`     | E2B sandboxes                                   | `domain` selects E2B cloud (default `e2b.dev`) or another E2B-compatible service; credential `{"api_key": ...}`. A recipe's `timeout_seconds` is at least 300. | Pauses, keeping memory and files       |
+| `daytona` | Daytona sandboxes                               | `organization_id`, optional `target` region; credential `{"api_key": ...}`                                                                                     | Stops, keeping files                   |
+| `modal`   | Modal sandboxes                                 | `workspace`, `app_name` (a deployed App that holds the sandboxes), optional `environment_name`; credential `{"token_id", "token_secret"}`                      | Snapshots the files, then terminates   |
+| `vercel`  | Persistent Vercel sandboxes                     | `team_id`, `project_id`; credential `{"api_key": ...}` (a Vercel access token)                                                                                 | Stops, keeping files                   |
+| `sprites` | Fly.io Sprites                                  | `organization`; credential `{"api_key": ...}`                                                                                                                  | Not supported; Sprites sleep when idle |
+| `runloop` | Runloop devboxes                                | `organization`; credential `{"api_key": ...}`                                                                                                                  | Suspends, keeping files                |
+| `local`   | Directories on the worker host, for development | Offered only with `provisioning.local.enabled`. Commands run directly on the worker host, which is no isolation boundary.                                      | Nothing to stop                        |
 
 A Docker provider uses the operator's `environments.docker_host` by default; a provider-specific `docker_host` must be a remote TCP or HTTPS engine allowed by the [outbound policy](configuration.md#outbound-requests). Docker Engine access grants host-level authority. Templates may bind host directories only under `environments.docker_mount_roots` (none by default); privileged containers and host namespaces are not available. Bound CPU, memory and process use on the Engine. The [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) connects the host Engine; the Kubernetes chart does not include one.
 
-The hosted types reach their vendor's fixed API: an account names an organization, team, workspace or app, never a host. Their sandboxes are billed to that account. The Service keeps a ready E2B, Modal, Vercel or Runloop sandbox alive by renewing it before the vendor would end it, so set the template's idle policy to bound what these sandboxes cost. A provider's credential can change to an account that cannot see a sandbox. The environment then shows the failure `provider_credential_changed`. It becomes usable again when a credential of the sandbox's account is restored. Renewal cannot pass a vendor's hard limit: Modal ends a sandbox at its recipe's `timeout_seconds` (at most 24 hours), after which the environment shows as lost, and Vercel ends a sandbox session at its recipe's `timeout_seconds`, after which the environment is stopped and the next run resumes it. A template's idle stop that comes first keeps the files. See [provider configuration](../environments/configuration-reference.md) for every recipe field.
+Hosted types reach vendor-owned APIs. E2B selects its cloud or another E2B-compatible service; other hosted accounts name an organization, team, workspace or app, never a host. Their sandboxes are billed to that account. The Service keeps a ready E2B, Modal, Vercel or Runloop sandbox alive by renewing it before the vendor would end it, so set the template's idle policy to bound what these sandboxes cost. A provider's credential can change to an account that cannot see a sandbox. The environment then shows the failure `provider_credential_changed`. It becomes usable again when a credential of the sandbox's account is restored. Renewal cannot pass a vendor's hard limit: Modal ends a sandbox at its recipe's `timeout_seconds` (at most 24 hours), after which the environment shows as lost, and Vercel ends a sandbox session at its recipe's `timeout_seconds`, after which the environment is stopped and the next run resumes it. A template's idle stop that comes first keeps the files. See [provider configuration](../environments/configuration-reference.md) for every recipe field.
+
+To use another E2B-compatible service, create an `e2b` provider with its sandbox domain and API key:
+
+```json
+{
+  "type": "e2b",
+  "name": "Compatible E2B",
+  "config": {"domain": "sandboxes.example.com"},
+  "credential": {"api_key": "YOUR_SANDBOX_API_KEY"}
+}
+```
+
+The Service derives the HTTPS control API `https://api.<domain>` from the configured sandbox domain. Use a lowercase DNS name without a scheme, port or path; independent `api_url` overrides are not supported. The native SDK owns control and sandbox requests, including endpoints returned by the selected service. Service does not inspect each SDK request; operator infrastructure owns network routing restrictions. Changing the domain requires replacing or removing its credential and creating new environment instances. Use a template from that service and verify compatibility with the repository's locked E2B SDK `2.46.4`: creation, connection, renewal, command/file operations, pause/resume and destruction.
 
 Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine answers one ping. A remote engine that does not resolve fails with message `provider_unavailable`; only a policy refusal answers `provider_endpoint_denied`.
 
@@ -59,12 +72,12 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
-- `provider_id` names an environment provider of the workspace, and `config.recipe` is validated by its type's recipe schema. For Docker it sets the `image`, host directory `mounts` (their sources must lie below `environments.docker_mount_roots`), `environment` variables, an `init_script`, `disable_network`, the `user`, and resource limits; see [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration). A rejected recipe identifies the invalid fields without returning their submitted values.
+- `provider_id` names an environment provider of the workspace, and `config.recipe` is validated by its type's recipe schema. For Docker it sets the `image`, host directory `mounts` (their sources must lie below `environments.docker_mount_roots`), `environment` variables, an `init_script`, `disable_network`, the `user`, and resource limits; see [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerrecipe). A rejected recipe identifies the invalid fields without returning their submitted values.
 - `stop_after_seconds` (default 1800, 60–2,592,000) stops an environment no run has used for that long. `delete_after_seconds` (60–31,536,000) deletes one that no run has used for that long and no thread mounts. `null` turns either off. Both count from the environment's last use.
 - `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set.
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
-To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`.
+To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
 
 ### Docker image versions
 
@@ -85,6 +98,7 @@ Each instance saves its resolved image before its first create; upgrades and int
 
 | Status                 | Meaning                                                                       |
 | ---------------------- | ----------------------------------------------------------------------------- |
+| `reserved`             | Reserved until first use; no vendor resource exists yet.                      |
 | `creating`, `starting` | Being created or started.                                                     |
 | `ready`                | Usable.                                                                       |
 | `stopping`, `stopped`  | Stopped environments keep their files; a run that mounts one starts it again. |
@@ -153,7 +167,17 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 - New threads and forks take initial mounts in their `environments` field. A fork shares its origin thread's mounts unless it sets `fresh_environments`. Archiving a thread removes its mounts.
 - Several threads may mount the same environment and use it at once.
 
-Before each attempt executes, it waits up to `environments.wait_seconds` for the run's environments to be ready, starting stopped ones. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
+By default, `AgentConfig.lazy_environment` is `true`. On first use of each mount, the worker waits up to `environments.wait_seconds` for that environment to be ready, creating reserved targets or starting stopped ones. If another dispatcher holds the operation claim, the worker waits for its published result; claim contention alone is not readiness. Input attachments and environment-backed skills can trigger first use before a model call. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
+
+Set `lazy_environment: false` in the agent configuration to have Service create or start every mounted instance and wait for it to be ready before entering Harness, even if no tool uses it. This only prepares instances. Harness still opens each execution connection on first dependent use, when operation readiness and any selected working directory are checked. A run that never uses an environment opens no execution connection to it. A run without mounts has nothing to prepare. Explicit environment creation through `POST …/environments` keeps its existing behavior.
+
+Override the agent's choice for one run through message options:
+
+```json
+{"options": {"overrides": {"lazy_environment": false}}}
+```
+
+An omitted or `null` override inherits the agent revision's value. The accepted choice survives retries and continuation runs. Async children use their own agent's configuration; inline children share their parent's environment.
 
 Async [subagents](agents-and-runs.md#subagents) get environments from their edge's policy: the parent run's mounts (`shared`), a new environment from a template (`dedicated`), or none.
 
@@ -161,6 +185,6 @@ Async [subagents](agents-and-runs.md#subagents) get environments from their edge
 
 In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. The **Add environment** form on an existing conversation offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
 
-The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories before execution and reports missing or inaccessible paths without creating them or marking the shared instance broken.
+The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories on first activation and reports missing or inaccessible paths without creating them or marking the shared instance broken.
 
 Two conversations can use different project directories on one instance, or deliberately use the same directory to share files. Relative file paths, the `/workspace` route and the default command cwd use the chosen directory. Processes, ports, installed software and native permissions remain shared: this is file organization, not security isolation. Removing a mount does not delete the directory; accepted runs keep their captured selection.

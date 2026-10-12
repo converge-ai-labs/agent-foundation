@@ -5,11 +5,9 @@ from contextlib import AbstractAsyncContextManager
 from a13n_envd_client import EIPSession
 from pydantic import BaseModel
 
-from ..eip.binding import EIPEnvironmentSession, configured_descriptor
-from ..errors import EnvironmentProviderError, provider_error
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..management import Environment
-from ..models import (
+from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -17,8 +15,13 @@ from ..models import (
     EnvironmentState,
     decode_state_envelope,
 )
-from ..operations import EnvironmentOperations
-from .configuration import RemoteEnvdEnvironmentConfiguration, RemoteEnvdStateData
+from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment._backend import ExecutionBackend
+from a13n_harness.providers.environment.eip.binding import EIPEnvironmentSession, configured_descriptor
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    RemoteEnvdEnvironmentConfiguration,
+    RemoteEnvdStateData,
+)
 
 REQUIRED_METHODS = frozenset({"environment.describe", "environment.readiness", "session.close"})
 
@@ -39,7 +42,7 @@ def target_identity(provider_type: str, *, configuration: BaseModel, state: Envi
     return decode_state(provider_type, state).device_id
 
 
-class RemoteEnvdEnvironment(Environment):
+class RemoteEnvdExecution(ExecutionBackend):
     def __init__(
         self,
         *,
@@ -80,7 +83,7 @@ class RemoteEnvdEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return self._operations
 
-    async def _prepare(self, *, mount_id: str) -> None:
+    async def open(self, *, execution_id: str) -> None:
         if self._attempted:
             raise provider_error(self.provider_key, "provider_runtime_consumed", Category.UNAVAILABLE)
         self._attempted = True
@@ -88,7 +91,10 @@ class RemoteEnvdEnvironment(Environment):
             session = await self._session_context.__aenter__()
             self._entered_session = True
             self._bound = EIPEnvironmentSession(
-                session=session, provider_key=self.provider_key, environment_id=self.environment_id, mount_id=mount_id
+                session=session,
+                provider_key=self.provider_key,
+                environment_id=self.environment_id,
+                execution_id=execution_id,
             )
             self._descriptor = self._bound.descriptor
             self._operations = self._bound.operations
@@ -96,7 +102,7 @@ class RemoteEnvdEnvironment(Environment):
         except BaseException as error:
             self._availability = EnvironmentAvailability(status="unavailable")
             try:
-                await self._close()
+                await self.close()
             except Exception as cleanup_error:
                 # Keep the preparation failure primary and retain cleanup evidence.
                 error.__cause__ = cleanup_error
@@ -104,20 +110,15 @@ class RemoteEnvdEnvironment(Environment):
                 raise
             raise provider_error(self.provider_key, "provider_session_failed", Category.UNAVAILABLE) from error
 
-    def _bind_mount(self, mount_id: str) -> None:
-        if self._bound is not None:
-            self._bound.bind_mount(mount_id)
-            self._operations = self._bound.operations
-
-    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if self._bound is None:
             raise EnvironmentError("Remote Envd connection is unavailable", code="environment_unavailable")
         try:
-            await self._bound.ensure_ready(operations)
+            await self._bound.check_ready(operations)
         finally:
             self._availability = self._bound.availability
 
-    async def _close(self) -> None:
+    async def close(self) -> None:
         self._availability = EnvironmentAvailability(status="unavailable")
         self._operations = EnvironmentOperations()
         errors: list[BaseException] = []

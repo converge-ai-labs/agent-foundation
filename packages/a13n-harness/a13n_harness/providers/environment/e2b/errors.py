@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from ..errors import EnvironmentProviderError
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
-from ..errors import EnvironmentProviderRecoveryHint as Recovery
-from ..errors import provider_error as typed_provider_error
-from ..models import EnvironmentError
-from .configuration import PROVIDER_KEY
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.environment.errors import EnvironmentProviderRecoveryHint as Recovery
+from a13n_harness.environment.errors import provider_error as typed_provider_error
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.providers.environment.e2b.configuration import PROVIDER_KEY
 
 
 def provider_error(code: str, category: Category, *, uncertain: bool = False) -> EnvironmentProviderError:

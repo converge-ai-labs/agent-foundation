@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from .._file_patterns import PathPattern, PatternError, content_pattern
-from .._file_search import search_text_file
+from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
+from a13n_harness.providers.environment._file_search import search_text_file
 
 
 def resolve(root: Path, value: str, *, follow: bool = True) -> Path:

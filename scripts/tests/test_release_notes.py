@@ -385,7 +385,7 @@ def _commit(root: Path, path: str, subject: str) -> str:
 @pytest.mark.parametrize(
     ("component", "path"),
     [
-        ("a13n-harness", "packages/a13n-harness/a13n_harness/providers/environment/api.py"),
+        ("a13n-harness", "packages/a13n-harness/a13n_harness/environment/api.py"),
         ("a13n-harness", "packages/a13n-harness/api.py"),
         ("a13n-harness", "packages/a13n-stream-protocol/api.py"),
         ("a13n-harness-ui", "packages/a13n-harness-ui/api.py"),

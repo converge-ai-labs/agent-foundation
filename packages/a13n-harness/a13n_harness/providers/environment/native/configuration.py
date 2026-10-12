@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from ..models import EnvironmentTargetState
+from a13n_harness.environment.models import EnvironmentTargetState
 
 
 class CommandConfiguration(BaseModel):

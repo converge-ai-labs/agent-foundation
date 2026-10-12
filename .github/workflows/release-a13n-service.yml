@@ -40,7 +40,7 @@ jobs:
           image=$(python - <<'PY'
           import ast
           from pathlib import Path
-          source = Path("packages/a13n-service/a13n_service/providers/environments/docker.py")
+          source = Path("packages/a13n-service/a13n_service/providers/environments/docker/__init__.py")
           module = ast.parse(source.read_text())
           for node in module.body:
               if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "DEFAULT_SANDBOX_IMAGE" for t in node.targets):

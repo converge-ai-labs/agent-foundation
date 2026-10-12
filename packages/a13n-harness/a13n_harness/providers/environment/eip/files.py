@@ -7,7 +7,7 @@ from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 from pydantic import ValidationError
 
-from ..files import (
+from a13n_harness.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -21,8 +21,14 @@ from ..files import (
     FileWriteMode,
     FileWriteResult,
 )
-from ..models import EnvironmentError
-from ._common import convert_receipt, invoke, new_context, raise_converted, session_client
+from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.providers.environment.eip._common import (
+    convert_receipt,
+    invoke,
+    new_context,
+    raise_converted,
+    session_client,
+)
 
 
 class EIPFileOperator:
@@ -31,12 +37,12 @@ class EIPFileOperator:
         *,
         session: EIPSession,
         environment_id: str,
-        mount_id: str,
+        execution_id: str,
         generation: str,
     ) -> None:
         self._session = session
         self._environment_id = environment_id
-        self._mount_id = mount_id
+        self._execution_id = execution_id
         self._generation = generation
 
     @property
@@ -364,6 +370,6 @@ class EIPFileOperator:
         return convert_receipt(
             receipt,
             session=self._session,
-            mount_id=self._mount_id,
+            execution_id=self._execution_id,
             generation=self._generation,
         )

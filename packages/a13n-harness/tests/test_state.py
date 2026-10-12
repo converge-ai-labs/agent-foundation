@@ -8,7 +8,7 @@ from a13n_harness import (
     SafeFailure,
     StateError,
 )
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.state import (
     AgentContextState,
     AgentContextStateSnapshot,

@@ -1,7 +1,7 @@
 """keep run version across checkpoint commits
 
 Revision ID: 3fe004454022
-Revises: 797996a323b1
+Revises: 43f34f1a0183
 
 Replaces the runs version trigger so a change confined to checkpoint, tail and memory cursors keeps the run's
 version and updated_at. Replacing the trigger briefly locks runs and scans nothing. Older builds read the version
@@ -12,7 +12,7 @@ safely; downgrade restores the unconditional trigger.
 from alembic import op
 
 revision = "3fe004454022"
-down_revision = "797996a323b1"
+down_revision = "43f34f1a0183"
 branch_labels = None
 depends_on = None
 

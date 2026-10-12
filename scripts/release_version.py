@@ -269,12 +269,13 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
             ),
         }
     if component == "a13n-logging":
+        manifest, package = LOGGING_MANIFEST, LOGGING_PACKAGE
         return {
-            str(LOGGING_MANIFEST): _project_version(root, LOGGING_MANIFEST),
-            f"{ROOT_UV_LOCK} package {LOGGING_PACKAGE}": _lock_package_version(
+            str(manifest): _project_version(root, manifest),
+            f"{ROOT_UV_LOCK} package {package}": _lock_package_version(
                 root,
                 ROOT_UV_LOCK,
-                LOGGING_PACKAGE,
+                package,
             ),
         }
     if component == "a13n-service":
@@ -527,15 +528,16 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             ROOT_UV_LOCK,
         )
     elif component == "a13n-logging":
-        planned[LOGGING_MANIFEST] = _replace_table_version(
-            _read_text(root, LOGGING_MANIFEST),
+        manifest, package = LOGGING_MANIFEST, LOGGING_PACKAGE
+        planned[manifest] = _replace_table_version(
+            _read_text(root, manifest),
             "project",
             python_version,
-            LOGGING_MANIFEST,
+            manifest,
         )
         planned[ROOT_UV_LOCK] = _replace_lock_package_version(
             _read_text(root, ROOT_UV_LOCK),
-            LOGGING_PACKAGE,
+            package,
             python_version,
             ROOT_UV_LOCK,
         )

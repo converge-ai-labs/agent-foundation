@@ -25,7 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 
-STATUSES = ("creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted")
+STATUSES = ("reserved", "creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted")
 OPERATIONS = "('creating', 'starting', 'stopping', 'deleting')"
 
 
@@ -44,6 +44,10 @@ class EnvironmentRow(Stamped, Base):
         CheckConstraint(
             "template_id IS NULL OR status NOT IN ('ready', 'starting', 'stopping', 'stopped') OR handle IS NOT NULL",
             name="handle",
+        ),
+        CheckConstraint(
+            "status <> 'reserved' OR (handle IS NULL AND provider_identity IS NULL AND failure IS NULL)",
+            name="reserved",
         ),
         # The status names the outstanding operation; no other state carries one.
         CheckConstraint(f"(status IN {OPERATIONS}) = (operation_id IS NOT NULL)", name="operation"),
@@ -77,7 +81,7 @@ class EnvironmentRow(Stamped, Base):
         Index(
             "ix_environments_idle",
             "last_used_at",
-            postgresql_where=text("template_id IS NOT NULL AND status IN ('ready', 'stopped')"),
+            postgresql_where=text("template_id IS NOT NULL AND status IN ('reserved', 'ready', 'stopped')"),
         ),
         Index("ix_environments_renewals", "renew_at", postgresql_where=text("renew_at IS NOT NULL")),
         rules(

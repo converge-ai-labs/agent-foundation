@@ -10,9 +10,9 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import AbstractModelContextCapability
-from a13n_harness.providers.environment.models import EnvironmentAction
 from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
 from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import (

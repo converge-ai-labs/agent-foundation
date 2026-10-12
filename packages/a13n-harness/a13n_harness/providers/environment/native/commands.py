@@ -11,11 +11,17 @@ from typing import BinaryIO
 
 from pydantic import JsonValue, TypeAdapter
 
-from .._guest_commands import file_helper_source
-from ..commands import CommandRequest, ProcessOutputSnapshot, ProcessStatus, ShellCommand, ShellExecResult
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import EnvironmentOutputCapture
-from .configuration import CommandConfiguration
+from a13n_harness.environment.commands import (
+    CommandRequest,
+    ProcessOutputSnapshot,
+    ProcessStatus,
+    ShellCommand,
+    ShellExecResult,
+)
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import EnvironmentOutputCapture
+from a13n_harness.providers.environment._guest_commands import file_helper_source
+from a13n_harness.providers.environment.native.configuration import CommandConfiguration
 
 # Native exec returns the bounded stdout of one helper, with no retry after dispatch.
 type Execute = Callable[[list[str], float], Awaitable[str]]
@@ -23,11 +29,11 @@ _OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
 class NativeCommands:
-    def __init__(self, execute: Execute, configuration: CommandConfiguration, generation: str, mount_id: str):
+    def __init__(self, execute: Execute, configuration: CommandConfiguration, generation: str, execution_id: str):
         self.execute = execute
         self.configuration = configuration
         self.generation = generation
-        self.mount_id = mount_id
+        self.execution_id = execution_id
         self.closed = False
         self._counter = itertools.count(1)
         self._files = file_helper_source()
@@ -64,7 +70,7 @@ class NativeCommands:
                 "import base64,json,sys\nr=json.loads(sys.argv[1])\nwith open(r['path'],'rb') as f:\n f.seek(r['offset'])\n print(json.dumps({'data':base64.b64encode(f.read(65536)).decode()}))",
                 {"path": path, "offset": offset},
             )
-            from .._guest_commands import decoded_bytes
+            from a13n_harness.providers.environment._guest_commands import decoded_bytes
 
             chunk = decoded_bytes(value)
             if not chunk:
@@ -83,7 +89,7 @@ class NativeCommands:
 
     def receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            mount_id=self.mount_id,
+            execution_id=self.execution_id,
             observed_generation=self.generation,
             operation_id=f"operation-{next(self._counter)}",
             stage="completed",

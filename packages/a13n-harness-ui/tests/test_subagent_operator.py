@@ -302,7 +302,7 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
         usage_limits=None,
         identity=AgentIdentityRef(issuer="test", subject="child"),
         state=state,
-        environment=cast(Any, SimpleNamespace(finalize=AsyncMock(return_value=finalized))),
+        environment=cast(Any, SimpleNamespace(finalization=finalized)),
         stream=stream,
         agent_instance_id="child-agent",
         display=CompactChildDisplay(),

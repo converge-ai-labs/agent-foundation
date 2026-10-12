@@ -17,15 +17,15 @@ from a13n_envd_client import __version__ as envd_client_version
 from a13n_envd_client.eip.v1 import EgressMode, ExecutionIdentity, RestrictedSandbox
 from anyio import CancelScope
 
-from ..envd_policy import EnvdBoundaryRequirement
-from ..errors import EnvironmentProviderError, provider_error
-from ..errors import EnvironmentProviderErrorCategory as Category
-from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
-from ..errors import EnvironmentProviderRecoveryHint as Recovery
-from .configuration import LocalEnvdLaunchConfiguration
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
+from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.environment.errors import EnvironmentProviderRecoveryHint as Recovery
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
 
 if TYPE_CHECKING:
-    from .runtime import LocalEnvdRuntimeAllocator
+    from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdRuntimeAllocator
 
 _PROVIDER_KEY = "local_envd"
 _PROCESS_POLL_SECONDS = 0.01
@@ -68,7 +68,7 @@ class LocalDaemon:
             if os.name == "posix":
                 options["start_new_session"] = True
             elif os.name == "nt":  # pragma: no cover - Windows CI
-                from .._windows_job import WindowsJob
+                from a13n_harness.providers.environment._windows_job import WindowsJob
 
                 job = WindowsJob.create()
                 self._stack.callback(job.close)

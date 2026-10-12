@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment._guest import files
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_harness.providers.environment.models import EnvironmentError
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Guest filesystem helpers execute on POSIX sandboxes")
 

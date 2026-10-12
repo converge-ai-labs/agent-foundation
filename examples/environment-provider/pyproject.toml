@@ -6,8 +6,9 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
-    "pydantic>=2.12,<3",
     "a13n-harness[docker,e2b]",
+    "a13n-service",
+    "pydantic>=2.12,<3",
     "websockets>=15,<16",
 ]
 
@@ -29,8 +30,11 @@ build-backend = "hatchling.build"
 packages = ["src/a13n_environment_example"]
 
 [tool.uv.sources]
-a13n-envd-client = { path = "../../packages/a13n-envd-client", editable = true }
+a13n-service = { path = "../../packages/a13n-service", editable = true }
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
+a13n-stream-protocol = { path = "../../packages/a13n-stream-protocol", editable = true }
+a13n-logging = { path = "../../packages/a13n-logging", editable = true }
+a13n-envd-client = { path = "../../packages/a13n-envd-client", editable = true }
 
 [tool.uv.workspace]
 members = []
