@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ToolSearch
+from pydantic_ai.capabilities._deferred_capability_loader import DeferredCapabilityLoader
 from pydantic_ai.models import ModelRequestContext, ModelResolutionContext
 from pydantic_ai.native_tools import WebSearchTool
+from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._tool_selectors import match_selector as match_selector
 from a13n_harness._tool_selectors import validate_selector
@@ -28,7 +30,7 @@ from a13n_harness.capabilities.tool_review import (
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.metering import ModelUsageBinding
-from a13n_harness.tools.identity import ToolIdentity, ToolPermissionMode
+from a13n_harness.tools.identity import ToolIdentity, ToolPermissionMode, identify_tool, tool_identity
 from a13n_harness.tools.policy import InvocationDecisionKind
 
 TOOL_PERMISSIONS_CAPABILITY_ID = "a13n.tool-permissions"
@@ -50,8 +52,12 @@ class ToolPermissions(BaseModel):
             validate_selector(selector)
         return rules
 
+    def setting_for(self, identity: ToolIdentity) -> ToolPermissionSetting:
+        """Select the authored setting without erasing an explicit inheritance choice."""
+        return match_selector(self.rules, identity.tool_id) or self.default
+
     def resolve(self, identity: ToolIdentity) -> ToolPermissionMode:
-        setting = match_selector(self.rules, identity.tool_id) or self.default
+        setting = self.setting_for(identity)
         return identity.default_mode if setting == "inherit" else setting
 
 
@@ -86,6 +92,18 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
         if reviewer is not None and not isinstance(reviewer, ToolReviewer):
             raise TypeError("reviewer must implement ToolReviewer")
         self._context: AgentContext | None = None
+
+    def get_ordering(self) -> CapabilityOrdering:
+        from a13n_harness.tools.surface import ToolSurfaceCapability
+
+        return CapabilityOrdering(
+            position="outermost",
+            wraps=(ToolSearch, DeferredCapabilityLoader),
+            wrapped_by=(ToolSurfaceCapability,),
+        )
+
+    def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
+        return _ToolPermissionsToolset(toolset, self.permissions)
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -170,3 +188,22 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
             raise
         except Exception as exc:
             raise ToolReviewError("tool_review_failed") from exc
+
+
+@dataclass
+class _ToolPermissionsToolset(WrapperToolset[AgentContext]):
+    """Apply runtime approval overrides before surface filtering and execution preparation."""
+
+    permissions: ToolPermissions
+
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        tools = await self.wrapped.get_tools(ctx)
+        prepared: dict[str, ToolsetTool[AgentContext]] = {}
+        for name, tool in tools.items():
+            if tool.tool_def.kind == "unapproved":
+                identified = identify_tool(tool)
+                if self.permissions.setting_for(tool_identity(identified.tool_def)) != "inherit":
+                    # Keep the source Tool and its prepared definition reusable by other Runs/Hosts.
+                    tool = replace(identified, tool_def=replace(identified.tool_def, kind="function"))
+            prepared[name] = tool
+        return prepared

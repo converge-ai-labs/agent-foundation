@@ -32,6 +32,8 @@ Match stable IDs: managed tools use their declared IDs, ordinary tools use `tool
 
 Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `inherit` uses the tool default, which is `allow` without review unless trusted code explicitly declares otherwise. External/provider-native tools retain their separate boundaries. A reviewer and its risk rules do not enable review by themselves; select permission `review` for the tools you want assessed. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
 
+An explicit permission selected by a rule or `default` overrides the tool's native `requires_approval=True` declaration. For example, `allow` runs without that declaration's approval, and `review` lets the configured reviewer and risk policy decide. A winning `inherit` setting, or no `ToolPermissionsCapability`, preserves the native declaration. This applies across Hosts and to dynamically prepared tools without modifying shared source tools. To retain a plugin's original approval behavior under a broader override, give that tool an `inherit` rule. Runtime `ApprovalRequired` from a tool body, validator, or approval wrapper still requests confirmation; automatic allow never pretends that a person approved the call.
+
 ### Configure or replace the reviewer
 
 The same `ToolPermissionsCapability` owns optional review configuration, reviewer selection, and the per-Run review lifecycle. Its model-backed reviewer uses a separate Agent with no execution tools:

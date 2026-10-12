@@ -358,6 +358,34 @@ def test_build_composes_the_definition_without_io() -> None:
     assert composed.model is None and composed.agent.model == subagent.agent.agent.model == MODEL
 
 
+@pytest.mark.parametrize("mode", ["allow", "ask", "deny", "inherit"])
+async def test_service_connection_permission_overrides_native_approval(mode: str) -> None:
+    from a13n_harness import AgentContext, RunBindings
+    from pydantic_ai import RunContext, Tool
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.toolsets import FunctionToolset
+
+    executed = []
+
+    def execute(ctx: RunContext[AgentContext]) -> str:
+        executed.append(ctx.deps.tool_approval.approved)
+        return "ok"
+
+    source = Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id=GITHUB)])
+    selected = config(toolsets={}, connection_tools=[{"connection_id": GITHUB, "permission": mode}])
+    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={GITHUB: "github"})
+    executable = build(root, capabilities=lambda _: [source], plugins=PLUGINS, instrumentation=None)
+
+    async def model_resolver(context, model_id):
+        assert model_id == MODEL
+        return TestModel(call_tools=["execute"])
+
+    result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
+    assert result.status == ("suspended" if mode in {"ask", "inherit"} else "completed")
+    assert executed == ([False] if mode == "allow" else [])
+
+
 async def create_model(service, **config: object) -> str:  # type: ignore[no-untyped-def]
     """A new model's key."""
     provider = await service.client.post(
