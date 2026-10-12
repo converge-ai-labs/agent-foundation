@@ -6884,6 +6884,34 @@
         "title": "MemoryRecordPage",
         "type": "object"
       },
+      "MemoryRecordProvenance": {
+        "properties": {
+          "content_matches": {
+            "title": "Content Matches",
+            "type": "boolean"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryRecordSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_write": {
+            "$ref": "#/components/schemas/MemoryRecordSource"
+          }
+        },
+        "required": [
+          "created",
+          "last_write",
+          "content_matches"
+        ],
+        "title": "MemoryRecordProvenance",
+        "type": "object"
+      },
       "MemoryRecordSearch": {
         "additionalProperties": false,
         "properties": {
@@ -6905,6 +6933,80 @@
           "query"
         ],
         "title": "MemoryRecordSearch",
+        "type": "object"
+      },
+      "MemoryRecordSource": {
+        "description": "A platform-confirmed write, not an asserted source message or complete provider history.",
+        "properties": {
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
+          "confirmed_at": {
+            "format": "date-time",
+            "title": "Confirmed At",
+            "type": "string"
+          },
+          "principal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal Id"
+          },
+          "principal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal Name"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          }
+        },
+        "required": [
+          "principal_id",
+          "run_id",
+          "attempt_id",
+          "tool_call_id",
+          "confirmed_at"
+        ],
+        "title": "MemoryRecordSource",
         "type": "object"
       },
       "MemoryRecordText": {
@@ -6929,6 +7031,16 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryRecordProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "score": {
             "anyOf": [

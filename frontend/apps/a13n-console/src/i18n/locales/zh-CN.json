@@ -1988,5 +1988,22 @@
   "Context gap": "上下文缺失",
   "Workflow issue": "流程问题",
   "Boundary violation": "边界违规",
-  "Category": "类型"
+  "Category": "类型",
+  "View source": "查看来源",
+  "Writing source": "写入来源",
+  "Writes confirmed by this platform. Direct changes in the memory provider may not be recorded.": "这里展示平台确认过的写入。直接在记忆供应商中进行的修改可能未被记录。",
+  "No source recorded": "暂无来源记录",
+  "The current content differs from the last recorded write. These sources may no longer describe it.": "当前内容与最后记录的写入不同，以下来源仅供参考。",
+  "Creation source": "创建来源",
+  "Last platform-confirmed write": "最近一次平台确认的写入",
+  "Written by an agent run": "由 Agent 运行写入",
+  "Written through the Console or API": "通过 Console 或 API 写入",
+  "Acting identity": "执行身份",
+  "Confirmed at": "确认时间",
+  "Technical details": "技术详情",
+  "Principal ID": "身份 ID",
+  "Attempt ID": "Attempt ID",
+  "Tool call ID": "工具调用 ID",
+  "Loading run…": "正在加载运行…",
+  "Linked run unavailable": "关联运行不可访问"
 }

@@ -59,6 +59,15 @@ async def test_a_run_recalls_at_its_first_input_and_writes_through_the_tools(ser
     assert "prefers window seats" in BACKEND.texts(namespace)
     assert [call for call in BACKEND.calls if call[0] != "search"] == [("add", namespace)]
     assert (await runs_kit.get_run(service, started["run"]["id"]))["status"] == "completed"
+    page = (await service.client.get(f"{service.api}/memories/{memory['id']}/records")).json()["items"]
+    saved = next(item for item in page if item["text"] == "prefers window seats")
+    source = saved["provenance"]["created"]
+    assert source["run_id"] == started["run"]["id"]
+    assert source["principal_id"] == service.tenant.principal_id
+    assert source["attempt_id"].startswith("rat_")
+    assert source["tool_call_id"] == "call_add"
+    assert saved["provenance"]["content_matches"] is True
+    assert all(item["provenance"] is None for item in page if item != saved)
 
 
 async def test_a_mount_and_the_toolset_limit_recall_and_tools(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

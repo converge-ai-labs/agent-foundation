@@ -186,6 +186,23 @@ class HistoryPurge(BaseModel):
     purged: int
 
 
+class MemoryRecordSource(BaseModel):
+    """A platform-confirmed write, not an asserted source message or complete provider history."""
+
+    principal_id: str | None
+    principal_name: str | None = None
+    run_id: str | None
+    attempt_id: str | None
+    tool_call_id: str | None
+    confirmed_at: datetime
+
+
+class MemoryRecordProvenance(BaseModel):
+    created: MemoryRecordSource | None
+    last_write: MemoryRecordSource
+    content_matches: bool
+
+
 class MemoryRecordView(BaseModel):
     """A record as the memory's provider returns it; `score` is its similarity to a search query."""
 
@@ -194,6 +211,7 @@ class MemoryRecordView(BaseModel):
     text: str
     score: float | None = None
     updated_at: datetime | None = None
+    provenance: MemoryRecordProvenance | None = None
 
 
 class MemoryRecordPage(BaseModel):

@@ -1988,5 +1988,22 @@
   "Context gap": "Context gap",
   "Workflow issue": "Workflow issue",
   "Boundary violation": "Boundary violation",
-  "Category": "Category"
+  "Category": "Category",
+  "View source": "View source",
+  "Writing source": "Writing source",
+  "Writes confirmed by this platform. Direct changes in the memory provider may not be recorded.": "Writes confirmed by this platform. Direct changes in the memory provider may not be recorded.",
+  "No source recorded": "No source recorded",
+  "The current content differs from the last recorded write. These sources may no longer describe it.": "The current content differs from the last recorded write. These sources may no longer describe it.",
+  "Creation source": "Creation source",
+  "Last platform-confirmed write": "Last platform-confirmed write",
+  "Written by an agent run": "Written by an agent run",
+  "Written through the Console or API": "Written through the Console or API",
+  "Acting identity": "Acting identity",
+  "Confirmed at": "Confirmed at",
+  "Technical details": "Technical details",
+  "Principal ID": "Principal ID",
+  "Attempt ID": "Attempt ID",
+  "Tool call ID": "Tool call ID",
+  "Loading run…": "Loading run…",
+  "Linked run unavailable": "Linked run unavailable"
 }
