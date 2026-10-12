@@ -43,6 +43,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     "test_ci_inputs.py": (".github/workflows/ci-*.yml", ".github/workflows/images.yml"),
     "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml",),
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),
+    "test_sandbox_init.py": ("deploy/docker/images/sandbox/*.sh",),
     "test_harness_ui_ci_workflow.py": (
         ".github/workflows/ci-a13n-harness-ui*.yml",
         ".github/workflows/images.yml",
@@ -57,6 +58,8 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/release-*.yml",
         ".github/workflows/ci-containers.yml",
         "deploy/docker/images/*",
+        "Makefile",
+        "scripts/sandbox_smoke.py",
         "deploy/docker/compose/*",
     ),
     "test_k8s_local.py": ("deploy/kubernetes/*",),

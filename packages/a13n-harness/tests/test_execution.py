@@ -842,9 +842,11 @@ async def test_concurrent_next_is_rejected_without_closing_the_active_stream() -
         observed_input = await stream.__anext__()
         assert isinstance(observed_input, HarnessEvent) and isinstance(observed_input.event, InputTextEvent)
         assert observed_input.event.source == "user"
-        projected_context = await stream.__anext__()
-        assert isinstance(projected_context, HarnessEvent) and isinstance(projected_context.event, InputTextEvent)
-        assert projected_context.event.source == "context"
+        for source_id in ("a13n.environment-mounts", "a13n.agent-context"):
+            projected_context = await stream.__anext__()
+            assert isinstance(projected_context, HarnessEvent) and isinstance(projected_context.event, InputTextEvent)
+            assert projected_context.event.source == "context"
+            assert projected_context.event.metadata.source_id == source_id
         next_entered = asyncio.Event()
 
         async def read_next():

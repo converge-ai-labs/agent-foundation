@@ -48,6 +48,7 @@ from a13n_service.tenancy.schemas import (
 from a13n_service.tenancy.tables import GrantRow, InvitationRow, PasswordRow, PrincipalRow
 
 _NEW_PASSWORD = TypeAdapter(NewPassword)
+_WRONG_PASSWORD = "Incorrect password for the existing account of the invited email"
 
 
 async def list_invitations(
@@ -183,7 +184,7 @@ async def accept_invitation(
     if existing is not None:
         # An existing account joins by proving its own password; the token proves the address.
         if not await verify_password(existing.hash, password):
-            raise ServiceError("unauthenticated", "Invalid email or password")
+            raise ServiceError("unauthenticated", _WRONG_PASSWORD)
         new_hash = None
     else:
         try:
@@ -204,7 +205,7 @@ async def accept_invitation(
                 principal = await lock_member(session, existing.id)
                 stored = await lock(session, PasswordRow, existing.id)
                 if principal.status != "active" or stored is None or stored.hash != existing.hash:
-                    raise ServiceError("unauthenticated", "Invalid email or password")
+                    raise ServiceError("unauthenticated", _WRONG_PASSWORD)
             else:
                 assert new_hash is not None
                 principal = PrincipalRow(

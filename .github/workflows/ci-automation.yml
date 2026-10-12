@@ -147,6 +147,7 @@ jobs:
           scripts/impact.py
           scripts/k8s_local.py
           scripts/deploy_smoke.py
+          scripts/sandbox_smoke.py
 
       - name: Set up Node.js for workflow tests
         uses: actions/setup-node@v6
@@ -168,6 +169,8 @@ jobs:
           scripts/tests/test_verify_cache.py
           scripts/tests/test_impact.py
           scripts/tests/test_image_workflows.py
+          scripts/tests/test_sandbox_init.py
+          scripts/tests/test_envd_release_workflow.py
           scripts/tests/test_k8s_local.py
           scripts/tests/test_deploy_smoke.py
           scripts/tests/test_harness_ui_release_workflow.py

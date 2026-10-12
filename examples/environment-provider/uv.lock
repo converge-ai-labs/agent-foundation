@@ -124,7 +124,7 @@ requires-dist = [
     { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"], specifier = ">=2.54.0,<3" },
+    { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"], specifier = ">=2.55.0,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "pydantic-monty", specifier = ">=1.1.0,<2" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
@@ -229,7 +229,7 @@ requires-dist = [
     { name = "prometheus-client", specifier = ">=0.21,<1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.54.0,<3" },
+    { name = "pydantic-ai-slim", specifier = ">=2.55.0,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "python-multipart", specifier = ">=0.0.32,<1" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
@@ -257,7 +257,7 @@ requires-dist = [
     { name = "a13n-harness", editable = "../../packages/a13n-harness" },
     { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.54.0,<3" },
+    { name = "pydantic-ai-slim", specifier = ">=2.55.0,<3" },
 ]
 
 [package.metadata.requires-dev]

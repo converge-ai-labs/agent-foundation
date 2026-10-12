@@ -11,7 +11,7 @@ on:
       - "deploy/docker/images/a13n-service/Dockerfile"
       - "deploy/docker/images/a13n-service/entrypoint.sh"
       - "deploy/docker/images/a13n-service/service.toml"
-      - "deploy/docker/images/sandbox/Dockerfile"
+      - "deploy/docker/images/sandbox/**"
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/*"
@@ -103,7 +103,7 @@ jobs:
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'crates/a13n-envd/**'
-              - 'deploy/docker/images/sandbox/Dockerfile'
+              - 'deploy/docker/images/sandbox/**'
               - 'LICENSE'
 
       - name: Build image matrix
@@ -125,16 +125,21 @@ jobs:
                   "image": "ghcr.io/converge-ai-labs/a13n-service",
                   "context": ".",
                   "platforms": "linux/amd64,linux/arm64",
+                  "variant": "standard",
+                  "tag": "dev",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
-              images.append({
-                  "name": "a13n-sandbox",
-                  "runner": "ubuntu-24.04",
-                  "file": "deploy/docker/images/sandbox/Dockerfile",
-                  "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
-                  "context": ".",
-                  "platforms": "linux/amd64,linux/arm64",
-              })
+              for variant in ("standard", "slim"):
+                  images.append({
+                      "name": "a13n-sandbox",
+                      "runner": "ubuntu-24.04",
+                      "file": "deploy/docker/images/sandbox/Dockerfile",
+                      "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
+                      "context": ".",
+                      "platforms": "linux/amd64,linux/arm64",
+                      "variant": variant,
+                      "tag": "dev" if variant == "standard" else "dev-slim",
+                  })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
           PY
@@ -186,7 +191,7 @@ jobs:
           retention-days: 1
 
   publish:
-    name: Publish ${{ matrix.name }}
+    name: Publish ${{ matrix.name }} (${{ matrix.variant }})
     needs: [changes, sandbox-binaries]
     # A skipped/failed sandbox build must not suppress Service publication.
     if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.images != '[]' }}
@@ -241,7 +246,7 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=raw,value=dev
+            type=raw,value=${{ matrix.tag }}
 
       - name: Build and publish image
         uses: docker/build-push-action@v6
@@ -254,7 +259,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             ${{ matrix.name == 'a13n-sandbox' && 'ENVD_BINARY_SOURCE=prebuilt' || '' }}
+            ${{ matrix.name == 'a13n-sandbox' && format('SANDBOX_VARIANT={0}', matrix.variant) || '' }}
             BUILD_VERSION=dev
             BUILD_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.variant }}

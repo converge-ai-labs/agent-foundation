@@ -119,6 +119,8 @@
   padding-block: 12px 4px;
 }
 .threadGroups {
+  /* Keep absolute screen-reader labels inside the sidebar's scroll boundary. */
+  position: relative;
   flex: 1;
   overflow: auto;
   min-height: 80px;
