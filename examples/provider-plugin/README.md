@@ -16,9 +16,7 @@ recipe = {"directory": "notes"}
 from pathlib import Path
 
 Path("/srv/acme/notes/env_notes").mkdir(parents=True, exist_ok=True)
-connector = definition.execution_connector(
-    recipe, configuration={"root": "/srv/acme"}, environment_id="env_notes"
-)
+connector = definition.execution_connector(recipe, configuration={"root": "/srv/acme"}, environment_id="env_notes")
 
 async with await connector.open() as execution:
     await execution.operations.files.write_text("/hello.txt", "persistent", mode="create")
