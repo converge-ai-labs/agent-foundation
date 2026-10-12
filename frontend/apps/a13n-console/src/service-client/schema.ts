@@ -5444,6 +5444,13 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** MemoryRecordProvenance */
+    MemoryRecordProvenance: {
+      /** Content Matches */
+      content_matches: boolean;
+      created: components["schemas"]["MemoryRecordSource"] | null;
+      last_write: components["schemas"]["MemoryRecordSource"];
+    };
     /** MemoryRecordSearch */
     MemoryRecordSearch: {
       /**
@@ -5453,6 +5460,27 @@ export interface components {
       limit?: number;
       /** Query */
       query: string;
+    };
+    /**
+     * MemoryRecordSource
+     * @description A platform-confirmed write, not an asserted source message or complete provider history.
+     */
+    MemoryRecordSource: {
+      /** Attempt Id */
+      attempt_id: string | null;
+      /**
+       * Confirmed At
+       * Format: date-time
+       */
+      confirmed_at: string;
+      /** Principal Id */
+      principal_id: string | null;
+      /** Principal Name */
+      principal_name?: string | null;
+      /** Run Id */
+      run_id: string | null;
+      /** Tool Call Id */
+      tool_call_id: string | null;
     };
     /** MemoryRecordText */
     MemoryRecordText: {
@@ -5466,6 +5494,7 @@ export interface components {
     MemoryRecordView: {
       /** Id */
       id: string;
+      provenance?: components["schemas"]["MemoryRecordProvenance"] | null;
       /** Score */
       score?: number | null;
       /** Text */

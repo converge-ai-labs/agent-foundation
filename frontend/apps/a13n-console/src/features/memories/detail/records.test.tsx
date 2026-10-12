@@ -51,7 +51,14 @@ type Refusal = { status: number; code: string; details: object };
 function setup({
   allowed = ["read", "run", "write"],
   tab = "",
-}: { allowed?: string[]; tab?: string } = {}) {
+  provenance,
+  runAvailable = true,
+}: {
+  allowed?: string[];
+  tab?: string;
+  provenance?: Schema["MemoryRecordProvenance"];
+  runAvailable?: boolean;
+} = {}) {
   permissions = allowed;
   // Record routes answer these methods with a refusal.
   const refusals = new Map<string, Refusal>();
@@ -79,7 +86,12 @@ function setup({
     updated_at: AT,
   };
   const records: Schema["MemoryRecordView"][] = [
-    { id: "rec_1", text: "Prefers tea in the morning.", updated_at: AT },
+    {
+      id: "rec_1",
+      provenance,
+      text: "Prefers tea in the morning.",
+      updated_at: AT,
+    },
     { id: "rec_2", text: "Ships on Fridays.", updated_at: AT },
     { id: "rec_3", text: "Coffee after lunch.", updated_at: null },
   ];
@@ -108,6 +120,10 @@ function setup({
       return Response.json({
         items: [{ type: "mem0", display_name: "Mem0 Platform" }],
       });
+    if (route === "GET /api/v1/runs/run_1")
+      return runAvailable
+        ? Response.json({ id: "run_1", thread_id: "thr_1" })
+        : failed(404, "not_found");
     if (!path.startsWith(`${base}/records`)) return failed(404, "not_found");
     const refusal = refusals.get(request.method);
     if (refusal) return failed(refusal.status, refusal.code, refusal.details);
@@ -326,7 +342,14 @@ it("shows records read-only to readers", async () => {
   const { user } = setup({ allowed: ["read"] });
   await screen.findByText("Prefers tea in the morning.");
   expect(screen.queryByRole("button", { name: "Add record" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Record actions" })).toBeNull();
+  await openMenu(user, "Prefers tea in the morning.");
+  expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+  await user.click(
+    await screen.findByRole("menuitem", { name: "View source" }),
+  );
+  expect(await screen.findByText("No source recorded")).toBeTruthy();
+  await user.keyboard("{Escape}");
   await user.type(
     screen.getByRole("searchbox", { name: "Search records" }),
     "tea{Enter}",
@@ -345,4 +368,56 @@ it("shows where a record memory keeps its records and its inherited guide", asyn
   expect(screen.getByText(/for record memories/)).toBeTruthy();
   // Records have no files to load.
   expect(screen.queryByText("Always loaded files")).toBeNull();
+});
+
+const source = {
+  principal_id: "usr_1",
+  principal_name: "Alice",
+  run_id: "run_1",
+  attempt_id: "rat_1",
+  tool_call_id: "call_1",
+  confirmed_at: AT,
+};
+it("shows creation and latest write attribution with a run link and stale-content warning", async () => {
+  const { user } = setup({
+    provenance: {
+      created: source,
+      last_write: { ...source, run_id: null },
+      content_matches: false,
+    },
+  });
+  await openMenu(user, "Prefers tea in the morning.");
+  await user.click(
+    await screen.findByRole("menuitem", { name: "View source" }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Writing source" });
+  expect(within(dialog).getByText("Written by an agent run")).toBeTruthy();
+  expect(
+    within(dialog).getByText("Written through the Console or API"),
+  ).toBeTruthy();
+  expect(within(dialog).getByRole("status").textContent).toContain("differs");
+  expect(
+    (
+      await within(dialog).findByRole("link", { name: "View run" })
+    ).getAttribute("href"),
+  ).toContain("thr_1");
+  expect(
+    within(dialog).getAllByText("call_1", { selector: "dd" }),
+  ).toHaveLength(2);
+});
+it("handles inaccessible runs and unknown creation without inventing a source", async () => {
+  const { user } = setup({
+    runAvailable: false,
+    provenance: { created: null, last_write: source, content_matches: true },
+  });
+  await openMenu(user, "Prefers tea in the morning.");
+  await user.click(
+    await screen.findByRole("menuitem", { name: "View source" }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Writing source" });
+  expect(within(dialog).getByText("No source recorded")).toBeTruthy();
+  expect(
+    await within(dialog).findByText("Linked run unavailable"),
+  ).toBeTruthy();
+  expect(within(dialog).queryByRole("link")).toBeNull();
 });

@@ -360,3 +360,118 @@ def test_shell_review_suggestions_keep_gateway_family_and_custom_ids_separate() 
         "anthropic/claude-haiku-4.5",
     ]
     assert all(item.value != "private-model" for item in shell_review_models(connection, "private-model"))
+
+
+@pytest.mark.parametrize("model_id", ["claude-sonnet-4-6", "claude-sonnet-4-5", "custom-model"])
+def test_anthropic_authoring_presets_materialize_block_cache_defaults(model_id: str) -> None:
+    options = model_options(ModelOptionsRequest(connection="anthropic", model_id=model_id))
+    for preset in options.presets:
+        recipe = prepare_model(
+            ModelRecipeRequest(
+                connection="anthropic",
+                model_id=model_id,
+                authentication=ApiKeyAuthentication(kind="api_key", env="ANTHROPIC_API_KEY"),
+                base_url="https://gateway.example.com",
+                preset=preset.value,
+            )
+        )
+        assert recipe_document(recipe)["settings"] == preset.settings
+        assert recipe.settings["anthropic_cache_instructions"] is True
+        assert recipe.settings["anthropic_cache_tool_definitions"] is True
+        assert recipe.settings["anthropic_cache_messages"] is True
+        assert "cache" not in recipe.settings and "anthropic_cache" not in recipe.settings
+    if model_id == "custom-model":
+        assert len(options.presets) == 1
+        assert "anthropic_thinking" not in options.presets[0].settings
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {},
+        {"anthropic_cache_messages": False},
+        {
+            "anthropic_cache_instructions": "1h",
+            "anthropic_cache_tool_definitions": "5m",
+            "anthropic_cache_messages": False,
+            "temperature": 0.2,
+        },
+    ],
+)
+def test_anthropic_explicit_settings_are_not_augmented(settings) -> None:
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection="anthropic",
+            model_id="claude-sonnet-4-6",
+            authentication=ApiKeyAuthentication(kind="api_key", env="ANTHROPIC_API_KEY"),
+            settings=settings,
+        )
+    )
+    assert recipe.settings == settings
+    assert recipe_document(recipe)["settings"] == settings
+
+
+@pytest.mark.parametrize("connection", ["openrouter", "openai-chat", "copilot-subscription"])
+def test_claude_names_on_other_protocols_do_not_get_anthropic_cache_flags(connection: str) -> None:
+    options = model_options(ModelOptionsRequest(connection=connection, model_id="anthropic/claude-sonnet-4.6"))
+    assert all(not any(key.startswith("anthropic_cache") for key in preset.settings) for preset in options.presets)
+
+
+@pytest.mark.anyio
+async def test_anthropic_defaults_send_block_cache_controls_not_automatic_caching(monkeypatch) -> None:
+    import json
+    from typing import cast
+
+    import httpx2 as httpx
+    from pydantic_ai import Agent
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+    from pydantic_ai.settings import ModelSettings
+
+    payloads = []
+
+    async def capture(_transport, request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-6",
+                "content": [{"type": "text", "text": "Done"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", capture)
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection="anthropic",
+            model_id="claude-sonnet-4-6",
+            authentication=ApiKeyAuthentication(kind="api_key", env="ANTHROPIC_API_KEY"),
+            preset="default",
+        )
+    )
+    model = AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(api_key="test-not-a-secret"))
+    agent = Agent(
+        model,
+        instructions="Keep answers short.",
+        # Keep this transport assertion below the SDK's automatic streaming cap.
+        model_settings=cast(ModelSettings, {**recipe.settings, "max_tokens": 1024}),
+    )
+
+    @agent.tool_plain
+    def lookup() -> str:
+        return "Found"
+
+    async with model:
+        result = await agent.run("Hello")
+    assert result.output == "Done"
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert "cache_control" not in payload
+    assert payload["system"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+    assert payload["tools"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+    assert payload["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}

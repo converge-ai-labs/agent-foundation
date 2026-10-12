@@ -733,3 +733,91 @@ it("styles manually typed and remote skill text without atomic editing, and disc
     ).not.toBeNull(),
   );
 });
+
+it("opens skill suggestions without a typing debounce and filters each edit synchronously", async () => {
+  const { currentCompletions, completionStatus } =
+    await import("@codemirror/autocomplete");
+  const editor = { current: null as EditorView | null };
+  const loadSkills = vi.fn(async () => ({
+    catalog_id: "catalog",
+    context_kind: "draft" as const,
+    items: ["review", "release"].map((name) => ({
+      item_id: name,
+      name,
+      description: name,
+      source_id: "project",
+      logical_path: `/skills/${name}`,
+    })),
+  }));
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  try {
+    render(
+      <ComposerEditor
+        draft={new ThreadDraft()}
+        editor={editor}
+        submit={vi.fn()}
+        loadSkills={loadSkills}
+        profile={{ display_name: "Test", color: "#000000" }}
+        presence={() => {}}
+      />,
+    );
+    act(() => {
+      editor.current!.focus();
+      editor.current!.dispatch({
+        changes: { from: 0, insert: "$re" },
+        selection: { anchor: 3 },
+        userEvent: "input.type",
+      });
+    });
+    // Exercise automatic activation, not startCompletion's explicit shortcut.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    const labels = () =>
+      currentCompletions(editor.current!.state).map((item) => item.label);
+    expect(completionStatus(editor.current!.state)).toBe("active");
+    expect(labels()).toEqual(["$release", "$review"]);
+    const requests = loadSkills.mock.calls.length;
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 3, insert: "v" },
+        selection: { anchor: 4 },
+        userEvent: "input.type",
+      });
+    });
+    expect(labels()).toEqual(["$review"]);
+    expect(completionStatus(editor.current!.state)).toBe("active");
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 3, to: 4 },
+        selection: { anchor: 3 },
+        userEvent: "delete.backward",
+      });
+    });
+    expect(labels()).toEqual(["$release", "$review"]);
+    // A pause beyond the query cache's stale time must not reload this token.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(11000);
+    });
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 3, insert: "l" },
+        selection: { anchor: 4 },
+        userEvent: "input.type",
+      });
+    });
+    expect(labels()).toEqual(["$release"]);
+    expect(loadSkills).toHaveBeenCalledTimes(requests);
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 4, insert: " " },
+        selection: { anchor: 5 },
+        userEvent: "input.type",
+      });
+    });
+    expect(labels()).toEqual([]);
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});

@@ -185,7 +185,7 @@ it("creates a memory identified by its ID", async () => {
   expect(within(dialog).queryByRole("textbox", { name: "Key" })).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: "Custom" }));
   await user.type(
-    within(dialog).getByRole("textbox", { name: "Guide" }),
+    within(dialog).getByRole("textbox", { name: "Memory instructions" }),
     "One topic per file.",
   );
   await user.type(

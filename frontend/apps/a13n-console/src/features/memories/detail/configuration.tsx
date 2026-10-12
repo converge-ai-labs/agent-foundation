@@ -128,9 +128,9 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
           <MemoryStorage memory={memory} />
         </Section>
         <Section
-          title={t("Guide")}
+          title={t("Memory instructions")}
           description={t(
-            "What belongs in this memory and how to organize it. Runs that start after a change receive the new guide.",
+            "Tell agents how to use this memory. Changes apply to future runs.",
           )}
         >
           <GuideField

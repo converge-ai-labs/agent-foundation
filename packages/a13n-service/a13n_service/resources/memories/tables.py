@@ -127,3 +127,22 @@ class MemoryFileRevisionRow(Base):
     tool_call_id: Mapped[str | None] = mapped_column(String(256))
     principal_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MemoryRecordSourceRow(Base):
+    """Best-effort attribution of confirmed provider writes, without a copy of their content."""
+
+    __tablename__ = "memory_record_sources"
+    memory_id: Mapped[str] = mapped_column(String(72), ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True)
+    record_id: Mapped[str] = mapped_column(primary_key=True)
+    created_principal_id: Mapped[str | None]
+    created_run_id: Mapped[str | None]
+    created_attempt_id: Mapped[str | None]
+    created_tool_call_id: Mapped[str | None]
+    created_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_write_principal_id: Mapped[str | None]
+    last_write_run_id: Mapped[str | None]
+    last_write_attempt_id: Mapped[str | None]
+    last_write_tool_call_id: Mapped[str | None]
+    last_write_confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    content_hash: Mapped[str] = mapped_column(String(64))
