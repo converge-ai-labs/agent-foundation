@@ -1,10 +1,8 @@
-"""E2B as the Service offers it: the E2B cloud, reached with the account's API key.
+"""E2B sandboxes in the E2B cloud or an Alibaba Cloud FC region.
 
-The E2B SDK dials the control API and every sandbox under one domain (`api.<domain>` and
-`<port>-<sandbox>.<domain>`) with its own HTTP client. No check before a dial can cover the sandbox names a
-tenant's DNS would answer, so an account names no domain or API URL and reaches only E2B's own.
-
-A renewal extends a sandbox by at most its recipe's timeout, so the timeout is at least the renewal horizon.
+The SDK dials both the control API and sandbox hosts. Restrict its domain to the supported vendors,
+then derive the control API from that same domain; accounts cannot redirect credentials to another host.
+A renewal extends a sandbox by at most its recipe's timeout, which must cover the renewal horizon.
 """
 
 from dataclasses import replace
@@ -20,23 +18,34 @@ from pydantic import BaseModel, Field
 
 from a13n_service.settings import RENEWAL_HORIZON_SECONDS
 
-_CLOUD = E2BConnectionConfiguration()
+
+class Account(EnvironmentProviderConfiguration):
+    domain: str = Field(
+        default="e2b.dev",
+        title="Sandbox domain",
+        description="e2b.dev or an Alibaba Cloud FC region, for example cn-hangzhou.e2b.fc.aliyuncs.com.",
+        pattern=r"^(e2b\.dev|[a-z][a-z0-9-]{0,61}[a-z0-9]\.e2b\.fc\.aliyuncs\.com)$",
+    )
+
+    def connection(self) -> E2BConnectionConfiguration:
+        return E2BConnectionConfiguration(domain=self.domain)
 
 
-class CloudRecipe(E2BEnvironmentConfiguration):
+class Recipe(E2BEnvironmentConfiguration):
     timeout_seconds: int = Field(default=3600, ge=RENEWAL_HORIZON_SECONDS, le=86_400, title="Sandbox timeout (seconds)")
 
 
-async def _cloud_runtime(*, configuration: BaseModel, credential: E2BCredential | None) -> object:
-    del configuration
+async def _runtime(*, configuration: BaseModel, credential: E2BCredential | None) -> object:
+    if not isinstance(configuration, Account):
+        raise TypeError("E2B requires its Service account configuration")
     assert HARNESS_E2B.runtime_factory is not None
-    return await HARNESS_E2B.runtime_factory(configuration=_CLOUD, credential=credential)
+    return await HARNESS_E2B.runtime_factory(configuration=configuration.connection(), credential=credential)
 
 
 E2B = replace(
     HARNESS_E2B,
-    configuration_model=EnvironmentProviderConfiguration,
-    environment_model=CloudRecipe,
-    runtime_factory=_cloud_runtime,
-    backend_identity=lambda configuration: HARNESS_E2B.backend_identity(_CLOUD),
+    configuration_model=Account,
+    environment_model=Recipe,
+    runtime_factory=_runtime,
+    backend_identity=lambda configuration: HARNESS_E2B.backend_identity(configuration.connection()),
 )

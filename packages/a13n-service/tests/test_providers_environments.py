@@ -1,4 +1,4 @@
-"""The hosted environment types: accounts that name no endpoint, sealed credentials and recipes checked by type."""
+"""The hosted environment types: accounts restricted to vendor endpoints, sealed credentials and recipes checked by type."""
 
 import json
 
@@ -25,13 +25,12 @@ ACCOUNTS: dict[str, tuple[dict, dict, dict]] = {
 }
 
 
-async def test_hosted_accounts_name_no_endpoint(service) -> None:  # type: ignore[no-untyped-def]
-    """Their SDKs dial fixed vendor APIs; E2B's domain and API URL, which would name the hosts its SDK dials, are
-    not offered, so no tenant field reaches a host the endpoint policy has not checked."""
+async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # type: ignore[no-untyped-def]
+    """Hosted accounts reach their vendors; E2B may select a supported cloud domain only."""
     types = (await service.client.get("/api/v1/provider-types/environment")).json()["items"]
     fields = {item["type"]: set(item["configuration_schema"].get("properties", {})) for item in types}
     assert {name: fields[name] for name in ACCOUNTS} == {
-        "e2b": set(),
+        "e2b": {"domain"},
         "daytona": {"organization_id", "target"},
         "modal": {"workspace", "app_name", "environment_name"},
         "vercel": {"team_id", "project_id"},
@@ -67,3 +66,39 @@ async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(ser
         assert accepted.status_code == 201, accepted.text
         rejected = await service.client.post(templates, json={**template, "config": {"recipe": broken}})
         assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe", type_
+
+
+async def test_e2b_aliyun_account_and_region_changes(service) -> None:  # type: ignore[no-untyped-def]
+    collection = f"{service.api}/environment-providers"
+    created = await service.client.post(
+        collection,
+        json={
+            "type": "e2b",
+            "name": "FC Hangzhou",
+            "config": {"domain": "cn-hangzhou.e2b.fc.aliyuncs.com"},
+            "credential": {"api_key": SECRET},
+        },
+    )
+    assert created.status_code == 201, created.text
+    provider = created.json()
+    assert provider["config"] == {"domain": "cn-hangzhou.e2b.fc.aliyuncs.com"}
+    assert SECRET not in created.text
+    template = await service.client.post(
+        f"{service.api}/environment-templates",
+        json={
+            "name": "FC Interpreter",
+            "provider_id": provider["id"],
+            "config": {"recipe": {"template": "code-interpreter-v1", "timeout_seconds": 3600}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    path = f"{collection}/{provider['id']}"
+    current = await service.client.get(path)
+    body = {"config": {"domain": "cn-shanghai.e2b.fc.aliyuncs.com"}}
+    refused = await service.client.patch(path, json=body, headers={"If-Match": current.headers["etag"]})
+    assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "credential"
+    moved = await service.client.patch(
+        path, json={**body, "credential": {"api_key": "new-region-key"}}, headers={"If-Match": current.headers["etag"]}
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["config"] == body["config"]
