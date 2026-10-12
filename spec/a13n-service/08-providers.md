@@ -5,7 +5,7 @@ A provider is a backend the Service calls on a tenant's behalf: a model API, an 
 ## Terms
 
 - A **provider resource** is a tenant-configured account row under `resources/`: identity, scope, `type`, `config`, write-only credential and enabled state ([04](04-resources.md#provider-resources)).
-- A **provider definition** is an immutable description of one backend type: configuration and credential schemas, authentication, capability flags and the factory that builds a handle. The Service registers Harness definitions for Model, Web, Connector and Memory, shared `a13n_environment` definitions for Environment, or its own qualification of one (Docker under the operator's choices, E2B fixed to its cloud, and `local`), so resource validation and execution use the same schemas; it keeps no second implementation catalogue.
+- A **provider definition** is an immutable description of one backend type: configuration and credential schemas, authentication, capability flags and the factory that builds a handle. The Service registers Harness definitions for Model, Web, Connector and Memory, its own Environment management definitions composed with Harness execution definitions, or a deployment qualification of one (Docker under the operator's choices, E2B fixed to its cloud, and `local`), so resource validation and execution use the same schemas; it keeps no second implementation catalogue.
 - A **provider handle** is the runtime object a factory builds from plain values and a revealed credential for one use. Its caller owns its lifetime and closes it.
 
 ## Registry
@@ -121,7 +121,7 @@ An entry is `{key, name, description, url, auth, header_names, documentation_url
 
 ## Environment providers
 
-Environment definitions are reached only through the registry; business packages never import `providers.environments` ([02](02-layout.md#import-direction)). The registry also owns the check of the endpoint an environment account names (`check_environment_endpoint`: a Docker engine other than the operator's, which `providers/endpoints.py` extracts). External envd targets are no registered type: `providers/envd.py` normalizes their endpoint and token, checks the endpoint with the same policy, reads the device a daemon states, and builds the shared Environment `http_envd` Environment connector from a target's values and portable state ([06](06-environments.md#external-targets)). The environment lifecycle, the operations a definition performs and the test probe are [06](06-environments.md)'s and [04](04-resources.md#provider-resources)'s.
+Environment definitions are reached only through the registry; business packages never import `providers.environments` ([02](02-layout.md#import-direction)). The registry also owns the check of the endpoint an environment account names (`check_environment_endpoint`: a Docker engine other than the operator's, which `providers/endpoints.py` extracts). External envd targets are no registered type: `providers/envd.py` normalizes their endpoint and token, checks the endpoint with the same policy, reads the device a daemon states, and builds the Harness `http_envd` Environment connector from a target's values and portable state ([06](06-environments.md#external-targets)). Durable lifecycle is owned by [Environments](06-environments.md), driver operations and composition by [Environment Management](06a-environment-management.md), and the test probe by [Provider Resources](04-resources.md#provider-resources).
 
 ## Trace backends
 

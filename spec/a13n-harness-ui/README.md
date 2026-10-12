@@ -8,7 +8,7 @@ Harness UI (`a13n-harness-ui`) is a local Agent workbench with a personal CLI an
 
 Harness UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, recover active operating-system processes, lease work across workers, or provide distributed failover. A finalized [graceful restart handoff](03-local-storage-and-recovery.md#graceful-restart-handoff) permits single-use continuation after a clean sequential WebUI update, not crash recovery. a13n Service remains the durable hosted product.
 
-Harness UI depends on the [Harness](../a13n-harness/README.md), including its [Environment Providers](../a13n-environment/01-environment-contract.md), and on [Agent Stream Protocol](../a13n-stream-protocol/README.md) through their public contracts. It does not reproduce their Agent loop, Environment operation, or observation semantics.
+Harness UI depends on the [Harness](../a13n-harness/README.md), including its [Environment Providers](../a13n-harness/08a-environment-execution.md), and on [Agent Stream Protocol](../a13n-stream-protocol/README.md) through their public contracts. It does not reproduce their Agent loop, Environment operation, or observation semantics.
 
 ## Document Catalog
 
@@ -46,7 +46,7 @@ Read `01`, `01a`, `01b`, `02`, `02a`, and `02b`, then [Harness Capability Model]
 
 ### Integrate Environments
 
-Read `01a`, `02b`, `04`, and `04a`, then the [Provider Subsystem](../a13n-harness/22-provider-subsystem.md) and [Environment Providers](../a13n-environment/01-environment-contract.md).
+Read `01a`, `02b`, `04`, and `04a`, then the [Provider Subsystem](../a13n-harness/22-provider-subsystem.md) and [Environment Providers](../a13n-harness/08a-environment-execution.md).
 
 ### Implement a Surface
 
@@ -60,7 +60,7 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 04. Every Thread owns independent mutable metadata and sticky-configuration heads. Omitted configuration changes retain the previous selection; an admitted Run captures one immutable resolved composition that later file, Project, or Thread changes cannot alter.
 05. `HarnessUiApp` owns validated last-write-wins configuration-file publication, detached Project and Thread projections, Host-authoritative Environment state, process-local root receipts and deferred response, async child execution, and live presentation.
 06. Harness and Pydantic AI own native Agent construction, Agent loops, public stream items, results, Capability behavior, and `HarnessState` continuation semantics.
-07. The Environment package owns Provider configuration, explicit management, Environment connectors, Environment execution scopes, `EnvironmentState` codecs, and non-destructive target close semantics. Harness UI owns Project-root binding, runtime collaborators, current state, and changed-only publication.
+07. Harness owns execution Provider configuration, connectors, execution scopes, `EnvironmentState` codecs, and provider-specific close semantics. Native, Local Envd, and remote Device support require no Service installation; Service owns built-in cloud target management. Harness UI owns Project-root binding, runtime collaborators, current state, and changed-only publication.
 08. Every independent root or async child Run receives fresh Model, Harness Plugin, MCP Toolset, Provider-runtime, Environment-execution, and Environment Run Extension collaborators. Opt-in generic and MCP Apps Toolsets borrow Host-owned Thread/server clients under `05`; default MCP clients remain logical-Run-local. Shell references are Run-local; native command survival and recovery follow the Provider Environment state contract.
 09. Root and child continuation checkpoints are independent authorities. Compact AG-UI child display is inspection history and never reconstructs `HarnessState`.
 10. Saved root and child facts never imply current-process liveness. Root receipts and all control availability are process-local; Harness UI does not infer liveness or silently replay work. Graceful-restart continuation requires a separately committed, single-use handoff.

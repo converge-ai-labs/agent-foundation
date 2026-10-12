@@ -6,13 +6,12 @@ Agent Foundation is an open-source foundation for embedding Agents or hosting th
 
 The platform consists of:
 
-- `a13n-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution, Model/Web/Connector/Memory Providers, and Run-local Environment integration;
-- `a13n-environment`, distributed as `a13n-environment`, for independent single-environment management, fixed-target connections, execution operations, portable state, and vendor implementations;
+- `a13n-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution, Provider definitions, fixed-target Environment execution, portable state, and Run-local Environment integration;
 - `a13n-stream-protocol`, distributed as `a13n-stream-protocol`, for shared Harness-to-AG-UI observation;
 - `a13n-harness-ui`, distributed as `a13n-harness-ui`, for human-editable local Agent resources, Project-scoped roots, mutable continuation-backed Threads, trusted Capability and extension discovery, and full-terminal CLI and bundled WebUI interaction over a reusable App boundary;
 - `a13n-envd`, distributed as `a13n-envd`, for Environment Interaction Protocol operations;
 - `a13n-envd-client`, the generated low-level Python EIP client;
-- `a13n-service`, distributed as `a13n-service`, for optional durable hosting;
+- `a13n-service`, distributed as `a13n-service`, for optional durable hosting, Environment management providers, and target lifecycle orchestration;
 - a13n Service SDKs for typed access to the Service HTTP API (`/api/v1`);
 - `a13n-service-cli`, a cross-platform remote CLI built above the `a13n` Rust SDK.
 
@@ -39,6 +38,7 @@ flowchart TB
         Control[control role<br/>HTTP API /api/v1, thread streams, sweeps]
         Worker[worker role<br/>claims and executes runs]
         Packages[tenancy, resources, runs, providers<br/>on infra]
+        EnvManagement[Environment management providers]
     end
 
     subgraph LocalUI[a13n-harness-ui]
@@ -64,14 +64,12 @@ flowchart TB
         State[HarnessState]
         Providers[Provider definitions<br/>Model, Web, Connector, Memory]
         Bound[BoundEnvironment]
+        EnvAPI[EnvironmentConnector and EnvironmentExecution]
+        Local[Native and Envd execution adapters]
     end
 
     StreamProtocol[a13n-stream-protocol]
 
-    subgraph Environment[a13n-environment]
-        EnvAPI[Management, EnvironmentConnector and EnvironmentExecution]
-        Local[Direct local operators]
-    end
     EIPClient[a13n-envd-client]
     EIP[EIP]
     Envd[a13n-envd]
@@ -104,6 +102,8 @@ flowchart TB
     Run --> Models
     Run -. deferred calls .-> Clients
     Worker & App --> Providers
+    Worker --> EnvManagement
+    EnvManagement --> EnvAPI
     Worker & App --> EnvAPI
     EnvAPI --> Local & EIPClient
     Providers --> Bindings
@@ -115,14 +115,13 @@ flowchart TB
     Run -. telemetry .-> OTel
 ```
 
-Dependency direction is one-way: Hosts embed Harness and use the independent Environment library; Harness consumes that library without a reverse dependency. Provider implementations import no Host lifecycle or presentation code. Harness UI and hosted transports consume Agent Stream Protocol above public Harness observations. Service clients call only the Service HTTP API (`/api/v1`), and a13n Service CLI consumes the Rust SDK rather than implementing a second transport client.
+Dependency direction is one-way: Service and Harness UI embed Harness. Harness owns Environment execution and imports no Service or Host implementation; Service composes Harness execution with its own target management. Harness UI and hosted transports consume Agent Stream Protocol above public Harness observations. Service clients call only the Service HTTP API (`/api/v1`), and a13n Service CLI consumes the Rust SDK rather than implementing a second transport client.
 
 ## Component Responsibilities
 
 | Component              | Owns                                                                                                                                                                                                                                                                                                                                                                                          | Does not own                                                                                                                                        |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a13n-harness`         | Agent construction, model integration, trusted plugins, Run context and execution, Environment mount/tool/context adaptation, observations and continuation                                                                                                                                                                                                                                   | Durable resources, target lifecycle policy, presentation, delivery, or billing                                                                      |
-| `a13n-environment`     | Single-target definitions, management, connections, execution operations, portable state and vendor implementations                                                                                                                                                                                                                                                                           | Agent loops, model tools, Harness mount identity, Host authorization, persistence, or lifecycle scheduling                                          |
+| `a13n-harness`         | Agent construction, model integration, trusted plugins, Run context and execution, Environment execution definitions, portable state, native/EIP operations, mount/tool/context adaptation, observations and continuation                                                                                                                                                                     | Database access, managed-target lifecycle operations or policy, durable resources, presentation, delivery, or billing                               |
 | `a13n-stream-protocol` | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                                                                                                                                                   | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                                            |
 | `a13n-harness-ui`      | Human-editable multi-file resources, trusted Capability and extension catalogs, Projects, Full Control and Sandbox execution modes, Host-path-preserving and virtual Environment layouts, sticky root and child Thread configuration, immutable per-Run composition, Host Environment state, one process-local `HarnessUiApp`, full-terminal CLI, foreground WebUI, and reusable adapter APIs | Durable root-input acceptance, distributed execution, worker takeover, multi-tenant authorization, or another Agent loop                            |
 | `a13n-envd-client`     | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                                                                                                                                                  | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle                            |
@@ -145,7 +144,7 @@ The Harness is built directly on Pydantic AI 2:
 - `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and `environment_states: Mapping[str, EnvironmentState]`; desired mounts, current managed state, runtime collaborators, and lifecycle policy remain Host-owned;
 - Pydantic AI owns native Model profiles, transport/output retries, provider-suspended continuation, deferred external calls/approvals, Toolsets, messages, events, and usage; Harness `providers.model.oauth` adds provider-compatible OAuth sources and lifecycle where upstream SDK behavior must be shared by embedded and hosted callers.
 
-Harness middleware plugins are trusted concrete objects, and Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment definitions, management, Environment connectors and Environment executions, state, and built-ins belong to the independent Environment library. Harness catalogs compose those definitions; a Run receives Host-owned sources implementing `ensure_ready()` and opens executions on first use. A Host owns serializable Agent schemas, artifact locks, package trust, current Environment state and associations, runtime collaborators, lifecycle policy, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
+Harness middleware plugins are trusted concrete objects, and Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Harness owns Environment execution definitions, connectors, executions, portable state, and native/EIP implementations. Service owns management definitions and vendor lifecycle implementations, composing Harness execution definitions; a Run receives Host-owned sources implementing `ensure_ready()` and opens executions on first use. A Host owns serializable Agent schemas, artifact locks, package trust, current Environment state and associations, runtime collaborators, lifecycle policy, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
 
 The complete design is indexed in [a13n-harness/README.md](a13n-harness/README.md).
 
@@ -173,13 +172,13 @@ Recovery never converts missing evidence into rollback or exactly-once success. 
 
 ## Environment Foundation
 
-The independent [Environment library](a13n-environment/README.md) owns definitions, explicit management primitives, fixed-target Environment connectors, Environment execution scopes, portable state, and native/Envd implementations. Hosts select and authorize targets, perform required management, persist observed state, and schedule renewal and retirement. Harness receives Host readiness sources, opens independent executions on first use, and owns mounts, routing, effective permissions, tools, model context, and scope cleanup.
+Harness [Environment Execution](a13n-harness/08a-environment-execution.md) owns execution definitions, fixed-target connectors, execution scopes, portable state, operation results/errors, and native/Envd implementations. [Service Environment Management](a13n-service/06a-environment-management.md) owns management definitions and vendor create/start/inspect/stop/destroy/keepalive implementations; Service also owns authorization, database state, lifecycle claims, renewal, and retirement for its resources. Harness receives Host readiness sources, opens independent executions on first use, and owns mounts, routing, effective permissions, tools, context, and scope cleanup. Its Environment contracts and implementations perform no database operations; a Service source can coordinate persistence internally without passing a session or ORM object to Harness.
 
 Opening, checking readiness, and reconnecting an Environment execution never create, resume, replace, or renew the target. Closing an Environment execution releases its owned resources under provider-specific process-survival rules and does not retire the target. `EnvironmentState` remains the existing credential-free portable reference; `HarnessState.environment_states` aggregates it without becoming managed Host authority.
 
 Envd-backed Environment connectors use `a13n-envd-client` to open independent Sessions over Host-owned Device connections. The client owns EIP transport and Session behavior, not executable discovery or target provisioning. Envd owns Session workers, operation evidence, process/output/transfer resources, and bounded cleanup; Hosts provide outer containment and Device policy. Native Docker and cloud operations do not require Envd.
 
-Harness UI exposes Direct Local as Full Control and Host-sandboxed Local Envd as Sandbox, with [Device bindings](a13n-harness-ui/04a-devices-and-environment-bindings.md) for remote and mixed selections. Service owns managed instances and connect-only external targets under its [Environment contract](a13n-service/06-environments.md). Neither Host's policy becomes a shared-library scheduler.
+Harness UI exposes Direct Local as Full Control and Host-sandboxed Local Envd as Sandbox, with [Device bindings](a13n-harness-ui/04a-devices-and-environment-bindings.md) for remote and mixed selections. Service owns managed instances and connect-only external targets under its [Environment contract](a13n-service/06-environments.md). Harness UI uses the Harness execution and Device support without importing Service; each Host retains its own persistence and lifecycle policy.
 
 ## a13n Client Surfaces
 
@@ -243,9 +242,11 @@ flowchart LR
     Adapter --> Capability[Pydantic Capability]
     Adapter --> Native[Model, tool, or Toolset]
     RunAuthority[Fresh RunBindings] --> Capability
-    Selection[Run Environment selection] --> EnvProvider[Shared Provider implementation]
+    Selection[Host Environment selection] --> EnvProvider[Harness execution definition]
     Adapter --> EnvProvider
-    EnvProvider --> Environment[Fixed-target EnvironmentConnector]
+    EnvProvider --> EnvConnector[Fixed-target EnvironmentConnector]
+    Adapter --> Environment[Host-owned EnvironmentSource]
+    Environment -. ensure_ready .-> EnvConnector
     Adapter --> RunExtension[Fresh Environment Run Extension]
     DirectPlugin & ConfiguredPlugin --> Harness[Harness run]
     Capability & Native --> Agent[Pydantic Agent]
@@ -298,7 +299,8 @@ Run acceptance, ModelAttempt completion, Harness terminal delivery, Host Run com
 | Platform API conventions                       | [api-conventions.md](api-conventions.md)                                                                                                                                             |
 | Harness catalog                                | [a13n-harness/README.md](a13n-harness/README.md)                                                                                                                                     |
 | Provider subsystem                             | [a13n-harness/22-provider-subsystem.md](a13n-harness/22-provider-subsystem.md)                                                                                                       |
-| Environment Providers                          | [a13n-environment/README.md](a13n-environment/README.md)                                                                                                                             |
+| Environment execution and Providers            | [Execution](a13n-harness/08a-environment-execution.md), [Providers](a13n-harness/08b-environment-providers.md)                                                                       |
+| Environment management                         | [Service management providers](a13n-service/06a-environment-management.md)                                                                                                           |
 | Harness architecture                           | [a13n-harness/00-overview.md](a13n-harness/00-overview.md)                                                                                                                           |
 | Harness definition/build                       | [a13n-harness/03-agent-definition-and-build.md](a13n-harness/03-agent-definition-and-build.md)                                                                                       |
 | Harness plugins                                | [a13n-harness/05-plugin-system.md](a13n-harness/05-plugin-system.md)                                                                                                                 |

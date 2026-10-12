@@ -6,4 +6,4 @@ The package owns single-environment operations and their resources. Consumers ow
 
 Install the `docker`, `e2b`, or `modal` extra when using that provider. Importing the package does not load optional vendor SDKs or open connections.
 
-The [Environment specification](../../spec/a13n-environment/README.md) owns the architecture, public contract, and backend guarantees.
+The accepted [Harness execution specification](../../spec/a13n-harness/08a-environment-execution.md) and [Service management specification](../../spec/a13n-service/06a-environment-management.md) own the architecture, public contracts, and backend guarantees.

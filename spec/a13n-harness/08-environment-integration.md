@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness receives Host-owned `EnvironmentSource` objects implementing `ensure_ready()`. That method returns a fixed-target connector from the [Environment library](../a13n-environment/01-environment-contract.md). Harness registers mounts without target I/O, calls the selected source's `ensure_ready()` when execution is needed, and opens the returned connector. It owns Run-local mounts, routing, permissions, readiness, tools, context, continuation references, and execution cleanup. Hosts own selection, authorization, management, and state publication, whether they prepare a target before the Run or during `ensure_ready()`.
+Harness receives Host-owned `EnvironmentSource` objects implementing `ensure_ready()`. That method returns a fixed-target connector under the Harness [Environment Execution contract](08a-environment-execution.md). Harness registers mounts without target I/O, calls the selected source's `ensure_ready()` when execution is needed, and opens the returned connector. It owns Run-local mounts, routing, permissions, readiness, tools, context, continuation references, and execution cleanup. Hosts own selection, authorization, management, and state publication, whether they prepare a target before the Run or during `ensure_ready()`.
 
 Each used mount opens its own Environment execution; an unused mount opens none. A Run needing no Environment I/O can finish with every mount unactivated. Inline children borrow the parent Run's bound facade; independent Runs, including async children, open independent scopes. Closing an Environment execution never stops or destroys a backing sandbox or workspace. It preserves provider-specific resource semantics: Envd closes Session-owned commands, output, and transfers while preserving the Host-owned daemon; Direct Local terminates its owned processes; native Docker and E2B release observations without blanket command termination. A changed Session working directory requires a new Environment execution through mount replacement. Directory routing and shell cwd are not OS isolation boundaries.
 
@@ -103,7 +103,7 @@ Validation of the complete initial mount set precedes source activation. Each ac
 | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Provider selection, activation, and desired configuration        | Host                                                             |
 | Current state, Thread association, retention                     | Host                                                             |
-| Fixed-target connection and single-target I/O                    | Environment library                                              |
+| Fixed-target connection and single-target I/O                    | Harness execution providers                                      |
 | Entry metadata correlation                                       | Harness supplies ephemeral values from Host bindings             |
 | One Run's mount names, IDs, access, aggregate roots, and routing | Harness                                                          |
 | Entered multi-mount facade                                       | Harness-internal bound aggregate                                 |
@@ -141,7 +141,7 @@ Harness-bound immutable values include:
 - `EnvironmentSnapshot(mounts, default_mount)`;
 - `EnvironmentChange(sequence, kind, name, previous_default, current_default)`.
 
-These wrappers add Harness mount correlation to the shared library's target/execution-scoped results. The shared provider receives no mount ID.
+These wrappers add Harness mount correlation to the execution provider's target/execution-scoped results. The shared provider receives no mount ID.
 
 `EnvironmentMountInfo` contains the mount name, provider key, configured descriptor narrowed by available live observations, readiness summary, access ceiling, provider-local default working directory, mapped `provider_root`, and optional aggregate `mount_path`. It omits opaque mount ID and provider target identity from model context.
 
@@ -404,7 +404,7 @@ Completion inside the yield window returns observed terminal status and bounded 
 
 The `alias` argument selects an existing public mount name from the active Environment context; it never labels a command or process. Schemas and model guidance make this distinction explicit. An omitted alias uses the default mount unless an absolute command `cwd` or an existing process reference selects its own mount. Unknown or conflicting selections remain errors; Harness does not silently retry on another mount.
 
-`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](../a13n-environment/01-environment-contract.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
+`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](08a-environment-execution.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
 
 A transient native reconnect preserves the reference and accumulated observation offsets, appends newly observed text and reports partial coverage. A new Run creates fresh references and observations at zero. Target replacement invalidates identities rather than reusing a PID against another sandbox. Capped output remains readable but cannot be reset by querying or waiting.
 
