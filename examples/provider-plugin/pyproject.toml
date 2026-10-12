@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Installed Environment Provider plugin example for Agent Foundation"
 requires-python = ">=3.13"
 dependencies = [
-    "a13n-harness>=0,<1",
+    "a13n-harness",
     "pydantic>=2.12,<3",
 ]
 

@@ -38,7 +38,7 @@ def _entry_points(manifest: ProviderManifest, loaded: list[str]):
 
 def test_selection_is_inert_and_imports_only_chosen_plugins(monkeypatch):
     definition = replace(ENVIRONMENT, type="custom_provider")
-    manifest = ProviderManifest(api_version=3, environment=(definition,))
+    manifest = ProviderManifest(api_version=1, environment=(definition,))
     loaded: list[str] = []
     monkeypatch.setattr(
         "a13n_harness.providers.plugins.importlib.metadata.entry_points", _entry_points(manifest, loaded)
@@ -64,11 +64,11 @@ def test_the_catalog_is_the_single_owner_of_one_type_per_domain(builtin):
 
 
 def test_manifest_rejects_other_domains_and_unsupported_api_versions():
-    assert ProviderManifest(api_version=3, environment=(ENVIRONMENT, ENVIRONMENT))
-    for version in (2, 999):
+    assert ProviderManifest(api_version=1, environment=(ENVIRONMENT, ENVIRONMENT))
+    for version in (0, 2, 3, 999):
         with pytest.raises(ValueError, match="API version"):
             ProviderManifest(api_version=version, environment=(ENVIRONMENT,))
     with pytest.raises(TypeError, match="immutable tuple"):
-        ProviderManifest(api_version=3, environment=[ENVIRONMENT])
+        ProviderManifest(api_version=1, environment=[ENVIRONMENT])
     with pytest.raises(TypeError, match="immutable tuple"):
-        ProviderManifest(api_version=3, environment=(BUILT_IN_MODEL_PROVIDERS[0],))
+        ProviderManifest(api_version=1, environment=(BUILT_IN_MODEL_PROVIDERS[0],))

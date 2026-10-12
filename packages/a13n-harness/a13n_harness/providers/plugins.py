@@ -10,7 +10,8 @@ from typing import Any
 
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 
-PROVIDER_API_VERSION = 3
+# The 0.10 alpha API starts at 1; package requirements define release compatibility.
+PROVIDER_API_VERSION = 1
 ENTRY_POINT_GROUP = "a13n_harness.providers.plugins"
 
 

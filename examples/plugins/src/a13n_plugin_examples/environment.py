@@ -70,7 +70,7 @@ WORKSPACE_ENVIRONMENT = EnvironmentProviderDefinition(
     describe_environment=_describe,
 )
 
-manifest = ProviderManifest(api_version=3, environment=(WORKSPACE_ENVIRONMENT,))
+manifest = ProviderManifest(api_version=1, environment=(WORKSPACE_ENVIRONMENT,))
 
 __all__ = [
     "PROVIDER_TYPE",

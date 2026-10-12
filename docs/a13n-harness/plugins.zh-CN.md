@@ -275,7 +275,11 @@ Host 管理包安装、兼容性与回滚。
 
 Provider 插件发布 Environment 定义供 Host 选择。Model、Web、Connector 和 Memory 定义通过代码中的 `ProviderCatalog` 组合。
 
-声明 Provider 类型、显示名称、配置、凭据与 runtime factory：
+Harness 0.10 将 alpha 阶段的 Provider API 重置为 `ProviderManifest(api_version=1)`，不兼容 0.10 之前的 API。版本值同为 `1` 不代表跨发布线兼容。使用此 API 发布的插件应声明 `a13n-harness>=0.10.0,<0.11.0`。manifest 版本必须是作者明确声明的固定字面量；从已安装的 Harness 常量推导版本会掩盖不兼容。使用 0.10 之前管理与执行合一 API 的插件，在迁移完成前必须排除 0.10：将目标准备和销毁移至 Host，并由 `connector_factory` 返回构造时无副作用的执行 connector。仅修改 manifest 版本并不构成迁移。
+
+普通 Harness 中间件的加载方式与 0.9.3 相同，其独立配置封套仍为 `schema_version="1"`，不与 Provider manifest 共用版本号。导入 Environment API 的中间件仍需完成相应的源码迁移。
+
+声明 Provider 类型、配置、凭据与执行 connector factory：
 
 ```python
 from a13n_harness.providers.authentication import Authentication, CredentialMode
@@ -300,7 +304,7 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=3, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 ```
 
 ```toml

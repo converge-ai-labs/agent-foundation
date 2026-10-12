@@ -41,7 +41,7 @@ acme = "acme_agent_environment:manifest"
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=3, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 ```
 
 `EnvironmentProviderDefinition` 应当：

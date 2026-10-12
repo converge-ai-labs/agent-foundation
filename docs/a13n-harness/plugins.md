@@ -275,6 +275,10 @@ For grouped tools, see [ToolProxy plugin-contributed sources](tool-proxy.md#plug
 
 Provider plugins publish Environment definitions for Host selection. Compose Model, Web, Connector, and Memory definitions in code through `ProviderCatalog`.
 
+Harness 0.10 resets the alpha Provider API to `ProviderManifest(api_version=1)` without compatibility with the pre-0.10 API. The repeated value `1` is not a compatibility promise across release lines. A published plugin using this API should require `a13n-harness>=0.10.0,<0.11.0`. Keep the manifest version a fixed author-declared literal; deriving it from the installed Harness constant would hide an incompatibility. Plugins using the pre-0.10 combined management/execution API must exclude 0.10 until migrated: move target preparation and destruction to the Host and return an inert execution connector from `connector_factory`. Changing only the manifest version is insufficient.
+
+Ordinary Harness middleware loading is unchanged from 0.9.3. Its separate configuration envelope retains `schema_version="1"`; it does not share the Provider manifest version. Middleware that imports Environment APIs still needs the corresponding source migration.
+
 Declare the Provider type, configuration, credentials, and an execution connector factory:
 
 ```python
@@ -300,7 +304,7 @@ One distribution exports one `ProviderManifest` per entry point:
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=3, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 ```
 
 ```toml

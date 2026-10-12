@@ -52,7 +52,9 @@ The project is intentionally outside the root release workspace. Its independent
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 ```
 
-A standalone integration distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
+This checkout targets Harness 0.10; the unversioned local dependency resolves source version `0.0.0`, not an arbitrary released version. Before publishing this integration package, remove those development sources and declare `a13n-harness>=0.10.0,<0.11.0`.
+
+The Environment plugin declares the fixed `ProviderManifest(api_version=1)`. This alpha API reset does not preserve pre-0.10 compatibility, even where the old manifest also declared `1`. Plugins using the old combined management/execution API must exclude Harness 0.10 until migrated to execution connectors and Host-owned preparation. Ordinary Harness middleware loading is unchanged from 0.9.3 and its configuration envelope remains `schema_version="1"`; that version is independent of the Provider manifest API.
 
 ## Environment Provider
 
@@ -67,7 +69,7 @@ workspace = "a13n_plugin_examples.environment:manifest"
 
 - a strict package-owned schema-version-1 `WorkspaceEnvironmentConfiguration` model;
 - a constant immutable `WORKSPACE_ENVIRONMENT` definition exported through `ProviderManifest`;
-- a fresh `WorkspaceEnvironment` adapter backed by Direct Local operations.
+- an inert connector factory delegating to `DIRECT_LOCAL.execution_connector`.
 
 Manifest import, configuration validation, and connector construction perform no filesystem I/O. Each connector `open()` checks the existing workspace and returns an independently owned execution. State is `None` because the target is the deterministic Host-selected directory. Execution close does not delete that directory.
 
@@ -87,7 +89,7 @@ uv run plugin-example-environment-entrypoint
 uv run plugin-example-environment-code
 ```
 
-Both paths pass two already constructed adapters to a real offline Harness Run, verify default and qualified routing, export no state for the stateless mounts, close both adapters non-destructively, and preserve both Host directories:
+Both paths wrap two prepared connectors in Host-owned sources and pass them to a real offline Harness Run, verify default and qualified routing, export no state for the stateless mounts, close both executions non-destructively, and preserve both Host directories:
 
 ```text
 selection mode: entrypoint
@@ -104,16 +106,16 @@ Code mode prints the same result with `selection mode: code`.
 ### Real Provider checklist
 
 - Use one stable entry-point name and one stable Provider `type`.
-- Keep definition construction, recipe validation, and Environment construction strict, bounded, and side-effect free.
+- Keep definition construction, recipe validation, and connector construction strict, bounded, and side-effect free.
 - Declare one account model, one optional credential model, and one target recipe model; support exact state versions without fallback or shape inference.
 - Acquire live clients only in connector `open()`. The `connector_factory` must remain inert.
-- Construct one fresh Environment per independent Run.
-- Validate supplied state before target mutation; create a replacement only after authoritative absence.
-- Update cached state as soon as changed target identity is known, before later readiness can fail.
-- Keep `close()` process-local and non-destructive; expose backing-target removal only through explicit `destroy()` on a fresh adapter.
+- Return one independently owned execution from each connector `open()`.
+- Let the Host's `EnvironmentSource.ensure_ready()` prepare the target and return its connector; execution does not allocate or replace targets.
+- Keep durable binding state and target-identity publication under Host control, including failed preparation and recovery.
+- Keep execution `close()` process-local and non-destructive; backing-target removal belongs to explicit Host management.
 - Keep mount names, access ceilings, desired configuration, state authority, retention, authorization, and scheduling under Host control.
 
-The example subclasses the public Direct Local adapter to stay focused on Provider packaging. A remote sandbox Provider can expose the same Provider-neutral operation surface through EIP without creating another Harness lifecycle layer.
+The example delegates to the public Direct Local execution definition to stay focused on Provider packaging. A remote sandbox Provider can expose the same Provider-neutral operation surface through EIP without creating another Harness lifecycle layer.
 
 ## Environment Run Extension
 

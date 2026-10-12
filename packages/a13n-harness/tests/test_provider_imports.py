@@ -47,7 +47,7 @@ def test_package_import_and_provider_metadata_stay_inert() -> None:
         "from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS\n"
         "from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS\n"
         "from a13n_harness.providers.web.builtins import built_in_web_providers\n"
-        "manifest = ProviderManifest(api_version=3, environment=BUILT_IN_ENVIRONMENT_PROVIDERS)\n"
+        "manifest = ProviderManifest(api_version=1, environment=BUILT_IN_ENVIRONMENT_PROVIDERS)\n"
         "assert len(manifest.environment) == 11\n"
         "assert all(item.configuration_model.model_json_schema() for item in manifest.environment)\n"
         "assert BUILT_IN_CONNECTOR_PROVIDERS and BUILT_IN_MODEL_PROVIDERS\n"
