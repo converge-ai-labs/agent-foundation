@@ -13,6 +13,7 @@ from urllib.parse import unquote_plus, urlsplit
 
 from a13n_harness import RunConfiguration
 from a13n_harness.capabilities import ToolProxyConfig
+from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     RemoteEnvdStateData,
@@ -268,7 +269,9 @@ class LiveConfiguration(ConfigurationModel):
 
     enabled: bool = False
     model: ResourceId | None = None
-    voice: Literal["marin", "cedar"] = "marin"
+    # Retain legacy values so immutable configuration generations remain readable.
+    # Voice admission rejects them before any provider access.
+    voice: CodexLiveVoice | Literal["marin", "cedar"] = "cove"
     files_enabled: bool = True
     instructions: str = Field(default="", max_length=64 * 1024)
 

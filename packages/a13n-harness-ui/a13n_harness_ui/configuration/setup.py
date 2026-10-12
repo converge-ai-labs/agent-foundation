@@ -349,7 +349,7 @@ async def preview_setup(
         and isinstance(live_authentication, dict)
         and live_authentication.get("kind") == "codex_subscription"
     ):
-        root["live"] = {"enabled": True, "model": live_model, "voice": "marin", "files_enabled": True}
+        root["live"] = {"enabled": True, "model": live_model, "voice": "cove", "files_enabled": True}
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if seed_review:
         authentication = (

@@ -16,7 +16,7 @@ flowchart TD
 
 ## Configuration and Executor
 
-The optional root `live` mapping contains `enabled` (default false), `model` (existing Model ID), `voice` (default `marin`), `files_enabled` (default true), and `instructions` (default empty). Enabling requires an existing `codex_subscription` Model. That Model supplies both the ordinary executor and the bound subscription credential source. There is no separate Live Model or Agent resource file.
+The optional root `live` mapping contains `enabled` (default false), `model` (existing Model ID), `voice` (Codex V3 voice, default `cove`), `files_enabled` (default true), and `instructions` (default empty). Enabling requires an existing `codex_subscription` Model. That Model supplies both the ordinary executor and the bound subscription credential source. There is no separate Live Model or Agent resource file. Legacy `marin` and `cedar` values remain readable in configuration and immutable generations; starting voice rejects them before provider access with an instruction to select a V3 voice. Reading history does not rewrite those values.
 
 WebUI setup and adding a Codex Model offer a disclosed, initially checked Live opt-in. Publication seeds Live only when the root has no explicit Live setting. Existing settings, including disabled settings, remain authoritative. Loading or upgrading does not rewrite configuration. General settings can enable, disable, or change Live; no save starts microphone capture or an Agent Run.
 
@@ -30,7 +30,7 @@ Opening `/live` leaves the microphone off. A user Start action claims authentica
 
 The process-local lifecycle is `idle → starting → connecting → active`, followed by `idle` on Stop or `failed` on failure. The App publishes the SDP answer while connecting. The browser applies it and reports media connection; the App becomes active only after the sideband also attaches. Media ownership, settings, and executor admission are checked at their authority boundaries. Reusing a known start ID reconciles its receipt without creating another call.
 
-Navigation within the WebUI retains the same microphone and peer. The workspace shows a microphone indicator and Stop control. Full reload, owner-control disconnect, page exit, or Stop releases media and ends voice. Reopening requires a new user action. Voice Stop leaves executor and delegated Runs running; their ordinary cancellation controls remain separate. Unsaved Host-file warnings remain active on the Live route.
+Navigation within the WebUI retains the same microphone and peer. The workspace provides a one-click Start voice control without leaving the current page, plus a microphone indicator, Stop control, and link to the full Live page while connecting or active. An unconfigured workspace links to Live settings. Connection errors remain visible beside the workspace controls. Both presentations share the same tab-owned voice session; neither navigation nor rendering starts capture. Full reload, owner-control disconnect, page exit, or Stop releases media and ends voice. Reopening requires a new user action. Voice Stop leaves executor and delegated Runs running; their ordinary cancellation controls remain separate. Unsaved Host-file warnings remain active on the Live route.
 
 ## Tasks and Reports
 

@@ -53,6 +53,12 @@
   line-height: 1.25;
   margin: 0;
 }
+.center[data-running="true"] h1 {
+  font-size: 24px;
+}
+.center[data-running="true"] .eyebrow {
+  margin-bottom: 16px;
+}
 .intro {
   font-size: 14px;
   color: var(--a13n-secondary);
@@ -129,14 +135,45 @@
   margin-top: 16px;
 }
 .caption {
-  max-width: 580px;
+  width: min(100%, 580px);
   min-height: 56px;
-  max-height: 150px;
+  max-height: 196px;
   overflow: auto;
+  overflow-wrap: anywhere;
   margin-top: 28px;
+  text-align: left;
   font-size: 17px;
   line-height: 1.6;
+  color: var(--a13n-text);
+}
+.captionTurn + .captionTurn {
+  margin-top: 16px;
+}
+.captionTurn p {
+  margin: 4px 0 0;
+}
+.speaker {
   color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.workspaceVoice {
+  position: relative;
+  flex-shrink: 0;
+}
+.indicatorError {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  right: 0;
+  width: min(320px, calc(100vw - 40px));
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow);
+  color: var(--a13n-text);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .thread {
   font-size: 12px;
@@ -154,15 +191,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: var(--a13n-surface);
   font-size: 12px;
 }
 .indicator a {
+  padding: 4px 6px;
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.indicator[data-active="true"] a::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #059669;
 }
 @keyframes breathe {
   50% {
@@ -175,6 +220,9 @@
   }
 }
 @media (max-width: 600px) {
+  .controlLabel {
+    display: none;
+  }
   .header {
     padding: 20px;
   }

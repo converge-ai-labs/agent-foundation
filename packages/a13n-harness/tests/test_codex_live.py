@@ -55,11 +55,19 @@ def test_context_utf8_chunks_and_channels():
     assert message["type"] == "session.context.append"
     assert "delegation_item_id" not in message
     assert (
-        session_payload("instructions", "marin", [ConversationItem("assistant", "hello")])["initial_items"][0][
+        session_payload("instructions", "cove", [ConversationItem("assistant", "hello")])["initial_items"][0][
             "content"
         ][0]["type"]
         == "output_text"
     )
+
+
+@pytest.mark.parametrize("voice", ["marin", "cedar", "unknown"])
+def test_rejects_incompatible_voices_before_loading_credentials(voice):
+    source = AsyncMock()
+    with pytest.raises(CodexLiveError, match="V3 voice"):
+        CodexLiveModel(source, voice=voice)
+    source.load.assert_not_called()
 
 
 @pytest.fixture
@@ -108,6 +116,7 @@ async def test_bootstrap_native_auth_and_single_sideband_initialization(live_tra
     payload = json.loads(requests[0].content)["session"]
     assert payload["delegation"] == {"type": "client"}
     assert payload["model"] == "gpt-live-1-codex"
+    assert payload["audio"]["output"]["voice"] == "cove"
     uri, options = connections[0]
     assert uri == "wss://api.openai.com/v1/live/rtc_test"
     assert options["additional_headers"] == {

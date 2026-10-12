@@ -363,11 +363,37 @@ export function ResourceFields({
                   <ChoiceField
                     label="Voice"
                     hideLabel
-                    value={text(["live", "voice"]) || "marin"}
+                    value={text(["live", "voice"]) || "cove"}
                     options={[
-                      { value: "marin", label: "Marin" },
-                      { value: "cedar", label: "Cedar" },
-                    ]}
+                      "cove",
+                      "juniper",
+                      "maple",
+                      "spruce",
+                      "ember",
+                      "vale",
+                      "breeze",
+                      "arbor",
+                      "sol",
+                      "aube",
+                      "bubbie",
+                      "haetsal",
+                      "hanul",
+                      "himari",
+                      "leher",
+                      "miko",
+                      "neer",
+                      "porto",
+                      "rindo",
+                      "rio",
+                      "rivage",
+                      "selva",
+                      "sonna",
+                      "tinta",
+                      "viola",
+                    ].map((value) => ({
+                      value,
+                      label: value[0]!.toUpperCase() + value.slice(1),
+                    }))}
                     onValueChange={(value) => set(["live", "voice"], value)}
                   />
                 </SettingsRow>

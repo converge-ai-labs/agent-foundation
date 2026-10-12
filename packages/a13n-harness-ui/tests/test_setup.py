@@ -1079,7 +1079,7 @@ async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path,
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "existing", [None, {"enabled": False}, {"enabled": True, "model": "model-codex", "voice": "cedar"}]
+    "existing", [None, {"enabled": False}, {"enabled": True, "model": "model-codex", "voice": "juniper"}]
 )
 async def test_live_setup_opt_in_and_add_model_preserves_explicit_settings(tmp_path, existing):
     path = tmp_path / "config.yaml"
@@ -1098,6 +1098,7 @@ async def test_live_setup_opt_in_and_add_model_preserves_explicit_settings(tmp_p
     live = yaml.safe_load(path.read_text())["live"]
     if existing is None:
         assert live["enabled"] and live["model"] == "model-another-codex"
+        assert live["voice"] == "cove"
         assert path.name in preview.files
     else:
         assert live == existing

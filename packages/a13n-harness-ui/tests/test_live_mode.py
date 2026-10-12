@@ -37,7 +37,28 @@ def test_live_config_is_opt_in_and_reuses_model():
     with pytest.raises(ValidationError, match="existing Codex"):
         LiveConfiguration(enabled=True)
     value = LiveConfiguration(enabled=True, model="model-example")
-    assert value.voice == "marin" and value.files_enabled
+    assert value.voice == "cove" and value.files_enabled
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("voice", ["marin", "cedar"])
+async def test_live_legacy_voice_generations_remain_readable_but_cannot_connect(tmp_path, voice):
+    root = live_configuration(tmp_path)
+    value = yaml.safe_load(root.read_text())
+    value["live"]["voice"] = voice
+    root.write_text(yaml.safe_dump(value))
+    settings = _settings(tmp_path / "data")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        source = await load_harness_ui_configuration(root)
+        assert source.document.live.voice == voice
+        with pytest.raises(ThreadError) as error:
+            app._voice_model(source)
+        assert error.value.code == "live_voice_incompatible"
+    # Correct the source without rewriting the old immutable generation.
+    value["live"]["voice"] = "cove"
+    root.write_text(yaml.safe_dump(value))
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert (await app.voice().status()).enabled
 
 
 @pytest.mark.anyio

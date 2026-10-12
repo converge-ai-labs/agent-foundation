@@ -8,7 +8,7 @@ import re
 import ssl
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, get_args
 from urllib.parse import urlsplit
 
 from anyio import move_on_after
@@ -20,7 +20,7 @@ from a13n_harness.http import bounded_response_body, outbound_tls_verify
 from a13n_harness.models.transport import create_model_http_client
 
 from .codec import MAX_EVENT_BYTES, EventDecoder, context_messages, session_payload
-from .types import CodexLiveError, CodexLiveEvent, ConversationItem
+from .types import CodexLiveError, CodexLiveEvent, CodexLiveVoice, ConversationItem
 
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
@@ -111,9 +111,11 @@ class CodexLiveModel:
         self,
         credential_source: OpenAICodexCredentialSource,
         *,
-        voice: str = "marin",
+        voice: CodexLiveVoice = "cove",
         configuration: RunConfiguration | None = None,
     ) -> None:
+        if voice not in get_args(CodexLiveVoice.__value__):
+            raise CodexLiveError("Unsupported Codex V3 voice; choose cove or another V3 voice")
         self._credential_source = credential_source
         self._voice = voice
         self._configuration = configuration or RunConfiguration()

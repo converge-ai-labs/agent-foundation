@@ -10,7 +10,7 @@ Live Mode gives the WebUI a continuous voice conversation with a persistent plac
 1. Add a Model with **Codex subscription** authentication and sign in to the selected account. See [Models and authentication](models-and-authentication.md).
 2. Open **Settings → General → Live**. Enable Live and select that Model.
 3. Choose the voice and whether the Live executor can use file tools. Save the settings.
-4. Open **Live** and press **Start voice**. Allow microphone access when the browser asks.
+4. Press **Start voice** in the workspace header or on the **Live** page. Allow microphone access when the browser asks.
 
 Use HTTPS or localhost in a browser that supports microphone capture and WebRTC. The selected account and network must support Codex Live. A successful ordinary Model request does not verify voice availability.
 
@@ -22,22 +22,24 @@ The equivalent root configuration is:
 live:
   enabled: true
   model: model-codex
-  voice: marin
+  voice: cove
   files_enabled: true
   instructions: "Keep spoken replies concise."
 ```
+
+Live uses Codex V3 voices and defaults to `cove`. V2 voices such as `marin` and `cedar` are incompatible; replace them in any earlier Live configuration.
 
 Use an existing Codex subscription Model ID. Live needs no additional Model or Agent YAML file. Its speech model is a runtime preset; the selected Model performs delegated tasks.
 
 ## Talk and Work
 
-Opening the Live page leaves the microphone off. Press **Start voice** to begin a continuous conversation. Press **Stop voice** to release the microphone and connection.
+Opening the Live page leaves the microphone off. Press **Start voice** to begin a continuous conversation. The workspace header starts the same conversation without leaving your current page. Press **Stop voice** on the Live page or **Stop** in the header to release the microphone and connection.
 
 Use **Open tasks & decisions** to inspect the persistent Live Thread. Tasks run through the ordinary Harness executor. Decisions and approvals remain in that Thread. Live can coordinate independent roots and Coordinators; managed workers retain their existing ownership rules.
 
 The built-in executor has notes, tasks, Thread collaboration, enabled global memory, and optional file tools. It uses `live-workspace` beside the selected configuration file. It does not inherit your default Agent's shell, MCP servers, plugins, Skills, or subagents. Delegate specialized work to a configured Thread instead.
 
-Navigation keeps the same voice connection. A compact **Microphone on** indicator and **Stop voice** control remain visible in the workspace. A full reload or closed tab ends voice; returning never starts the microphone automatically. Only one browser can own voice in the App at a time.
+Navigation keeps the same voice connection. A compact **Microphone on** indicator and **Stop** control remain visible in the workspace. Select the indicator to open the full Live page. That page shows **Connected** and recent captions labeled **You** or **Assistant**; stopping hides unfinished captions. A full reload or closed tab ends voice; returning never starts the microphone automatically. Only one browser can own voice in the App at a time.
 
 ## Results and Reports
 

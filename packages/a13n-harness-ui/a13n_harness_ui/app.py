@@ -458,12 +458,18 @@ class HarnessUiApp:
         return self._voice
 
     def _voice_model(self, source: LoadedHarnessUiConfiguration) -> CodexLiveModel:
+        assert source.document.live is not None
+        voice = source.document.live.voice
+        if voice == "marin" or voice == "cedar":
+            raise ThreadError(
+                "Choose cove or another Codex V3 voice in Live settings before starting voice.",
+                code="live_voice_incompatible",
+            )
         if self._codex_account is None:
             raise ThreadError("Connect a Codex subscription account before starting Live.", code="live_account_missing")
-        assert source.document.live is not None
         return CodexLiveModel(
             BoundCodexCredentialSource(self._codex_account),
-            voice=source.document.live.voice,
+            voice=voice,
             configuration=source.document.run_configuration,
         )
 

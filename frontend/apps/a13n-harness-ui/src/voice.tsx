@@ -37,40 +37,87 @@ function useVoice() {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   return { ...state, start: session.start, stop: session.stop };
 }
+function useVoiceSettings() {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: ["voice-status"],
+    queryFn: ({ signal }) => result(client.GET("/api/voice", { signal })),
+    staleTime: 0,
+  });
+}
 export function VoiceIndicator() {
   const voice = useVoice();
-  if (!["starting", "connecting", "active"].includes(voice.status)) return null;
+  const settings = useVoiceSettings();
+  const running = ["starting", "connecting", "active"].includes(voice.status);
+  const error = voice.error || settings.error?.message;
   return (
-    <div className={styles.indicator}>
-      <Link to="/live">
-        <Microphone size={16} />{" "}
-        {voice.status === "active" ? "Microphone on" : "Starting voice…"}
-      </Link>
-      <Button size="sm" variant="ghost" onClick={voice.stop}>
-        Stop voice
-      </Button>
+    <div className={styles.workspaceVoice}>
+      <div className={styles.indicator} data-active={voice.status === "active"}>
+        {running ? (
+          <>
+            <Link to="/live" aria-label="Open Live conversation">
+              <Microphone size={16} />
+              <span>
+                {voice.status === "active" ? "Microphone on" : "Connecting…"}
+              </span>
+            </Link>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={voice.stop}
+              aria-label="Stop voice"
+            >
+              <Stop size={14} weight="fill" />
+              <span className={styles.controlLabel}>Stop</span>
+            </Button>
+          </>
+        ) : !settings.isPending &&
+          !settings.data?.enabled &&
+          !settings.error ? (
+          <Link to="/settings#live">
+            <Microphone size={16} /> Set up voice
+          </Link>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void voice.start()}
+            disabled={settings.isPending || !settings.data?.enabled}
+            aria-label="Start voice"
+          >
+            <Microphone size={16} />
+            {voice.status === "failed" ? "Retry voice" : "Start voice"}
+          </Button>
+        )}
+      </div>
+      {error && (
+        <p className={styles.indicatorError} role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
 export function VoicePage() {
   const voice = useVoice();
-  const { client } = useTransport();
-  const settings = useQuery({
-    queryKey: ["voice-status"],
-    queryFn: ({ signal }) => result(client.GET("/api/voice", { signal })),
-    staleTime: 0,
-  });
+  const settings = useVoiceSettings();
   const running = ["starting", "connecting", "active"].includes(voice.status);
   const connected = voice.status === "active";
   const snapshot = voice.snapshot;
   const threadId = snapshot?.thread_id ?? settings.data?.thread_id;
-  const lastTurn = snapshot?.transcript?.at(-1);
-  const caption =
-    snapshot?.assistant_text ||
-    snapshot?.user_text ||
-    (connected ? lastTurn?.text : "");
+  const captions = connected
+    ? [
+        ...(snapshot?.transcript ?? []).slice(-2),
+        ...(snapshot?.user_text
+          ? [{ role: "user", text: snapshot.user_text }]
+          : []),
+        ...(snapshot?.assistant_text
+          ? [{ role: "assistant", text: snapshot.assistant_text }]
+          : []),
+      ].slice(-2)
+    : [];
   const label = connected
-    ? "Listening"
+    ? "Connected"
     : running
       ? "Connecting"
       : voice.status === "failed"
@@ -87,14 +134,26 @@ export function VoicePage() {
         </span>
         <Link to="/settings#live">Settings</Link>
       </header>
-      <section className={styles.center} aria-label="Voice conversation">
+      <section
+        className={styles.center}
+        data-running={running}
+        aria-label="Voice conversation"
+      >
         <p className={styles.eyebrow}>HARNESS UI · LIVE</p>
         <h1>
-          A little less typing.
-          <br />A little more conversation.
+          {running ? (
+            "Live conversation"
+          ) : (
+            <>
+              A little less typing.
+              <br />A little more conversation.
+            </>
+          )}
         </h1>
         <p className={styles.intro}>
-          Talk things through. Put your agents to work.
+          {running
+            ? "Stay here, or keep working while we talk."
+            : "Talk things through. Put your agents to work."}
         </p>
         <div className={styles.controlArea} data-active={connected}>
           <div className={styles.halo} aria-hidden="true" />
@@ -135,8 +194,19 @@ export function VoicePage() {
             <Link to="/settings#live">Live in Settings</Link>.
           </p>
         )}
-        <div className={styles.caption} aria-live="polite">
-          {caption}
+        <div
+          className={styles.caption}
+          aria-live="polite"
+          aria-label="Recent captions"
+        >
+          {captions.map((caption, index) => (
+            <div className={styles.captionTurn} key={index}>
+              <span className={styles.speaker}>
+                {caption.role === "user" ? "You" : "Assistant"}
+              </span>
+              <p>{caption.text}</p>
+            </div>
+          ))}
         </div>
         {threadId && (
           <Link className={styles.thread} to={`/threads/${threadId}`}>

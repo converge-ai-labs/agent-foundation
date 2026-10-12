@@ -10,7 +10,7 @@ Live 模式为 WebUI 提供连续语音对话，并保留任务与决策记录�
 1. 添加使用 **Codex subscription** 认证的 Model，并登录所选账户。参阅[模型与认证](models-and-authentication.md)。
 2. 打开 **Settings → General → Live**，启用 Live 并选择该 Model。
 3. 选择音色，以及是否允许 Live 执行器使用文件工具，然后保存设置。
-4. 打开 **Live**，点击 **Start voice**，并在浏览器询问时允许访问麦克风。
+4. 在工作区顶部或 **Live** 页面点击 **Start voice**，并在浏览器询问时允许访问麦克风。
 
 请使用支持麦克风采集和 WebRTC 的浏览器，通过 HTTPS 或 localhost 访问。所选账户和网络必须支持 Codex Live。普通 Model 请求成功并不代表语音功能可用。
 
@@ -22,22 +22,24 @@ Live 模式为 WebUI 提供连续语音对话，并保留任务与决策记录�
 live:
   enabled: true
   model: model-codex
-  voice: marin
+  voice: cove
   files_enabled: true
   instructions: "Keep spoken replies concise."
 ```
+
+Live 使用 Codex V3 音色，默认为 `cove`。V2 音色（例如 `marin`、`cedar`）不兼容；已有 Live 配置若使用这些音色，请将其替换。
 
 使用已有的 Codex subscription Model ID。Live 不需要额外的 Model 或 Agent YAML 文件。语音模型使用运行时预设，所选 Model 负责执行委派任务。
 
 ## 交谈与工作
 
-打开 Live 页面时，麦克风保持关闭。点击 **Start voice** 开始连续对话，点击 **Stop voice** 释放麦克风和连接。
+打开 Live 页面时，麦克风保持关闭。点击 **Start voice** 开始连续对话。工作区顶部的按钮可以启动同一语音对话，无需离开当前页面。在 Live 页面点击 **Stop voice**，或在顶部点击 **Stop**，即可释放麦克风和连接。
 
 通过 **Open tasks & decisions** 查看持久化的 Live Thread。任务由普通 Harness 执行器运行，决策和审批在该 Thread 中处理。Live 可以协调独立根 Thread 和 Coordinator；受管 worker 保留原有的归属规则。
 
 内置执行器具有笔记、任务、Thread 协作、已启用的全局记忆，以及可选的文件工具。工作区位于所选配置文件旁的 `live-workspace`。它不继承默认 Agent 的 shell、MCP 服务器、插件、Skills 或子 agent。专业工作应委派给已配置的 Thread。
 
-页面导航会保留同一语音连接。工作区中持续显示简洁的 **Microphone on** 指示和 **Stop voice** 按钮。整页刷新或关闭标签页会结束语音，再次进入不会自动开启麦克风。同一 App 同时只允许一个浏览器持有语音连接。
+页面导航会保留同一语音连接。工作区中持续显示简洁的 **Microphone on** 指示和 **Stop** 按钮。点击指示可打开完整 Live 页面，查看 **Connected** 状态，以及标注 **You** 或 **Assistant** 的最近字幕；停止后隐藏未完成的字幕。整页刷新或关闭标签页会结束语音，再次进入不会自动开启麦克风。同一 App 同时只允许一个浏览器持有语音连接。
 
 ## 结果与回报
 

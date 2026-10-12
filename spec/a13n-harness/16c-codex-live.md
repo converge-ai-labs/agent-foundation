@@ -6,7 +6,7 @@
 
 ## Authentication and Connection
 
-`CodexLiveModel` takes a public `OpenAICodexCredentialSource`, a voice name, and optional Harness Run configuration. [Model Authentication](16a-model-authentication.md) owns credential loading, OAuth refresh, and Host storage. A dedicated native provider HTTP client creates the call at the fixed Codex HTTPS endpoint with redirects and transport retries disabled. The speech model uses the Codex runtime preset; the Host's ordinary request Model remains independently selected.
+`CodexLiveModel` takes a public `OpenAICodexCredentialSource`, a `CodexLiveVoice` name (default `cove`), and optional Harness Run configuration. Voices follow Codex V3; incompatible V2 voices such as `marin` and `cedar` are rejected before loading credentials or creating a call. [Model Authentication](16a-model-authentication.md) owns credential loading, OAuth refresh, and Host storage. A dedicated native provider HTTP client creates the call at the fixed Codex HTTPS endpoint with redirects and transport retries disabled. The speech model uses the Codex runtime preset; the Host's ordinary request Model remains independently selected.
 
 `connect(offer_sdp, instructions=..., on_answer=..., initial_items=...)` is an async context manager. The caller supplies an SDP offer and an asynchronous answer callback. The factory validates bounded SDP input, creates one call, and invokes `on_answer(answer_sdp)` before attaching the sideband. The callback applies the answer and waits for its media peer to connect. Holding the answer until sideband attachment would prevent activation of the upstream call.
 
