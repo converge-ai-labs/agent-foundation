@@ -11043,6 +11043,14 @@
             "type": "array",
             "title": "Native Tools",
             "default": []
+          },
+          "shell_review_models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "type": "array",
+            "title": "Shell Review Models",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -13247,6 +13255,20 @@
             "type": "boolean",
             "title": "Shell Review",
             "default": true
+          },
+          "shell_review_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 480,
+                "minLength": 1,
+                "pattern": "^\\S+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shell Review Model"
           },
           "include_default_subagents": {
             "anyOf": [

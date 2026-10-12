@@ -84,6 +84,17 @@ const UsagePage = lazy(() =>
   })),
 );
 
+const FindingsPage = lazy(() =>
+  import("./features/findings/page").then((module) => ({
+    default: module.FindingsPage,
+  })),
+);
+const FindingDetail = lazy(() =>
+  import("./features/findings/detail").then((module) => ({
+    default: module.FindingDetail,
+  })),
+);
+
 const TracesPage = lazy(() =>
   import("./features/traces/page").then((module) => ({
     default: module.TracesPage,
@@ -214,6 +225,11 @@ function AppContent() {
                           </Route>
                         </Route>
                       </Route>
+                      <Route path="findings" element={<FindingsPage />} />
+                      <Route
+                        path="findings/:findingId"
+                        element={<FindingDetail />}
+                      />
                       <Route path="usage" element={<UsagePage />} />
                       <Route path="traces" element={<TracesPage />} />
                       <Route

@@ -3,7 +3,7 @@ import { basePath } from "./base-path.mjs";
 export { basePath };
 
 export const site = {
-  name: "Agent Foundation",
+  name: "a13n",
   description:
     "The open-source, self-hosted foundation for AI agents: the Harness library, the managed Service, and the Harness UI workbench.",
   url: `https://a13n.converge.ai${basePath}`,

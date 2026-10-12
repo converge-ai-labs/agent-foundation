@@ -13,6 +13,11 @@ dependencies = [
     "pydantic-ai-slim>=2.54.0,<3",
 ]
 
+[project.urls]
+Homepage = "https://a13n.converge.ai/"
+Documentation = "https://a13n.converge.ai/docs/a13n-stream-protocol/"
+Repository = "https://github.com/converge-ai-labs/agent-foundation"
+
 [dependency-groups]
 test = [
     "jsonschema>=4.23,<5",

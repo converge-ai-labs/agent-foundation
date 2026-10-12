@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://a13n.converge.ai/docs/sitemap.xml

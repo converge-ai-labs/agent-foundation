@@ -21,10 +21,11 @@ function modelRequired(error: unknown) {
 export interface ComposerTarget {
   agent: Pick<Schema["Agent"], "id" | "name">;
   revision: Pick<Schema["AgentRevision"], "id" | "number">;
+  context?: string;
 }
 
 /**
- * Agent Composer is the workspace's builtin agent. Writers
+ * Agent Composer is the workspace's composer preset. Writers
  * prepare it, which creates it or brings it up to date, before conversing;
  * other runners converse with it once it exists. A conversation about an
  * existing agent opens with a first message naming it, which the user sends.
@@ -43,7 +44,7 @@ export function useAgentComposer() {
       client
         .workspace(workspace.id)
         .GET("/api/v1/agents", {
-          params: { query: { source: "builtin" } },
+          params: { query: { source: "builtin", preset_kind: "composer" } },
           signal,
         })
         .then(data)
@@ -63,7 +64,7 @@ export function useAgentComposer() {
             version: target.revision.number,
             revision: target.revision.id,
           },
-        ),
+        ) + (target.context ? `\n\n${target.context}` : ""),
       );
     navigate(`${basePath}/sessions/new?${search}`);
   };

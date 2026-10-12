@@ -175,7 +175,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
     notices = []
 
     async def ask(question, selection):
-        if question.key == "tools" or question.text == "Model saved. Configure tools on a new Agent?":
+        if question.key in {"tools", "review_model"} or question.text == "Model saved. Configure tools on a new Agent?":
             return question.default
         assert answers, question
         if provider == "grok" and question.key == "model":
@@ -223,7 +223,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
 
 def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> None:
     wizard = SetupWizard()
-    for answer in ("api", "anthropic", "", "new", "env:TEST_KEY", "claude-sonnet-4-6", "", "", ""):
+    for answer in ("api", "anthropic", "", "new", "env:TEST_KEY", "claude-sonnet-4-6", "", "", "", "skip"):
         wizard.accept(answer)
     assert "Native media input: image." in wizard.notice()
     while wizard.question.key != "model":
@@ -232,10 +232,11 @@ def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> No
     wizard.accept("")
     wizard.accept("")
     wizard.accept("")  # Tool recommendations.
+    wizard.accept("skip")  # Shell review.
     assert "Native media input: unknown; no native media enabled." in wizard.notice()
     while wizard.question.key != "api_provider":
         assert wizard.back()
-    for answer in ("google", "https://proxy.example/v1", "new", "env:TEST_KEY", "gemini-2.5-pro", "", ""):
+    for answer in ("google", "https://proxy.example/v1", "new", "env:TEST_KEY", "gemini-2.5-pro", "", "", "skip"):
         wizard.accept(answer)
     assert "Native media input: audio, image, video." in wizard.notice()
 

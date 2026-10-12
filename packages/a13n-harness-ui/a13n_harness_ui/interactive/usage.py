@@ -1,17 +1,18 @@
-"""Read-only quota display and explicit, account-bound reset confirmation."""
+"""Thread usage presentation and separate, explicitly confirmed subscription operations."""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from a13n_harness.providers.model.openai_chatgpt import DEFINITION as CHATGPT_DEFINITION
 from pydantic_ai.exceptions import UserError
 
 from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest
-from a13n_harness_ui.storage.usage import ThreadUsageView, UsageTotals
+from a13n_harness_ui.storage.usage import ModelUsageView, ThreadUsageView, UsageTotals
 
 from .selection import Choice
 
@@ -19,147 +20,194 @@ if TYPE_CHECKING:
     from .shell import CliShell
 
 
-def thread_usage_text(view: ThreadUsageView, *, details: bool = False) -> str:
-    if not details:
-        return _usage_summary(view)
-    return _usage_details(view)
+type UsageScope = Literal["all", "root", "subagents"]
 
 
-def _usage_summary(view: ThreadUsageView) -> str:
-    lines = ["Usage · this conversation"]
+def thread_usage_text(view: ThreadUsageView, *, scope: UsageScope = "all", details: bool = False) -> str:
+    """Markdown panel body; model sections reflow instead of squeezing a wide table."""
+    title = {"all": "All", "root": "Root", "subagents": "Subagents"}[scope]
+    lines = [f"Thread usage · {title}", "Recorded so far · auxiliary models included", ""]
     if view.first_observed_at is None:
-        return "\n".join([*lines, "No recorded usage yet."])
-    totals = view.combined
-    tokens = dict(totals.tokens)
-    total = tokens["input_tokens"] + tokens["output_tokens"]
-    lines.extend(
-        [
-            f"Tokens       {total:,}  ·  in {tokens['input_tokens']:,} / out {tokens['output_tokens']:,}",
-            f"Responses    {totals.model_requests:,}  ·  root {view.root.model_requests:,} / children {view.descendants.model_requests:,}",
-            f"Model cost   USD {totals.model_cost_usd:.6f} known subtotal"
-            + (f" · {totals.unknown_model_costs:,} unknown-cost responses" if totals.unknown_model_costs else ""),
-            f"Cache read   {tokens['cache_read_tokens']:,}"
-            + (f" ({100 * tokens['cache_read_tokens'] / total:.1f}%)" if total else ""),
-        ]
-    )
-    for currency, cost in totals.provider_costs:
-        lines.append(f"Provider     {currency} {cost} · separate known subtotal")
-    if totals.unknown_provider_costs or totals.omitted_currency_receipts:
-        lines.append(
-            f"Provider cost incomplete · {totals.unknown_provider_costs} unknown / {totals.omitted_currency_receipts} currency entries omitted"
-        )
-    lines.append("By model · root + subagents + auxiliary models:")
-    lines.extend(_model_table(view.models))
-    if view.other_models.model_requests:
-        lines.extend(_model_table((("Other models", view.other_models),)))
-    lines.append("+ marks a partial known subtotal; missing historical prices are not backfilled.")
-    lines.append("/usage details · /usage subscription")
-    return "\n".join(lines)
-
-
-def _usage_details(view: ThreadUsageView) -> str:
-    lines = [f"Thread usage · {view.thread_id}"]
-    if view.first_observed_at is None:
-        return "\n".join([*lines, "No recorded usage yet. Lifetime coverage is unavailable, not proven zero."])
-    lines.extend(
-        [
-            f"Observed {view.first_observed_at.astimezone():%Y-%m-%d %H:%M:%S %Z}"
-            f" through {view.observed_through.astimezone():%Y-%m-%d %H:%M:%S %Z}"
-            if view.observed_through
-            else "",
-            "Recorded-so-far only; pre-ledger or unobserved usage is unavailable. Not a provider invoice.",
-        ]
-    )
-    for title, totals in (
-        ("Root agent", view.root),
-        ("Descendants (inline + async)", view.descendants),
-        ("Combined", view.combined),
-    ):
-        lines.extend(_total_lines(title, totals))
-    lines.append("By model (root + descendants):")
-    for name, totals in view.models:
-        lines.extend(_total_lines(name, totals, details=False))
-    if view.other_models.model_requests:
-        lines.extend(_total_lines("Other models (breakdown limited to 32 names)", view.other_models, details=False))
-    for label, scope in (("Root", "root"), ("Subagents", "descendants")):
-        rows = tuple(
-            (model.name, model.root if scope == "root" else model.descendants)
-            for model in view.model_scopes
-            if (model.root if scope == "root" else model.descendants).model_requests
-        )
-        if rows:
-            lines.append(f"By model · {label}:")
-            lines.extend(_model_table(rows))
-    if view.groups:
-        lines.append("By agent and source (overlapping dimensions, not additional usage):")
-        for group in view.groups:
-            role = "subagent" if group.descendant else "root"
+        lines.extend(["No recorded usage yet. Historical coverage is unavailable, not proven zero.", ""])
+    else:
+        totals = _scope_totals(view, scope)
+        lines.extend(_total_lines(totals, exact=details))
+        if scope == "all":
             lines.extend(
-                _total_lines(
-                    f"{group.model} · {role} · {group.agent_instance_id} · {group.source}",
-                    group.totals,
-                    details=False,
-                )
+                [f"Root {view.root.model_requests:,} / Subagents {view.descendants.model_requests:,} responses", ""]
             )
-    if view.other_groups is not None and view.other_groups.model_requests:
-        lines.extend(_total_lines("Other agent/source groups (included in totals)", view.other_groups, details=False))
-    lines.append("Recent Runs (up to 32, newest observed first; unique contributions):")
-    for run in view.recent_runs:
-        role = "child" if run.descendant else "root"
-        lines.extend(_total_lines(f"{run.run_id} · {role} · {run.agent_instance_id}", run.totals))
-    if view.other_runs.model_requests or view.other_runs.provider_receipts:
-        lines.extend(_total_lines("Older Runs (included in Thread totals)", view.other_runs))
-    lines.extend(
-        [
-            "Cache/audio counters are subsets of input/output, not extra tokens.",
-            "Cache rate = cache-read / (input + output), matching the status bar.",
-            "Provider receipts are deduplicated across Runs and attributed to first observation.",
-            "Context occupancy: /status. Subscription usage: /usage subscription; Codex reset credits: /usage reset.",
-        ]
-    )
-    return "\n".join(lines)
-
-
-def _model_table(models: tuple[tuple[str, UsageTotals], ...]) -> list[str]:
-    lines = ["  Model | Requests | Input | Output | Cache read / write | USD"]
-    for name, totals in models:
-        tokens = dict(totals.tokens)
-        cost = (
-            "unknown"
-            if totals.model_requests == totals.unknown_model_costs
-            else f"{totals.model_cost_usd:.6f}{'+' if totals.unknown_model_costs else ''}"
-        )
-        lines.append(
-            f"  {name} | {totals.model_requests:,} | {tokens.get('input_tokens', 0):,} | "
-            f"{tokens.get('output_tokens', 0):,} | {tokens.get('cache_read_tokens', 0):,} / "
-            f"{tokens.get('cache_write_tokens', 0):,} | {cost}"
-        )
-    return lines
-
-
-def _total_lines(title: str, totals: UsageTotals, *, details: bool = True) -> list[str]:
-    tokens = dict(totals.tokens)
-    total = tokens["input_tokens"] + tokens["output_tokens"]
-    cache_rate = f"{100 * tokens['cache_read_tokens'] / total:.1f}%" if total else "--"
-    lines = [
-        f"{title}: {totals.model_requests:,} model responses · {total:,} tokens"
-        f" (in {tokens['input_tokens']:,} / out {tokens['output_tokens']:,})",
-        f"  Model cost: USD {totals.model_cost_usd:.6f} known subtotal · {totals.unknown_model_costs:,} unknown-cost responses",
-    ]
-    if details:
+        lines.extend(_provider_lines(totals))
+        lines.extend(["### By model", ""])
+        models = _scope_models(view, scope)
+        for name, model in models:
+            lines.extend([f"**{_literal(name)}**  ", *_total_lines(model, exact=details)])
+        if not models:
+            lines.extend(
+                [
+                    "Model attribution is unavailable for this scope in older data."
+                    if totals.model_requests
+                    else "No recorded model responses in this scope.",
+                    "",
+                ]
+            )
+        if details:
+            lines.extend(_diagnostic_lines(view))
         lines.extend(
             [
-                f"  Cache: read {tokens['cache_read_tokens']:,} / write {tokens['cache_write_tokens']:,} · rate {cache_rate}",
-                f"  Audio: in {tokens['input_audio_tokens']:,} / out {tokens['output_audio_tokens']:,} / cached {tokens['cache_audio_read_tokens']:,}",
-                f"  Provider receipts: {totals.provider_receipts:,} · {totals.unknown_provider_costs:,} unknown-cost receipts",
+                "Cache/audio are included in input/output, not extra tokens. "
+                "Model costs are USD estimates; + means a partial known subtotal.",
+                "",
             ]
         )
-        for currency, cost in totals.provider_costs:
-            lines.append(f"    {currency} {cost} known provider subtotal (separate from model costs)")
-        if totals.omitted_currency_receipts:
-            lines.append(
-                f"    {totals.omitted_currency_receipts:,} receipts omitted from currency breakdown (32-currency limit)"
-            )
+    lines.append("Scopes: `/usage all` · `/usage root` · `/usage subagents`")
+    if not details:
+        lines[-1] += "  "
+        lines.append("Attribution and Runs: `/usage details`")
+    return "\n".join(lines)
+
+
+def _scope_totals(view: ThreadUsageView | ModelUsageView, scope: UsageScope) -> UsageTotals:
+    return view.root if scope == "root" else view.descendants if scope == "subagents" else view.combined
+
+
+def _scope_models(view: ThreadUsageView, scope: UsageScope) -> tuple[tuple[str, UsageTotals], ...]:
+    if view.model_scopes:
+        return tuple(
+            (model.name, totals)
+            for model in view.model_scopes
+            if (totals := _scope_totals(model, scope)).model_requests
+        )
+    # Legacy projections know combined attribution only; never borrow it for a single scope.
+    if scope != "all":
+        return ()
+    return view.models + ((("Other models", view.other_models),) if view.other_models.model_requests else ())
+
+
+def _literal(value: str) -> str:
+    """Keep provider/model/source labels literal inside generated Markdown."""
+    return "".join("\\" + char if char in "\\`*_[]<>!&#" else char for char in " ".join(value.split()))
+
+
+def _model_cost(totals: UsageTotals, *, exact: bool = False) -> str:
+    if not totals.model_requests:
+        return "—"
+    if totals.model_requests == totals.unknown_model_costs:
+        return "unknown"
+    cost = totals.model_cost_usd
+    if exact:
+        amount = f"${cost:f}"
+    elif 0 < cost < Decimal("0.0001"):
+        amount = "<$0.0001"
+    else:
+        amount = f"${cost:,.4f}" if cost < 1 else f"${cost:,.2f}"
+    return amount + ("+" if totals.unknown_model_costs else "")
+
+
+def _total_lines(totals: UsageTotals, *, exact: bool = False) -> list[str]:
+    if not totals.model_requests:
+        return ["No recorded model responses in this scope.", ""]
+    tokens = dict(totals.tokens)
+    input_tokens, output_tokens = tokens.get("input_tokens", 0), tokens.get("output_tokens", 0)
+    total = input_tokens + output_tokens
+    cache = tokens.get("cache_read_tokens", 0)
+    cost = _model_cost(totals, exact=exact)
+    rows = [
+        f"**{total:,} tokens** · **Cost {cost}** · {totals.model_requests:,} responses",
+        f"Input {input_tokens:,} · Output {output_tokens:,}",
+        f"Cache read {cache:,}"
+        + (f" ({100 * cache / total:.1f}%)" if total else "")
+        + f" · Cache write {tokens.get('cache_write_tokens', 0):,}",
+    ]
+    audio = [
+        (label, tokens.get(key, 0))
+        for label, key in (
+            ("input", "input_audio_tokens"),
+            ("output", "output_audio_tokens"),
+            ("cached", "cache_audio_read_tokens"),
+        )
+    ]
+    if any(count for _, count in audio):
+        rows.append("Audio " + " · ".join(f"{label} {count:,}" for label, count in audio if count))
+    if totals.unknown_model_costs:
+        rows.append(f"{totals.unknown_model_costs:,} unknown-cost responses")
+    return ["  \n".join(rows), ""]
+
+
+def _provider_lines(totals: UsageTotals) -> list[str]:
+    if not totals.provider_receipts:
+        return []
+    rows = [f"{totals.provider_receipts:,} receipts · separate from model costs; currencies are not converted."]
+    rows.extend(f"{_literal(currency)} {cost} known subtotal" for currency, cost in totals.provider_costs)
+    if totals.unknown_provider_costs:
+        rows.append(f"{totals.unknown_provider_costs:,} unknown-cost receipts")
+    if totals.omitted_currency_receipts:
+        rows.append(f"{totals.omitted_currency_receipts:,} currency entries omitted; subtotal incomplete")
+    return ["### Non-model providers", "", "  \n".join(rows), ""]
+
+
+def _diagnostic_lines(view: ThreadUsageView) -> list[str]:
+    lines = ["### Coverage", "", f"Thread: {_literal(view.thread_id)}  "]
+    if view.first_observed_at is not None:
+        lines.append(f"First observed: {view.first_observed_at.astimezone():%Y-%m-%d %H:%M:%S %Z}  ")
+    if view.observed_through is not None:
+        lines.append(f"Observed through: {view.observed_through.astimezone():%Y-%m-%d %H:%M:%S %Z}  ")
+    lines.extend(["Not a provider invoice. Missing history and prices are not backfilled.", ""])
+    scopes: tuple[UsageScope, ...] = ("root", "subagents")
+    for scope in scopes:
+        title = "Root" if scope == "root" else "Subagents"
+        totals = _scope_totals(view, scope)
+        lines.extend([f"### {title}", "", *_total_lines(totals, exact=True), *_provider_lines(totals)])
+        for name, totals in _scope_models(view, scope):
+            lines.extend([f"**{_literal(name)}**", "", *_total_lines(totals, exact=True)])
+    if view.groups:
+        lines.extend(["### Agents and sources", "", "Overlapping breakdowns, not additional usage.", ""])
+    for group in view.groups:
+        role = "Subagent" if group.descendant else "Root"
+        source = {"agent": "Agent requests", "files.media_understanding": "Media understanding · view"}.get(
+            group.source, group.source or "Unattributed"
+        )
+        lines.extend(
+            [
+                f"**{_literal(group.model)}** · {role} · {_literal(source)}  ",
+                _literal(group.agent_instance_id),
+                "",
+                *_total_lines(group.totals, exact=True),
+            ]
+        )
+    if view.other_groups is not None and view.other_groups.model_requests:
+        lines.extend(
+            ["**Other agent/source groups (included in totals)**", "", *_total_lines(view.other_groups, exact=True)]
+        )
+    lines.extend(["### Recent Runs", "", "Up to 32, newest observed first; unique contributions.", ""])
+    for run in view.recent_runs:
+        role = "Subagent" if run.descendant else "Root"
+        lines.extend(
+            [
+                f"**{_literal(run.run_id)}** · {role}  ",
+                _literal(run.agent_instance_id),
+                "",
+                *_total_lines(run.totals, exact=True),
+                *_provider_lines(run.totals),
+            ]
+        )
+    if view.other_runs.model_requests or view.other_runs.provider_receipts:
+        lines.extend(
+            [
+                "**Older Runs (included in Thread totals)**",
+                "",
+                *_total_lines(view.other_runs, exact=True),
+                *_provider_lines(view.other_runs),
+            ]
+        )
+    lines.extend(
+        [
+            "Cache rate = cache-read / (input + output), matching the status bar. "
+            "Provider receipts are deduplicated across Runs and attributed to first observation.",
+            "",
+            "Context: `/status` · Subscription: `/usage subscription` · Codex credits: `/usage reset`",
+            "",
+        ]
+    )
     return lines
 
 

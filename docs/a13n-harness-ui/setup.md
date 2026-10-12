@@ -35,6 +35,8 @@ Choose a suggested model or enter a case-sensitive API model ID. Suggestions com
 
 For a new Codex connection, setup also offers Fast or Standard service. Fast requests priority; it may consume more quota and does not guarantee speed. Use `/fast` for a temporary change or edit the Model for a permanent one.
 
+API-key setup adds an optional **Shell review model** step. Choose a suggestion or enter a model ID to enable review. Lightweight models in the same family appear first, but nothing is selected automatically. Skip to leave shell review off. The reviewer uses the same endpoint and key reference in a separate Model, without copying the main Model's settings. Each review makes an additional model request; suggestions do not verify access or review quality.
+
 Setup saves known media-input capabilities for the selected route. For custom endpoints, verify supported image, audio, and video input before editing these declarations.
 
 See [Model settings](models-and-authentication.md#native-request-settings-and-connection-wiring), [context budgets](models-and-authentication.md#context-and-modality-policy), and [Fast mode](models-and-authentication.md#fast-mode-and-service-tiers).
@@ -56,7 +58,7 @@ a13n-harness-ui setup --advanced
 
 Advanced setup exposes optional context, reasoning, shell-review, subagent, and instruction choices. Normal setup supplies starter values; these are still editable YAML, not hidden application state.
 
-Normal setup includes three built-in Subagent roles. It also initializes absent `security.shell_review` settings: review shell launches with a Model and request approval at `extra_high` risk. Codex setup selects a separate review Model and enables Guardian credit linking. Existing review settings remain unchanged. Review is separate from isolation; see [shell review configuration](configuration-recipes.md#configure-shell-review).
+Normal setup includes three built-in Subagent roles. When shell review is selected, it initializes absent `security.shell_review` settings to review shell launches and request approval at `extra_high` risk. API-key setup without a reviewer initializes the shortcut as disabled. Codex setup selects a separate review Model and enables Guardian credit linking. Existing review settings remain unchanged. Review is separate from isolation; see [shell review configuration](configuration-recipes.md#configure-shell-review).
 
 Built-in subagents inherit the parent Model. Advanced setup offers all or none; edit `subagents.include` to choose individual roles. External Codex/Claude Code subagent import is a separate `/import` workflow, not part of setup.
 

@@ -8,6 +8,7 @@ import {
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { APIPage } from "@/components/api-page";
+import { baseMetadata } from "@/components/document-layout";
 import { getMDXComponents } from "@/components/mdx";
 import { OpenMenu } from "@/components/page-actions";
 import { PageFooter } from "@/components/page-footer";
@@ -98,7 +99,9 @@ export function pageMetadata(slug: string[], locale: Locale): Metadata {
         "x-default": localeUrl(page.url, "en"),
       },
     },
+    // Next replaces the layout's Open Graph object, so keep its site fields.
     openGraph: {
+      ...baseMetadata.openGraph,
       locale: locale === "zh-CN" ? "zh_CN" : "en_US",
       alternateLocale: locale === "zh-CN" ? "en_US" : "zh_CN",
     },

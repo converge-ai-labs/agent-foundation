@@ -13,6 +13,8 @@ from sqlalchemy import URL, Connection, create_engine, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
 
+from a13n_harness_ui.settings import DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS
+
 from .metadata import harness_ui_metadata
 
 MIGRATIONS_PATH = Path(__file__).resolve().parent / "migrations"
@@ -29,7 +31,7 @@ class DatabaseSchemaError(RuntimeError):
 class DatabaseMigrator:
     """Apply and inspect Harness UI's package-owned linear SQLite history."""
 
-    def __init__(self, path: Path | str, *, busy_timeout_seconds: float = 5.0) -> None:
+    def __init__(self, path: Path | str, *, busy_timeout_seconds: float = DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS) -> None:
         resolved = Path(path).resolve(strict=False)
         self._path = resolved
         self._busy_timeout_seconds = busy_timeout_seconds

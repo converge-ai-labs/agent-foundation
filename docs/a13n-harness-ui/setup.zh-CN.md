@@ -35,6 +35,8 @@ TUI 中没有 `/setup` 命令。显式运行设置会在保存后返回 shell；
 
 创建 Codex 连接时，向导还会提供 Fast 或 Standard 服务选项。Fast 请求优先处理，可能消耗更多配额，也不保证更快。用 `/fast` 临时切换，或修改 Model 以永久设置。
 
+API 密钥设置多一个可跳过的 **Shell review model** 步骤。选择推荐项或输入模型 ID 才启用审查。同系列的轻量模型排在前面，但不会自动选中。跳过则不启用 shell 审查。审查模型复用相同端点和密钥引用，保存为独立 Model，不复制主 Model 的设置。每次审查都会产生额外模型请求；推荐列表不代表已验证访问权限或审查质量。
+
 设置向导为所选路由保存已知的媒体输入能力。使用自定义端点时，先验证图像、音频和视频输入支持，再修改这些声明。
 
 见[模型设置](models-and-authentication.md#native-request-settings-and-connection-wiring)、[上下文预算](models-and-authentication.md#context-and-modality-policy)和 [Fast 模式](models-and-authentication.md#fast-mode-and-service-tiers)。
@@ -56,7 +58,7 @@ a13n-harness-ui setup --advanced
 
 高级设置提供可选的上下文、推理、shell 审查、subagent 和指令选项。常规设置会填入默认配置，之后仍可编辑 YAML；这些设置并非隐藏的应用状态。
 
-常规设置包含三种内置 Subagent 角色，并初始化尚未配置的 `security.shell_review`：用 Model 审查 shell 启动，在风险达到 `extra_high` 时请求审批。Codex 设置选择独立的审查 Model，并开启 Guardian 额度关联。现有审查设置保持不变。审查与隔离是两回事；见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
+常规设置包含三种内置 Subagent 角色。选择启用 shell 审查时，会初始化尚未配置的 `security.shell_review`：用 Model 审查 shell 启动，在风险达到 `extra_high` 时请求审批。API 密钥设置未选择审查模型时，快捷配置初始化为关闭。Codex 设置选择独立的审查 Model，并开启 Guardian 额度关联。现有审查设置保持不变。审查与隔离是两回事；见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
 
 内置 subagent 继承父级 Model。高级设置提供全部启用或全部关闭选项；要选择单独角色，请编辑 `subagents.include`。导入外部 Codex/Claude Code subagent 是独立的 `/import` 工作流，不属于设置流程。
 

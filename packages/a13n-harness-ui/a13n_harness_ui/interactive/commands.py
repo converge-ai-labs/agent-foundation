@@ -75,11 +75,11 @@ COMMANDS = (
     ),
     Command(
         "usage",
-        "Show recorded Thread usage; subscription shows Codex plan limits; "
-        "reset redeems a Codex reset credit after confirmation.",
-        "[details|subscription|reset]",
+        "Show this Thread's tokens, costs, and models for all/root/subagents; details adds attribution and Runs. "
+        "Subscription limits and confirmed Codex reset credits are separate.",
+        "[all|root|subagents|details|subscription|reset]",
         maximum=1,
-        choices=("details", "subscription", "reset"),
+        choices=("all", "root", "subagents", "details", "subscription", "reset"),
         busy=True,
     ),
     Command(

@@ -7,6 +7,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+# Allow brief disk stalls and competing App processes to finish their writes.
+DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_OBJECT_BYTES = 256 * 1024 * 1024
 type ObjectSizeLimit = Annotated[int, Field(ge=1024, le=1024 * 1024 * 1024)]
 
@@ -28,7 +30,7 @@ class StorageSettings(BaseModel):
 
     data_root: Path = Field(default_factory=default_harness_ui_data_root)
     scratch_retention_seconds: float = Field(default=259200.0, gt=0)
-    busy_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    busy_timeout_seconds: float = Field(default=DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS, gt=0, le=60)
     cleanup_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
 

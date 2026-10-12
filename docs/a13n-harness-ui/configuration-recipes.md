@@ -125,7 +125,7 @@ security:
 2. Add the mapping above to root YAML and run `a13n-harness-ui config validate`.
 3. Start a new Run. The shortcut reviews `environment.shell_exec` for the Agent and its children; it does not enable review for other tools.
 
-Codex and Grok setup create a separate reviewer Model. ChatGPT, GitHub Copilot, and API-key setup reuse the connected Model. Each review makes a Model request with that connection's usage and cost. For optional Codex Guardian linking, see [the root reference](configuration.md#shell-review-shortcut).
+Codex and Grok setup create a separate reviewer Model. ChatGPT and GitHub Copilot setup reuse the connected Model. API-key setup asks for an optional reviewer model and creates a separate Model using the same endpoint and authentication reference. Skipping leaves review off; the main Model is never selected implicitly. Each review makes a Model request with that connection's usage and cost. For optional Codex Guardian linking, see [the root reference](configuration.md#shell-review-shortcut).
 
 | Setting                | Behavior                                                                              |
 | ---------------------- | ------------------------------------------------------------------------------------- |

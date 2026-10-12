@@ -30,6 +30,8 @@ Service 的 `control` 和 `all` 进程在 **`/api/v1/mcp/`** 提供 Streamable H
 
 工具由部署实际组装的 OpenAPI 中显式允许的操作生成，也包括显式允许的 Distribution 扩展。新增 HTTP 路由不会自动暴露。工具名称由 operation ID 派生；请从部署发现准确的名称和参数 schema。没有任何工具接受任意 URL、HTTP 方法或操作名。
 
+MCP 也提供只读的[发现项和分析历史](agents-and-runs.md#find-and-improve-execution-issues)查询。提交或审阅发现项、准备 Finding Agent 和启动分析仍通过直接 HTTP API 完成。
+
 MCP 不授予额外权限或审批权。例如，订阅管理仍要求工作区 `admin` 权限，Trace 查询仍遵循 HTTP API 的租户过滤和脱敏规则。
 
 ## 读取和更新资源

@@ -20,7 +20,7 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-Preparing requires `write` in the workspace. The first call creates the workspace's one built-in agent (`source: "builtin"`), which `GET /api/v1/agents?source=builtin` also finds. Later calls refresh its name and description and add a revision only when its configuration changed. Anyone with `run` can start runs with it once it exists.
+Preparing requires `write` in the workspace. The first call creates the workspace's Composer preset (`source: "builtin"`, `preset_kind: "composer"`), which `GET /api/v1/agents?source=builtin&preset_kind=composer` also finds. Later calls refresh its name and description and add a revision only when its configuration changed. Anyone with `run` can start runs with it once it exists.
 
 ## Choose its model
 
@@ -52,7 +52,7 @@ Agent Composer does not rename agents or change their labels, archive them, or m
 
 ## Built-in agent rules
 
-Agent Composer cannot be edited, revised, archived or given an avatar (`409 conflict`, reason `builtin`); only preparing changes it. Duplicate it to create a custom agent you can change.
+Agent Composer cannot be edited, revised, archived or given an avatar (`409 conflict`, reason `builtin`); only preparing changes it. Its model is selected automatically as described above. Duplicate it to create a custom agent you can change.
 
 ## Use the toolset in your own agents
 

@@ -1,6 +1,6 @@
 """Agent heads, their avatars and revisions, and the built-in toolset catalogue their configurations select from."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Response
 
@@ -76,13 +76,14 @@ async def list_agents(
     q: Annotated[Search | None, Query()] = None,
     archived: bool | None = None,
     source: AgentSource | None = None,
+    preset_kind: Literal["composer", "finding"] | None = None,
     skill_id: Annotated[str | None, Query(max_length=72)] = None,
     skill_revision_id: Annotated[str | None, Query(max_length=72)] = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> AgentPage:
     """Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only
-    archived agents, or only open ones; `source=builtin` finds the Agent Composer; the skill filters keep those
+    archived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those
     with a revision pinning that skill or that skill revision."""
     return await service.list_agents(
         runtime.storage,
@@ -92,6 +93,7 @@ async def list_agents(
         q=q,
         archived=archived,
         source=source,
+        preset_kind=preset_kind,
         skill_id=skill_id,
         skill_revision_id=skill_revision_id,
         limit=limit,

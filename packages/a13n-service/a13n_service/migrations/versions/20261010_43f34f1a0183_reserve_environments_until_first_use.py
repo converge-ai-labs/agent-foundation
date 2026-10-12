@@ -1,14 +1,14 @@
 """reserve environments until first use
 
 Revision ID: 43f34f1a0183
-Revises: 7dc8ec393cc1
+Revises: 797996a323b1
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "43f34f1a0183"
-down_revision = "7dc8ec393cc1"
+down_revision = "797996a323b1"
 branch_labels = None
 depends_on = None
 

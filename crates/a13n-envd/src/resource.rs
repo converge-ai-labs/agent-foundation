@@ -1030,10 +1030,27 @@ fn extend_ignore_specs(
     }
     let text = String::from_utf8_lossy(&bytes);
     let mut builder = GitignoreBuilder::new("");
-    for line in text.lines() {
-        builder
-            .add_line(None, line)
-            .map_err(|_| ResourceError::Invalid)?;
+    let mut invalid_count = 0;
+    let mut invalid_lines = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        if builder.add_line(None, line).is_err() {
+            // A rejected line is not added to the builder; retain every valid rule.
+            invalid_count += 1;
+            if invalid_lines.len() < 10 {
+                invalid_lines.push(index + 1);
+            }
+        }
+    }
+    if invalid_count > 0 {
+        let record = serde_json::json!({
+            "level": "warning",
+            "event": "a13n-envd.gitignore_invalid_pattern",
+            "path": path.to_string_lossy(),
+            "invalid_count": invalid_count,
+            "lines": invalid_lines,
+            "action": "Skipped invalid rules; remaining rules remain active.",
+        });
+        eprintln!("{record}");
     }
     let matcher = builder.build().map_err(|_| ResourceError::Invalid)?;
     let mut extended = Vec::with_capacity(ignore_specs.len() + 1);
@@ -2646,6 +2663,105 @@ mod tests {
             )
             .expect("search never scans the hidden sparse source");
         assert!(searched.matches.is_empty());
+    }
+
+    #[test]
+    fn invalid_gitignore_lines_preserve_valid_rules_in_find_and_search() {
+        let fixture = Fixture::read_only();
+        fs::create_dir_all(fixture.native.join("src")).unwrap();
+        fs::create_dir_all(fixture.native.join("ignored")).unwrap();
+        fs::write(
+            fixture.native.join(".gitignore"),
+            "ignored/\ntrailing\\\n*.tmp\n[z-a]\n",
+        )
+        .unwrap();
+        fs::write(
+            fixture.native.join("src/.gitignore"),
+            "*.log\ntrailing\\\n!keep.tmp\n[z-a]\n",
+        )
+        .unwrap();
+        for path in [
+            "ignored/a.py",
+            "src/a.py",
+            "src/b.tmp",
+            "src/keep.tmp",
+            "src/skip.log",
+        ] {
+            fs::write(fixture.native.join(path), "needle\n").unwrap();
+        }
+        for respect_git_ignore in [true, false] {
+            let expected = if respect_git_ignore {
+                vec!["src/a.py", "src/keep.tmp"]
+            } else {
+                vec![
+                    "ignored/a.py",
+                    "src/a.py",
+                    "src/b.tmp",
+                    "src/keep.tmp",
+                    "src/skip.log",
+                ]
+            };
+            let found = fixture
+                .resources
+                .find(
+                    &fixture.filesystem,
+                    &FileFindParams {
+                        context: context("invalid-gitignore-find"),
+                        root: fixture.path("/"),
+                        pattern: "**/*".to_owned(),
+                        offset: 0,
+                        max_results: 10,
+                        recursive: true,
+                        include_hidden: false,
+                        kinds: vec![FileKind::File],
+                        respect_git_ignore,
+                    },
+                )
+                .expect("invalid ignore lines do not fail find");
+            assert_eq!(
+                found
+                    .entries
+                    .iter()
+                    .map(|entry| entry.relative_path.as_str())
+                    .collect::<Vec<_>>(),
+                expected,
+            );
+            let searched = fixture
+                .resources
+                .search(
+                    &fixture.filesystem,
+                    &FileSearchParams {
+                        context: context("invalid-gitignore-search"),
+                        root: fixture.path("/"),
+                        query: "needle".to_owned(),
+                        mode: SearchMode::Literal,
+                        case_sensitive: true,
+                        offset: 0,
+                        max_results: 10,
+                        include_hidden: false,
+                        max_line_length: 32,
+                        include_pattern: "**/*".to_owned(),
+                        respect_git_ignore,
+                        context_lines: 0,
+                        max_matches_per_file: None,
+                        max_files: None,
+                        max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
+                    },
+                )
+                .expect("invalid ignore lines do not fail search");
+            assert_eq!(
+                searched
+                    .matches
+                    .iter()
+                    .map(|entry| entry.path.clone())
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|path| fixture.path(&format!("/{path}")))
+                    .collect::<Vec<_>>(),
+            );
+            assert!(!found.has_more && !searched.has_more);
+        }
     }
 
     #[test]

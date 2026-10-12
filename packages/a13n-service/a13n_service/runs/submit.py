@@ -1,8 +1,9 @@
 """Idempotent message commands: create a thread, submit to a thread, fork a run.
 
 Each is one short transaction that resolves the request key, appends the entry and tries to accept it from the
-source its validation loaded. The unique request index arbitrates concurrent duplicates: the loser rolls back
-everything it created, including a tentative thread or session, then replays the winner.
+source its validation loaded. The unique request index arbitrates concurrent duplicates. The loser rolls back
+everything it created, including a tentative thread or session, whether it lost the index or was refused by the state
+the winner committed while it waited for a lock, then replays the winner.
 """
 
 from collections.abc import Awaitable, Callable
@@ -11,8 +12,8 @@ from a13n_harness.configuration import RunConfiguration
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra.db import transaction, violated_constraint
-from a13n_service.infra.errors import conflict
+from a13n_service.infra.db import transaction
+from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.service import require_usable
@@ -134,14 +135,15 @@ async def _submit(
             await accept(session, runtime, thread, explicit=source)
             assert source.entry is not None
             return await receipt(session, thread, source.entry), True
-    except IntegrityError as error:
-        if violated_constraint(error) != "uq_inbox_entries_request":
-            raise
-    # A concurrent request with the same key committed first; its entry is the evidence.
-    async with transaction(runtime.storage) as session:
-        _, request, found = await _lookup(session, actor, workspace_id, requested)
-        assert found is not None
-        return await _replay(session, found, request), False
+    except (IntegrityError, ServiceError):
+        # A concurrent request with the same key may have committed first. This one then lost the unique request
+        # index, or waited for a lock the winner held and was refused by the state the winner left, such as a full
+        # inbox. Either way the key is now known, and a known key replays.
+        async with transaction(runtime.storage) as session:
+            _, request, found = await _lookup(session, actor, workspace_id, requested)
+            if found is not None:
+                return await _replay(session, found, request), False
+        raise
 
 
 async def _lookup(

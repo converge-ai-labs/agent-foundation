@@ -154,6 +154,7 @@ def test_api_wizard_backtracking_drops_incompatible_settings_and_endpoints() -> 
         "interleaved",
         "200k",
         "none",  # Custom endpoints offer explicit native choices without recommendations.
+        "skip",  # Shell review is an independent opt-in.
         "Coding",
     ):
         wizard.accept(answer)
@@ -183,7 +184,7 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
     questions, output = [], []
 
     async def ask(question, selection):
-        if question.key == "tools":
+        if question.key in {"tools", "review_model"}:
             return question.default
         questions.append(question)
         assert answers, question
@@ -224,7 +225,7 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
     answers = deque(["api", "anthropic", "https://api.anthropic.com", "new", "fixture-key"])
 
     async def ask(question, selection):
-        if question.key == "tools":
+        if question.key in {"tools", "review_model"}:
             return question.default
         if not answers:
             raise SetupCancelled()
@@ -581,7 +582,9 @@ def test_api_context_defaults_manual_override_and_model_change(hint, expected) -
         with pytest.raises(ValueError, match="positive"):
             wizard.accept(invalid)
     wizard.accept("100k")
-    assert wizard.question.key == "environment"  # No native tools for Chat Completions.
+    assert wizard.question.key == "review_model"  # No native tools for Chat Completions.
+    wizard.accept("skip")
+    assert wizard.question.key == "environment"
     wizard.accept("full-control")
     characteristics = wizard.selection("/tmp")["model"]["model_characteristics"]
     assert characteristics == {
@@ -651,7 +654,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
     answers = deque(["api", provider, "", "off", "new", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
 
     async def ask(question, selection):
-        if question.key in {"tools", "review"}:
+        if question.key in {"tools", "review_model"}:
             return question.default
         assert answers, question
         return answers.popleft()

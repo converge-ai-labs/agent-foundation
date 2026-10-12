@@ -11,11 +11,12 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode
 
-import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from dev.fixtures.mcp import create_app as create_mcp
+
+from .process import add_listener_arguments, serve_fixture
 
 
 def create_app(database: Path) -> FastAPI:
@@ -274,7 +275,7 @@ def create_app(database: Path) -> FastAPI:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fd", type=int, required=True)
+    add_listener_arguments(parser)
     parser.add_argument("--database", type=Path, required=True)
     args = parser.parse_args()
-    uvicorn.run(create_app(args.database), fd=args.fd, log_level="warning", access_log=False)
+    serve_fixture(create_app(args.database), fd=args.fd, shared_socket=args.shared_socket)

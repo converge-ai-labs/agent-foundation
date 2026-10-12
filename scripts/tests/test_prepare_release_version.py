@@ -416,6 +416,7 @@ def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None
     [
         ("a13n-harness", "a13n-harness", "a13n-environment", ">=0.1.0,<0.2.0"),
         ("a13n-environment", "a13n-environment", "a13n-envd-client", ">=0.1.0,<0.2.0"),
+        ("a13n-environment", "a13n-environment", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-service", "a13n-service", "a13n-logging", ">=0.2.0,<0.3.0"),

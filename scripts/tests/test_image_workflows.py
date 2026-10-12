@@ -12,7 +12,19 @@ import yaml
 ROOT = Path(__file__).parents[2]
 
 
-def test_development_images_publish_only_dev_without_smoke_or_sha_tags(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "event,service_changed,sandbox_changed,expected",
+    [
+        ("workflow_dispatch", "false", "false", {"a13n-service", "a13n-sandbox"}),
+        ("push", "true", "false", {"a13n-service"}),
+        ("push", "false", "true", {"a13n-sandbox"}),
+        ("push", "true", "true", {"a13n-service", "a13n-sandbox"}),
+        ("push", "false", "false", set()),
+    ],
+)
+def test_development_images_publish_only_dev_without_smoke_or_sha_tags(
+    tmp_path, monkeypatch, event, service_changed, sandbox_changed, expected
+) -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
     assert workflow[True]["push"]["branches"] == ["main"]
     # Incremental matrices must not cancel or drop another component's publication.
@@ -28,20 +40,74 @@ def test_development_images_publish_only_dev_without_smoke_or_sha_tags(tmp_path,
     assert "Smoke-check" not in str(steps)
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
-    for name in ("A13N_SERVICE_CHANGED", "SANDBOX_CHANGED"):
-        monkeypatch.setenv(name, "false")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event)
+    monkeypatch.setenv("A13N_SERVICE_CHANGED", service_changed)
+    monkeypatch.setenv("SANDBOX_CHANGED", sandbox_changed)
     matrix = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
     images = json.loads(output.read_text().removeprefix("images="))
-    assert {image["name"] for image in images} == {
-        "a13n-service",
-        "a13n-sandbox",
-    }
-    assert {image["name"]: image["platforms"] for image in images} == {
-        "a13n-service": "linux/amd64,linux/arm64",
-        "a13n-sandbox": "linux/amd64,linux/arm64",
-    }
+    assert {image["name"] for image in images} == expected
+    assert all(image["platforms"] == "linux/amd64,linux/arm64" for image in images)
+
+
+def test_development_sandbox_builds_native_binaries_and_copies_same_run_artifacts() -> None:
+    jobs = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())["jobs"]
+    native = jobs["sandbox-binaries"]
+    assert native["needs"] == "changes"
+    assert native["if"] == "contains(fromJSON(needs.changes.outputs.images).*.name, 'a13n-sandbox')"
+    assert native["runs-on"] == "${{ matrix.runner }}"
+    assert native["strategy"]["fail-fast"] is False
+    assert native["strategy"]["matrix"]["include"] == [
+        {"arch": "amd64", "runner": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu"},
+        {"arch": "arm64", "runner": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
+    ]
+    steps = native["steps"]
+    assert not any("docker/" in step.get("uses", "") for step in steps)
+    rust = next(step for step in steps if step["name"] == "Set up Rust")
+    assert rust["uses"] == "dtolnay/rust-toolchain@1.96.0"
+    assert rust["with"]["targets"] == "${{ matrix.target }}"
+    cache = next(step for step in steps if step["name"] == "Cache Cargo")
+    assert cache["uses"] == "Swatinem/rust-cache@v2"
+    assert cache["with"]["shared-key"] == "dev-sandbox-${{ matrix.target }}"
+    compile_step = next(step for step in steps if step["name"] == "Build native sandbox binary")
+    assert compile_step["env"]["TARGET"] == "${{ matrix.target }}"
+    assert compile_step["run"] == 'cargo build --release --locked --package a13n-envd --target "$TARGET"'
+    upload = next(step for step in steps if step["name"] == "Upload sandbox binary")
+    assert upload["with"]["name"] == "sandbox-binary-${{ matrix.arch }}"
+    assert upload["with"]["path"] == "target/${{ matrix.target }}/release/a13n-envd"
+    assert upload["with"]["if-no-files-found"] == "error"
+
+    publish = jobs["publish"]
+    assert publish["needs"] == ["changes", "sandbox-binaries"]
+    # Explicit status handling allows Service through a skipped or failed sandbox dependency.
+    assert publish["if"] == (
+        "${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.images != '[]' }}"
+    )
+    steps = publish["steps"]
+    gate = next(step for step in steps if step["name"] == "Require successful sandbox binaries")
+    assert gate["if"] == "matrix.name == 'a13n-sandbox'"
+    assert gate["env"]["BINARY_BUILD_RESULT"] == "${{ needs.sandbox-binaries.result }}"
+    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
+    assert "${{ matrix.name == 'a13n-sandbox' && 'ENVD_BINARY_SOURCE=prebuilt' || '' }}" in build["with"]["build-args"]
+    downloads = [step for step in steps if step.get("uses", "").startswith("actions/download-artifact")]
+    assert len(downloads) == 2
+    for arch, download in zip(("amd64", "arm64"), downloads, strict=True):
+        assert download["if"] == "matrix.name == 'a13n-sandbox'"
+        # No external run or release lookup: artifacts belong to this workflow run.
+        assert download["with"] == {"name": f"sandbox-binary-{arch}", "path": f"tmp/sandbox-binaries/{arch}"}
+        assert steps.index(gate) < steps.index(download) < steps.index(build)
+    for job in (native, publish):
+        checkout = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout"))
+        assert "ref" not in checkout.get("with", {})
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "skipped", "cancelled"])
+def test_development_sandbox_publication_requires_both_binary_builds(result, monkeypatch) -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())["jobs"]["publish"]["steps"]
+    gate = next(step for step in steps if step["name"] == "Require successful sandbox binaries")
+    monkeypatch.setenv("BINARY_BUILD_RESULT", result)
+    completed = subprocess.run(["bash", "-eu", "-c", gate["run"]], check=False)
+    assert (completed.returncode == 0) is (result == "success")
 
 
 @pytest.mark.parametrize("component", ["a13n-service", "a13n-envd"])
@@ -130,9 +196,10 @@ def test_sandbox_shares_trixie_runtime_with_source_and_prebuilt_binaries() -> No
     assert "FROM envd-${ENVD_BINARY_SOURCE} AS envd" in dockerfile
     assert "COPY --from=envd /a13n-envd /usr/local/bin/a13n-envd" in dockerfile
     assert "tmp" not in (ROOT / ".dockerignore").read_text().splitlines()
-    steps = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())["jobs"]["publish"]["steps"]
-    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
-    assert "ENVD_BINARY_SOURCE=prebuilt" not in build["with"]["build-args"]
+    # Changing source identity must not reinstall the stable runtime toolchain.
+    install = dockerfile.index("RUN apt-get update")
+    for marker in ("ARG BUILD_VERSION", "ARG BUILD_REVISION", "LABEL ", "COPY --from=envd"):
+        assert install < dockerfile.index(marker)
 
 
 @pytest.mark.parametrize(

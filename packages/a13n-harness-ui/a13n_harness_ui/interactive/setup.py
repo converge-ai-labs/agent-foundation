@@ -101,6 +101,12 @@ _QUESTIONS = (
         "yes",
         ("yes", "no"),
     ),
+    Question(
+        "review_model",
+        "Shell review model (optional; same endpoint and API key). Skip to leave shell review off",
+        "skip",
+        allow_custom=True,
+    ),
     Question("instructions", "Additional Agent instructions (optional)", ""),
     Question(
         "environment",
@@ -185,6 +191,14 @@ class SetupWizard:
             return None
         question = _QUESTIONS[self.index]
         default = self.values.get(question.key, question.default)
+        if question.key == "review_model":
+            from a13n_harness_ui.model_authoring import shell_review_models
+
+            suggestions = shell_review_models(model_connection(self.connection_id), self.values.get("model", ""))
+            choices = tuple(dict.fromkeys(("skip", *(item.value for item in suggestions), self.values["model"])))
+            if default not in choices:
+                choices = (*choices, default)
+            return replace(question, default=default, choices=choices)
         if question.key == "session_affinity_header":
             from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS
 
@@ -313,6 +327,12 @@ class SetupWizard:
                 "Custom endpoints and unreviewed model IDs are not preselected: verify their native-tool support before enabling.\n"
                 f"Provider requirements and all native options: {NATIVE_TOOLS_DOCS}"
             )
+        if question.key == "review_model":
+            return (
+                "Lightweight models in the same family are listed first; custom IDs are accepted.\n"
+                "Each review uses an extra model request. Suggestions do not verify endpoint access or review quality.\n"
+                "Skip disables the shortcut; existing root settings stay unchanged."
+            )
         if question.key in {"file_stores", "mcp_url", "mcp_id", "advisor_model"}:
             return "Configure the selected native tool · Esc returns to your choices. No remote resource is created."
         if question.key in {"environment", "name", "provider", "preset"}:
@@ -338,7 +358,11 @@ class SetupWizard:
                 if not self.add_model:
                     hint += (
                         "\nShell review shortcut: extra-high risk requires approval; uses a Model request."
-                        if self.values.get("review", "yes") == "yes"
+                        if (
+                            self.values.get("review_model", "skip") != "skip"
+                            if self.values.get("provider") == "api"
+                            else self.values.get("review", "yes") == "yes"
+                        )
                         else "\nShell review shortcut: off; explicit Agent policies remain active."
                     )
                     hint += " Existing root security.shell_review settings stay unchanged."
@@ -420,6 +444,14 @@ class SetupWizard:
                         "Save a new API key" if value == "new" else value,
                         "Saved separately from Models" if value == "new" else "Reuse without reading the secret",
                     )
+                    for value in question.choices
+                ),
+                cursor=question.choices.index(question.default),
+            )
+        if question.key == "review_model":
+            return Selection(
+                tuple(
+                    Choice(value, "Skip — do not enable shell review" if value == "skip" else value)
                     for value in question.choices
                 ),
                 cursor=question.choices.index(question.default),
@@ -564,7 +596,7 @@ class SetupWizard:
             selected = ",".join(stores)
         if question.key in {"mcp_id", "advisor_model"} and (not selected or any(char.isspace() for char in selected)):
             raise ValueError("Enter a non-empty provider identifier without whitespace.")
-        if question.key == "model":
+        if question.key in {"model", "review_model"}:
             if not selected or len(selected) > 480 or any(c.isspace() for c in selected):
                 raise ValueError("Enter a model ID without whitespace.")
         agent_route = (
@@ -600,6 +632,7 @@ class SetupWizard:
         ):
             self.context_window_hint = None
             self.values.pop("context", None)
+            self.values.pop("review_model", None)
             for key in ("tools", "file_stores", "mcp_url", "mcp_id", "advisor_model"):
                 self.values.pop(key, None)
         if question.key == "model" and self.values.get("model") != selected:
@@ -621,6 +654,10 @@ class SetupWizard:
     def _is_relevant(self, key: str) -> bool:
         """One visibility rule for navigation and progress, including conditional resource steps."""
         provider = self.values.get("provider", self.default_provider)
+        if key == "review_model":
+            return provider == "api" and not self.add_model and self.existing_model_id is None
+        if key == "review" and provider == "api":
+            return False
         if (
             key in {"subagents", "context", "thinking", "review", "instructions", "session_affinity_header"}
             and not self.advanced
@@ -692,7 +729,15 @@ class SetupWizard:
             "environment_profile": "environment-native"
             if self.values.get("environment", self.default_environment) == "full-control"
             else "environment-sandbox",
-            "shell_review": not self.add_model and self.values.get("review", "yes") == "yes",
+            "shell_review": not self.add_model
+            and (
+                self.values.get("review_model", "skip") != "skip"
+                if provider == "api"
+                else self.values.get("review", "yes") == "yes"
+            ),
+            "shell_review_model": self.values.get("review_model")
+            if provider == "api" and self.values.get("review_model", "skip") != "skip"
+            else None,
             "connect_default": True,
             "include_default_subagents": self.values.get("subagents", "all") == "all",
             "instructions": self.values.get("instructions", ""),

@@ -258,36 +258,36 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 
 “忙碌时可用”表示解析器允许在执行期间使用，不允许绕过待处理交互或操作不可用资源。`/steer` 要求根操作当前可接受引导。附件命令修改草稿。Agent 工作期间按 Enter，会把草稿文本和附件一同作为引导发送。见[TUI 使用](everyday-use.md)。
 
-| 命令语法                                | 别名    | 忙碌时可用 | 用途                                                                                                                      |
-| --------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `/help [command]`                       | `/?`    | 是         | 显示命令帮助和键盘快捷键。                                                                                                |
-| `/mode [concise\|detailed]`             | —       | 是         | 切换输出详细程度，不改变执行。                                                                                            |
-| `/theme [auto\|dark\|light]`            | —       | 是         | 选择 TUI 主题。                                                                                                           |
-| `/mouse [on\|off]`                      | —       | 是         | 切换滚轮捕获；off 保留原生选择/复制。                                                                                     |
-| `/attach path`                          | —       | 是         | 为当前草稿附加文件或图像。                                                                                                |
-| `/paste-image`                          | —       | 是         | 显式读取剪贴板图像。                                                                                                      |
-| `/recover`                              | —       | 否         | 恢复未发送提示。                                                                                                          |
-| `/status`                               | —       | 是         | 显示 Model、上下文、Environment 和订阅用量。                                                                              |
-| `/ps`                                   | —       | 是         | 查看观测的后台进程及其最后报告状态。                                                                                      |
-| `/subagents [execution-id\|next]`       | —       | 是         | 查看本对话子级执行和保留输出。                                                                                            |
-| `/usage [details\|subscription\|reset]` | —       | 是         | 显示已记录 Thread 用量；subscription 显示 Codex 套餐限额；reset 确认后兑换一次 Codex 重置额度。                           |
-| `/goal task description`                | —       | 否         | 朝目标工作，带完成审核和有上限的续接。                                                                                    |
-| `/steer message`                        | —       | 是         | 用补充输入引导活动 Run。                                                                                                  |
-| `/import`                               | —       | 否         | 预览并可选启用继承父级的外部 subagent。                                                                                   |
-| `/agent [agent-id]`                     | —       | 否         | 切换 Agent，包括其 Model、指令和工具。                                                                                    |
-| `/model [model-id\|default\|defaults]`  | —       | 否         | 覆盖 Model 直到你退出，并为 Project 记住该选择；default 清除覆盖和记住的选择；defaults 配置全局媒体理解，可 Save/Cancel。 |
-| `/fast [on\|off\|ultrafast\|reset]`     | —       | 否         | 选择 Fast 或 Ultrafast 直到你退出，不保存配置。                                                                           |
-| `/pro [on\|off\|reset]`                 | —       | 否         | 选择 Pro 推理模式；off 选择 Standard，reset 继承 Model。                                                                  |
-| `/thinking [level]`                     | —       | 否         | 查看或改变后续轮次推理强度。                                                                                              |
-| `/environment [mode]`                   | —       | 否         | 查看或选择后续轮次的 Environment 模式（Full Control 或 Sandbox）。                                                        |
-| `/new`                                  | —       | 否         | 开始新对话，保留全部已存历史。                                                                                            |
-| `/resume [thread-id]`                   | —       | 否         | 搜索、预览、命名已保存对话，或按 Thread ID 恢复。                                                                         |
-| `/history`                              | —       | 否         | 浏览保留消息（Ctrl+T）。                                                                                                  |
-| `/notes`                                | —       | 否         | 在显示预算内展示完整已保存笔记。                                                                                          |
-| `/config`                               | —       | 否         | 查找配置文件。                                                                                                            |
-| `/review request-id`                    | —       | 否         | 针对所选续接查看待处理请求。                                                                                              |
-| `/cancel`                               | —       | 是         | 停止活动 Run。                                                                                                            |
-| `/quit`                                 | `/exit` | 是         | 退出 TUI；已保存对话仍可恢复。                                                                                            |
+| 命令语法                                                      | 别名    | 忙碌时可用 | 用途                                                                                                                                        |
+| ------------------------------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/help [command]`                                             | `/?`    | 是         | 显示命令帮助和键盘快捷键。                                                                                                                  |
+| `/mode [concise\|detailed]`                                   | —       | 是         | 切换输出详细程度，不改变执行。                                                                                                              |
+| `/theme [auto\|dark\|light]`                                  | —       | 是         | 选择 TUI 主题。                                                                                                                             |
+| `/mouse [on\|off]`                                            | —       | 是         | 切换滚轮捕获；off 保留原生选择/复制。                                                                                                       |
+| `/attach path`                                                | —       | 是         | 为当前草稿附加文件或图像。                                                                                                                  |
+| `/paste-image`                                                | —       | 是         | 显式读取剪贴板图像。                                                                                                                        |
+| `/recover`                                                    | —       | 否         | 恢复未发送提示。                                                                                                                            |
+| `/status`                                                     | —       | 是         | 显示 Model、上下文、Environment 和订阅用量。                                                                                                |
+| `/ps`                                                         | —       | 是         | 查看观测的后台进程及其最后报告状态。                                                                                                        |
+| `/subagents [execution-id\|next]`                             | —       | 是         | 查看本对话子级执行和保留输出。                                                                                                              |
+| `/usage [all\|root\|subagents\|details\|subscription\|reset]` | —       | 是         | 按 all/root/subagents 查看当前 Thread 的 token、费用和各模型明细；details 补充归属和 Run。订阅限额与需确认的 Codex 重置额度单独查询或操作。 |
+| `/goal task description`                                      | —       | 否         | 朝目标工作，带完成审核和有上限的续接。                                                                                                      |
+| `/steer message`                                              | —       | 是         | 用补充输入引导活动 Run。                                                                                                                    |
+| `/import`                                                     | —       | 否         | 预览并可选启用继承父级的外部 subagent。                                                                                                     |
+| `/agent [agent-id]`                                           | —       | 否         | 切换 Agent，包括其 Model、指令和工具。                                                                                                      |
+| `/model [model-id\|default\|defaults]`                        | —       | 否         | 覆盖 Model 直到你退出，并为 Project 记住该选择；default 清除覆盖和记住的选择；defaults 配置全局媒体理解，可 Save/Cancel。                   |
+| `/fast [on\|off\|ultrafast\|reset]`                           | —       | 否         | 选择 Fast 或 Ultrafast 直到你退出，不保存配置。                                                                                             |
+| `/pro [on\|off\|reset]`                                       | —       | 否         | 选择 Pro 推理模式；off 选择 Standard，reset 继承 Model。                                                                                    |
+| `/thinking [level]`                                           | —       | 否         | 查看或改变后续轮次推理强度。                                                                                                                |
+| `/environment [mode]`                                         | —       | 否         | 查看或选择后续轮次的 Environment 模式（Full Control 或 Sandbox）。                                                                          |
+| `/new`                                                        | —       | 否         | 开始新对话，保留全部已存历史。                                                                                                              |
+| `/resume [thread-id]`                                         | —       | 否         | 搜索、预览、命名已保存对话，或按 Thread ID 恢复。                                                                                           |
+| `/history`                                                    | —       | 否         | 浏览保留消息（Ctrl+T）。                                                                                                                    |
+| `/notes`                                                      | —       | 否         | 在显示预算内展示完整已保存笔记。                                                                                                            |
+| `/config`                                                     | —       | 否         | 查找配置文件。                                                                                                                              |
+| `/review request-id`                                          | —       | 否         | 针对所选续接查看待处理请求。                                                                                                                |
+| `/cancel`                                                     | —       | 是         | 停止活动 Run。                                                                                                                              |
+| `/quit`                                                       | `/exit` | 是         | 退出 TUI；已保存对话仍可恢复。                                                                                                              |
 
 `/thinking` 打开所选 Model 支持的选项；命令补全使用相同列表。`default` 继承 Model 配置。按模型和适配器，显式选择可能包括 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。不支持的选项会被拒绝；未知模型仅提供 default 并解释原因。`/environment` 在支持时选择 `full-control` 或 `sandbox`。原生 `/steer` 保留整个尾随消息，不拆成 shell 词语。
 

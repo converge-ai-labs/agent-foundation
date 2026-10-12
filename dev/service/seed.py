@@ -19,6 +19,7 @@ from dev.service.seed_agents import seed_agents
 from dev.service.seed_assets import examples, store
 from dev.service.seed_connections import seed_connections
 from dev.service.seed_conversations import Talk, scenarios
+from dev.service.seed_findings import seed_findings
 from dev.service.seed_identity import MEMBERS, seed_identity
 from dev.service.seed_lifecycle import revise_after_runs
 from dev.service.seed_local import seed_local, stopped_environment
@@ -71,6 +72,7 @@ def seed(api: Api, checkout: Checkout) -> Seeded:
     api.until("/api/v1/threads?limit=100", lambda page: all(item["current_run_id"] is None for item in page["items"]))
     deliveries = f"/api/v1/subscriptions/{subscription['id']}/deliveries"
     api.until(deliveries, lambda page: any(item["status"] == "delivered" for item in page["items"]))
+    index |= seed_findings(api, local, connections["ready"])
     index |= seed_usage(api, checkout, local)
     return Seeded(workspace["organization_id"], workspace["id"], index)
 

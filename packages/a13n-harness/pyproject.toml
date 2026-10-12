@@ -33,6 +33,11 @@ dependencies = [
     "typesafe-sdk>=0.7.1,<1",
 ]
 
+[project.urls]
+Homepage = "https://a13n.converge.ai/"
+Documentation = "https://a13n.converge.ai/docs/a13n-harness/"
+Repository = "https://github.com/converge-ai-labs/agent-foundation"
+
 [dependency-groups]
 test = [
     "opentelemetry-sdk>=1.39,<2",

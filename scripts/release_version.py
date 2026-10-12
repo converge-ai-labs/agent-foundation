@@ -188,7 +188,7 @@ def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     """Read independently versioned dependencies without constraining local workspace members."""
     expected = {
         HARNESS_MANIFEST: (LOGGING_PACKAGE, ENVIRONMENT_PACKAGE),
-        ENVIRONMENT_MANIFEST: (A13N_ENVD_CLIENT_PACKAGE,),
+        ENVIRONMENT_MANIFEST: (A13N_ENVD_CLIENT_PACKAGE, LOGGING_PACKAGE),
         A13N_SERVICE_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, ENVIRONMENT_PACKAGE),
         HARNESS_UI_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE, ENVIRONMENT_PACKAGE),
     }[manifest]

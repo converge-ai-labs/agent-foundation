@@ -139,7 +139,7 @@ where
                             }),
                         )
                         .await
-                        .map_err(|_| io::ErrorKind::TimedOut)?
+                        .map_err(|_| response_drain_timeout())?
                         .map_err(|_| io::ErrorKind::BrokenPipe)?;
                         continue;
                     }
@@ -168,7 +168,7 @@ where
                         };
                         timeout(drain_timeout, data_tx.send(reset))
                             .await
-                            .map_err(|_| io::ErrorKind::TimedOut)?
+                            .map_err(|_| response_drain_timeout())?
                             .map_err(|_| io::ErrorKind::BrokenPipe)?;
                     }
                 }
@@ -194,10 +194,7 @@ where
         Ok(result) => result.map_err(io::Error::other)?,
         Err(_) => {
             writer_task.abort();
-            Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "response drain timed out",
-            ))
+            Err(response_drain_timeout())
         }
     };
     outcome?;
@@ -465,6 +462,11 @@ fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+/// Stdout stopped accepting responses, whichever queue or flush noticed it first.
+fn response_drain_timeout() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "response drain timed out")
+}
+
 #[cfg(unix)]
 async fn shutdown_signal() -> io::Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
@@ -723,7 +725,16 @@ mod tests {
         serving.await.unwrap().unwrap();
     }
 
-    async fn run_shutdown_under_stdout_backpressure(signal_shutdown: bool, data_storm: bool) {
+    /// How the peer ends the carrier while it leaves stdout unread.
+    #[derive(Clone, Copy)]
+    enum PeerEnd {
+        Signal,
+        Eof,
+        /// Neither: the daemon must give up when a response cannot be queued.
+        Stall,
+    }
+
+    async fn run_shutdown_under_stdout_backpressure(end: PeerEnd, data_storm: bool) {
         let mut config = Config::for_test("env-test");
         config.limits.max_device_concurrent_operations = 2;
         let daemon = Arc::new(Daemon::new(&config).expect("daemon builds"));
@@ -808,36 +819,42 @@ mod tests {
             .expect("describe frame writes");
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
-        if signal_shutdown {
-            shutdown_tx.send(()).expect("signals shutdown");
-        } else {
-            input_client.shutdown().await.unwrap();
+        match end {
+            PeerEnd::Signal => shutdown_tx.send(()).expect("signals shutdown"),
+            PeerEnd::Eof => input_client.shutdown().await.unwrap(),
+            PeerEnd::Stall => {}
         }
 
-        let result = tokio::time::timeout(Duration::from_secs(4), serving)
+        let error = tokio::time::timeout(Duration::from_secs(4), serving)
             .await
             .expect("shutdown remains bounded")
-            .expect("stdio task joins");
-        assert!(
-            result.is_err(),
-            "stalled stdout cannot complete a clean carrier drain"
-        );
+            .expect("stdio task joins")
+            .expect_err("stalled stdout cannot complete a clean carrier drain");
+        // The same failure, however the carrier ends and wherever the stall is noticed.
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(error.to_string(), "response drain timed out");
     }
 
     #[tokio::test]
     async fn shutdown_interrupts_stdout_backpressure() {
-        run_shutdown_under_stdout_backpressure(true, false).await;
+        run_shutdown_under_stdout_backpressure(PeerEnd::Signal, false).await;
     }
 
     #[tokio::test]
     async fn eof_drain_deadline_covers_response_flush() {
-        run_shutdown_under_stdout_backpressure(false, false).await;
+        run_shutdown_under_stdout_backpressure(PeerEnd::Eof, false).await;
     }
 
     #[tokio::test]
-    async fn reset_queue_saturation_observes_signal_and_eof() {
-        run_shutdown_under_stdout_backpressure(true, true).await;
-        run_shutdown_under_stdout_backpressure(false, true).await;
+    async fn stalled_stdout_ends_the_carrier_without_signal_or_eof() {
+        run_shutdown_under_stdout_backpressure(PeerEnd::Stall, false).await;
+    }
+
+    #[tokio::test]
+    async fn reset_queue_saturation_observes_every_peer_end() {
+        for end in [PeerEnd::Signal, PeerEnd::Eof, PeerEnd::Stall] {
+            run_shutdown_under_stdout_backpressure(end, true).await;
+        }
     }
 
     #[tokio::test]

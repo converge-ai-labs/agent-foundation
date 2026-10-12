@@ -49,6 +49,18 @@ The stack binds to loopback and mounts the host Docker socket. For a shared depl
 
 Continue with the [Service quickstart](docs/a13n-service/get-started.md) for model setup, API usage, stop/resume, and troubleshooting.
 
+## Turn execution evidence into improvements
+
+**Findings** helps you inspect execution evidence, review diagnoses and record corrections. Hand the cited Agent revision and evidence to **Composer** for a proposed change, then review and approve it. Nothing is automatically repaired or published. See [Find and improve execution issues](docs/a13n-service/agents-and-runs.md#find-and-improve-execution-issues).
+
+![Findings list with long diagnostic titles, Agent names, severity and reviewer assessments](.github/assets/console-findings-list.webp)
+
+*Scan diagnoses and review status. Shown with fictional local seed data.*
+
+![Finding detail with diagnosis, linked trace and Run evidence, saved review rationale and a Review with Composer action](.github/assets/console-findings-detail.webp)
+
+*Inspect the evidence, record your judgment, then ask Composer to propose a change to the cited version.*
+
 ## Choose your agent stack
 
 Build your agent stack in Console: choose model providers, web data services, execution environments, and remote MCP servers.

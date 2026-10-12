@@ -21,4 +21,4 @@ make site-build
 - `src/scene/` holds the Service scene in three acts: `build.ts`, `call.ts`, and `run.ts`. `stage.ts` maps the scroll position to the acts and their transitions.
 - `src/main.ts` shows the hero once the display face loads, then loads `src/page.ts`, which mounts everything below the hero. One frame loop drives both.
 
-`index.html` preloads the two faces above the fold, and `public/_headers` lets browsers cache hashed assets for a year. Reduced-motion preferences stop the loops and make transitions instant. The `Site` workflow checks, tests, builds, and deploys the site to the `a13n-site` Cloudflare Pages project.
+`index.html` preloads the two faces above the fold, and `public/_headers` lets browsers cache hashed assets for a year. `public/robots.txt` points crawlers to the documentation sitemap. Reduced-motion preferences stop the loops and make transitions instant. The `Site` workflow checks, tests, builds, and deploys the site to the `a13n-site` Cloudflare Pages project.

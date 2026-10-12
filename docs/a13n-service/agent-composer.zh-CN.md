@@ -20,7 +20,7 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-准备操作需要工作空间中的 `write` 权限。首次调用会创建工作空间中唯一的内置 agent（`source: "builtin"`），也可通过 `GET /api/v1/agents?source=builtin` 查到。后续调用刷新名称和描述，只有配置变化时才添加修订版本。创建后，任何有 `run` 权限的人都可以用它启动运行。
+准备操作需要工作空间中的 `write` 权限。首次调用会创建工作空间中的 Composer 预设（`source: "builtin"`、`preset_kind: "composer"`），也可通过 `GET /api/v1/agents?source=builtin&preset_kind=composer` 查到。后续调用刷新名称和描述，只有配置变化时才添加修订版本。创建后，任何有 `run` 权限的人都可以用它启动运行。
 
 ## 选择模型
 
@@ -52,7 +52,7 @@ Agent Composer 不能重命名 agent、修改标签、归档 agent，也不能�
 
 ## 内置 agent 规则
 
-Agent Composer 不能被编辑、添加修订版本、归档或设置头像（返回 `409 conflict`，原因为 `builtin`）；只有准备操作能修改它。可以复制它，创建可修改的自定义 agent。
+Agent Composer 不能被编辑、添加修订版本、归档或设置头像（返回 `409 conflict`，原因为 `builtin`）；只有准备操作能修改它。模型按上述规则自动选择。可以复制它，创建可修改的自定义 agent。
 
 ## 在自己的 agent 中使用工具集
 

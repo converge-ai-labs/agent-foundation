@@ -35,6 +35,9 @@
   backface-visibility: hidden;
   will-change: transform;
 }
+.g::before {
+  content: attr(data-ch);
+}
 .name .mk {
   position: absolute;
   left: 0;

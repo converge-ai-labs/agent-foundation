@@ -51,6 +51,7 @@ version = "0.0.0"
 source = { editable = "packages/a13n-environment" }
 dependencies = [
     { name = "a13n-envd-client" },
+    { name = "a13n-logging" },
     { name = "anyio" },
     { name = "httpx2" },
     { name = "packaging" },
@@ -79,6 +80,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
+    { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
     { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },

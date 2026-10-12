@@ -33,9 +33,11 @@ def _write_missing(target: Path, content: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if target.parent.is_symlink():
         raise OSError(f"Development configuration destination must not be a symlink: {target.parent}")
-    with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".initialize-") as temporary:
+    with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".initialize-", delete_on_close=False) as temporary:
         temporary.write(content)
-        temporary.flush()
+        # Close before linking: Windows directory entries can otherwise retain
+        # the empty file's size even after the linked file has been flushed.
+        temporary.close()
         try:
             os.link(temporary.name, target)
         except FileExistsError:

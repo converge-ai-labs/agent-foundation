@@ -125,7 +125,7 @@ security:
 2. 将上面的映射加入根 YAML，运行 `a13n-harness-ui config validate`。
 3. 开始新 Run。快捷配置审查 Agent 及其子级的 `environment.shell_exec`，不为其他工具启用审查。
 
-Codex 和 Grok 设置会创建独立审查 Model。ChatGPT、GitHub Copilot 和 API 密钥设置复用所连接的 Model。每次审查都发出模型请求，按该连接计算用量和费用。可选的 Codex Guardian 关联见[根配置参考](configuration.md#shell-review-shortcut)。
+Codex 和 Grok 设置会创建独立审查 Model。ChatGPT 和 GitHub Copilot 设置复用所连接的 Model。API 密钥设置会询问可选的审查模型，并创建复用相同端点和认证引用的独立 Model。跳过则不启用审查，不会隐式选择主 Model。每次审查都发出模型请求，按该连接计算用量和费用。可选的 Codex Guardian 关联见[根配置参考](configuration.md#shell-review-shortcut)。
 
 | 设置             | 行为                                                                |
 | ---------------- | ------------------------------------------------------------------- |

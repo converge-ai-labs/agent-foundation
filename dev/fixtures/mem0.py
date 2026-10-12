@@ -13,9 +13,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-import uvicorn
 from fastapi import APIRouter, FastAPI
 from fastapi.responses import JSONResponse
+
+from .process import add_listener_arguments, serve_fixture
 
 router = APIRouter()
 # Record ID to {id, memory, user_id, created_at, updated_at}; mem0 IDs are global across namespaces.
@@ -142,6 +143,6 @@ async def health():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fd", type=int, required=True)
+    add_listener_arguments(parser)
     args = parser.parse_args()
-    uvicorn.run(app, fd=args.fd, log_level="warning", access_log=False)
+    serve_fixture(app, fd=args.fd, shared_socket=args.shared_socket)

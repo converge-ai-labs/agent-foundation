@@ -162,6 +162,8 @@ The observer maintains only the state needed to translate multipart events consi
 
 Tool names and mapping-valued argument deltas can be incomplete during Pydantic streaming. Their start and delta observations therefore remain visible through `CUSTOM`, while the completed `PartEndEvent` produces one coherent standard tool-call lifecycle from the final public `ToolCallPart`. The observer never mixes AG-UI chunk convenience events with explicit start/end events or concatenates independently serialized mapping deltas.
 
+Provider-executed `NativeToolCallPart` starts establish tool-call identity for their shared `ToolCallPartDelta` observations, replacing any prior part at that index just like an ordinary tool-call start. Their start, delta, end, and native return observations remain `CUSTOM`; they do not manufacture a standard function-tool lifecycle. Their end releases the tracked part, and observer continuation preserves the identity of an in-progress native call.
+
 A text or reasoning part delta or end without a preceding start is normalized into a valid standard lifecycle by emitting the missing start from the information present in that same public event. A conflicting part kind or identity is a conversion error rather than a reason to rewrite prior events.
 
 ## Complete Custom Fallback

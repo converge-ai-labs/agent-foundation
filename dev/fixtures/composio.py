@@ -8,9 +8,10 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 
-import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+from .process import add_listener_arguments, serve_fixture
 
 VERSION = "20260923_00"
 
@@ -298,10 +299,10 @@ def create_app(database: Path) -> FastAPI:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fd", type=int, required=True)
+    add_listener_arguments(parser)
     parser.add_argument("--database", type=Path, required=True)
     args = parser.parse_args()
-    uvicorn.run(create_app(args.database), fd=args.fd, log_level="warning", access_log=False)
+    serve_fixture(create_app(args.database), fd=args.fd, shared_socket=args.shared_socket)
 
 
 if __name__ == "__main__":

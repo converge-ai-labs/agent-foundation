@@ -5,7 +5,7 @@ description: 为 agent 配置内置工具集、MCP 和应用连接、客户端�
 
 Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agent-configuration)中选择：
 
-- **内置工具集：** 由 Service 自身执行，包括文件、终端、web、记忆、资产发布和 agent 配置。
+- **内置工具集：** 由 Service 自身执行，包括文件、终端、web、记忆、资产发布、agent 配置、trace 查询和发现项。
 - **连接：** 远程 MCP 服务器，以及 Composio 等 connector provider 的应用账号。
 - **客户端工具：** 由你的应用执行，并通过[恢复](agents-and-runs.md#waits-approvals-and-questions)提交结果。
 - **Skill：** 添加指令和文件；参阅 [Skill](skills.md)。
@@ -24,6 +24,12 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 | `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete` | 启用                                           |
 | `assets`        | `publish_asset`                                                                                                                               | 禁用                                           |
 | `configuration` | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                           | 禁用；参阅 [Agent Composer](agent-composer.md) |
+| `traces`        | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | 禁用                                           |
+| `findings`      | `read_finding`, `submit_finding`                                                                                                              | 禁用                                           |
+
+发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。不支持的值返回校验错误。发现类型与分析规则预设相互独立。
+
+配置、trace 查询和发现项提交工具位于 **高级 / 平台功能**下。工具集开关会保留各平台工具的独立选择。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
 
 文件和终端工具操作运行挂载的[环境](environments.md)，只有挂载环境时才提供给模型。记忆工具操作挂载的[记忆](memory.md)：文件工具用于文件型记忆，记录工具用于记录型记忆；`read` 挂载只提供查看、列出和搜索。`publish_asset` 将环境文件转换为工作空间[资产](files-and-webhooks.md#assets)。
 

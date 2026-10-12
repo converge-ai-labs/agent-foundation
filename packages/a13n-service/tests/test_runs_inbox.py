@@ -12,6 +12,7 @@ from a13n_service.runs import inbox
 from a13n_service.runs.accept import ThreadAdvancer, advance
 from a13n_service.runs.tables import RunRow, ThreadRow
 from sqlalchemy import event
+from sqlalchemy import text as sql
 
 pytestmark = pytest.mark.anyio
 
@@ -269,6 +270,42 @@ async def test_the_inbox_holds_a_bounded_count_of_outstanding_input(serve, setti
         )
         assert withdrawn.status_code == 200, withdrawn.text
         assert (await runs_kit.submit(service, thread_id, runs_kit.message(agent, "fits again"))).status_code == 201
+
+
+async def _sessions_waiting_on_locks(service, count: int) -> None:  # type: ignore[no-untyped-def]
+    async with asyncio.timeout(5):
+        while True:
+            async with transaction(service.runtime.storage) as session:
+                waiting = await session.scalar(
+                    sql(
+                        "SELECT count(*) FROM pg_stat_activity"
+                        " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                    )
+                )
+            if waiting >= count:
+                return
+            await asyncio.sleep(0.01)
+
+
+async def test_a_duplicate_that_waited_for_its_thread_replays_the_winner_that_filled_the_inbox(
+    serve, settings, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    small = settings.model_copy(update={"control": settings.control.model_copy(update={"inbox_count": 2})})
+    async with serve(settings=small) as service:
+        agent = await runs_kit.create_agent(service, scripted_model)
+        thread_id = (await runs_kit.start_thread(service, agent, "assigned"))["thread"]["id"]
+        url, key = f"{service.api}/threads/{thread_id}/inbox", runs_kit.fresh_key()
+        body = runs_kit.message(agent, "once", delivery="next_run")
+        async with transaction(service.runtime.storage) as session:
+            await lock(session, ThreadRow, thread_id)
+            # Both copies find no entry for the key, then wait for the thread.
+            copies = [asyncio.create_task(service.client.post(url, json=body, headers=key)) for _ in range(2)]
+            await _sessions_waiting_on_locks(service, 2)
+        responses = await asyncio.gather(*copies)
+        # The winner fills the inbox; the copy that waited replays it instead of reporting the inbox full.
+        assert sorted(response.status_code for response in responses) == [200, 201], [r.text for r in responses]
+        assert len({response.json()["entry"]["id"] for response in responses}) == 1
+        assert len(await runs_kit.inbox(service, thread_id)) == 2
 
 
 async def test_pending_entries_are_edited_reordered_and_withdrawn(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
