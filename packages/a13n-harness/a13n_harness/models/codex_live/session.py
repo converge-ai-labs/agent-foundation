@@ -8,11 +8,10 @@ import re
 import ssl
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
 from anyio import move_on_after
-from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource, OpenAICodexProvider
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import InvalidStatus, WebSocketException
 
@@ -22,6 +21,9 @@ from a13n_harness.models.transport import create_model_http_client
 
 from .codec import MAX_EVENT_BYTES, EventDecoder, context_messages, session_payload
 from .types import CodexLiveError, CodexLiveEvent, ConversationItem
+
+if TYPE_CHECKING:
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
 
 CALLS_URL = "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas"
 SIDEBAND_URL = "wss://api.openai.com/v1/live/"
@@ -130,6 +132,8 @@ class CodexLiveModel:
         ``on_answer`` must apply the SDP to the media peer and await its connection.
         The sideband is not routable until media activates the call.
         """
+        from pydantic_ai.providers.openai_codex import OpenAICodexProvider
+
         if not offer_sdp.startswith("v=0") or len(offer_sdp.encode("utf-8")) > MAX_SDP_BYTES:
             raise CodexLiveError("Invalid WebRTC offer")
         session: CodexLiveSession | None = None

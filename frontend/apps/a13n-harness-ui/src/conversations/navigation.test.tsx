@@ -34,7 +34,10 @@ function thread(id: string, project: string | null = "project-one") {
   return {
     thread_id: id,
     title: id,
-    configuration: { project_id: project },
+    configuration: {
+      project_id: project,
+      agent_source: { kind: "configured", id: "assistant" },
+    },
     root_activity: { state: "inactive" },
     archived: false,
     starred: false,
@@ -1056,8 +1059,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   expect(activity).toHaveLength(1);
   expect(activity[0].searchParams.get("cursor")).toBeNull();
   const otherProject = {
-    ...thread("Other project result"),
-    configuration: { project_id: "project-two" },
+    ...thread("Other project result", "project-two"),
     completion,
   } as Schema<"ThreadSummary">;
   await act(async () => {
