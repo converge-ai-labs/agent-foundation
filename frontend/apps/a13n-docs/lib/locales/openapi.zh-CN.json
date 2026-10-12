@@ -92,7 +92,7 @@
   "The trace backend queries read; `type` is null when trace query is not configured.": "Trace 查询读取的后端；未配置 trace 查询时 `type` 为 null。",
   "The multipart form: one file part named `file`.": "Multipart 表单：一个名为 `file` 的文件部分。",
   "A package archive staged through `/uploads`.": "通过 `/uploads` 暂存的软件包归档。",
-  "Limits on model usage.\n\nThe request count is tracked by pydantic_ai, and the request limit is checked before each request to the model.\nToken counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.": "模型用量限制。\n\npydantic_ai 跟踪请求数，每次模型请求前检查请求上限。Token 数由模型响应提供，每次响应后检查 token 上限。\n\n各限制均可设为 `None`，关闭对应限制。",
+  "Limits on model usage.\n\nThe request count is tracked by Pydantic AI, and the request limit is checked at the start of each step of the\nagent loop. Token counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.": "模型用量限制。\n\nPydantic AI 跟踪请求数，在 agent 循环的每一步开始时检查请求上限。Token 数由模型响应提供，每次响应后检查 token 上限。\n\n各限制均可设为 `None`，关闭对应限制。",
   "One webhook outbox row; its ID is the delivery ID receivers deduplicate by.": "一条 webhook outbox 记录；ID 是接收方用于去重的投递 ID。",
   "A workspace API key (`a13n_...`)": "工作空间 API 密钥（`a13n_...`）",
   "The login session's CSRF token, sent with it on every unsafe method": "登录会话的 CSRF token，每个不安全方法都需随会话发送",
