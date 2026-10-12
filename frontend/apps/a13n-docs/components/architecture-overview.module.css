@@ -1,0 +1,110 @@
+.overview {
+  margin: 0 0 3rem;
+}
+
+.scroll {
+  overflow-x: auto;
+  border-radius: 12px;
+}
+
+.scroll:focus-visible {
+  outline: 2px solid #5145cd;
+  outline-offset: 4px;
+}
+
+.canvas {
+  position: relative;
+  isolation: isolate;
+}
+
+.artwork {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.region {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hotspot {
+  position: absolute;
+  pointer-events: auto;
+  border-radius: 8px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition:
+    background-color 150ms,
+    outline-color 150ms;
+}
+
+.hotspot:hover,
+.hotspot:focus-visible {
+  background-color: rgb(81 69 205 / 6%);
+  outline-color: rgb(81 69 205 / 55%);
+}
+
+.hotspot:focus-visible {
+  outline-color: #5145cd;
+}
+
+.connection {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #5145cd;
+  stroke-width: 3;
+  stroke-dasharray: 8 10;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.region:hover .connection,
+.region:has(.hotspot:focus-visible) .connection {
+  opacity: 0.75;
+}
+
+.region:hover .connection path,
+.region:has(.hotspot:focus-visible) .connection path {
+  animation: flow 900ms linear infinite;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
+.hint {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .canvas {
+    min-width: 800px;
+  }
+
+  .hint {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--color-fd-muted-foreground);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotspot,
+  .connection {
+    transition: none;
+  }
+
+  .region:hover .connection path,
+  .region:has(.hotspot:focus-visible) .connection path {
+    animation: none;
+  }
+}

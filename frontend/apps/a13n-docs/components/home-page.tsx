@@ -16,6 +16,9 @@ export function HomePage({ locale }: { locale: Locale }) {
       components={getMDXComponents(
         {
           ...home,
+          ArchitectureOverview: (
+            props: ComponentProps<typeof home.ArchitectureOverview>,
+          ) => <home.ArchitectureOverview {...props} locale={locale} />,
           Intro: (props: ComponentProps<typeof home.Intro>) => (
             <home.Intro {...props} locale={locale} />
           ),
