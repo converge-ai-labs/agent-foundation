@@ -1,10 +1,13 @@
 """Protocol fidelity and operation confinement of the single generated HTTP adapter."""
 
 import json
+from copy import deepcopy
 from typing import Literal
+from unittest.mock import patch
 
 import pytest
 from a13n_service.api_tools import api_tools, tool_name
+from a13n_service.infra.http import ErrorEnvelope
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -125,6 +128,35 @@ async def test_path_arguments_cannot_change_operation_or_parameter_boundaries() 
         assert result.structured_content["body"] == {"memory_id": "m", "path": "a/b.md"}
         encoded = await mapped["item"].run({"item_id": "x%2Fcontent"})
         assert encoded.structured_content["body"] == {"id": "x%2Fcontent"}
+
+
+def test_error_schema_is_generated_once_per_assembly_and_isolated_per_tool() -> None:
+    app = FastAPI()
+
+    @app.get("/first", operation_id="first", openapi_extra=ADMIT)
+    @app.get("/second", operation_id="second", openapi_extra=ADMIT)
+    async def item() -> dict:
+        return {}
+
+    app.openapi()
+    expected = ErrorEnvelope.model_json_schema()
+    definitions = expected.pop("$defs")
+    with patch.object(ErrorEnvelope, "model_json_schema", wraps=ErrorEnvelope.model_json_schema) as generate:
+        mapped = tools(app)
+        assert generate.call_count == 1
+        first = mapped["first"].output_schema
+        second = mapped["second"].output_schema
+        assert first is not None and second is not None
+        assert first["properties"]["body"]["anyOf"][0] == expected
+        assert all(first["$defs"][name] == definition for name, definition in definitions.items())
+        original_first = deepcopy(first)
+        original = deepcopy(second)
+        first["properties"]["body"]["anyOf"][0]["properties"].clear()
+        for name in definitions:
+            first["$defs"][name].clear()
+        assert second == original
+        assert tools(app)["first"].output_schema == original_first
+        assert generate.call_count == 2
 
 
 def test_assembly_rejects_invalid_admission_and_names_are_order_independent() -> None:

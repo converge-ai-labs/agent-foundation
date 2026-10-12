@@ -54,6 +54,7 @@ def api_tools(app: ASGIApp, schema: dict[str, Any], base_url: str, routes: Seque
     if {(route.path, route.method) for route in operations} != admitted:
         raise ValueError("An admitted MCP operation could not be parsed")
     director = RequestDirector(SchemaPath.from_dict(selected))
+    error_schema = ErrorEnvelope.model_json_schema()
     tools: list[Tool] = []
     names = {"search_documents"}
     for route in operations:
@@ -68,7 +69,7 @@ def api_tools(app: ASGIApp, schema: dict[str, Any], base_url: str, routes: Seque
         ]
         if len(targets) != 1:
             raise ValueError(f"MCP operation must identify one HTTP route: {route.operation_id}")
-        tools.append(ApiTool(app, director, route, base_url, name, routes, targets[0]))
+        tools.append(ApiTool(app, director, route, base_url, name, routes, targets[0], error_schema))
     return tools
 
 
@@ -99,9 +100,9 @@ def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str,
     return parameters, mappings
 
 
-def _output_schema(route: HTTPRoute) -> dict[str, Any]:
+def _output_schema(route: HTTPRoute, error_schema: dict[str, Any]) -> dict[str, Any]:
     """Describe the HTTP envelope, retaining response and Service error schemas."""
-    error_schema = ErrorEnvelope.model_json_schema()
+    error_schema = deepcopy(error_schema)
     definitions = {**route.response_schemas, **error_schema.pop("$defs", {})}
     bodies = [error_schema]
     for response in route.responses.values():
@@ -133,6 +134,7 @@ class ApiTool(Tool):
         name: str,
         routes: Sequence[APIRoute],
         target: APIRoute,
+        error_schema: dict[str, Any],
     ):
         parameters, mappings = _input_schema(route)
         super().__init__(
@@ -141,7 +143,7 @@ class ApiTool(Tool):
             "Returns {status, headers, body}. Use headers.etag as If-Match for subsequent writes. "
             "Writes are not retried; check resource state after an unknown outcome.",
             parameters=parameters,
-            output_schema=_output_schema(route),
+            output_schema=_output_schema(route, error_schema),
             annotations=ToolAnnotations(read_only_hint=route.method == "GET", open_world_hint=True),
         )
         self._app = app
