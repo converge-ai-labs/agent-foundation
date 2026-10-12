@@ -54,7 +54,7 @@ a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 
 This checkout targets Harness 0.10; the unversioned local dependency resolves source version `0.0.0`, not an arbitrary released version. Before publishing this integration package, remove those development sources and declare `a13n-harness>=0.10.0,<0.11.0`.
 
-The Environment plugin declares the fixed `ProviderManifest(api_version=1)`. This alpha API reset does not preserve pre-0.10 compatibility, even where the old manifest also declared `1`. Plugins using the old combined management/execution API must exclude Harness 0.10 until migrated to execution connectors and Host-owned preparation. Ordinary Harness middleware loading is unchanged from 0.9.3 and its configuration envelope remains `schema_version="1"`; that version is independent of the Provider manifest API.
+The Environment plugin declares `ProviderManifest(api_version=1)` and uses execution connectors with Host-owned preparation. Harness middleware configuration uses `schema_version="1"`.
 
 ## Environment Provider
 
