@@ -1,4 +1,4 @@
-"""The hosted environment types: accounts restricted to vendor endpoints, sealed credentials and recipes checked by type."""
+"""The hosted environment types: account endpoints, sealed credentials and recipes checked by type."""
 
 import json
 
@@ -26,7 +26,7 @@ ACCOUNTS: dict[str, tuple[dict, dict, dict]] = {
 
 
 async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # type: ignore[no-untyped-def]
-    """Hosted accounts reach their vendors; E2B may select a supported cloud domain only."""
+    """Hosted accounts expose vendor account fields; E2B selects a compatible service domain."""
     types = (await service.client.get("/api/v1/provider-types/environment")).json()["items"]
     fields = {item["type"]: set(item["configuration_schema"].get("properties", {})) for item in types}
     assert {name: fields[name] for name in ACCOUNTS} == {
@@ -38,7 +38,7 @@ async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # typ
         "runloop": {"organization"},
     }
     collection = f"{service.api}/environment-providers"
-    for config in ({"domain": "sandboxes.example"}, {"api_url": "https://10.0.0.1"}):
+    for config in ({"domain": "https://sandboxes.example"}, {"api_url": "https://10.0.0.1"}):
         body = {"type": "e2b", "name": "E2B", "config": config, "credential": {"api_key": "k"}}
         refused = await service.client.post(collection, json=body)
         assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "config", refused.text
@@ -68,37 +68,37 @@ async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(ser
         assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe", type_
 
 
-async def test_e2b_aliyun_account_and_region_changes(service) -> None:  # type: ignore[no-untyped-def]
+async def test_e2b_compatible_service_account_and_domain_changes(service) -> None:  # type: ignore[no-untyped-def]
     collection = f"{service.api}/environment-providers"
     created = await service.client.post(
         collection,
         json={
             "type": "e2b",
-            "name": "FC Hangzhou",
-            "config": {"domain": "cn-hangzhou.e2b.fc.aliyuncs.com"},
+            "name": "Compatible E2B",
+            "config": {"domain": "sandboxes.example.com"},
             "credential": {"api_key": SECRET},
         },
     )
     assert created.status_code == 201, created.text
     provider = created.json()
-    assert provider["config"] == {"domain": "cn-hangzhou.e2b.fc.aliyuncs.com"}
+    assert provider["config"] == {"domain": "sandboxes.example.com"}
     assert SECRET not in created.text
     template = await service.client.post(
         f"{service.api}/environment-templates",
         json={
-            "name": "FC Interpreter",
+            "name": "Compatible Interpreter",
             "provider_id": provider["id"],
-            "config": {"recipe": {"template": "code-interpreter-v1", "timeout_seconds": 3600}},
+            "config": {"recipe": {"template": "base", "timeout_seconds": 3600}},
         },
     )
     assert template.status_code == 201, template.text
     path = f"{collection}/{provider['id']}"
     current = await service.client.get(path)
-    body = {"config": {"domain": "cn-shanghai.e2b.fc.aliyuncs.com"}}
+    body = {"config": {"domain": "other-sandboxes.example.com"}}
     refused = await service.client.patch(path, json=body, headers={"If-Match": current.headers["etag"]})
     assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "credential"
     moved = await service.client.patch(
-        path, json={**body, "credential": {"api_key": "new-region-key"}}, headers={"If-Match": current.headers["etag"]}
+        path, json={**body, "credential": {"api_key": "new-service-key"}}, headers={"If-Match": current.headers["etag"]}
     )
     assert moved.status_code == 200, moved.text
     assert moved.json()["config"] == body["config"]

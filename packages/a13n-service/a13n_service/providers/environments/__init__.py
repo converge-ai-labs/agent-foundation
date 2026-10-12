@@ -1,7 +1,8 @@
 """The environment provider types the Service offers, each qualified individually.
 
 `docker` is the managed backend under the operator's engine and host directory choices, and `e2b` reaches the
-E2B cloud or an Alibaba Cloud FC region. `daytona`, `modal`, `vercel`, `sprites` and `runloop` are the Harness's own: their accounts name
+E2B cloud or another E2B-compatible service. `daytona`, `modal`, `vercel`, `sprites` and `runloop` are the
+Harness's own: their accounts name
 an organization, team or app at a fixed vendor API, never an endpoint. `local` is a development-only managed
 directory on the worker host. External envd targets are no provider type (`providers.envd`).
 """

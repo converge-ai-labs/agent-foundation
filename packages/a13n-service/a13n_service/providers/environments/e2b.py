@@ -1,7 +1,7 @@
-"""E2B sandboxes in the E2B cloud or an Alibaba Cloud FC region.
+"""E2B sandboxes in the E2B cloud or another E2B-compatible service.
 
-The SDK dials both the control API and sandbox hosts. Restrict its domain to the supported vendors,
-then derive the control API from that same domain; accounts cannot redirect credentials to another host.
+The SDK owns control API and sandbox traffic. Derive the HTTPS control API from the account domain;
+operator network controls own routing restrictions for this opaque transport.
 A renewal extends a sandbox by at most its recipe's timeout, which must cover the renewal horizon.
 """
 
@@ -23,8 +23,9 @@ class Account(EnvironmentProviderConfiguration):
     domain: str = Field(
         default="e2b.dev",
         title="Sandbox domain",
-        description="e2b.dev or an Alibaba Cloud FC region, for example cn-hangzhou.e2b.fc.aliyuncs.com.",
-        pattern=r"^(e2b\.dev|[a-z][a-z0-9-]{0,61}[a-z0-9]\.e2b\.fc\.aliyuncs\.com)$",
+        description="Sandbox domain of the E2B-compatible service, without a scheme, port or path.",
+        max_length=253,
+        pattern=r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$",
     )
 
     def connection(self) -> E2BConnectionConfiguration:

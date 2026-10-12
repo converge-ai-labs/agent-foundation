@@ -30,33 +30,33 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 *图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*
 
-| 类型      | 环境                              | 账号                                                                                                                        | 停止行为                   |
-| --------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                     | 停止容器                   |
-| `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或阿里云 FC 地域；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
-| `daytona` | Daytona 沙箱                      | `organization_id`、可选 `target` 区域；凭据为 `{"api_key": ...}`                                                            | 停止，保留文件             |
-| `modal`   | Modal 沙箱                        | `workspace`、`app_name`（托管沙箱的已部署 App）、可选 `environment_name`；凭据为 `{"token_id", "token_secret"}`             | 保存文件快照后终止         |
-| `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                   | 停止，保留文件             |
-| `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                   | 不支持；Sprites 空闲时休眠 |
-| `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                   | 挂起，保留文件             |
-| `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                | 无需停止                   |
+| 类型      | 环境                              | 账号                                                                                                                                 | 停止行为                   |
+| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
+| `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
+| `daytona` | Daytona 沙箱                      | `organization_id`、可选 `target` 区域；凭据为 `{"api_key": ...}`                                                                     | 停止，保留文件             |
+| `modal`   | Modal 沙箱                        | `workspace`、`app_name`（托管沙箱的已部署 App）、可选 `environment_name`；凭据为 `{"token_id", "token_secret"}`                      | 保存文件快照后终止         |
+| `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
+| `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
+| `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
+| `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                         | 无需停止                   |
 
 Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
 
-云托管类型访问厂商持有的 API。E2B 可选择官方云或阿里云 FC 地域；其他云托管账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
+云托管类型访问厂商持有的 API。E2B 可选择官方云或其他兼容 E2B 协议的服务；其他云托管账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
 
-接入阿里云 FC 时，使用所在地域的沙箱域名和 API Key 创建 `e2b` provider：
+接入其他兼容 E2B 协议的服务时，使用它提供的沙箱域名和 API Key 创建 `e2b` provider：
 
 ```json
 {
   "type": "e2b",
-  "name": "FC Hangzhou",
-  "config": {"domain": "cn-hangzhou.e2b.fc.aliyuncs.com"},
-  "credential": {"api_key": "YOUR_FC_SANDBOX_API_KEY"}
+  "name": "Compatible E2B",
+  "config": {"domain": "sandboxes.example.com"},
+  "credential": {"api_key": "YOUR_SANDBOX_API_KEY"}
 }
 ```
 
-Service 从同一个域名推导 `https://api.<domain>` 和沙箱主机地址。仅接受 `e2b.dev` 或 `e2b.fc.aliyuncs.com` 下单层地域域名；拒绝任意域名及 `api_url` 覆盖。切换云厂商或地域时，需要更换凭据并创建新的环境实例。使用该地域的模板，例如 `code-interpreter-v1`。保留仓库锁定的 E2B SDK `2.46.4`；阿里云目前不支持 SDK `2.51.0` 的创建和连接操作。第二代运行时支持暂停与恢复；第一代需要账号开通权限。供 agent 使用前，请用所选模板验证创建、命令和文件操作、暂停与恢复以及销毁。参阅[阿里云接入参数](https://help.aliyun.com/zh/functioncompute/e2b-sdk-integration-parameter-description)和[兼容说明](https://help.aliyun.com/zh/functioncompute/e2b-compatibility-explanation)。
+Service 从配置的沙箱域名推导 HTTPS 控制 API `https://api.<domain>`；域名须为小写 DNS 名称，不含协议、端口或路径，不支持单独覆盖 `api_url`。原生 SDK 负责控制 API 和沙箱请求，包括所选服务返回的端点；Service 不会逐个检查 SDK 请求，网络路由限制由运维基础设施负责。更换域名时，需要替换或移除凭据并创建新的环境实例。使用该服务提供的模板，并验证它与仓库锁定的 E2B SDK `2.46.4` 兼容，包括创建、连接、续期、命令和文件操作、暂停与恢复以及销毁。
 
 只有 Docker provider 可以测试（`POST …/{provider_id}/test`）：Engine 响应一次 ping。远程 Engine 无法解析时，失败消息为 `provider_unavailable`；只有策略拒绝时才返回 `provider_endpoint_denied`。
 
