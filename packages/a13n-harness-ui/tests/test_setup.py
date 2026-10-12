@@ -1075,3 +1075,39 @@ async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path,
         path, _selection(tmp_path, new_model_id="model-added", new_model_name="Added"), validate_candidate=_validate()
     )
     assert yaml.safe_load(path.read_text())["memory"] == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("model_id", ["claude-sonnet-4-6", "custom-model"])
+async def test_terminal_anthropic_defaults_survive_preview_publication_and_reload(
+    tmp_path: Path, model_id: str
+) -> None:
+    from a13n_harness_ui.interactive.setup import SetupWizard
+
+    path = tmp_path / "config.yaml"
+    wizard = SetupWizard()
+    for answer in ("api", "anthropic", "https://gateway.example.com", "new", "env:ANTHROPIC_API_KEY", model_id):
+        wizard.accept(answer)
+    while wizard.question is not None:
+        wizard.accept("")
+    selection = SetupSelection.model_validate(wizard.selection(str(tmp_path)))
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    model_path, content = next((name, content) for name, content in preview.files.items() if name.startswith("models/"))
+    document = yaml.safe_load(content)
+    settings = document["settings"]
+    assert settings["anthropic_cache_instructions"] is True
+    assert settings["anthropic_cache_tool_definitions"] is True
+    assert settings["anthropic_cache_messages"] is True
+    assert "cache" not in settings and "anthropic_cache" not in settings
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    saved = path.parent / model_path
+    assert saved.read_text() == content
+    source = await load_harness_ui_configuration(path)
+    assert source.models[document["id"]].settings == settings
+    # Existing files remain authoritative, including an explicitly empty mapping.
+    document["settings"] = {}
+    saved.write_text(yaml.safe_dump(document))
+    original = saved.read_bytes()
+    source = await load_harness_ui_configuration(path)
+    assert source.models[document["id"]].settings == {}
+    assert saved.read_bytes() == original

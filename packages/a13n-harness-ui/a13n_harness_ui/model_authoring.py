@@ -8,6 +8,7 @@ logs in, or constructs an executable Model.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import Literal
 
 from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
@@ -314,10 +315,27 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
         model_id not in API_MODEL_SUGGESTIONS.get(connection.provider, ())
         and known_model_capabilities(f"{connection.provider}:{model_id}") is None
     ):
-        return (
+        presets = (
             SettingsPreset("default", "Provider defaults", "Unreviewed model; configure native settings if needed", {}),
         )
-    return settings_presets(connection.provider, model_id)
+    else:
+        presets = settings_presets(connection.provider, model_id)
+    if connection.provider == "anthropic":
+        # Persist explicit block-cache flags for compatible endpoints rather than
+        # relying on unified caching or top-level automatic cache control.
+        presets = tuple(
+            replace(
+                preset,
+                settings={
+                    "anthropic_cache_instructions": True,
+                    "anthropic_cache_tool_definitions": True,
+                    "anthropic_cache_messages": True,
+                    **preset.settings,
+                },
+            )
+            for preset in presets
+        )
+    return presets
 
 
 def shell_review_models(connection: ModelConnection, model_id: str) -> tuple[ModelChoice, ...]:
