@@ -390,7 +390,7 @@ class _Attempt:
         root = self.plan.agent
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
-        skill_cache = Cache(runtime.settings.environments.skill_cache_bytes)
+        skill_cache = Cache(runtime.settings.environments.skill_cache_count)
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
                 open_mounts(

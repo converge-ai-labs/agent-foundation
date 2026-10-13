@@ -1,7 +1,8 @@
 """The agent's pinned skills, materialized into the run's primary environment for the Harness skill catalog.
 
 Packages live at `/workspace/.agents/skills/{package digest}/{name}`. Each publisher writes a private
-candidate, including its completion marker, before an atomic no-replace move makes the whole package visible.
+candidate before an atomic no-replace move makes the whole package visible. The published directory itself
+records completion; no separate marker is needed.
 Concurrent publishers reuse the winner. Each agent's catalog selects only its pinned versions; the shared
 cache is never scanned for ambient skills and published package files are never overwritten.
 
@@ -48,7 +49,6 @@ class PinnedSkill:
     digest: str
     name: str
     description: str
-    size: int
 
     @property
     def package_directory(self) -> str:
@@ -57,14 +57,6 @@ class PinnedSkill:
     @property
     def directory(self) -> str:
         return f"{self.package_directory}/{self.name}"
-
-    @property
-    def marker_name(self) -> str:
-        return ".complete-package" if self.name.casefold() == ".complete" else ".complete"
-
-    @property
-    def marker(self) -> str:
-        return f"{self.package_directory}/{self.marker_name}"
 
 
 async def resolve_skills(
@@ -88,9 +80,9 @@ async def resolve_skills(
         if row is None or row.skill_id != selection.skill_id:
             raise not_found("skill_revision", selection.revision_id or selection.skill_id)
         manifest = SkillManifest.model_validate(row.config)
-        # Historical manifests must also be safe before their names become path components.
+        # Validate the name before using it as a directory component.
         validate_name(manifest.name)
-        pinned.append(PinnedSkill(row.id, manifest.package_digest, manifest.name, manifest.description, manifest.size))
+        pinned.append(PinnedSkill(row.id, manifest.package_digest, manifest.name, manifest.description))
     return tuple(pinned)
 
 
@@ -117,10 +109,10 @@ class _PinnedSkills:
         workspace_id: str,
         prove_lease: LeaseProof,
         *,
-        cache: Cache | None = None,
+        cache: Cache,
     ):
         self.skills, self.runtime, self.workspace_id, self.prove_lease = skills, runtime, workspace_id, prove_lease
-        self.cache = cache or Cache()
+        self.cache = cache
 
     async def catalog(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
         # The manifest holds the frontmatter the Harness validated when the revision was created.
@@ -133,7 +125,7 @@ class _PinnedSkills:
         try:
             await self._materialize(files)
             for skill in self.skills:
-                await self.cache.touch(files, skill.digest, skill.size)
+                await self.cache.touch(files, skill.digest)
             await self.cache.trim(files)
         except EnvironmentError as error:
             raise ServiceError(
@@ -144,7 +136,7 @@ class _PinnedSkills:
 
     async def _materialize(self, files: FileOperator) -> None:
         uses = {skill.digest: await self.cache.acquire(files, skill.digest) for skill in self.skills}
-        missing = [skill for skill in self.skills if not await _complete(files, skill)]
+        missing = [skill for skill in self.skills if not await _published(files, skill)]
         if not missing:
             return
         await self.prove_lease()
@@ -160,7 +152,6 @@ class _PinnedSkills:
                     await files.mkdir(directory, parents=True, exist_ok=True)
                 for path, target in paths.items():
                     await placement.write(files, target, package.files[path])
-                await files.write_text(f"{candidate}/{skill.marker_name}", skill.digest, mode="create")
                 await self.prove_lease()
                 # Cancellation may leave the provider's rename in flight. Never race it with removal.
                 cleanup = False
@@ -173,7 +164,7 @@ class _PinnedSkills:
                         raise
                     cleanup = True  # A rejected no-replace move cannot publish this candidate.
                     uses[skill.digest].retain = False
-                    if not await _complete(files, skill):
+                    if not await _published(files, skill):
                         raise
             finally:
                 if cleanup:
@@ -187,7 +178,10 @@ class _PinnedSkills:
                                 )
 
 
-async def _complete(files: FileOperator, skill: PinnedSkill) -> bool:
-    if await placement.stat(files, skill.marker) is None:
-        return False
-    return await files.read_bytes(skill.marker, length=65) == skill.digest.encode()
+async def _published(files: FileOperator, skill: PinnedSkill) -> bool:
+    try:
+        return (await files.stat(skill.directory)).kind == "directory"
+    except EnvironmentError as error:
+        if error.code == "environment_not_found":
+            return False
+        raise

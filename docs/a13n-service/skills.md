@@ -69,13 +69,13 @@ The digest identifies the archive bytes. Identical packages reuse the same files
 
 The directory immediately containing `SKILL.md` matches its declared `name`. Other tools can read that explicit path during execution; automatic discovery and duplicate-name handling depend on the tool. Service does not install symlinks or select versions for other agent CLIs. Names must be portable filename components: no separators, traversal, Windows-reserved names or characters, trailing dot or space, or more than 255 UTF-8 bytes.
 
-Treat package files as immutable dependencies. Write generated files and local modifications outside the cache. This is a usage contract, not a filesystem permission boundary. Existing `.a13n/skills` directories are left in place, and attachments continue using `.a13n`.
+Treat package files as immutable dependencies. Write generated files and local modifications outside the cache. This is a usage contract, not a filesystem permission boundary. Service uses only this Skill layout, with no legacy lookup or migration. Attachments continue using `.a13n`.
 
 ### Capacity and reclamation
 
-`environments.skill_cache_bytes` (environment override `A13N_ENVIRONMENTS__SKILL_CACHE_BYTES`) defaults to **268435456 bytes (256 MiB)** per physical cache root. It counts expanded package content. A skill acquisition updates recency and, above budget, runs a bounded LRU-like cleanup of unused packages. An evicted version is downloaded again when next needed.
+`environments.skill_cache_count` (environment override `A13N_ENVIRONMENTS__SKILL_CACHE_COUNT`) defaults to **128 packages** per physical cache root. Each distinct archive digest counts once, regardless of how many agents use it. Acquisition refreshes recency and lists cache entries. Within capacity, it reads no per-package cache metadata; above capacity, it reads timestamps and reclaims up to 32 unused packages in LRU-like order. An evicted version is downloaded again when next needed.
 
-The budget is soft: active packages remain available, and a new skill can load even when no package can safely be reclaimed or the new package itself exceeds the budget. A later acquisition retries reclamation. Actual disk exhaustion can still fail a run. Set the budget to `0` on all workers sharing a root to disable automatic eviction.
+The limit is soft: active packages remain available, and a new skill can load even when no package can safely be reclaimed. A later acquisition retries reclamation. Package count does not limit disk bytes; actual disk exhaustion can still fail a run. Set the count to `0` on all workers sharing a root to disable automatic eviction.
 
 Reader protection lasts through the primary execution, including inline children. Use a coherently shared filesystem and the same access to its cache metadata on all workers. Disable eviction for other storage semantics or for independent consumers that need these paths after execution ends; surviving background processes are not protected.
 

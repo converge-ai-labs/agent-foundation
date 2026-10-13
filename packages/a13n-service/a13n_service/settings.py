@@ -287,8 +287,8 @@ RENEWAL_HORIZON_SECONDS = 300
 
 
 class Environments(Section):
-    # Soft budget per physical skill-cache root; active packages may exceed it. Zero disables eviction.
-    skill_cache_bytes: int = Field(default=268435456, ge=0)
+    # Soft package count per physical skill-cache root; active packages may exceed it. Zero disables eviction.
+    skill_cache_count: int = Field(default=128, ge=0)
     # Maintenance and renewal interval, and the batch of each; idle thresholds are template policy.
     scan_seconds: float = Field(default=5, gt=0, le=300)
     batch: int = Field(default=16, ge=1, le=1000)

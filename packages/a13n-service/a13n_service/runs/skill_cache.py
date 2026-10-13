@@ -15,17 +15,10 @@ import anyio
 from a13n_harness.environment.files import FileOperator
 from a13n_harness.environment.models import EnvironmentError
 from a13n_logging import get_logger
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 ROOT = "/workspace/.agents/skills"
 _STATE = f"{ROOT}/.cache"
 logger = get_logger(__name__)
-
-
-class _Entry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    size: int = Field(ge=0)
-    acquired: int = Field(ge=0)
 
 
 @dataclass(slots=True)
@@ -38,8 +31,8 @@ class Use:
 class Cache:
     """Pins owned by one primary environment execution, including all inline agents."""
 
-    def __init__(self, budget: int = 256 * 1024 * 1024, *, wait_seconds: float = 10):
-        self.budget = budget
+    def __init__(self, capacity: int = 128, *, wait_seconds: float = 10):
+        self.capacity = capacity
         self.wait_seconds = wait_seconds
         self.uses: list[Use] = []
 
@@ -59,11 +52,9 @@ class Cache:
             ) from error
         return use
 
-    async def touch(self, files: FileOperator, digest: str, size: int) -> None:
+    async def touch(self, files: FileOperator, digest: str) -> None:
         await files.mkdir(f"{_STATE}/entries", parents=True, exist_ok=True)
-        await files.write_text(
-            f"{_STATE}/entries/{digest}", _Entry(size=size, acquired=time.time_ns()).model_dump_json(), mode="upsert"
-        )
+        await files.write_text(f"{_STATE}/entries/{digest}", str(time.time_ns()), mode="upsert")
 
     async def release(self, files: FileOperator, *, root: str = ROOT) -> None:
         """Called before the primary execution closes its file client; unknown pins are retained."""
@@ -86,40 +77,37 @@ class Cache:
             logger.warning("Skill cache reclamation deferred", extra={"code": error.code})
 
     async def _trim(self, files: FileOperator) -> None:
-        if self.budget == 0:
+        if self.capacity == 0:
             return
-        entries: list[tuple[str, _Entry]] = []
+        paths: list[str] = []
         offset = 0
         while True:
             page = await files.list(f"{_STATE}/entries", offset=offset, max_results=256, include_hidden=True)
             for item in page.entries:
-                digest = posixpath.basename(item.path)
-                if not re.fullmatch(r"[0-9a-f]{64}", digest):
-                    continue
-                try:
-                    entry = _Entry.model_validate_json(await files.read_bytes(item.path, length=256))
-                except ValidationError:
-                    continue
-                except EnvironmentError as error:
-                    if error.code == "environment_not_found":
-                        continue
-                    raise
-                entries.append((digest, entry))
-            # Count the complete paged index; a prefix below budget says nothing about its tail.
+                if re.fullmatch(r"[0-9a-f]{64}", posixpath.basename(item.path)):
+                    paths.append(item.path)
             if not page.has_more:
                 break
             offset += len(page.entries)
-        total = sum(entry.size for _, entry in entries)
-        if total <= self.budget:
+        if len(paths) <= self.capacity:
             return
+        # Reading recency is necessary only when the package count exceeds capacity.
+        entries: list[tuple[int, str]] = []
+        for path in paths:
+            try:
+                entries.append((int(await files.read_bytes(path, length=32)), posixpath.basename(path)))
+            except ValueError:
+                continue
+            except EnvironmentError as error:
+                if error.code != "environment_not_found":
+                    raise
         await files.mkdir(f"{_STATE}/evict", parents=True, exist_ok=True)
-        evicted = 0
-        for digest, entry in sorted(entries, key=lambda item: item[1].acquired):
-            if total <= self.budget or evicted >= 32:
+        remaining = min(len(entries) - self.capacity, 32)
+        for _, digest in sorted(entries):
+            if remaining <= 0:
                 break
             if await self._evict(files, digest):
-                total -= entry.size
-                evicted += 1
+                remaining -= 1
 
     async def _evict(self, files: FileOperator, digest: str) -> bool:
         gate = f"{_STATE}/evict/{digest}"

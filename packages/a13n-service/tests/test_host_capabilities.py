@@ -359,7 +359,6 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
     root = tmp_path / ENVIRONMENT / ".agents" / "skills"
     assert (root / pinned.digest / pinned.name / "SKILL.md").read_bytes() == SKILL
     assert (root / pinned.digest / pinned.name / "scripts" / "check.py").read_bytes() == b"print('ok')\n"
-    assert (root / pinned.digest / ".complete").read_text() == pinned.digest
     assert f"<path>/workspace/.agents/skills/{pinned.digest}/{pinned.name}</path>" in script.instructions[0]
     assert "Review a change for correctness." in script.instructions[0]
     assert proofs == ["proved", "proved"]
@@ -370,15 +369,17 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
     assert (await run(script, [attempt()], environment=mount(tmp_path))).output == "done"
     assert pinned.digest in script.instructions[0] and proofs == ["proved", "proved"]
 
-    # Without the marker the package is read again, and its bytes must still match the revision's digest. The
+    # After eviction the archive is read again and must still match its digest.
     # Harness keeps the object store's error as the cause, for the attempt to classify.
-    (root / pinned.digest / ".complete").unlink()
+    import shutil
+
+    shutil.rmtree(root / pinned.digest)
     (Path(runtime.settings.objects.root) / package).write_bytes(archive({"SKILL.md": SKILL}))
     with pytest.raises(DefinitionError) as failed:
         await run(Script(["done"]), [attempt()], environment=mount(tmp_path))
     cause = failed.value.__cause__
     assert isinstance(cause, ServiceError) and (cause.code, cause.details) == ("unavailable", {"dependency": "objects"})
-    assert not (root / pinned.digest / ".complete").exists()
+    assert not (root / pinned.digest).exists()
 
 
 # Assets.
