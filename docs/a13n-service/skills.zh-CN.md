@@ -56,3 +56,26 @@ curl -X POST "$A13N_URL/api/v1/skills" \
 - `POST …/archive` 阻止新的 agent 修订版本固定引用该 skill，并拒绝修改；已固定引用的 agent 仍可使用。`POST …/unarchive` 取消归档。
 
 Agent 修订版本在 `skills` 中使用 `{"skill_id": "sk_…", "revision_id": ...}` 选择 skill；不提供 `revision_id` 时，保存会固定引用 skill 当前的默认修订版本。`GET /api/v1/agents?skill_id=sk_…` 列出含有引用该 skill 的修订版本的 agent；`skill_revision_id` 可按一个 skill 修订版本筛选。
+
+## 共享工作区同步
+
+执行启动时，所选 skill 会发布到主环境的 `/workspace/.agents/skills/<name>/SKILL.md`。目录名与包的 front matter 一致。名称由 1–64 个小写 ASCII 字母或数字组成，可用单个连字符分隔；不接受 Windows 保留设备名。目录结构不包含 agent 或摘要层。
+
+可在 agent 修订版本中配置以下独立字段，也可通过 `options.overrides` 为单次运行覆盖其中任一字段：
+
+| 字段                    | 默认值  | 效果                                                                                                                |
+| ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `skill_force_overwrite` | `true`  | 用完整包替换每个所选的同名 skill，同时移除包内过时文件。设为 `false` 可让 sidecar 保留已有条目，仅补充缺失名称。    |
+| `skill_force_cleanup`   | `false` | 设为 `true` 后，在发布完成后移除 skills 根目录中未选中的条目，包括手工安装的 skill 和隐藏条目。空选择会清空该目录。 |
+
+Sidecar 运行示例：
+
+```json
+{"options": {"overrides": {"skill_force_overwrite": false, "skill_force_cleanup": false}}}
+```
+
+两个字段都为 `true` 时，所选 skill 会替换同名内容，未选中的条目会被移除。即使选择为空，清理仍需要主环境。内联子 agent 使用自己的策略；根运行的 override 不会改变子 agent 的策略。
+
+Linux 和 macOS 按单个 skill 目录原子发布。Windows 使用普通删除加重命名，接受竞态下的可见性空隙和不完整结果。同名 skill 由最后一次发布决定，与运行启动顺序无关。并发运行和外部工具共享可变路径：后续发布可能改变活跃 agent 正在读取的文件，清理也可能移除这些文件。提供给模型的目录描述所选修订版本，不是文件系统快照。需要稳定、隔离版本时，使用独立环境。整组选择与清理不构成一个事务。
+
+取消或结果不确定的操作会在可发现的 skills 根目录之外保留私有暂存目录。只有确认尚未完成的文件操作已经停止后，才应删除遗留暂存。已有 `.a13n/skills` 内容不会迁移或删除；附件和其他 `.a13n` 路径保持不变。

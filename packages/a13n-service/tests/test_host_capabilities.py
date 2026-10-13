@@ -340,41 +340,52 @@ async def pin_skill(runtime: Any, tenant: Any) -> tuple[Any, str]:
     return pinned, f"orgs/{tenant.organization_id}/uploads/{upload.upload_id}"
 
 
-async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, tenant, tmp_path) -> None:  # type: ignore[no-untyped-def]
+async def test_skills_overwrite_by_default_and_sidecars_can_preserve_them(runtime, tenant, tmp_path) -> None:  # type: ignore[no-untyped-def]
     pinned, package = await pin_skill(runtime, tenant)
     proofs: list[str] = []
 
     async def prove_lease() -> None:
         proofs.append("proved")
 
-    def attempt() -> AbstractCapability[AgentContext]:
-        return build_skills([pinned], runtime=runtime, workspace_id=tenant.workspace_id, prove_lease=prove_lease)
+    def attempt(*, overwrite=True) -> AbstractCapability[AgentContext]:
+        return build_skills(
+            [pinned],
+            runtime=runtime,
+            workspace_id=tenant.workspace_id,
+            prove_lease=prove_lease,
+            force_overwrite=overwrite,
+        )
 
     script = Script(["done"])
     assert (await run(script, [attempt()], environment=mount(tmp_path))).output == "done"
-    root = tmp_path / ENVIRONMENT / ".a13n" / "skills"
-    assert (root / pinned.digest / "SKILL.md").read_bytes() == SKILL
-    assert (root / pinned.digest / "scripts" / "check.py").read_bytes() == b"print('ok')\n"
-    assert (root / f"{pinned.digest}.complete").read_text() == pinned.digest
-    assert f"<path>/workspace/.a13n/skills/{pinned.digest}</path>" in script.instructions[0]
+    root = tmp_path / ENVIRONMENT / ".agents" / "skills"
+    assert (root / pinned.name / "SKILL.md").read_bytes() == SKILL
+    assert (root / pinned.name / "scripts" / "check.py").read_bytes() == b"print('ok')\n"
+    assert f"<path>/workspace/.agents/skills/{pinned.name}</path>" in script.instructions[0]
     assert "Review a change for correctness." in script.instructions[0]
-    assert proofs == ["proved"]
+    assert proofs == ["proved", "proved"]
 
-    # A later attempt finds the completion marker: it writes nothing and never reads the package again.
+    (root / pinned.name / "obsolete").write_text("obsolete")
+    (root / pinned.name / "SKILL.md").write_bytes(SKILL + b"\nlocal edit")
+    assert (await run(Script(["done"]), [attempt()], environment=mount(tmp_path))).output == "done"
+    assert not (root / pinned.name / "obsolete").exists()
+    assert (root / pinned.name / "SKILL.md").read_bytes() == SKILL
+    assert len(proofs) == 4
+
+    # Additive sidecars preserve an existing complete entry without reading its package.
     await runtime.objects.delete(package)
     script = Script(["done"])
-    assert (await run(script, [attempt()], environment=mount(tmp_path))).output == "done"
-    assert pinned.digest in script.instructions[0] and proofs == ["proved"]
+    assert (await run(script, [attempt(overwrite=False)], environment=mount(tmp_path))).output == "done"
+    assert pinned.directory in script.instructions[0] and len(proofs) == 4
 
-    # Without the marker the package is read again, and its bytes must still match the revision's digest. The
-    # Harness keeps the object store's error as the cause, for the attempt to classify.
-    (root / f"{pinned.digest}.complete").unlink()
+    # Default overwrite reads and verifies the pinned package on every attempt.
+    # A failed download leaves the already published skill untouched.
     (Path(runtime.settings.objects.root) / package).write_bytes(archive({"SKILL.md": SKILL}))
     with pytest.raises(DefinitionError) as failed:
         await run(Script(["done"]), [attempt()], environment=mount(tmp_path))
     cause = failed.value.__cause__
     assert isinstance(cause, ServiceError) and (cause.code, cause.details) == ("unavailable", {"dependency": "objects"})
-    assert not (root / f"{pinned.digest}.complete").exists()
+    assert (root / pinned.name / "SKILL.md").read_bytes() == SKILL
 
 
 # Assets.
@@ -427,3 +438,25 @@ async def test_publish_asset_attributes_the_run_and_bounds_the_file(runtime, ten
     assert "exceeds the 65536-byte asset limit" in str(await publish(bounded, "/workspace/large.bin"))
     assert "does not cover" in str(await publish(runtime, "/workspace/report.txt", verbs=frozenset({"read", "run"})))
     assert "regular file" in str(await publish(runtime, "/workspace"))
+
+
+async def test_empty_skill_catalog_still_cleans_through_harness(runtime, tenant, tmp_path):
+    environment = mount(tmp_path)
+    root = tmp_path / ENVIRONMENT / ".agents" / "skills"
+    (root / "old").mkdir(parents=True)
+    (root / "old" / "SKILL.md").write_bytes(SKILL)
+
+    async def prove_lease():
+        pass
+
+    capability = build_skills(
+        [], runtime=runtime, workspace_id=tenant.workspace_id, prove_lease=prove_lease, force_cleanup=True
+    )
+    assert (await run(Script(["done"]), [capability], environment=environment)).output == "done"
+    assert list(root.iterdir()) == []
+
+
+async def test_cleanup_without_selections_still_requires_primary_environment(runtime, tenant):
+    async with short_session(runtime.storage) as session:
+        with pytest.raises(ServiceError):
+            await resolve_skills(session, run_row(tenant, mounted=False), [], force_cleanup=True)

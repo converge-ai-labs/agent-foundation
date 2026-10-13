@@ -86,7 +86,7 @@ async def resolve_host(
                 authority=authority,
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
-            skills=await resolve_skills(session, run, config.skills),
+            skills=await resolve_skills(session, run, config.skills, force_cleanup=config.skill_force_cleanup),
         )
     return HostPlan(
         parts,
@@ -112,10 +112,13 @@ class Host:
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
         features = list(self.tools[agent.revision_id])
-        if skills := self.plan.parts[agent.revision_id].skills:
+        skills = self.plan.parts[agent.revision_id].skills
+        if skills or agent.config.skill_force_cleanup:
             features.append(
                 skills_capability(
                     skills,
+                    force_overwrite=agent.config.skill_force_overwrite,
+                    force_cleanup=agent.config.skill_force_cleanup,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
                     prove_lease=partial(prove, self.runtime.storage, self.lease),

@@ -430,9 +430,54 @@ impl DeviceFilesystem {
         let (source_parent, source_name) = self.open_parent(source)?;
         let (destination_parent, destination_name) = self.open_parent(destination)?;
         if replace {
-            source_parent
-                .rename(&source_name, &destination_parent, &destination_name)
-                .map_err(PathError::from_io)?;
+            if let Err(error) =
+                source_parent.rename(&source_name, &destination_parent, &destination_name)
+            {
+                let source_metadata = source_parent
+                    .symlink_metadata(&source_name)
+                    .map_err(PathError::from_io)?;
+                let destination_metadata = destination_parent
+                    .symlink_metadata(&destination_name)
+                    .map_err(PathError::from_io)?;
+                if !source_metadata.is_dir() || !destination_metadata.is_dir() {
+                    return Err(PathError::from_io(error));
+                }
+                #[cfg(windows)]
+                {
+                    // Windows has no directory exchange; accept the remove/rename race.
+                    if !matches!(
+                        error.kind(),
+                        std::io::ErrorKind::PermissionDenied
+                            | std::io::ErrorKind::AlreadyExists
+                            | std::io::ErrorKind::DirectoryNotEmpty
+                    ) {
+                        return Err(PathError::from_io(error));
+                    }
+                    destination_parent
+                        .remove_dir_all(&destination_name)
+                        .map_err(PathError::from_io)?;
+                    source_parent
+                        .rename(&source_name, &destination_parent, &destination_name)
+                        .map_err(PathError::from_io)?;
+                }
+                #[cfg(not(windows))]
+                {
+                    if !matches!(error.raw_os_error(), Some(libc::ENOTEMPTY | libc::EEXIST)) {
+                        return Err(PathError::from_io(error));
+                    }
+                    rename_atomic(
+                        &source_parent,
+                        Path::new(&source_name),
+                        &destination_parent,
+                        Path::new(&destination_name),
+                        true,
+                    )
+                    .map_err(PathError::from_io)?;
+                    source_parent
+                        .remove_dir_all(&source_name)
+                        .map_err(|_| PathError::UnknownOutcome)?;
+                }
+            }
         } else {
             rename_no_replace(
                 &source_parent,
@@ -650,6 +695,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn replacement_move_publishes_a_whole_nonempty_directory() {
+        let root = std::env::temp_dir()
+            .join(crate::operation::random_selector("replacement-test").unwrap());
+        fs::create_dir(&root).unwrap();
+        let source = root.join("candidate");
+        let destination = root.join("review");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(source.join("SKILL.md"), "new").unwrap();
+        fs::write(destination.join("SKILL.md"), "old").unwrap();
+        fs::write(destination.join("obsolete"), "old").unwrap();
+        let filesystem = DeviceFilesystem::new(&Config::for_test("test")).unwrap();
+        let source_path = EIPPath {
+            path: device_path::from_native(&source).unwrap(),
+        };
+        let destination_path = EIPPath {
+            path: device_path::from_native(&destination).unwrap(),
+        };
+        assert!(matches!(
+            filesystem.rename(&source_path, &destination_path, false),
+            Err(PathError::AlreadyExists)
+        ));
+        filesystem
+            .rename(&source_path, &destination_path, true)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("SKILL.md")).unwrap(),
+            "new"
+        );
+        assert!(!destination.join("obsolete").exists());
+        assert!(!source.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn scoped_staging_quota_keeps_siblings_independent_and_releases_both_charges() {
         let device = StagingQuota::new(12, 2).unwrap();
         let first = device.for_session((8, 1));
@@ -785,12 +865,22 @@ fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 fn rename_no_replace(
     source_dir: &Dir,
     source: &Path,
     destination_dir: &Dir,
     destination: &Path,
+) -> std::io::Result<()> {
+    rename_atomic(source_dir, source, destination_dir, destination, false)
+}
+
+#[cfg(target_os = "macos")]
+fn rename_atomic(
+    source_dir: &Dir,
+    source: &Path,
+    destination_dir: &Dir,
+    destination: &Path,
+    exchange: bool,
 ) -> std::io::Result<()> {
     let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "source contains NUL")
@@ -804,7 +894,11 @@ fn rename_no_replace(
             source.as_ptr(),
             destination_dir.as_raw_fd(),
             destination.as_ptr(),
-            libc::RENAME_EXCL,
+            if exchange {
+                libc::RENAME_SWAP
+            } else {
+                libc::RENAME_EXCL
+            },
         )
     };
     if result == 0 {
@@ -815,11 +909,12 @@ fn rename_no_replace(
 }
 
 #[cfg(target_os = "linux")]
-fn rename_no_replace(
+fn rename_atomic(
     source_dir: &Dir,
     source: &Path,
     destination_dir: &Dir,
     destination: &Path,
+    exchange: bool,
 ) -> std::io::Result<()> {
     let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "source contains NUL")
@@ -834,7 +929,11 @@ fn rename_no_replace(
             source.as_ptr(),
             destination_dir.as_raw_fd(),
             destination.as_ptr(),
-            libc::RENAME_NOREPLACE,
+            if exchange {
+                libc::RENAME_EXCHANGE
+            } else {
+                libc::RENAME_NOREPLACE
+            },
         )
     };
     if result == 0 {
@@ -845,21 +944,29 @@ fn rename_no_replace(
 }
 
 #[cfg(windows)]
-fn rename_no_replace(
+fn rename_atomic(
     source_dir: &Dir,
     source: &Path,
     destination_dir: &Dir,
     destination: &Path,
+    exchange: bool,
 ) -> std::io::Result<()> {
+    if exchange {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "directory exchange is unsupported",
+        ));
+    }
     source_dir.rename(source, destination_dir, destination)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-fn rename_no_replace(
+fn rename_atomic(
     _source_dir: &Dir,
     _source: &Path,
     _destination_dir: &Dir,
     _destination: &Path,
+    _exchange: bool,
 ) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,

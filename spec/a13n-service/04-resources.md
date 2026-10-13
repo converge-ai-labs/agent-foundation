@@ -70,7 +70,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `model`: a model key, with `model_settings`, native settings for the model's calling API, and `model_characteristics`, the context characteristics the agent assumes.
 - `instructions`.
 - `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource.
-- `skills`: `{skill_id, revision_id}` selections.
+- `skills`: `{skill_id, revision_id}` selections. `skill_force_overwrite` defaults to `true`; `skill_force_cleanup` defaults to `false`. Each field supports an independent `options.overrides` value for one run; omitted or null values inherit the agent revision. [Skill synchronization](#skill-synchronization) owns their filesystem effects.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
 - `client_tools`, whose results a client supplies through resume, and `user_questions`, which offers `ask_user_question`.
 - `subagent_mode` (`inline` or `async`) and named `subagents`: `{agent_id, revision_id, description, context, usage_limits, environment}`. `environment.mode` is `none`, `shared` or `dedicated`, and `dedicated` names a `template_id`.
@@ -155,6 +155,18 @@ The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; 
 - `GET /skills` filters by `label`, `q`, `archived` and `source` (`upload` or `github`, the default revision's source). A skill's representation includes `default_revision {id, number, source}`.
 - `PATCH` changes `name`, `description` and `labels`.
 - Revisions: `POST` with a source and `If-Match`, list, get, `set-default`, `GET …/revisions/{rev}/content` (the zip) and `GET …/revisions/{rev}/files/{path}` (one file of the package). Both reads serve the bytes as an attachment ([10](10-api.md#representations)).
+
+### Skill synchronization
+
+Selected packages are installed at `/workspace/.agents/skills/<name>/SKILL.md` in the primary environment, where `<name>` matches the pinned manifest. Names are 1–64 lowercase ASCII letters or digits separated by single hyphens; Windows reserved device names are rejected. Import and execution reject invalid names. No agent ID, revision digest, completion marker or ownership layer appears in the skill directory. Attachments and other `.a13n` placement retain their existing paths.
+
+`skill_force_overwrite=true` publishes each selected package on every materialization, replacing the complete same-name directory, including removal of obsolete files inside it. The publisher validates package bytes, prepares a private directory outside the discoverable `skills` root, proves its attempt lease and publishes the directory. Linux and macOS use atomic directory publication; native Windows accepts a remove/rename visibility gap and incomplete outcomes under races. The last publication of each name wins. Separate names and cleanup are independent mutations, not a transaction over the full catalog.
+
+`skill_force_overwrite=false` preserves existing same-name entries and installs absent names using no-replace publication. A concurrent winner is preserved. This additive mode lets sidecar agents contribute missing skills without overwriting the workspace. The model catalog still describes the agent's selected revisions; existing or later-replaced bytes at shared names may differ. Shared-name paths are mutable and do not pin runtime bytes for an active reader.
+
+`skill_force_cleanup=true` removes every observed immediate child of the `skills` root whose name is not selected, including manually installed skills and hidden entries. An empty selection cleans the root. Cleanup happens after selected packages publish, detaches each stale entry before recursively removing it, and requires a primary environment even for an empty selection. Concurrent publication or cleanup may subsequently change the set. Parents and siblings can lose paths when an inline child opts into cleanup; use dedicated environments when readers need isolation. Each inline child uses its own agent policy, and root-run overrides affect the root agent only.
+
+Failed preparation leaves the published name unchanged. Failure after some publications preserves those completed effects; retry rematerializes the selection. Cancellation or uncertain provider completion retains staging paths because dispatched operations may still use them. Operators may remove abandoned staging only after outstanding operations have stopped. There is no automatic legacy-directory migration or cleanup.
 
 ## Provider resources
 

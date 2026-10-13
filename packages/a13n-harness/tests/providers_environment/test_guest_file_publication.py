@@ -86,3 +86,24 @@ async def test_guest_replace_missing_file_does_not_publish_and_cleans_stage(tmp_
         await guest_files.write_text("/missing", "new\n", mode="replace")
     assert caught.value.code == "environment_not_found"
     assert not list(tmp_path.iterdir())
+
+
+async def test_guest_replaces_complete_nonempty_directory(tmp_path, guest_files):
+    for name in ("source", "destination"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "SKILL.md").write_text(name)
+    (tmp_path / "destination" / "obsolete").write_text("old")
+    await guest_files.move("/source", "/destination", replace=True)
+    assert (tmp_path / "destination" / "SKILL.md").read_text() == "source"
+    assert not (tmp_path / "destination" / "obsolete").exists()
+    assert not (tmp_path / "source").exists()
+
+
+async def test_guest_directory_no_replace_preserves_winner(tmp_path, guest_files):
+    for name in ("source", "destination"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "SKILL.md").write_text(name)
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.move("/source", "/destination")
+    assert error.value.code == "environment_conflict"
+    assert (tmp_path / "destination" / "SKILL.md").read_text() == "destination"

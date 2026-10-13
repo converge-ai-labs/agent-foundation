@@ -171,7 +171,21 @@ def _frontmatter(document: bytes) -> tuple[str, str]:
         )
     except ValidationError:
         raise invalid("package", "SKILL.md frontmatter needs a valid name and description") from None
+    validate_name(item.name)
     return item.name, item.description
+
+
+def validate_name(name: str) -> None:
+    """Skill names are portable directory components matching the installed SKILL.md name."""
+    if (
+        len(name) > 64
+        or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is None
+        or name in {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+    ):
+        raise invalid(
+            "package",
+            "skill name must be a portable lowercase alphanumeric name with single hyphens, at most 64 characters",
+        )
 
 
 def _too_large(limit: str, value: int) -> ServiceError:

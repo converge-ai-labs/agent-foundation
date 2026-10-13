@@ -3174,6 +3174,16 @@ export interface components {
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /**
+       * Skill Force Cleanup
+       * @default false
+       */
+      skill_force_cleanup?: boolean;
+      /**
+       * Skill Force Overwrite
+       * @default true
+       */
+      skill_force_overwrite?: boolean;
+      /**
        * Skills
        * @default []
        */
@@ -3243,6 +3253,16 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /**
+       * Skill Force Cleanup
+       * @default false
+       */
+      skill_force_cleanup?: boolean;
+      /**
+       * Skill Force Overwrite
+       * @default true
+       */
+      skill_force_overwrite?: boolean;
       /**
        * Skills
        * @default []
@@ -3351,6 +3371,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Force Cleanup */
+      skill_force_cleanup?: boolean | null;
+      /** Skill Force Overwrite */
+      skill_force_overwrite?: boolean | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -3393,6 +3417,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Force Cleanup */
+      skill_force_cleanup?: boolean | null;
+      /** Skill Force Overwrite */
+      skill_force_overwrite?: boolean | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */

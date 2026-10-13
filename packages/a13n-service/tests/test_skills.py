@@ -215,7 +215,7 @@ async def test_package_limits_keys_and_authorization(service) -> None:  # type: 
     assert keyed.status_code == 400
     spaced = archive({"SKILL.md": b"---\nname: Code Review\ndescription: d\n---\n"})
     loose = {"kind": "upload", "upload_id": await stage(service, spaced, "spaced")}
-    assert (await service.client.post(f"{service.api}/skills", json={"source": loose})).status_code == 201
+    assert (await service.client.post(f"{service.api}/skills", json={"source": loose})).status_code == 400
 
     viewer = Principal(
         service.tenant.principal_id,
@@ -632,7 +632,9 @@ async def test_pins_and_the_agents_pinning_a_skill(service) -> None:  # type: ig
     assert archived.value.details["reason"] == "archived"
 
 
-async def _skilled_run(service, runs_kit, scripted_model, tmp_path) -> tuple[dict, Path]:  # type: ignore[no-untyped-def]
+async def _skilled_run(
+    service, runs_kit, scripted_model, tmp_path, *, agent_policy=None, overrides=None
+) -> tuple[dict, Path]:  # type: ignore[no-untyped-def]
     """A run of an agent with a pinned skill in a local primary environment, and where its skills materialize."""
     await runs_kit.pause_sweeps(service)
     provider = await service.client.post(
@@ -654,10 +656,11 @@ async def _skilled_run(service, runs_kit, scripted_model, tmp_path) -> tuple[dic
         scripted_model,
         skills=[{"skill_id": skill["id"]}],
         default_environment_template_id=template.json()["id"],
+        **(agent_policy or {}),
     )
-    run = (await runs_kit.start_thread(service, agent, "review it"))["run"]
+    run = (await runs_kit.start_thread(service, agent, "review it", options={"overrides": overrides}))["run"]
     [mount] = run["environment_mounts"]
-    return run, tmp_path / mount["environment_id"] / ".a13n" / "skills"
+    return run, tmp_path / mount["environment_id"] / ".agents" / "skills"
 
 
 def _with_local_environments(settings: Settings) -> Settings:
@@ -687,7 +690,7 @@ async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_
         assert released["status"] == "accepted", released
         attempts = (await service.client.get(f"{service.api}/runs/{run['id']}/attempts")).json()["items"]
         assert [(item["status"], item["failure"]["code"]) for item in attempts] == [("failed", "attempt_failed")]
-        assert not list(skills_root.glob("*.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob("*/SKILL.md")) and scripted_model.requests.empty()
 
         monkeypatch.undo()
         scripted_model.say("Reviewed")
@@ -695,7 +698,8 @@ async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_
         completed = await runs_kit.get_run(service, run["id"])
         assert (completed["status"], completed["attempts"]) == ("completed", 2), completed
         [document] = skills_root.glob("*/SKILL.md")
-        assert document.read_bytes() == DOCUMENT and (skills_root / f"{document.parent.name}.complete").exists()
+        assert document.read_bytes() == DOCUMENT
+        assert document.parent.name == "code-review"
 
 
 async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
@@ -713,4 +717,31 @@ async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
             await (await runs_kit.attempt(service))
         running = await runs_kit.get_run(service, run["id"])
         assert running["status"] == "running", running
-        assert not list(skills_root.glob("*.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob("*/SKILL.md")) and scripted_model.requests.empty()
+
+
+@pytest.mark.parametrize("override_run", [False, True])
+async def test_worker_applies_agent_and_run_skill_sync_policy(
+    serve, settings, scripted_model, runs_kit, tmp_path, override_run
+):
+    policy = {"skill_force_overwrite": False, "skill_force_cleanup": True}
+    async with serve(settings=_with_local_environments(settings)) as service:
+        run, root = await _skilled_run(
+            service,
+            runs_kit,
+            scripted_model,
+            tmp_path,
+            agent_policy={} if override_run else policy,
+            overrides=policy if override_run else None,
+        )
+        (root / "code-review").mkdir(parents=True)
+        local = DOCUMENT + b"\nLocal instructions\n"
+        (root / "code-review" / "SKILL.md").write_bytes(local)
+        (root / "unselected").mkdir()
+        (root / "unselected" / "SKILL.md").write_bytes(DOCUMENT)
+        scripted_model.say("Reviewed")
+        await (await runs_kit.attempt(service))
+        completed = await runs_kit.get_run(service, run["id"])
+        assert completed["status"] == "completed", completed
+        assert (root / "code-review" / "SKILL.md").read_bytes() == local
+        assert not (root / "unselected").exists()

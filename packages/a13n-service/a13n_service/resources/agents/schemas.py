@@ -146,6 +146,8 @@ class AgentConfig(_Frozen):
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
+    skill_force_overwrite: bool = True
+    skill_force_cleanup: bool = False
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
@@ -211,6 +213,8 @@ class AgentOverride(_Frozen):
     lazy_environment: bool | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
+    skill_force_overwrite: bool | None = None
+    skill_force_cleanup: bool | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
@@ -228,6 +232,8 @@ _REPLACED = (
     "lazy_environment",
     "plugins",
     "skills",
+    "skill_force_overwrite",
+    "skill_force_cleanup",
     "connection_tools",
     "client_tools",
     "output_spec",

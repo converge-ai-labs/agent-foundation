@@ -125,3 +125,20 @@ test("media understanding is a dedicated field kept out of advanced configuratio
     ),
   ).toThrow(/dedicated field/);
 });
+
+test("advanced skill synchronization policies survive editing and accept false overrides", () => {
+  const original = {
+    ...initialConfig(),
+    model,
+    skill_force_overwrite: false,
+    skill_force_cleanup: true,
+  };
+  const saved = buildConfig(original, { model }, advancedConfig(original));
+  expect(saved.skill_force_overwrite).toBe(false);
+  expect(saved.skill_force_cleanup).toBe(true);
+  const advanced = JSON.parse(advancedConfig(saved));
+  advanced.skill_force_cleanup = false;
+  expect(
+    buildConfig(saved, { model }, JSON.stringify(advanced)).skill_force_cleanup,
+  ).toBe(false);
+});

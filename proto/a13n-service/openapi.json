@@ -273,6 +273,16 @@
               }
             ]
           },
+          "skill_force_cleanup": {
+            "default": false,
+            "title": "Skill Force Cleanup",
+            "type": "boolean"
+          },
+          "skill_force_overwrite": {
+            "default": true,
+            "title": "Skill Force Overwrite",
+            "type": "boolean"
+          },
           "skills": {
             "default": [],
             "items": {
@@ -433,6 +443,16 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_force_cleanup": {
+            "default": false,
+            "title": "Skill Force Cleanup",
+            "type": "boolean"
+          },
+          "skill_force_overwrite": {
+            "default": true,
+            "title": "Skill Force Overwrite",
+            "type": "boolean"
           },
           "skills": {
             "default": [],
@@ -761,6 +781,28 @@
               }
             ]
           },
+          "skill_force_cleanup": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Force Cleanup"
+          },
+          "skill_force_overwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Force Overwrite"
+          },
           "skills": {
             "anyOf": [
               {
@@ -968,6 +1010,28 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_force_cleanup": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Force Cleanup"
+          },
+          "skill_force_overwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Force Overwrite"
           },
           "skills": {
             "anyOf": [

@@ -56,3 +56,26 @@ curl -X POST "$A13N_URL/api/v1/skills" \
 - `POST …/archive` stops new agent revisions from pinning the skill and refuses changes; agents that already pin it keep working. `POST …/unarchive` reverses it.
 
 An agent revision selects skills in `skills` as `{"skill_id": "sk_…", "revision_id": ...}`; without `revision_id`, saving pins the skill's current default revision. `GET /api/v1/agents?skill_id=sk_…` lists the agents with a revision that pins the skill; `skill_revision_id` filters by one skill revision.
+
+## Shared workspace synchronization
+
+At execution startup, selected skills are published in the primary environment at `/workspace/.agents/skills/<name>/SKILL.md`. The directory name matches the package's front matter. Names use 1–64 lowercase ASCII letters or digits separated by single hyphens; Windows reserved device names are rejected. The layout has no agent or digest directory layer.
+
+Configure these independent fields on an agent revision, or override either through `options.overrides` for one run:
+
+| Field                   | Default | Effect                                                                                                                                                                                                    |
+| ----------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skill_force_overwrite` | `true`  | Replace every selected same-name skill with its complete package, removing obsolete files inside it. Set `false` for an additive sidecar that preserves existing entries and installs only missing names. |
+| `skill_force_cleanup`   | `false` | Set `true` to remove unselected entries from the skills root after publication, including manually installed skills and hidden entries. An empty selection cleans the root.                               |
+
+For a sidecar run:
+
+```json
+{"options": {"overrides": {"skill_force_overwrite": false, "skill_force_cleanup": false}}}
+```
+
+With both fields `true`, the selection replaces matching skills and removes unselected entries. Cleanup requires a primary environment even when the selection is empty. Inline children use their own agent policy; a root-run override does not change it.
+
+Publication is atomic per skill directory on Linux and macOS. Windows uses ordinary remove/rename and accepts gaps and incomplete outcomes under races. The last publication of a name wins, regardless of which run started first. Concurrent runs and external tools share mutable paths: later publication can change files an active agent reads, and cleanup can remove them. The supplied catalog describes selected revisions, not a filesystem snapshot. Use separate environments when agents need stable, isolated versions. The full selection and cleanup are not one transaction.
+
+Cancelled or uncertain operations retain private staging directories outside the discoverable skills root. Remove abandoned staging only after outstanding filesystem operations have stopped. Existing `.a13n/skills` content is not migrated or deleted; attachments and other `.a13n` paths are unchanged.
