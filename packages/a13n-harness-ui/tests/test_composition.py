@@ -1085,15 +1085,23 @@ async def test_explicit_notes_opt_out_overrides_the_enabled_default(tmp_path: Pa
     assert len(native) == 1 and native[0].configuration.notes_enabled is False
 
 
-@pytest.mark.parametrize("tier", [None, "auto", "default", "flex", "priority"])
 @pytest.mark.parametrize(
-    "route,tier_key,configured",
+    "tier,route,tier_key,configured",
     [
-        ("openai:gpt-5", "service_tier", "default"),
-        ("openai:gpt-5", "openai_service_tier", "priority"),
-        ("anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
-        ("google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
-        ("deepseek:deepseek-chat", "openai_service_tier", "flex"),
+        # Exercise every tier once, and absent/present overrides for each key owner.
+        (None, "openai:gpt-5", "openai_service_tier", "priority"),
+        ("auto", "openai:gpt-5", "openai_service_tier", "priority"),
+        ("default", "openai:gpt-5", "openai_service_tier", "priority"),
+        ("flex", "openai:gpt-5", "openai_service_tier", "priority"),
+        ("priority", "openai:gpt-5", "openai_service_tier", "priority"),
+        (None, "openai:gpt-5", "service_tier", "default"),
+        ("priority", "openai:gpt-5", "service_tier", "default"),
+        (None, "anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
+        ("priority", "anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
+        (None, "google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
+        ("priority", "google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
+        (None, "deepseek:deepseek-chat", "openai_service_tier", "flex"),
+        ("priority", "deepseek:deepseek-chat", "openai_service_tier", "flex"),
     ],
 )
 async def test_generic_service_tier_override_only_changes_root_and_inherited_children(

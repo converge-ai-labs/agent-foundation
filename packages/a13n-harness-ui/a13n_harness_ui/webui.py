@@ -126,7 +126,7 @@ from a13n_harness_ui.page_presence import (
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
-from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame, DraftSummary
+from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, DraftFrame, DraftSummary
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.surfaces import (
     ChildControlResult,
@@ -242,6 +242,7 @@ class SteerRequest(SurfaceModel):
 
 
 class SubmitRequest(PromptRequest, ModelControlSelection):
+    draft: DraftCapture | None = None
     app_context: tuple[AppContextReference, ...] = Field(default=(), max_length=8)
     mode: Literal["normal", "goal"] = "normal"
     environment: EnvironmentSelectionPatch | None = None
@@ -249,6 +250,8 @@ class SubmitRequest(PromptRequest, ModelControlSelection):
 
 
 class RootSteerRequest(PromptRequest):
+    draft: DraftCapture | None = None
+
     @model_validator(mode="after")
     def validate_instruction(self) -> RootSteerRequest:
         if not self.parts:
@@ -457,12 +460,14 @@ class AccessBoundary:
         await self.app(scope, receive, send)
 
 
-async def _document[T: BaseModel](request: Request, model: type[T]) -> T:
+async def _document[T: BaseModel](request: Request, model: type[T], *, max_bytes: int = _MAX_BODY) -> T:
     data = bytearray()
     async for chunk in request.stream():
         data.extend(chunk)
-        if len(data) > _MAX_BODY:
-            raise HarnessUiError("Request exceeds the one MiB limit.", code="request_too_large")
+        if len(data) > max_bytes:
+            raise HarnessUiError(
+                f"Request exceeds the {max_bytes // (1024 * 1024)} MiB limit.", code="request_too_large"
+            )
     try:
         return model.model_validate_json(data)
     except ValidationError:
@@ -1668,7 +1673,8 @@ def create_webui(
 
     @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(SubmitRequest))
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
-        document = await _document(request, SubmitRequest)
+        # Ordered input and its base64 CRDT capture can each contain the prompt.
+        document = await _document(request, SubmitRequest, max_bytes=2 * _MAX_BODY)
         try:
             return await app().submit_thread(
                 thread_id=thread_id,
@@ -1679,6 +1685,7 @@ def create_webui(
                 model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
                 skill_references=document.skill_references,
                 input_surface="webui",
+                draft=document.draft,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1699,12 +1706,13 @@ def create_webui(
         "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(RootSteerRequest)
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
-        document = await _document(request, RootSteerRequest)
+        document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
         try:
             return await app().steer_root_operation(
                 receipt_id=receipt_id,
                 message=document.input(),
                 skill_references=document.skill_references,
+                draft=document.draft,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc

@@ -215,7 +215,7 @@ from a13n_harness_ui.setup import (
     SetupStatus,
     preflight_environment,
 )
-from a13n_harness_ui.shared_drafts import DraftCommand, DraftSummary, SharedDraft
+from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, DraftSummary, SharedDraft
 from a13n_harness_ui.skill_input import prepare_skill_input
 from a13n_harness_ui.storage import (
     AgentResourceSource,
@@ -1692,6 +1692,24 @@ class HarnessUiApp:
             if await draft.command(participant, command, validate):
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
+    def _prepare_draft_clear(self, thread_id: str, capture: DraftCapture | None) -> tuple[SharedDraft, bytes] | None:
+        if capture is None:
+            return None
+        draft = self._shared_drafts.get(thread_id)
+        if draft is None:
+            raise AppStateError("The shared draft instance changed.", code="draft_instance_conflict")
+        return draft, draft.prepare_clear(capture)
+
+    async def _clear_submitted_draft(self, thread_id: str, prepared: tuple[SharedDraft, bytes] | None) -> None:
+        if prepared is None:
+            return
+        draft, update = prepared
+        # Admission already succeeded. Finish its draft cleanup even if the
+        # initiating request disappears, without shielding admission itself.
+        with CancelScope(shield=True):
+            if await draft.clear(update):
+                await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+
     @property
     def host_terminal_available(self) -> bool:
         return self._host_terminal.available
@@ -1979,6 +1997,7 @@ class HarnessUiApp:
         mode: GoalMode = "normal",
         app_context: tuple[AppContextReference, ...] = (),
         mcp_app_view: AppView | None = None,
+        draft: DraftCapture | None = None,
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
@@ -1986,6 +2005,7 @@ class HarnessUiApp:
             raise ValueError("Unknown submission mode")
         async with self._operation():
             await self._threads.require_interactive(thread_id)
+            draft_clear = self._prepare_draft_clear(thread_id, draft)
             selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()
             goal = None
             if mode == "goal":
@@ -2049,6 +2069,7 @@ class HarnessUiApp:
                 human_input=True,
                 authorize=authorize_app_message if mcp_app_view is not None else None,
             )
+            await self._clear_submitted_draft(thread_id, draft_clear)
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
                 thread_id=thread_id,
@@ -2162,10 +2183,12 @@ class HarnessUiApp:
         message: str | ComposerInput,
         skill_references: tuple[SkillReference, ...] = (),
         attachment_ids: tuple[str, ...] = (),
+        draft: DraftCapture | None = None,
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
             await self._threads.require_interactive(operation.receipt.thread_id)
+            draft_clear = self._prepare_draft_clear(operation.receipt.thread_id, draft)
             catalog = (
                 await self._terminal_projections.skill_catalog(thread_id=operation.receipt.thread_id)
                 if skill_references
@@ -2183,7 +2206,10 @@ class HarnessUiApp:
             )
             if catalog is not None:
                 prepared = prepare_skill_input(prepared, catalog, selected_skills)
-            return await self._root_runs.steer(receipt_id=receipt_id, message=prepared, touch=True)
+            result = await self._root_runs.steer(receipt_id=receipt_id, message=prepared, touch=True)
+            if result.accepted:
+                await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
+            return result
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
         async with self._operation():

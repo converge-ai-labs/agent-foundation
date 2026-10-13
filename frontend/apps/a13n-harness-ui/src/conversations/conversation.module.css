@@ -313,6 +313,10 @@
   min-height: 34px;
   border-radius: 8px;
 }
+/* Keep stars and menus aligned with rows that have a worker disclosure. */
+.threadRow:not(:has(.threadDisclosure)) {
+  padding-inline-end: 28px;
+}
 .threadDisclosure {
   display: flex;
   align-items: center;

@@ -37,6 +37,7 @@ export class ResultTracker {
   private dirtyIds = new Set<string>();
   private acknowledgements = new Map<string, number>();
   private failedFollows = new Map<string, number>();
+  private following = new Map<string, Promise<void>>();
   private failedAcknowledgements = new Map<string, number>();
 
   constructor(
@@ -51,17 +52,25 @@ export class ResultTracker {
     };
   };
   private publish(patch: Partial<ResultSnapshot>) {
+    if (
+      Object.entries(patch).every(
+        ([key, value]) => this.snapshot[key as keyof ResultSnapshot] === value,
+      )
+    )
+      return;
     this.snapshot = { ...this.snapshot, ...patch };
     this.listeners.forEach((listener) => listener());
   }
   private saved(records: FollowedThread[]) {
-    const followed = new Map(this.snapshot.followed);
-    for (const record of records)
-      followed.set(
-        record.threadId,
-        Math.max(followed.get(record.threadId) ?? 0, record.acknowledged),
-      );
-    this.publish({ followed });
+    let followed: Map<string, number> | undefined;
+    for (const record of records) {
+      const known = (followed ?? this.snapshot.followed).get(record.threadId);
+      const acknowledged = Math.max(known ?? 0, record.acknowledged);
+      if (known === acknowledged) continue;
+      followed ??= new Map(this.snapshot.followed);
+      followed.set(record.threadId, acknowledged);
+    }
+    if (followed) this.publish({ followed });
   }
   private storageFailed() {
     this.publish({
@@ -70,51 +79,68 @@ export class ResultTracker {
     });
   }
   observe(thread: Schema<"ThreadSummary">, observedAt = Date.now()) {
-    const threads = new Map(this.snapshot.threads);
-    const previous = threads.get(thread.thread_id);
-    // Lookup, detail, and cross-tab invalidations may race. Never regress a marker.
-    if (previous && previous.observedAt > observedAt) {
-      if (
-        (thread.completion?.version ?? 0) <=
-        (previous.thread.completion?.version ?? 0)
-      )
-        return;
-      thread = { ...previous.thread, completion: thread.completion };
-      observedAt = previous.observedAt;
+    this.observeMany([thread], observedAt);
+  }
+  private observeMany(rows: Schema<"ThreadSummary">[], observedAt: number) {
+    let threads: Map<string, ResultObservation> | undefined;
+    for (let thread of rows) {
+      let timestamp = observedAt;
+      const previous = (threads ?? this.snapshot.threads).get(thread.thread_id);
+      // Lookup, detail, and cross-tab invalidations may race. Never regress a marker.
+      if (previous && previous.observedAt > timestamp) {
+        if (
+          (thread.completion?.version ?? 0) <=
+          (previous.thread.completion?.version ?? 0)
+        )
+          continue;
+        thread = { ...previous.thread, completion: thread.completion };
+        timestamp = previous.observedAt;
+      }
+      if (previous?.thread === thread && previous.observedAt === timestamp)
+        continue;
+      threads ??= new Map(this.snapshot.threads);
+      threads.set(thread.thread_id, {
+        observedAt: timestamp,
+        thread:
+          previous &&
+          (previous.thread.completion?.version ?? 0) >
+            (thread.completion?.version ?? 0)
+            ? { ...thread, completion: previous.thread.completion }
+            : thread,
+      });
     }
-    threads.set(thread.thread_id, {
-      observedAt,
-      thread:
-        previous &&
-        (previous.thread.completion?.version ?? 0) >
-          (thread.completion?.version ?? 0)
-          ? { ...thread, completion: previous.thread.completion }
-          : thread,
-    });
-    this.publish({ threads });
+    if (threads) this.publish({ threads });
   }
   follow = async (thread: Schema<"ThreadSummary">, observedAt = Date.now()) => {
     if (thread.parent_thread_id) return;
     this.observe(thread, observedAt);
+    const id = thread.thread_id;
+    if (this.snapshot.followed.has(id)) return;
+    const pending = this.following.get(id);
+    if (pending) return pending;
     const baseline =
-      this.failedFollows.get(thread.thread_id) ??
-      thread.completion?.version ??
-      0;
-    try {
-      const record = await this.store.update(thread.thread_id, baseline, true);
-      this.failedFollows.delete(thread.thread_id);
-      if (record) this.saved([record]);
-      this.channel?.postMessage(null);
-      this.invalidate();
-    } catch {
-      this.failedFollows.set(thread.thread_id, baseline);
-      this.storageFailed();
-    }
+      this.failedFollows.get(id) ?? thread.completion?.version ?? 0;
+    const following = (async () => {
+      try {
+        const record = await this.store.update(id, baseline, true);
+        this.failedFollows.delete(id);
+        if (record) this.saved([record]);
+        this.channel?.postMessage(null);
+        this.invalidate(id);
+      } catch {
+        this.failedFollows.set(id, baseline);
+        this.storageFailed();
+      }
+    })().finally(() => this.following.delete(id));
+    this.following.set(id, following);
+    return following;
   };
   // Admission must not outrun initial interest registration, including a newly
   // created Thread's first Send. A storage failure is visible, not a Send failure.
   beforeRun = async (threadId: string) => {
     if (this.snapshot.followed.has(threadId)) return;
+    const pending = this.following.get(threadId);
+    if (pending) return pending;
     const detail = await result(
       this.transport.client.GET("/api/threads/{thread_id}", {
         params: { path: { thread_id: threadId } },
@@ -194,6 +220,7 @@ export class ResultTracker {
             const record = await this.store.update(id, baseline, true);
             if (record) this.saved([record]);
             this.failedFollows.delete(id);
+            dirtyIds.add(id);
             this.channel?.postMessage(null);
           }
           for (const [id, version] of this.failedAcknowledgements) {
@@ -220,7 +247,7 @@ export class ResultTracker {
                 body: { thread_ids: ids.slice(offset, offset + 100) },
               }),
             );
-            for (const thread of page.threads) this.observe(thread, observedAt);
+            this.observeMany(page.threads, observedAt);
           }
           this.publish({ lookupError: "" });
         } catch {

@@ -9,7 +9,7 @@ import {
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Robot, Folder } from "@phosphor-icons/react";
-import { SearchPicker } from "a13n-ui";
+import { Button, SearchPicker } from "a13n-ui";
 import {
   useProjects,
   useSelectors,
@@ -43,6 +43,34 @@ export function newConversationPath(
   return `/new?project=${encodeURIComponent(projectId ?? "")}${coordinatorThreadId ? `&coordinator=${encodeURIComponent(coordinatorThreadId)}` : ""}`;
 }
 
+async function checkConversation(
+  transport: Transport,
+  threadId: string,
+  draft: NewDraft,
+  signal?: AbortSignal,
+) {
+  try {
+    signal?.throwIfAborted();
+    await result(
+      transport.client.GET("/api/threads/{thread_id}", {
+        params: { path: { thread_id: threadId } },
+        signal,
+      }),
+    );
+    signal?.throwIfAborted();
+    draft.created = true;
+    return true;
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (!(error instanceof ApiError) || error.code !== "thread_missing")
+      throw error;
+    draft.attempted = false;
+    return false;
+  } finally {
+    draft.save();
+  }
+}
+
 // Creation and admission remain separate. Resolve a lost creation acknowledgement
 // by its retained identity, never by allocating another Thread or replaying Send.
 export async function ensureConversation(
@@ -54,25 +82,12 @@ export async function ensureConversation(
   if (draft.created) return;
   const create = async () => {
     if (draft.attempted) {
-      try {
-        await result(
-          transport.client.GET("/api/threads/{thread_id}", {
-            params: { path: { thread_id: threadId } },
-          }),
-        );
-        draft.created = true;
-        throw new Error(
-          "This conversation already exists. Open it to review its settings before sending your retained input.",
-        );
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          draft.attempted = false;
-          throw new Error(
-            "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
-          );
-        }
-        throw error;
-      }
+      const found = await checkConversation(transport, threadId, draft);
+      throw new Error(
+        found
+          ? "This conversation already exists. Open it to review its settings before sending your retained input."
+          : "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
+      );
     }
     draft.attempted = true;
     draft.save();
@@ -139,10 +154,12 @@ function NewConversation({
 }) {
   const { threadId } = draft;
   const active = useRef(true);
+  const reviewController = useRef<AbortController | null>(null);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
+      reviewController.current?.abort();
     };
   }, []);
   const transport = useTransport();
@@ -184,6 +201,29 @@ function NewConversation({
       if (draft.created && error && active.current) openConversation();
     },
   });
+  const review = useMutation({
+    mutationFn: async () => {
+      const controller = new AbortController();
+      reviewController.current = controller;
+      // A creation started before navigating away still owns this identity.
+      // Wait for it instead of reading absence while its POST is in flight.
+      if (draft.pending) await draft.pending;
+      controller.signal.throwIfAborted();
+      return (
+        draft.created ||
+        checkConversation(transport, threadId, draft, controller.signal)
+      );
+    },
+    onSuccess: (found) => {
+      if (found) {
+        void refreshThreadLists(queries);
+        openConversation();
+      }
+    },
+  });
+  const unknownSubmission = composerDraft.submission.kind === "unknown";
+  const choicesDisabled =
+    preparing || review.isPending || draft.attempted || unknownSubmission;
   const [search, setSearch] = useSearchParams();
   const requestedProject = search.get("project");
   const requestedOwner = search.get("coordinator");
@@ -191,9 +231,7 @@ function NewConversation({
     // Home resumes the slot; explicit creation links select Project and ownership.
     if (
       (requestedProject === null && requestedOwner === null) ||
-      preparing ||
-      draft.attempted ||
-      composerDraft.submission.kind === "unknown"
+      choicesDisabled
     ) {
       if (
         requestedProject !== (draft.defaults.project_id ?? "") ||
@@ -231,13 +269,13 @@ function NewConversation({
   }, [
     requestedProject,
     requestedOwner,
-    preparing,
+    choicesDisabled,
     draft,
     composerDraft,
     setSearch,
   ]);
   const change = (patch: Schema<"NewThreadDefaults">) => {
-    if (preparing || draft.attempted) return;
+    if (choicesDisabled) return;
     draft.defaults = { ...defaults, ...patch };
     setDefaults(draft.defaults);
     draft.save();
@@ -261,8 +299,6 @@ function NewConversation({
   const effectiveEnvironment = selectors.data?.environments.find(
     (item) => item.profile_id === effective?.environment_profile_id,
   );
-  const choicesDisabled =
-    preparing || draft.attempted || composerDraft.submission.kind === "unknown";
   const ownerAvailable =
     !ownerId ||
     (!owner.isError &&
@@ -337,10 +373,7 @@ function NewConversation({
             localInputs={composerDraft.localInputs}
             threadId={threadId}
           />
-          <fieldset
-            className={styles.context}
-            disabled={preparing || draft.attempted}
-          >
+          <fieldset className={styles.context} disabled={choicesDisabled}>
             <legend className={styles.srOnly}>Conversation settings</legend>
             <div className={styles.location}>
               <Folder aria-hidden="true" />
@@ -376,6 +409,48 @@ function NewConversation({
               />
             </div>
           </fieldset>
+          {choicesDisabled && (
+            <div className={styles.projectNotice}>
+              <div role="status">
+                <strong>Project changes are paused</strong>
+                <p>
+                  {preparing
+                    ? "Finishing your first message. Wait for this attempt to finish before changing projects."
+                    : unknownSubmission
+                      ? "The previous message may already have been accepted. Open the conversation to review its outcome. Your input is retained."
+                      : draft.created
+                        ? "This draft belongs to an existing conversation. Open it to continue with your retained input."
+                        : "Conversation creation could not be confirmed. Check its status before changing projects. Your input is retained."}
+                </p>
+              </div>
+              {!preparing &&
+                (draft.created || unknownSubmission ? (
+                  <Link
+                    to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
+                  >
+                    Open conversation with retained input
+                  </Link>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={review.isPending}
+                    onClick={() => review.mutate()}
+                  >
+                    {review.isPending
+                      ? "Checking conversation…"
+                      : "Check conversation status"}
+                  </Button>
+                ))}
+              <ErrorNotice error={review.error} />
+            </div>
+          )}
+          {!choicesDisabled && review.isSuccess && !review.data && (
+            <p className={styles.recoveryStatus} role="status">
+              No conversation was found. You can now change projects; your input
+              is retained.
+            </p>
+          )}
           <Composer
             autoFocus={pageReady}
             threadId={threadId}
@@ -400,15 +475,22 @@ function NewConversation({
                     locked: draft.attempted,
                   }
             }
-            canRun={!!preview.data && !preview.error && ownerAvailable}
+            canRun={
+              !!preview.data &&
+              !preview.error &&
+              ownerAvailable &&
+              !review.isPending
+            }
             unavailableReason={
-              !ownerAvailable
-                ? "The Coordinator must be available in this Project. Retry or remove the assignment."
-                : preview.isPending
-                  ? "Updating conversation settings…"
-                  : preview.error
-                    ? "Review conversation settings before sending."
-                    : undefined
+              review.isPending
+                ? "Checking the previous creation attempt…"
+                : !ownerAvailable
+                  ? "The Coordinator must be available in this Project. Retry or remove the assignment."
+                  : preview.isPending
+                    ? "Updating conversation settings…"
+                    : preview.error
+                      ? "Review conversation settings before sending."
+                      : undefined
             }
             profile={profile}
             unauthorized={unauthorized}
@@ -482,11 +564,6 @@ function NewConversation({
               void projects.refetch();
             }}
           />
-          {draft.created && !preparing && (
-            <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
-              Open conversation with retained input
-            </Link>
-          )}
           {(preview.error || setup.data?.needed) && (
             <Link className={styles.setup} to="/setup">
               Continue setup

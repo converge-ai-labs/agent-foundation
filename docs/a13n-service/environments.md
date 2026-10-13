@@ -62,6 +62,8 @@ Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine
 
 ## Templates
 
+In Console, choose **Environments → Templates → Create template** to open the creation page. Name the template, choose a runtime, then select an enabled provider connection or add one in place. Use the **Cloud / Own infrastructure** tabs to show one category at a time. Switching back restores the previous runtime selection. These groups do not change provider behavior. Configure the environment and its idle policy, then save. Switching runtimes preserves each runtime's draft configuration. A connection added here is saved independently, even if you cancel template creation. Saving the template does not start an environment.
+
 A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`. This example uses a Docker provider; replace `eprov_...` with its ID.
 
 ```sh

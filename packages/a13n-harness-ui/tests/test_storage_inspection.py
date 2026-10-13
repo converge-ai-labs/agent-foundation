@@ -134,3 +134,86 @@ async def test_independent_publishers_recheck_index_under_the_writer_lock(databa
         assert len(statements) == 2  # Two bounded batches, not two full publications.
         assert (await first.header(_THREAD, _INITIAL)).message_count == 101
         assert (await second.header(_THREAD, _INITIAL)).message_count == 101
+
+
+async def test_long_prefix_is_not_submitted_to_the_writer_again(database):
+    repository = InspectionRepository(database.sessions)
+    first = InspectionData("{}", tuple(f"message-{index}" for index in range(2000)), ())
+    assert await repository.publish(_THREAD, _INITIAL, first)
+    await select_source(database, _NEXT)
+    submitted = []
+
+    def observe(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("INSERT INTO transcript_entry"):
+            submitted.extend(parameters if executemany else [parameters])
+
+    event.listen(database.engine.sync_engine, "before_cursor_execute", observe)
+    try:
+        latest = InspectionData("{}", (*first.entries, "appended"), ())
+        assert await repository.publish(_THREAD, _NEXT, latest)
+    finally:
+        event.remove(database.engine.sync_engine, "before_cursor_execute", observe)
+    assert len(submitted) == 1
+    assert await repository.entries(_THREAD, _NEXT, (0, 1999, 2000)) == ("message-0", "message-1999", "appended")
+
+
+@pytest.mark.parametrize("intervening", ["star", "new_source", "same_source"])
+async def test_prepared_inspection_rechecks_the_source_after_an_independent_write(
+    database, tmp_path, monkeypatch, intervening
+):
+    import threading
+
+    from a13n_harness_ui.storage import inspection
+    from anyio import Event, fail_after, from_thread
+
+    repository = InspectionRepository(database.sessions)
+    first = InspectionData("{}", ("first",), ())
+    assert await repository.publish(_THREAD, _INITIAL, first)
+    await select_source(database, _NEXT)
+    entered = Event()
+    release = threading.Event()
+    original = inspection._changed_rows
+    loop_thread = threading.get_ident()
+    latest = InspectionData("{}", ("first", "prepared"), ())
+    outcomes = []
+
+    def prepare(thread_id, data, entries, turns):
+        assert threading.get_ident() != loop_thread
+        if data is latest:
+            from_thread.run_sync(entered.set)
+            assert release.wait(5)
+        return original(thread_id, data, entries, turns)
+
+    async def publish():
+        outcomes.append(await repository.publish(_THREAD, _NEXT, latest))
+
+    monkeypatch.setattr(inspection, "_changed_rows", prepare)
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as other:
+        async with create_task_group() as tasks:
+            tasks.start_soon(publish)
+            try:
+                with fail_after(2):
+                    await entered.wait()
+                    assert not database.sessions.write_lock.locked()
+                    async with transaction(other.sessions) as session:
+                        row = await session.get(ThreadRecord, _THREAD)
+                        row.starred = True
+                        if intervening == "new_source":
+                            row.continuation_digest = "c" * 64
+                    if intervening == "same_source":
+                        assert await InspectionRepository(other.sessions).publish(
+                            _THREAD, _NEXT, InspectionData("{}", ("independent winner",), ())
+                        )
+            finally:
+                release.set()
+    assert outcomes == [intervening != "new_source"]
+    async with short_session(database.sessions) as session:
+        assert (await session.get(ThreadRecord, _THREAD)).starred
+    if intervening == "new_source":
+        assert await repository.header(_THREAD, _NEXT) is None
+        assert await repository.entries(_THREAD, _INITIAL, (0,)) == ("first",)
+    elif intervening == "same_source":
+        assert await repository.entries(_THREAD, _NEXT, (0,)) == ("independent winner",)
+        assert (await repository.header(_THREAD, _NEXT)).message_count == 1
+    else:
+        assert await repository.entries(_THREAD, _NEXT, (0, 1)) == latest.entries

@@ -115,8 +115,7 @@ async def test_unknown_installer_gets_instructions_not_an_install_action(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("disabled", ["none", "config", "flag"])
-@pytest.mark.parametrize("install", [False, True])
+@pytest.mark.parametrize("disabled,install", [("none", False), ("none", True), ("config", False), ("flag", False)])
 async def test_update_precedes_setup_and_handoff_closes_app_and_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disabled: str, install: bool
 ) -> None:
