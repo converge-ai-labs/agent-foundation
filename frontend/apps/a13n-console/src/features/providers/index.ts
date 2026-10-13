@@ -33,7 +33,11 @@ export {
 export { CredentialsPill, type CredentialState } from "./credentials-pill";
 export { EditProviderDialog } from "./edit-provider-dialog";
 export { providerKeyLink, type ProviderKeyLinkTarget } from "./key-urls";
-export { KindProviders, useProviderTypes } from "./kind-providers";
+export {
+  KindProviders,
+  ProviderForm,
+  useProviderTypes,
+} from "./kind-providers";
 export { ManageProvidersLink } from "./manage-link";
 export { providersPath } from "./navigation";
 export {

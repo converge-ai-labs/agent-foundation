@@ -26,6 +26,8 @@ import { environmentApi } from "./api";
 import editorStyles from "./environments.module.css";
 import { ProviderConfiguration } from "./provider-configuration";
 import { useEnvironmentTypes } from "./providers";
+import { EnvironmentRuntimeCatalog } from "./runtime-catalog";
+import { TemplateConnection } from "./template-connection";
 
 export interface ChosenProvider {
   provider: Schema["Provider"];
@@ -34,8 +36,8 @@ export interface ChosenProvider {
 
 /**
  * A template's configuration: the provider that runs it and the recipe that
- * provider understands. Creation starts at the provider catalog; editing
- * opens on the current configuration with a way back to the catalog.
+ * provider understands. Standalone creation keeps runtime and connection
+ * choices beside the recipe; editing retains the current provider catalog.
  */
 export function TemplateConfig({
   template,
@@ -43,7 +45,9 @@ export function TemplateConfig({
   reload,
   readOnly = false,
   onProviderChange,
+  standalone = false,
 }: {
+  standalone?: boolean;
   readOnly?: boolean;
   template?: ReturnType<typeof representation<Schema["Template"]>>;
   close: () => void;
@@ -68,7 +72,11 @@ export function TemplateConfig({
   const [name, setName] = useState(""),
     [description, setDescription] = useState(""),
     [providerId, setProviderId] = useState(saved?.provider_id ?? ""),
+    [runtimeType, setRuntimeType] = useState(""),
     [choosing, setChoosing] = useState(!saved?.provider_id);
+  const [connections, setConnections] = useState<Record<string, string>>({});
+  const activeRuntime = useRef(runtimeType);
+  activeRuntime.current = runtimeType;
   const [configurations, setConfigurations] = useState<Record<string, string>>({
     [saved?.provider_id ?? ""]: JSON.stringify(
       saved?.config.recipe ?? {},
@@ -77,9 +85,12 @@ export function TemplateConfig({
     ),
   });
   const [configurationError, setConfigurationError] = useState<string>();
-  const configuration = configurations[providerId] ?? "{}";
+  // Connections of the same runtime share a recipe schema. Keep the draft
+  // while creating or changing a connection, but never cross runtime schemas.
+  const configurationKey = standalone ? runtimeType : providerId;
+  const configuration = configurations[configurationKey] ?? "{}";
   function setConfiguration(value: string) {
-    setConfigurations((current) => ({ ...current, [providerId]: value }));
+    setConfigurations((current) => ({ ...current, [configurationKey]: value }));
     setConfigurationError(undefined);
   }
   const [stop, setStop] = useState(
@@ -90,8 +101,33 @@ export function TemplateConfig({
     );
   const provider = providers.data?.find((item) => item.id === providerId);
   const definition = types.data?.items.find(
-    (item) => item.type === provider?.type,
+    (item) => item.type === (standalone ? runtimeType : provider?.type),
   );
+  function chooseRuntime(type: string) {
+    save.reset();
+    setRuntimeType(type);
+    const available =
+      providers.data?.filter((item) => item.enabled && item.type === type) ??
+      [];
+    const previous = available.find((item) => item.id === connections[type]);
+    setProviderId(
+      previous?.id ?? (available.length === 1 ? available[0]!.id : ""),
+    );
+    setConfigurationError(undefined);
+  }
+  function connectionCreated(created: Schema["Provider"]) {
+    cache.setQueryData<Schema["Provider"][]>(
+      ["environment-provider-options", workspace.id],
+      (current = []) => [
+        ...current.filter((item) => item.id !== created.id),
+        created,
+      ],
+    );
+    setConnections((current) => ({ ...current, [created.type]: created.id }));
+    // A connection can finish saving after its dialog was dismissed and the
+    // user picked another runtime. Keep that result without changing their choice.
+    if (activeRuntime.current === created.type) chooseProvider(created.id);
+  }
   const configurationSchema = definition?.environment_schema ?? undefined;
   const report = useRef(onProviderChange);
   report.current = onProviderChange;
@@ -102,6 +138,8 @@ export function TemplateConfig({
   }, [choosing, provider, definition]);
   function chooseProvider(id: string) {
     setProviderId(id);
+    if (standalone)
+      setConnections((current) => ({ ...current, [runtimeType]: id }));
     setConfigurationError(undefined);
     setChoosing(false);
   }
@@ -165,7 +203,13 @@ export function TemplateConfig({
       ? save.error.message
       : undefined;
   const loadError = providers.error ?? types.error;
-  if (choosing)
+  const readyToCreate =
+    provider?.enabled &&
+    provider.type === definition?.type &&
+    !loadError &&
+    !providers.isPending &&
+    !types.isPending;
+  if (choosing && !standalone)
     return (
       <div className={styles.stack}>
         <ErrorNotice error={loadError} />
@@ -191,108 +235,160 @@ export function TemplateConfig({
   const body = (
     <>
       <form
-        className={formSectionStyles.form}
+        className={`${formSectionStyles.form} ${standalone ? editorStyles.creationForm : ""}`}
         onSubmit={(event) => {
           event.preventDefault();
+          if (standalone && !readyToCreate) return;
           if (!readOnly) save.mutate();
         }}
       >
         <ErrorNotice error={loadError} />
-        {!basis && (
-          <FormSection>
-            <FormField className="min-w-0 w-full" label={t("Name")}>
-              <Input
-                readOnly={readOnly}
-                required={true}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                maxLength={128}
-              />
-            </FormField>
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Description")}
-              description={t("Shown when someone picks this template.")}
+        <fieldset
+          disabled={save.isPending}
+          className={editorStyles.templateFields}
+        >
+          {!basis && (
+            <FormSection
+              title={standalone ? t("General") : undefined}
+              description={
+                standalone
+                  ? t("Name this reusable configuration for your agents.")
+                  : undefined
+              }
             >
-              <Input
-                readOnly={readOnly}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                maxLength={2048}
+              <FormField className="min-w-0 w-full" label={t("Name")}>
+                <Input
+                  readOnly={readOnly}
+                  required={true}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  maxLength={128}
+                />
+              </FormField>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Description")}
+                description={t("Shown when someone picks this template.")}
+              >
+                <Input
+                  readOnly={readOnly}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  maxLength={2048}
+                />
+              </FormField>
+            </FormSection>
+          )}
+          {standalone && (
+            <FormSection
+              title={t("Environment runtime")}
+              description={t(
+                "Choose where new environment instances will run.",
+              )}
+            >
+              {types.isPending ? (
+                <InlineLoading width="12rem" />
+              ) : (
+                <EnvironmentRuntimeCatalog
+                  definitions={types.data?.items ?? []}
+                  selected={runtimeType}
+                  onChoose={chooseRuntime}
+                />
+              )}
+              {definition && (
+                <TemplateConnection
+                  key={definition.type}
+                  definition={definition}
+                  providers={providers.data ?? []}
+                  value={providerId}
+                  onChange={chooseProvider}
+                  onCreated={connectionCreated}
+                />
+              )}
+            </FormSection>
+          )}
+          {/* Creation carries the brand in the dialog title instead. */}
+          {basis && (
+            <div className={editorStyles.chosenProviderBlock}>
+              <ChosenProviderRow
+                provider={provider}
+                definition={definition}
+                pending={providers.isPending}
+                onChange={readOnly ? undefined : () => setChoosing(true)}
               />
-            </FormField>
-          </FormSection>
-        )}
-        {/* Creation carries the brand in the dialog title instead. */}
-        {basis && (
-          <div className={editorStyles.chosenProviderBlock}>
-            <ChosenProviderRow
-              provider={provider}
-              definition={definition}
-              pending={providers.isPending}
-              onChange={readOnly ? undefined : () => setChoosing(true)}
-            />
-          </div>
-        )}
-        <ProviderConfiguration
-          key={providerId}
-          readOnly={readOnly}
-          schema={configurationSchema}
-          text={configuration}
-          onChange={setConfiguration}
-          error={configurationError ?? recipeRefusal}
-          note={
-            definition?.type === "direct_local"
-              ? t(
-                  "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
-                )
-              : undefined
-          }
-          variant={definition?.type === "docker" ? "docker" : "default"}
-        />
-        <FormSection divider={false}>
-          <DisclosureSection
-            className={editorStyles.advanced}
-            title={t("Lifecycle")}
-          >
-            <div className={editorStyles.advancedBody}>
-              <div className={styles.twoColumns}>
-                <FormField
-                  className="min-w-0 w-full"
-                  label={t("Stop after idle seconds")}
-                  description={t("Leave empty to disable automatic stopping.")}
-                  disabled={definition?.supports_stop === false}
-                >
-                  <Input
-                    readOnly={readOnly}
-                    type="number"
-                    min={60}
-                    step={1}
-                    value={stop}
-                    onChange={(event) => setStop(event.target.value)}
-                  />
-                </FormField>
-                <FormField
-                  className="min-w-0 w-full"
-                  label={t("Delete after idle seconds")}
-                  description={t(
-                    "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
-                  )}
-                  disabled={definition?.supports_destroy === false}
-                >
-                  <Input
-                    readOnly={readOnly}
-                    type="number"
-                    min={60}
-                    step={1}
-                    value={destroy}
-                    onChange={(event) => setDestroy(event.target.value)}
-                  />
-                </FormField>
-              </div>
             </div>
-          </DisclosureSection>
-        </FormSection>
+          )}
+          {(!standalone || definition) && (
+            <ProviderConfiguration
+              key={providerId || runtimeType}
+              readOnly={readOnly}
+              schema={configurationSchema}
+              text={configuration}
+              onChange={setConfiguration}
+              error={configurationError ?? recipeRefusal}
+              note={
+                ["local", "direct_local"].includes(definition?.type ?? "")
+                  ? t(
+                      "The root is on the Service worker machine, not your browser computer. Each environment gets a separate subdirectory under this root.",
+                    )
+                  : undefined
+              }
+              variant={definition?.type === "docker" ? "docker" : "default"}
+            />
+          )}
+          <FormSection divider={false}>
+            <DisclosureSection
+              className={editorStyles.advanced}
+              title={t("Lifecycle")}
+            >
+              <div className={editorStyles.advancedBody}>
+                <div className={styles.twoColumns}>
+                  <FormField
+                    className="min-w-0 w-full"
+                    label={t("Stop after idle seconds")}
+                    description={t(
+                      "Leave empty to disable automatic stopping.",
+                    )}
+                    disabled={definition?.supports_stop === false}
+                  >
+                    <Input
+                      readOnly={readOnly}
+                      type="number"
+                      min={60}
+                      step={1}
+                      value={stop}
+                      onChange={(event) => setStop(event.target.value)}
+                    />
+                  </FormField>
+                  <FormField
+                    className="min-w-0 w-full"
+                    label={t("Delete after idle seconds")}
+                    description={t(
+                      "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
+                    )}
+                    disabled={definition?.supports_destroy === false}
+                  >
+                    <Input
+                      readOnly={readOnly}
+                      type="number"
+                      min={60}
+                      step={1}
+                      value={destroy}
+                      onChange={(event) => setDestroy(event.target.value)}
+                    />
+                  </FormField>
+                </div>
+              </div>
+            </DisclosureSection>
+          </FormSection>
+        </fieldset>
+        {standalone && (
+          <p className={editorStyles.creationNote}>
+            {t(
+              "Saving creates a template, not a running environment. When an agent uses this template, a thread without a primary environment gets its own instance; later runs reuse it.",
+            )}
+          </p>
+        )}
         <ErrorNotice
           error={recipeRefusal ? undefined : save.error}
           retry={reload ? () => void reload() : undefined}
@@ -307,7 +403,12 @@ export function TemplateConfig({
             >
               {t("Cancel")}
             </Button>
-            <Button type="submit" variant="default" loading={save.isPending}>
+            <Button
+              type="submit"
+              variant="default"
+              loading={save.isPending}
+              disabled={standalone && !readyToCreate}
+            >
               {t(basis ? "Save changes" : "Create template")}
             </Button>
           </div>
@@ -315,7 +416,7 @@ export function TemplateConfig({
       </form>
     </>
   );
-  return basis ? (
+  return basis || standalone ? (
     body
   ) : (
     <CatalogStep

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
@@ -104,18 +104,28 @@ beforeEach(() => {
           ? [
               {
                 type: "e2b",
+                display_name: "E2B",
+                configuration_schema: { type: "object", properties: {} },
+                authentication: { mode: "required" },
+                credential_schema: {
+                  type: "object",
+                  required: ["api_key"],
+                  properties: { api_key: { type: "string", title: "API key" } },
+                },
                 environment_schema: e2bSchema,
                 supports_stop: true,
                 supports_destroy: true,
               },
               {
                 type: "direct_local",
+                display_name: "Local directory",
                 environment_schema: localSchema,
                 supports_stop: false,
                 supports_destroy: false,
               },
               {
                 type: "docker",
+                display_name: "Docker",
                 environment_schema: dockerSchema,
                 supports_stop: true,
                 supports_destroy: true,
@@ -408,4 +418,237 @@ it("saves an existing template's recipe and idle policy against its ETag", async
     ),
   );
   await waitFor(() => expect(state.close).toHaveBeenCalledOnce());
+});
+
+function mountCreationPage() {
+  unmountEditor?.();
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <TemplateConfig standalone close={state.close} />
+    </QueryClientProvider>,
+  );
+}
+
+it("keeps runtime drafts separate and saves using the matching connection", async () => {
+  mountCreationPage();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "My workspace",
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Description" }),
+    "Reusable setup",
+  );
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
+  expect(
+    screen
+      .getByRole("tab", { name: "Cloud hosting" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.queryByRole("button", { name: /Local directory/ })).toBeNull();
+  const template = screen.getByRole("textbox", {
+    name: "E2B template name or ID",
+  });
+  await user.clear(template);
+  await user.type(template, "custom");
+  await user.click(screen.getByRole("tab", { name: "Own hosting" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "E2B" })).toBeNull(),
+  );
+  expect(
+    screen.queryByRole("textbox", { name: "E2B template name or ID" }),
+  ).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Create template",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("button", { name: /Local directory/ }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Workspace path" }),
+    "/projects",
+  );
+  await user.click(screen.getByRole("tab", { name: "Cloud hosting" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "E2B template name or ID",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("custom");
+  await user.click(screen.getByRole("combobox", { name: "Connection" }));
+  expect(await screen.findByRole("option", { name: "E2B" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "Local" })).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("tab", { name: "Own hosting" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Workspace path",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("/projects");
+  await user.click(screen.getByRole("button", { name: "Create template" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith("/api/v1/environment-templates", {
+      body: {
+        name: "My workspace",
+        description: "Reusable setup",
+        provider_id: "eprov_local",
+        config: {
+          recipe: { workspace: { path: "/projects" } },
+          stop_after_seconds: null,
+          delete_after_seconds: null,
+        },
+      },
+    }),
+  );
+});
+
+it("creates a connection in place, clears canceled credentials and retains the recipe through errors", async () => {
+  const get = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation(async (path: string) => {
+    const result = await get(path);
+    if (path !== "/api/v1/provider-types/{kind}") result.data.items = [];
+    return result;
+  });
+  const connection = {
+    id: "eprov_new",
+    type: "e2b",
+    name: "E2B",
+    enabled: true,
+  };
+  state.POST.mockRejectedValueOnce(new Error("Connection rejected"))
+    .mockResolvedValueOnce({ data: connection })
+    .mockResolvedValueOnce({ data: { id: "envt_created" } });
+  mountCreationPage();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Cloud template",
+  );
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
+  const recipe = screen.getByRole("textbox", {
+    name: "E2B template name or ID",
+  });
+  await user.clear(recipe);
+  await user.type(recipe, "custom-base");
+  // No connections exist: changing runtime must still isolate its draft.
+  await user.click(screen.getByRole("tab", { name: "Own hosting" }));
+  await user.click(screen.getByRole("button", { name: /Local directory/ }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Workspace path" }),
+    "/local-only",
+  );
+  await user.click(screen.getByRole("tab", { name: "Cloud hosting" }));
+  await user.click(screen.getByRole("button", { name: "E2B" }));
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Create template",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Add connection" }));
+  let dialog = within(screen.getByRole("dialog"));
+  await user.type(dialog.getByLabelText("API key"), "discarded-test-key");
+  await user.click(dialog.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Add connection" }));
+  dialog = within(screen.getByRole("dialog"));
+  expect((dialog.getByLabelText("API key") as HTMLInputElement).value).toBe("");
+  await user.type(dialog.getByLabelText("API key"), "test-key");
+  await user.click(dialog.getByRole("button", { name: "Add connection" }));
+  await screen.findByText("Connection rejected");
+  expect(state.POST).toHaveBeenCalledTimes(1);
+  expect(state.close).not.toHaveBeenCalled();
+  await user.click(dialog.getByRole("button", { name: "Add connection" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(state.POST).toHaveBeenCalledTimes(2);
+  expect(state.POST).toHaveBeenLastCalledWith("/api/v1/environment-providers", {
+    body: {
+      name: "E2B",
+      type: "e2b",
+      config: {},
+      credential: { api_key: "test-key" },
+    },
+  });
+  expect(
+    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+  ).toBe("Cloud template");
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "E2B template name or ID",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("custom-base");
+  await user.click(screen.getByRole("button", { name: "Create template" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenLastCalledWith(
+      "/api/v1/environment-templates",
+      {
+        body: {
+          name: "Cloud template",
+          description: null,
+          provider_id: connection.id,
+          config: {
+            recipe: { template: "custom-base" },
+            stop_after_seconds: null,
+            delete_after_seconds: null,
+          },
+        },
+      },
+    ),
+  );
+  expect(state.POST).toHaveBeenCalledTimes(3);
+});
+
+it("keeps a late connection result without replacing a newly selected runtime", async () => {
+  const created = {
+    id: "eprov_late",
+    type: "e2b",
+    name: "Another E2B",
+    enabled: true,
+  };
+  let resolve!: (value: { data: typeof created }) => void;
+  const pending = new Promise<{ data: typeof created }>((done) => {
+    resolve = done;
+  });
+  state.POST.mockReturnValueOnce(pending);
+  mountCreationPage();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
+  await user.click(screen.getByRole("button", { name: "Add connection" }));
+  const dialog = within(screen.getByRole("dialog"));
+  await user.type(dialog.getByLabelText("API key"), "test-key");
+  await user.click(dialog.getByRole("button", { name: "Add connection" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  await user.click(dialog.getByRole("button", { name: "Close" }));
+  await user.click(screen.getByRole("tab", { name: "Own hosting" }));
+  await user.click(screen.getByRole("button", { name: /Local directory/ }));
+  await act(async () => {
+    resolve({ data: created });
+    await pending;
+  });
+  expect(
+    screen.getByRole("combobox", { name: "Connection" }).textContent,
+  ).toContain("Local");
+  await user.click(screen.getByRole("tab", { name: "Cloud hosting" }));
+  await user.click(screen.getByRole("button", { name: "E2B" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Connection" }).textContent,
+    ).toContain("Another E2B"),
+  );
+  expect(state.POST).toHaveBeenCalledOnce();
 });
