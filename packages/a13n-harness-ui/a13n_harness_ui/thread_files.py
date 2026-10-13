@@ -10,8 +10,8 @@ import re
 import shutil
 import stat
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
@@ -236,6 +236,24 @@ class ThreadFiles:
     async def touch(self, thread_id: str) -> Path:
         async with self._mutex:
             return await to_thread.run_sync(self._touch, thread_id)
+
+    @asynccontextmanager
+    async def fork(self, source_id: str, destination_id: str) -> AsyncIterator[None]:
+        """Copy owned files before publishing the destination Thread.
+
+        Keep scratch protected from pruning. Preserve symlinks as links rather
+        than following them into project directories or other external files.
+        """
+        source = await self.touch(source_id)
+        destination = self.directory(destination_id)
+        await to_thread.run_sync(lambda: destination.mkdir())
+        try:
+            await to_thread.run_sync(lambda: shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True))
+            yield
+        except BaseException:
+            with CancelScope(shield=True):
+                await to_thread.run_sync(lambda: shutil.rmtree(destination))
+            raise
 
     async def stage(self, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         if len(upload.data) > MAX_ATTACHMENT_BYTES:

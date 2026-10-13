@@ -36,7 +36,7 @@ function thread(id: string, project: string | null = "project-one") {
     title: id,
     configuration: {
       project_id: project,
-      agent_source: { kind: "configured", id: "assistant" },
+      agent_source: { kind: "agent", id: "assistant" },
     },
     root_activity: { state: "inactive" },
     archived: false,
@@ -2002,4 +2002,116 @@ it("keeps the owner of an unread worker above collapsed history", async () => {
     screen.getByRole("button", { name: "Restore worker-owner" }),
   ).toBeTruthy();
   vi.restoreAllMocks();
+});
+
+it("forks from the thread menu, refreshes navigation and opens the new conversation", async () => {
+  const fetchOriginal = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const forkRequests: Request[] = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/fork")) {
+      forkRequests.push(request);
+      await pending;
+      return json({ ...thread("forked"), title: "Recent 1" });
+    }
+    return fetchOriginal(input, init);
+  });
+  mount("/threads/Recent%201");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Recent 1" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Fork conversation" }),
+  );
+  await waitFor(() => expect(forkRequests).toHaveLength(1));
+  expect(forkRequests[0].method).toBe("POST");
+  expect(new URL(forkRequests[0].url).pathname).toBe(
+    "/api/threads/Recent%201/fork",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Actions for Recent 1" }),
+  );
+  expect(
+    (
+      await screen.findByRole("menuitem", { name: "Fork conversation" })
+    ).getAttribute("aria-disabled"),
+  ).toBe("true");
+  const before = activity.length;
+  await act(async () => {
+    finish();
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current route").textContent).toBe(
+      "/threads/forked",
+    ),
+  );
+  await waitFor(() => expect(activity.length).toBeGreaterThan(before));
+});
+
+it("keeps the source open and displays a fork failure without retrying the mutation", async () => {
+  const fetchOriginal = vi.mocked(fetch).getMockImplementation()!;
+  let forks = 0;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/fork")) {
+      forks++;
+      return json(
+        { error: { message: "The source Thread changed while copying." } },
+        409,
+      );
+    }
+    return fetchOriginal(input, init);
+  });
+  mount("/threads/source");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Recent 1" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Fork conversation" }),
+  );
+  expect(
+    await screen.findByText("The source Thread changed while copying."),
+  ).toBeTruthy();
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/threads/source",
+  );
+  expect(forks).toBe(1);
+});
+
+it("keeps Fork unavailable in Coordinator and worker action menus", async () => {
+  coordinators = [
+    { ...thread("Lead"), role: "coordinator", auto_followup: true },
+  ];
+  workerThreads = [
+    { ...thread("Worker"), role: "worker", coordinator_thread_id: "Lead" },
+  ];
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Lead" }),
+  );
+  await screen.findByRole("menuitem", { name: "New worker" });
+  expect(
+    screen.queryByRole("menuitem", { name: "Fork conversation" }),
+  ).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(
+    screen.getByRole("button", { name: "Expand workers for Lead" }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Worker" }),
+  );
+  await screen.findByRole("menuitem", { name: "Rename conversation" });
+  expect(
+    screen.queryByRole("menuitem", { name: "Fork conversation" }),
+  ).toBeNull();
 });

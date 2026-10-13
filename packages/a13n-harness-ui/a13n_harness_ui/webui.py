@@ -1439,6 +1439,10 @@ def create_webui(
     async def set_auto_followup(thread_id: str, body: CoordinatorUpdate) -> ThreadSummary:
         return await app().set_auto_followup(thread_id, body.auto_followup)
 
+    @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
+    async def fork_thread(thread_id: str) -> ThreadSummary:
+        return await app().fork_thread(thread_id)
+
     @server.post("/api/threads/{thread_id}/coordinator", response_model=ThreadSummary)
     async def promote_coordinator(thread_id: str) -> ThreadSummary:
         return await app().promote_coordinator(thread_id)

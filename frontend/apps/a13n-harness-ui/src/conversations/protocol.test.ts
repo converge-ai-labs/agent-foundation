@@ -777,3 +777,92 @@ it("captures an HTTP environment override without changing defaults and never fa
   expect(retained.captured).toEqual(inspection.captured);
   expect(retained.next_run.configuration).toEqual(before.thread.configuration);
 });
+
+it("forks a saved conversation and its attachments through the real HTTP boundary", async () => {
+  const source = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Fork this title" },
+    }),
+  );
+  const path = { thread_id: source.thread_id };
+  const uploaded = await transport.fetch(
+    `/api/threads/${source.thread_id}/attachments?name=fork.txt`,
+    { method: "POST", body: "fork attachment bytes" },
+  );
+  expect(uploaded.ok).toBe(true);
+  const attachment = await uploaded.json();
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        parts: [
+          "Remember the source",
+          { attachment_id: attachment.attachment_id },
+        ],
+      },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("completed");
+    },
+    { timeout: 10000 },
+  );
+  const before = await result(
+    transport.client.GET("/api/threads/{thread_id}", { params: { path } }),
+  );
+  const copied = await result(
+    transport.client.POST("/api/threads/{thread_id}/fork", {
+      params: { path },
+    }),
+  );
+  expect(copied.thread_id).not.toBe(source.thread_id);
+  expect(copied.title).toBe("Fork this title");
+  expect(copied.configuration).toEqual(before.thread.configuration);
+  expect(copied.root_activity.state).toBe("inactive");
+  const copyPath = { thread_id: copied.thread_id };
+  const history = await result(
+    transport.client.GET("/api/threads/{thread_id}/transcript", {
+      params: { path: copyPath },
+    }),
+  );
+  expect(JSON.stringify(history.entries)).toContain("Remember the source");
+  expect(JSON.stringify(history.entries)).toContain("response");
+  const bytes = await transport.fetch(
+    `/api/threads/${copied.thread_id}/attachments/${attachment.attachment_id}`,
+  );
+  expect(bytes.ok).toBe(true);
+  expect(await bytes.text()).toBe("fork attachment bytes");
+  const successor = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: copyPath },
+      body: { parts: ["Only in the fork"] },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: successor.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("completed");
+    },
+    { timeout: 10000 },
+  );
+  const unchanged = await result(
+    transport.client.GET("/api/threads/{thread_id}", { params: { path } }),
+  );
+  expect(unchanged.continuation_id).toBe(before.continuation_id);
+  const updated = await result(
+    transport.client.GET("/api/threads/{thread_id}/transcript", {
+      params: { path: copyPath },
+    }),
+  );
+  expect(JSON.stringify(updated.entries)).toContain("Only in the fork");
+});

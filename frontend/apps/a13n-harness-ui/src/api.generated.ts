@@ -1460,6 +1460,23 @@ export interface paths {
         patch: operations["set_auto_followup_api_threads__thread_id__coordinator_patch"];
         trace?: never;
     };
+    "/api/threads/{thread_id}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fork Thread */
+        post: operations["fork_thread_api_threads__thread_id__fork_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/decisions": {
         parameters: {
             query?: never;
@@ -10041,6 +10058,37 @@ export interface operations {
                 "application/json": components["schemas"]["CoordinatorUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fork_thread_api_threads__thread_id__fork_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -256,6 +256,73 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, configuration)
 
+    async def fork(
+        self,
+        *,
+        source: Thread,
+        thread_id: str,
+        initial_state: ObjectRef,
+        continuation: ObjectRef | None,
+        read_model: ThreadReadModel | None,
+    ) -> Thread:
+        """Publish a complete copy only while the captured source remains eligible."""
+        _require_kind(initial_state, ObjectKind.thread_initial_state)
+        if continuation is not None:
+            _require_kind(continuation, ObjectKind.continuation)
+        now = datetime.now(UTC)
+        async with transaction(self._sessions) as session:
+            current = await session.get(ThreadRecord, source.thread_id)
+            configuration = await session.get(ThreadConfigurationRecord, source.thread_id)
+            if current is None or configuration is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            if (
+                current.parent_thread_id is not None
+                or current.memory_scope is not None
+                or source.configuration.agent_source.kind != "agent"
+                or await session.get(CoordinatorRecord, source.thread_id) is not None
+                or await session.get(CoordinatorWorkerRecord, source.thread_id) is not None
+            ):
+                raise StoreConflictError(
+                    "Only independent ordinary Threads can be forked.", code="thread_fork_unsupported"
+                )
+            if (
+                current.metadata_version != source.metadata_version
+                or _configuration_value(configuration) != source.configuration
+                or _continuation_ref(current) != source.continuation
+            ):
+                raise StoreConflictError(
+                    "The source Thread changed while copying. Fork it again.", code="thread_fork_conflict"
+                )
+            record = ThreadRecord(
+                thread_id=thread_id,
+                metadata_version=1,
+                title=source.title,
+                archived=source.archived,
+                starred=source.starred,
+                first_input=source.excerpt.first_input,
+                latest_input=source.excerpt.latest_input,
+                latest_reply=source.excerpt.latest_reply,
+                reply_kind=source.excerpt.reply_kind,
+                created_at=now,
+                updated_at=now,
+                touched_at=now,
+                activity_at=source.activity_at,
+                initial_state_schema_version=initial_state.object_schema_version,
+                initial_state_digest=initial_state.logical_digest,
+                continuation_schema_version=continuation.object_schema_version if continuation else None,
+                continuation_digest=continuation.logical_digest if continuation else None,
+                read_model_schema_version=continuation.object_schema_version if continuation else None,
+                read_model_digest=continuation.logical_digest if continuation else None,
+                read_model_json=read_model.model_dump_json() if read_model else None,
+            )
+            record.search_text = _search_text(record)
+            session.add(record)
+            await session.flush()
+            copied_configuration = source.configuration.model_copy(update={"version": 1})
+            session.add(_configuration_record(thread_id, copied_configuration))
+            await session.flush()
+            return _thread_value(record, copied_configuration)
+
     async def promote_coordinator(self, thread_id: str) -> None:
         """Atomically establish a one-way role; worker ownership is never inferred."""
         async with transaction(self._sessions) as session:

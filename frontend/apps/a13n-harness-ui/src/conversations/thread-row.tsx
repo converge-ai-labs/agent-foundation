@@ -11,6 +11,7 @@ import {
   Archive,
   ArrowCounterClockwise,
   DotsThree,
+  GitFork,
   PencilSimple,
   ShareNetwork,
   SlidersHorizontal,
@@ -135,6 +136,18 @@ export function ThreadRow({
     if (star.isPending) return;
     star.mutate();
   };
+  const fork = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.POST("/api/threads/{thread_id}/fork", {
+          params: { path: { thread_id: row.thread.thread_id } },
+        }),
+      ),
+    onSuccess: (copied) => {
+      void refreshThreadLists(queries);
+      navigate(`/threads/${encodeURIComponent(copied.thread_id)}`);
+    },
+  });
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -253,7 +266,7 @@ export function ThreadRow({
               <Button ref={actionsButton} variant="ghost" size="icon-sm" />
             }
             className={styles.threadActions}
-            aria-busy={star.isPending}
+            aria-busy={star.isPending || fork.isPending}
             aria-label={`Actions for ${title}`}
           >
             <DotsThree />
@@ -299,6 +312,17 @@ export function ThreadRow({
                 {label}
               </MenuItem>
             ))}
+            {row.thread.role === "ordinary" &&
+              !row.thread.parent_thread_id &&
+              !row.thread.memory_scope &&
+              row.thread.configuration.agent_source.kind === "agent" && (
+                <MenuItem
+                  disabled={fork.isPending}
+                  onClick={() => fork.mutate()}
+                >
+                  <GitFork /> Fork conversation
+                </MenuItem>
+              )}
             {row.thread.role === "ordinary" &&
               row.thread.configuration.project_id && (
                 <MenuItem
@@ -354,7 +378,9 @@ export function ThreadRow({
           </button>
         )}
       </div>
-      <ErrorNotice error={star.error || archive.error || coordinator.error} />
+      <ErrorNotice
+        error={star.error || archive.error || fork.error || coordinator.error}
+      />
       <CoordinatorPromotion
         open={promoting}
         close={() => setPromoting(false)}

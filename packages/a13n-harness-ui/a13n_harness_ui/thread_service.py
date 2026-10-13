@@ -32,6 +32,7 @@ from a13n_harness_ui.storage import (
     ThreadConfiguration,
     ThreadConfigurationMutation,
 )
+from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.contracts import LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
@@ -42,6 +43,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadMetadataMutation,
 )
+from a13n_harness_ui.thread_files import ThreadFiles
 
 
 class _CreationDefault(Enum):
@@ -152,6 +154,61 @@ class ThreadService:
         if thread.memory_scope is not None:
             raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
         return thread
+
+    async def fork(self, thread_id: str, *, files: ThreadFiles) -> Thread:
+        """Fork the complete saved conversation without borrowing execution authority."""
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            source = await self.get(thread_id)
+            if (
+                source.parent_thread_id is not None
+                or source.memory_scope is not None
+                or source.configuration.agent_source.kind != "agent"
+                or await self._store.threads.is_coordinator(thread_id)
+                or await self._store.threads.worker_owners((thread_id,))
+            ):
+                raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
+            baseline = await self._store.objects.read_model(source.initial_state, StoredThreadInitialState)
+            stored = (
+                await self._store.objects.read_model(source.continuation, StoredContinuation)
+                if source.continuation is not None
+                else baseline
+            )
+            if stored.harness_state.thread_id != thread_id:
+                raise ThreadError(
+                    "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
+                )
+            state = await to_thread.run_sync(stored.harness_state.fork)
+            initial_state = (
+                await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                if source.continuation is not None
+                else state
+            )
+        now = datetime.now(UTC)
+        copied: Thread | None = None
+        with CancelScope(shield=True):
+            initial = await self._store.objects.publish_model(
+                object_kind=ObjectKind.thread_initial_state,
+                value=StoredThreadInitialState(harness_state=initial_state, created_at=now),
+            )
+            continuation = None
+            read_model = None
+            if isinstance(stored, StoredContinuation):
+                replacement = stored.model_copy(update={"harness_state": state, "created_at": now})
+                continuation = (
+                    await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=replacement)
+                ).ref
+                read_model = await to_thread.run_sync(project_continuation, replacement)
+            async with files.fork(thread_id, state.thread_id):
+                copied = await self._store.threads.fork(
+                    source=source,
+                    thread_id=state.thread_id,
+                    initial_state=initial.ref,
+                    continuation=continuation,
+                    read_model=read_model,
+                )
+            await self._store.publish_work(copied.thread_id, continuation or initial.ref, state)
+        assert copied is not None
+        return copied
 
     async def promote_coordinator(self, thread_id: str) -> Thread:
         thread = await self.require_interactive(thread_id)

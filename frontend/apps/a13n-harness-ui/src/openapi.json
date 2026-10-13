@@ -4103,6 +4103,45 @@
         }
       }
     },
+    "/api/threads/{thread_id}/fork": {
+      "post": {
+        "summary": "Fork Thread",
+        "operationId": "fork_thread_api_threads__thread_id__fork_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/decisions": {
       "get": {
         "summary": "Decision Batch",

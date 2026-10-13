@@ -1100,6 +1100,13 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def fork_thread(self, thread_id: str) -> ThreadSummary:
+        """Copy an independent ordinary Thread without admitting a Run."""
+        async with self._operation():
+            thread = await self._threads.fork(thread_id, files=self._thread_files)
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
+
     async def promote_coordinator(self, thread_id: str) -> ThreadSummary:
         """Convert an idle independent root without replacing its conversation."""
         async with self._operation():
