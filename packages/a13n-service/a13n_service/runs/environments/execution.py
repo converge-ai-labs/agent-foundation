@@ -9,7 +9,14 @@ from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
-from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentError, EnvironmentState
+from a13n_harness.environment.models import (
+    EnvironmentAvailability,
+    EnvironmentDescriptor,
+    EnvironmentError,
+    EnvironmentOperationFamily,
+    EnvironmentState,
+)
+from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
 from a13n_logging import exception_details, get_logger
@@ -29,6 +36,7 @@ from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
+from a13n_service.runs.skill_cache import Cache
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -62,6 +70,7 @@ class Source:
     state: EnvironmentState | None
     configuration: RunConfiguration | None = None
     activated: bool = False
+    skill_cache: Cache | None = None
 
     @property
     def environment_id(self) -> str:
@@ -92,8 +101,8 @@ class Source:
             raise EnvironmentUnavailable(error.message) from error
         self.state = prepared.target.state
         self.activated = True
-        if self.mount.working_directory is not None:
-            return _DirectoryConnector(connector, prepared, seconds)
+        if self.mount.working_directory is not None or self.skill_cache is not None:
+            return _DirectoryConnector(connector, prepared, seconds, self.skill_cache)
         return connector
 
 
@@ -201,6 +210,7 @@ async def open_mounts(
     mounts: Sequence[EnvironmentMount],
     *,
     configuration: RunConfiguration | None = None,
+    skill_cache: Cache | None = None,
 ) -> AsyncIterator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
@@ -236,7 +246,18 @@ async def open_mounts(
             # Service Local uses the shared Direct Local execution provider key.
             provider_key = "direct_local" if definition.type == "local" else definition.type
             sources.append(
-                Source(runtime, lease, principal, authority, mount, descriptor, provider_key, state, configuration)
+                Source(
+                    runtime,
+                    lease,
+                    principal,
+                    authority,
+                    mount,
+                    descriptor,
+                    provider_key,
+                    state,
+                    configuration,
+                    skill_cache=skill_cache if mount.name == PRIMARY else None,
+                )
             )
     try:
         yield {
@@ -255,8 +276,11 @@ async def open_mounts(
 class _DirectoryConnector(EnvironmentConnector):
     """Check the Host's mount selection in the exact execution Harness will own."""
 
-    def __init__(self, connector: EnvironmentConnector, mount: PreparedMount, seconds: float) -> None:
+    def __init__(
+        self, connector: EnvironmentConnector, mount: PreparedMount, seconds: float, cache: Cache | None = None
+    ) -> None:
         self._connector, self._mount, self._seconds = connector, mount, seconds
+        self._cache = cache
 
     @property
     def provider_key(self) -> str:
@@ -279,7 +303,11 @@ class _DirectoryConnector(EnvironmentConnector):
         try:
             with anyio.fail_after(self._seconds):
                 execution = await self._connector.open()
-                await _check_directory(self._mount, execution.operations.files)
+                if self._mount.working_directory is not None:
+                    await _check_directory(self._mount, execution.operations.files)
+            if self._cache is not None:
+                root = self._mount.working_directory or self.descriptor.working_directory
+                return _CacheExecution(execution, self._cache, f"{root.rstrip('/')}/.agents/skill-cache")
             return execution
         except BaseException as error:
             if execution is not None:
@@ -344,3 +372,48 @@ async def _mark_used(runtime: Runtime, environment_ids: list[str]) -> None:
                 "Marking environments used failed",
                 extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
             )
+
+
+class _CacheExecution(EnvironmentExecution):
+    """Release primary-cache pins while the provider file client is still open."""
+
+    def __init__(self, execution: EnvironmentExecution, cache: Cache, root: str):
+        self._execution, self._cache, self._root = execution, cache, root
+
+    @property
+    def provider_key(self) -> str:
+        return self._execution.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self._execution.environment_id
+
+    @property
+    def execution_id(self) -> str:
+        return self._execution.execution_id
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self._execution.state
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self._execution.descriptor
+
+    @property
+    def availability(self) -> EnvironmentAvailability:
+        return self._execution.availability
+
+    @property
+    def operations(self) -> EnvironmentOperations:
+        return self._execution.operations
+
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        await self._execution.check_ready(operations)
+
+    async def close(self) -> None:
+        try:
+            if files := self._execution.operations.files:
+                await self._cache.release(files, root=self._root)
+        finally:
+            await self._execution.close()

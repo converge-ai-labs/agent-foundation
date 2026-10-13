@@ -58,6 +58,24 @@ class SkillSelection(_Frozen):
     revision_id: ObjectId | None = None
 
 
+class SharedSkillSync(_Frozen):
+    """Publish mutable conventional names; the last completed publication wins."""
+
+    mode: Literal["shared"] = "shared"
+    overwrite: bool = True
+    cleanup: bool = False
+
+
+class IsolatedSkillSync(_Frozen):
+    """Reuse immutable package directories, with a soft count budget."""
+
+    mode: Literal["isolated"] = "isolated"
+    cache_count: int = Field(default=128, ge=0)
+
+
+SkillSync = Annotated[SharedSkillSync | IsolatedSkillSync, Field(discriminator="mode")]
+
+
 class DelegationContextPolicy(_Frozen):
     include_task: bool = True
     history: Literal["none", "summary", "selected"] = "none"
@@ -146,6 +164,7 @@ class AgentConfig(_Frozen):
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
+    skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
@@ -211,6 +230,7 @@ class AgentOverride(_Frozen):
     lazy_environment: bool | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
+    skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
@@ -228,6 +248,7 @@ _REPLACED = (
     "lazy_environment",
     "plugins",
     "skills",
+    "skill_sync",
     "connection_tools",
     "client_tools",
     "output_spec",

@@ -1,4 +1,6 @@
 {
+  "Reuse immutable package directories, with a soft count budget.": "复用不可变的软件包目录，采用数量软预算。",
+  "Publish mutable conventional names; the last completed publication wins.": "按约定名称发布可变目录，最后成功发布的内容生效。",
   "One automatic delivery in this Run; content remains in the memory or execution archive.": "本次运行的一次自动记忆加载；原文保留在记忆或执行存档中。",
   "An immutable Host-owned value, loaded through that Host's authorized content API.": "由 Host 持有的不可变值，通过该 Host 需要鉴权的内容 API 加载。",
   "One immutable saved display value, possibly truncated, read under the owning run's authority.": "已保存的不可变显示值，可能已被截断，读取时校验所属运行的访问权限。",

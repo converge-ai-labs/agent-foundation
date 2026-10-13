@@ -3173,6 +3173,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | components["schemas"]["SharedSkillSync"]
+        | components["schemas"]["IsolatedSkillSync"];
       /**
        * Skills
        * @default []
@@ -3243,6 +3247,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | components["schemas"]["SharedSkillSync"]
+        | components["schemas"]["IsolatedSkillSync"];
       /**
        * Skills
        * @default []
@@ -3351,6 +3359,13 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | (
+            | components["schemas"]["SharedSkillSync"]
+            | components["schemas"]["IsolatedSkillSync"]
+          )
+        | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -3393,6 +3408,13 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | (
+            | components["schemas"]["SharedSkillSync"]
+            | components["schemas"]["IsolatedSkillSync"]
+          )
+        | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -5019,6 +5041,22 @@ export interface components {
       invitation: components["schemas"]["Invitation"];
       /** Invitation Url */
       invitation_url: string | null;
+    };
+    /**
+     * IsolatedSkillSync
+     * @description Reuse immutable package directories, with a soft count budget.
+     */
+    IsolatedSkillSync: {
+      /**
+       * Cache Count
+       * @default 128
+       */
+      cache_count?: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "isolated";
     };
     /** IssuedKey */
     IssuedKey: {
@@ -6973,6 +7011,27 @@ export interface components {
     };
     /** @enum {string} */
     Severity: "critical" | "warning" | "suggestion";
+    /**
+     * SharedSkillSync
+     * @description Publish mutable conventional names; the last completed publication wins.
+     */
+    SharedSkillSync: {
+      /**
+       * Cleanup
+       * @default false
+       */
+      cleanup?: boolean;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "shared";
+      /**
+       * Overwrite
+       * @default true
+       */
+      overwrite?: boolean;
+    };
     /** Skill */
     Skill: {
       /** Archived At */

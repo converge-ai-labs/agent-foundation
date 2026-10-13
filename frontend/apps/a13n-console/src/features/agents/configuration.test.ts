@@ -125,3 +125,30 @@ test("media understanding is a dedicated field kept out of advanced configuratio
     ),
   ).toThrow(/dedicated field/);
 });
+
+test("skill synchronization stays in advanced configuration when editing selections", () => {
+  const original = {
+    ...initialConfig(),
+    model,
+    skills: [],
+    skill_sync: { mode: "isolated" as const, cache_count: 7 },
+  };
+  const config = buildConfig(
+    original,
+    { model, skills: [{ skill_id: "sk_0123456789abcdef01234567" }] },
+    advancedConfig(original),
+  );
+  expect(config.skill_sync).toEqual(original.skill_sync);
+  expect(config.skills).toHaveLength(1);
+  expect(
+    buildConfig(original, { model }, '{"skill_sync":{"mode":"shared"}}')
+      .skill_sync,
+  ).toEqual({ mode: "shared" });
+  expect(() =>
+    buildConfig(
+      original,
+      { model },
+      '{"skill_sync":{"mode":"shared","cache_count":7}}',
+    ),
+  ).toThrow(/skill_sync/);
+});

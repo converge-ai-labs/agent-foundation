@@ -273,6 +273,24 @@
               }
             ]
           },
+          "skill_sync": {
+            "discriminator": {
+              "mapping": {
+                "isolated": "#/components/schemas/IsolatedSkillSync",
+                "shared": "#/components/schemas/SharedSkillSync"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SharedSkillSync"
+              },
+              {
+                "$ref": "#/components/schemas/IsolatedSkillSync"
+              }
+            ],
+            "title": "Skill Sync"
+          },
           "skills": {
             "default": [],
             "items": {
@@ -433,6 +451,24 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_sync": {
+            "discriminator": {
+              "mapping": {
+                "isolated": "#/components/schemas/IsolatedSkillSync",
+                "shared": "#/components/schemas/SharedSkillSync"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SharedSkillSync"
+              },
+              {
+                "$ref": "#/components/schemas/IsolatedSkillSync"
+              }
+            ],
+            "title": "Skill Sync"
           },
           "skills": {
             "default": [],
@@ -761,6 +797,31 @@
               }
             ]
           },
+          "skill_sync": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "isolated": "#/components/schemas/IsolatedSkillSync",
+                    "shared": "#/components/schemas/SharedSkillSync"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SharedSkillSync"
+                  },
+                  {
+                    "$ref": "#/components/schemas/IsolatedSkillSync"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Sync"
+          },
           "skills": {
             "anyOf": [
               {
@@ -968,6 +1029,31 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_sync": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "isolated": "#/components/schemas/IsolatedSkillSync",
+                    "shared": "#/components/schemas/SharedSkillSync"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SharedSkillSync"
+                  },
+                  {
+                    "$ref": "#/components/schemas/IsolatedSkillSync"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Sync"
           },
           "skills": {
             "anyOf": [
@@ -5602,6 +5688,26 @@
           "invitation_url"
         ],
         "title": "InvitationReceipt",
+        "type": "object"
+      },
+      "IsolatedSkillSync": {
+        "additionalProperties": false,
+        "description": "Reuse immutable package directories, with a soft count budget.",
+        "properties": {
+          "cache_count": {
+            "default": 128,
+            "minimum": 0.0,
+            "title": "Cache Count",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "isolated",
+            "default": "isolated",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "IsolatedSkillSync",
         "type": "object"
       },
       "IssuedKey": {
@@ -11561,6 +11667,30 @@
           "suggestion"
         ],
         "type": "string"
+      },
+      "SharedSkillSync": {
+        "additionalProperties": false,
+        "description": "Publish mutable conventional names; the last completed publication wins.",
+        "properties": {
+          "cleanup": {
+            "default": false,
+            "title": "Cleanup",
+            "type": "boolean"
+          },
+          "mode": {
+            "const": "shared",
+            "default": "shared",
+            "title": "Mode",
+            "type": "string"
+          },
+          "overwrite": {
+            "default": true,
+            "title": "Overwrite",
+            "type": "boolean"
+          }
+        },
+        "title": "SharedSkillSync",
+        "type": "object"
       },
       "Skill": {
         "properties": {

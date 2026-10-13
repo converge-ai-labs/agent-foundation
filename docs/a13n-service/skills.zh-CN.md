@@ -22,6 +22,8 @@ description: Write release notes from merged pull requests.
 1. List the merged pull requests since the last tag...
 ```
 
+声明的 `name` 必须是单个可跨平台使用的目录名，UTF-8 编码最多 255 字节，不得包含路径分隔符、`.`、`..`、保留设备名或保留文件名字符。
+
 限制：最多 1000 个文件，单文件 8 MiB，解压后总计 32 MiB，`SKILL.md` 最多 256 KiB，路径最多 1024 字节。归档条目必须是使用相对路径的普通文件，采用存储或 deflate 压缩，不得加密。
 
 ## 添加 skill
@@ -56,3 +58,36 @@ curl -X POST "$A13N_URL/api/v1/skills" \
 - `POST …/archive` 阻止新的 agent 修订版本固定引用该 skill，并拒绝修改；已固定引用的 agent 仍可使用。`POST …/unarchive` 取消归档。
 
 Agent 修订版本在 `skills` 中使用 `{"skill_id": "sk_…", "revision_id": ...}` 选择 skill；不提供 `revision_id` 时，保存会固定引用 skill 当前的默认修订版本。`GET /api/v1/agents?skill_id=sk_…` 列出含有引用该 skill 的修订版本的 agent；`skill_revision_id` 可按一个 skill 修订版本筛选。
+
+## 运行时同步
+
+在 Agent 配置中用一个 `skill_sync` 块管理所有选中的 skill（Console 中使用高级 JSON）。默认采用共享模式，后发布的内容生效：
+
+```json
+{
+  "skills": [{"skill_id": "sk_…"}],
+  "skill_sync": {"mode": "shared", "overwrite": true, "cleanup": false}
+}
+```
+
+共享模式在 Agent 首次请求模型前，将每个选中的包发布到 `/workspace/.agents/skills/<name>`。覆盖会替换整个目录，同时移除旧版本多出的文件。设置 `overwrite: false` 保留已有名称；设置 `cleanup: true` 删除共享目录中未选中的条目，此时空选择会清空目录。共享模式不使用包缓存。
+
+其他 Run 或子 Agent 读取时，共享路径仍可能变化。替换存在短暂的路径缺失窗口；并发发布保留成功发布的完整目录。顺序由实际物化决定，而非 Run 完成时间；整组 skill 不作为一次原子更新。
+
+多个 Agent 需要在同一 Environment 中使用互相冲突的版本时，选择隔离模式：
+
+```json
+{"skill_sync": {"mode": "isolated", "cache_count": 128}}
+```
+
+目录中的路径为 `/workspace/.agents/skill-cache/<package-digest>/<name>`。不同包并存，归档字节相同的包复用目录，无需再次下载。`cache_count` 是该 Environment 的非负包数量软预算；`0` 禁用清理。每个 Agent 在物化时应用自身的预算。使用中的包受到 pin 保护，执行结束时释放；清理按最近使用时间淘汰空闲包，单次工作量有界，因此缓存可能暂时超出预算。共享模式的 cleanup 不会触碰这个缓存。
+
+通过 `options.overrides.skill_sync` 为一次 Run 指定策略：
+
+```json
+{"options": {"overrides": {"skill_sync": {"mode": "isolated"}}}}
+```
+
+覆盖会替换整个配置块，省略的成员取所选模式的默认值。子 Agent 使用自己的策略。`overwrite`、`cleanup` 仅适用于共享模式，`cache_count` 仅适用于隔离模式。选择 skill 或要求共享 cleanup 都需要主 Environment。
+
+新布局直接取代原 `.a13n/skills` 布局，不读取或迁移旧内容。缓存协调依赖 Environment 各客户端之间一致的共享文件系统操作。崩溃或结果不确定的 provider 操作可能留下暂存目录、pin 或淘汰 gate。手动回收遗留状态前，应停止所有客户端；保护状态不会按时间自动过期。

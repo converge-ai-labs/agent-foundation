@@ -22,6 +22,8 @@ description: Write release notes from merged pull requests.
 1. List the merged pull requests since the last tag...
 ```
 
+The declared `name` must be one portable directory component, at most 255 UTF-8 bytes: no separators, `.` or `..`, reserved device names, or reserved filename characters.
+
 Limits: at most 1000 files, 8 MiB per file, 32 MiB expanded, 256 KiB for `SKILL.md`, and paths up to 1024 bytes. Archive entries must be regular files with relative paths, stored or deflated, and not encrypted.
 
 ## Add a skill
@@ -56,3 +58,36 @@ curl -X POST "$A13N_URL/api/v1/skills" \
 - `POST …/archive` stops new agent revisions from pinning the skill and refuses changes; agents that already pin it keep working. `POST …/unarchive` reverses it.
 
 An agent revision selects skills in `skills` as `{"skill_id": "sk_…", "revision_id": ...}`; without `revision_id`, saving pins the skill's current default revision. `GET /api/v1/agents?skill_id=sk_…` lists the agents with a revision that pins the skill; `skill_revision_id` filters by one skill revision.
+
+## Runtime synchronization
+
+Configure all selected skills with one `skill_sync` block in the agent configuration (Console's advanced JSON). The default is shared, last-publication-wins:
+
+```json
+{
+  "skills": [{"skill_id": "sk_…"}],
+  "skill_sync": {"mode": "shared", "overwrite": true, "cleanup": false}
+}
+```
+
+Shared mode publishes each selected package at `/workspace/.agents/skills/<name>` before the agent's first model request. Overwriting replaces the whole directory, including removal of obsolete files. Set `overwrite: false` to preserve existing names. Set `cleanup: true` to remove unselected entries from that shared directory; an empty selection then clears it. Shared mode does not use the package cache.
+
+Shared paths can change while another run or child agent reads them. Replacement has a brief missing-path window, and concurrent publication preserves the complete directory that wins publication. Ordering follows materialization, not run completion; the complete selection is not one atomic update.
+
+When agents need conflicting versions in the same environment, choose isolated mode:
+
+```json
+{"skill_sync": {"mode": "isolated", "cache_count": 128}}
+```
+
+Its catalog paths are `/workspace/.agents/skill-cache/<package-digest>/<name>`. Different packages coexist, while identical archive bytes reuse the same directory without downloading again. `cache_count` is a nonnegative soft package-count budget for this environment; `0` disables trimming. Each agent applies its own configured budget when materializing. Active packages stay pinned until execution teardown; bounded least-recently-used trimming removes idle packages and may leave the cache above budget. Shared cleanup never touches this cache.
+
+Use `options.overrides.skill_sync` to select a policy for one run:
+
+```json
+{"options": {"overrides": {"skill_sync": {"mode": "isolated"}}}}
+```
+
+The override replaces the entire block; omitted members use the chosen mode's defaults. Children use their own agent policies. `overwrite` and `cleanup` belong only to shared mode; `cache_count` belongs only to isolated mode. Selecting skills or requesting shared cleanup requires a primary environment.
+
+The new layouts replace the former `.a13n/skills` layout without reading or migrating it. Cache coordination requires coherent shared-filesystem operations across environment clients. A crash or uncertain provider operation can leave staging directories, pins or eviction gates. Quiesce all clients before manually reclaiming abandoned state; protection has no timed expiry.

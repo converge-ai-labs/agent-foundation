@@ -19,6 +19,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
     enabled_tools,
@@ -40,6 +41,7 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.web import ResolvedWeb, open_web, resolve_web
@@ -86,7 +88,7 @@ async def resolve_host(
                 authority=authority,
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
-            skills=await resolve_skills(session, run, config.skills),
+            skills=await resolve_skills(session, run, config.skills, sync=config.skill_sync),
         )
     return HostPlan(
         parts,
@@ -104,6 +106,7 @@ class Host:
     authority: ExecutionAuthority
     plan: HostPlan
     models: Mapping[str, Model]
+    skill_cache: Cache
     tools: Mapping[str, tuple[AbstractCapability[AgentContext], ...]]
     webs: Mapping[str, WebBinding]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
@@ -112,10 +115,14 @@ class Host:
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
         features = list(self.tools[agent.revision_id])
-        if skills := self.plan.parts[agent.revision_id].skills:
+        skills = self.plan.parts[agent.revision_id].skills
+        sync = agent.config.skill_sync
+        if skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
                 skills_capability(
                     skills,
+                    cache=self.skill_cache,
+                    sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
                     prove_lease=partial(prove, self.runtime.storage, self.lease),
@@ -156,6 +163,7 @@ async def open_host(
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
     configuration: RunConfiguration,
+    skill_cache: Cache,
 ) -> AsyncIterator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
@@ -201,4 +209,4 @@ async def open_host(
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, principal, authority, plan, models, tools, webs, memory)
+        yield Host(runtime, lease, principal, authority, plan, models, skill_cache, tools, webs, memory)
