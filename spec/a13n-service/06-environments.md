@@ -96,6 +96,8 @@ Each mount carries an exact Harness `EnvironmentPermissionSet` as `permission_ce
 
 Computer Use requires both the Agent's enabled `computer` toolset and explicit Computer actions in a mount ceiling. Harness intersects this authority with the provider's supported actions and current readiness at execution. Enabling it does not provision a desktop or add one to an existing headless image. These permissions govern Computer operations only; file, shell and other separately authorized operations retain their own authority. A shared desktop has no exclusive human/Agent input ownership under this contract.
 
+`POST …/environments/{id}/computer/check` requires workspace `run` and the same private-target ownership as execution. It probes only a ready instance using a bounded temporary execution after closing the authorization read session. It neither starts an instance, captures pixels nor sends input. The result distinguishes `not_ready`, `unsupported` and `checked`, reporting observation/input readiness, display count and exact Computer actions. Provider errors remain failures, not unsupported results. The probe releases its execution on completion, failure and cancellation; its result is a point-in-time capability observation, not a permission grant or a guarantee for a later Run.
+
 ## One outstanding external operation
 
 The status names the instance's outstanding operation: `creating`, `starting`, `stopping` or `deleting`. No other status carries one, and an error stays on the phase with the same operation.

@@ -12,11 +12,7 @@ import { FormActions } from "../../shared/forms";
 import { WorkingDirectory } from "../environments/working-directory";
 import { MountComputerPermissions } from "./mount-computer-permissions";
 import { EnvironmentReference } from "../environments/reference";
-import {
-  conversationKeys,
-  conversationQueries,
-  invalidateConversation,
-} from "./api";
+import { conversationQueries, invalidateConversation } from "./api";
 import { isInteractive } from "./transcript/run-actions";
 
 /** The environments a Thread mounts for its later Runs. */
@@ -32,24 +28,9 @@ export function ThreadEnvironmentMounts({
   const thread = useQuery(
     conversationQueries(client, workspace.id).thread(threadId),
   );
-  const mounts = useQuery({
-    // Mount edits change the Thread, so they refresh with it.
-    queryKey: [
-      ...conversationKeys(workspace.id).thread(threadId),
-      "environments",
-    ],
-    queryFn: ({ signal }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/threads/{thread_id}/environments", {
-          params: {
-            path: { thread_id: threadId },
-          },
-          signal,
-        })
-        .then(data)
-        .then((page) => page.items),
-  });
+  const mounts = useQuery(
+    conversationQueries(client, workspace.id).environments(threadId),
+  );
   return (
     <section className="flex flex-col gap-3" aria-label={t("Environments")}>
       <div className="flex items-center justify-between gap-2">

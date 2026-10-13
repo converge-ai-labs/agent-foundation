@@ -793,6 +793,26 @@ export interface paths {
     patch: operations["update_environment_api_v1_environments__environment_id__patch"];
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/computer/check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check Computer
+     * @description Probe desktop readiness without capturing the screen, sending input or starting the instance.
+     */
+    post: operations["check_computer_api_v1_environments__environment_id__computer_check_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/stop": {
     parameters: {
       query?: never;
@@ -4045,6 +4065,34 @@ export interface components {
        * @enum {string}
        */
       permission?: "inherit" | "allow" | "deny";
+    };
+    /**
+     * ComputerCheck
+     * @description A point-in-time capability probe, not an Agent or mount permission grant.
+     */
+    ComputerCheck: {
+      /**
+       * Display Count
+       * @default 0
+       */
+      display_count?: number;
+      /**
+       * Input Ready
+       * @default false
+       */
+      input_ready?: boolean;
+      /**
+       * Observe Ready
+       * @default false
+       */
+      observe_ready?: boolean;
+      /** Operations */
+      operations?: components["schemas"]["EnvironmentAction"][];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "checked" | "unsupported" | "not_ready";
     };
     /** Connection */
     Connection: {
@@ -10118,6 +10166,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  check_computer_api_v1_environments__environment_id__computer_check_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ComputerCheck"];
         };
       };
       400: components["responses"]["Error"];

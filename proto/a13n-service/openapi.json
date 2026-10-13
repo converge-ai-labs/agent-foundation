@@ -2850,6 +2850,47 @@
         "title": "ClientToolDefinition",
         "type": "object"
       },
+      "ComputerCheck": {
+        "description": "A point-in-time capability probe, not an Agent or mount permission grant.",
+        "properties": {
+          "display_count": {
+            "default": 0,
+            "title": "Display Count",
+            "type": "integer"
+          },
+          "input_ready": {
+            "default": false,
+            "title": "Input Ready",
+            "type": "boolean"
+          },
+          "observe_ready": {
+            "default": false,
+            "title": "Observe Ready",
+            "type": "boolean"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentAction"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "checked",
+              "unsupported",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ComputerCheck",
+        "type": "object"
+      },
       "Connection": {
         "properties": {
           "auth": {
@@ -19893,6 +19934,75 @@
           }
         ],
         "summary": "Update Environment",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environments/{environment_id}/computer/check": {
+      "post": {
+        "description": "Probe desktop readiness without capturing the screen, sending input or starting the instance.",
+        "operationId": "check_computer_api_v1_environments__environment_id__computer_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputerCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Check Computer",
         "tags": [
           "environments"
         ],

@@ -205,3 +205,5 @@ The API accepts exact `permission_ceiling.operations` on initial mounts and moun
 Computer permissions default off. They do not constrain terminal commands or other independent tools. Screenshot preview is read-only and historical; interactive remote desktop and human takeover are not available in this view.
 
 When upgrading to this capability, upgrade Service control and worker roles together before accepting new Runs. Older workers cannot consume the new mount snapshots and screenshot dependency metadata. Existing mounts and old Run snapshots retain their original file/execution permissions with Computer operations disabled.
+
+The conversation header shows the Computer permission summary; click it to configure mounts. Run Details shows the permissions captured for that Run. In the permission dialog, **Check desktop** probes a running environment without taking a screenshot or sending input. The result distinguishes absent desktop support, an unready desktop and supported operations; it does not grant Agent permissions or start stopped environments.

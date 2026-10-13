@@ -9,42 +9,14 @@ import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { invalidateConversation } from "./api";
 
-const computerActions = [
-  "environment.computer.describe",
-  "environment.computer.observe",
-  "environment.computer.click",
-  "environment.computer.move",
-  "environment.computer.drag",
-  "environment.computer.scroll",
-  "environment.computer.type_text",
-  "environment.computer.press_keys",
-] satisfies Schema["EnvironmentAction"][];
-const observationActions = computerActions.slice(0, 2);
-const labels = {
-  off: "Computer: off",
-  observe: "Computer: observe",
-  interact: "Computer: interact",
-  custom: "Computer: custom",
-} as const;
+import {
+  computerActions,
+  observationActions,
+  computerPermissionLabels as labels,
+  computerPermissionMode as modeOf,
+} from "./computer-permissions";
+import { ComputerCheck } from "./computer-check";
 type Mode = keyof typeof labels;
-
-function modeOf(operations: Schema["EnvironmentAction"][]): Mode {
-  const selected = operations.filter((value) =>
-    value.startsWith("environment.computer."),
-  );
-  if (!selected.length) return "off";
-  if (
-    selected.length === computerActions.length &&
-    computerActions.every((value) => selected.includes(value))
-  )
-    return "interact";
-  if (
-    selected.length === observationActions.length &&
-    observationActions.every((value) => selected.includes(value))
-  )
-    return "observe";
-  return "custom";
-}
 
 /** These are Agent action ceilings for later Runs, not human desktop control. */
 export function MountComputerPermissions({
@@ -162,6 +134,7 @@ function PermissionsForm({
           "This controls Computer tools only. Terminal commands and other tools keep their existing permissions.",
         )}
       </p>
+      <ComputerCheck environmentId={mount.environment_id} />
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

@@ -583,6 +583,9 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
         key = await client.post(f"{accounts}/{account['id']}/keys", json={"name": role})
         bearers[role] = {"authorization": "Bearer " + key.json()["secret"]}
 
+    assert (
+        await client.post(f"{env.api}/environments/{environment_id}/computer/check", headers=bearers["viewer"])
+    ).status_code == 403
     templates = f"{env.api}/environment-templates"
     body = {"name": "Other", "provider_id": env.provider["id"]}
     assert (await client.post(templates, json=body, headers=bearers["runner"])).status_code == 403
@@ -610,6 +613,10 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
         )
         target.token = seal(env.runtime.keys, target, "laptop-token")
         session.add(target)
+    assert (
+        await client.post(f"{env.api}/environments/{device}/computer/check", headers=bearers["runner"])
+    ).status_code == 403
+
     assert (await environment(env, device))["device_id"] == "laptop"
     mounts = f"{env.api}/threads/{thread}/environments"
     version = (await client.get(mounts)).headers["etag"]
@@ -1359,3 +1366,23 @@ async def test_service_executes_computer_observation_and_retains_its_screenshot(
     [image] = tool["content"]["tool_images"]
     response = await env.client.get(f"{env.api}/runs/{run['id']}/images/{image['id']}")
     assert response.status_code == 200 and response.content == png
+
+
+async def test_computer_check_reports_unsupported_and_never_starts_stopped_targets(env) -> None:
+    target = await reserve(env, env.template["id"])
+    path = f"{env.api}/environments/{target['id']}/computer/check"
+    before = list(BACKEND.preparations)
+    response = await env.client.post(path)
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_ready"
+    assert BACKEND.preparations == before
+    await dispatch_pending(env.runtime, target["id"], owner="desktop-check-test")
+    response = await env.client.post(path)
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "unsupported",
+        "observe_ready": False,
+        "input_ready": False,
+        "display_count": 0,
+        "operations": [],
+    }

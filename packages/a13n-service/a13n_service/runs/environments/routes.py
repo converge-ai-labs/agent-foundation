@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Response
 from a13n_service.infra.http import IfMatch, PageLimit, etag, tagged
 from a13n_service.runs.environments import mounts, service
 from a13n_service.runs.environments.schemas import (
+    ComputerCheck,
     EnvironmentPage,
     EnvironmentUpdate,
     EnvironmentView,
@@ -168,3 +169,15 @@ async def update_mount(
     )
     response.headers["ETag"] = etag(thread_id, version)
     return mount
+
+
+@router.post(
+    "/environments/{environment_id}/computer/check",
+    response_model=ComputerCheck,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def check_computer(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, environment_id: str, actor: Actor
+) -> ComputerCheck:
+    """Probe desktop readiness without capturing the screen, sending input or starting the instance."""
+    return await service.check_computer(runtime, actor, workspace_id, environment_id)

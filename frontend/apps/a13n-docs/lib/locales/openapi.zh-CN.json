@@ -402,5 +402,8 @@
   "A platform-confirmed write, not an asserted source message or complete provider history.": "平台已确认的写入，不代表原始消息引用或供应商的完整历史。",
   "Exact authorization values in the locked first-party catalog.": "锁定的第一方动作目录中的精确授权值。",
   "Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.": "读取已提交运行历史中保存的截图。此二进制媒体接口不是 MCP 查询端点。",
-  "Run Image": "读取运行截图"
+  "Run Image": "读取运行截图",
+  "A point-in-time capability probe, not an Agent or mount permission grant.": "某一时刻的环境能力检查，不授予 Agent 或挂载权限。",
+  "Check Computer": "检查桌面",
+  "Probe desktop readiness without capturing the screen, sending input or starting the instance.": "检查桌面就绪状态，不截图、不发送输入，也不启动实例。"
 }

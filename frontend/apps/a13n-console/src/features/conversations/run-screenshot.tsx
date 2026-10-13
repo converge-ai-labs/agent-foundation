@@ -18,6 +18,7 @@ export function RunScreenshot({
   const [open, setOpen] = useState(false);
   return (
     <ModalFrame
+      size="xl"
       open={open}
       onOpenChange={setOpen}
       title={t("Computer screenshot")}

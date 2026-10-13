@@ -29,6 +29,10 @@ import { conversationQueries, runPath } from "../../api";
 import { formatDuration } from "../../format";
 import { useRun } from "../../queries";
 import { UsageTable } from "../../usage-table";
+import {
+  computerPermissionMode,
+  computerPermissionLabels,
+} from "../../computer-permissions";
 import styles from "./details.module.css";
 
 type Run = Schema["RunView"];
@@ -164,17 +168,37 @@ function RunDetails({ runId }: { runId: string }) {
         ) : (
           <>
             {!!run.environment_mounts.length && (
-              <ListRows>
-                {run.environment_mounts.map((mount) => (
-                  <ListRow
-                    key={mount.name}
-                    icon={<MonitorIcon size={16} />}
-                    name={mount.name}
-                    secondary={mount.working_directory ?? undefined}
-                    control={<EnvironmentReference id={mount.environment_id} />}
-                  />
-                ))}
-              </ListRows>
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Permissions captured when this run was accepted. Later changes do not affect this run.",
+                  )}
+                </p>
+                <ListRows>
+                  {run.environment_mounts.map((mount) => (
+                    <ListRow
+                      key={mount.name}
+                      icon={<MonitorIcon size={16} />}
+                      name={mount.name}
+                      secondary={mount.working_directory ?? undefined}
+                      control={
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {t(
+                              computerPermissionLabels[
+                                computerPermissionMode(
+                                  mount.permission_ceiling?.operations ?? [],
+                                )
+                              ],
+                            )}
+                          </span>
+                          <EnvironmentReference id={mount.environment_id} />
+                        </div>
+                      }
+                    />
+                  ))}
+                </ListRows>
+              </div>
             )}
             {!!run.memory_mounts.length && (
               <MemoryMountRows

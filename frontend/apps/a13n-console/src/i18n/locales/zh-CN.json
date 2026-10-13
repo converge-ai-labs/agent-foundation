@@ -2136,5 +2136,21 @@
   "Type text into the focused application": "向当前聚焦应用输入文本",
   "Press a desktop key combination": "输入桌面组合键",
   "Observe and control an explicitly authorized desktop. Requires a compatible environment.": "观察和操作明确授权的桌面，需要兼容的环境。",
-  "Describe desktop": "描述桌面"
+  "Describe desktop": "描述桌面",
+  "Computer: loading…": "电脑权限：加载中…",
+  "Computer: unavailable": "电脑权限：读取失败",
+  "Computer: no environment": "电脑：未挂载环境",
+  "Computer: varies by environment": "电脑权限：各环境不同",
+  "Configure Computer permissions for later runs": "配置后续运行的电脑权限",
+  "Permissions captured when this run was accepted. Later changes do not affect this run.": "以下权限在接收本次运行时确定，后续修改不会影响本次运行。",
+  "Check desktop": "检查桌面",
+  "Checking desktop…": "正在检查桌面…",
+  "This environment does not provide desktop operations.": "此环境未提供桌面操作能力。",
+  "The environment is not running. Start it before checking the desktop.": "环境尚未运行，请启动后再检查桌面。",
+  "Desktop ready for observation and input.": "桌面已就绪，可以观察和输入。",
+  "The screen is available, but desktop input is not ready.": "可以查看屏幕，但桌面输入尚未就绪。",
+  "The desktop is not ready. Check its display and system permissions.": "桌面尚未就绪，请检查图形会话和系统权限。",
+  "{{count}} displays detected": "已检测到 {{count}} 个显示器",
+  "Literal text entry is not supported; supported key presses remain available.": "不支持直接输入整段文本，仍可使用受支持的按键操作。",
+  "This checks the environment only. Agent tools and mount permissions still apply at execution time.": "此检查仅反映环境能力，执行时仍受 Agent 工具配置和挂载权限限制。"
 }

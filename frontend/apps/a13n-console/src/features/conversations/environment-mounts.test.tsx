@@ -261,3 +261,34 @@ it("shows Computer permissions without offering edits to a reader", async () => 
   ).toBeNull();
   cache.clear();
 });
+
+it("checks actual desktop support without changing mount permissions", async () => {
+  mocks.mounts = [
+    {
+      name: "workspace",
+      environment_id: "env_device",
+      working_directory: null,
+      permission_ceiling: { operations: ["environment.computer.observe"] },
+    },
+  ];
+  mocks.POST.mockResolvedValueOnce({
+    data: { status: "unsupported", operations: [] },
+  });
+  const cache = show();
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Computer: custom" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Check desktop" }));
+  await screen.findByText(
+    "This environment does not provide desktop operations.",
+  );
+  expect(mocks.POST).toHaveBeenCalledWith(
+    "/api/v1/environments/{environment_id}/computer/check",
+    {
+      params: { path: { environment_id: "env_device" } },
+    },
+  );
+  expect(mocks.PATCH).not.toHaveBeenCalled();
+  cache.clear();
+});

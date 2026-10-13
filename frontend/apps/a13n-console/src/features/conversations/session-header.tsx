@@ -32,6 +32,7 @@ import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
 import { ThreadMountsDialog } from "./thread-mounts";
+import { ThreadComputerSummary } from "./thread-computer-summary";
 import styles from "./conversations.module.css";
 
 /**
@@ -128,6 +129,12 @@ export function SessionHeader({
         )}
         {thread && (
           <ThreadBranches thread={thread} threads={threads} level={level} />
+        )}
+        {thread && (
+          <ThreadComputerSummary
+            threadId={thread.id}
+            onConfigure={() => setMounts(true)}
+          />
         )}
         <SegmentedControl
           label={t("Disclosure level")}

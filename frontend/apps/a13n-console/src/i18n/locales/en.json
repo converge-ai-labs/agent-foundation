@@ -2136,5 +2136,21 @@
   "Type text into the focused application": "Type text into the focused application",
   "Press a desktop key combination": "Press a desktop key combination",
   "Observe and control an explicitly authorized desktop. Requires a compatible environment.": "Observe and control an explicitly authorized desktop. Requires a compatible environment.",
-  "Describe desktop": "Describe desktop"
+  "Describe desktop": "Describe desktop",
+  "Computer: loading…": "Computer: loading…",
+  "Computer: unavailable": "Computer: unavailable",
+  "Computer: no environment": "Computer: no environment",
+  "Computer: varies by environment": "Computer: varies by environment",
+  "Configure Computer permissions for later runs": "Configure Computer permissions for later runs",
+  "Permissions captured when this run was accepted. Later changes do not affect this run.": "Permissions captured when this run was accepted. Later changes do not affect this run.",
+  "Check desktop": "Check desktop",
+  "Checking desktop…": "Checking desktop…",
+  "This environment does not provide desktop operations.": "This environment does not provide desktop operations.",
+  "The environment is not running. Start it before checking the desktop.": "The environment is not running. Start it before checking the desktop.",
+  "Desktop ready for observation and input.": "Desktop ready for observation and input.",
+  "The screen is available, but desktop input is not ready.": "The screen is available, but desktop input is not ready.",
+  "The desktop is not ready. Check its display and system permissions.": "The desktop is not ready. Check its display and system permissions.",
+  "{{count}} displays detected": "{{count}} displays detected",
+  "Literal text entry is not supported; supported key presses remain available.": "Literal text entry is not supported; supported key presses remain available.",
+  "This checks the environment only. Agent tools and mount permissions still apply at execution time.": "This checks the environment only. Agent tools and mount permissions still apply at execution time."
 }

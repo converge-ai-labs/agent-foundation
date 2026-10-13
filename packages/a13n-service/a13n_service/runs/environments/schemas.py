@@ -3,7 +3,12 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentPermissionSet, EnvironmentState
+from a13n_harness.environment.models import (
+    FILE_EXECUTION_ACTIONS,
+    EnvironmentAction,
+    EnvironmentPermissionSet,
+    EnvironmentState,
+)
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints
 
 from a13n_service.infra.ids import ObjectId
@@ -149,3 +154,13 @@ class MountView(BaseModel):
 class MountPage(BaseModel):
     items: list[MountView]
     next_cursor: str | None = None
+
+
+class ComputerCheck(BaseModel):
+    """A point-in-time capability probe, not an Agent or mount permission grant."""
+
+    status: Literal["checked", "unsupported", "not_ready"]
+    observe_ready: bool = False
+    input_ready: bool = False
+    display_count: int = 0
+    operations: list[EnvironmentAction] = Field(default_factory=list)
