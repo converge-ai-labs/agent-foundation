@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -47,13 +47,32 @@ it("saves the environment choice together with other configuration edits", async
   HTMLElement.prototype.setPointerCapture = () => {};
   HTMLElement.prototype.releasePointerCapture = () => {};
   HTMLElement.prototype.scrollIntoView = () => {};
-  http.GET.mockResolvedValue({
+  http.GET.mockImplementation(async (path: string) => ({
     data: {
-      items: [{ id: "envtpl_1234567890abcdef1234", name: "Sandbox" }],
+      items:
+        path === "/api/v1/environment-templates"
+          ? [
+              {
+                id: "envtpl_local",
+                name: "Sandbox",
+                provider_id: "provider_local",
+              },
+              {
+                id: "envtpl_1234567890abcdef1234",
+                name: "Sandbox",
+                provider_id: "provider_cloud",
+              },
+            ]
+          : path === "/api/v1/environment-providers"
+            ? [
+                { id: "provider_local", type: "local" },
+                { id: "provider_cloud", type: "e2b" },
+              ]
+            : [{ type: "e2b", display_name: "E2B" }],
       next_cursor: null,
     },
     response: new Response(null, { status: 200 }),
-  });
+  }));
   const submit = vi.fn();
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -84,7 +103,18 @@ it("saves the environment choice together with other configuration edits", async
   await user.click(
     screen.getByRole("combobox", { name: "Default environment template" }),
   );
-  await user.click(await screen.findByRole("option", { name: "Sandbox" }));
+  const cloud = await screen.findByRole("group", { name: "Cloud hosting" });
+  expect(
+    within(screen.getByRole("group", { name: "Own hosting" })).getByRole(
+      "option",
+      { name: "Sandbox Local directory" },
+    ),
+  ).toBeTruthy();
+  await user.click(within(cloud).getByRole("option", { name: "Sandbox E2B" }));
+  expect(
+    screen.getByRole("combobox", { name: "Default environment template" })
+      .textContent,
+  ).toContain("E2B");
   expect(submit).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(submit).toHaveBeenCalledWith(

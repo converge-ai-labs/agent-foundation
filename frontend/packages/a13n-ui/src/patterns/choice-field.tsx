@@ -4,6 +4,7 @@ import { FormField } from "./form-field";
 import {
   Select,
   SelectGroup,
+  SelectGroupLabel,
   SelectItem,
   SelectPopup,
   SelectTrigger,
@@ -15,6 +16,8 @@ export interface ChoiceOption {
   label: string;
   icon?: ReactNode;
   disabled?: boolean;
+  group?: string;
+  hint?: string;
 }
 export function ChoiceField({
   label,
@@ -61,6 +64,9 @@ export function ChoiceField({
         <span className="flex items-center gap-2">
           {selected?.icon}
           {selected?.label ?? value ?? "—"}
+          {selected?.hint && (
+            <span className="text-muted-foreground">{selected.hint}</span>
+          )}
         </span>
       </ReadOnlyField>
     );
@@ -112,6 +118,8 @@ function ChoiceControl({
   | "placeholder"
   | "aria-describedby"
 > & { "aria-invalid"?: boolean; inlineLabel?: string }) {
+  const selected = options.find((option) => option.value === value);
+  const groups = [...new Set(options.map((option) => option.group))];
   return (
     <Select
       items={options}
@@ -130,22 +138,42 @@ function ChoiceControl({
         )}
         {options.find((option) => option.value === value)?.icon}
         <SelectValue placeholder={placeholder} />
+        {selected?.hint && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {selected.hint}
+          </span>
+        )}
       </SelectTrigger>
       <SelectPopup>
-        <SelectGroup>
-          {options.map((option) => (
-            <SelectItem
-              key={option.value}
-              value={option.value}
-              disabled={option.disabled}
-            >
-              <span className="flex items-center gap-2">
-                {option.icon}
-                {option.label}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectGroup>
+        {groups.map((group) => (
+          <SelectGroup key={group ?? "ungrouped"}>
+            {group && <SelectGroupLabel>{group}</SelectGroupLabel>}
+            {options
+              .filter((option) => option.group === group)
+              .map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                  aria-label={
+                    option.hint ? `${option.label} ${option.hint}` : undefined
+                  }
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    {option.icon}
+                    <span className="min-w-0 flex-1 truncate">
+                      {option.label}
+                    </span>
+                    {option.hint && (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {option.hint}
+                      </span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+          </SelectGroup>
+        ))}
       </SelectPopup>
     </Select>
   );
