@@ -18,6 +18,7 @@ make site-build
 - `index.html` holds the page copy; `404.html` is the site-wide not-found page.
 - `src/content.ts` holds the data the scenes show: agents, calls, and the provider stack. Provider and product icons come from the `a13n-ui` brand registry.
 - `src/hero.ts` folds and unfolds the hero name.
+- `src/stars.ts` shows the repository's GitHub star count beside the nav's GitHub link. It reads the count from Shields, which caches GitHub, so visitors never meet GitHub's per-address API limit.
 - `src/scene/` holds the Service scene in three acts: `build.ts`, `call.ts`, and `run.ts`. `stage.ts` maps the scroll position to the acts and their transitions.
 - `src/main.ts` shows the hero once the display face loads, then loads `src/page.ts`, which mounts everything below the hero. One frame loop drives both.
 
