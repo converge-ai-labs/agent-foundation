@@ -198,7 +198,7 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
   }
 }, 20000);
 
-it("an uncertain admission retains input and cannot silently retry", async () => {
+it("keeps lost acknowledgement uncertain after server consumption and cannot silently retry", async () => {
   const created = await result(
     transport.client.POST("/api/threads", { body: {} }),
   );
@@ -218,8 +218,14 @@ it("an uncertain admission retains input and cannot silently retry", async () =>
     try {
       await submitDraft(draft, transport, created.thread_id, "send");
       expect(draft.submission.kind).toBe("unknown");
-      expect(values(draft.doc).prompt).toBe("do not retry");
+      await until(() => values(draft.doc).prompt === "");
+      // Receiving the server's clear is not a submission acknowledgement.
+      expect(draft.submission.kind).toBe("unknown");
+      draft.doc.getText("text").insert(0, "next prompt");
+      await until(() => draft.synchronized);
       await submitDraft(draft, transport, created.thread_id, "send");
+      expect(values(draft.doc).prompt).toBe("next prompt");
+      expect(draft.submission.kind).toBe("unknown");
       expect(send).toHaveBeenCalledTimes(1);
     } finally {
       send.mockRestore();

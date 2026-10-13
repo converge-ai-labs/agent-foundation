@@ -459,6 +459,7 @@ async function fill() {
 }
 
 it("keeps the blank composer and files local, then creates, uploads, synchronizes and sends exactly once", async () => {
+  const capture = vi.spyOn(ThreadDraft.prototype, "capture");
   let resume!: () => void;
   paused = new Promise<void>((resolve) => {
     resume = resolve;
@@ -504,6 +505,7 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
     defaults: { project_id: "project-one" },
   });
   expect(await writes[2].json()).toEqual({
+    draft: capture.mock.results.at(-1)!.value.snapshot,
     mode: "normal",
     parts: [{ attachment_id: "attachment-one" }, "Build this"],
     source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
@@ -639,6 +641,7 @@ it("does not steal navigation when an uncertain creation is reconciled after lea
 });
 
 it("distinguishes inherited choices and sends an independent model without changing the agent binding", async () => {
+  const capture = vi.spyOn(ThreadDraft.prototype, "capture");
   const user = (await import("@testing-library/user-event")).default.setup();
   mount();
   await fill();
@@ -680,6 +683,7 @@ it("distinguishes inherited choices and sends an independent model without chang
     defaults: { project_id: "project-one", agent_id: "agent-two" },
   });
   expect(await writes[1].json()).toEqual({
+    draft: capture.mock.results.at(-1)!.value.snapshot,
     mode: "normal",
     parts: ["Build this"],
     source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
