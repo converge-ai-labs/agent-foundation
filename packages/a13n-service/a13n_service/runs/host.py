@@ -19,6 +19,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.resources.agents.schemas import PlatformSelection
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
     enabled_tools,
@@ -30,6 +31,7 @@ from a13n_service.resources.connections.runtime import SelectedConnection, open_
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
+from a13n_service.runs.builtin_skills import platform_skill
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
 from a13n_service.runs.findings.tools import FindingCapability
@@ -39,6 +41,7 @@ from a13n_service.runs.memories.execution import (
     record_memory_capability,
     resolve_memories,
 )
+from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
@@ -51,6 +54,8 @@ class _Parts:
     connections: tuple[SelectedConnection, ...]
     web: ResolvedWeb | None
     skills: tuple[PinnedSkill, ...]
+    platform: PlatformSelection
+    builtin_skill: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +92,8 @@ async def resolve_host(
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
             skills=await resolve_skills(session, run, config.skills),
+            platform=config.platform_tools,
+            builtin_skill="platform-operations" in config.builtin_skills,
         )
     return HostPlan(
         parts,
@@ -175,6 +182,11 @@ async def open_host(
                     settings=runtime.settings.providers,
                 )
             )
+            if parts.builtin_skill:
+                tools[revision_id] += (await platform_skill(runtime),)
+            if parts.platform.groups:
+                platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
+                tools[revision_id] += (platform,)
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)

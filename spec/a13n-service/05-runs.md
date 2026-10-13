@@ -30,6 +30,14 @@ At execution, accepted input distinguishes message content from a deferred-resul
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
 
+## Execution queries
+
+Read-only JSON queries expose Session and Thread lists/details, inbox lists/entries, Thread Runs, Run details, display items and saved content, lineage, Attempt lists/details, traces and Findings through the HTTP API and explicitly admitted MCP operations. Live output streams and execution commands remain outside internal platform admission.
+
+`GET /runs` searches within the selected workspace independently of Session IDs. Optional `agent_id`, `session_id`, `thread_id`, `principal_id` and `status` filters combine with timezone-aware `created_after` (inclusive) and `created_before` (exclusive) bounds on Run creation time. Results use newest-first `(created_at, id)` keyset pagination; cursors are bound to workspace and filters. Time bounds must be ordered. This finds historical failures, unlike Session filters based on each Session's latest Run.
+
+`GET /runs/{run}/attempts/{attempt}` returns one Attempt only when it belongs to that authorized Run. The result includes its lifecycle, replacement, build and trace correlation fields, never worker lease credentials. An Attempt failure and a final Run failure are distinct; missing or expired trace evidence does not establish execution success.
+
 ## Run configuration
 
 Message `options.configuration` accepts the shared [Harness Run configuration](../a13n-harness/06-execution-context-and-lifecycle.md#run-configuration), independently of Agent revision overrides. Omission or null selects the default for a new Run and retains the snapshot when steering. An explicit object selects its entire value; `{allowed_hosts: null}` explicitly clears a hostname restriction for a new Run, while `{allowed_hosts: []}` denies every destination.

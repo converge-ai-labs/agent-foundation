@@ -24,6 +24,7 @@ from starlette.routing import Match
 from starlette.types import ASGIApp, Scope
 
 from a13n_service.infra.http import ErrorEnvelope
+from a13n_service.infra.platform import PLATFORM_METADATA, PlatformOperation
 
 CONTEXT_HEADERS = frozenset({"authorization", "cookie", "x-workspace-id"})
 RESULT_HEADERS = ("etag", "x-request-id", "retry-after")
@@ -137,6 +138,8 @@ class ApiTool(Tool):
         error_schema: dict[str, Any],
     ):
         parameters, mappings = _input_schema(route)
+        metadata = (target.openapi_extra or {}).get(PLATFORM_METADATA)
+        operation = PlatformOperation.model_validate(metadata) if metadata is not None else None
         super().__init__(
             name=name,
             description=f"{route.method} {route.path}\n{route.description or route.summary or ''}\n"
@@ -144,7 +147,13 @@ class ApiTool(Tool):
             "Writes are not retried; check resource state after an unknown outcome.",
             parameters=parameters,
             output_schema=_output_schema(route, error_schema),
-            annotations=ToolAnnotations(read_only_hint=route.method == "GET", open_world_hint=True),
+            annotations=ToolAnnotations(
+                read_only_hint=operation.effect == "read" if operation else route.method == "GET",
+                destructive_hint=operation.effect == "write" if operation else route.method != "GET",
+                idempotent_hint=False,
+                open_world_hint=True,
+            ),
+            meta={PLATFORM_METADATA: metadata} if metadata else None,
         )
         self._app = app
         self._routes = routes

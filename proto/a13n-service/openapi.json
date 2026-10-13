@@ -165,6 +165,16 @@
       "AgentConfig-Input": {
         "additionalProperties": false,
         "properties": {
+          "builtin_skills": {
+            "default": [],
+            "items": {
+              "const": "platform-operations",
+              "type": "string"
+            },
+            "title": "Builtin Skills",
+            "type": "array",
+            "uniqueItems": true
+          },
           "client_tools": {
             "default": [],
             "items": {
@@ -243,6 +253,9 @@
                 "type": "null"
               }
             ]
+          },
+          "platform_tools": {
+            "$ref": "#/components/schemas/PlatformSelection"
           },
           "plugins": {
             "default": [],
@@ -326,6 +339,16 @@
       "AgentConfig-Output": {
         "additionalProperties": false,
         "properties": {
+          "builtin_skills": {
+            "default": [],
+            "items": {
+              "const": "platform-operations",
+              "type": "string"
+            },
+            "title": "Builtin Skills",
+            "type": "array",
+            "uniqueItems": true
+          },
           "client_tools": {
             "default": [],
             "items": {
@@ -404,6 +427,9 @@
                 "type": "null"
               }
             ]
+          },
+          "platform_tools": {
+            "$ref": "#/components/schemas/PlatformSelection"
           },
           "plugins": {
             "default": [],
@@ -617,6 +643,22 @@
         "additionalProperties": false,
         "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
         "properties": {
+          "builtin_skills": {
+            "anyOf": [
+              {
+                "items": {
+                  "const": "platform-operations",
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtin Skills"
+          },
           "client_tools": {
             "anyOf": [
               {
@@ -720,6 +762,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform_tools": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformSelection"
               },
               {
                 "type": "null"
@@ -825,6 +877,22 @@
         "additionalProperties": false,
         "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
         "properties": {
+          "builtin_skills": {
+            "anyOf": [
+              {
+                "items": {
+                  "const": "platform-operations",
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtin Skills"
+          },
           "client_tools": {
             "anyOf": [
               {
@@ -928,6 +996,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform_tools": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformSelection"
               },
               {
                 "type": "null"
@@ -8984,6 +9062,55 @@
         "title": "PendingCall",
         "type": "object"
       },
+      "PlatformGroup": {
+        "enum": [
+          "agents",
+          "models",
+          "connections",
+          "skills",
+          "environment_templates",
+          "providers",
+          "execution"
+        ],
+        "type": "string"
+      },
+      "PlatformSelection": {
+        "additionalProperties": false,
+        "description": "Platform MCP groups selected independently of local operating instructions.",
+        "properties": {
+          "groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlatformGroup"
+            },
+            "title": "Groups",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "read_permission": {
+            "default": "allow",
+            "enum": [
+              "allow",
+              "ask",
+              "deny"
+            ],
+            "title": "Read Permission",
+            "type": "string"
+          },
+          "write_permission": {
+            "default": "ask",
+            "enum": [
+              "allow",
+              "ask",
+              "deny"
+            ],
+            "title": "Write Permission",
+            "type": "string"
+          }
+        },
+        "title": "PlatformSelection",
+        "type": "object"
+      },
       "PluginSelection": {
         "additionalProperties": false,
         "description": "One instance of a Harness plugin factory the deployment installed.",
@@ -14854,7 +14981,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
       },
       "post": {
         "operationId": "create_agent_api_v1_agents_post",
@@ -14921,7 +15052,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/validate": {
@@ -14984,7 +15119,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}": {
@@ -15051,7 +15190,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
       },
       "patch": {
         "operationId": "update_agent_api_v1_agents__agent_id__patch",
@@ -15146,7 +15289,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}/archive": {
@@ -15233,7 +15380,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}/avatar": {
@@ -15582,7 +15733,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}/revisions": {
@@ -15677,7 +15832,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
       },
       "post": {
         "description": "A configuration that validates to the default revision's creates nothing and returns that revision.",
@@ -15773,7 +15932,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}/revisions/{revision_id}": {
@@ -15849,7 +16012,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default": {
@@ -15945,7 +16112,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/agents/{agent_id}/unarchive": {
@@ -16032,7 +16203,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/assets": {
@@ -16748,7 +16923,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       },
       "post": {
         "operationId": "create_connection_api_v1_connections_post",
@@ -16815,7 +16994,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connections/callback": {
@@ -17027,7 +17210,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       },
       "patch": {
         "operationId": "update_connection_api_v1_connections__connection_id__patch",
@@ -17122,7 +17309,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connections/{connection_id}/authorize": {
@@ -17306,7 +17497,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connections/{connection_id}/test": {
@@ -17374,7 +17569,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connections/{connection_id}/tools": {
@@ -17441,7 +17640,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connector-providers": {
@@ -17527,7 +17730,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "post": {
         "operationId": "create_provider_api_v1_connector_providers_post",
@@ -17661,7 +17868,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "patch": {
         "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
@@ -17879,7 +18090,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connector-providers/{provider_id}/apps/{app}": {
@@ -17955,7 +18170,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connector-providers/{provider_id}/apps/{app}/actions": {
@@ -18031,7 +18250,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/connector-providers/{provider_id}/test": {
@@ -18185,7 +18408,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "post": {
         "operationId": "create_provider_api_v1_environment_providers_post",
@@ -18319,7 +18546,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "patch": {
         "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
@@ -18588,7 +18819,11 @@
         "tags": [
           "environments"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "environment_templates"
+        }
       },
       "post": {
         "operationId": "create_template_api_v1_environment_templates_post",
@@ -18655,7 +18890,11 @@
         "tags": [
           "environments"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "environment_templates"
+        }
       }
     },
     "/api/v1/environment-templates/{template_id}": {
@@ -18722,7 +18961,11 @@
         "tags": [
           "environments"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "environment_templates"
+        }
       },
       "patch": {
         "operationId": "update_template_api_v1_environment_templates__template_id__patch",
@@ -18817,7 +19060,11 @@
         "tags": [
           "environments"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "environment_templates"
+        }
       }
     },
     "/api/v1/environments": {
@@ -19474,7 +19721,11 @@
         "tags": [
           "findings"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "post": {
         "operationId": "start_analysis_api_v1_finding_analyses_post",
@@ -19718,7 +19969,11 @@
         "tags": [
           "findings"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "post": {
         "operationId": "create_finding_api_v1_findings_post",
@@ -19851,7 +20106,11 @@
         "tags": [
           "findings"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "patch": {
         "operationId": "update_finding_api_v1_findings__finding_id__patch",
@@ -20078,7 +20337,11 @@
         "tags": [
           "connections"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
       }
     },
     "/api/v1/media-understanding-defaults": {
@@ -20136,7 +20399,11 @@
         "tags": [
           "models"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "models"
+        }
       },
       "put": {
         "description": "Replaces all three kinds; each model must declare it understands its kind. Requires workspace admin.",
@@ -22426,7 +22693,11 @@
         "tags": [
           "models"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "models"
+        }
       }
     },
     "/api/v1/model-providers": {
@@ -22512,7 +22783,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "post": {
         "operationId": "create_provider_api_v1_model_providers_post",
@@ -22646,7 +22921,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "patch": {
         "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
@@ -23098,7 +23377,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       }
     },
     "/api/v1/model-providers/{provider_id}/test": {
@@ -23252,7 +23535,11 @@
         "tags": [
           "models"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "models"
+        }
       },
       "post": {
         "description": "Needs `write` on the workspace and on the model's provider, whose credential the model spends.",
@@ -23320,7 +23607,11 @@
         "tags": [
           "models"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "models"
+        }
       }
     },
     "/api/v1/models/{key}": {
@@ -23387,7 +23678,11 @@
         "tags": [
           "models"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "models"
+        }
       },
       "patch": {
         "description": "A configuration change also needs `write` on the model's provider.",
@@ -23483,7 +23778,11 @@
         "tags": [
           "models"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "models"
+        }
       }
     },
     "/api/v1/organizations": {
@@ -24754,6 +25053,226 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Principal Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "accepted",
+                    "running",
+                    "waiting",
+                    "completed",
+                    "failed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Runs",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
     "/api/v1/runs/{run_id}": {
       "get": {
         "operationId": "get_run_api_v1_runs__run_id__get",
@@ -24817,7 +25336,12 @@
         "summary": "Get Run",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "patch": {
         "description": "Labels only.",
@@ -24978,7 +25502,92 @@
         "summary": "Run Attempts",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
+    "/api/v1/runs/{run_id}/attempts/{attempt_id}": {
+      "get": {
+        "operationId": "get_attempt_api_v1_runs__run_id__attempts__attempt_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Attempt",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/runs/{run_id}/attempts/{attempt_id}/trace": {
@@ -25083,7 +25692,11 @@
         "tags": [
           "runs"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/runs/{run_id}/contents/{content_id}": {
@@ -25159,7 +25772,12 @@
         "summary": "Run Content",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/runs/{run_id}/fork": {
@@ -25443,7 +26061,12 @@
         "summary": "Run Items",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/runs/{run_id}/lineage": {
@@ -25526,7 +26149,12 @@
         "summary": "Run Lineage",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/runs/{run_id}/resume": {
@@ -25823,7 +26451,12 @@
         "summary": "List Sessions",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "post": {
         "operationId": "create_session_api_v1_sessions_post",
@@ -25955,7 +26588,12 @@
         "summary": "Get Session",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "patch": {
         "operationId": "update_session_api_v1_sessions__session_id__patch",
@@ -26131,7 +26769,12 @@
         "summary": "Get Message Authors",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/skills": {
@@ -26291,7 +26934,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "skills"
+        }
       },
       "post": {
         "operationId": "create_skill_api_v1_skills_post",
@@ -26358,7 +27005,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/validate": {
@@ -26428,7 +27079,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/{skill_id}": {
@@ -26495,7 +27150,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "skills"
+        }
       },
       "patch": {
         "description": "Name, description and labels; an archived skill changes only by unarchiving.",
@@ -26591,7 +27250,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/{skill_id}/archive": {
@@ -26679,7 +27342,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/{skill_id}/revisions": {
@@ -26774,7 +27441,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "skills"
+        }
       },
       "post": {
         "description": "A package whose manifest equals the default revision's creates nothing and returns that revision.",
@@ -26870,7 +27541,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/{skill_id}/revisions/{revision_id}": {
@@ -26946,7 +27621,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/{skill_id}/revisions/{revision_id}/content": {
@@ -27205,7 +27884,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/skills/{skill_id}/unarchive": {
@@ -27292,7 +27975,11 @@
         "tags": [
           "skills"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "skills"
+        }
       }
     },
     "/api/v1/subscriptions": {
@@ -27978,7 +28665,12 @@
         "summary": "List Threads",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "post": {
         "description": "Create a thread (and its session unless one is named) with its first message.",
@@ -28133,7 +28825,12 @@
         "summary": "Get Thread",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "patch": {
         "operationId": "update_thread_api_v1_threads__thread_id__patch",
@@ -28678,7 +29375,12 @@
         "summary": "List Inbox",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "post": {
         "description": "Append a message; it starts a run at once when the thread can accept it, or steers the active run.",
@@ -29042,7 +29744,12 @@
         "summary": "Get Entry",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       },
       "patch": {
         "operationId": "edit_entry_api_v1_threads__thread_id__inbox__entry_id__patch",
@@ -29591,7 +30298,12 @@
         "summary": "List Thread Runs",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/threads/{thread_id}/stream": {
@@ -29762,7 +30474,11 @@
         "tags": [
           "agents"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
       }
     },
     "/api/v1/trace-backend": {
@@ -29821,7 +30537,11 @@
         "tags": [
           "runs"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/traces": {
@@ -30017,7 +30737,11 @@
         "tags": [
           "runs"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/traces/{trace_id}": {
@@ -30086,7 +30810,11 @@
         "tags": [
           "runs"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/traces/{trace_id}/spans": {
@@ -30183,7 +30911,11 @@
         "tags": [
           "runs"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/uploads": {
@@ -31541,7 +32273,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "post": {
         "operationId": "create_provider_api_v1_web_providers_post",
@@ -31675,7 +32411,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "providers"
+        }
       },
       "patch": {
         "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",

@@ -38,6 +38,7 @@ from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.mcp import WorkspaceKey, build_mcp
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
+from a13n_service.platform_auth import RunTokenBoundary
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
@@ -300,7 +301,6 @@ def build_app(
         redoc_url=None,
     )
     app.add_middleware(BodyLimit, max_bytes=config.server.request_bytes, timeout=config.server.request_timeout)
-    install_error_envelope(app)
     documented = distribution.routers if serves_api and distribution.authenticator is None else ()
     app.openapi = partial(contract, app, locally_authenticated=documented)
 
@@ -347,8 +347,10 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        app.add_middleware(RunTokenBoundary, routes=api_routes)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))
     if serves_api and (console / "index.html").is_file():
         app.router.default = console_fallback(console, app.router.default)
+    install_error_envelope(app)
     return app

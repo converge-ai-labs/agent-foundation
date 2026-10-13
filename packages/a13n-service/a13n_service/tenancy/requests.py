@@ -8,6 +8,7 @@ from fastapi import Depends, Header, Request
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.http import answer_headers
 from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.platform import RUN_CREDENTIAL
 from a13n_service.infra.redis import rate_limit
 from a13n_service.tenancy.access import Authenticated, unauthenticated
 from a13n_service.tenancy.authorize import Principal
@@ -26,7 +27,9 @@ async def current_credential(request: Request, runtime: CurrentRuntime) -> Authe
     """The request's credential. What authentication sets on the answer, such as a renewed login cookie, and
     `Cache-Control: no-store` reach every response to the request, including a route's own and an error."""
     answer = answer_headers(request)
-    credential = await runtime.access.authenticator.authenticate(request, answer)
+    credential = request.scope.get("state", {}).get(RUN_CREDENTIAL)
+    if credential is None:
+        credential = await runtime.access.authenticator.authenticate(request, answer)
     if credential is None:
         raise unauthenticated()
     answer.headers["Cache-Control"] = "no-store"

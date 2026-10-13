@@ -155,6 +155,8 @@ it("opens setup before preparing the composer and resumes the original target af
   );
   expect(search.get("message")).toContain("Research (ID ap_research)");
   expect(search.get("message")).toContain("revision ID apr_three");
+  expect(search.get("message")).toContain('"base_revision_id":"apr_three"');
+  expect(search.get("message")).toContain('"workspace_id":"ws_test"');
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
@@ -239,7 +241,7 @@ it("opens the conversation with a first message naming the agent version to star
     screen.getByLabelText("Current path").textContent ?? "",
   );
   expect(search.get("agent")).toBe("ap_composer");
-  expect(search.get("message")).toBe(
+  expect(search.get("message")).toContain(
     "Help me change the agent Research (ID ap_research), starting from its version 3 (revision ID apr_three).",
   );
 });

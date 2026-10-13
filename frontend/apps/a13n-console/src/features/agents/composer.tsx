@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
@@ -35,6 +35,7 @@ export function useAgentComposer() {
     client = useClient(),
     cache = useQueryClient(),
     navigate = useNavigate(),
+    location = useLocation(),
     { workspace, basePath, can } = useWorkspace();
   const write = can("write");
   const [setup, setSetup] = useState<{ target?: ComposerTarget }>();
@@ -64,7 +65,9 @@ export function useAgentComposer() {
             version: target.revision.number,
             revision: target.revision.id,
           },
-        ) + (target.context ? `\n\n${target.context}` : ""),
+        ) +
+          `\n\nConsole context: ${JSON.stringify({ page: location.pathname, workspace_id: workspace.id, agent_id: target.agent.id, base_revision_id: target.revision.id })}` +
+          (target.context ? `\n\n${target.context}` : ""),
       );
     navigate(`${basePath}/sessions/new?${search}`);
   };

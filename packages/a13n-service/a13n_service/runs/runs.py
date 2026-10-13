@@ -16,7 +16,7 @@ from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunView
+from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunQuery, RunView
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -84,6 +84,42 @@ async def list_thread_runs(
             newest_first=True,
         )
         return RunPage(items=await run_views(session, rows), next_cursor=next_cursor)
+
+
+async def list_runs(storage: Storage, actor: Principal, workspace_id: str, filters: RunQuery) -> RunPage:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        query = select(RunRow).where(RunRow.workspace_id == scope.workspace_id)
+        for name in ("agent_id", "session_id", "thread_id", "principal_id", "status"):
+            if (value := getattr(filters, name)) is not None:
+                query = query.where(getattr(RunRow, name) == value)
+        if filters.created_after is not None:
+            query = query.where(RunRow.created_at >= filters.created_after)
+        if filters.created_before is not None:
+            query = query.where(RunRow.created_at < filters.created_before)
+        rows, cursor = await cursors.keyset_page(
+            session,
+            query,
+            (RunRow.created_at, RunRow.id),
+            kind="runs",
+            owner=cursors.query_owner(scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor"})),
+            cursor=filters.cursor,
+            limit=filters.limit,
+            newest_first=True,
+        )
+        return RunPage(items=await run_views(session, rows), next_cursor=cursor)
+
+
+async def get_attempt(
+    storage: Storage, actor: Principal, workspace_id: str, run_id: str, attempt_id: str
+) -> AttemptView:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        run = await get_run(session, scope.workspace_id, run_id)
+        attempt = await session.get(AttemptRow, attempt_id)
+        if attempt is None or attempt.run_id != run.id:
+            raise not_found("attempt", attempt_id)
+        return AttemptView.model_validate(attempt)
 
 
 async def lineage(storage: Storage, actor: Principal, workspace_id: str, run_id: str, *, cursor: str | None) -> RunPage:

@@ -3,7 +3,7 @@
 import hashlib
 import json
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from a13n_harness.configuration import RunConfiguration
@@ -486,6 +486,30 @@ class RunView(BaseModel):
     started_at: datetime | None
     sealed_at: datetime | None
     updated_at: datetime
+
+
+class RunQuery(_Frozen):
+    """Workspace execution search; timestamps bound creation time, newest first."""
+
+    agent_id: ObjectId | None = None
+    session_id: ObjectId | None = None
+    thread_id: ObjectId | None = None
+    principal_id: ObjectId | None = None
+    status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
+    created_after: AwareDatetime | None = None
+    created_before: AwareDatetime | None = None
+    limit: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = None
+
+    @model_validator(mode="after")
+    def ordered_time_range(self) -> Self:
+        if (
+            self.created_after is not None
+            and self.created_before is not None
+            and self.created_after >= self.created_before
+        ):
+            raise ValueError("created_after must precede created_before")
+        return self
 
 
 class RunPage(BaseModel):

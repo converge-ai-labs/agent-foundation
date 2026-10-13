@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IfMatch, PageLimit, answer_headers, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.registry import ProviderKind
 from a13n_service.resources.providers import callback, discovery, oauth, service
 from a13n_service.resources.providers.oauth import (
@@ -61,7 +62,10 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         return tagged(response, result)
 
     @router.get(
-        collection, response_model=ProviderPage, summary=f"List {kind} providers", openapi_extra={"x-a13n-mcp": True}
+        collection,
+        response_model=ProviderPage,
+        summary=f"List {kind} providers",
+        openapi_extra=platform_operation("providers", "read") if kind != "memory" else {"x-a13n-mcp": True},
     )
     async def list_providers(
         workspace_id: WorkspaceId,
@@ -72,7 +76,12 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
     ) -> ProviderPage:
         return await service.list_providers(runtime.storage, actor, row_type, workspace_id, limit=limit, cursor=cursor)
 
-    @router.get(item, response_model=Provider, summary=f"Get {kind} provider", openapi_extra={"x-a13n-mcp": True})
+    @router.get(
+        item,
+        response_model=Provider,
+        summary=f"Get {kind} provider",
+        openapi_extra=platform_operation("providers", "read") if kind != "memory" else {"x-a13n-mcp": True},
+    )
     async def get_provider(
         response: Response, workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
     ) -> Provider:
@@ -233,7 +242,9 @@ async def disconnect_model_authorization(
 
 
 @router.get(
-    "/model-providers/{provider_id}/models", response_model=list[ProviderModel], openapi_extra={"x-a13n-mcp": True}
+    "/model-providers/{provider_id}/models",
+    response_model=list[ProviderModel],
+    openapi_extra=platform_operation("providers", "read"),
 )
 async def discover_model_provider_models(
     request: Request, workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
