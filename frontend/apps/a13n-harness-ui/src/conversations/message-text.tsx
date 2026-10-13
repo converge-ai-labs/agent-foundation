@@ -5,7 +5,6 @@ import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
 import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
 import { OpenHostFile } from "./tool-call";
-import { syntaxHighlight } from "./syntax-code";
 import { linkedMediaPreviews } from "./linked-media";
 import { LinkedMediaPreview } from "./linked-media-preview";
 
@@ -69,7 +68,6 @@ export const MessageText = memo(function MessageText({
         <Markdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[
-            syntaxHighlight,
             [linkedMediaPreviews, { currentHref: window.location.href }],
           ]}
           skipHtml

@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   Button,
@@ -86,21 +86,23 @@ export function InputNavigation({
           .slice(0, 512) || "Attachment",
     });
   }
+  const update = useCallback(() => {
+    const element = reader.current;
+    if (!element) return;
+    const top = element.getBoundingClientRect().top + 80;
+    const sections = [
+      ...element.querySelectorAll<HTMLElement>("[data-turn-id]"),
+    ];
+    const current =
+      sections.find(
+        (section) => section.getBoundingClientRect().bottom > top,
+      ) ?? sections.at(-1);
+    setActive(current?.dataset.turnId);
+  }, [reader]);
+  useEffect(update, [update, revision]);
   useEffect(() => {
     const element = reader.current;
     if (!element) return;
-    const update = () => {
-      const top = element.getBoundingClientRect().top + 80;
-      const sections = [
-        ...element.querySelectorAll<HTMLElement>("[data-turn-id]"),
-      ];
-      const current =
-        sections.find(
-          (section) => section.getBoundingClientRect().bottom > top,
-        ) ?? sections.at(-1);
-      setActive(current?.dataset.turnId);
-    };
-    update();
     element.addEventListener("scroll", update, { passive: true });
     const resize =
       typeof ResizeObserver === "undefined"
@@ -111,7 +113,7 @@ export function InputNavigation({
       element.removeEventListener("scroll", update);
       resize?.disconnect();
     };
-  }, [reader, revision]);
+  }, [reader, threadId, update]);
   const select = (id: string) => {
     setOpen(false);
     setActive(id);

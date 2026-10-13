@@ -483,7 +483,9 @@ function ConversationContent({
       lastContent.current !== visibleContent
     )
       setNewOutput(true);
-    readingAnchor.current = captureReadingAnchor(element);
+    readingAnchor.current = follow.current
+      ? undefined
+      : captureReadingAnchor(element);
     lastContent.current = visibleContent;
   }, [
     pageReady,
@@ -513,7 +515,9 @@ function ConversationContent({
         scrollToLatest(true);
       else if (!follow.current && !olderAnchor.current && !pendingJump.current)
         restoreReadingAnchor(element, readingAnchor.current);
-      readingAnchor.current = captureReadingAnchor(element);
+      readingAnchor.current = follow.current
+        ? undefined
+        : captureReadingAnchor(element);
     });
     observer.observe(element);
     observer.observe(content);
@@ -664,7 +668,9 @@ function ConversationContent({
                     element.clientHeight <=
                     1;
               if (follow.current) setNewOutput(false);
-              readingAnchor.current = captureReadingAnchor(element);
+              readingAnchor.current = follow.current
+                ? undefined
+                : captureReadingAnchor(element);
               if (
                 element.scrollTop < 160 &&
                 history.hasNextPage &&
