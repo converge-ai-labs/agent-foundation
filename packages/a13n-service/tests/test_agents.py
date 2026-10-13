@@ -815,6 +815,16 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
 
     catalogue = await service.client.get(f"{service.api}/toolsets")
     assert catalogue.status_code == 200, catalogue.text
+    for group in catalogue.json()["items"]:
+        assert group["display_name"].strip()
+        assert group["description"].strip()
+        for tool in group["tools"]:
+            assert tool["display_name"].strip()
+            assert tool["description"].strip()
+    findings = next(group for group in catalogue.json()["items"] if group["key"] == "findings")
+    read_finding = next(tool for tool in findings["tools"] if tool["key"] == "read")
+    assert read_finding["description"] == "Read finding"
+    assert read_finding["model_name"] == "read_finding"
     assert [toolset["key"] for toolset in catalogue.json()["items"]] == [
         "files",
         "shell",

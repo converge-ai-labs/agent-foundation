@@ -7598,6 +7598,11 @@ export interface components {
       default_permission: components["schemas"]["ToolPermissionMode"];
       /** Deployment Supported */
       deployment_supported: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
       /** Display Name */
       display_name: string;
       /** Execution Id */
@@ -7697,6 +7702,11 @@ export interface components {
       };
       /** Default Enabled */
       default_enabled: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
       /** Display Name */
       display_name: string;
       key: components["schemas"]["ToolsetKey"];

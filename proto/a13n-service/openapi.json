@@ -13590,6 +13590,11 @@
             "title": "Deployment Supported",
             "type": "boolean"
           },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -13875,6 +13880,11 @@
           "default_enabled": {
             "title": "Default Enabled",
             "type": "boolean"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
           },
           "display_name": {
             "title": "Display Name",

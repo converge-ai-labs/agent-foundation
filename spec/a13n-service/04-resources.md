@@ -84,6 +84,8 @@ agent_revisions   revision columns; config: AgentConfig
 
 Tool permissions live on each selection and compile into one Harness tool-permission table.
 
+`GET /toolsets` owns the default English `display_name` and short `description` for each built-in toolset and tool. Descriptions default to an empty string when omitted. Tool entries also identify their model-facing `model_name` and permission `execution_id`; presentation text is separate from these identities.
+
 ### Validation
 
 Revision creation, `set-default`, duplication and `POST /agents/validate` apply one validation. It pins every skill and subagent edge whose `revision_id` is omitted to that head's current default, and it reports the first failure as `invalid_argument` with the field path relative to the configuration:

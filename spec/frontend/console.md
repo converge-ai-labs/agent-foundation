@@ -42,6 +42,8 @@ Provider editors use consistent type pickers, enabled controls and Cancel/Save a
 
 Web search and scrape select compatible providers independently; fetch/download require no provider. Saved unavailable references are not silently replaced. Tool configuration and permission controls preserve hidden settings, show effective access, and distinguish provider availability from authorization. Connection tool scopes use the selected MCP/Composio source catalog; absent saved tools and catalog errors remain visible.
 
+Built-in tool settings use the [Service catalogue](../a13n-service/04-resources.md#agents) for group names and descriptions. Tool rows show the unchanged `model_name` beside the catalogue's description, using `display_name` when the description is empty or absent. A group without a description shows its name alone. Console translates catalogue text through its language resources and displays the English source text when a translation is missing.
+
 Saving Agent configuration explains that the new version becomes the default for new work, while active work and approval continuations retain their accepted version. Save changes is the normal editing action; saved version identities and history remain inspectable.
 
 ## Agent Configuration Transfer

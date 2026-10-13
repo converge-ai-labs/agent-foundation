@@ -36,11 +36,13 @@ vi.mock("react-i18next", () => ({
 const web = {
   key: "web",
   display_name: "Web",
+  description: "Web tools from the service catalogue.",
   default_enabled: false,
   config_schema: {},
   tools: ["search", "scrape", "fetch", "download"].map((key) => ({
     key,
     display_name: `Display ${key}`,
+    description: `Catalogue description for ${key}`,
     execution_id: key,
     model_name: key,
     default_enabled: false,
@@ -98,6 +100,59 @@ function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+});
+
+it("renders catalogue labels and descriptions while keeping model-facing tool names", async () => {
+  const group = {
+    ...web,
+    key: "catalog_extension",
+    display_name: "Catalogue extension",
+    tools: [
+      { ...web.tools[0], resource_selector: null },
+      { ...web.tools[1], resource_selector: null, description: "" },
+    ],
+  };
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? { items: [group] }
+      : { items: [], next_cursor: null },
+  }));
+  const { user } = renderDraft({});
+  const title = await screen.findByText("Catalogue extension");
+  expect(
+    screen.getByRole("checkbox", { name: "Enable Catalogue extension tools" }),
+  ).toBeTruthy();
+  expect(screen.getByText(group.description)).toBeTruthy();
+  await user.click(title.closest("button")!);
+  expect(screen.getByRole("checkbox", { name: "search" })).toBeTruthy();
+  expect(screen.getByText("Catalogue description for search")).toBeTruthy();
+  expect(screen.queryByText("Display search")).toBeNull();
+  expect(screen.getByRole("checkbox", { name: "scrape" })).toBeTruthy();
+  expect(screen.getByText("Display scrape")).toBeTruthy();
+});
+
+it("renders catalogue labels when descriptions are omitted", async () => {
+  const { description: _description, ...group } = web;
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? {
+          items: [
+            {
+              ...group,
+              tools: group.tools.map(
+                ({ description: _description, ...tool }) => tool,
+              ),
+            },
+          ],
+        }
+      : { items: [], next_cursor: null },
+  }));
+  const { user } = renderDraft({});
+  const title = await screen.findByText("Web");
+  await user.click(title.closest("button")!);
+  expect(screen.getByRole("checkbox", { name: "search" })).toBeTruthy();
+  expect(screen.getByText("Display search")).toBeTruthy();
+  expect(screen.queryByText(web.description)).toBeNull();
 });
 
 it("keeps disabled child settings, edits permissions, and validates the candidate without saving", async () => {
