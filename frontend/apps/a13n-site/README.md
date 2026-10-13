@@ -1,6 +1,6 @@
 # a13n site
 
-The private landing page at `https://a13n.converge.ai/`. It is a Vite and TypeScript page without a UI framework. The documentation from `apps/a13n-docs` is published under its `/docs/` path.
+The private landing page at `https://a13n.dev/`. It is a Vite and TypeScript page without a UI framework. The documentation from `apps/a13n-docs` is published under its `/docs/` path.
 
 ## Local development
 

@@ -51,13 +51,13 @@ test("every human document has a Chinese static page with matching section ancho
     assert.match(chinese, /rel="alternate" hrefLang="zh-CN"/);
     assert.match(
       chinese,
-      /<link rel="canonical" href="https:\/\/a13n\.converge\.ai\/docs\/zh-CN\//,
+      /<link rel="canonical" href="https:\/\/a13n\.dev\/docs\/zh-CN\//,
     );
   }
 });
 
 test("the sitemap lists every page in both languages at its canonical URL", async () => {
-  const site = "https://a13n.converge.ai/docs/";
+  const site = "https://a13n.dev/docs/";
   const sitemap = await readFile(new URL("sitemap.xml", output), "utf8");
   const urls = [...sitemap.matchAll(/<loc>(.+?)<\/loc>/g)].map(
     (match) => match[1],

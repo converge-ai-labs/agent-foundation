@@ -13,8 +13,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://a13n.converge.ai/"
-Documentation = "https://a13n.converge.ai/docs/a13n-envd/python-client/"
+Homepage = "https://a13n.dev/"
+Documentation = "https://a13n.dev/docs/a13n-envd/python-client/"
 Repository = "https://github.com/converge-ai-labs/agent-foundation"
 
 [dependency-groups]

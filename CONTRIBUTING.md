@@ -290,7 +290,7 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 - `frontend/apps/a13n-docs` owns the documentation site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. English pages use unprefixed paths under `/docs/`; Simplified Chinese human pages use `/docs/zh-CN/`. It also publishes `/docs/sitemap.xml` with every page in both languages, and English-only `llms.txt`, `llms-full.txt`, and Markdown under `/docs/md/`; the bundled Harness UI configuration Skill stays English. Machine-readable OpenAPI and Schema downloads remain unchanged.
 - Changes to Service OpenAPI summaries or descriptions also require updating `frontend/apps/a13n-docs/lib/locales/openapi.zh-CN.json`, including summaries generated from route function names. See [Service contract exports](proto/a13n-service/README.md).
 - Run `make docs-build` after documentation or site changes. It runs localization tests before building, then checks exported pages and links; missing API translations fail before the build.
-- The canonical documentation site is [a13n.converge.ai/docs](https://a13n.converge.ai/docs/). The landing page in `frontend/apps/a13n-site` owns the site root.
+- The canonical documentation site is [a13n.dev/docs](https://a13n.dev/docs/). The landing page in `frontend/apps/a13n-site` owns the site root.
 - The `Site` GitHub Actions workflow builds both applications, publishes build artifacts for pull requests, and deploys `main` to the `a13n-site` Cloudflare Pages project.
 
 ## Specification Changes
