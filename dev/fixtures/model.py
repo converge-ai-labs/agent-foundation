@@ -97,7 +97,7 @@ async def completion(request: Request):
     if finding_fixture.selection(prompt) is not None:
         text = "## Fictional Findings analysis\n\nRead the selected trace roots and steps, then submitted the recognized preview diagnoses with trace evidence. These scripted examples exercise review and navigation; they do not measure inference quality or establish complete review."
     response_id = "chatcmpl-local-development"
-    usage = {"prompt_tokens": 20, "completion_tokens": len(text) // 4, "total_tokens": 20 + len(text) // 4}
+    usage = _usage(body, messages, text)
     usage_chunk = (
         "data: "
         + json.dumps(
@@ -339,6 +339,27 @@ def memory_step(body: dict, tools: list[dict]) -> dict | None:
         return None
     name, arguments = steps[made]
     return call(name, arguments) if any(tool["name"] == name for tool in tools) else None
+
+
+def _usage(body: dict, messages: list[dict], text: str) -> dict:
+    """Counters that grow with the request, as a provider's would.
+
+    Everything before the newest message is a prefix the provider has seen, so it is
+    reported as cached in 64-token blocks; local runs then show realistic cache rates.
+    """
+
+    def tokens(value: object) -> int:
+        return len(json.dumps(value, ensure_ascii=False)) // 4
+
+    prompt = max(1, tokens([body.get("tools"), messages]))
+    cached = tokens([body.get("tools"), messages[:-1]]) // 64 * 64
+    completion = max(1, len(text) // 4)
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+        "prompt_tokens_details": {"cached_tokens": min(cached, prompt)},
+    }
 
 
 def text_of(message: dict) -> str:
