@@ -2005,13 +2005,10 @@
   "Loading run…": "正在加载运行…",
   "Linked run unavailable": "关联运行不可访问",
   "Crop image": "裁剪图片",
-  "Drag to position your image. Use the arrow keys to move it.": "拖动图片调整位置，也可以使用方向键移动。",
   "Use image": "使用图片",
   "Zoom": "缩放",
-  "Cropped image preview": "裁剪后的图片预览",
   "Opening image…": "正在打开图片…",
   "Image unavailable": "图片不可用",
-  "Your image is cropped to a square and compressed automatically.": "图片将裁剪为正方形，并自动压缩。",
   "Preparing and saving image…": "正在处理并保存图片…",
   "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.": "支持 PNG、JPEG 或 WebP，最大 20 MiB。保存前可裁剪并自动压缩。",
   "Choose a PNG, JPEG, or WebP image.": "请选择 PNG、JPEG 或 WebP 图片。",
@@ -2021,5 +2018,6 @@
   "This image could not be prepared. Try another image.": "无法处理这张图片，请尝试其他图片。",
   "Adjust the crop before using this image.": "请先调整裁剪区域，再使用这张图片。",
   "This image could not be compressed enough. Choose another image.": "无法将这张图片压缩到所需大小，请选择其他图片。",
-  "Crop position": "裁剪位置"
+  "Crop position": "裁剪位置",
+  "Scroll to zoom. Drag the image to position it.": "滚轮缩放，拖动图片调整位置。"
 }

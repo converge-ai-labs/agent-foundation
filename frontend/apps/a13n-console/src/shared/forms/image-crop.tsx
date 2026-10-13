@@ -1,5 +1,5 @@
 import { Button, ModalFrame } from "a13n-ui";
-import { useEffect, useId, useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import Cropper from "react-easy-crop";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../feedback";
@@ -18,12 +18,10 @@ export function ImageCropDialog({
   close: () => void;
 }) {
   const { t } = useTranslation();
-  const zoomId = useId();
   const [image, setImage] = useState<HTMLImageElement>();
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [pixels, setPixels] = useState<ImageCrop>();
-  const [area, setArea] = useState<ImageCrop>();
   const [error, setError] = useState<unknown>();
   const [loadError, setLoadError] = useState<string>();
   const [processing, setProcessing] = useState(false);
@@ -64,9 +62,7 @@ export function ImageCropDialog({
     <ModalFrame
       open
       title={t("Crop image")}
-      description={t(
-        "Drag to position your image. Use the arrow keys to move it.",
-      )}
+      description={t("Scroll to zoom. Drag the image to position it.")}
       closeLabel={t("Close")}
       finalFocus={finalFocus}
       onOpenChange={(open, details) => {
@@ -106,6 +102,7 @@ export function ImageCropDialog({
               aspect={1}
               minZoom={1}
               maxZoom={3}
+              zoomWithScroll
               onCropChange={(position) => {
                 if (!processing) setCrop(position);
               }}
@@ -116,10 +113,7 @@ export function ImageCropDialog({
                 "aria-label": t("Crop position"),
                 "aria-disabled": processing,
               }}
-              onCropAreaChange={(area, pixels) => {
-                setArea(area);
-                setPixels(pixels);
-              }}
+              onCropAreaChange={(_area, pixels) => setPixels(pixels)}
               showGrid={false}
               keyboardStep={10}
               style={{
@@ -134,39 +128,6 @@ export function ImageCropDialog({
             </p>
           )}
         </div>
-        <div className={styles.controls}>
-          <div className={styles.zoom}>
-            <label htmlFor={zoomId}>{t("Zoom")}</label>
-            <input
-              id={zoomId}
-              type="range"
-              min="1"
-              max="3"
-              step="0.01"
-              value={zoom}
-              disabled={!image || processing}
-              onChange={(event) => setZoom(Number(event.target.value))}
-            />
-          </div>
-          <div className={styles.previewGroup}>
-            <span>{t("Preview")}</span>
-            <div className={styles.preview}>
-              {area && (
-                <img
-                  src={url}
-                  alt={t("Cropped image preview")}
-                  style={{
-                    width: `${10000 / area.width}%`,
-                    transform: `translate(-${area.x}%, -${area.y}%)`,
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-        <p className={styles.hint}>
-          {t("Your image is cropped to a square and compressed automatically.")}
-        </p>
         {processing && <p role="status">{t("Preparing and saving image…")}</p>}
         <ErrorNotice error={loadError ? new Error(t(loadError)) : error} />
       </div>

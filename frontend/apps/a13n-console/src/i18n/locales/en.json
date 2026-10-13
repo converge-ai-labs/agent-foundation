@@ -2005,13 +2005,10 @@
   "Loading run…": "Loading run…",
   "Linked run unavailable": "Linked run unavailable",
   "Crop image": "Crop image",
-  "Drag to position your image. Use the arrow keys to move it.": "Drag to position your image. Use the arrow keys to move it.",
   "Use image": "Use image",
   "Zoom": "Zoom",
-  "Cropped image preview": "Cropped image preview",
   "Opening image…": "Opening image…",
   "Image unavailable": "Image unavailable",
-  "Your image is cropped to a square and compressed automatically.": "Your image is cropped to a square and compressed automatically.",
   "Preparing and saving image…": "Preparing and saving image…",
   "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.": "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.",
   "Choose a PNG, JPEG, or WebP image.": "Choose a PNG, JPEG, or WebP image.",
@@ -2021,5 +2018,6 @@
   "This image could not be prepared. Try another image.": "This image could not be prepared. Try another image.",
   "Adjust the crop before using this image.": "Adjust the crop before using this image.",
   "This image could not be compressed enough. Choose another image.": "This image could not be compressed enough. Choose another image.",
-  "Crop position": "Crop position"
+  "Crop position": "Crop position",
+  "Scroll to zoom. Drag the image to position it.": "Scroll to zoom. Drag the image to position it."
 }
