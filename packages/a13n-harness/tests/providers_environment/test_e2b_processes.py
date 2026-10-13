@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -643,8 +644,21 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
             assert process.returncode == 0
             return SimpleNamespace(stdout=stdout.decode())
 
+    async def read(path, *, format, **kwargs):
+        assert format == "stream"
+
+        reader = AsyncMock()
+        reader.__aiter__.return_value = [Path(path).read_bytes()]
+        return reader
+
     native = Commands()
-    sandbox = SimpleNamespace(sandbox_id="sandbox-shared", commands=native, is_running=AsyncMock(return_value=True))
+    downloads = AsyncMock(side_effect=read)
+    sandbox = SimpleNamespace(
+        sandbox_id="sandbox-shared",
+        commands=native,
+        files=SimpleNamespace(read=downloads),
+        is_running=AsyncMock(return_value=True),
+    )
     for directory in ("a", "b"):
         (tmp_path / directory).mkdir()
         (tmp_path / directory / "README").write_text(directory)
@@ -681,6 +695,9 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
         ) as bound:
             assert (await bound.files.read_text("README")).text == directory
             assert (await bound.files.read_text("/workspace/README")).text == directory
+            assert [call.args[0] for call in downloads.await_args_list[-2:]] == [
+                str(tmp_path / directory / "README")
+            ] * 2
             started = await bound.processes.start(request())
             call = native.calls[-1]
             assert call[0] == "run" and call[2]["cwd"] == str(tmp_path / directory)
