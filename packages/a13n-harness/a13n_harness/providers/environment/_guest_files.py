@@ -3,25 +3,34 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import secrets
 import tempfile
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
+from io import BytesIO
 from pathlib import PurePosixPath
 
 from pydantic import JsonValue
 
+from a13n_harness.environment.archives import FileArchive
+from a13n_harness.environment.batches import validate_file_batch
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FilePatchResult,
     FileQueryRequest,
+    FileRemoveOperation,
+    FileStatOperation,
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
     FileWriteMode,
     FileWriteResult,
+    FileWriteTextOperation,
 )
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.text import apply_unified_diff, iter_lf_lines
@@ -31,6 +40,68 @@ from a13n_harness.providers.environment._guest_commands import FileCommands, dec
 class GuestFiles:
     def __init__(self, commands: FileCommands) -> None:
         self.commands = commands
+
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        validate_file_batch(operations)
+        if not operations:
+            return ()
+        response = await self.commands.files(
+            "batch",
+            {"operations": [item.model_dump(mode="json") for item in operations]},
+            mutation=any(not isinstance(item, FileStatOperation) for item in operations),
+        )
+        values = response.get("results")
+        if not isinstance(values, list) or len(values) != len(operations):
+            raise EnvironmentError("Invalid file batch response.", code="environment_provider_failure")
+        results: list[FileBatchValue] = []
+        for operation, value in zip(operations, values, strict=True):
+            if (
+                value is None
+                and isinstance(operation, (FileStatOperation, FileRemoveOperation))
+                and operation.missing_ok
+            ):
+                results.append(None)
+                continue
+            if not isinstance(value, dict):
+                raise EnvironmentError("Invalid file batch response.", code="environment_provider_failure")
+            if isinstance(operation, FileStatOperation):
+                results.append(FileMetadata.model_validate(value))
+            elif isinstance(operation, FileWriteTextOperation):
+                results.append(
+                    FileWriteResult.model_validate(
+                        {
+                            **value,
+                            "path": operation.path,
+                            "receipt": self.commands.receipt(),
+                        }
+                    )
+                )
+            else:
+                results.append(FileMutationResult(path=operation.path, receipt=self.commands.receipt()))
+        return tuple(results)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        maximum = self.commands.configuration.max_file_bytes
+        if len(archive.content) > maximum or any(size > maximum for _, size in archive.entries):
+            raise EnvironmentError("Archive exceeds the configured limit.", code="environment_too_large")
+        staged = str(PurePosixPath(path).parent / f".a13n-archive-{secrets.token_hex(12)}")
+        value = await self.commands.files("stage", {"path": staged, "parents": True}, mutation=True)
+        native = value.get("path")
+        if not isinstance(native, str):
+            raise EnvironmentError("Guest path resolution failed.", code="environment_provider_failure")
+        # The guest owns cleanup once extraction starts. An unconfirmed upload can leave only a private ZIP.
+        with BytesIO(archive.content) as source:
+            await self.commands.write_stream(native, source)
+        return await self._mutate(
+            "archive",
+            {
+                "path": path,
+                "staged": staged,
+                "digest": hashlib.sha256(archive.content).hexdigest(),
+                "root": archive.root,
+                "entries": [[name, size] for name, size in archive.entries],
+            },
+        )
 
     async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
         maximum = self.commands.configuration.max_file_bytes

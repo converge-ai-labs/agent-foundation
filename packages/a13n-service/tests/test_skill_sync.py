@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
 from a13n_service.resources.agents.schemas import (
@@ -14,7 +15,8 @@ from a13n_service.resources.agents.schemas import (
     apply_override,
     freeze_override,
 )
-from a13n_service.resources.skills.package import Package
+from a13n_service.resources.skills.content import SkillPackage
+from a13n_service.resources.skills.package import pack
 from a13n_service.runs import skills
 from a13n_service.runs.skill_cache import Cache
 from pydantic import ValidationError
@@ -39,7 +41,17 @@ def sync_root(tmp_path):
 def materializer(monkeypatch, version="new", *, overwrite=True, cleanup=False, empty=False):
     async def load(storage, objects, workspace, revisions):
         return [
-            Package("review", version, "", {"SKILL.md": revision.encode(), revision: b"content"})
+            SkillPackage(
+                "skill",
+                revision,
+                version,
+                "review",
+                version,
+                FileArchive(
+                    pack({"SKILL.md": revision.encode(), revision: b"content"}),
+                    (("SKILL.md", len(revision.encode())), (revision, 7)),
+                ),
+            )
             for revision in revisions
         ]
 
@@ -208,7 +220,7 @@ async def test_failed_overwrite_preserves_old_directory(sync_root, monkeypatch, 
         raise EnvironmentError("Publication failed", code="environment_unsupported" if failure == "stage" else failure)
 
     if failure == "stage":
-        monkeypatch.setattr(skills.placement, "write", fail)
+        monkeypatch.setattr(files, "write_archive", fail)
     else:
         monkeypatch.setattr(files, "move", fail)
     with pytest.raises(ServiceError):

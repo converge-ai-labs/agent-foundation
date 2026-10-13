@@ -8,11 +8,19 @@ its protection until the operator has quiesced the target. Other packages can st
 import posixpath
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
 import anyio
-from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.files import (
+    FileMkdirOperation,
+    FileOperation,
+    FileOperator,
+    FileRemoveOperation,
+    FileStatOperation,
+    FileWriteTextOperation,
+)
 from a13n_harness.environment.models import EnvironmentError
 from a13n_logging import get_logger
 
@@ -35,36 +43,67 @@ class Cache:
         self.wait_seconds = wait_seconds
         self.uses: list[Use] = []
 
-    async def acquire(self, files: FileOperator, digest: str) -> Use:
-        directory = f"{_STATE}/pins/{digest}"
-        await files.mkdir(directory, parents=True, exist_ok=True)
-        use = Use(f"{directory}/{uuid4().hex}")
-        await files.write_text(use.path, "", mode="create")
-        self.uses.append(use)
-        try:
-            with anyio.fail_after(self.wait_seconds):
-                while await _exists(files, f"{_STATE}/evict/{digest}"):
-                    await anyio.sleep(0.05)
-        except TimeoutError as error:
-            raise EnvironmentError(
-                "Skill package eviction has not completed", code="environment_unavailable", details={"digest": digest}
-            ) from error
-        return use
+    async def acquire_many(self, files: FileOperator, digests: Sequence[str]) -> list[Use]:
+        uses: list[Use] = []
+        for offset in range(0, len(digests), 32):
+            batch = digests[offset : offset + 32]
+            created = [Use(f"{_STATE}/pins/{digest}/{uuid4().hex}", retain=True) for digest in batch]
+            self.uses.extend(created)
+            operations: list[FileOperation] = []
+            for digest, use in zip(batch, created, strict=True):
+                operations.extend(
+                    (
+                        FileMkdirOperation(path=f"{_STATE}/pins/{digest}", parents=True, exist_ok=True),
+                        FileWriteTextOperation(path=use.path, text="", mode="create"),
+                        FileStatOperation(path=f"{_STATE}/evict/{digest}", missing_ok=True),
+                    )
+                )
+            # A failed/cancelled batch may still be creating pins remotely. Retain the whole dispatched batch.
+            results = await files.batch(operations)
+            for use in created:
+                use.retain = False
+            uses.extend(created)
+            pending = [digest for digest, result in zip(batch, results[2::3], strict=True) if result is not None]
+            try:
+                with anyio.fail_after(self.wait_seconds):
+                    while pending:
+                        await anyio.sleep(0.05)
+                        gates = await files.batch(
+                            [FileStatOperation(path=f"{_STATE}/evict/{digest}", missing_ok=True) for digest in pending]
+                        )
+                        pending = [digest for digest, gate in zip(pending, gates, strict=True) if gate is not None]
+            except TimeoutError as error:
+                raise EnvironmentError(
+                    "Skill package eviction has not completed",
+                    code="environment_unavailable",
+                    details={"digests": ",".join(pending)},
+                ) from error
+        return uses
 
-    async def touch(self, files: FileOperator, digest: str) -> None:
-        await files.mkdir(f"{_STATE}/entries", parents=True, exist_ok=True)
-        await files.write_text(f"{_STATE}/entries/{digest}", str(time.time_ns()), mode="upsert")
+    async def touch_many(self, files: FileOperator, digests: Sequence[str]) -> None:
+        for offset in range(0, len(digests), 32):
+            operations: list[FileOperation] = [
+                FileMkdirOperation(path=f"{_STATE}/entries", parents=True, exist_ok=True),
+            ]
+            timestamp = str(time.time_ns())
+            operations.extend(
+                FileWriteTextOperation(path=f"{_STATE}/entries/{digest}", text=timestamp, mode="upsert")
+                for digest in digests[offset : offset + 32]
+            )
+            await files.batch(operations)
 
     async def release(self, files: FileOperator, *, root: str = ROOT) -> None:
         """Called before the primary execution closes its file client; unknown pins are retained."""
         uses, self.uses = self.uses, []
         paths = [f"{root.rstrip('/')}/{use.path.removeprefix(ROOT + '/')}" for use in uses if not use.retain]
-        # Give each bounded batch its own cleanup window; a healthy large catalog must drain completely.
         for offset in range(0, len(paths), 32):
             with anyio.move_on_after(5, shield=True) as cleanup:
-                async with anyio.create_task_group() as group:
-                    for path in paths[offset : offset + 32]:
-                        group.start_soon(_unpin, files, path)
+                try:
+                    await files.batch(
+                        [FileRemoveOperation(path=path, missing_ok=True) for path in paths[offset : offset + 32]]
+                    )
+                except EnvironmentError as error:
+                    logger.warning("Skill pin release failed", extra={"code": error.code})
             if cleanup.cancel_called:
                 logger.warning("Skill pin release timed out; unfinished pins are retained")
 
@@ -143,11 +182,3 @@ async def _exists(files: FileOperator, path: str) -> bool:
         if error.code == "environment_not_found":
             return False
         raise
-
-
-async def _unpin(files: FileOperator, path: str) -> None:
-    try:
-        await files.remove(path)
-    except EnvironmentError as error:
-        if error.code != "environment_not_found":
-            logger.warning("Skill pin release failed", extra={"path": path, "code": error.code})

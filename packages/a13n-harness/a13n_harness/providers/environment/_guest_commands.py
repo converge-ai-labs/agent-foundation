@@ -49,4 +49,7 @@ def file_helper_source() -> str:
             f"from a13n_harness.providers.environment.{module} import {names}",
             files("a13n_harness.providers.environment").joinpath(f"{module}.py").read_text(),
         )
-    return source
+    return source.replace(
+        "from a13n_harness.environment._zip import extract_zip",
+        files("a13n_harness.environment").joinpath("_zip.py").read_text(),
+    )

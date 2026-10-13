@@ -168,7 +168,9 @@ async def test_skill_revisions_and_package_content(service) -> None:  # type: ig
         service.runtime.storage, service.runtime.objects, service.tenant.workspace_id, [first_revision["id"]]
     )
     assert packages[0].name == "code-review" and packages[0].digest == first_revision["digest"]
-    assert dict(packages[0].files) == {"SKILL.md": DOCUMENT, "scripts/check.py": b"print('ok')\n"}
+    assert package.extract(
+        packages[0].archive.content, packages[0].archive.root, [name for name, _ in packages[0].archive.entries]
+    ) == {"SKILL.md": DOCUMENT, "scripts/check.py": b"print('ok')\n"}
     with pytest.raises(ServiceError) as missing:
         await content.load_packages(
             service.runtime.storage, service.runtime.objects, service.tenant.workspace_id, ["skr_" + "0" * 24]

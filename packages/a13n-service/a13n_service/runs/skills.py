@@ -14,15 +14,16 @@ from uuid import uuid4
 
 import anyio
 from a13n_harness.capabilities import SkillCatalogItem, SkillManager, SkillsCapability, SkillsPolicy
-from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.files import FileMetadata, FileOperator, FileStatOperation
 from a13n_harness.environment.models import EnvironmentError
 from a13n_logging import get_logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.infra.concurrency import map_concurrently
 from a13n_service.infra.errors import ServiceError, invalid, not_found
 from a13n_service.resources.agents.schemas import IsolatedSkillSync, SharedSkillSync, SkillSelection, SkillSync
-from a13n_service.resources.skills.content import load_packages
+from a13n_service.resources.skills.content import SkillPackage, load_packages
 from a13n_service.resources.skills.package import validate_name
 from a13n_service.resources.skills.schemas import SkillManifest
 from a13n_service.resources.skills.tables import SkillRevisionRow
@@ -143,8 +144,7 @@ class _PinnedSkills:
                 await self._shared(files, self.sync)
             else:
                 await self._materialize(files)
-                for skill in self.skills:
-                    await self.cache.touch(files, skill.digest)
+                await self.cache.touch_many(files, [skill.digest for skill in self.skills])
                 await self.cache.trim(files, capacity=self.sync.cache_count)
         except EnvironmentError as error:
             raise ServiceError(
@@ -168,12 +168,12 @@ class _PinnedSkills:
             else ()
         )
         await files.mkdir(_SHARED, parents=True, exist_ok=True)
-        for skill, package in zip(selected, packages, strict=True):
-            candidate = f"{_AGENTS}/.skill-stage-{uuid4().hex}"
-            for directory in sorted({posixpath.dirname(f"{candidate}/{path}") for path in package.files}):
-                await files.mkdir(directory, parents=True, exist_ok=True)
-            for path, content in package.files.items():
-                await placement.write(files, f"{candidate}/{path}", content)
+        candidates = [
+            (skill, package, f"{_AGENTS}/.skill-stage-{uuid4().hex}")
+            for skill, package in zip(selected, packages, strict=True)
+        ]
+        await map_concurrently(candidates, lambda item: files.write_archive(item[2], item[1].archive))
+        for skill, _, candidate in candidates:
             await self.prove_lease()
             try:
                 await files.move(candidate, skill.directory, replace=sync.overwrite)
@@ -209,23 +209,31 @@ class _PinnedSkills:
         await files.remove(discarded, recursive=True)
 
     async def _materialize(self, files: FileOperator) -> None:
-        uses = {skill.digest: await self.cache.acquire(files, skill.digest) for skill in self.skills}
-        missing = [skill for skill in self.skills if not await _published(files, skill)]
+        acquired = await self.cache.acquire_many(files, [skill.digest for skill in self.skills])
+        uses = {skill.digest: use for skill, use in zip(self.skills, acquired, strict=True)}
+        published = []
+        for offset in range(0, len(self.skills), 32):
+            values = await files.batch(
+                [
+                    FileStatOperation(path=skill.cached_directory, missing_ok=True)
+                    for skill in self.skills[offset : offset + 32]
+                ]
+            )
+            published.extend(isinstance(value, FileMetadata) and value.kind == "directory" for value in values)
+        missing = [skill for skill, exists in zip(self.skills, published, strict=True) if not exists]
         if not missing:
             return
         await self.prove_lease()
         packages = await load_packages(
             self.runtime.storage, self.runtime.objects, self.workspace_id, [skill.revision_id for skill in missing]
         )
-        for skill, package in zip(missing, packages, strict=True):
+
+        async def publish(item: tuple[PinnedSkill, SkillPackage]) -> None:
+            skill, package = item
             candidate = f"{_ROOT}/.staging/{uuid4().hex}"
             cleanup = True
             try:
-                paths = {path: f"{candidate}/{skill.name}/{path}" for path in package.files}
-                for directory in sorted({posixpath.dirname(target) for target in paths.values()}):
-                    await files.mkdir(directory, parents=True, exist_ok=True)
-                for path, target in paths.items():
-                    await placement.write(files, target, package.files[path])
+                await files.write_archive(f"{candidate}/{skill.name}", package.archive)
                 await self.prove_lease()
                 # Cancellation may leave the provider's rename in flight. Never race it with removal.
                 cleanup = False
@@ -250,6 +258,8 @@ class _PinnedSkills:
                                 logger.warning(
                                     "Skill staging cleanup failed", extra={"path": candidate, "code": error.code}
                                 )
+
+        await map_concurrently(list(zip(missing, packages, strict=True)), publish)
 
 
 async def _published(files: FileOperator, skill: PinnedSkill) -> bool:
