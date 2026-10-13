@@ -69,7 +69,7 @@ agent_revisions   revision columns; config: AgentConfig
 
 - `model`: a model key, with `model_settings`, native settings for the model's calling API, and `model_characteristics`, the context characteristics the agent assumes.
 - `instructions`.
-- `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource.
+- `toolsets`: the built-in toolsets `files`, `shell`, `computer`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource. The `computer` toolset defaults off; its describe, observe and input tools retain per-tool permission policy and require a compatible, explicitly authorized [environment mount](06-environments.md#mounts).
 - `skills`: `{skill_id, revision_id}` selections, with one `skill_sync` policy ([Skill materialization](#skill-materialization)). An Agent revision stores the policy; `options.overrides.skill_sync` replaces the whole block for a Run.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
 - `client_tools`, whose results a client supplies through resume, and `user_questions`, which offers `ask_user_question`.

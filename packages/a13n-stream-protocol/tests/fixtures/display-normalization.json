@@ -1654,7 +1654,7 @@
           "sequence": 20,
           "event": {
             "type": "CUSTOM",
-            "name": "a13n.harness-ui.tool_images",
+            "name": "a13n.tool_images",
             "value": {
               "event": {
                 "tool_call_id": "t",

@@ -183,7 +183,7 @@ async def load_tail(objects: ObjectStore, pointer: TailPointer | None, *, hydrat
         return Tail()
     tail = Tail.model_validate_json(await load(objects, pointer))
     if hydrate:
-        refs = {ref.id: ref for ref in tail.refs}
+        refs = {ref.id: ref for ref in tail.refs if ref.purpose != "image"}
         values = {identifier: decode(await load(objects, ref), ref) for identifier, ref in refs.items()}
         for item in tail.items:
             for field, ref in item.content_refs.items():

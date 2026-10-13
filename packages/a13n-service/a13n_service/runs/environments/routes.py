@@ -14,6 +14,7 @@ from a13n_service.runs.environments.schemas import (
     ManagedEnvironmentCreate,
     MountCreate,
     MountPage,
+    MountUpdate,
     MountView,
 )
 from a13n_service.runs.environments.tables import STATUSES
@@ -149,3 +150,21 @@ async def remove_mount(
 ) -> Response:
     version = await mounts.remove_mount(runtime.storage, actor, workspace_id, thread_id, name, if_match=if_match)
     return Response(status_code=204, headers={"ETag": etag(thread_id, version)})
+
+
+@router.patch("/threads/{thread_id}/environments/{name}", response_model=MountView, openapi_extra={"x-a13n-mcp": True})
+async def update_mount(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    name: str,
+    body: MountUpdate,
+    actor: Actor,
+    if_match: IfMatch = None,
+) -> MountView:
+    mount, version = await mounts.update_mount(
+        runtime.storage, actor, workspace_id, thread_id, name, body, if_match=if_match
+    )
+    response.headers["ETag"] = etag(thread_id, version)
+    return mount

@@ -10,6 +10,7 @@ import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { WorkingDirectory } from "../environments/working-directory";
+import { MountComputerPermissions } from "./mount-computer-permissions";
 import { EnvironmentReference } from "../environments/reference";
 import {
   conversationKeys,
@@ -86,7 +87,18 @@ export function ThreadEnvironmentMounts({
               icon={<MonitorIcon size={16} />}
               name={mount.name}
               secondary={mount.working_directory ?? undefined}
-              control={<EnvironmentReference id={mount.environment_id} />}
+              control={
+                <div className="flex items-center gap-2">
+                  {thread.data && (
+                    <MountComputerPermissions
+                      thread={thread.data}
+                      mount={mount}
+                      editable={can("run") && isInteractive(thread.data)}
+                    />
+                  )}
+                  <EnvironmentReference id={mount.environment_id} />
+                </div>
+              }
             />
           ))}
         </ListRows>

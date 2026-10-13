@@ -137,3 +137,9 @@ Writers who may run Agents start bounded analysis from Findings or an ended trac
 Review with Composer is unavailable for expected or false-positive Findings. Otherwise it opens a normal conversation containing the finding ID and exact cited revision; Composer reads the durable evidence through its read-only finding tool. The user sends the proposed initial message and reviews subsequent configuration writes; navigation does not repair or publish the target. No experiment or dataset workflow is required.
 
 Agent tool settings place configuration, trace-query and finding tools under a collapsed Advanced / Platform Features disclosure. Opening it changes no selection. Group toggles preserve platform tools' individual enabled settings and permissions; configuration writes default to asking even when the draft omits a permission.
+
+## Computer Use configuration and observations
+
+Thread environment settings expose the Computer action ceiling as Off, Observe, Interact, or Custom. Only callers with `run` on an interactive open thread can edit it, including the primary `workspace` mount. Presets replace Computer actions while preserving every non-Computer action. Custom exact action sets remain visible and unchanged until a preset is selected. The form explains that the Agent Computer toolset and provider support are also required and edits affect later Runs.
+
+Tool entries offer an explicit screenshot preview when a retained image reference exists. Preview uses the authenticated Run image API, releases browser object URLs on close, and labels the image as the Agent's observation at that step. Pending or unavailable image reads remain retryable. This preview has no click, keyboard, takeover or live streaming behavior.

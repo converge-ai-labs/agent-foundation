@@ -9,6 +9,7 @@ import { fixtureThread } from "./transcript/fixture";
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
+  PATCH: vi.fn(),
   canAdd: true,
   thread: {} as Schema["ThreadView"],
   mounts: [] as Schema["MountView"][],
@@ -34,6 +35,7 @@ beforeEach(() => {
   mocks.thread = fixtureThread();
   mocks.mounts = [];
   mocks.POST.mockReset();
+  mocks.PATCH.mockReset();
   mocks.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/threads/{thread_id}")
       ? mocks.thread
@@ -185,5 +187,77 @@ it("lists the Thread's mounts with their working directories", async () => {
   await screen.findByText("/captured");
   expect(screen.getByText("reference")).toBeTruthy();
   expect(screen.getByText("env_saved")).toBeTruthy();
+  cache.clear();
+});
+
+it("changes only Computer permissions on the primary mount and uses the Thread version", async () => {
+  mocks.mounts = [
+    {
+      name: "workspace",
+      environment_id: "env_saved",
+      working_directory: null,
+      permission_ceiling: {
+        operations: [
+          "environment.file.read_text",
+          "environment.computer.observe",
+        ],
+      },
+    },
+  ];
+  mocks.PATCH.mockResolvedValue({ data: mocks.mounts[0] });
+  const cache = show(),
+    user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Computer: custom" }),
+  );
+  expect(screen.getByText(/Changes apply to later runs/)).toBeTruthy();
+  await user.click(
+    screen.getByRole("combobox", { name: "Computer permissions" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Computer: observe" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(mocks.PATCH).toHaveBeenCalledWith(
+      "/api/v1/threads/{thread_id}/environments/{name}",
+      expect.objectContaining({
+        params: { path: { thread_id: "thr_1", name: "workspace" } },
+        headers: { "If-Match": '"thr_1:4"' },
+        body: {
+          permission_ceiling: {
+            operations: [
+              "environment.file.read_text",
+              "environment.computer.describe",
+              "environment.computer.observe",
+            ],
+          },
+        },
+      }),
+    ),
+  );
+  cache.clear();
+});
+
+it("shows Computer permissions without offering edits to a reader", async () => {
+  mocks.canAdd = false;
+  mocks.mounts = [
+    {
+      name: "workspace",
+      environment_id: "env_saved",
+      working_directory: null,
+      permission_ceiling: {
+        operations: [
+          "environment.computer.describe",
+          "environment.computer.observe",
+        ],
+      },
+    },
+  ];
+  const cache = show();
+  await screen.findByText("Computer: observe");
+  expect(
+    screen.queryByRole("button", { name: "Computer: observe" }),
+  ).toBeNull();
   cache.clear();
 });

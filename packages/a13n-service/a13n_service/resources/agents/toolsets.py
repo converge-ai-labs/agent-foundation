@@ -39,7 +39,9 @@ FINDING_TOOL_IDS = {
     "submit": "service.findings.submit",
 }
 
-type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration", "traces", "findings"]
+type ToolsetKey = Literal[
+    "files", "shell", "computer", "web", "memory", "assets", "configuration", "traces", "findings"
+]
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -228,6 +230,66 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             ),
         ),
         description="Run commands and manage processes.",
+    ),
+    _Toolset(
+        "computer",
+        "Computer",
+        False,
+        (
+            _Tool(
+                "describe",
+                "Describe desktop",
+                "environment.computer.describe",
+                "computer_describe",
+                description="Describe displays and readiness",
+            ),
+            _Tool(
+                "observe",
+                "Observe desktop",
+                "environment.computer.observe",
+                "computer_observe",
+                description="Capture the desktop for the model and conversation",
+            ),
+            _Tool(
+                "click",
+                "Click",
+                "environment.computer.click",
+                "computer_click",
+                description="Click a location in an observed desktop",
+            ),
+            _Tool(
+                "move",
+                "Move pointer",
+                "environment.computer.move",
+                "computer_move",
+                description="Move the desktop pointer",
+            ),
+            _Tool(
+                "drag",
+                "Drag",
+                "environment.computer.drag",
+                "computer_drag",
+                description="Drag between observed desktop locations",
+            ),
+            _Tool(
+                "scroll", "Scroll", "environment.computer.scroll", "computer_scroll", description="Scroll the desktop"
+            ),
+            _Tool(
+                "type_text",
+                "Type text",
+                "environment.computer.type_text",
+                "computer_type_text",
+                description="Type text into the focused application",
+            ),
+            _Tool(
+                "press_keys",
+                "Press keys",
+                "environment.computer.press_keys",
+                "computer_press_keys",
+                description="Press a desktop key combination",
+            ),
+        ),
+        description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
     ),
     _Toolset(
         "web",
@@ -525,9 +587,16 @@ def memory_record_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozens
 
 def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> DynamicEnvironmentConfiguration:
     files, shell = toolsets["files"], toolsets["shell"]
+    computer = toolsets.get("computer")
     return DynamicEnvironmentConfiguration(
         files_enabled=files.enabled,
         shell_enabled=shell.enabled,
+        computer_enabled=computer is not None and computer.enabled,
+        computer_tools=frozenset(
+            tool.model_name
+            for tool in _BY_KEY["computer"].tools
+            if computer is not None and computer.tools.get(tool.key, ToolSelection()).enabled
+        ),
         file_tools=frozenset(tool.model_name for tool in _BY_KEY["files"].tools if files.tools[tool.key].enabled),
         shell_tools=frozenset(tool.model_name for tool in _BY_KEY["shell"].tools if shell.tools[tool.key].enabled),
     )
