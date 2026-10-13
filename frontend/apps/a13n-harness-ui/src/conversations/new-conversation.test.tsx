@@ -26,6 +26,7 @@ import {
 } from "./new-conversation";
 import { NewDraftStore } from "./new-draft";
 import { ConversationPage } from "./conversation";
+import { ConversationNavigation } from "./navigation";
 import { LiveThreadsProvider } from "./live-threads";
 import type { Schema } from "../transport/client";
 
@@ -40,6 +41,7 @@ let failure: "create" | "submit" | "reject" | "submit-reject" | null;
 let paused: Promise<void> | undefined;
 let readPaused: Promise<void> | undefined;
 let readFailure = false;
+let readMissing = false;
 let historyPaused: Promise<void> | undefined;
 let focusPaused: Promise<void> | undefined;
 let focusUnavailable = false;
@@ -86,6 +88,7 @@ beforeEach(() => {
   paused = undefined;
   readPaused = undefined;
   readFailure = false;
+  readMissing = false;
   historyPaused = undefined;
   focusPaused = undefined;
   focused = undefined;
@@ -278,6 +281,16 @@ beforeEach(() => {
               ? threadDetail
               : (focused?.thread ?? threadDetail);
           await readPaused;
+          if (readMissing)
+            return json(
+              {
+                error: {
+                  code: "thread_missing",
+                  message: "Thread does not exist.",
+                },
+              },
+              400,
+            );
           if (readFailure)
             return json(
               { error: { message: "Thread detail unavailable" } },
@@ -389,7 +402,7 @@ function Location() {
     </>
   );
 }
-function mount(initial = path) {
+function mount(initial = path, sidebar = false) {
   return render(
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("test", () => {})}>
@@ -397,6 +410,7 @@ function mount(initial = path) {
           <NewConversationDrafts value={creations}>
             <MemoryRouter initialEntries={[initial]}>
               <LiveThreadsProvider>
+                {sidebar && <ConversationNavigation />}
                 <Link to="/settings">Settings</Link>
                 <Link to={initial}>Return to draft</Link>
                 <Link to="/">Home</Link>
@@ -579,6 +593,14 @@ it("keeps rejected first input on the New page and retries without recreating th
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Conversation busy");
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByText("Project changes are paused");
+  expect(
+    screen
+      .getByRole("link", { name: "Open conversation with retained input" })
+      .getAttribute("href"),
+  ).toBe(`/threads/${id}?compose=1`);
+  expect(creations.current!.defaults.project_id).toBe("project-one");
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
   expect(view.container.querySelector("[data-message-id]")).toBeNull();
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
@@ -791,6 +813,178 @@ it("uses one composer across project plus actions, Home and settings without cre
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
 });
 
+it("explains a frozen project from sidebar plus and unlocks it only after a missing-identity check", async () => {
+  failure = "create";
+  mount(path, true);
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  const original = creations.current!;
+  fireEvent.click(
+    screen.getByRole("button", { name: "New conversation in Second project" }),
+  );
+  await screen.findByText("Project changes are paused");
+  expect(screen.getByLabelText("Search").textContent).toBe(
+    "?project=project-one",
+  );
+  expect(original.defaults.project_id).toBe("project-one");
+
+  // A failed observation must retain the lock and input, not imply absence.
+  readFailure = true;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check conversation status" }),
+  );
+  await screen.findByText("Thread detail unavailable");
+  expect(original.attempted).toBe(true);
+  expect(writes).toHaveLength(1);
+
+  readFailure = false;
+  readMissing = true;
+  let resume!: () => void;
+  readPaused = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check conversation status" }),
+  );
+  await screen.findByRole("button", { name: "Checking conversation…" });
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "New conversation in Second project" }),
+  );
+  expect(original.defaults.project_id).toBe("project-one");
+  await act(async () => resume());
+  await screen.findByText(
+    "No conversation was found. You can now change projects; your input is retained.",
+  );
+  expect(original.attempted).toBe(false);
+  expect(
+    JSON.parse(localStorage.getItem("a13n-harness-ui.new-draft")!).attempted,
+  ).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "New conversation in Second project" }),
+  );
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(creations.current).toBe(original);
+  expect(original.defaults.project_id).toBe("project-two");
+  expect(values(original.composer.doc).prompt).toBe("Build this");
+  expect(writes).toHaveLength(1);
+});
+
+it("checks uncertain creation without input and opens the exact existing conversation without sending", async () => {
+  failure = "create";
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  act(() => {
+    const text = creations.current!.composer.doc.getText("text");
+    text.delete(0, text.length);
+  });
+  reload(newConversationPath("project-two"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Check conversation status" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  expect(reads).toContain(`/api/threads/${id}`);
+  expect(creations.current!.created).toBe(true);
+  expect(writes).toHaveLength(1);
+});
+
+it.each([false, true])(
+  "cancels the old status check before returning to New (missing: %s)",
+  async (missing) => {
+    failure = "create";
+    mount();
+    await fill();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(
+      "Unable to reach the server. Check your connection and try again.",
+    );
+    let resume!: () => void;
+    readPaused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check conversation status" }),
+    );
+    await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("link", { name: "Return to draft" }));
+    await screen.findByRole("button", { name: "Check conversation status" });
+    readMissing = missing;
+    await act(async () => resume());
+    expect(creations.current!.created).toBe(false);
+    expect(creations.current!.attempted).toBe(true);
+    expect(screen.getByLabelText("Location").textContent).toBe("/new");
+    expect(writes).toHaveLength(1);
+  },
+);
+
+it("waits for creation already in flight before checking status after navigation", async () => {
+  let resume!: () => void;
+  paused = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("link", { name: "Return to draft" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Check conversation status" }),
+  );
+  await screen.findByRole("button", { name: "Checking conversation…" });
+  expect(reads).not.toContain(`/api/threads/${id}`);
+  expect(
+    (screen.getByRole("button", { name: "Submitting" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await act(async () => resume());
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  expect(writes).toHaveLength(1);
+});
+
+it("unlocks creation choices on the backend missing-thread response when retrying Send", async () => {
+  failure = "create";
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  readMissing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(
+    "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
+  );
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(creations.current!.attempted).toBe(false);
+  expect(creations.current!.threadId).toBe(id);
+  expect(writes).toHaveLength(1);
+});
+
 it("restores text and choices after a full reload and persists deleting the input", async () => {
   mount();
   await fill();
@@ -890,6 +1084,12 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
     /The previous input may already have been accepted\. Open the conversation/,
   );
   expect(creations.current!.composer.submission.kind).toBe("unknown");
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByText("Project changes are paused");
+  expect(creations.current!.defaults.project_id).toBe("project-one");
+  expect(
+    screen.queryByRole("button", { name: "Check conversation status" }),
+  ).toBeNull();
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
