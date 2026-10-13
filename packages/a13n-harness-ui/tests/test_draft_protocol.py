@@ -213,3 +213,95 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
             assert "reviewed bytes" in (await api.get(prefix + "/transcript")).text
             missing = await api.get(f"/api/operations/{receipt}")
             assert missing.status_code == 400 and missing.json()["error"]["code"] == "root_receipt_missing"
+
+
+@pytest.mark.parametrize("action", ["send", "steer"])
+@pytest.mark.parametrize("submitted", ["submitted", "中" * 160000], ids=["short", "large-unicode"])
+async def test_accepted_input_clears_peer_draft_without_the_submitting_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str, submitted: str
+) -> None:
+    root = _write_configuration(tmp_path)
+    started, release = Event(), Event()
+
+    async def model(messages, info):
+        started.set()
+        await release.wait()
+        yield "completed"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener(tmp_path, configuration_path=root, sharing=False) as (http, ws):
+        async with httpx.AsyncClient(
+            base_url=http, headers={"Authorization": "Bearer test-only-key"}, trust_env=False
+        ) as api:
+            thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
+            prefix = f"/api/threads/{thread_id}"
+            receipt = None
+            if action == "steer":
+                receipt = (await api.post(prefix + "/submit", json={"parts": ["start"]})).json()["receipt_id"]
+                with fail_after(10):
+                    await started.wait()
+            path = ws + prefix + "/draft/connect"
+            async with connect(path, proxy=None, origin=http) as peer:
+                await join(peer)
+                async with connect(path, proxy=None, origin=http) as author:
+                    initial = await join(author)
+                    authored = document(initial)
+                    authored.get("text", type=Text).insert(0, submitted)
+                    await send(author, initial["draft_id"], authored)
+                    accepted = await containing(author, submitted)
+                    capture = {"draft_id": accepted["draft_id"], "update_base64": accepted["update_base64"]}
+                    next_input = document(accepted)
+                    next_input.get("text", type=Text).insert(0, "NEXT ")
+                    await send(peer, initial["draft_id"], next_input)
+                    await containing(peer, "NEXT ")
+                # Navigation/closure has detached the submitting editor. Only the
+                # HTTP admission can now consume its snapshot; no client clear follows.
+                endpoint = prefix + "/submit" if action == "send" else f"/api/operations/{receipt}/steer"
+                body = {"parts": [submitted], "draft": capture}
+                if len(submitted) > 1000:
+                    # Valid UTF-8 text plus its base64 capture exceeds the ordinary
+                    # one MiB API budget but fits the submission endpoint budget.
+                    assert len(json.dumps(body, ensure_ascii=False).encode()) > 1024 * 1024
+                oversized = await api.post(endpoint, content=b" " * (2 * 1024 * 1024 + 1))
+                assert oversized.json()["error"]["code"] == "request_too_large"
+                invalid = await api.post(endpoint, json={**body, "draft": {**capture, "draft_id": "stale-draft"}})
+                assert invalid.status_code == 409, invalid.text
+                if action == "steer":
+                    busy = await api.post(prefix + "/submit", json=body)
+                    assert busy.status_code == 409, busy.text
+                # Rejections leave the synchronized shared input unchanged.
+                async with connect(path, proxy=None, origin=http) as observer:
+                    assert composer_values(document(await join(observer))) == ("NEXT " + submitted, ())
+                response = await api.post(endpoint, json=body)
+                assert response.status_code == 200, response.text
+                if action == "steer":
+                    assert response.json()["accepted"]
+                else:
+                    receipt = response.json()["receipt_id"]
+                cleared = await frame_until(
+                    peer, lambda f: f.get("kind") == "draft" and composer_values(document(f)) == ("NEXT ", ())
+                )
+                assert cleared["draft_id"] == initial["draft_id"]
+                assert (await api.get("/api/drafts")).json()[0]["thread_id"] == thread_id
+                # A stale reconnect cannot resurrect already-consumed item identities.
+                await send(peer, initial["draft_id"], authored)
+                async with connect(path, proxy=None, origin=http) as observer:
+                    current = await join(observer)
+                    assert composer_values(document(current)) == ("NEXT ", ())
+                release.set()
+                with fail_after(10):
+                    while (await api.get(f"/api/operations/{receipt}")).json()["status"] in {"preparing", "running"}:
+                        await sleep(0.02)
+                rejected = await api.post(
+                    f"/api/operations/{receipt}/steer",
+                    json={
+                        "parts": ["NEXT "],
+                        "draft": {"draft_id": current["draft_id"], "update_base64": current["update_base64"]},
+                    },
+                )
+                assert rejected.status_code == 200 and not rejected.json()["accepted"]
+                async with connect(path, proxy=None, origin=http) as observer:
+                    assert composer_values(document(await join(observer))) == ("NEXT ", ())

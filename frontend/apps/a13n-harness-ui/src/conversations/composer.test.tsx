@@ -173,6 +173,55 @@ it("reserves an upload before joining and resolves it after the initial draft id
   query.clear();
 });
 
+it.each(["accepted", "unknown"] as const)(
+  "preserves the next prompt when server consumption precedes an %s acknowledgement",
+  async (outcome) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, "Submitted");
+    const receive = (doc: Y.Doc) =>
+      draft.receive({
+        draft_id: "draft-one",
+        participant_id: "participant-one",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(doc)),
+      });
+    receive(draft.doc);
+    const captured = draft.capture();
+    let finish!: (value: object) => void;
+    const POST = vi.fn(
+      () =>
+        new Promise<object>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = submitDraft(
+      draft,
+      { client: { POST } } as unknown as Transport,
+      "one",
+      "send",
+    );
+    await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+    // Ordinary synchronization delivers server consumption before HTTP returns.
+    captured.doc.getText("text").delete(0, captured.doc.getText("text").length);
+    receive(captured.doc);
+    expect(values(draft.doc).prompt).toBe("");
+    expect(draft.submission.kind).toBe("pending");
+    captured.doc.getText("text").insert(0, "Next prompt");
+    receive(captured.doc);
+    finish(
+      outcome === "accepted"
+        ? { data: { receipt_id: "receipt-one", thread_id: "one" } }
+        : {},
+    );
+    await pending;
+    expect(draft.submission.kind).toBe(outcome);
+    expect(values(draft.doc).prompt).toBe("Next prompt");
+    expect(POST).toHaveBeenCalledOnce();
+    captured.doc.destroy();
+    draft.doc.destroy();
+  },
+);
+
 it.each(["accepted", "rejected", "unknown"] as const)(
   "steers ordered attachments and preserves uncaptured edits when %s",
   async (outcome) => {
@@ -190,7 +239,7 @@ it.each(["accepted", "rejected", "unknown"] as const)(
       update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
     });
     const capture = draft.capture();
-    const input = { parts: capture.parts };
+    const input = { parts: capture.parts, draft: capture.snapshot };
     capture.doc.destroy();
     const attachment = {
       attachment_id: "attachment-image",
@@ -847,6 +896,10 @@ it("continues with the shared draft and attachments and clears only accepted inp
         { attachment_id: "attachment-kept" },
       ],
       mode: "normal",
+      draft: {
+        draft_id: "draft-one",
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+      },
       source_id: expect.any(String),
       thinking: "low",
     },

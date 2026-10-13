@@ -8,7 +8,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 import * as Y from "yjs";
-import { covers, encode, replica, ThreadDraft, values } from "./draft";
+import { covers, decode, encode, replica, ThreadDraft, values } from "./draft";
 import { attachmentToken } from "./inline-attachments";
 
 function frame(doc: Y.Doc, draft_id = "draft-one") {
@@ -387,3 +387,49 @@ it("resends current edits after disconnect with an update still in flight", () =
   connection.close();
   server.destroy();
 });
+
+it.each([false, true])(
+  "broadcasts accepted capture clearing to a peer with concurrent input (%s)",
+  (concurrent) => {
+    vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+    const socket = mockWebSocket();
+    const server = replica();
+    const first = new ThreadDraft();
+    const second = new ThreadDraft();
+    const connections = [first, second].map((draft) => {
+      const connection = draft.connect(
+        createTransport("key", () => {}),
+        "thread-one",
+        () => {},
+      );
+      const ws = socket();
+      ws.open();
+      ws.message({ kind: "draft", ...frame(server) });
+      return { connection, ws, cursor: 0 };
+    });
+    const flush = () => {
+      for (const client of connections) {
+        for (const command of client.ws.sent.slice(client.cursor)) {
+          if (command.kind === "sync")
+            Y.applyUpdate(server, decode(command.update_base64 as string));
+        }
+        client.cursor = client.ws.sent.length;
+      }
+      for (const client of connections)
+        client.ws.message({ kind: "draft", ...frame(server) });
+    };
+    first.doc.getText("text").insert(0, "submitted");
+    flush();
+    const captured = first.capture();
+    if (concurrent) second.doc.getText("text").insert(0, "NEXT ");
+    first.clear(captured);
+    flush();
+    expect(values(first.doc).prompt).toBe(concurrent ? "NEXT " : "");
+    expect(values(second.doc).prompt).toBe(concurrent ? "NEXT " : "");
+    expect(first.synchronized).toBe(true);
+    expect(second.synchronized).toBe(true);
+    captured.doc.destroy();
+    connections.forEach(({ connection }) => connection.close());
+    server.destroy();
+  },
+);

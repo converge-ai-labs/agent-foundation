@@ -59,6 +59,7 @@ export function covers(accepted: Y.Snapshot, local: Y.Snapshot): boolean {
 export type DraftCapture = {
   doc: Y.Doc;
   draftId: string;
+  snapshot: Schema<"DraftCapture">;
   input: ReturnType<typeof values>;
   parts: ReturnType<typeof orderedInput>;
 };
@@ -160,6 +161,10 @@ export class ThreadDraft {
       return {
         doc,
         draftId: this.draftId,
+        snapshot: {
+          draft_id: this.draftId,
+          update_base64: encode(Y.encodeStateAsUpdate(doc)),
+        },
         input: values(doc),
         parts: orderedInput(doc),
       };
