@@ -371,7 +371,6 @@ async def test_staging_is_private_and_aborted_stream_is_removed(tmp_path: Path, 
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Atomic directory replacement is unsupported on Windows")
 async def test_directory_replacement_publishes_complete_tree_and_removes_old_files(tmp_path):
     files = _files(tmp_path)
     source, destination = tmp_path / "source", tmp_path / "destination"
@@ -389,7 +388,7 @@ async def test_directory_replacement_publishes_complete_tree_and_removes_old_fil
     assert not (destination / "obsolete").exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Atomic directory replacement is unsupported on Windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows directory replacement accepts a visibility gap")
 async def test_concurrent_directory_replacements_never_expose_a_partial_document(tmp_path):
     files = _files(tmp_path)
     destination = tmp_path / "published"
@@ -440,27 +439,29 @@ async def test_windows_directory_replacement_preserves_destination_on_unrelated_
 
 
 @pytest.mark.parametrize("number", [errno.EACCES, errno.EEXIST, errno.ENOTEMPTY])
-async def test_windows_directory_replacement_preserves_existing_tree_without_fallback(tmp_path, monkeypatch, number):
+async def test_windows_directory_replacement_removes_existing_tree_before_retry(tmp_path, monkeypatch, number):
     files = _files(tmp_path)
     source, destination = tmp_path / "source", tmp_path / "destination"
     for path in (source, destination):
         path.mkdir()
         (path / "SKILL.md").write_text(path.name)
+    native_replace = os.replace
     calls = 0
 
-    def fail_replace(source, destination):
+    def replace_after_removal(source, destination):
         nonlocal calls
         calls += 1
-        raise OSError(number, "destination directory exists")
+        if calls == 1:
+            raise OSError(number, "destination directory exists")
+        assert not destination.exists()
+        native_replace(source, destination)
 
     monkeypatch.setattr(local_files, "sys", SimpleNamespace(platform="win32"))
-    monkeypatch.setattr(local_files.os, "replace", fail_replace)
-    with pytest.raises(EnvironmentError) as failed:
-        files._move_native("/source", "/destination", True)
-    assert failed.value.code == "environment_unsupported"
-    assert calls == 1
-    assert (source / "SKILL.md").read_text() == "source"
-    assert (destination / "SKILL.md").read_text() == "destination"
+    monkeypatch.setattr(local_files.os, "replace", replace_after_removal)
+    files._move_native("/source", "/destination", True)
+    assert calls == 2
+    assert not source.exists()
+    assert (destination / "SKILL.md").read_text() == "source"
 
 
 async def test_directory_no_replace_preserves_existing_tree(tmp_path):
@@ -475,6 +476,7 @@ async def test_directory_no_replace_preserves_existing_tree(tmp_path):
     assert (tmp_path / "source" / "SKILL.md").read_text() == "source"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows uses remove/rename instead of exchange")
 async def test_unsupported_exchange_preserves_both_directories(tmp_path, monkeypatch):
     files = _files(tmp_path)
     for name in ("source", "destination"):
@@ -493,7 +495,7 @@ async def test_unsupported_exchange_preserves_both_directories(tmp_path, monkeyp
         assert (tmp_path / name / "SKILL.md").read_text() == name
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Atomic directory replacement is unsupported on Windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows directory replacement accepts a visibility gap")
 async def test_displaced_cleanup_failure_reports_unknown_after_publication(tmp_path, monkeypatch):
     files = _files(tmp_path)
     for name in ("source", "destination"):
@@ -510,3 +512,25 @@ async def test_displaced_cleanup_failure_reports_unknown_after_publication(tmp_p
     assert failed.value.code == "environment_unknown_outcome"
     assert (tmp_path / "destination" / "SKILL.md").read_text() == "source"
     assert (tmp_path / "source" / "SKILL.md").read_text() == "destination"
+
+
+async def test_windows_replacement_failure_after_removal_leaves_candidate(tmp_path, monkeypatch):
+    files = _files(tmp_path)
+    for name in ("source", "destination"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "SKILL.md").write_text(name)
+    calls = 0
+
+    def fail_replace(source, destination):
+        nonlocal calls
+        calls += 1
+        raise OSError(errno.EACCES if calls == 1 else errno.EIO, "rename failed")
+
+    monkeypatch.setattr(local_files, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(local_files.os, "replace", fail_replace)
+    with pytest.raises(OSError) as failed:
+        files._move_native("/source", "/destination", True)
+    assert failed.value.errno == errno.EIO
+    assert calls == 2
+    assert not (tmp_path / "destination").exists()
+    assert (tmp_path / "source" / "SKILL.md").read_text() == "source"

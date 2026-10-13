@@ -783,9 +783,10 @@ class LocalFileOperator:
             if sys.platform == "win32":
                 if destination_metadata is None or exc.errno not in {errno.EACCES, errno.EEXIST, errno.ENOTEMPTY}:
                     raise
-                raise EnvironmentError(
-                    "Atomic directory replacement is unavailable.", code="environment_unsupported"
-                ) from exc
+                # Windows has no directory exchange; replacement accepts the remove/rename gap.
+                shutil.rmtree(destination_native)
+                os.replace(source_native, destination_native)
+                return
             if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
                 raise
             _rename_atomic(source_native, destination_native, exchange=True)

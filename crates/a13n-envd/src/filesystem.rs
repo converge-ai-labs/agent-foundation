@@ -452,10 +452,13 @@ impl DeviceFilesystem {
                     ) {
                         return Err(PathError::from_io(error));
                     }
-                    return Err(PathError::from_io(std::io::Error::new(
-                        std::io::ErrorKind::Unsupported,
-                        "atomic directory replacement is unavailable",
-                    )));
+                    // Windows has no directory exchange; accept the remove/rename gap.
+                    destination_parent
+                        .remove_dir_all(&destination_name)
+                        .map_err(PathError::from_io)?;
+                    source_parent
+                        .rename(&source_name, &destination_parent, &destination_name)
+                        .map_err(PathError::from_io)?;
                 }
                 #[cfg(not(windows))]
                 {
@@ -729,34 +732,26 @@ mod tests {
         let destination_path = EIPPath {
             path: device_path::from_native(&destination).unwrap(),
         };
-        assert!(matches!(
-            filesystem.rename(&source_path, &destination_path, false),
-            Err(PathError::AlreadyExists)
-        ));
-        #[cfg(not(windows))]
-        {
+        // Native Windows may classify a nonempty destination as access denied.
+        assert!(
             filesystem
-                .rename(&source_path, &destination_path, true)
-                .unwrap();
-            assert_eq!(
-                fs::read_to_string(destination.join("SKILL.md")).unwrap(),
-                "new"
-            );
-            assert!(!destination.join("obsolete").exists());
-            assert!(!source.exists());
-        }
-        #[cfg(windows)]
-        {
-            assert!(matches!(
-                filesystem.rename(&source_path, &destination_path, true),
-                Err(PathError::Unsupported)
-            ));
-            assert_eq!(
-                fs::read_to_string(destination.join("SKILL.md")).unwrap(),
-                "old"
-            );
-            assert_eq!(fs::read_to_string(source.join("SKILL.md")).unwrap(), "new");
-        }
+                .rename(&source_path, &destination_path, false)
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(source.join("SKILL.md")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(destination.join("SKILL.md")).unwrap(),
+            "old"
+        );
+        filesystem
+            .rename(&source_path, &destination_path, true)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("SKILL.md")).unwrap(),
+            "new"
+        );
+        assert!(!destination.join("obsolete").exists());
+        assert!(!source.exists());
         fs::remove_dir_all(root).unwrap();
     }
 
