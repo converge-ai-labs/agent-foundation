@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 
 from pydantic import JsonValue
 
+from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.batches import validate_file_batch
 from a13n_harness.environment.files import (
@@ -126,12 +127,13 @@ class GuestFiles:
             raise EnvironmentError("Invalid Guest chunk size.", code="environment_request_invalid")
         native = await self._resolve_native_path(path, regular_file=True)
         total = 0
-        async for chunk in self.commands.read_stream(native):
-            total += len(chunk)
-            if total > self.commands.configuration.max_file_bytes:
-                raise EnvironmentError("File exceeds the configured limit.", code="environment_too_large")
-            for offset in range(0, len(chunk), chunk_size):
-                yield chunk[offset : offset + chunk_size]
+        async with closing_stream(self.commands.read_stream(native)) as stream:
+            async for chunk in stream:
+                total += len(chunk)
+                if total > self.commands.configuration.max_file_bytes:
+                    raise EnvironmentError("File exceeds the configured limit.", code="environment_too_large")
+                for offset in range(0, len(chunk), chunk_size):
+                    yield chunk[offset : offset + chunk_size]
 
     async def _resolve_native_path(self, path: str, *, regular_file: bool = False) -> str:
         value = (await self.commands.files("resolve", {"path": path, "regular_file": regular_file})).get("path")

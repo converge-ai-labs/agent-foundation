@@ -19,6 +19,7 @@ from a13n_harness._json import redact_json
 from a13n_harness.context import AgentContext, ToolMetadataKey
 from a13n_harness.environment._mount_path import normalize_operation_path
 from a13n_harness.environment._resources import EnvironmentResources
+from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.files import (
     FileMetadata,
     FileOperator,
@@ -257,7 +258,10 @@ class FileToolset:
                 "read_only",
                 resources=self._path_resources(lambda arguments: (_string_argument(arguments, "file_path"),)),
                 name="view",
-                description="Read bounded text segments or attach common image, video, and audio files natively.",
+                description=(
+                    "Read bounded text or analyze common image, video, and audio files. "
+                    "Uses configured media understanding when the active model lacks native media support."
+                ),
                 max_output_bytes=_MAX_MODEL_MEDIA_BYTES,
             ),
             self._tool(
@@ -471,15 +475,16 @@ class FileToolset:
                             code="environment_too_large",
                         )
                     self._guard_unscoped_step()
-                    data = await files.read_bytes(
-                        file_path,
-                        length=_MAX_MODEL_MEDIA_BYTES + 1,
-                    )
-                    if len(data) > _MAX_MODEL_MEDIA_BYTES:
-                        raise EnvironmentError(
-                            "Media file exceeds the model view limit.",
-                            code="environment_too_large",
-                        )
+                    content = bytearray()
+                    async with closing_stream(files.read_bytes_stream(file_path)) as stream:
+                        async for chunk in stream:
+                            if len(content) + len(chunk) > _MAX_MODEL_MEDIA_BYTES:
+                                raise EnvironmentError(
+                                    "Media file exceeds the model view limit.",
+                                    code="environment_too_large",
+                                )
+                            content.extend(chunk)
+                    data = bytes(content)
                     source = self._file_access.resolved_path(file_path)
             except EnvironmentError as exc:
                 return _environment_error_result(exc)

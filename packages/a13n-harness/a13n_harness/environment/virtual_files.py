@@ -7,6 +7,7 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 
+from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.batches import file_operation_action, validate_file_batch
 from a13n_harness.environment.files import (
@@ -124,11 +125,11 @@ class VirtualFileOperator:
         chunk_size: int = 65_536,
     ) -> AsyncGenerator[bytes]:
         async with self._prepare(self._resolve(path), EnvironmentAction.FILE_READ_BYTES) as prepared:
-            async for chunk in prepared.backend.read_bytes_stream(
-                prepared.selected.path,
-                chunk_size=chunk_size,
-            ):
-                yield chunk
+            async with closing_stream(
+                prepared.backend.read_bytes_stream(prepared.selected.path, chunk_size=chunk_size)
+            ) as stream:
+                async for chunk in stream:
+                    yield chunk
 
     async def write_bytes_stream(
         self,
