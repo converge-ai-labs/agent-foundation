@@ -320,6 +320,14 @@ it("selects a model for one HTTP admission without changing sticky configuration
         }),
       );
       expect(operation.status).toBe("completed");
+      // Terminal status can be visible while execution persistence still holds
+      // the admission slot. Wait for release before testing the next submit.
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
     },
     { timeout: 10000 },
   );
@@ -733,6 +741,12 @@ it("captures an HTTP environment override without changing defaults and never fa
         }),
       );
       expect(operation.status).toBe("completed");
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
     },
     { timeout: 10000 },
   );
