@@ -88,7 +88,7 @@ def guest(tmp_path):
     )
 
 
-@pytest.mark.parametrize("size", [0, 1, 65535, 65536, 65537, 1024 * 1024, 16 * 1024 * 1024])
+@pytest.mark.parametrize("size", [0, 1, 65535, 65536, 65537, 1024 * 1024, 16 * 1024 * 1024, 100 * 1024 * 1024])
 async def test_complete_read_uses_one_resolution_and_one_native_download(guest, size):
     payload = (bytes(range(256)) * ((size + 255) // 256))[:size]
     guest.reader.path.write_bytes(payload)
@@ -96,6 +96,20 @@ async def test_complete_read_uses_one_resolution_and_one_native_download(guest, 
     assert guest.actions == ["resolve"]
     guest.sandbox.files.read.assert_awaited_once()
     assert guest.reader.closed
+
+
+async def test_default_limit_rejects_above_100_mib_and_closes_reader(guest):
+    maximum = guest.commands.configuration.max_file_bytes
+    assert maximum == 100 * 1024 * 1024
+    with guest.reader.path.open("wb") as source:
+        source.truncate(maximum + 1)
+    with pytest.raises(EnvironmentError) as caught:
+        await guest.files.read_bytes("/file")
+    assert caught.value.code == "environment_too_large"
+    assert guest.reader.closed
+    assert guest.reader.consumed == maximum + 1
+    assert guest.actions == ["resolve"]
+    guest.sandbox.files.read.assert_awaited_once()
 
 
 @pytest.mark.parametrize("maximum,size", [(4096, 4096), (65536, 65536), (65536, 65537), (4096, 200000)])
