@@ -22,6 +22,7 @@ from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_catalog_updates import run_official_model_updates
+from a13n_harness.models.codex_live import CodexLiveModel
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.remote_envd.pairing import PairingChallenge, PairingRequest, PairingResponse
@@ -162,6 +163,7 @@ from a13n_harness_ui.model_accounts import (
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
 from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
@@ -285,6 +287,7 @@ from a13n_harness_ui.thread_files import (
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
+from a13n_harness_ui.voice import VoiceController
 from a13n_harness_ui.web_push import WebPush
 
 
@@ -400,6 +403,7 @@ class HarnessUiApp:
         )
         self._restart = restart_coordinator
         self._memory_organizer = memory_organizer
+        self._voice: VoiceController | None = None
         self._web_push = web_push
         self._store = store
         self._saved_outputs = SavedOutputs(store)
@@ -447,6 +451,27 @@ class HarnessUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    def voice(self) -> VoiceController:
+        if self._voice is None:
+            raise HarnessUiError("Live is available in WebUI with a configuration directory.", code="live_unavailable")
+        return self._voice
+
+    def _voice_model(self, source: LoadedHarnessUiConfiguration) -> CodexLiveModel:
+        assert source.document.live is not None
+        voice = source.document.live.voice
+        if voice == "marin" or voice == "cedar":
+            raise ThreadError(
+                "Choose cove or another Codex V3 voice in Live settings before starting voice.",
+                code="live_voice_incompatible",
+            )
+        if self._codex_account is None:
+            raise ThreadError("Connect a Codex subscription account before starting Live.", code="live_account_missing")
+        return CodexLiveModel(
+            BoundCodexCredentialSource(self._codex_account),
+            voice=voice,
+            configuration=source.document.run_configuration,
+        )
 
     def _push(self) -> WebPush:
         if self._web_push is None:
@@ -1075,6 +1100,13 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def fork_thread(self, thread_id: str) -> ThreadSummary:
+        """Copy an independent ordinary Thread without admitting a Run."""
+        async with self._operation():
+            thread = await self._threads.fork(thread_id, files=self._thread_files)
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
+
     async def promote_coordinator(self, thread_id: str) -> ThreadSummary:
         """Convert an idle independent root without replacing its conversation."""
         async with self._operation():
@@ -1186,11 +1218,19 @@ class HarnessUiApp:
                 ),
                 next_generation_digest=None if source is None else source.source_digest,
                 next_model_id=(
-                    source.memory_organization_model_id
+                    source.document.live.model
+                    if selected.agent_source.kind == "live" and source is not None and source.document.live is not None
+                    else source.memory_organization_model_id
                     if thread.memory_scope is not None and source is not None
                     else selected.default_model_id or (None if agent is None else agent.model)
                 ),
-                next_capability_ids=() if agent is None else tuple(item.capability for item in agent.capabilities),
+                next_capability_ids=(
+                    ("working_state", "runtime_context", "user_interaction", "dynamic_environment")
+                    if selected.agent_source.kind == "live"
+                    else ()
+                    if agent is None
+                    else tuple(item.capability for item in agent.capabilities)
+                ),
                 next_tool_proxy=(
                     None
                     if agent is None or source is None
@@ -2753,6 +2793,8 @@ class HarnessUiApp:
             self._state = AppState.stopping
             idle = self._operations_idle
         self._memory_organizer.stop()
+        if self._voice is not None:
+            await self._voice.stop()
         await self._root_runs.stop_admission()
         if graceful:
             await self._restart.drain(self._settings.shutdown_timeout_seconds)
@@ -3068,6 +3110,12 @@ async def open_harness_ui_app(
                 run=run_memory,
                 webui=host_mode == "webui",
             )
+
+            async def notify_settled(project_id: str | None, operation: RootOperationView) -> None:
+                await thread_tools.notify_coordinator(project_id, operation)
+                if app is not None and app._voice is not None:
+                    await app._voice.executor_settled(operation)
+
             root_runs = RootRunCoordinator(
                 root_executor,
                 restart_coordinator=restart_coordinator,
@@ -3078,9 +3126,7 @@ async def open_harness_ui_app(
                 )
                 if host_mode == "webui"
                 else None,
-                on_settled=(lambda project_id, operation: thread_tools.notify_coordinator(project_id, operation))
-                if host_mode == "webui"
-                else None,
+                on_settled=notify_settled if host_mode == "webui" else None,
                 summary_hub=summary_hub,
                 observation=observation,
                 touch_thread=store.threads.touch,
@@ -3167,6 +3213,16 @@ async def open_harness_ui_app(
                 restart_coordinator=restart_coordinator,
             )
             if host_mode == "webui":
+                if configuration_path is not None:
+                    app._voice = VoiceController(
+                        configuration_root=configuration_path.expanduser().resolve().parent,
+                        configurations=configurations,
+                        threads=threads,
+                        store=store,
+                        root_runs=root_runs,
+                        projections=projections,
+                        model=app._voice_model,
+                    )
                 thread_tools = ThreadToolController(
                     threads=store.threads,
                     projections=projections,
@@ -3174,6 +3230,7 @@ async def open_harness_ui_app(
                     create_thread=app.create_thread,
                     configurations=configurations,
                     inspect_configuration=app.inspect_thread_configuration,
+                    voice=app._voice,
                 )
                 root_executor.set_root_capability_factory(
                     lambda composition: ThreadCollaborationCapability(
@@ -3189,6 +3246,8 @@ async def open_harness_ui_app(
                 async with create_task_group() as background:
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
+                    if app._voice is not None:
+                        app._voice.start(background)
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
                     background.start_soon(app._maintain_read_models)

@@ -86,6 +86,7 @@ from a13n_service.runs.schemas import (
     canonical_json,
 )
 from a13n_service.runs.seal import release_attempt, seal, seal_attempt
+from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -338,7 +339,12 @@ class _Attempt:
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
-            lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
+            lease.run_id,
+            plan.tail,
+            attempt=lease.number,
+            page_items=worker.page_items,
+            page_bytes=worker.page_bytes,
+            memory_ids={memory.mount.name: memory.mount.memory_id for memory in plan.host.memories},
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
@@ -389,6 +395,7 @@ class _Attempt:
         root = self.plan.agent
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
+        skill_cache = Cache()
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
                 open_mounts(
@@ -398,6 +405,7 @@ class _Attempt:
                     self.plan.authority,
                     self.plan.mounts,
                     configuration=self.plan.configuration,
+                    skill_cache=skill_cache,
                 )
             )
             models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
@@ -412,6 +420,7 @@ class _Attempt:
                     authority=self.plan.authority,
                     cursors=self.cursors,
                     configuration=self.plan.configuration,
+                    skill_cache=skill_cache,
                 )
             )
             executable = agent.build(

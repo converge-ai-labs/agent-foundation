@@ -3213,6 +3213,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | components["schemas"]["SharedSkillSync"]
+        | components["schemas"]["IsolatedSkillSync"];
       /**
        * Skills
        * @default []
@@ -3289,6 +3293,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | components["schemas"]["SharedSkillSync"]
+        | components["schemas"]["IsolatedSkillSync"];
       /**
        * Skills
        * @default []
@@ -3400,6 +3408,13 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | (
+            | components["schemas"]["SharedSkillSync"]
+            | components["schemas"]["IsolatedSkillSync"]
+          )
+        | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -3445,6 +3460,13 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | (
+            | components["schemas"]["SharedSkillSync"]
+            | components["schemas"]["IsolatedSkillSync"]
+          )
+        | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -4386,6 +4408,10 @@ export interface components {
        * @default false
        */
       full_content?: boolean;
+      /** Memory Sources */
+      memory_sources?: {
+        [key: string]: components["schemas"]["MemorySource"][];
+      };
       /** Next Ordinal */
       next_ordinal: number;
       observer?: components["schemas"]["ObserverContinuation"];
@@ -4644,6 +4670,20 @@ export interface components {
       code: string;
       /** Message */
       message: string;
+    };
+    /** FileSource */
+    FileSource: {
+      /** Bytes */
+      bytes: number;
+      /** Path */
+      path: string;
+      /** Sha256 */
+      sha256: string;
+      /**
+       * Truncated
+       * @default false
+       */
+      truncated?: boolean;
     };
     /** Finding */
     Finding: {
@@ -5053,6 +5093,22 @@ export interface components {
       invitation: components["schemas"]["Invitation"];
       /** Invitation Url */
       invitation_url: string | null;
+    };
+    /**
+     * IsolatedSkillSync
+     * @description Reuse immutable package directories, with a soft count budget.
+     */
+    IsolatedSkillSync: {
+      /**
+       * Cache Count
+       * @default 128
+       */
+      cache_count?: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "isolated";
     };
     /** IssuedKey */
     IssuedKey: {
@@ -5496,6 +5552,13 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** MemoryRecordProvenance */
+    MemoryRecordProvenance: {
+      /** Content Matches */
+      content_matches: boolean;
+      created: components["schemas"]["MemoryRecordSource"] | null;
+      last_write: components["schemas"]["MemoryRecordSource"];
+    };
     /** MemoryRecordSearch */
     MemoryRecordSearch: {
       /**
@@ -5505,6 +5568,27 @@ export interface components {
       limit?: number;
       /** Query */
       query: string;
+    };
+    /**
+     * MemoryRecordSource
+     * @description A platform-confirmed write, not an asserted source message or complete provider history.
+     */
+    MemoryRecordSource: {
+      /** Attempt Id */
+      attempt_id: string | null;
+      /**
+       * Confirmed At
+       * Format: date-time
+       */
+      confirmed_at: string;
+      /** Principal Id */
+      principal_id: string | null;
+      /** Principal Name */
+      principal_name?: string | null;
+      /** Run Id */
+      run_id: string | null;
+      /** Tool Call Id */
+      tool_call_id: string | null;
     };
     /** MemoryRecordText */
     MemoryRecordText: {
@@ -5518,6 +5602,7 @@ export interface components {
     MemoryRecordView: {
       /** Id */
       id: string;
+      provenance?: components["schemas"]["MemoryRecordProvenance"] | null;
       /** Score */
       score?: number | null;
       /** Text */
@@ -5590,6 +5675,51 @@ export interface components {
       items: components["schemas"]["MemoryRevision"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /**
+     * MemorySource
+     * @description One automatic delivery in this Run; content remains in the memory or execution archive.
+     */
+    MemorySource: {
+      /** Cursor */
+      cursor?: string | null;
+      /**
+       * Files
+       * @default []
+       */
+      files?: components["schemas"]["FileSource"][];
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "record" | "file";
+      /** Memory */
+      memory: string;
+      /** Memory Id */
+      memory_id?: string | null;
+      /**
+       * Records
+       * @default []
+       */
+      records?: components["schemas"]["RecordSource"][];
+      /**
+       * Sources Truncated
+       * @default false
+       */
+      sources_truncated?: boolean;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "recalled"
+        | "failed"
+        | "timeout"
+        | "full"
+        | "changes"
+        | "unchanged"
+        | "omitted"
+        | "unavailable";
     };
     /**
      * MemoryUpdate
@@ -6502,6 +6632,13 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** RecordSource */
+    RecordSource: {
+      /** Id */
+      id: string;
+      /** Sha256 */
+      sha256: string;
+    };
     /**
      * Resume
      * @description The complete result batch, submitted and stored on the successor without omission defaults.
@@ -6958,6 +7095,27 @@ export interface components {
     };
     /** @enum {string} */
     Severity: "critical" | "warning" | "suggestion";
+    /**
+     * SharedSkillSync
+     * @description Publish mutable conventional names; the last completed publication wins.
+     */
+    SharedSkillSync: {
+      /**
+       * Cleanup
+       * @default false
+       */
+      cleanup?: boolean;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "shared";
+      /**
+       * Overwrite
+       * @default true
+       */
+      overwrite?: boolean;
+    };
     /** Skill */
     Skill: {
       /** Archived At */
@@ -7583,6 +7741,11 @@ export interface components {
       default_permission: components["schemas"]["ToolPermissionMode"];
       /** Deployment Supported */
       deployment_supported: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
       /** Display Name */
       display_name: string;
       /** Execution Id */
@@ -7682,6 +7845,11 @@ export interface components {
       };
       /** Default Enabled */
       default_enabled: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
       /** Display Name */
       display_name: string;
       key: components["schemas"]["ToolsetKey"];

@@ -93,6 +93,16 @@ Current Run receipts, status, subscribers, steering queues, and live output rema
 
 Title and archive state form one metadata compare-and-select head independent from sticky configuration. A metadata command names the exact expected metadata version and atomically updates either or both fields. A changed head increments once; a no-op can retain its version. Title can be explicitly cleared. Root archive is rejected while that Thread has a current-process root operation, so an accepted operation cannot become hidden mid-Run. Child metadata changes require the parent-scoped child boundary.
 
+## Thread Fork
+
+An authenticated human forks an independent ordinary root through `fork_thread(thread_id)` / `POST /api/threads/{thread_id}/fork`. Coordinators, their workers, async child Threads, and internal Memory/Live Threads cannot be forked. The command returns the new `ThreadSummary`, admits no Run, and never calls a Model. The WebUI Thread action menu offers **Fork conversation** only for eligible Threads, prevents duplicate clicks while pending, and opens the new Thread after success. Failures remain visible beside the source.
+
+A fork has a new Thread ID and creation time, the exact same title (including null), archive/star selections, excerpts, and sticky configuration values. Its metadata and configuration versions start at one. It copies the complete selected saved Harness state through `HarnessState.fork()`: model history, compact display history, notes, embedded tasks, explicit stored values, and retained inline subagent state/references. A saved continuation also retains its composition provenance, pending decisions, accepted deferred input and memory cursors. Subsequent conversation and file changes belong independently to each Thread.
+
+All existing Thread-owned files, including retained attachments and scratch, are copied into the new Thread directory. Attachment identities and relative paths remain valid there. Historical message text and absolute paths remain historical; current Environment instructions identify the new Thread mount. Symlinks are copied as links without traversing their external targets. Project directories, remote targets and sandboxes are not cloned; the copied configuration still selects the same external resources. Portable Environment runtime state is reset by Harness fork semantics. Async child Threads are not recursively copied. Live operations, receipts, subscriptions, browser drafts, execution/completion markers and usage accounting are not duplicated.
+
+Fork reads one complete selected checkpoint, including while the source has an active Run; unsaved live output is excluded. The source role, metadata, configuration and selected continuation are checked again when publishing the new Thread. A concurrent change returns a conflict rather than publishing a mixed snapshot. File copying and immutable publication finish before the new Thread becomes visible. Copy or publication failure leaves the source unchanged and removes any partially copied destination directory; unreferenced immutable objects follow the ordinary publication lifecycle. Repeated successful requests create distinct copies, so clients do not automatically retry an uncertain outcome.
+
 ## Coordinator
 
 A Project can contain multiple Coordinators. A Coordinator is a durable role of an independent root Thread, not a singleton Project binding or a new conversation type. Human creation through `create_thread(coordinator=True)` / `POST /api/threads` with `coordinator: true` establishes this role atomically with the Thread and configuration head. Creation requires an accepted Project and cannot combine Coordinator role with worker ownership or child lineage; omission defaults to an ordinary root. Creation admits no Run; first-message submission remains a separate operation. An authenticated human promotes an ordinary project-bound root through `promote_coordinator(thread_id)` / `POST /api/threads/{thread_id}/coordinator`. Promotion requires an accepted Project, an unarchived inactive root, and no pending decisions. It preserves the Thread ID, title, history, drafts, configuration and URL; it creates no Run and calls no Model. Concurrent promotion of the same eligible root is idempotent; promotion of different roots creates independent Coordinators. Workers and child Threads cannot be promoted. Promotion is one-way, with no demotion, adoption, owner transfer or nested Coordinator operation.
@@ -116,7 +126,12 @@ class MarkdownSubagentSource(BaseModel):
     markdown: SubagentId
 
 
-AgentSource = AgentResourceSource | MarkdownSubagentSource
+class LiveAgentSource(BaseModel):
+    kind: Literal["live"]
+    id: Literal["live"]
+
+
+AgentSource = AgentResourceSource | MarkdownSubagentSource | LiveAgentSource
 
 
 class ThreadConfiguration(BaseModel):
@@ -135,13 +150,15 @@ class ThreadConfiguration(BaseModel):
 
 The stored value is exact. It contains no omitted or globally enabled state. `default_model_id` is an optional Model resource ID: null follows the selected Agent's current Model, while a non-null ID persists independently of Agent edits. Effective root Model precedence is explicit per-Run override, then Thread default, then Agent Model. An override containing only thinking, fast, or service-tier settings retains that precedence. Missing selected Models fail admission without silently falling back. Explicit Run overrides never change the stored default or historical captures. A configuration patch can set the default, explicitly clear it with null, or omit it to retain the current value. A null `project_id` means no Project, not an unresolved reference or a request to inherit a global default. A configuration patch can explicitly clear the Project with null; omission retains the current selection.
 
+The internal `LiveAgentSource` is created only for the persistent projectless [Live executor](10-live-mode.md#configuration-and-executor). It cannot be selected by ordinary Thread creation or mutation. Its workspace and restricted composition are App-owned.
+
 A new root Thread resolves its Agent resource from explicit creation input, the selected Project's Agent default, or the root YAML Agent default into `AgentResourceSource`, then resolves other axes under the shared creation precedence and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
 
 A child Thread stores the selected roster entry as either an Agent resource or Markdown subagent source. Project, local roots, Environment profile, remote bindings, default mount, and Run Extensions default from the admitting parent capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the admitting parent capture's exact Plugin and MCP lists. After creation the child owns these stored selections independently. Agent-resource children start with a null default Model and retain their independent Model selection. Markdown children inherit the admitting parent Model and reject a non-null `default_model_id` rather than silently ignoring it.
 
 ## Configuration Patch and Run Admission
 
-A Thread can change configuration before or after any Run:
+Ordinary and child Threads can change configuration before or after any Run. The internal [Live Thread](10-live-mode.md#configuration-and-executor) instead follows root Live settings and rejects ordinary configuration or Run-only Model/Environment overrides:
 
 ```python
 class ThreadConfigurationPatch(BaseModel):

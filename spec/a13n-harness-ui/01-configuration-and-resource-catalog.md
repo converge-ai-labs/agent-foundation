@@ -41,6 +41,8 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [MCP Apps Host](09-mcp-apps.md#opt-in-and-compatibility) owns the default-disabled `webui.mcp_apps` mapping and the separate-origin sandbox configuration. Its server selection is automatically unioned with each root and child Agent's generic MCP selection in WebUI, without rewriting Agent resources or sticky Thread selections or overriding tool permissions.
 
+[Live Mode](10-live-mode.md#configuration-and-executor) owns the optional root `live` mapping and existing Codex Model selection. Loading configuration never enables Live or starts microphone capture.
+
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
 
 ```yaml

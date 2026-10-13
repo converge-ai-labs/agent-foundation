@@ -17,7 +17,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, type Schema } from "../../shared/api";
 import { changeAgentImage } from "./images";
 import { AgentAvatar } from "./avatar";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
+import { ImagePicker } from "../../shared/forms";
 import { ErrorNotice } from "../../shared/feedback";
 import { Confirm } from "../../shared/dialogs";
 import { FormActions } from "../../shared/forms";
@@ -74,10 +74,6 @@ export function AgentDetails({
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      if (file && file.size > MAX_IMAGE_BYTES)
-        throw new Error(
-          t("Choose a PNG, JPEG, or WebP image smaller than 5 MB."),
-        );
       return changeAgentImage(client, workspace.id, agent.id, etag, file);
     },
     onSuccess: async (result) => {
@@ -108,12 +104,16 @@ export function AgentDetails({
                 hasImage={!!agent.image_url}
                 editable={can("write")}
                 pending={save.isPending || image.isPending}
-                onChange={(file) => image.mutate(file)}
+                onChange={async (file) => {
+                  await image.mutateAsync(file);
+                }}
                 description={
                   image.isPending ? (
                     <span role="status">{t("Saving…")}</span>
                   ) : (
-                    t("PNG, JPEG, or WebP. Up to 5 MB.")
+                    t(
+                      "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.",
+                    )
                   )
                 }
               >

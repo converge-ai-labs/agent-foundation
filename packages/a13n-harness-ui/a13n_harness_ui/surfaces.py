@@ -59,7 +59,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory"]
+    kind: Literal["agent", "markdown", "memory", "live"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod

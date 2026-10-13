@@ -8,7 +8,7 @@ export {
   serializeHeaders,
   type HeaderDraft,
 } from "./header-fields";
-export { ImagePicker, MAX_IMAGE_BYTES } from "./image-picker";
+export { ImagePicker } from "./image-picker";
 export { fieldLabel } from "./labels";
 export { ProviderEnabled } from "./provider-enabled";
 export { ProviderKeyLink } from "./provider-key-link";

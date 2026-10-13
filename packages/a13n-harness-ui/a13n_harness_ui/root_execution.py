@@ -451,8 +451,14 @@ class RootRunExecutor:
                 input_factory = prepare_input
                 prompt = None
             preparation_span.set_attribute("a13n.phase.step", "environment")
+            live_without_files = published.value.root.source_kind == "live" and not any(
+                item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
+                for item in published.value.root.capabilities
+            )
             environment = (
-                None if admission.organization is not None else await self._environments.prepare(published.value)
+                None
+                if admission.organization is not None or live_without_files
+                else await self._environments.prepare(published.value)
             )
             instance = AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),

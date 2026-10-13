@@ -26,83 +26,7 @@ import styles from "./agents.module.css";
 
 type Toolsets = NonNullable<AgentConfig["toolsets"]>;
 type Definition = Schema["ToolsetDefinition"];
-const names: Record<Definition["key"], string> = {
-  files: "Files",
-  shell: "Terminal",
-  web: "Web",
-  memory: "Memory",
-  assets: "Assets",
-  configuration: "Configuration",
-  traces: "Trace queries",
-  findings: "Findings",
-};
-const groupDescriptions: Record<Definition["key"], string> = {
-  files: "Read, write, and organize files.",
-  shell: "Run commands and manage processes.",
-  web: "Search and retrieve online content.",
-  memory: "Read and change the memories a conversation mounts.",
-  assets: "Publish files as agent assets.",
-  configuration: "Find resources and create agents and versions.",
-  traces: "Read authorized execution evidence.",
-  findings: "Submit findings with execution evidence.",
-};
 const platform = new Set(["configuration", "traces", "findings"]);
-const toolDescriptions: Record<string, Record<string, string>> = {
-  files: {
-    view: "Read file contents",
-    write: "Create or replace a file",
-    edit: "Edit a file",
-    multi_edit: "Apply several file edits",
-    mkdir: "Create directories",
-    move: "Move a file or directory",
-    copy: "Copy a file or directory",
-    delete: "Delete a file or directory",
-    ls: "List directory contents",
-    glob: "Find matching paths",
-    grep: "Search file contents",
-  },
-  shell: {
-    exec: "Execute a command",
-    info: "Inspect a running process",
-    wait: "Wait for a process",
-    input: "Send input to a process",
-    signal: "Signal a process",
-  },
-  web: {
-    search: "Search the web",
-    scrape: "Extract page content",
-    fetch: "Fetch URL content",
-    download: "Download a resource",
-  },
-  memory: {
-    file_view: "View memory files",
-    file_grep: "Search memory files",
-    file_create: "Create a memory file",
-    file_edit: "Edit a memory file",
-    file_append: "Append to a memory file",
-    file_move: "Move a memory file",
-    file_delete: "Delete a memory file",
-    record_search: "Search memory records",
-    record_list: "List memory records",
-    record_add: "Add a memory record",
-    record_update: "Update a memory record",
-    record_delete: "Delete a memory record",
-  },
-  traces: {
-    list: "List traces",
-    read: "Read trace",
-    spans: "Read trace steps",
-  },
-  findings: { submit: "Submit finding" },
-  assets: { publish: "Publish an asset" },
-  configuration: {
-    find: "Find workspace resources",
-    read: "Read a resource",
-    describe: "Describe the configuration schema",
-    create_agent: "Create an agent",
-    create_revision: "Publish an agent version",
-  },
-};
 
 export function AgentToolsets({
   value,
@@ -251,6 +175,7 @@ export function AgentToolsets({
     }));
   }
   const renderGroup = (group: Definition) => {
+    const groupLabel = t(group.display_name);
     const enabled = value[group.key]?.enabled ?? group.default_enabled;
     const expanded = selected === group.key;
     const activeCount = group.tools.filter(
@@ -280,7 +205,7 @@ export function AgentToolsets({
               />
               <span className="sr-only">
                 {t("Enable {{group}} tools", {
-                  group: t(names[group.key]),
+                  group: groupLabel,
                 })}
               </span>
             </Label>
@@ -289,12 +214,12 @@ export function AgentToolsets({
                 <button type="button" className={styles.toolsetGroupTrigger} />
               }
             >
-              <span className={styles.toolsetGroupName}>
-                {t(names[group.key])}
-              </span>
-              <span className={styles.toolsetGroupDescription}>
-                {t(groupDescriptions[group.key])}
-              </span>
+              <span className={styles.toolsetGroupName}>{groupLabel}</span>
+              {group.description && (
+                <span className={styles.toolsetGroupDescription}>
+                  {t(group.description)}
+                </span>
+              )}
               <span className={styles.toolsetGroupCount}>
                 {enabled
                   ? t("{{count}} of {{total}} on", {
@@ -387,10 +312,7 @@ export function AgentToolsets({
                           </span>
                         )}
                         <span className={styles.toolsetToolDescription}>
-                          {t(
-                            toolDescriptions[group.key]?.[tool.key] ??
-                              tool.model_name,
-                          )}
+                          {t(tool.description || tool.display_name)}
                         </span>
                         <div className={styles.toolsetToolActions}>
                           {group.key === "web" && (

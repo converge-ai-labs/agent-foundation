@@ -241,3 +241,87 @@ def test_host_processor_is_shared_by_live_display_and_restored_continuation() ->
     assert "".join(event["delta"] for event in live if event["type"] == "TEXT_MESSAGE_CONTENT") == "HELLO WORLD"
     assert next(item for item in fold.items.values() if item.kind == "text_message").content["text"] == "HELLO WORLD"
     assert not any(event["type"] == "CUSTOM" for event in live)
+
+
+def _recall(memory: str, record: str, *, scope: str | None = None) -> dict:
+    event = {
+        "type": "CUSTOM",
+        "name": "a13n.harness.context",
+        "value": {
+            "event": {
+                "payload": {
+                    "type": "memory_recall",
+                    "memories": [
+                        {"memory": memory, "recall": "recalled", "records": [{"id": record, "sha256": "a" * 64}]}
+                    ],
+                }
+            }
+        },
+    }
+    if scope:
+        event["subagentRunId"] = scope
+    return event
+
+
+def test_memory_sources_survive_cuts_and_are_scoped_to_replies() -> None:
+    from a13n_stream_protocol.display import DisplaySnapshot
+
+    fold = DisplayFold("run", attempt=1)
+    fold.fold([_recall("facts", "record-1")])
+    frozen = fold.export().model_dump_json()
+    fold = DisplayFold.restore(DisplaySnapshot.model_validate_json(frozen))
+    for message, scope in (("answer", None), ("child-answer", "child")):
+        events = [
+            {"type": "TEXT_MESSAGE_START", "messageId": message, "role": "assistant"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": message, "delta": "hello"},
+            {"type": "TEXT_MESSAGE_END", "messageId": message},
+        ]
+        if scope:
+            for event in events:
+                event["subagentRunId"] = scope
+        for event in events:
+            event["timestamp"] = 1000
+            restored = DisplayFold.restore(fold.export())
+            [observed] = fold.fold([event])
+            restored.fold([event])
+            assert restored.export() == fold.export()
+            assert observed.item is not None
+            item = fold.items[observed.item.id]
+            if scope:
+                assert "memory_sources" not in item.content
+                assert observed.item.memory_sources is None
+            elif event["type"] == "TEXT_MESSAGE_END":
+                assert observed.item.model_dump(mode="json")["memory_sources"] == item.content["memory_sources"]
+                assert item.content["memory_sources"][0]["records"][0]["id"] == "record-1"
+            else:
+                assert observed.item.memory_sources is None
+    # Later deliveries do not rewrite already completed replies.
+    saved = [item.model_dump_json() for item in fold.items.values() if item.kind == "text_message"]
+    fold.fold([_recall("facts", "record-2")])
+    assert saved == [item.model_dump_json() for item in fold.items.values() if item.kind == "text_message"]
+
+
+def test_old_memory_observations_do_not_invent_empty_evidence() -> None:
+    fold = DisplayFold("run")
+    event = _recall("facts", "record")
+    del event["value"]["event"]["payload"]["memories"][0]["records"]
+    fold.fold(
+        [
+            event,
+            {"type": "TEXT_MESSAGE_START", "messageId": "m", "role": "assistant"},
+            {"type": "TEXT_MESSAGE_END", "messageId": "m"},
+        ]
+    )
+    assert "memory_sources" not in list(fold.items.values())[-1].content
+
+
+@pytest.mark.parametrize("status", [[], "future-status", "recalled"])
+def test_unknown_context_payloads_remain_observations(status) -> None:
+    event = _recall("facts", "record")
+    memory = event["value"]["event"]["payload"]["memories"][0]
+    memory["recall"] = status
+    memory["records"] = ["future-format"]
+    fold = DisplayFold("run")
+    fold.fold([event])
+    assert fold.memory_sources == {}
+    assert next(iter(fold.items.values())).content["name"] == "a13n.harness.context"

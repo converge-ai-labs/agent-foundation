@@ -72,3 +72,20 @@ it("offers prefix completion with descriptions only at dollar token boundaries",
   expect(await complete("/review")).toBeNull();
   expect((await complete("$unknown"))?.options).toEqual([]);
 });
+
+it("reuses the full catalog when a prefix narrows, broadens, or has no matches", async () => {
+  const context = (doc: string) =>
+    new CompletionContext(EditorState.create({ doc }), doc.length, false);
+  const initial = await skillCompletion(async () => catalog)(context("$rev"));
+  expect(initial?.update).toBeTypeOf("function");
+  const update = (doc: string) =>
+    initial!.update!(initial!, 0, doc.length, context(doc));
+  expect(update("$review")?.options).toHaveLength(1);
+  expect(update("$REVIEW")?.options).toEqual([]);
+  expect(update("$rvw")?.options).toEqual([]);
+  expect(update("$unknown")?.options).toEqual([]);
+  expect(update("$")?.options).toHaveLength(1);
+  expect(update("x$review")).toBeNull();
+  expect(update("$review ")).toBeNull();
+  expect(update("")).toBeNull();
+});

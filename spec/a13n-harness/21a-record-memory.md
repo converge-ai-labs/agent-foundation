@@ -109,7 +109,7 @@ The JSON body escapes `<`, `>`, and `&`, so a record cannot close or open a bloc
 
 After a `ContextRestoredEvent` from its own run's primary execution, the Capability delivers nothing more in that run; the next run recalls again.
 
-Each recall emits one `HarnessExtensionEvent(kind="context")` whose payload is `{"type": "memory_recall", "memories": [...]}` with one entry per recalling mount in mount order: `{"memory", "recall": "recalled", "count", "bytes"}` for the records and bytes delivered, or `{"memory", "recall": "timeout" | "failed"}`. It carries no record content.
+Each recall emits one `HarnessExtensionEvent(kind="context")` whose payload is `{"type": "memory_recall", "memories": [...]}` with one entry per recalling mount in mount order: `{"memory", "recall": "recalled", "count", "bytes"}` for the records and bytes delivered, or `{"memory", "recall": "timeout" | "failed"}`. Successful entries also carry `records: [{id, sha256}]` for the leading records actually included after the recall byte budget, hashing each exact UTF-8 record text. They carry no record text. Source references share a 32 KiB budget per observation; `sources_truncated: true` explicitly marks a partial reference list without changing the delivered record count or model context.
 
 ## Invariants
 

@@ -29,6 +29,7 @@ from .repositories import (
     ThreadRepository,
 )
 from .usage import ThreadUsageRepository
+from .voice import VoiceTranscriptRepository
 from .work import WorkRepository
 
 if TYPE_CHECKING:
@@ -59,6 +60,7 @@ class LocalStore:
         self.inspections = InspectionRepository(database.sessions)
         self.work = WorkRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
+        self.voice = VoiceTranscriptRepository(database.sessions, objects)
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)

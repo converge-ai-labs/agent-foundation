@@ -201,18 +201,6 @@ export function NativeWorkspace({
     setOpening(false);
     return () => openingRequest.current?.abort();
   }, [location.pathname, location.search]);
-  useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => {
-      if (
-        [...buffers.values()].some(
-          (entry) => entry.dirty || entry.uncertain || entry.saving,
-        )
-      )
-        event.preventDefault();
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [buffers]);
   const open = async (target: string, line?: number) => {
     openingRequest.current?.abort();
     const controller = new AbortController();

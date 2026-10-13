@@ -101,6 +101,10 @@ People can read and correct what agents recorded. Reading needs `read`; adding, 
 
 A record holds 1 to `memory.record_chars` characters (8000 by default). Records have no ETag, so the last write wins. A write the backend does not confirm answers `409 conflict` with reason `write_unconfirmed`: it may or may not have happened, so list or search before trying again. A backend that cannot answer is `503 unavailable` with dependency `memory:{type}`, and a disabled provider is `422 disabled`. Record changes are audited with the record ID, never the text.
 
+Record responses also include optional `provenance`. In the Console, choose **View source** in a record's menu to see its known creation and last platform-confirmed write, the acting identity, and a link to an accessible run. Technical details include the run, attempt and tool-call IDs. Existing or imported records may have no source. An update to one of these records records only the latest write, not an invented creation source.
+
+Sources are saved separately from provider content. Failed source indexing does not retry or fail a confirmed memory write. Direct provider edits may be missing; if the current text differs from the last recorded write, the Console warns that its sources may be stale. Matching text does not prove that no external edits occurred. This is write attribution, not a full version history or a citation of the user's original message.
+
 ### Recall
 
 When a run starts, each mounted record memory with `recall` on searches for the `memory.recall_limit` records (5 by default) closest to the run's input, and the run receives them before its input as untrusted data, at most `memory.recall_bytes` (8 KiB) per memory. Recall waits at most `memory.recall_seconds` (2 seconds); a memory whose search fails or is too slow is skipped, and the run continues without it. Only the first input of a run recalls, so a run's history does not fill with repeated records.
@@ -161,3 +165,13 @@ People can read and correct what agents wrote. Reading needs `read`, editing and
 Each revision records who made the change: `principal_id` always (for an agent's change, the run's principal), plus `run_id` and `tool_call_id` for an agent's tool call. A file's ETag changes with every change, so an edit based on an old read answers `412 precondition_failed`.
 
 A file holds at most `memory.max_file_bytes` (64 KiB by default). Each file keeps its latest `memory.revisions_per_file` changes (10 by default), and one memory's content and history together fit `memory.max_total_bytes` (32 MiB by default): the oldest history is pruned first, and only content alone over the limit refuses a change, with `409 conflict` and reason `memory_full`. See the [settings reference](configuration-reference.md#memory) for every `memory.*` setting.
+
+## Inspect memories loaded for a reply
+
+An assistant reply can include `memory_sources`. The thread SSE stream sends it in `delta.item.memory_sources` alongside `TEXT_MESSAGE_END`. The run items API returns the same array in the reply's `content.memory_sources`. Save or render the array with the reply. A stream boundary, not message end alone, confirms checkpoint durability.
+
+Each source names the mount (`memory`) and the Service resource (`memory_id`). Record sources contain the IDs and SHA-256 text digests of records that fit the recall budget. File sources distinguish context status from actual loaded files: `files` lists paths, digests, byte counts and whether the delivered prefix was truncated. A file index alone does not mean that all listed files were read. `sources_truncated` means the reference list is partial.
+
+This evidence describes automatic memory delivery during that run. It does not prove the model cited a memory, inventory inherited conversation history, or include explicit memory tool reads. A missing field means no source evidence was captured; an empty `records` or `files` list must be interpreted with its source's `status`. Old replies are not backfilled.
+
+History reads use saved evidence without searching the memory provider again. Editing or deleting a memory does not rewrite earlier source evidence. Digests cannot reconstruct the old text. Current memory content remains subject to the memory API's authorization and availability. Applications decide how to display sources and offer editing controls.

@@ -53,17 +53,17 @@ export function GuideField({
 }) {
   const { t } = useTranslation();
   const modes: { value: GuideMode; label: string }[] = [
-    { value: "inherit", label: t("Inherit") },
+    { value: "inherit", label: t("Use default") },
     { value: "custom", label: t("Custom") },
     { value: "none", label: t("None") },
   ];
   return (
     <div className={styles.guide}>
       <div className={styles.guideHeading}>
-        <span>{t("Guide")}</span>
+        <span>{t("Memory instructions")}</span>
         {!readOnly && (
           <SegmentedControl
-            label={t("Guide")}
+            label={t("Memory instructions")}
             value={value.mode}
             onValueChange={(mode) =>
               onChange({
@@ -81,7 +81,7 @@ export function GuideField({
       </div>
       {value.mode === "custom" ? (
         <TextAreaField
-          label={t("Guide")}
+          label={t("Memory instructions")}
           hideLabel
           readOnly={readOnly}
           required
@@ -89,26 +89,28 @@ export function GuideField({
           value={value.text}
           onChange={(text) => onChange({ ...value, text })}
           hint={t(
-            "What belongs in this memory and how to organize it. Agents read it with their instructions and cannot change it.",
+            "Tell agents what to remember and how to organize it. These instructions guide their behavior; they do not enforce storage rules. Agents cannot edit them.",
           )}
         />
       ) : value.mode === "none" ? (
         <p className={styles.note}>
-          {t("Runs receive no guide for this memory.")}
+          {t(
+            "No usage instructions are added for this memory. Agents can still use it according to their permissions.",
+          )}
         </p>
       ) : (
         <>
           <p className={styles.note}>
             {t(
               kind === "file"
-                ? "Runs use the deployment's guide for file memories, and follow it when it changes."
-                : "Runs use the deployment's guide for record memories, and follow it when it changes.",
+                ? "Use the service's default instructions for file memories. Changes to the defaults apply to future runs."
+                : "Use the service's default instructions for record memories. Changes to the defaults apply to future runs.",
             )}
           </p>
           {inherited && (
             <pre
               className={`${styles.inherited} a13n-scrollbar`}
-              aria-label={t("Inherited guide")}
+              aria-label={t("Default memory instructions")}
             >
               {inherited}
             </pre>

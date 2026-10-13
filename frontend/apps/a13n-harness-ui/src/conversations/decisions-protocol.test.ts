@@ -30,6 +30,13 @@ async function wait(receipt_id: string, status: string) {
         }),
       );
       expect(operation.status, JSON.stringify(operation)).toBe(status);
+      // Receipt status can settle before persistence releases the active root.
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: operation.receipt.thread_id } },
+        }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
     },
     { timeout: 15000 },
   );

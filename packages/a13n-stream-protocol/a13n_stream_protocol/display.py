@@ -26,6 +26,7 @@ from pydantic_ai.messages import (
 
 from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
 from a13n_stream_protocol.fragments import CustomEventAssembler, FragmentState
+from a13n_stream_protocol.memory import MemorySource, memory_sources
 from a13n_stream_protocol.observer import AguiEventProcessor, ObserverContinuation
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
@@ -116,6 +117,8 @@ class ItemRef(BaseModel):
     # Host-selected grouping and native failure diagnostics are not text deltas.
     response_group: str | None = None
     failure: dict[str, JsonValue] | None = None
+    # Sent at message END, not repeated for every text delta.
+    memory_sources: tuple[MemorySource, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class Observed(BaseModel):
@@ -195,6 +198,9 @@ class DisplayContinuation(BaseModel):
     next_ordinal: int = Field(ge=1)
     full_content: bool = False
     response_groups: dict[str, str] = Field(default_factory=dict)
+    memory_sources: dict[str, tuple[MemorySource, ...]] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     arguments: _Arguments | None = None
     fragments: FragmentState = Field(default_factory=FragmentState)
     observer: ObserverContinuation = Field(default_factory=ObserverContinuation)
@@ -298,6 +304,7 @@ class DisplayFold:
         # Unlike full_content, this does not suppress native observations for an interactive Host.
         self.retain_content = retain_content
         self.response_groups: dict[str, str] = {}
+        self.memory_sources: dict[str, tuple[MemorySource, ...]] = {}
 
         def process(source: HarnessStreamEvent[Any], event: Event) -> Event | None:
             selected = processor(source, event) if processor is not None else event
@@ -312,6 +319,7 @@ class DisplayFold:
                 raise ValueError("Display continuation does not match the run, attempt or content policy")
             self.next, self.sequence = state.next_ordinal, state.position.sequence
             self.response_groups, self.arguments = state.response_groups, state.arguments
+            self.memory_sources = state.memory_sources
             self.assembler = CustomEventAssembler.restore(state.fragments)
             self.observer = HarnessAguiStreamObserver.restore(state.observer, processor=process)
 
@@ -330,6 +338,7 @@ class DisplayFold:
             next_ordinal=self.next,
             full_content=self.full_content,
             response_groups=self.response_groups,
+            memory_sources=self.memory_sources,
             arguments=self.arguments,
             fragments=self.assembler.export(),
             observer=self.observer.export(),
@@ -368,6 +377,12 @@ class DisplayFold:
         for payload in events:
             self.sequence += 1
             ref = self._fold(payload)
+            if ref is not None and payload["type"] == "TEXT_MESSAGE_END":
+                sources = self.items[ref.id].content.get("memory_sources")
+                if isinstance(sources, list):
+                    ref = ref.model_copy(
+                        update={"memory_sources": tuple(MemorySource.model_validate(s) for s in sources)}
+                    )
             observed.append(Observed(sequence=self.sequence, event=payload, item=ref))
         if observed and source is not None and (failed := _failed_tool_call(source)) is not None:
             ref = self._fail_tool_call(
@@ -410,6 +425,11 @@ class DisplayFold:
         group = self.response_groups.get(str(content.get("subagentRunId") or "root"))
         if group is not None and "responseGroup" not in content:
             content["responseGroup"] = group
+        scope = str(content.get("subagentRunId") or "root")
+        if event_type == "TEXT_MESSAGE_END" and content.get("role") == "assistant":
+            sources = self.memory_sources.get(scope)
+            if sources is not None:
+                content["memory_sources"] = [item.model_dump(mode="json") for item in sources]
         if event_type == "TOOL_CALL_END":
             content["arguments_complete"] = True
         if (accumulated := _ACCUMULATED.get(event_type)) is not None:
@@ -448,6 +468,13 @@ class DisplayFold:
         ):
             scope = str(assembled.get("subagentRunId") or "root")
             self.response_groups[scope] = f"{self.run_id}:{self.attempt}:{self.sequence}"
+        if assembled.get("name") == "a13n.harness.context" and isinstance(lifecycle, dict):
+            sources = memory_sources(lifecycle)
+            if sources is not None:
+                scope = str(assembled.get("subagentRunId") or "root")
+                kinds = {item.kind for item in sources}
+                kept = tuple(item for item in self.memory_sources.get(scope, ()) if item.kind not in kinds)
+                self.memory_sources[scope] = (*kept, *sources)
         media_input = (
             assembled.get("name") == "a13n.input.media"
             and isinstance(input_event, dict)

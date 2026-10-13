@@ -34,6 +34,19 @@ Model 资源定义提供方连接、请求设置和工作上下文预算。将�
 
 CLI 命令 `setup`、`add model` 和 `add agent` 的新 Model 分支采用相同后端选项和准备规则。API 连接可复用已存密钥元数据或环境变量引用，不暴露密钥字节。订阅账户不可用时，设置提供直接设备/浏览器登录，或显式稍后配置的选项。
 
+### Anthropic 缓存默认值
+
+通过 Anthropic 连接创建 Model 时，会保存以下显式分块缓存设置，自定义模型 ID 和兼容端点也适用：
+
+```yaml
+settings:
+  anthropic_cache_instructions: true
+  anthropic_cache_tool_definitions: true
+  anthropic_cache_messages: true
+```
+
+所有 Anthropic 预设均包含这三个字段。为兼容端点，Harness UI 使用它们，而不是统一 `cache` 或顶层 `anthropic_cache`。高级设置仍可编辑：显式传入的映射，包括 `false`、缓存时长或空映射，均保持不变。OpenRouter 等其他协议不会仅因模型是 Claude 就获得这些字段。已有 Model 文件不会迁移；可手动添加这些字段，或显式应用预设来启用。
+
 ## 网关会话亲和性
 
 在 **Add Model** 或首次设置中选择 **Gateway session affinity** 预设，或在 **Session affinity header** 中填写其他名称。CLI `add model` 提供同样预设和自定义输入。保存结果是普通 header 名称，不是预设引用：

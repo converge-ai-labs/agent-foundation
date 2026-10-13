@@ -42,6 +42,7 @@
     "openapi-fetch": "0.17.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-easy-crop": "^6.2.4",
     "react-i18next": "^15.5.0",
     "react-markdown": "^10.1.0",
     "react-router": "^8.3.1",

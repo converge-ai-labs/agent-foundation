@@ -324,6 +324,111 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
+            <div id="live">
+              <SettingsSection
+                title="Live voice"
+                description="A continuous voice conversation with a lightweight task executor. Uses your Codex subscription. Changes apply when you start a new voice session."
+              >
+                <SettingsRow
+                  label="Live"
+                  description="Your microphone stays off until you start Live. Stopping voice leaves tasks running."
+                >
+                  <ChoiceField
+                    label="Live"
+                    hideLabel
+                    value={
+                      get(["live", "enabled"]) === true ? "enabled" : "disabled"
+                    }
+                    options={[
+                      { value: "disabled", label: "Disabled" },
+                      { value: "enabled", label: "Enabled" },
+                    ]}
+                    onValueChange={(value) =>
+                      set(["live", "enabled"], value === "enabled")
+                    }
+                  />
+                </SettingsRow>
+                {scalar(
+                  "Live Codex Model",
+                  ["live", "model"],
+                  (selectors.data?.models ?? [])
+                    .filter((model) => model.route.startsWith("openai-codex:"))
+                    .map((model) => ({
+                      value: model.model_id,
+                      label: model.name,
+                    })),
+                  "Choose a Codex Model",
+                )}
+                <SettingsRow label="Voice">
+                  <ChoiceField
+                    label="Voice"
+                    hideLabel
+                    value={text(["live", "voice"]) || "cove"}
+                    options={[
+                      "cove",
+                      "juniper",
+                      "maple",
+                      "spruce",
+                      "ember",
+                      "vale",
+                      "breeze",
+                      "arbor",
+                      "sol",
+                      "aube",
+                      "bubbie",
+                      "haetsal",
+                      "hanul",
+                      "himari",
+                      "leher",
+                      "miko",
+                      "neer",
+                      "porto",
+                      "rindo",
+                      "rio",
+                      "rivage",
+                      "selva",
+                      "sonna",
+                      "tinta",
+                      "viola",
+                    ].map((value) => ({
+                      value,
+                      label: value[0]!.toUpperCase() + value.slice(1),
+                    }))}
+                    onValueChange={(value) => set(["live", "voice"], value)}
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Workspace files"
+                  description="File access in Live's own workspace. No shell, skills, plugins or MCP servers."
+                >
+                  <ChoiceField
+                    label="Live file access"
+                    hideLabel
+                    value={
+                      get(["live", "files_enabled"]) === false
+                        ? "disabled"
+                        : "enabled"
+                    }
+                    options={[
+                      { value: "enabled", label: "Enabled" },
+                      { value: "disabled", label: "Disabled" },
+                    ]}
+                    onValueChange={(value) =>
+                      set(["live", "files_enabled"], value === "enabled")
+                    }
+                  />
+                </SettingsRow>
+                <FormField label="Live instructions">
+                  <Textarea
+                    value={text(["live", "instructions"])}
+                    onChange={(event) =>
+                      set(["live", "instructions"], event.target.value)
+                    }
+                    rows={3}
+                  />
+                </FormField>
+              </SettingsSection>
+            </div>
             <SettingsSection
               title="Memory"
               description="Shared file memory lives beside this configuration: global preferences across conversations, plus separate memory for each Project."

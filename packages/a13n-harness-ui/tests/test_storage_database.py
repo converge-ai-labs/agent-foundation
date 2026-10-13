@@ -115,6 +115,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "configuration_source",
             "current_configuration",
             "environment_binding",
+            "live_transcript_head",
             "project_model_preference",
             "coordinator",
             "coordinator_worker",

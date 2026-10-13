@@ -158,6 +158,18 @@ class ThreadRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class LiveTranscriptHeadRecord(Base):
+    """Voice transcript authority, independent of ordinary execution checkpoints."""
+
+    __tablename__ = "live_transcript_head"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    object_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    logical_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+
+
 class ThreadWorkRecord(Base):
     """Small, replaceable work projection independent of transcript indexes."""
 
@@ -216,7 +228,7 @@ class ThreadConfigurationRecord(Base):
     __tablename__ = "thread_configuration"
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
-        CheckConstraint("agent_source_kind IN ('agent', 'markdown', 'memory')", name="agent_source_kind"),
+        CheckConstraint("agent_source_kind IN ('agent', 'markdown', 'memory', 'live')", name="agent_source_kind"),
     )
 
     thread_id: Mapped[str] = mapped_column(

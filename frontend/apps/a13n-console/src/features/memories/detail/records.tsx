@@ -33,6 +33,7 @@ import {
 import { ErrorNotice, Loading, Timestamp } from "../../../shared/feedback";
 import { FormActions, TextAreaField } from "../../../shared/forms";
 import shared from "../../../shared/shared.module.css";
+import { RecordSourceDialog } from "./record-source";
 import { isUnconfirmed, memoryKeys, memoryQueries } from "../api";
 import styles from "../memories.module.css";
 
@@ -73,6 +74,7 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
   const records = useQuery(queries.records(memory.id, search, page.cursor));
   // The editor lives outside the row menu, which would take its keystrokes.
   const editor = useResourceRows<MemoryRecord>();
+  const source = useResourceRows<MemoryRecord>();
   const add = can("run") ? (
     <RecordDialog
       memory={memory}
@@ -117,17 +119,24 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
             caption={t("Records")}
             items={records.data.items}
             rowMenuLabel={t("Record actions")}
-            rowMenu={
-              can("run")
-                ? (item) => (
-                    <RecordActions
-                      memory={memory}
-                      record={item}
-                      onEdit={(element) => editor.activate(item, element)}
-                    />
-                  )
-                : undefined
-            }
+            rowMenu={(item) => (
+              <>
+                <MenuItem
+                  onClick={(event) =>
+                    source.activate(item, event.currentTarget)
+                  }
+                >
+                  {t("View source")}
+                </MenuItem>
+                {can("run") && (
+                  <RecordActions
+                    memory={memory}
+                    record={item}
+                    onEdit={(element) => editor.activate(item, element)}
+                  />
+                )}
+              </>
+            )}
             columns={[
               {
                 label: t("Record"),
@@ -187,6 +196,9 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
           )}
           action={add}
         />
+      )}
+      {source.selected && (
+        <RecordSourceDialog record={source.selected} {...source.control} />
       )}
       {editor.selected && (
         <RecordDialog

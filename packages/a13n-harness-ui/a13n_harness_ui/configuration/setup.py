@@ -52,6 +52,7 @@ class SetupSelection(StrictModel):
     project_path: str | None = Field(default=None, min_length=1, max_length=4096)
     environment_profile: Literal["environment-native", "environment-sandbox"]
     shell_review: bool = True
+    enable_live: bool = True
     shell_review_model: str | None = Field(default=None, min_length=1, max_length=480, pattern=r"^\S+$")
     include_default_subagents: bool | None = None
 
@@ -333,6 +334,23 @@ async def preview_setup(
                 if resource["id"] == (selection.new_agent_id or selection.default_agent):
                     resource["model"] = connection_model
                     files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
+    live_model = selection.existing_model_id or connection_model
+    live_authentication = (
+        selected_model[1].get("authentication")
+        if selected_model is not None
+        else selection.model.authentication.model_dump()
+        if selection.model is not None
+        else None
+    )
+    if (
+        "live" not in root
+        and selection.enable_live
+        and live_model is not None
+        and isinstance(live_authentication, dict)
+        and live_authentication.get("kind") == "codex_subscription"
+    ):
+        root["live"] = {"enabled": True, "model": live_model, "voice": "cove", "files_enabled": True}
+        files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if seed_review:
         authentication = (
             selected_model[1].get("authentication")

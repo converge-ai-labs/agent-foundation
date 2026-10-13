@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
@@ -262,15 +263,23 @@ class _FileMemoryRun(FileMemoryCapability):
             except MemoryStoreError:
                 # An unavailable memory keeps its cursor and is read again next run.
                 observed[mount.name] = {"memory": mount.name, "context": "unavailable"}
-        rendered = _layout(snapshots, self.limits)
+        file_sources: dict[str, list[JsonValue]] = {}
+        rendered = _layout(snapshots, self.limits, file_sources=file_sources)
         for snapshot in snapshots:
             self._positions._set(snapshot.mount.key, snapshot.cursor)
             if rendered is None:
                 kind, content = ("unchanged" if snapshot.changed == () else "omitted"), ""
             else:
                 kind, content = rendered.get(snapshot.mount.name, ("unchanged", ""))
-            observed[snapshot.mount.name] = {"memory": snapshot.mount.name, "context": kind, "bytes": _size(content)}
+            observed[snapshot.mount.name] = {
+                "memory": snapshot.mount.name,
+                "context": kind,
+                "bytes": _size(content),
+                "cursor": snapshot.cursor,
+                "files": file_sources.get(snapshot.mount.name, []),
+            }
         memories: list[JsonValue] = [observed[mount.name] for mount in self.mounts]
+        _bound_sources(memories, "files")
         payload: dict[str, JsonValue] = {"type": "memory_context", "memories": memories}
         if rendered is None:
             payload["fallback_bytes"] = _size(_FILE_CONTEXT_FALLBACK)
@@ -318,7 +327,12 @@ async def _snapshot(mount: FileMount, since: str | None) -> _Snapshot:
     return _Snapshot(mount, feed.cursor, entries, changed, loaded)
 
 
-def _layout(snapshots: Sequence[_Snapshot], limits: FileMemoryLimits) -> dict[str, tuple[str, str]] | None:
+def _layout(
+    snapshots: Sequence[_Snapshot],
+    limits: FileMemoryLimits,
+    *,
+    file_sources: dict[str, list[JsonValue]] | None = None,
+) -> dict[str, tuple[str, str]] | None:
     """Each memory's bounded block, or None to deliver one fixed-size view/cleanup reminder.
 
     A change list that does not fit its share becomes full context, whose index
@@ -326,14 +340,18 @@ def _layout(snapshots: Sequence[_Snapshot], limits: FileMemoryLimits) -> dict[st
     """
     full = {snapshot.mount.name for snapshot in snapshots if snapshot.changed is None}
     while True:
-        rendered, overflow = _render(snapshots, full, limits)
+        rendered, overflow = _render(snapshots, full, limits, file_sources=file_sources)
         if not overflow:
             return rendered
         full |= overflow
 
 
 def _render(
-    snapshots: Sequence[_Snapshot], full: set[str], limits: FileMemoryLimits
+    snapshots: Sequence[_Snapshot],
+    full: set[str],
+    limits: FileMemoryLimits,
+    *,
+    file_sources: dict[str, list[JsonValue]] | None = None,
 ) -> tuple[dict[str, tuple[str, str]] | None, set[str]]:
     kinds = {
         snapshot.mount.name: "full" if snapshot.mount.name in full else "changes"
@@ -385,6 +403,21 @@ def _render(
             overflow.add(name)
             continue
         rendered[name] = (kind, _block(name, kind, body))
+    if not overflow and file_sources is not None:
+        file_sources.clear()
+        for name in rendered:
+            refs: list[JsonValue] = []
+            for item in files[name]:
+                if isinstance(item, dict) and isinstance(text := item.get("content"), str):
+                    refs.append(
+                        {
+                            "path": item["path"],
+                            "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                            "bytes": _size(text),
+                            "truncated": "truncated" in item,
+                        }
+                    )
+            file_sources[name] = refs
     return rendered, overflow
 
 
@@ -621,7 +654,18 @@ class _RecordMemoryRun(RecordMemoryCapability):
                 observed.append({"memory": mount.name, "recall": outcome})
                 continue
             block, count = _recall_block(mount.name, records, self.limits.recall_bytes)
-            observed.append({"memory": mount.name, "recall": outcome, "count": count, "bytes": _size(block)})
+            observed.append(
+                {
+                    "memory": mount.name,
+                    "recall": outcome,
+                    "count": count,
+                    "bytes": _size(block),
+                    "records": [
+                        {"id": record.id, "sha256": hashlib.sha256(record.text.encode()).hexdigest()}
+                        for record in records[:count]
+                    ],
+                }
+            )
             if block:
                 blocks.append(
                     ModelContextBlock(
@@ -630,6 +674,7 @@ class _RecordMemoryRun(RecordMemoryCapability):
                         content=block,
                     )
                 )
+        _bound_sources(observed, "records")
         await ctx.deps.events.emit(
             HarnessExtensionEvent(kind="context", payload={"type": "memory_recall", "memories": observed})
         )
@@ -645,6 +690,23 @@ class _RecordMemoryRun(RecordMemoryCapability):
         except Exception:
             return "failed", ()
         return "recalled", records[: self.limits.recall_limit]
+
+
+def _bound_sources(memories: list[JsonValue], field: str) -> None:
+    """Reserve headroom under the extension-event bound; unusually large source lists are explicitly partial."""
+    remaining = 32 * 1024
+    for memory in memories:
+        if not isinstance(memory, dict) or not isinstance(refs := memory.get(field), list):
+            continue
+        kept: list[JsonValue] = []
+        for ref in refs:
+            size = _size(_encode(ref)) + 1
+            if size > remaining:
+                memory["sources_truncated"] = True
+                break
+            kept.append(ref)
+            remaining -= size
+        memory[field] = kept
 
 
 def _input_text(prompt: str | Sequence[UserContent] | None) -> str:

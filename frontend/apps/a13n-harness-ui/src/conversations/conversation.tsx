@@ -929,46 +929,52 @@ function ConversationContent({
             }
             modelId={draft.modelId}
             leadingControls={
-              <RunEnvironments
-                catalog={selectors.data}
-                configuration={thread?.configuration}
-                value={draft.environment}
-                onChange={(value) => {
-                  draft.environment = value;
-                  draft.notify();
-                }}
-                disabled={
-                  !thread ||
-                  draft.submission.kind === "pending" ||
-                  draft.submission.kind === "unknown"
-                }
-              />
+              thread?.configuration.agent_source.kind === "live" ? (
+                <Link to="/settings#live">Live settings</Link>
+              ) : (
+                <RunEnvironments
+                  catalog={selectors.data}
+                  configuration={thread?.configuration}
+                  value={draft.environment}
+                  onChange={(value) => {
+                    draft.environment = value;
+                    draft.notify();
+                  }}
+                  disabled={
+                    !thread ||
+                    draft.submission.kind === "pending" ||
+                    draft.submission.kind === "unknown"
+                  }
+                />
+              )
             }
-            controls={() => (
-              <ThreadRunChoices
-                catalog={selectors.data}
-                agentId={thread?.configuration.agent_source.id ?? ""}
-                defaultModelId={thread?.configuration.default_model_id}
-                modelId={draft.modelId}
-                controls={draft.controls}
-                onControlsChange={(value) => {
-                  draft.controls = value;
-                  draft.notify();
-                }}
-                disabled={
-                  !thread ||
-                  agentSelection.isPending ||
-                  draft.submission.kind === "pending" ||
-                  draft.submission.kind === "unknown"
-                }
-                onAgentChange={(value) => agentSelection.mutate(value)}
-                onModelChange={(value) => {
-                  draft.modelId = value;
-                  draft.controls = {};
-                  draft.notify();
-                }}
-              />
-            )}
+            controls={() =>
+              thread?.configuration.agent_source.kind === "live" ? null : (
+                <ThreadRunChoices
+                  catalog={selectors.data}
+                  agentId={thread?.configuration.agent_source.id ?? ""}
+                  defaultModelId={thread?.configuration.default_model_id}
+                  modelId={draft.modelId}
+                  controls={draft.controls}
+                  onControlsChange={(value) => {
+                    draft.controls = value;
+                    draft.notify();
+                  }}
+                  disabled={
+                    !thread ||
+                    agentSelection.isPending ||
+                    draft.submission.kind === "pending" ||
+                    draft.submission.kind === "unknown"
+                  }
+                  onAgentChange={(value) => agentSelection.mutate(value)}
+                  onModelChange={(value) => {
+                    draft.modelId = value;
+                    draft.controls = {};
+                    draft.notify();
+                  }}
+                />
+              )
+            }
             profile={profile}
             unauthorized={unauthorized}
             reconcile={reconcile}

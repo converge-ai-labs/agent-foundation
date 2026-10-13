@@ -356,3 +356,37 @@ it("keeps orphan tool arguments incomplete after END even if the suffix is valid
   expect(parseItemValue(presented.arguments, presented.incomplete)).toBe("{}");
   expect(state.incomplete).toBe(true);
 });
+
+it("keeps reply memory sources from END metadata without altering the answer", () => {
+  const normalizer = new DisplayNormalizer();
+  const items = new Map<string, DisplayItem>();
+  normalizer.apply(items, delta(1, "Hello"));
+  const sources = [
+    {
+      kind: "record",
+      memory: "facts",
+      memory_id: "mem_1",
+      status: "recalled",
+      records: [{ id: "r1", sha256: "digest" }],
+    },
+  ];
+  const end = {
+    ...delta(2),
+    event: { type: "TEXT_MESSAGE_END", messageId: "m" },
+    item: {
+      ...delta(2).item!,
+      state: "completed" as const,
+      memory_sources: sources,
+    },
+  };
+  expect(isItemRef(end.item)).toBe(true);
+  normalizer.apply(items, end);
+  expect(items.get(end.item.id)?.content.text).toBe("Hello");
+  expect(items.get(end.item.id)?.content.memory_sources).toEqual(sources);
+  sources[0].records[0].id = "changed";
+  expect(
+    (items.get(end.item.id)?.content.memory_sources as typeof sources)[0]
+      .records[0].id,
+  ).toBe("r1");
+  expect(isItemRef({ ...end.item, memory_sources: [null] })).toBe(false);
+});

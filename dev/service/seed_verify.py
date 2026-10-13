@@ -227,7 +227,7 @@ def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
     ]
     yield (
         "The shared workspace shows a skill read, a file write and a command",
-        [name for name, _ in calls] == ["view", "write", "shell_exec"] and "/.a13n/skills/" in calls[0][1],
+        [name for name, _ in calls] == ["view", "write", "shell_exec"] and "/.agents/skills/" in calls[0][1],
     )
     native, inline, placed = (api.get(f"/api/v1/runs/{index[name]}/items")["items"] for name in DELIVERIES)
     media_types = {

@@ -43,6 +43,7 @@ from a13n_service.resources.memories.tables import (
     MemoryFileRevisionRow,
     MemoryFileRow,
     MemoryFileStoreRow,
+    MemoryRecordSourceRow,
     MemoryRow,
 )
 from a13n_service.resources.models.routes import router as models_router
@@ -303,6 +304,7 @@ OSS = Distribution(
         MemoryFileStoreRow,
         MemoryFileRow,
         MemoryFileRevisionRow,
+        MemoryRecordSourceRow,
         SessionRow,
         ThreadRow,
         EnvironmentRow,

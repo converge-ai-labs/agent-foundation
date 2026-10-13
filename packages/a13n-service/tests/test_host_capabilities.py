@@ -39,7 +39,7 @@ from a13n_service.distribution import OSS
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.agents.schemas import SkillSelection
+from a13n_service.resources.agents.schemas import IsolatedSkillSync, SkillSelection
 from a13n_service.resources.agents.toolsets import FetchConfiguration, SearchConfiguration, WebTools, web_configuration
 from a13n_service.resources.assets.service import get_asset, read_asset_content
 from a13n_service.resources.providers.schemas import ProviderCreate
@@ -348,33 +348,43 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
         proofs.append("proved")
 
     def attempt() -> AbstractCapability[AgentContext]:
-        return build_skills([pinned], runtime=runtime, workspace_id=tenant.workspace_id, prove_lease=prove_lease)
+        from a13n_service.runs.skill_cache import Cache
+
+        return build_skills(
+            [pinned],
+            runtime=runtime,
+            workspace_id=tenant.workspace_id,
+            prove_lease=prove_lease,
+            cache=Cache(),
+            sync=IsolatedSkillSync(),
+        )
 
     script = Script(["done"])
     assert (await run(script, [attempt()], environment=mount(tmp_path))).output == "done"
-    root = tmp_path / ENVIRONMENT / ".a13n" / "skills"
-    assert (root / pinned.digest / "SKILL.md").read_bytes() == SKILL
-    assert (root / pinned.digest / "scripts" / "check.py").read_bytes() == b"print('ok')\n"
-    assert (root / f"{pinned.digest}.complete").read_text() == pinned.digest
-    assert f"<path>/workspace/.a13n/skills/{pinned.digest}</path>" in script.instructions[0]
+    root = tmp_path / ENVIRONMENT / ".agents" / "skill-cache"
+    assert (root / pinned.digest / pinned.name / "SKILL.md").read_bytes() == SKILL
+    assert (root / pinned.digest / pinned.name / "scripts" / "check.py").read_bytes() == b"print('ok')\n"
+    assert f"<path>/workspace/.agents/skill-cache/{pinned.digest}/{pinned.name}</path>" in script.instructions[0]
     assert "Review a change for correctness." in script.instructions[0]
-    assert proofs == ["proved"]
+    assert proofs == ["proved", "proved"]
 
-    # A later attempt finds the completion marker: it writes nothing and never reads the package again.
+    # A later attempt updates cache-use metadata but neither rewrites nor downloads the package.
     await runtime.objects.delete(package)
     script = Script(["done"])
     assert (await run(script, [attempt()], environment=mount(tmp_path))).output == "done"
-    assert pinned.digest in script.instructions[0] and proofs == ["proved"]
+    assert pinned.digest in script.instructions[0] and proofs == ["proved", "proved"]
 
-    # Without the marker the package is read again, and its bytes must still match the revision's digest. The
+    # After eviction the archive is read again and must still match its digest.
     # Harness keeps the object store's error as the cause, for the attempt to classify.
-    (root / f"{pinned.digest}.complete").unlink()
+    import shutil
+
+    shutil.rmtree(root / pinned.digest)
     (Path(runtime.settings.objects.root) / package).write_bytes(archive({"SKILL.md": SKILL}))
     with pytest.raises(DefinitionError) as failed:
         await run(Script(["done"]), [attempt()], environment=mount(tmp_path))
     cause = failed.value.__cause__
     assert isinstance(cause, ServiceError) and (cause.code, cause.details) == ("unavailable", {"dependency": "objects"})
-    assert not (root / f"{pinned.digest}.complete").exists()
+    assert not (root / pinned.digest).exists()
 
 
 # Assets.

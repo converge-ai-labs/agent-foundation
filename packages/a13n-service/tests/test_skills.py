@@ -632,7 +632,7 @@ async def test_pins_and_the_agents_pinning_a_skill(service) -> None:  # type: ig
     assert archived.value.details["reason"] == "archived"
 
 
-async def _skilled_run(service, runs_kit, scripted_model, tmp_path) -> tuple[dict, Path]:  # type: ignore[no-untyped-def]
+async def _skilled_run(service, runs_kit, scripted_model, tmp_path, mode="shared", **options) -> tuple[dict, Path]:  # type: ignore[no-untyped-def]
     """A run of an agent with a pinned skill in a local primary environment, and where its skills materialize."""
     await runs_kit.pause_sweeps(service)
     provider = await service.client.post(
@@ -653,11 +653,12 @@ async def _skilled_run(service, runs_kit, scripted_model, tmp_path) -> tuple[dic
         service,
         scripted_model,
         skills=[{"skill_id": skill["id"]}],
+        skill_sync={"mode": mode, **({"cache_count": 1} if mode == "isolated" else {})},
         default_environment_template_id=template.json()["id"],
     )
-    run = (await runs_kit.start_thread(service, agent, "review it"))["run"]
+    run = (await runs_kit.start_thread(service, agent, "review it", **options))["run"]
     [mount] = run["environment_mounts"]
-    return run, tmp_path / mount["environment_id"] / ".a13n" / "skills"
+    return run, tmp_path / mount["environment_id"] / ".agents" / ("skill-cache" if mode == "isolated" else "skills")
 
 
 def _with_local_environments(settings: Settings) -> Settings:
@@ -670,13 +671,14 @@ def _with_local_environments(settings: Settings) -> Settings:
     )
 
 
+@pytest.mark.parametrize("mode", ["shared", "isolated"])
 async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_a_later_attempt(
-    serve, settings: Settings, scripted_model, runs_kit, monkeypatch, tmp_path
+    serve, settings: Settings, scripted_model, runs_kit, monkeypatch, tmp_path, mode
 ) -> None:  # type: ignore[no-untyped-def]
     """An object store outage while a run materializes its pinned skills ends the attempt, and a later one
     retries."""
     async with serve(settings=_with_local_environments(settings)) as service:
-        run, skills_root = await _skilled_run(service, runs_kit, scripted_model, tmp_path)
+        run, skills_root = await _skilled_run(service, runs_kit, scripted_model, tmp_path, mode)
 
         async def unavailable(*args: object, **kwargs: object) -> None:
             raise ServiceError("unavailable", "The object store is unavailable", {"dependency": "objects"})
@@ -687,23 +689,27 @@ async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_
         assert released["status"] == "accepted", released
         attempts = (await service.client.get(f"{service.api}/runs/{run['id']}/attempts")).json()["items"]
         assert [(item["status"], item["failure"]["code"]) for item in attempts] == [("failed", "attempt_failed")]
-        assert not list(skills_root.glob("*.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.rglob("SKILL.md")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob(".cache/pins/*/*"))
 
         monkeypatch.undo()
         scripted_model.say("Reviewed")
         await (await runs_kit.attempt(service))
         completed = await runs_kit.get_run(service, run["id"])
-        assert (completed["status"], completed["attempts"]) == ("completed", 2), completed
-        [document] = skills_root.glob("*/SKILL.md")
-        assert document.read_bytes() == DOCUMENT and (skills_root / f"{document.parent.name}.complete").exists()
+        attempts = (await service.client.get(f"{service.api}/runs/{run['id']}/attempts")).json()
+        assert (completed["status"], completed["attempts"]) == ("completed", 2), str(attempts)
+        assert not list(skills_root.glob(".cache/pins/*/*"))
+        [document] = skills_root.rglob("SKILL.md")
+        assert document.read_bytes() == DOCUMENT and document.parent.name == "code-review"
 
 
+@pytest.mark.parametrize("mode", ["shared", "isolated"])
 async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
-    serve, settings: Settings, scripted_model, runs_kit, monkeypatch, tmp_path
+    serve, settings: Settings, scripted_model, runs_kit, monkeypatch, tmp_path, mode
 ) -> None:  # type: ignore[no-untyped-def]
     """The Harness wraps what a skill materializer raises; a lost lease still ends the attempt without a seal."""
     async with serve(settings=_with_local_environments(settings)) as service:
-        run, skills_root = await _skilled_run(service, runs_kit, scripted_model, tmp_path)
+        run, skills_root = await _skilled_run(service, runs_kit, scripted_model, tmp_path, mode)
 
         async def lost(*args: object, **kwargs: object) -> None:
             raise LeaseLost()
@@ -713,4 +719,98 @@ async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
             await (await runs_kit.attempt(service))
         running = await runs_kit.get_run(service, run["id"])
         assert running["status"] == "running", running
-        assert not list(skills_root.glob("*.complete")) and scripted_model.requests.empty()
+        assert not list(skills_root.rglob("SKILL.md")) and scripted_model.requests.empty()
+        assert not list(skills_root.glob(".cache/pins/*/*"))
+
+
+async def test_worker_reclaims_idle_cache_and_releases_its_reader_pin(
+    serve, settings: Settings, scripted_model, runs_kit, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    async with serve(settings=_with_local_environments(settings)) as service:
+        run, root = await _skilled_run(service, runs_kit, scripted_model, tmp_path, "isolated")
+        old = "a" * 64
+        (root / old / "old").mkdir(parents=True)
+        (root / old / "old" / "SKILL.md").write_bytes(b"old package")
+        (root / ".cache" / "pins" / old).mkdir(parents=True)
+        (root / ".cache" / "entries").mkdir(parents=True)
+        (root / ".cache" / "entries" / old).write_text("1")
+        scripted_model.say("Reviewed")
+        await (await runs_kit.attempt(service))
+        completed = await runs_kit.get_run(service, run["id"])
+        assert completed["status"] == "completed", completed
+        assert not (root / old).exists()
+        [document] = root.glob("*/*/SKILL.md")
+        assert document.read_bytes() == DOCUMENT
+        assert not list(root.glob(".cache/pins/*/*"))
+        assert not list(root.glob(".cache/evict/*"))
+
+
+async def test_run_override_switches_shared_agent_to_isolated_materialization(
+    serve, settings: Settings, scripted_model, runs_kit, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    async with serve(settings=_with_local_environments(settings)) as service:
+        run, shared = await _skilled_run(
+            service,
+            runs_kit,
+            scripted_model,
+            tmp_path,
+            options={"overrides": {"skill_sync": {"mode": "isolated"}}},
+        )
+        scripted_model.say("Reviewed")
+        await (await runs_kit.attempt(service))
+        completed = await runs_kit.get_run(service, run["id"])
+        assert completed["status"] == "completed", completed
+        assert not shared.exists()
+        root = shared.parent / "skill-cache"
+        [document] = root.glob("*/*/SKILL.md")
+        assert document.read_bytes() == DOCUMENT
+        assert not list(root.glob(".cache/pins/*/*"))
+
+
+@pytest.mark.parametrize("parent_mode,child_mode", [("shared", "isolated"), ("isolated", "shared")])
+async def test_inline_child_uses_its_own_skill_mode_in_shared_environment(
+    serve, settings: Settings, scripted_model, runs_kit, tmp_path, parent_mode, child_mode
+) -> None:  # type: ignore[no-untyped-def]
+    async with serve(settings=_with_local_environments(settings)) as service:
+        await runs_kit.pause_sweeps(service)
+        provider = await service.client.post(
+            f"{service.api}/environment-providers", json={"type": "local", "name": "Local"}
+        )
+        assert provider.status_code == 201, provider.text
+        template = await service.client.post(
+            f"{service.api}/environment-templates",
+            json={
+                "name": "Local",
+                "provider_id": provider.json()["id"],
+                "config": {"recipe": {"root": {"path": str(tmp_path)}}},
+            },
+        )
+        assert template.status_code == 201, template.text
+        parent = await create(service, archive({"SKILL.md": DOCUMENT + b"Parent\n"}), "parent")
+        child = await create(service, archive({"SKILL.md": DOCUMENT + b"Child\n"}), "child")
+        agent = await runs_kit.delegating(
+            service,
+            scripted_model,
+            "inline",
+            skills=[{"skill_id": parent["id"]}],
+            skill_sync={"mode": parent_mode},
+            worker={"skills": [{"skill_id": child["id"]}], "skill_sync": {"mode": child_mode}},
+            edge={"environment": {"mode": "shared"}},
+            default_environment_template_id=template.json()["id"],
+        )
+        scripted_model.call(
+            "delegate", {"subagent": "helper", "prompt": "review"}, call_id="call_child", to="Role: coordinator"
+        )
+        scripted_model.say("Child reviewed", to="Role: worker")
+        scripted_model.say("Done", to="Role: coordinator")
+        run = (await runs_kit.start_thread(service, agent, "ask the helper"))["run"]
+        await (await runs_kit.attempt(service))
+        completed = await runs_kit.get_run(service, run["id"])
+        assert completed["status"] == "completed", completed
+        [mount] = run["environment_mounts"]
+        root = tmp_path / mount["environment_id"] / ".agents"
+        shared = root / "skills" / "code-review" / "SKILL.md"
+        [isolated] = (root / "skill-cache").glob("*/*/SKILL.md")
+        assert shared.read_bytes() == DOCUMENT + (b"Parent\n" if parent_mode == "shared" else b"Child\n")
+        assert isolated.read_bytes() == DOCUMENT + (b"Child\n" if child_mode == "isolated" else b"Parent\n")
+        assert not list((root / "skill-cache").glob(".cache/pins/*/*"))

@@ -1,0 +1,18 @@
+.editor {
+  display: grid;
+  gap: 16px;
+}
+.stage {
+  position: relative;
+  height: clamp(220px, 40dvh, 320px);
+  overflow: hidden;
+  border-radius: 8px;
+  background: #17191e;
+}
+.loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #fff;
+  font-size: 13px;
+}

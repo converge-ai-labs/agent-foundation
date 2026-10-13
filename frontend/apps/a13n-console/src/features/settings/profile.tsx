@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
+import { ImagePicker } from "../../shared/forms";
 import { useClient, type IdentityData } from "../../auth/context";
 import { UserAvatar } from "../../layout/avatar";
 import { representation, type Schema } from "../../shared/api";
@@ -163,10 +163,6 @@ function ProfileForm({
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      if (file && file.size > MAX_IMAGE_BYTES)
-        throw new Error(
-          t("Choose a PNG, JPEG, or WebP image smaller than 5 MB."),
-        );
       const headers = {
         "If-Match": current.etag,
         "Content-Type": file?.type ?? "application/octet-stream",
@@ -248,13 +244,18 @@ function ProfileForm({
       >
         <SettingsRow
           label={t(target.kind === "personal" ? "Avatar" : "Icon")}
-          description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
+          description={t(
+            "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.",
+          )}
         >
           <ImagePicker
             hasImage={!!current.value.image_url}
             editable={editable}
             pending={pending}
-            onChange={(file) => image.mutate(file)}
+            description={null}
+            onChange={async (file) => {
+              await image.mutateAsync(file);
+            }}
           >
             <UserAvatar
               name={current.value.name}

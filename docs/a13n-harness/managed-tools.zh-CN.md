@@ -32,6 +32,8 @@ permissions = ToolPermissionsCapability(
 
 规则优先级依次为确切匹配、最长 `.*` 或 `/*` 前缀、`*`、`default`。`inherit` 使用工具默认值；可信代码未显式声明时为不审查的 `allow`。外部/提供方原生工具保留独立边界。仅有审查器和风险规则不会开启审查；需为待评估工具选择 `review`。`allow` 继续，`deny` 在自定义验证前失败，`ask` 请求人工审批，`review` 咨询匹配审查器。未配置或没有匹配审查器时，review 不增加限制。所有模式都不提供凭据，也不绕过 Host/Environment 策略。
 
+规则或 `default` 选出的显式权限会覆盖工具原生的 `requires_approval=True` 声明。例如，`allow` 不再因该声明要求审批，`review` 则交由配置的审查器和风险策略决定。最终匹配到 `inherit`，或未安装 `ToolPermissionsCapability` 时，保留原生声明。这一规则适用于所有 Host 和动态准备的工具，且不会修改共享的源工具。若要在更广泛的覆盖规则下保留某个插件工具的原生审批行为，为它配置 `inherit` 规则。工具函数、验证器或审批 wrapper 在运行时抛出的 `ApprovalRequired` 仍会请求确认；自动放行不会被当作人工批准。
+
 ### 配置或替换审查器
 
 同一个 `ToolPermissionsCapability` 负责可选审查配置、审查器选择和单 Run 审查生命周期。模型审查器使用没有执行工具的独立 Agent：

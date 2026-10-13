@@ -4,10 +4,12 @@ import { Hero } from "./hero";
 import { mountMarks } from "./mark";
 import { Nav } from "./nav";
 import type { Page } from "./page";
+import { mountStars } from "./stars";
 
 const RESIZE_SETTLE = 120; // ms
 
 async function boot() {
+  mountStars();
   const display = cssVar("--display");
   // the hero measures its name with the display face
   await fontsReady(`700 100px ${display}`);

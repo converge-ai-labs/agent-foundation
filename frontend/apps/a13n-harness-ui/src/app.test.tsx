@@ -1215,6 +1215,65 @@ it("persists generated and edited collaboration names across visits and rejects 
   await screen.findByRole("button", { name: "Your collaboration name: Alex" });
 });
 
+it("shows Live entries only after enabling and saving, and hides them again without a reload", async () => {
+  window.history.replaceState(null, "", "/settings");
+  const rootSource = {
+    ...source,
+    relative_path: "custom-root.yaml",
+    resource_kind: "root",
+    resource_ids: [],
+  };
+  let content =
+    'schema_version: "1"\nlive: {enabled: false, model: model-codex}\n';
+  let writes = 0;
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    const path = decodeURIComponent(new URL(request.url).pathname);
+    if (path === "/api/voice")
+      return json({ enabled: parse(content).live.enabled });
+    if (path === "/api/configuration/sources")
+      return json({ generation_digest: "g", sources: [rootSource] });
+    if (path === "/api/configuration/sources/custom-root.yaml") {
+      if (request.method === "PUT") {
+        content = (await request.json()).content;
+        writes += 1;
+        return json({ source_digest: `saved-${writes}` });
+      }
+      return json({ ...rootSource, source_digest: `saved-${writes}`, content });
+    }
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  const live = await screen.findByRole("combobox", {
+    name: "Live",
+  });
+  const expectHidden = () => {
+    expect(screen.queryByRole("link", { name: "Live" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Set up voice" })).toBeNull();
+  };
+  expectHidden();
+  await user.click(live);
+  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  expectHidden();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByRole("link", { name: "Live" })).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Start voice" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("combobox", { name: "Live" }));
+  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(expectHidden);
+  expect(writes).toBe(2);
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([input]) => (input as Request).method === "POST"),
+  ).toBe(false);
+});
+
 it("configures Sidekick in General without changing defaults or starting conversations", async () => {
   window.history.replaceState(null, "", "/settings");
   const rootSource = {

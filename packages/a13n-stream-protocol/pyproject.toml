@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://a13n.converge.ai/"
-Documentation = "https://a13n.converge.ai/docs/a13n-stream-protocol/"
+Homepage = "https://a13n.dev/"
+Documentation = "https://a13n.dev/docs/a13n-stream-protocol/"
 Repository = "https://github.com/converge-ai-labs/agent-foundation"
 
 [dependency-groups]

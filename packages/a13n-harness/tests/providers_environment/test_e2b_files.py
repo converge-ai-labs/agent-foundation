@@ -55,6 +55,28 @@ def test_no_replace_publication_and_staging(tmp_path, filesystem):
     assert not (tmp_path / "stage").exists()
 
 
+def test_permission_update_failure_preserves_original_file(tmp_path, filesystem, monkeypatch):
+    from pathlib import Path
+
+    target = tmp_path / "target"
+    target.write_text("old")
+    target.chmod(0o755)
+    filesystem("stage", path="/stage")
+    stage = tmp_path / "stage"
+    stage.write_text("new")
+
+    def denied(path, mode):
+        assert path == stage and mode == 0o755
+        raise PermissionError("cannot set candidate permissions")
+
+    monkeypatch.setattr(Path, "chmod", denied)
+    with pytest.raises(PermissionError):
+        filesystem("publish", path="/target", staged="/stage", mode="replace")
+    assert target.read_text() == "old"
+    assert target.stat().st_mode & 0o777 == 0o755
+    assert stage.read_text() == "new"
+
+
 def test_query_paging_and_bounded_scan(tmp_path, filesystem):
     for name in ("one.py", "two.py", "three.txt", ".hidden.py"):
         (tmp_path / name).write_text(name)

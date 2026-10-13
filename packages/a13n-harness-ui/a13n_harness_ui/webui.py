@@ -170,6 +170,7 @@ from a13n_harness_ui.thread_files import (
     ComposerInput,
     ThreadAttachment,
 )
+from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
 from a13n_harness_ui.webui_lifecycle import ErrorResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
@@ -541,6 +542,7 @@ def create_webui(
         file_transfers=file_transfers,
     )
     server.add_middleware(RequestLog)
+    register_voice_routes(server, lambda: app().voice(), api_key)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -1437,6 +1439,10 @@ def create_webui(
     async def set_auto_followup(thread_id: str, body: CoordinatorUpdate) -> ThreadSummary:
         return await app().set_auto_followup(thread_id, body.auto_followup)
 
+    @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
+    async def fork_thread(thread_id: str) -> ThreadSummary:
+        return await app().fork_thread(thread_id)
+
     @server.post("/api/threads/{thread_id}/coordinator", response_model=ThreadSummary)
     async def promote_coordinator(thread_id: str) -> ThreadSummary:
         return await app().promote_coordinator(thread_id)
@@ -1875,6 +1881,7 @@ def create_webui(
         recognized = path in {
             "",
             "new",
+            "live",
             "setup",
             "settings",
             "projects",
@@ -1925,6 +1932,9 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         RealtimeCommand,
         RealtimeFrame,
         RealtimePing,
+        VoiceCommand,
+        VoiceOwner,
+        VoicePing,
         TerminalCommand,
         TerminalFrame,
         DraftCommand,
@@ -1940,6 +1950,13 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         components[model.__name__] = schema
     document["x-interactive"] = {
         "authentication": {"$ref": "#/components/schemas/InteractiveAuthentication"},
+        "voice": {
+            "path": "/api/voice/connect",
+            "owner": {"$ref": "#/components/schemas/VoiceOwner"},
+            "input": {"$ref": "#/components/schemas/VoiceCommand"},
+            "output": {"$ref": "#/components/schemas/VoiceSnapshot"},
+            "heartbeat": {"$ref": "#/components/schemas/VoicePing"},
+        },
         "realtime": {
             "path": "/api/realtime/connect",
             "input": {"$ref": "#/components/schemas/RealtimeCommand"},

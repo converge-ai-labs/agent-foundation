@@ -78,6 +78,36 @@
       "title": "Delta",
       "type": "object"
     },
+    "FileSource": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "title": "FileSource",
+      "type": "object"
+    },
     "Gap": {
       "description": "Missing output through this position, or unknown after transport loss.",
       "properties": {
@@ -139,6 +169,21 @@
         "kind": {
           "$ref": "#/$defs/ItemKind"
         },
+        "memory_sources": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MemorySource"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Sources"
+        },
         "ordinal": {
           "anyOf": [
             {
@@ -186,6 +231,109 @@
       "type": "string"
     },
     "JsonValue": {},
+    "MemorySource": {
+      "additionalProperties": false,
+      "description": "One automatic delivery in this Run; content remains in the memory or execution archive.",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "files": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileSource"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "record",
+            "file"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "memory": {
+          "title": "Memory",
+          "type": "string"
+        },
+        "memory_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Id"
+        },
+        "records": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RecordSource"
+          },
+          "title": "Records",
+          "type": "array"
+        },
+        "sources_truncated": {
+          "default": false,
+          "title": "Sources Truncated",
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "recalled",
+            "failed",
+            "timeout",
+            "full",
+            "changes",
+            "unchanged",
+            "omitted",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "memory",
+        "status"
+      ],
+      "title": "MemorySource",
+      "type": "object"
+    },
+    "RecordSource": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sha256"
+      ],
+      "title": "RecordSource",
+      "type": "object"
+    },
     "RunSignal": {
       "description": "The payload of `reset` and `gap`.",
       "properties": {

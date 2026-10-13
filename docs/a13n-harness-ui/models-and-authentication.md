@@ -34,6 +34,19 @@ Choose native tools on the **Agent**, after selecting its saved Model. Changing 
 
 The CLI commands `setup`, `add model`, and the new-Model branch of `add agent` use the same backend choices and preparation rules. API connections can reuse saved-key metadata or an environment-variable reference without exposing key bytes. Subscription setup offers inline device/browser login or an explicit configure-later choice when an account is unavailable.
 
+### Anthropic cache defaults
+
+Creating a Model through the Anthropic connection saves these explicit block-cache settings, including for custom model IDs and compatible endpoints:
+
+```yaml
+settings:
+  anthropic_cache_instructions: true
+  anthropic_cache_tool_definitions: true
+  anthropic_cache_messages: true
+```
+
+Every offered Anthropic preset includes these flags. Harness UI uses them instead of unified `cache` or top-level `anthropic_cache` for endpoint compatibility. Advanced settings remain editable: explicit mappings, including `false` flags, cache durations, or an empty mapping, are preserved. Other protocols such as OpenRouter do not receive these flags merely because the model is Claude. Existing Model files are not migrated; add the flags manually or explicitly apply a preset to enable them.
+
 ## Gateway session affinity
 
 In **Add Model** or initial setup, choose a **Gateway session affinity** preset or type a replacement in **Session affinity header**. CLI `add model` offers the same presets and custom entry. The saved result is an ordinary header name, not a preset reference:

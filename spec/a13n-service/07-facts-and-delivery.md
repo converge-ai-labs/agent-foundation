@@ -139,6 +139,8 @@ A worker that seals a run failed or cancelled may write its in-memory display as
 
 The worker converts producer observations through one non-retaining AG-UI observer per Harness root Run and folds them once into compact items. Saved display and live delivery share normalized item semantics; clients continue the saved parsing state with raw AG-UI events. Each live item reference supplies stable identity, kind, state and ordinal, with optional Host-selected response grouping and native failure diagnostics. Inline children retain native IDs and carry `subagentRunId`; display identity includes that attribution, so coincident root and child IDs do not collide. Public tool content parts retain their order, subject to the display value limit; supplemental model-only content remains hidden. Standard `RUN_FINISHED` interrupt observations retain native deferred tool-call IDs but do not replace Service pending records or partial-answer policy. Child safe boundaries cannot publish a root checkpoint or Environment state, and presentation usage does not replace the usage ledger.
 
+Assistant reply items can retain automatic [memory source evidence](11-memory.md#reply-source-evidence). It is committed and paged with the item, and the corresponding message-END delta carries the same source metadata. It has the same provisional-versus-committed boundary as other display values.
+
 ### Display values
 
 Service applies these limits to each field's uncompressed UTF-8 encoding. Strings encode as `text/plain`; other values encode as compact `application/json`.

@@ -70,7 +70,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `model`: a model key, with `model_settings`, native settings for the model's calling API, and `model_characteristics`, the context characteristics the agent assumes.
 - `instructions`.
 - `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource.
-- `skills`: `{skill_id, revision_id}` selections.
+- `skills`: `{skill_id, revision_id}` selections, with one `skill_sync` policy ([Skill materialization](#skill-materialization)). An Agent revision stores the policy; `options.overrides.skill_sync` replaces the whole block for a Run.
 - `platform_tools`: selected platform MCP `groups`, with `read_permission` (default `allow`) and `write_permission` (default `ask`), each `allow`, `ask` or `deny`. Groups default empty.
 - `builtin_skills`: independently selected instance-local instructions; currently `platform-operations`, default empty. Neither selection grants tenant permissions.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
@@ -85,6 +85,8 @@ agent_revisions   revision columns; config: AgentConfig
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
 
 Tool permissions live on each selection and compile into one Harness tool-permission table.
+
+`GET /toolsets` owns the default English `display_name` and short `description` for each built-in toolset and tool. Descriptions default to an empty string when omitted. Tool entries also identify their model-facing `model_name` and permission `execution_id`; presentation text is separate from these identities.
 
 ### Validation
 
@@ -162,13 +164,39 @@ A skill revision is a validated package. Its source is `{kind: upload, upload_id
 
 The package contract: a zip archive with `SKILL.md` at its root or in its only top-level directory; at most 1000 files, 8 MiB per file, 32 MiB expanded, 256 KiB for `SKILL.md` and 1024 bytes per path; no links and no path escaping the root; `__MACOSX/` entries are ignored. The manifest records the name, description, root, files, size, package digest and size, and the source with its resolved commit.
 
-The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; the head's `name` is display text. Two skills of a workspace may declare the same name, and a new revision may declare another; only the skill revisions one agent pins must declare distinct names ([validation](#validation)).
+The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; the head's `name` is display text. A declared name is a portable directory component of at most 255 UTF-8 bytes, excluding separators, `.` and `..`, reserved device names and reserved filename characters. Two skills of a workspace may declare the same name, and a new revision may declare another; only the skill revisions one agent pins must declare distinct names ([validation](#validation)).
 
 - `POST /skills` `{name?, description?, labels, source}` creates the head and revision 1. Name and description default to the manifest's.
 - `POST /skills/validate` `{source}` needs `write`, checks a package exactly as creation does and returns the manifest, staging nothing.
 - `GET /skills` filters by `label`, `q`, `archived` and `source` (`upload` or `github`, the default revision's source). A skill's representation includes `default_revision {id, number, source}`.
 - `PATCH` changes `name`, `description` and `labels`.
 - Revisions: `POST` with a source and `If-Match`, list, get, `set-default`, `GET …/revisions/{rev}/content` (the zip) and `GET …/revisions/{rev}/files/{path}` (one file of the package). Both reads serve the bytes as an attachment ([10](10-api.md#representations)).
+
+### Skill materialization
+
+Each Agent chooses one `skill_sync` block, independently of its skill selections and its parent Agent's policy:
+
+- `{"mode": "shared", "overwrite": true, "cleanup": false}` is the default. Selected packages publish under `/workspace/.agents/skills/<name>`. Overwrite replaces the complete selected directory, removing files absent from the selected revision; `overwrite: false` preserves an existing name. `cleanup: true` removes unselected entries from this shared root, including when the selection is empty. Shared mode performs no cache operations.
+- `{"mode": "isolated", "cache_count": 128}` publishes immutable packages under `/workspace/.agents/skill-cache/<package-digest>/<name>`. The digest identifies the archive bytes, so identical packages share a directory across revisions and distinct versions coexist. A warm package loads without fetching its archive again. `cache_count` is a nonnegative soft package-count budget; zero disables trimming. The Agent performing materialization applies its budget to that primary Environment's cache.
+
+Mode-specific fields cannot be mixed. Omission uses the Agent's policy; a Run override replaces it as a whole, with the selected mode's defaults for omitted members. Inline children use their own pinned Agent policies. Selecting skills, or shared cleanup with an empty selection, requires a primary Environment. Model-visible catalog paths identify the chosen layout; previous layouts are neither read nor migrated.
+
+Shared mode is last-publication-wins during Agent preparation, not ordered by Run completion. Packages are prepared in private directories, then each selected name is published with an Environment move. Linux and macOS atomically replace nonempty directories on supported filesystems; failure before publication preserves the old destination. Windows uses ordinary remove/rename for an existing directory, accepting a visibility gap and possible missing or partially removed destination if the operation fails. Other unsupported atomic replacement operations fail with the old destination preserved. Cancellation or an unknown provider outcome can leave a published replacement or a staged candidate; preparation fails without deleting a potentially in-flight candidate. Publication is per skill, not atomic across the selection, and separate reads can span versions. Cleanup deliberately removes unselected names even when another active Agent uses them. Independent writers with different selections leave cleanup disabled or coordinate ownership of the shared namespace.
+
+| Scenario                                        | Observable behavior                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Shared, different names, cleanup disabled       | Names coexist in the same root.                                                                                                |
+| Shared, same name and identical package         | Each overwrite republishes equivalent content.                                                                                 |
+| Shared, same name and different packages        | The last publication wins; an active reader can observe a later version. Windows accepts the remove/rename gap.                |
+| Shared, overwrite disabled                      | An existing name or concurrent publication winner is preserved, even if its package differs from the Agent's selection.        |
+| Shared, cleanup enabled                         | Entries outside this Agent's selection are removed; an empty selection clears the shared root, including other Agents' skills. |
+| Isolated, identical archive bytes               | Agents and revisions reuse one immutable package directory.                                                                    |
+| Isolated, different versions with the same name | Distinct digest directories coexist; each catalog points to its selected package.                                              |
+| Mixed shared and isolated policies              | Roots are disjoint; shared overwrite and cleanup leave isolated packages untouched.                                            |
+
+Isolated immutability describes Service publication: packages are not overwritten, and reader pins prevent cache eviction during execution. It does not create per-Agent physical copies or an operating-system read-only boundary; authorized file or shell writes can still mutate these files.
+
+Isolated cache readers hold shared-filesystem pins until execution teardown; eviction skips pinned packages and removes idle packages in least-recently-used order, with bounded work per materialization. Active packages and bounded trimming may exceed the budget. Coordination requires the Environment's coherent no-replace moves and exclusive creation across its clients. Cancellation or an unknown provider mutation outcome retains the candidate and protection needed to avoid racing in-flight operations; crashes may leave pins or eviction gates, which have no timed expiry. Operators quiesce clients before reclaiming abandoned state.
 
 ## Provider resources
 

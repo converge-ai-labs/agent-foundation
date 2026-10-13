@@ -47,7 +47,14 @@ class MemoryAgentSource(StoredContract):
     id: str = "memory"
 
 
-type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource
+class LiveAgentSource(StoredContract):
+    """Application-owned voice executor; not a selectable Agent resource."""
+
+    kind: Literal["live"] = "live"
+    id: Literal["live"] = "live"
+
+
+type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource | LiveAgentSource
 
 
 class ThreadConfiguration(StoredContract):

@@ -73,6 +73,7 @@ class ObjectKind(StrEnum):
     run_composition = "run-composition"
     thread_initial_state = "thread-initial-state"
     continuation = "continuation"
+    live_transcript = "live-transcript"
     child_checkpoint = "child-checkpoint"
     environment_state = "environment-state"
     mcp_app_resource = "mcp-app-resource"

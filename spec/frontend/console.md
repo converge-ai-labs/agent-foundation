@@ -42,6 +42,8 @@ Provider editors use consistent type pickers, enabled controls and Cancel/Save a
 
 Web search and scrape select compatible providers independently; fetch/download require no provider. Saved unavailable references are not silently replaced. Tool configuration and permission controls preserve hidden settings, show effective access, and distinguish provider availability from authorization. Connection tool scopes use the selected MCP/Composio source catalog; absent saved tools and catalog errors remain visible.
 
+Built-in tool settings use the [Service catalogue](../a13n-service/04-resources.md#agents) for group names and descriptions. Tool rows show the unchanged `model_name` beside the catalogue's description, using `display_name` when the description is empty or absent. A group without a description shows its name alone. Console translates catalogue text through its language resources and displays the English source text when a translation is missing.
+
 Saving Agent configuration explains that the new version becomes the default for new work, while active work and approval continuations retain their accepted version. Save changes is the normal editing action; saved version identities and history remain inspectable.
 
 ## Agent Configuration Transfer
@@ -113,6 +115,12 @@ English and Simplified Chinese are supported, with English as the fallback. Date
 Collections emphasize names, descriptions and status. Search/filter controls retain visible borders and form a compact row; primary actions sit beside the title without duplicate shell headings. Models use flat rows showing name/key, Provider and status; authorized rows open editors by pointer or keyboard. Resource sections stack on narrow screens; settings navigation collapses behind an accessible control and closes after selection. Long content uses shared scrolling rules. Loading, empty, error, forbidden, unavailable and stale-data states are distinct.
 
 Dialogs have accessible names, keyboard dismissal where safe, managed focus and restoration to their trigger. Validation identifies fields without discarding input. Raw payload dialogs fit narrow viewports. Copy actions show success briefly and offer retryable failure feedback. Password changes use a modal rather than resting-page fields; sensitive input clears on close. Supported profile/avatar image actions have keyboard access, progress, errors and a preview; unavailable image APIs do not receive simulated controls. Agent fallback initials/colors remain stable by ID and use sufficient contrast. A post-create image upload failure preserves the created Agent and offers retry without duplicate creation.
+
+## Identity Images
+
+Personal and Agent avatars, Workspace icons and Organization icons share one browser crop flow. PNG, JPEG and WebP source files are at most 20 MiB and 40 million pixels. Selecting a file opens a square crop with image dragging, keyboard positioning, wheel/pinch zoom. No zoom slider, separate preview or explanatory footer is shown. Cancelling preserves the current image or creation draft. Confirming prepares a square image with each axis at most 512 pixels, without enlarging smaller crops, and at most 256 KiB. Browser encoding prefers WebP and preserves transparency, including PNG fallback when WebP encoding is unavailable. Preparation errors retain the crop for correction or cancellation; upload errors retain it for retry. Processing prevents duplicate confirmation and dismissal. Source object URLs are released when the crop closes or its owner unmounts.
+
+Only the prepared file enters the existing upload or Agent-creation draft. The [Service image contract](../a13n-service/03-tenancy.md#images) remains authoritative for format, configured byte limits, permissions and version preconditions; browser preparation does not change the API or existing stored images. Deployments with a smaller upload limit may still refuse the prepared file.
 
 ## Boundaries
 

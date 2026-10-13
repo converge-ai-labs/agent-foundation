@@ -92,6 +92,18 @@ async def test_local_shared_device_owns_daemon_not_adapter(binary, tmp_path):
             assert files is not None and processes is not None
             await files.write_text(device_path(first_root / "outside-cwd"), "allowed", mode="create")
             assert (first_root / "outside-cwd").read_text() == "allowed"
+            # Stage a complete skill through the public file API and replace a nonempty name over EIP.
+            candidate, published = second_root / "candidate", second_root / "review"
+            await files.mkdir(device_path(candidate))
+            await files.mkdir(device_path(published))
+            await files.write_text(device_path(candidate / "SKILL.md"), "new", mode="create")
+            await files.copy(device_path(candidate / "SKILL.md"), device_path(candidate / "support.txt"))
+            await files.write_text(device_path(published / "SKILL.md"), "old", mode="create")
+            await files.write_text(device_path(published / "obsolete"), "old", mode="create")
+            await files.move(device_path(candidate), device_path(published), replace=True)
+            assert (published / "SKILL.md").read_text() == "new"
+            assert (published / "support.txt").read_text() == "new"
+            assert not (published / "obsolete").exists() and not candidate.exists()
             started = await processes.start(
                 CommandRequest(
                     command=ArgvCommand(

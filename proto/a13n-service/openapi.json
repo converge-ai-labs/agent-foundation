@@ -286,6 +286,24 @@
               }
             ]
           },
+          "skill_sync": {
+            "discriminator": {
+              "mapping": {
+                "isolated": "#/components/schemas/IsolatedSkillSync",
+                "shared": "#/components/schemas/SharedSkillSync"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SharedSkillSync"
+              },
+              {
+                "$ref": "#/components/schemas/IsolatedSkillSync"
+              }
+            ],
+            "title": "Skill Sync"
+          },
           "skills": {
             "default": [],
             "items": {
@@ -459,6 +477,24 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_sync": {
+            "discriminator": {
+              "mapping": {
+                "isolated": "#/components/schemas/IsolatedSkillSync",
+                "shared": "#/components/schemas/SharedSkillSync"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SharedSkillSync"
+              },
+              {
+                "$ref": "#/components/schemas/IsolatedSkillSync"
+              }
+            ],
+            "title": "Skill Sync"
           },
           "skills": {
             "default": [],
@@ -813,6 +849,31 @@
               }
             ]
           },
+          "skill_sync": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "isolated": "#/components/schemas/IsolatedSkillSync",
+                    "shared": "#/components/schemas/SharedSkillSync"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SharedSkillSync"
+                  },
+                  {
+                    "$ref": "#/components/schemas/IsolatedSkillSync"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Sync"
+          },
           "skills": {
             "anyOf": [
               {
@@ -1046,6 +1107,31 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_sync": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "isolated": "#/components/schemas/IsolatedSkillSync",
+                    "shared": "#/components/schemas/SharedSkillSync"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SharedSkillSync"
+                  },
+                  {
+                    "$ref": "#/components/schemas/IsolatedSkillSync"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Sync"
           },
           "skills": {
             "anyOf": [
@@ -3782,6 +3868,16 @@
             "title": "Full Content",
             "type": "boolean"
           },
+          "memory_sources": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/MemorySource"
+              },
+              "type": "array"
+            },
+            "title": "Memory Sources",
+            "type": "object"
+          },
           "next_ordinal": {
             "minimum": 1.0,
             "title": "Next Ordinal",
@@ -4589,6 +4685,36 @@
           "message"
         ],
         "title": "Failure",
+        "type": "object"
+      },
+      "FileSource": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "title": "FileSource",
         "type": "object"
       },
       "Finding": {
@@ -5640,6 +5766,26 @@
           "invitation_url"
         ],
         "title": "InvitationReceipt",
+        "type": "object"
+      },
+      "IsolatedSkillSync": {
+        "additionalProperties": false,
+        "description": "Reuse immutable package directories, with a soft count budget.",
+        "properties": {
+          "cache_count": {
+            "default": 128,
+            "minimum": 0.0,
+            "title": "Cache Count",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "isolated",
+            "default": "isolated",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "IsolatedSkillSync",
         "type": "object"
       },
       "IssuedKey": {
@@ -6962,6 +7108,34 @@
         "title": "MemoryRecordPage",
         "type": "object"
       },
+      "MemoryRecordProvenance": {
+        "properties": {
+          "content_matches": {
+            "title": "Content Matches",
+            "type": "boolean"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryRecordSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_write": {
+            "$ref": "#/components/schemas/MemoryRecordSource"
+          }
+        },
+        "required": [
+          "created",
+          "last_write",
+          "content_matches"
+        ],
+        "title": "MemoryRecordProvenance",
+        "type": "object"
+      },
       "MemoryRecordSearch": {
         "additionalProperties": false,
         "properties": {
@@ -6983,6 +7157,80 @@
           "query"
         ],
         "title": "MemoryRecordSearch",
+        "type": "object"
+      },
+      "MemoryRecordSource": {
+        "description": "A platform-confirmed write, not an asserted source message or complete provider history.",
+        "properties": {
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
+          "confirmed_at": {
+            "format": "date-time",
+            "title": "Confirmed At",
+            "type": "string"
+          },
+          "principal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal Id"
+          },
+          "principal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal Name"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          }
+        },
+        "required": [
+          "principal_id",
+          "run_id",
+          "attempt_id",
+          "tool_call_id",
+          "confirmed_at"
+        ],
+        "title": "MemoryRecordSource",
         "type": "object"
       },
       "MemoryRecordText": {
@@ -7007,6 +7255,16 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryRecordProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "score": {
             "anyOf": [
@@ -7270,6 +7528,88 @@
           "next_cursor"
         ],
         "title": "MemoryRevisionPage",
+        "type": "object"
+      },
+      "MemorySource": {
+        "additionalProperties": false,
+        "description": "One automatic delivery in this Run; content remains in the memory or execution archive.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FileSource"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "record",
+              "file"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory": {
+            "title": "Memory",
+            "type": "string"
+          },
+          "memory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Id"
+          },
+          "records": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RecordSource"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "sources_truncated": {
+            "default": false,
+            "title": "Sources Truncated",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "recalled",
+              "failed",
+              "timeout",
+              "full",
+              "changes",
+              "unchanged",
+              "omitted",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "memory",
+          "status"
+        ],
+        "title": "MemorySource",
         "type": "object"
       },
       "MemoryUpdate": {
@@ -10095,6 +10435,25 @@
         "title": "ProviderUpdate",
         "type": "object"
       },
+      "RecordSource": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sha256"
+        ],
+        "title": "RecordSource",
+        "type": "object"
+      },
       "Resume": {
         "additionalProperties": false,
         "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
@@ -11435,6 +11794,30 @@
           "suggestion"
         ],
         "type": "string"
+      },
+      "SharedSkillSync": {
+        "additionalProperties": false,
+        "description": "Publish mutable conventional names; the last completed publication wins.",
+        "properties": {
+          "cleanup": {
+            "default": false,
+            "title": "Cleanup",
+            "type": "boolean"
+          },
+          "mode": {
+            "const": "shared",
+            "default": "shared",
+            "title": "Mode",
+            "type": "string"
+          },
+          "overwrite": {
+            "default": true,
+            "title": "Overwrite",
+            "type": "boolean"
+          }
+        },
+        "title": "SharedSkillSync",
+        "type": "object"
       },
       "Skill": {
         "properties": {
@@ -13464,6 +13847,11 @@
             "title": "Deployment Supported",
             "type": "boolean"
           },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -13749,6 +14137,11 @@
           "default_enabled": {
             "title": "Default Enabled",
             "type": "boolean"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
           },
           "display_name": {
             "title": "Display Name",

@@ -98,6 +98,7 @@ class ToolResourceSelector(_Frozen):
 class ToolDefinition(_Frozen):
     key: str
     display_name: str
+    description: str = ""
     # The tool's permission identity: the key of its rule in the compiled tool permissions.
     execution_id: str
     model_name: str
@@ -113,6 +114,7 @@ class ToolDefinition(_Frozen):
 class ToolsetDefinition(_Frozen):
     key: ToolsetKey
     display_name: str
+    description: str = ""
     default_enabled: bool
     config_schema: dict[str, JsonValue]
     tools: tuple[ToolDefinition, ...]
@@ -133,11 +135,13 @@ class _Tool:
     operation: WebOperation | None = None
     # What a selection starts with; `inherit` takes the agent's default, which allows.
     permission: ToolPermissionSetting = "inherit"
+    description: str = ""
 
     def definition(self, supported_operations: frozenset[str]) -> ToolDefinition:
         return ToolDefinition(
             key=self.key,
             display_name=self.display_name,
+            description=self.description,
             execution_id=self.execution_id,
             model_name=self.model_name,
             default_enabled=self.default_enabled,
@@ -157,11 +161,13 @@ class _Toolset:
     display_name: str
     default_enabled: bool
     tools: tuple[_Tool, ...]
+    description: str = ""
 
     def definition(self, supported_operations: frozenset[str]) -> ToolsetDefinition:
         return ToolsetDefinition(
             key=self.key,
             display_name=self.display_name,
+            description=self.description,
             default_enabled=self.default_enabled,
             config_schema=EmptyConfiguration.model_json_schema(),
             tools=tuple(tool.definition(supported_operations) for tool in self.tools),
@@ -174,41 +180,92 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "Files",
         True,
         (
-            _Tool("view", "View", "filesystem.view", "view"),
-            _Tool("write", "Write", "filesystem.write", "write"),
-            _Tool("edit", "Edit", "filesystem.edit", "edit"),
-            _Tool("multi_edit", "Multi edit", "filesystem.multi_edit", "multi_edit"),
-            _Tool("mkdir", "Create directories", "filesystem.mkdir", "mkdir"),
-            _Tool("move", "Move", "filesystem.move", "move"),
-            _Tool("copy", "Copy", "filesystem.copy", "copy"),
-            _Tool("delete", "Delete", "filesystem.remove", "delete"),
-            _Tool("ls", "List", "filesystem.ls", "ls"),
-            _Tool("glob", "Find paths", "filesystem.glob", "glob"),
-            _Tool("grep", "Search files", "filesystem.grep", "grep"),
+            _Tool("view", "View", "filesystem.view", "view", description="Read file contents"),
+            _Tool("write", "Write", "filesystem.write", "write", description="Create or replace a file"),
+            _Tool("edit", "Edit", "filesystem.edit", "edit", description="Edit a file"),
+            _Tool(
+                "multi_edit",
+                "Multi edit",
+                "filesystem.multi_edit",
+                "multi_edit",
+                description="Apply several file edits",
+            ),
+            _Tool("mkdir", "Create directories", "filesystem.mkdir", "mkdir", description="Create directories"),
+            _Tool("move", "Move", "filesystem.move", "move", description="Move a file or directory"),
+            _Tool("copy", "Copy", "filesystem.copy", "copy", description="Copy a file or directory"),
+            _Tool("delete", "Delete", "filesystem.remove", "delete", description="Delete a file or directory"),
+            _Tool("ls", "List", "filesystem.ls", "ls", description="List directory contents"),
+            _Tool("glob", "Find paths", "filesystem.glob", "glob", description="Find matching paths"),
+            _Tool("grep", "Search files", "filesystem.grep", "grep", description="Search file contents"),
         ),
+        description="Read, write, and organize files.",
     ),
     _Toolset(
         "shell",
         "Terminal",
         True,
         (
-            _Tool("exec", "Execute", "environment.shell_exec", "shell_exec"),
-            _Tool("info", "Inspect processes", "environment.process_info", "shell_info"),
-            _Tool("wait", "Wait for process", "environment.process_wait", "shell_wait"),
-            _Tool("input", "Send process input", "environment.process_input", "shell_input"),
-            _Tool("signal", "Signal process", "environment.process_signal", "shell_signal"),
+            _Tool("exec", "Execute", "environment.shell_exec", "shell_exec", description="Execute a command"),
+            _Tool(
+                "info",
+                "Inspect processes",
+                "environment.process_info",
+                "shell_info",
+                description="Inspect a running process",
+            ),
+            _Tool(
+                "wait", "Wait for process", "environment.process_wait", "shell_wait", description="Wait for a process"
+            ),
+            _Tool(
+                "input",
+                "Send process input",
+                "environment.process_input",
+                "shell_input",
+                description="Send input to a process",
+            ),
+            _Tool(
+                "signal", "Signal process", "environment.process_signal", "shell_signal", description="Signal a process"
+            ),
         ),
+        description="Run commands and manage processes.",
     ),
     _Toolset(
         "web",
         "Web",
         False,
         (
-            _Tool("search", "Search", "web.search", "search", SearchConfiguration, False, "search"),
-            _Tool("scrape", "Scrape", "web.scrape", "scrape", ScrapeConfiguration, False, "scrape"),
-            _Tool("fetch", "Fetch", "web.fetch", "fetch", FetchConfiguration, False),
-            _Tool("download", "Download", "web.download", "download", DownloadConfiguration, False),
+            _Tool(
+                "search",
+                "Search",
+                "web.search",
+                "search",
+                SearchConfiguration,
+                False,
+                "search",
+                description="Search the web",
+            ),
+            _Tool(
+                "scrape",
+                "Scrape",
+                "web.scrape",
+                "scrape",
+                ScrapeConfiguration,
+                False,
+                "scrape",
+                description="Extract page content",
+            ),
+            _Tool("fetch", "Fetch", "web.fetch", "fetch", FetchConfiguration, False, description="Fetch URL content"),
+            _Tool(
+                "download",
+                "Download",
+                "web.download",
+                "download",
+                DownloadConfiguration,
+                False,
+                description="Download a resource",
+            ),
         ),
+        description="Search and retrieve online content.",
     ),
     # The tools of the memories a run mounts; a read mount offers only viewing and searching.
     _Toolset(
@@ -216,58 +273,155 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "Memory",
         True,
         (
-            _Tool("file_view", "View memory files", "memory.file.view", "memory_file_view"),
-            _Tool("file_grep", "Search memory files", "memory.file.grep", "memory_file_grep"),
-            _Tool("file_create", "Create memory file", "memory.file.create", "memory_file_create"),
-            _Tool("file_edit", "Edit memory file", "memory.file.edit", "memory_file_edit"),
-            _Tool("file_append", "Append to memory file", "memory.file.append", "memory_file_append"),
-            _Tool("file_move", "Move memory file", "memory.file.move", "memory_file_move"),
-            _Tool("file_delete", "Delete memory file", "memory.file.delete", "memory_file_delete"),
-            _Tool("record_search", "Search memory records", "memory.record.search", "memory_record_search"),
-            _Tool("record_list", "List memory records", "memory.record.list", "memory_record_list"),
-            _Tool("record_add", "Add memory record", "memory.record.add", "memory_record_add"),
-            _Tool("record_update", "Update memory record", "memory.record.update", "memory_record_update"),
-            _Tool("record_delete", "Delete memory record", "memory.record.delete", "memory_record_delete"),
+            _Tool(
+                "file_view",
+                "View memory files",
+                "memory.file.view",
+                "memory_file_view",
+                description="View memory files",
+            ),
+            _Tool(
+                "file_grep",
+                "Search memory files",
+                "memory.file.grep",
+                "memory_file_grep",
+                description="Search memory files",
+            ),
+            _Tool(
+                "file_create",
+                "Create memory file",
+                "memory.file.create",
+                "memory_file_create",
+                description="Create a memory file",
+            ),
+            _Tool(
+                "file_edit",
+                "Edit memory file",
+                "memory.file.edit",
+                "memory_file_edit",
+                description="Edit a memory file",
+            ),
+            _Tool(
+                "file_append",
+                "Append to memory file",
+                "memory.file.append",
+                "memory_file_append",
+                description="Append to a memory file",
+            ),
+            _Tool(
+                "file_move",
+                "Move memory file",
+                "memory.file.move",
+                "memory_file_move",
+                description="Move a memory file",
+            ),
+            _Tool(
+                "file_delete",
+                "Delete memory file",
+                "memory.file.delete",
+                "memory_file_delete",
+                description="Delete a memory file",
+            ),
+            _Tool(
+                "record_search",
+                "Search memory records",
+                "memory.record.search",
+                "memory_record_search",
+                description="Search memory records",
+            ),
+            _Tool(
+                "record_list",
+                "List memory records",
+                "memory.record.list",
+                "memory_record_list",
+                description="List memory records",
+            ),
+            _Tool(
+                "record_add",
+                "Add memory record",
+                "memory.record.add",
+                "memory_record_add",
+                description="Add a memory record",
+            ),
+            _Tool(
+                "record_update",
+                "Update memory record",
+                "memory.record.update",
+                "memory_record_update",
+                description="Update a memory record",
+            ),
+            _Tool(
+                "record_delete",
+                "Delete memory record",
+                "memory.record.delete",
+                "memory_record_delete",
+                description="Delete a memory record",
+            ),
         ),
+        description="Read and change the memories a conversation mounts.",
     ),
     _Toolset(
         "assets",
         "Asset publication",
         False,
-        (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset"),),
+        (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset", description="Publish an asset"),),
+        description="Publish files as agent assets.",
     ),
     _Toolset(
         "traces",
         "Trace queries",
         False,
         (
-            _Tool("list", "List traces", TRACE_TOOL_IDS["list"], "list_traces"),
-            _Tool("read", "Read trace", TRACE_TOOL_IDS["read"], "read_trace"),
-            _Tool("spans", "Read trace steps", TRACE_TOOL_IDS["spans"], "read_trace_spans"),
+            _Tool("list", "List traces", TRACE_TOOL_IDS["list"], "list_traces", description="List traces"),
+            _Tool("read", "Read trace", TRACE_TOOL_IDS["read"], "read_trace", description="Read trace"),
+            _Tool(
+                "spans", "Read trace steps", TRACE_TOOL_IDS["spans"], "read_trace_spans", description="Read trace steps"
+            ),
         ),
+        description="Read execution traces and steps.",
     ),
     _Toolset(
         "findings",
         "Findings",
         False,
         (
-            _Tool("read", "Read finding", FINDING_TOOL_IDS["read"], "read_finding"),
-            _Tool("submit", "Submit finding", FINDING_TOOL_IDS["submit"], "submit_finding"),
+            _Tool("read", "Read finding", FINDING_TOOL_IDS["read"], "read_finding", description="Read finding"),
+            _Tool(
+                "submit", "Submit finding", FINDING_TOOL_IDS["submit"], "submit_finding", description="Submit finding"
+            ),
         ),
+        description="Read and submit findings with execution evidence.",
     ),
     _Toolset(
         "configuration",
         "Agent configuration",
         False,
         (
-            _Tool("find", "Find resources", CONFIGURATION_TOOL_IDS["find"], "find_resources"),
-            _Tool("read", "Read resource", CONFIGURATION_TOOL_IDS["read"], "read_resource"),
             _Tool(
-                "describe", "Describe agent configuration", CONFIGURATION_TOOL_IDS["describe"], "describe_agent_config"
+                "find",
+                "Find resources",
+                CONFIGURATION_TOOL_IDS["find"],
+                "find_resources",
+                description="Find workspace resources",
+            ),
+            _Tool(
+                "read", "Read resource", CONFIGURATION_TOOL_IDS["read"], "read_resource", description="Read a resource"
+            ),
+            _Tool(
+                "describe",
+                "Describe agent configuration",
+                CONFIGURATION_TOOL_IDS["describe"],
+                "describe_agent_config",
+                description="Describe the configuration schema",
             ),
             # Writes act with the run principal's authority, so each one waits for the user's approval.
             _Tool(
-                "create_agent", "Create agent", CONFIGURATION_TOOL_IDS["create_agent"], "create_agent", permission="ask"
+                "create_agent",
+                "Create agent",
+                CONFIGURATION_TOOL_IDS["create_agent"],
+                "create_agent",
+                permission="ask",
+                description="Create an agent",
             ),
             _Tool(
                 "create_revision",
@@ -275,8 +429,10 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 CONFIGURATION_TOOL_IDS["create_revision"],
                 "create_agent_revision",
                 permission="ask",
+                description="Publish an agent version",
             ),
         ),
+        description="Find resources and create agents and versions.",
     ),
 )
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}

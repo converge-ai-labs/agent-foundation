@@ -9,6 +9,7 @@ import {
   type Schema,
 } from "./transport/client";
 import { Startup } from "./shell/startup";
+import { VoiceProvider } from "./voice";
 import { TransportContext } from "./transport/context";
 import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
@@ -77,6 +78,18 @@ export function BrowserApp() {
     return store;
   });
   const files = useRef(new Map<string, FileBuffer>());
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (
+        [...files.current.values()].some(
+          (entry) => entry.dirty || entry.uncertain || entry.saving,
+        )
+      )
+        event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
   const [queries] = useState(
     () =>
       new QueryClient({
@@ -174,11 +187,13 @@ export function BrowserApp() {
                   {status ? (
                     <BrowserRouter>
                       <NotificationsProvider>
-                        <Workbench
-                          status={status}
-                          forget={forget}
-                          unauthorized={unauthorized}
-                        />
+                        <VoiceProvider>
+                          <Workbench
+                            status={status}
+                            forget={forget}
+                            unauthorized={unauthorized}
+                          />
+                        </VoiceProvider>
                       </NotificationsProvider>
                     </BrowserRouter>
                   ) : access !== "login" ? (

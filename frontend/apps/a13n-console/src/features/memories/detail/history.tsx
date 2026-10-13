@@ -12,7 +12,7 @@ import { Button, ChoiceField } from "a13n-ui";
 import { Fragment, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, ifMatch, rowTag, type Schema } from "../../../shared/api";
@@ -27,8 +27,7 @@ import {
 import { Confirm } from "../../../shared/dialogs";
 import { Patch } from "../../../shared/diff";
 import { ErrorNotice, Loading, Timestamp } from "../../../shared/feedback";
-import { runPath } from "../../conversations/api";
-import { useRun } from "../../conversations/queries";
+import { MemoryRunLink as RunLink } from "../run-link";
 import { invalidateMemories, memoryQueries } from "../api";
 import styles from "../memories.module.css";
 
@@ -300,18 +299,5 @@ function RevisionDiff({ memory, seq }: { memory: Memory; seq: number }) {
         <Patch hunks={detail.data.hunks} />
       )}
     </div>
-  );
-}
-
-/** A run by its ID, linked to its debug view once its conversation is known. */
-function RunLink({ runId }: { runId: string }) {
-  const { basePath } = useWorkspace();
-  const run = useRun(runId).data;
-  return run ? (
-    <Link to={runPath(basePath, { ...run, run_id: run.id }, "debug")}>
-      {runId}
-    </Link>
-  ) : (
-    <>{runId}</>
   );
 }
