@@ -4,7 +4,7 @@ import type { Schema } from "../../shared/api";
 import { exactCost, formatCost, sumCosts } from "../../shared/cost";
 import { ModelKeyIcon } from "../models/model-icon";
 import { percent } from "../usage/values";
-import { formatTokens } from "./format";
+import { formatDuration, formatSpeed, formatTokens } from "./format";
 import styles from "./usage.module.css";
 
 type ModelUsage = Schema["ModelUsage"];
@@ -40,6 +40,9 @@ export function usageTotals(models: readonly ModelUsage[]): UsageTotals {
 type Counter =
   "requests" | "input_tokens" | "output_tokens" | "cache_read_tokens";
 
+/** The columns `Figures` renders after the labels. */
+const FIGURES = 7;
+
 /** Rows that share one label, such as the models one Run used. */
 export interface UsageGroup {
   key: string;
@@ -54,8 +57,9 @@ export interface UsageSection {
 }
 
 /**
- * Token figures per model: input, the cached part of it and its rate, output
- * and cost. A leading column labels each group; a model column names each row.
+ * Figures per model: input, the cached part of it and its rate, output, how
+ * fast the model answered, and cost. A leading column labels each group; a
+ * model column names each row.
  */
 export function UsageTable({
   caption,
@@ -76,7 +80,7 @@ export function UsageTable({
   total?: boolean;
 }) {
   const { t } = useTranslation();
-  const columns = 5 + (leading ? 1 : 0) + (model ? 1 : 0);
+  const columns = FIGURES + (leading ? 1 : 0) + (model ? 1 : 0);
   const all = sections.flatMap((section) =>
     section.groups.flatMap((group) => group.models),
   );
@@ -99,6 +103,16 @@ export function UsageTable({
             </th>
             <th scope="col" data-number>
               {t("Output")}
+            </th>
+            <th
+              scope="col"
+              data-number
+              title={t("Average time to first token")}
+            >
+              {t("TTFT")}
+            </th>
+            <th scope="col" data-number title={t("Output tokens per second")}>
+              {t("Output speed")}
             </th>
             <th scope="col" data-number>
               {t("Spend")}
@@ -145,7 +159,7 @@ export function UsageTable({
                       )}
                     </td>
                   )}
-                  <Figures totals={usageTotals([usage])} />
+                  <Figures totals={usageTotals([usage])} usage={usage} />
                 </tr>
               )),
             )}
@@ -154,7 +168,7 @@ export function UsageTable({
         {total && all.length > 1 && (
           <tfoot>
             <tr>
-              <th scope="row" colSpan={columns - 5}>
+              <th scope="row" colSpan={columns - FIGURES}>
                 {t("Total")}
               </th>
               <Figures totals={usageTotals(all)} />
@@ -166,8 +180,17 @@ export function UsageTable({
   );
 }
 
-function Figures({ totals }: { totals: UsageTotals }) {
+/** Speed is a model's own, so a total across models leaves it blank. */
+function Figures({
+  totals,
+  usage,
+}: {
+  totals: UsageTotals;
+  /** The one model these totals describe. */
+  usage?: ModelUsage;
+}) {
   const { t } = useTranslation();
+  const waited = usage?.average_time_to_first_chunk_seconds;
   return (
     <>
       <td data-number>
@@ -181,6 +204,12 @@ function Figures({ totals }: { totals: UsageTotals }) {
       </td>
       <td data-number>
         <Tokens value={totals.outputTokens} />
+      </td>
+      <td data-number>
+        {usage && formatDuration(waited == null ? null : waited * 1000)}
+      </td>
+      <td data-number>
+        {usage && formatSpeed(t, usage.output_tokens_per_second)}
       </td>
       <td
         data-number

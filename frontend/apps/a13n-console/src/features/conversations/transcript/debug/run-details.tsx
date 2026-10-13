@@ -47,7 +47,7 @@ export function RunDetailsDialog({
   const { t } = useTranslation();
   return (
     <ModalFrame
-      size="lg"
+      size="xl"
       title={
         <span className={styles.title}>
           {index === null ? t("Run") : t("Run {{index}}", { index })}

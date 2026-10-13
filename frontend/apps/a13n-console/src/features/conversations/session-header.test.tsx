@@ -53,6 +53,8 @@ const model = (
   input: number,
   cached: number,
   cost: string | null,
+  // Seconds to the first chunk and output tokens per second, when streamed.
+  [waited, speed]: [number | null, number | null] = [null, null],
 ) => ({
   model: name,
   requests,
@@ -61,10 +63,12 @@ const model = (
   cache_read_tokens: cached,
   cache_write_tokens: 0,
   cost,
+  average_time_to_first_chunk_seconds: waited,
+  output_tokens_per_second: speed,
 });
 const usage = {
   models: [
-    model("large", 1, 1000, 600, "0.20"),
+    model("large", 1, 1000, 600, "0.20", [1.2, 48.6]),
     model("small", 2, 3000, 2400, "0.10"),
   ],
   runs: [
@@ -77,7 +81,7 @@ const usage = {
       run_id: "run_2",
       thread_id: "thr_1",
       models: [
-        model("large", 1, 1000, 600, "0.20"),
+        model("large", 1, 1000, 600, "0.20", [1.2, 48.6]),
         model("small", 1, 2000, 1600, "0.06"),
       ],
     },
@@ -286,9 +290,12 @@ it("shows the session's spend and breaks it down by model and by run", async () 
   const runs = within(dialog).getByRole("table", { name: "Usage by run" });
   const [, first, second, third] = within(runs).getAllByRole("row");
   expect(first!.textContent).toContain("Run 1");
-  expect(second!.textContent).toMatch(/Run 2large1k60060\.0%10\$0\.20/);
-  // A Run's second model continues its group under the same label.
-  expect(third!.textContent).toMatch(/^small2k1\.6k80\.0%10\$0\.06$/);
+  expect(second!.textContent).toMatch(
+    /Run 2large1k60060\.0%101\.2s49 tok\/s\$0\.20/,
+  );
+  // A Run's second model continues its group under the same label; it was
+  // not streamed, so its speed is unknown.
+  expect(third!.textContent).toMatch(/^small2k1\.6k80\.0%10——\$0\.06$/);
   expect(
     within(runs).getByRole("link", { name: "Run 2" }).getAttribute("href"),
   ).toBe(

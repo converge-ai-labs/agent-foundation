@@ -81,6 +81,8 @@ beforeEach(() => {
           cache_read_tokens: 18000,
           cache_write_tokens: 0,
           cost: "0.42",
+          average_time_to_first_chunk_seconds: 0.84,
+          output_tokens_per_second: 62.4,
         };
         return Response.json({
           models: [usage],
@@ -193,7 +195,7 @@ it("opens the run details in a dialog, on demand, starting with usage", async ()
     name: "Usage by model",
   });
   expect(within(usage).getAllByRole("row")[1]!.textContent).toMatch(
-    /^large3 requests24k18k75\.0%900\$0\.42$/,
+    /^large3 requests24k18k75\.0%900840ms62 tok\/s\$0\.42$/,
   );
   const attempts = await within(dialog).findByText("Attempt 1");
   expect(

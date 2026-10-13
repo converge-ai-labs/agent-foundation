@@ -57,7 +57,7 @@ export function SessionUsage({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      size="lg"
+      size="xl"
       title={t("Session usage")}
       description={t(
         "Model requests recorded across this session's conversations, including late reports. Cached input is part of input.",

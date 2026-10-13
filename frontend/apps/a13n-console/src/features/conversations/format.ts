@@ -25,6 +25,15 @@ export function formatTokens(value: number | null | undefined): string {
   return String(value);
 }
 
+/** Output tokens per second of generation; unknown when it was not timed. */
+export function formatSpeed(t: TFunction, rate: number | null | undefined) {
+  if (rate === null || rate === undefined || !Number.isFinite(rate))
+    return UNKNOWN;
+  return t("{{rate}} tok/s", {
+    rate: rate < 10 ? rate.toFixed(1) : Math.round(rate).toLocaleString(),
+  });
+}
+
 /**
  * A request's or Run's tokens as "input → output", and the cached share of its
  * input when the provider reported one. Exact counts go in the titles.
