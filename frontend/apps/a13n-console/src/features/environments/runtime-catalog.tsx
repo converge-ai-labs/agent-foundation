@@ -113,8 +113,9 @@ export function EnvironmentRuntimeCatalog({
           ))}
         </TabsList>
       )}
-      {searchable && (
+      {searchable && definitions.length > 6 && (
         <Input
+          type="search"
           aria-label={t("Search providers…")}
           placeholder={t("Search providers…")}
           value={search}
