@@ -13,8 +13,12 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
+from a13n_service.runs.memories.organization_tables import SessionMemoryRow
+from a13n_service.runs.memories.session_memory import configure
+from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     SessionCreate,
+    SessionMemoryStatus,
     SessionPage,
     SessionPreview,
     SessionQuery,
@@ -81,9 +85,17 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
         .tuples()
         .all()
     )
+    policies = {
+        policy.session_id: SessionMemoryStatus.model_validate(policy, from_attributes=True)
+        for policy in await session.scalars(select(SessionMemoryRow).where(SessionMemoryRow.session_id.in_(ids)))
+    }
     return [
         SessionView.model_validate(row).model_copy(
-            update={"preview": previews.get(row.id), "run_count": counts.get(row.id, 0)}
+            update={
+                "preview": previews.get(row.id),
+                "run_count": counts.get(row.id, 0),
+                "memory_status": policies.get(row.id, SessionMemoryStatus()),
+            }
         )
         for row in rows
     ]
@@ -91,7 +103,7 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
 
 async def find_session(session: AsyncSession, workspace_id: str, session_id: str, *, lock: bool = False) -> SessionRow:
     query = select(SessionRow).where(SessionRow.workspace_id == workspace_id, SessionRow.id == session_id)
-    found = await session.scalar(query.with_for_update() if lock else query)
+    found = await session.scalar(query.with_for_update(key_share=True) if lock else query)
     if found is None:
         raise not_found("session", session_id)
     return found
@@ -140,24 +152,30 @@ async def get_session(storage: Storage, actor: Principal, workspace_id: str, ses
         return (await _views(session, [await find_session(session, scope.workspace_id, session_id)]))[0]
 
 
-async def create_session(storage: Storage, actor: Principal, workspace_id: str, body: SessionCreate) -> SessionView:
+async def create_session(runtime: Runtime, actor: Principal, workspace_id: str, body: SessionCreate) -> SessionView:
     """An empty session; threads join it through `POST /threads` with its ID."""
-    async with transaction(storage) as session:
+    async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = new_session(scope.organization_id, scope.workspace_id, actor.id)
         row.labels = dict(body.labels)
         session.add(row)
         await session.flush()
-        return SessionView.model_validate(row)
+        if body.memory.enabled or body.memory.auto_organize:
+            await configure(session, runtime, actor, row, body.memory)
+            await session.flush()
+        return (await _views(session, [row]))[0]
 
 
 async def update_session(
-    storage: Storage, actor: Principal, workspace_id: str, session_id: str, body: SessionUpdate, *, if_match: str | None
+    runtime: Runtime, actor: Principal, workspace_id: str, session_id: str, body: SessionUpdate, *, if_match: str | None
 ) -> SessionView:
-    async with transaction(storage) as session:
+    async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find_session(session, scope.workspace_id, session_id, lock=True)
         require_match(if_match, row.id, row.version)
-        row.labels = dict(body.labels)
+        if body.labels is not None:
+            row.labels = dict(body.labels)
+        if body.memory is not None:
+            await configure(session, runtime, actor, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

@@ -168,35 +168,42 @@ async def create_memory(
     provider must be enabled and usable in the workspace."""
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        memory_id = new_object_id("mem")
-        kind, provider_id, namespace = await _backend(session, actor, scope, memory_id, body)
-        row = MemoryRow(
-            id=memory_id,
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            name=body.name,
-            description=body.description,
-            kind=kind,
-            type=body.type,
-            provider_id=provider_id,
-            namespace=namespace,
-            guide=_guide(body.guide, settings),
-            always_load=_always_load(kind, body.always_load, settings),
-            labels=body.labels,
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
+        return await insert_memory(session, actor, scope, body, settings=settings)
+
+
+async def insert_memory(
+    session: AsyncSession, actor: Principal, scope: WorkspaceScope, body: MemoryCreate, *, settings: MemorySettings
+) -> Memory:
+    """Create a memory and its store inside the caller's authorized transaction."""
+    memory_id = new_object_id("mem")
+    kind, provider_id, namespace = await _backend(session, actor, scope, memory_id, body)
+    row = MemoryRow(
+        id=memory_id,
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        name=body.name,
+        description=body.description,
+        kind=kind,
+        type=body.type,
+        provider_id=provider_id,
+        namespace=namespace,
+        guide=_guide(body.guide, settings),
+        always_load=_always_load(kind, body.always_load, settings),
+        labels=body.labels,
+        created_by_id=actor.id,
+        updated_by_id=actor.id,
+    )
+    session.add(row)
+    await session.flush()
+    store = None
+    if kind == "file":
+        store = MemoryFileStoreRow(
+            memory_id=row.id, seq=0, pruned_through_seq=0, content_bytes=0, history_bytes=0, file_count=0
         )
-        session.add(row)
+        session.add(store)
         await session.flush()
-        store = None
-        if kind == "file":
-            store = MemoryFileStoreRow(
-                memory_id=row.id, seq=0, pruned_through_seq=0, content_bytes=0, history_bytes=0, file_count=0
-            )
-            session.add(store)
-            await session.flush()
-        audit_row(session, actor, row, "create")
-        return memory_view(row, store, settings)
+    audit_row(session, actor, row, "create")
+    return memory_view(row, store, settings)
 
 
 async def list_memories(

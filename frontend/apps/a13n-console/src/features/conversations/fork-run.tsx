@@ -113,6 +113,7 @@ export function ForkRun({
       navigate(`${path}?${params}`);
     },
   });
+  if (thread.purpose === "memory_organization") return null;
   return (
     <ModalFrame
       open={open}

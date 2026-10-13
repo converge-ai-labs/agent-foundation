@@ -109,17 +109,12 @@
           "preset_kind": {
             "anyOf": [
               {
-                "enum": [
-                  "composer",
-                  "finding"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/PresetKind"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Preset Kind"
+            ]
           },
           "source": {
             "$ref": "#/components/schemas/AgentSource"
@@ -9361,6 +9356,14 @@
         ],
         "type": "string"
       },
+      "PresetKind": {
+        "enum": [
+          "composer",
+          "finding",
+          "memory_organizer"
+        ],
+        "type": "string"
+      },
       "PriceComponent-Input": {
         "additionalProperties": false,
         "description": "One genai-prices usage dimension and its USD unit price.",
@@ -11450,9 +11453,102 @@
             },
             "title": "Labels",
             "type": "object"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/SessionMemorySettings"
           }
         },
         "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionMemorySettings": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_organize": {
+            "default": false,
+            "title": "Auto Organize",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "SessionMemorySettings",
+        "type": "object"
+      },
+      "SessionMemoryStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "active_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Run Id"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Failure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run Id"
+          },
+          "pending": {
+            "default": false,
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "processed_seq": {
+            "default": 0,
+            "title": "Processed Seq",
+            "type": "integer"
+          }
+        },
+        "title": "SessionMemoryStatus",
         "type": "object"
       },
       "SessionPage": {
@@ -11566,22 +11662,36 @@
         "additionalProperties": false,
         "properties": {
           "labels": {
-            "additionalProperties": {
-              "maxLength": 128,
-              "type": "string"
-            },
-            "maxProperties": 32,
-            "propertyNames": {
-              "maxLength": 128,
-              "minLength": 1
-            },
-            "title": "Labels",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "maxProperties": 32,
+                "propertyNames": {
+                  "maxLength": 128,
+                  "minLength": 1
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labels"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionMemorySettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": [
-          "labels"
-        ],
         "title": "SessionUpdate",
         "type": "object"
       },
@@ -11617,6 +11727,23 @@
               }
             ],
             "title": "Last Run Id"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/SessionMemorySettings"
+          },
+          "memory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Id"
+          },
+          "memory_status": {
+            "$ref": "#/components/schemas/SessionMemoryStatus"
           },
           "preview": {
             "anyOf": [
@@ -13642,6 +13769,15 @@
             ],
             "title": "Origin Tool Call Id"
           },
+          "purpose": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "memory_organization"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
@@ -15121,11 +15257,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "composer",
-                    "finding"
-                  ],
-                  "type": "string"
+                  "$ref": "#/components/schemas/PresetKind"
                 },
                 {
                   "type": "null"
@@ -26216,7 +26348,8 @@
         "summary": "List Sessions",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true
       },
       "post": {
         "operationId": "create_session_api_v1_sessions_post",
@@ -26348,7 +26481,8 @@
         "summary": "Get Session",
         "tags": [
           "runs"
-        ]
+        ],
+        "x-a13n-mcp": true
       },
       "patch": {
         "operationId": "update_session_api_v1_sessions__session_id__patch",
@@ -26443,6 +26577,101 @@
         "tags": [
           "runs"
         ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/memory/organizations": {
+      "get": {
+        "operationId": "list_memory_organizations_api_v1_sessions__session_id__memory_organizations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Memory Organizations",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/sessions/{session_id}/message-authors": {

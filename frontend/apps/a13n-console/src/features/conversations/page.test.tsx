@@ -327,7 +327,10 @@ it("starts a Console session that mounts the chosen template, reusing both on a 
     "/api/v1/threads",
     "/api/v1/threads",
   ]);
-  expect(posts[0]?.body).toEqual({ labels: { "a13n.console": "debug" } });
+  expect(posts[0]?.body).toEqual({
+    labels: { "a13n.console": "debug" },
+    memory: { enabled: false, auto_organize: false, model: null },
+  });
   expect(posts[1]?.body).toEqual({ template_id: "envt_research" });
   expect(posts[2]?.body).toEqual({
     agent_id: "agt_1",

@@ -21,7 +21,7 @@ from pydantic import (
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
-from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.connections.headers import normalize_headers
@@ -334,12 +334,35 @@ class EnvironmentMount(_Frozen):
     working_directory: str | None = None
 
 
+class SessionMemorySettings(_Frozen):
+    enabled: bool = False
+    auto_organize: bool = False
+    model: Key | None = None
+
+    @model_validator(mode="after")
+    def organization_model(self) -> "SessionMemorySettings":
+        if self.auto_organize and self.model is None:
+            raise ValueError("Automatic organization requires a model key")
+        return self
+
+
+class SessionMemoryStatus(_Frozen):
+    pending: bool = False
+    active_run_id: str | None = None
+    last_run_id: str | None = None
+    due_at: datetime | None = None
+    processed_seq: int = 0
+    failure: Failure | None = None
+
+
 class SessionCreate(_Frozen):
     labels: Labels = Field(default_factory=dict)
+    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
 
 
 class SessionUpdate(_Frozen):
-    labels: Labels
+    labels: Labels | None = None
+    memory: SessionMemorySettings | None = None
 
 
 class SessionQuery(_Frozen):
@@ -378,6 +401,9 @@ class SessionView(BaseModel):
     created_by_id: str
     last_run_id: str | None
     run_count: int = 0
+    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
+    memory_id: str | None = None
+    memory_status: SessionMemoryStatus = Field(default_factory=SessionMemoryStatus)
     preview: SessionPreview | None = None
     version: int
     created_at: datetime
@@ -391,6 +417,7 @@ class SessionPage(BaseModel):
 
 class ThreadView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    purpose: Literal["conversation", "memory_organization"] = "conversation"
     message_history: MessageHistory
     id: str
     workspace_id: str

@@ -28,6 +28,7 @@ import { useAnchoredLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
 import { ThreadBranches } from "./thread-branches";
+import { SessionMemory } from "./session-memory";
 import styles from "./conversations.module.css";
 
 /**
@@ -106,6 +107,7 @@ export function SessionHeader({
         </span>
       </div>
       <div className={styles.sessionControls}>
+        <SessionMemory sessionId={sessionId} />
         {active && run.data && <StatePill state={run.data.status} />}
         {child && root && (
           <span className={styles.breadcrumb}>

@@ -16,6 +16,7 @@ type Run = Schema["RunView"];
 type Thread = Schema["ThreadView"];
 
 export type RunRequest =
+  | { kind: "memory_organization"; input: unknown; text: string }
   /** An ordinary message: what a person or an application sent. */
   | { kind: "message"; input: unknown; text: string }
   /** `resume`: the complete answer to a waiting batch. */
@@ -31,6 +32,12 @@ export type RunRequest =
   | { kind: "delegated_task"; text: string; parentTask: string | null };
 
 export function runRequest(run: Run, thread?: Thread | null): RunRequest {
+  if (thread?.purpose === "memory_organization")
+    return {
+      kind: "memory_organization",
+      input: run.input,
+      text: inputText(run.input),
+    };
   if (run.trigger === "child_result") return subagentResult(run.input);
   if (run.trigger === "resume")
     return { kind: "feedback", input: run.resume, text: inputText(run.resume) };

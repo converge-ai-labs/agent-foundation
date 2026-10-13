@@ -16,7 +16,7 @@ from pydantic_ai.usage import UsageLimits
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
-from a13n_service.resources.agents.tables import AgentSource
+from a13n_service.resources.agents.tables import AgentSource, PresetKind
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts
@@ -354,7 +354,7 @@ class Agent(BaseModel):
     labels: dict[str, str]
     default_revision_id: str | None
     source: AgentSource
-    preset_kind: Literal["composer", "finding"] | None = None
+    preset_kind: PresetKind | None = None
     image_url: str | None
     archived_at: datetime | None
     version: int

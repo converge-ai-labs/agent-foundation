@@ -21,7 +21,7 @@ from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.rows import given
 from a13n_service.runs.memories.schemas import MemoryMountPage, MemoryMountUpdate
 from a13n_service.runs.memories.tables import ThreadMemoryRow
-from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tables import RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_thread, refresh_version, require_open
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
@@ -120,9 +120,20 @@ async def freeze_memories(
                 with at_field(f"memory_mounts.{index}.memory_id"):
                     raise not_found(MemoryRow.KIND, mount.memory_id)
         await mount_memories(session, thread, added, limit=limit)
-    return [
-        MemoryMount.model_validate(mount).model_dump(mode="json") for mount in await thread_mounts(session, thread.id)
-    ]
+    mounts = [MemoryMount.model_validate(mount) for mount in await thread_mounts(session, thread.id)]
+    # A dynamic default, not a desired thread mount: disable takes effect without rewriting existing threads.
+    # Children retain exactly their inherited set, including read-only bindings.
+    if thread.origin != "child" and thread.purpose == "conversation":
+        owner = await session.get(SessionRow, thread.session_id)
+        assert owner is not None
+        if owner.memory.get("enabled") and owner.memory_id is not None:
+            if not any(mount.name == "session" or mount.memory_id == owner.memory_id for mount in mounts):
+                if len(mounts) >= limit:
+                    raise conflict("thread", thread.id, "memory_mount_limit", limit=limit)
+                existing = await _existing(session, thread.workspace_id, [owner.memory_id])
+                if owner.memory_id in existing:
+                    mounts.append(MemoryMount(name="session", memory_id=owner.memory_id, access="write"))
+    return [mount.model_dump(mode="json") for mount in sorted(mounts, key=lambda mount: mount.name)]
 
 
 def inherited_cursors(parent: RunRow | None, mounts: Sequence[dict]) -> dict[str, str | None]:

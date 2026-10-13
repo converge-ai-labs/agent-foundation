@@ -91,6 +91,24 @@ Memory paths take the memory's ID. The view adds `inherited_guide`, what a null 
 
 Every change is audited as `memory.{create | update | delete}`.
 
+## Session memory and automatic organization
+
+A session has optional `memory` settings: `enabled: false`, `auto_organize: false`, and `model: null` by default. `POST …/sessions` accepts these settings; `PATCH …/sessions/{id}` replaces them under the session's `If-Match`. Changing memory settings requires workspace `write` in addition to the session operation's `run`. Automatic organization requires an explicit model key. Its effective switch is `enabled && auto_organize`; disabling memory preserves the separately configured organization preference.
+
+First enablement provisions a dedicated ordinary PostgreSQL memory, with `MEMORY.md` as an always-loaded path. The session exposes its `memory_id`. Disabling retains that identity, files and revisions; re-enabling reuses them. The memory retains ordinary workspace permissions and may be inspected or explicitly mounted elsewhere. This is a session default, not a new privacy boundary. Deleting the memory clears the reference. Only another explicit enablement provisions a replacement, after any active organization has settled.
+
+At each business run acceptance, the current enabled session memory adds a `session` write mount after explicit thread mounts and agent defaults. An existing name or memory identity wins, including read-only access. The default counts against the mount limit and stays out of the thread's explicit mount configuration. Accepted runs retain their frozen mounts when settings change. Child threads retain the parent's allowed, frozen mount set; they receive no additional session default. Agent tool permissions still govern memory tools.
+
+### Organization lifecycle
+
+Automatic organization operates on saved files only. Each round starts a fresh maintenance thread with `purpose: memory_organization`, no parent run, no business transcript and no previous organizer context. A pinned built-in `memory_organizer` agent revision exposes only memory tools and the session memory write mount, with no environment, web, connections, skills or subagents. It consolidates duplicate facts, groups topics and maintains `MEMORY.md`, preserving provenance, uncertainty and conflicting claims. Each round has a 40-model-request ceiling.
+
+A business run's seal durably marks a coalesced organization opportunity when both switches are enabled. A bounded control sweep admits at most one active round per session, skipping disabled, deleted, empty or unchanged memory. The enabling principal's frozen execution authority bounds admission, which also checks current grants and resource availability. Organization uses ordinary Runs, Attempts, leases, checkpoints, cancellation, usage and write attribution. No transaction spans model execution. Disabling prevents future admission and leaves an already accepted round unchanged. Maintenance seals never enqueue themselves.
+
+The session's `memory_status` exposes pending work, active and last run IDs, failure, and `processed_seq`. This execution state changes independently of the session settings version. Only confirmed `completed` execution can advance progress. Settlement advances through the current store sequence only when retained revisions prove that every change since the admitted source sequence belongs to that organizer. Concurrent external writes or pruning that prevents this proof leave progress unchanged. Failure, cancellation and unconfirmed outcomes also leave progress unchanged; committed partial file edits remain. A later business seal can request another round. Pending admission failures retain the opportunity and report the failure. Admission retries and subsequent rounds use a five-minute cooldown.
+
+`GET …/sessions/{id}/memory/organizations` returns ordinary Run views newest first with `limit` and `cursor`. Maintenance remains directly inspectable, with its model usage and file revisions. It does not replace the session preview, update its business activity order, appear in ordinary thread lists or accept conversation messages. Session run counts and workspace usage include its cost. Console provides settings, files, revisions and organization history through the session Memory dialog; organizer input is labeled as maintenance rather than a person's message.
+
 ## The PostgreSQL store
 
 `PostgresFileStore` implements the Harness `SearchableFileStore` for one memory, and the API's file operations use the same functions. Each call runs in its own short session or transaction; none spans a tool call.
@@ -166,11 +184,11 @@ A thread's **memory mounts** name the memories its later runs use: `{name, memor
 Mounts reach a thread in these ways:
 
 - **New threads and forks** may name initial `memories`, added in the transaction that creates the thread. A fork also copies the origin thread's mounts; copied and named mounts count together.
-- **Agent defaults.** An agent configuration's `memory_mounts` ([04](04-resources.md#agents)) join at the thread's **first acceptance**, before any run of the thread has sealed: each default whose name and memory the thread does not use yet is mounted. A default whose memory is gone refuses the start, and the entry fails with `invalid_argument` at `memory_mounts.{index}.memory_id`; defaults that would exceed the limit fail it with `memory_mount_limit`. Afterwards only the thread's own mounts count, so removing a default's mount keeps it removed.
+- **Agent defaults.** An agent configuration's `memory_mounts` ([04](04-resources.md#agents)) join at the thread's **first acceptance**, before any run of the thread has sealed: each default whose name and memory the thread does not use yet is mounted. A default whose memory is gone refuses the start, and the entry fails with `invalid_argument` at `memory_mounts.{index}.memory_id`; defaults that would exceed the limit fail it with `memory_mount_limit`. Afterwards agent defaults are no longer added, so removing an agent default's mount keeps it removed. The enabled session default is evaluated separately at each business acceptance.
 - **Child threads** adopt their parent run's frozen memory mounts, except memories deleted since, and then take their own agent's defaults at their first acceptance.
 - **Archive** removes the thread's memory mounts with its environment mounts ([05](05-runs.md#waiting-interrupt-and-fork)).
 
-Mount edits affect later runs only. **Acceptance** freezes the thread's mounts, ordered by name, into `runs.memory_mounts` `[{name, memory_id, access, recall}]`, which never changes afterwards.
+Mount edits affect later runs only. **Acceptance** freezes the thread's mounts plus its applicable session default, ordered by name, into `runs.memory_mounts` `[{name, memory_id, access, recall}]`, which never changes afterwards.
 
 ## Execution
 

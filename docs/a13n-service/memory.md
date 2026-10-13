@@ -26,6 +26,34 @@ flowchart TB
 
 All API paths below are under `/api/v1`.
 
+## Session memory
+
+Use **Session memory** when threads in one session should share saved facts without configuring a memory resource first. Both session memory and automatic organization are off by default.
+
+1. Enable **Session memory** when starting a conversation, or open **Memory** in an existing session header.
+2. Optionally enable **Automatically organize saved memory** and select an organization model.
+3. Save the settings. Open **Browse files and revisions** to inspect or correct saved facts. **Organization history** links to each maintenance run and its usage.
+
+Enabling provisions a dedicated file memory. Future runs mount it as `session`; an explicit mount with that name or memory identity takes precedence. Already accepted runs keep their mounts. Disabling retains files and history, and re-enabling uses the same memory. The memory uses workspace permissions, so it is not private to one participant. Changing these settings requires `write` and `run`.
+
+Automatic organization uses the selected model after a business run finishes, only when saved memory is nonempty and changed. It consolidates saved files and maintains a `MEMORY.md` index. It does not extract facts from conversation transcripts. Each round starts fresh with only memory tools and a 40-model-request limit. Organization has ordinary model costs, shown in run usage. Disabling prevents new rounds; already accepted rounds continue.
+
+Failed or cancelled organization retains committed edits but does not mark memory as processed. Concurrent edits remain eligible for a later round. You can inspect file history and restore earlier content through the existing memory controls.
+
+The API accepts the same settings on session creation or update:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "auto_organize": true,
+    "model": "your-model-key"
+  }
+}
+```
+
+Use `POST /api/v1/sessions`, or `PATCH /api/v1/sessions/{session_id}` with the session's `If-Match`. Responses include `memory_id` and `memory_status`. Read paginated maintenance runs at `GET /api/v1/sessions/{session_id}/memory/organizations`. Maintenance does not replace the conversation preview or appear among ordinary conversation branches.
+
 ## Create a file memory
 
 Creating and changing memories needs `write`:

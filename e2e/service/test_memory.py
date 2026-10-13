@@ -276,3 +276,69 @@ async def test_deleting_a_record_memory_purges_its_namespace_through_the_outbox(
         workspace_id=api.tenant["workspace_id"],
     )
     assert rows == [{"dedupe_key": memory["id"], "status": "delivered"}]
+
+
+async def test_session_memory_organization_runs_through_control_and_workers(stack) -> None:  # type: ignore[no-untyped-def]
+    api, model = stack.api, stack.model
+    model_key = await api.create_model(model.base_url)
+    agent = await api.create_agent("Business", model_key)
+    owner = expect(
+        await api.client.post(
+            "/api/v1/sessions", json={"memory": {"enabled": True, "auto_organize": True, "model": model_key}}
+        ),
+        201,
+    )
+    session_url = f"/api/v1/sessions/{owner['id']}"
+    memory_id = owner["memory_id"]
+    marker = "Organize the current saved session memory files."
+    await model.call(
+        "memory_file_create",
+        {"memory": "session", "path": "notes.md", "content": "Prefer concise answers."},
+        call_id="business_save",
+        to="[business-session]",
+    )
+    await model.say("Saved your preference.", to="[business-session]")
+    await model.call(
+        "memory_file_create",
+        {"memory": "session", "path": "MEMORY.md", "content": "Preferences: see notes.md."},
+        call_id="organizer_index",
+        to=marker,
+    )
+    await model.say("Indexed saved preferences.", to=marker)
+    started = await api.start(agent, "[business-session] Save my preference", session_id=owner["id"])
+    assert (await api.sealed(started["run"]["id"]))["status"] == "completed"
+
+    async def organized() -> dict | None:
+        current = expect(await api.client.get(session_url), 200)
+        state = current["memory_status"]
+        return current if state["processed_seq"] == 2 and state["active_run_id"] is None else None
+
+    # The ordinary bounded sweep admits and later settles the worker's run.
+    current = await eventually(organized, timeout=60)
+    assert current["preview"]["run_id"] == started["run"]["id"]
+    listing = expect(await api.client.get(session_url + "/memory/organizations"), 200)
+    [organization] = listing["items"]
+    assert organization["status"] == "completed" and organization["parent_run_id"] is None
+    assert organization["memory_mounts"][0]["memory_id"] == memory_id
+    assert organization["environment_mounts"] == []
+    assert (await api.thread(organization["thread_id"]))["purpose"] == "memory_organization"
+    assert len(await api.attempts(organization["id"])) == 1
+    request = (await model.requests(marker))[0]["body"]
+    assert "[business-session]" not in str(request["messages"])
+    assert all(tool["function"]["name"].startswith("memory_file_") for tool in request["tools"])
+    assert await history(api, {"id": memory_id}, "MEMORY.md") == [("create", organization["id"], "organizer_index")]
+    threads = expect(await api.client.get("/api/v1/threads", params={"session_id": owner["id"]}), 200)
+    assert [thread["id"] for thread in threads["items"]] == [started["thread"]["id"]]
+    before = await api.client.get(session_url)
+    disabled = expect(
+        await api.client.patch(
+            session_url, json={"memory": {"enabled": False}}, headers={"if-match": before.headers["etag"]}
+        ),
+        200,
+    )
+    assert disabled["memory_id"] == memory_id
+    await model.say("Without session memory.", to="[disabled-session]")
+    second = await api.start(agent, "[disabled-session] Hello", session_id=owner["id"])
+    assert second["run"]["memory_mounts"] == []
+    assert (await api.sealed(second["run"]["id"]))["status"] == "completed"
+    assert len(expect(await api.client.get(session_url + "/memory/organizations"), 200)["items"]) == 1

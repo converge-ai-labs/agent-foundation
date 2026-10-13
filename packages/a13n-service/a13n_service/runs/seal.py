@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import select, tuple_
+from sqlalchemy import select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit, lock, now, transaction
@@ -20,9 +20,10 @@ from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints, inbox
 from a13n_service.runs.accept import advance
 from a13n_service.runs.attempts import Lease, lock_thread_lease
+from a13n_service.runs.memories.organization_tables import SessionMemoryRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Failure, Outcome, Sealed
-from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
+from a13n_service.runs.tables import AttemptRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.usage import totals
 from a13n_service.runs.webhooks import LifecycleKind, notify_subscribers
 
@@ -142,6 +143,21 @@ async def seal(
         )
     await notify_subscribers(session, runtime, run, kinds, at=at, attempt=attempt)
     await checkpoints.reclaim(session, run)
+    if thread.purpose == "conversation":
+        await session.execute(
+            update(SessionMemoryRow)
+            .where(
+                SessionMemoryRow.session_id == run.session_id,
+                SessionMemoryRow.session_id.in_(
+                    select(SessionRow.id).where(
+                        SessionRow.memory["enabled"].as_boolean(),
+                        SessionRow.memory["auto_organize"].as_boolean(),
+                        SessionRow.memory_id.is_not(None),
+                    )
+                ),
+            )
+            .values(pending=True)
+        )
 
 
 async def recover(

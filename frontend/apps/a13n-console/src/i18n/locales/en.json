@@ -2075,5 +2075,19 @@
   "Environment runtime": "Runtime",
   "Cloud hosting": "Cloud",
   "Own hosting": "Own infrastructure",
-  "Hosting mode": "Hosting mode"
+  "Hosting mode": "Hosting mode",
+  "Session memory": "Session memory",
+  "Share saved facts across this session's threads. Disabling retains files and history.": "Share saved facts across this session's threads. Disabling retains files and history.",
+  "Automatically organize saved memory": "Automatically organize saved memory",
+  "Uses the selected model after runs finish, only when memory has changed. Already accepted organization runs continue.": "Uses the selected model after runs finish, only when memory has changed. Already accepted organization runs continue.",
+  "Organization model": "Organization model",
+  "Saved files and their organization, separate from the conversation.": "Saved files and their organization, separate from the conversation.",
+  "Browse files and revisions": "Browse files and revisions",
+  "Organization history": "Organization history",
+  "Organizing": "Organizing",
+  "Idle": "Idle",
+  "View run and usage": "View run and usage",
+  "No organization runs yet. Empty or unchanged memory needs no model call.": "No organization runs yet. Empty or unchanged memory needs no model call.",
+  "Older": "Older",
+  "Memory organization": "Memory organization"
 }

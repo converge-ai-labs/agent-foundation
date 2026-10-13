@@ -74,6 +74,8 @@ from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.findings.routes import router as findings_router
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
+from a13n_service.runs.memories.organization import organization_sweep
+from a13n_service.runs.memories.organization_tables import SessionMemoryRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
@@ -306,6 +308,7 @@ OSS = Distribution(
         MemoryFileRevisionRow,
         MemoryRecordSourceRow,
         SessionRow,
+        SessionMemoryRow,
         ThreadRow,
         EnvironmentRow,
         ThreadEnvironmentRow,
@@ -342,6 +345,7 @@ OSS = Distribution(
     migrations=(Path(__file__).parent / "migrations" / "versions",),
     sweeps=(
         _advance_threads,
+        organization_sweep,
         _expire_leases,
         _expire_credentials,
         maintenance_sweep,

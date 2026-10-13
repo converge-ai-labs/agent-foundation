@@ -1822,6 +1822,23 @@ export interface paths {
     patch: operations["update_session_api_v1_sessions__session_id__patch"];
     trace?: never;
   };
+  "/api/v1/sessions/{session_id}/memory/organizations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memory Organizations */
+    get: operations["list_memory_organizations_api_v1_sessions__session_id__memory_organizations_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/sessions/{session_id}/message-authors": {
     parameters: {
       query?: never;
@@ -3113,8 +3130,7 @@ export interface components {
       name: string;
       /** Organization Id */
       organization_id: string;
-      /** Preset Kind */
-      preset_kind?: ("composer" | "finding") | null;
+      preset_kind?: components["schemas"]["PresetKind"] | null;
       source: components["schemas"]["AgentSource"];
       /**
        * Updated At
@@ -6241,6 +6257,8 @@ export interface components {
     };
     /** @enum {string} */
     Preset: "execution" | "recovery" | "answer";
+    /** @enum {string} */
+    PresetKind: "composer" | "finding" | "memory_organizer";
     /**
      * PriceComponent
      * @description One genai-prices usage dimension and its USD unit price.
@@ -6932,6 +6950,42 @@ export interface components {
       labels?: {
         [key: string]: string;
       };
+      memory?: components["schemas"]["SessionMemorySettings"];
+    };
+    /** SessionMemorySettings */
+    SessionMemorySettings: {
+      /**
+       * Auto Organize
+       * @default false
+       */
+      auto_organize?: boolean;
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled?: boolean;
+      /** Model */
+      model?: string | null;
+    };
+    /** SessionMemoryStatus */
+    SessionMemoryStatus: {
+      /** Active Run Id */
+      active_run_id?: string | null;
+      /** Due At */
+      due_at?: string | null;
+      failure?: components["schemas"]["Failure"] | null;
+      /** Last Run Id */
+      last_run_id?: string | null;
+      /**
+       * Pending
+       * @default false
+       */
+      pending?: boolean;
+      /**
+       * Processed Seq
+       * @default 0
+       */
+      processed_seq?: number;
     };
     /** SessionPage */
     SessionPage: {
@@ -6972,9 +7026,10 @@ export interface components {
     /** SessionUpdate */
     SessionUpdate: {
       /** Labels */
-      labels: {
+      labels?: {
         [key: string]: string;
-      };
+      } | null;
+      memory?: components["schemas"]["SessionMemorySettings"] | null;
     };
     /** SessionView */
     SessionView: {
@@ -6993,6 +7048,10 @@ export interface components {
       };
       /** Last Run Id */
       last_run_id: string | null;
+      memory?: components["schemas"]["SessionMemorySettings"];
+      /** Memory Id */
+      memory_id?: string | null;
+      memory_status?: components["schemas"]["SessionMemoryStatus"];
       preview?: components["schemas"]["SessionPreview"] | null;
       /**
        * Run Count
@@ -7631,6 +7690,12 @@ export interface components {
       origin_thread_id: string | null;
       /** Origin Tool Call Id */
       origin_tool_call_id: string | null;
+      /**
+       * Purpose
+       * @default conversation
+       * @enum {string}
+       */
+      purpose?: "conversation" | "memory_organization";
       /** Session Id */
       session_id: string;
       /** Subagent */
@@ -8198,7 +8263,7 @@ export interface operations {
         q?: string | null;
         archived?: boolean | null;
         source?: components["schemas"]["AgentSource"] | null;
-        preset_kind?: ("composer" | "finding") | null;
+        preset_kind?: components["schemas"]["PresetKind"] | null;
         skill_id?: string | null;
         skill_revision_id?: string | null;
         limit?: number;
@@ -12381,6 +12446,36 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SessionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_memory_organizations_api_v1_sessions__session_id__memory_organizations_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunPage"];
         };
       };
       400: components["responses"]["Error"];

@@ -135,7 +135,7 @@ async def test_real_client_and_two_api_process_lifespans(
             headers = {"authorization": "Bearer " + credential["secret"]}
             async with Client(StreamableHttpTransport(first_url + MCP, headers=headers)) as first:
                 tools = await first.list_tools()
-                assert len(tools) == 124
+                assert len(tools) == 127
                 operation = service.app.openapi()["paths"]["/api/v1/memories"]["post"]
                 created = await first.call_tool(
                     tool_name(operation["operationId"]), {"request_body": {"name": "shared"}}
@@ -213,9 +213,14 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     selected = {
         (path, method) for path, item in schema["paths"].items() for method, op in item.items() if op.get("x-a13n-mcp")
     }
-    assert len(selected) == 123
+    assert len(selected) == 126
     assert ("/api/v1/runs/{run_id}/attempts/{attempt_id}/trace", "get") in selected
     assert ("/api/v1/skills", "post") in selected
+    assert {
+        ("/api/v1/sessions", "get"),
+        ("/api/v1/sessions/{session_id}", "get"),
+        ("/api/v1/sessions/{session_id}/memory/organizations", "get"),
+    } <= selected
     assert {
         ("/api/v1/findings", "get"),
         ("/api/v1/findings/{finding_id}", "get"),
@@ -228,7 +233,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         ("/api/v1/finding-agent", "post"),
     }.isdisjoint(selected)
     assert not any(
-        "/auth" in path or "/uploads" in path or "/organizations" in path or "/users" in path for path, _ in selected
+        "/auth" in path or "/uploads" in path or path.startswith("/api/v1/organizations") or "/users" in path
+        for path, _ in selected
     )
     assert not any(path.endswith("/content") or path.endswith("/authorize") for path, _ in selected)
     tools = api_tools(

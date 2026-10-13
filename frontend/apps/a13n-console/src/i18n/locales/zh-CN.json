@@ -2075,5 +2075,19 @@
   "Environment runtime": "运行方式",
   "Cloud hosting": "云端",
   "Own hosting": "自有",
-  "Hosting mode": "托管方式"
+  "Hosting mode": "托管方式",
+  "Session memory": "会话记忆",
+  "Share saved facts across this session's threads. Disabling retains files and history.": "在会话内的对话之间共享已保存的事实。停用后保留文件和历史。",
+  "Automatically organize saved memory": "自动整理已保存的记忆",
+  "Uses the selected model after runs finish, only when memory has changed. Already accepted organization runs continue.": "运行结束后，仅在记忆发生变化时使用所选模型整理。已经接收的整理运行会继续。",
+  "Organization model": "整理模型",
+  "Saved files and their organization, separate from the conversation.": "查看已保存的文件与整理记录，独立于对话内容。",
+  "Browse files and revisions": "浏览文件和历史版本",
+  "Organization history": "整理历史",
+  "Organizing": "正在整理",
+  "Idle": "空闲",
+  "View run and usage": "查看运行与用量",
+  "No organization runs yet. Empty or unchanged memory needs no model call.": "尚无整理运行。记忆为空或未变化时无需调用模型。",
+  "Older": "更早",
+  "Memory organization": "记忆整理"
 }

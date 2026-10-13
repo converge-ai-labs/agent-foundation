@@ -311,11 +311,12 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     if source.entry is not None:
         inbox.assign(source.entry, run)
     thread.current_run_id = run.id
-    await session.execute(
-        update(SessionRow)
-        .where(SessionRow.id == thread.session_id)
-        .values(last_run_id=run.id, updated_at=func.clock_timestamp())
-    )
+    if thread.purpose == "conversation":
+        await session.execute(
+            update(SessionRow)
+            .where(SessionRow.id == thread.session_id)
+            .values(last_run_id=run.id, updated_at=func.clock_timestamp())
+        )
     await session.flush()
     await notify_subscribers(session, runtime, run, ["run.accepted"], at=current)
     runtime.wake_workers(session)

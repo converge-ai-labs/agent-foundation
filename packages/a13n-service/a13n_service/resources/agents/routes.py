@@ -1,6 +1,6 @@
 """Agent heads, their avatars and revisions, and the built-in toolset catalogue their configurations select from."""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
 
@@ -19,6 +19,7 @@ from a13n_service.resources.agents.schemas import (
     AgentUpdate,
     AgentValidate,
 )
+from a13n_service.resources.agents.tables import PresetKind
 from a13n_service.resources.agents.toolsets import ToolsetCatalog
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
@@ -76,7 +77,7 @@ async def list_agents(
     q: Annotated[Search | None, Query()] = None,
     archived: bool | None = None,
     source: AgentSource | None = None,
-    preset_kind: Literal["composer", "finding"] | None = None,
+    preset_kind: PresetKind | None = None,
     skill_id: Annotated[str | None, Query(max_length=72)] = None,
     skill_revision_id: Annotated[str | None, Query(max_length=72)] = None,
     limit: PageLimit = 50,

@@ -32,6 +32,7 @@ import type { EnvironmentChoice } from "./composer/options-dialog";
 import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
+import { defaultSessionMemory, SessionMemoryFields } from "./session-memory";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { ThreadInbox } from "./transcript/inbox";
 import styles from "./conversations.module.css";
@@ -73,7 +74,7 @@ export function NewConversation() {
   async function consoleSession() {
     prepared.current.session ??= data(
       await client.workspace(workspace.id).POST("/api/v1/sessions", {
-        body: { labels: CONSOLE_SESSION_LABELS },
+        body: { labels: CONSOLE_SESSION_LABELS, memory },
       }),
     );
     return prepared.current.session;
@@ -106,6 +107,7 @@ export function NewConversation() {
           .then(data),
       ),
   });
+  const [memory, setMemory] = useState(defaultSessionMemory);
   const enabled = agents.data ?? [];
   const selected = enabled.find((agent) => agent.id === agentId);
   return (
@@ -144,11 +146,20 @@ export function NewConversation() {
             },
           ]}
         />
+        {can("write") && (
+          <SessionMemoryFields
+            value={memory}
+            onChange={setMemory}
+            disabled={!!prepared.current.session}
+          />
+        )}
         <Composer
           initial={
             message ? { content: [{ type: "text", text: message }] } : undefined
           }
-          disabled={!can("run") || !agentId}
+          disabled={
+            !can("run") || !agentId || (!!memory.auto_organize && !memory.model)
+          }
           agentName={selected?.name}
           options={<RunOptions options={options} showAgent={false} />}
           submit={async (payload) => {

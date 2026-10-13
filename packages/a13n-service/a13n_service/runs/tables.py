@@ -78,7 +78,9 @@ class SessionRow(Stamped, Base):
     workspace_id: Mapped[str]
     labels: Mapped[dict] = mapped_column(JSONB)
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
-    # The most recently accepted run of any of its threads: the list preview.
+    memory: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    memory_id: Mapped[str | None] = mapped_column(ForeignKey("memories.id", ondelete="SET NULL"))
+    # The most recently accepted business run: maintenance never replaces this preview.
     last_run_id: Mapped[str | None] = mapped_column(String(72))
 
 
@@ -112,6 +114,8 @@ class ThreadRow(Stamped, Base):
             )
             for pointer in ("current_run_id", "last_run_id")
         ),
+        CheckConstraint("purpose IN ('conversation', 'memory_organization')", name="purpose"),
+        CheckConstraint("purpose = 'conversation' OR origin = 'new'", name="purpose_origin"),
         CheckConstraint("origin IN ('new', 'fork', 'child')", name="origin"),
         CheckConstraint(
             "(origin = 'new' AND origin_thread_id IS NULL AND origin_run_id IS NULL AND origin_tool_call_id IS NULL)"
@@ -161,6 +165,7 @@ class ThreadRow(Stamped, Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     session_id: Mapped[str]
+    purpose: Mapped[str] = mapped_column(default="conversation", server_default="conversation")
     origin: Mapped[str]
     origin_thread_id: Mapped[str | None]
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
