@@ -79,10 +79,10 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
         (None, 50, 10, 0, None, START + timedelta(days=2)),
         ("scripted", 9999, 0, 0, Decimal("99"), START + timedelta(days=3)),
     ]
-    await observed_run(service, runs_kit, agent, records=records)
+    first_run, _ = await observed_run(service, runs_kit, agent, records=records)
     await observed_run(service, runs_kit, second, seconds=30)
     # Consumption arrives in this window, but this Run began outside it.
-    await observed_run(
+    late_run, _ = await observed_run(
         service,
         runs_kit,
         agent,
@@ -112,7 +112,7 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     first = await read(service, "models", limit=1)
     last = await read(service, "models", limit=1, cursor=first["next_cursor"])
     assert first["items"] + last["items"] == models and last["next_cursor"] is None
-    # The original summary endpoint keeps its shape and includes cache writes.
+    # The summary sums per model and per Run in one reading, and includes cache writes.
     summary = (
         await service.client.get(
             f"{service.api}/usage",
@@ -122,8 +122,22 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
             },
         )
     ).json()
-    assert sum(row["requests"] for row in summary["models"]) == 4
+    assert [(row["model"], row["requests"]) for row in summary["models"]] == [("scripted", 3), (None, 1)]
     assert all("cache_write_tokens" in row for row in summary["models"])
+    assert [run["run_id"] for run in summary["runs"]] == [first_run, late_run]
+    first = summary["runs"][0]
+    assert [(row["model"], row["requests"], row["input_tokens"], row["cost"]) for row in first["models"]] == [
+        ("scripted", 2, 1000, "0.1"),
+        (None, 1, 50, None),
+    ]
+    run = (await service.client.get(f"{service.api}/runs/{first_run}")).json()
+    assert first["thread_id"] == run["thread_id"]
+    for field in ("requests", "input_tokens", "output_tokens", "cache_read_tokens"):
+        assert sum(row[field] for run in summary["runs"] for row in run["models"]) == sum(
+            row[field] for row in summary["models"]
+        )
+    only = (await service.client.get(f"{service.api}/usage", params={"run_id": late_run})).json()
+    assert [run["run_id"] for run in only["runs"]] == [late_run] and only["models"] == only["runs"][0]["models"]
 
 
 async def test_calendar_buckets_empty_state_and_invalid_windows(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]

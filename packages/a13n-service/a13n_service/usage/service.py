@@ -8,7 +8,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import BigInteger, ColumnElement, Numeric, RowMapping, Select, case, func, or_, select
+from sqlalchemy import BigInteger, ColumnElement, Numeric, RowMapping, Select, case, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -30,6 +30,7 @@ from a13n_service.usage.schemas import (
     ModelUsagePage,
     OverviewQuery,
     RunMetrics,
+    RunUsage,
     UsageFilter,
     UsageOverview,
     UsageSummary,
@@ -226,17 +227,24 @@ async def models(storage: Storage, actor: Principal, workspace_id: str, query: B
 
 
 async def summarize(storage: Storage, actor: Principal, workspace_id: str, where: UsageFilter) -> UsageSummary:
-    """Model usage recorded in the workspace, per model, including reports that arrived after a seal.
+    """Model usage recorded in the workspace, per model and per Run, including reports that arrived after a seal.
 
-    Cost sums each record's own priced cost; records the Harness could not price count tokens only.
+    Cost sums each record's own priced cost; records the Harness could not price count tokens only. One
+    statement groups both ways, so the per-Run rows always add up to the per-model totals.
     """
+    by_run = (RunRow.created_at, RunRow.id, RunRow.thread_id)
     query = (
         _model_totals()
-        .add_columns(ModelRow.key.label("model"))
+        .add_columns(
+            ModelRow.key.label("model"),
+            RunRow.id.label("run_id"),
+            RunRow.thread_id,
+            func.grouping(RunRow.id).label("total"),
+        )
         .join(RunRow, RunRow.id == UsageRecordRow.run_id)
         .outerjoin(ModelRow, ModelRow.id == UsageRecordRow.model_id)
-        .group_by(ModelRow.key)
-        .order_by(ModelRow.key)
+        .group_by(func.grouping_sets(tuple_(ModelRow.key), tuple_(*by_run, ModelRow.key)))
+        .order_by(*by_run, ModelRow.key)
     )
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -253,4 +261,15 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
         if where.ingested_before is not None:
             query = query.where(UsageRecordRow.ingested_at < where.ingested_before)
         rows = (await session.execute(query)).mappings().all()
-    return UsageSummary(models=[ModelUsage.model_validate(row) for row in rows])
+    models: list[ModelUsage] = []
+    runs: dict[tuple[str, str], list[ModelUsage]] = {}
+    for row in rows:
+        usage = ModelUsage.model_validate(row)
+        if row["total"]:
+            models.append(usage)
+        else:
+            runs.setdefault((row["run_id"], row["thread_id"]), []).append(usage)
+    return UsageSummary(
+        models=models,
+        runs=[RunUsage(run_id=run, thread_id=thread, models=usage) for (run, thread), usage in runs.items()],
+    )

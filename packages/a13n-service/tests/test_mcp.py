@@ -135,7 +135,7 @@ async def test_real_client_and_two_api_process_lifespans(
             headers = {"authorization": "Bearer " + credential["secret"]}
             async with Client(StreamableHttpTransport(first_url + MCP, headers=headers)) as first:
                 tools = await first.list_tools()
-                assert len(tools) == 124
+                assert len(tools) == 125
                 operation = service.app.openapi()["paths"]["/api/v1/memories"]["post"]
                 created = await first.call_tool(
                     tool_name(operation["operationId"]), {"request_body": {"name": "shared"}}
@@ -213,8 +213,9 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     selected = {
         (path, method) for path, item in schema["paths"].items() for method, op in item.items() if op.get("x-a13n-mcp")
     }
-    assert len(selected) == 123
+    assert len(selected) == 124
     assert ("/api/v1/runs/{run_id}/attempts/{attempt_id}/trace", "get") in selected
+    assert ("/api/v1/usage", "get") in selected
     assert ("/api/v1/skills", "post") in selected
     assert {
         ("/api/v1/findings", "get"),

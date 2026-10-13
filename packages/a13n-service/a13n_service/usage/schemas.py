@@ -117,5 +117,13 @@ class ModelUsage(BaseModel):
     cost: Decimal | None
 
 
+class RunUsage(BaseModel):
+    run_id: str
+    thread_id: str
+    models: list[ModelUsage]
+
+
 class UsageSummary(BaseModel):
     models: list[ModelUsage]
+    # The same per-model sums for each Run, in creation order.
+    runs: list[RunUsage]

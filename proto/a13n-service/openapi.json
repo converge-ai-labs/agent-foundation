@@ -10925,6 +10925,32 @@
         ],
         "type": "string"
       },
+      "RunUsage": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsage"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "thread_id",
+          "models"
+        ],
+        "title": "RunUsage",
+        "type": "object"
+      },
       "RunView": {
         "properties": {
           "agent_id": {
@@ -14487,10 +14513,18 @@
             },
             "title": "Models",
             "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunUsage"
+            },
+            "title": "Runs",
+            "type": "array"
           }
         },
         "required": [
-          "models"
+          "models",
+          "runs"
         ],
         "title": "UsageSummary",
         "type": "object"
@@ -30802,7 +30836,8 @@
         "summary": "Summarize Usage",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/agents": {
