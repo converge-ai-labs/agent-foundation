@@ -100,7 +100,7 @@
   color: var(--a13n-secondary);
 }
 .branchTrigger {
-  max-width: 150px;
+  max-width: 200px;
 }
 .branchTrigger span {
   overflow: hidden;

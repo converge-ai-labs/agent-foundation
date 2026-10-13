@@ -1,6 +1,5 @@
 import { Button, DisclosureSection } from "a13n-ui";
 import { CaretRightIcon } from "@phosphor-icons/react";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../../layout/workspace";
 import type { Schema } from "../../../../shared/api";
@@ -8,7 +7,7 @@ import { StatePill } from "../../../../shared/feedback";
 import { JsonView } from "../../../../shared/forms";
 import { isActiveRun } from "../../api";
 import { formatCost } from "../../../../shared/cost";
-import { formatDuration, formatTokens } from "../../format";
+import { formatDuration, formatTokens, tokenFigures } from "../../format";
 import { runOutcome } from "../../lifecycle";
 import { runRequest } from "../../request";
 import { ForkRun } from "../../fork-run";
@@ -22,7 +21,7 @@ import {
   useChildThreads,
 } from "../thread-runs";
 import { useRunOpen } from "./collapse";
-import { RunDetails } from "./run-details";
+import { RunDetailsDialog } from "./run-details";
 import { EventRow, TimelineRows } from "./timeline-rows";
 import { useNow } from "./use-now";
 import type { RunScope } from "./scope";
@@ -47,10 +46,9 @@ export function DebugRunSection({
   resubmit?: () => void;
   jumpToDock?: () => void;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { can, basePath } = useWorkspace();
   const [open, toggleOpen] = useRunOpen(run.id);
-  const [details, setDetails] = useState(false);
   const active = isActiveRun(run.status) || run.status === "waiting";
   const now = useNow(active);
   const children = useChildThreads(run.session_id, run.thread_id);
@@ -94,43 +92,28 @@ export function DebugRunSection({
         <StatePill state={run.status} />
         <Lineage run={run} />
         <span className={styles.headingMeta}>
-          <span>
-            {new Intl.DateTimeFormat(i18n.resolvedLanguage, {
-              timeStyle: "medium",
-            }).format(new Date(run.started_at ?? run.created_at))}
-          </span>
+          {/* The request beneath says when; Details has the exact start. */}
           <span className={styles.headingDuration}>
             {formatDuration(duration)}
           </span>
           <span>
             {t("{{count}} model calls", { count: timeline.totals.modelCalls })}
           </span>
-          <span>
-            {/* Tokens nobody reported are unknown, never zero. */}
-            {timeline.totals.reportedUsage
-              ? `${formatTokens(timeline.totals.inputTokens)} → ${formatTokens(timeline.totals.outputTokens)}`
-              : `${formatTokens(null)} → ${formatTokens(null)}`}
-          </span>
+          <TokenFigures totals={timeline.totals} />
           {timeline.totals.costUsd && (
             <span>{formatCost(timeline.totals.costUsd)}</span>
           )}
         </span>
-        <ForkRun
-          run={run}
-          thread={thread}
-          level="debug"
-          index={index}
-          compact
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          className={styles.detailsToggle}
-          aria-expanded={details}
-          onClick={() => setDetails((value) => !value)}
-        >
-          {t("Details")}
-        </Button>
+        <span className={styles.headingActions}>
+          <ForkRun
+            run={run}
+            thread={thread}
+            level="debug"
+            index={index}
+            compact
+          />
+          <RunDetailsDialog run={run} index={index} />
+        </span>
       </header>
       <div className={styles.request} data-collapsed={!open || undefined}>
         {request.kind === "message" ? (
@@ -149,7 +132,6 @@ export function DebugRunSection({
       </div>
       {open && (
         <>
-          {details && <RunDetails runId={run.id} />}
           {timeline.coverage !== "complete" && (
             <p role="status" className={styles.coverage}>
               {t(
@@ -184,6 +166,24 @@ export function DebugRunSection({
         </>
       )}
     </section>
+  );
+}
+
+/** Tokens nobody reported are unknown, never zero. */
+function TokenFigures({ totals }: { totals: RunTimeline["totals"] }) {
+  const { t } = useTranslation();
+  if (!totals.reportedUsage)
+    return <span>{`${formatTokens(null)} → ${formatTokens(null)}`}</span>;
+  const figures = tokenFigures(t, {
+    input: totals.inputTokens,
+    output: totals.outputTokens,
+    cached: totals.cacheReadTokens,
+  });
+  return (
+    <>
+      <span title={figures.pairTitle}>{figures.pair}</span>
+      {figures.cache && <span title={figures.cacheTitle}>{figures.cache}</span>}
+    </>
   );
 }
 

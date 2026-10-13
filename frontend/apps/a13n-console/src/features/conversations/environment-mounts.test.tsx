@@ -3,8 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
-import { RunEnvironmentMounts } from "./environment-mounts";
-import { fixtureRun, fixtureThread } from "./transcript/fixture";
+import { ThreadEnvironmentMounts } from "./environment-mounts";
+import { fixtureThread } from "./transcript/fixture";
 
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -28,7 +28,6 @@ vi.mock("react-i18next", () => ({
 vi.mock("../environments/reference", () => ({
   EnvironmentReference: ({ id }: { id: string }) => <span>{id}</span>,
 }));
-const run = fixtureRun({ status: "completed" });
 
 beforeEach(() => {
   mocks.canAdd = true;
@@ -55,7 +54,7 @@ function show() {
   });
   render(
     <QueryClientProvider client={cache}>
-      <RunEnvironmentMounts run={run} />
+      <ThreadEnvironmentMounts thread={fixtureThread()} />
     </QueryClientProvider>,
   );
   return cache;
@@ -161,7 +160,7 @@ it("mounts a managed instance at a directory and clears stale paths on selection
 it("does not offer additions on a child Thread", async () => {
   mocks.thread = fixtureThread({ origin: "child" });
   const cache = show();
-  await screen.findByText("No additional environments.");
+  await screen.findByText("No environments mounted.");
   expect(screen.queryByRole("button", { name: "Add environment" })).toBeNull();
   cache.clear();
 });
@@ -169,7 +168,7 @@ it("does not offer additions on a child Thread", async () => {
 it("requires run permission", async () => {
   mocks.canAdd = false;
   const cache = show();
-  await screen.findByText("No additional environments.");
+  await screen.findByText("No environments mounted.");
   expect(screen.queryByRole("button", { name: "Add environment" })).toBeNull();
   cache.clear();
 });

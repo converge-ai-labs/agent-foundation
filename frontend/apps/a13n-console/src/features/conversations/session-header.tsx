@@ -14,7 +14,9 @@ import {
   CaretRightIcon,
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
+  MonitorIcon,
 } from "@phosphor-icons/react";
+import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
@@ -27,7 +29,9 @@ import { useRun, useSession } from "./queries";
 import { useAnchoredLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
+import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
+import { ThreadMountsDialog } from "./thread-mounts";
 import styles from "./conversations.module.css";
 
 /**
@@ -53,6 +57,7 @@ export function SessionHeader({
   const agent = useAgent(valid ? run.data?.agent_id : undefined);
   const { runs } = useThreadRuns(threadId);
   const collapse = useRunCollapseAll();
+  const [mounts, setMounts] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside conversation switching.
   const child = thread?.origin === "child";
@@ -118,6 +123,9 @@ export function SessionHeader({
             <span>{agent.data?.name ?? t("Child thread")}</span>
           </span>
         )}
+        {level === "debug" && (
+          <SessionUsage sessionId={sessionId} threads={threads} />
+        )}
         {thread && (
           <ThreadBranches thread={thread} threads={threads} level={level} />
         )}
@@ -159,6 +167,12 @@ export function SessionHeader({
                   : t("Collapse all runs")}
               </MenuItem>
             )}
+            {thread && (
+              <MenuItem onClick={() => setMounts(true)}>
+                <MonitorIcon size={14} aria-hidden="true" />
+                {t("Environments and memory")}
+              </MenuItem>
+            )}
             {can("read") && (
               <MenuItem
                 render={
@@ -177,6 +191,13 @@ export function SessionHeader({
             </MenuItem>
           </MenuPopup>
         </Menu>
+        {thread && (
+          <ThreadMountsDialog
+            thread={thread}
+            open={mounts}
+            onOpenChange={setMounts}
+          />
+        )}
       </div>
     </header>
   );

@@ -98,10 +98,21 @@
   color: var(--a13n-text);
   font-weight: 500;
 }
-.detailsToggle {
+/* Branch and Details are the run's two quiet actions; they read alike. */
+.headingActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   flex: none;
+  margin-right: -6px;
+}
+.headingActions > :global(button),
+.headingActions > :global(a) {
   color: var(--a13n-secondary);
-  font-weight: 400;
+}
+.headingActions > :global(button):hover,
+.headingActions > :global(a):hover {
+  color: var(--a13n-text);
 }
 
 /* Request ---------------------------------------------------------------- */
@@ -263,8 +274,12 @@
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
 }
-.tokens {
+.tokens,
+.cache {
   white-space: nowrap;
+}
+.cache {
+  color: color-mix(in srgb, var(--a13n-secondary) 82%, transparent);
 }
 .duration {
   min-width: 44px;
@@ -343,8 +358,12 @@
   line-height: 1.65;
 }
 @media (max-width: 760px) {
-  .headingMeta {
+  .headingMeta,
+  .cache {
     display: none;
+  }
+  .headingActions {
+    margin-left: auto;
   }
   .request,
   .reply,

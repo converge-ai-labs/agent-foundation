@@ -291,3 +291,15 @@ a.agentLink:focus-visible {
     padding: 24px 16px 64px;
   }
 }
+
+/* Conversation mounts dialog: two titled groups, separated by space. */
+.threadMounts {
+  display: grid;
+  gap: 26px;
+  padding-bottom: 8px;
+}
+.threadMounts h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 600;
+}

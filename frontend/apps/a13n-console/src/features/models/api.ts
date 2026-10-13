@@ -1,5 +1,6 @@
 import type { Client } from "../../service-client";
 import {
+  allPages,
   data,
   ifMatch,
   matchesSearch,
@@ -21,6 +22,17 @@ export function mediaDefaultsQuery(client: Client, workspaceId: string) {
         .then(representation),
   };
 }
+/** Every model of a workspace, for the surfaces that refer to models by key. */
+export function workspaceModelsQuery(client: Client, workspaceId: string) {
+  return {
+    queryKey: ["models", "all", workspaceId],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      allPages((cursor) =>
+        modelApi(client, workspaceId).models(signal, cursor),
+      ),
+  };
+}
+
 /** A workspace's models, identified by key, and the providers that serve them. */
 export function modelApi(client: Client, workspaceId: string) {
   const http = client.workspace(workspaceId);

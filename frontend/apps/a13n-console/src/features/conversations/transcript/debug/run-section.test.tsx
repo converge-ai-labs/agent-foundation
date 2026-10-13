@@ -72,6 +72,21 @@ beforeEach(() => {
         return Response.json({ items: [fixtureRun()], next_cursor: null });
       if (url.pathname.endsWith("/environments"))
         return Response.json({ items: [], next_cursor: null });
+      if (url.pathname.endsWith("/usage")) {
+        const usage = {
+          model: "large",
+          requests: 3,
+          input_tokens: 24000,
+          output_tokens: 900,
+          cache_read_tokens: 18000,
+          cache_write_tokens: 0,
+          cost: "0.42",
+        };
+        return Response.json({
+          models: [usage],
+          runs: [{ run_id: "run_2", thread_id: "thr_1", models: [usage] }],
+        });
+      }
       if (url.pathname.includes("/runs/")) return Response.json(fixtureRun());
       throw new Error(`Unexpected request: ${url.pathname}`);
     },
@@ -166,17 +181,26 @@ it("names the failure of a failed run and leaves continuing to the dock", () => 
   expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
 
-it("opens the run details in place, on demand", async () => {
+it("opens the run details in a dialog, on demand, starting with usage", async () => {
   show();
   const user = userEvent.setup();
-  expect(requests.filter((path) => path.includes("/attempts"))).toEqual([]);
+  expect(requests.filter((path) => /\/(attempts|usage)$/.test(path))).toEqual(
+    [],
+  );
   await user.click(screen.getByRole("button", { name: "Details" }));
-  const attempts = await screen.findByText("Attempt 1");
+  const dialog = await screen.findByRole("dialog", { name: /Run 2/ });
+  const usage = await within(dialog).findByRole("table", {
+    name: "Usage by model",
+  });
+  expect(within(usage).getAllByRole("row")[1]!.textContent).toMatch(
+    /^large3 requests24k18k75\.0%900\$0\.42$/,
+  );
+  const attempts = await within(dialog).findByText("Attempt 1");
   expect(
     within(attempts.closest("li")!).getByText("state.succeeded"),
   ).toBeTruthy();
-  expect(screen.getByText("Overview")).toBeTruthy();
-  expect(await screen.findByText("Continued run")).toBeTruthy();
+  expect(within(dialog).getByText("Overview")).toBeTruthy();
+  expect(await within(dialog).findByText("Continued run")).toBeTruthy();
 });
 
 it("pauses an unresolved call while the run waits for a person", () => {

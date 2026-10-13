@@ -8,7 +8,7 @@ import {
   LegacyTruncation,
   useStoredReference,
 } from "../../stored-content";
-import { formatDuration, formatTokens } from "../../format";
+import { formatDuration, tokenFigures } from "../../format";
 import type {
   ActionEntry,
   ContentEntry,
@@ -135,7 +135,16 @@ function ExpandableRow({
           {"edit" in entry && entry.edit && (
             <DiffBadges diff={entry.edit.diff} />
           )}
-          {text.tokens && <span className={styles.tokens}>{text.tokens}</span>}
+          {text.cache && (
+            <span className={styles.cache} title={text.cacheTitle}>
+              {text.cache}
+            </span>
+          )}
+          {text.tokens && (
+            <span className={styles.tokens} title={text.tokensTitle}>
+              {text.tokens}
+            </span>
+          )}
           {!content && (
             <>
               <span className={styles.duration}>
@@ -177,6 +186,10 @@ interface RowText {
   mono: boolean;
   subject?: string;
   tokens?: string;
+  tokensTitle?: string;
+  /** How much of the request's input the provider served from its cache. */
+  cache?: string;
+  cacheTitle?: string;
 }
 
 function rowText(
@@ -208,15 +221,24 @@ function modelText(entry: ModelEntry, t: TFunction): RowText {
             : entry.endedAt
               ? t("no output")
               : t("thinking…");
-  const usage = entry.usage;
-  return {
+  const label = {
     ...entryLabel(entry, t),
     subject: [entry.model, outcome].filter(Boolean).join(" · "),
-    // Tokens nobody reported are unknown: the pair is absent, not zeroed.
-    tokens:
-      usage && entry.reportedUsage
-        ? `${formatTokens(usage.inputTokens)} → ${formatTokens(usage.outputTokens)}`
-        : undefined,
+  };
+  const usage = entry.usage;
+  // Tokens nobody reported are unknown: the pair is absent, not zeroed.
+  if (!usage || !entry.reportedUsage) return label;
+  const figures = tokenFigures(t, {
+    input: usage.inputTokens,
+    output: usage.outputTokens,
+    cached: usage.cacheReadTokens,
+  });
+  return {
+    ...label,
+    tokens: figures.pair,
+    tokensTitle: figures.pairTitle,
+    cache: figures.cache,
+    cacheTitle: figures.cacheTitle,
   };
 }
 
