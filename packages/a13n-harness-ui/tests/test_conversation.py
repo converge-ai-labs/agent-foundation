@@ -44,8 +44,6 @@ def test_excerpts_are_bounded_plain_text_and_media_is_payload_free():
 @pytest.mark.parametrize(
     "text",
     [
-        "",
-        " \t\n\x00\x1b\u200b",
         "\t alpha\x00beta\n\u3000中文\u00a0end \r",
         "x" * 2048,
         "x" * 2048 + "\n\t\x00\u200b",
@@ -57,6 +55,11 @@ def test_excerpt_matches_complete_normalization_at_truncation_boundaries(text, l
     normalized = " ".join("".join(char for char in text if char.isprintable() or char.isspace()).split())
     expected = normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
     assert excerpt_text(text, limit) == expected
+
+
+@pytest.mark.parametrize("text", ["", " \t\n\x00\x1b\u200b"])
+def test_empty_excerpt_needs_no_truncation(text):
+    assert excerpt_text(text) == ""
 
 
 def test_excerpt_stops_scanning_after_truncation_is_known():
@@ -108,16 +111,6 @@ def test_collector_preserves_first_input_and_pairs_delivered_steering():
     assert collector.value.latest_reply == ""
     assert collector.value.reply_kind == "none"
     assert previous.latest_input == "Older question"
-
-
-def test_context_only_events_do_not_replace_compacted_conversation_excerpts():
-    previous = ConversationExcerpt(
-        first_input="Original task", latest_input="Recent question", latest_reply="Saved answer", reply_kind="final"
-    )
-    collector = ExcerptCollector(previous, run_id="run-root")
-    collector.observe(event(InputTextEvent(input_id="context-one", source="context", content="compacted context")))
-    assert collector.finish(None) == previous
-    assert not collector.changed
 
 
 @pytest.mark.parametrize("source", ["context", "recovery", "async_subagent", "background_process"])

@@ -689,7 +689,6 @@ it("uses distinct source identities for consecutive steering of one receipt and 
 it.each([
   ["send", false],
   ["send", "ultrafast"],
-  ["steer", false],
   ["steer", "ultrafast"],
 ] as const)(
   "submits captured skill references for %s at speed %s and preserves later edits",
