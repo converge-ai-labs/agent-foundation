@@ -114,6 +114,12 @@ Collections emphasize names, descriptions and status. Search/filter controls ret
 
 Dialogs have accessible names, keyboard dismissal where safe, managed focus and restoration to their trigger. Validation identifies fields without discarding input. Raw payload dialogs fit narrow viewports. Copy actions show success briefly and offer retryable failure feedback. Password changes use a modal rather than resting-page fields; sensitive input clears on close. Supported profile/avatar image actions have keyboard access, progress, errors and a preview; unavailable image APIs do not receive simulated controls. Agent fallback initials/colors remain stable by ID and use sufficient contrast. A post-create image upload failure preserves the created Agent and offers retry without duplicate creation.
 
+## Identity Images
+
+Personal and Agent avatars, Workspace icons and Organization icons share one browser crop flow. PNG, JPEG and WebP source files are at most 20 MiB and 40 million pixels. Selecting a file opens a square crop with drag, keyboard positioning, zoom and a live preview; cancelling preserves the current image or creation draft. Confirming prepares a square image with each axis at most 512 pixels, without enlarging smaller crops, and at most 256 KiB. Browser encoding prefers WebP and preserves transparency, including PNG fallback when WebP encoding is unavailable. Preparation errors retain the crop for correction or cancellation; upload errors retain it for retry. Processing prevents duplicate confirmation and dismissal. Source object URLs are released when the crop closes or its owner unmounts.
+
+Only the prepared file enters the existing upload or Agent-creation draft. The [Service image contract](../a13n-service/03-tenancy.md#images) remains authoritative for format, configured byte limits, permissions and version preconditions; browser preparation does not change the API or existing stored images. Deployments with a smaller upload limit may still refuse the prepared file.
+
 ## Boundaries
 
 The [API](../a13n-service/10-api.md) owns wire behavior, and the [Service boundaries](../a13n-service/00-overview.md#boundaries) name what the product does not provide. The Console identifies unavailable capabilities without simulated state.

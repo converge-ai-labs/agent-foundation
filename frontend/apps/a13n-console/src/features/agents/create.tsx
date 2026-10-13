@@ -7,7 +7,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { representation, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
+import { ImagePicker } from "../../shared/forms";
 import { DetailHeader, DetailPage, Section } from "../../shared/page";
 import { AgentAvatar } from "./avatar";
 import { initialConfig, type AgentConfig } from "./configuration";
@@ -26,7 +26,6 @@ export function CreateAgent() {
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>();
-  const [fileError, setFileError] = useState<Error>();
   const [created, setCreated] = useState<{
     value: Schema["Agent"];
     etag?: string;
@@ -80,19 +79,10 @@ export function CreateAgent() {
       hasImage={!!file}
       editable
       pending={create.isPending || upload.isPending}
-      description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
-      onChange={(selected) => {
-        if (selected && selected.size > MAX_IMAGE_BYTES) {
-          setFileError(
-            new Error(
-              t("Choose a PNG, JPEG, or WebP image smaller than 5 MB."),
-            ),
-          );
-          return;
-        }
-        setFileError(undefined);
-        setFile(selected);
-      }}
+      description={t(
+        "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.",
+      )}
+      onChange={setFile}
     >
       <AgentAvatar
         name={label}
@@ -117,7 +107,7 @@ export function CreateAgent() {
         <Section title={t("Avatar")}>
           {picker(created.value.name)}
           {upload.isPending && <p role="status">{t("Saving…")}</p>}
-          <ErrorNotice error={upload.error ?? fileError} />
+          <ErrorNotice error={upload.error} />
           <div className="flex gap-3">
             <Button
               disabled={upload.isPending}
@@ -150,7 +140,7 @@ export function CreateAgent() {
       <AgentEditor
         initial={initialConfig()}
         pending={create.isPending || upload.isPending || !!created}
-        error={create.error ?? fileError}
+        error={create.error}
         saveLabel={t("Create agent")}
         saveDisabled={!name.trim()}
         discard={() => navigate(`${basePath}/agents`)}

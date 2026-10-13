@@ -1,0 +1,73 @@
+.editor {
+  display: grid;
+  gap: 16px;
+}
+.stage {
+  position: relative;
+  height: clamp(220px, 40dvh, 320px);
+  overflow: hidden;
+  border-radius: 8px;
+  background: #17191e;
+}
+.loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #fff;
+  font-size: 13px;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.zoom {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.zoom input {
+  width: 100%;
+  accent-color: var(--a13n-signal);
+}
+.zoom input:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 4px;
+}
+.previewGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.preview {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 10px;
+  background-color: var(--a13n-surface);
+  background-image: conic-gradient(
+    var(--a13n-border-soft) 25%,
+    transparent 0 50%,
+    var(--a13n-border-soft) 0 75%,
+    transparent 0
+  );
+  background-size: 12px 12px;
+}
+.preview img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  height: auto;
+}
+.hint {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
