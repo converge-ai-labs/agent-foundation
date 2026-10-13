@@ -93,6 +93,8 @@ Every change is audited as `memory.{create | update | delete}`.
 
 ## Session memory and automatic organization
 
+The Service provides session memory APIs and control-plane organization scheduling by default, without a deployment feature flag. Usage is selected per session, not through a new Run or Agent activation flag.
+
 A session has optional `memory` settings: `enabled: false`, `auto_organize: false`, and `model: null` by default. `POST …/sessions` accepts these settings; `PATCH …/sessions/{id}` replaces them under the session's `If-Match`. Changing memory settings requires workspace `write` in addition to the session operation's `run`. Automatic organization requires an explicit model key. Its effective switch is `enabled && auto_organize`; disabling memory preserves the separately configured organization preference.
 
 First enablement provisions a dedicated ordinary PostgreSQL memory, with `MEMORY.md` as an always-loaded path. The session exposes its `memory_id`. Disabling retains that identity, files and revisions; re-enabling reuses them. The memory retains ordinary workspace permissions and may be inspected or explicitly mounted elsewhere. This is a session default, not a new privacy boundary. Deleting the memory clears the reference. Only another explicit enablement provisions a replacement, after any active organization has settled.
@@ -101,7 +103,7 @@ At each business run acceptance, the current enabled session memory adds a `sess
 
 ### Organization lifecycle
 
-Automatic organization operates on saved files only. Each round starts a fresh maintenance thread with `purpose: memory_organization`, no parent run, no business transcript and no previous organizer context. A pinned built-in `memory_organizer` agent revision exposes only memory tools and the session memory write mount, with no environment, web, connections, skills or subagents. It consolidates duplicate facts, groups topics and maintains `MEMORY.md`, preserving provenance, uncertainty and conflicting claims. Each round has a 40-model-request ceiling.
+Automatic organization operates on saved files only. Each round starts a fresh maintenance thread with `purpose: memory_organization`, no parent run, no business transcript and no previous organizer context. A pinned built-in `memory_organizer` agent revision exposes only memory tools and the session memory write mount, with no environment, web, connections, skills or subagents. It consolidates duplicate facts, groups topics and maintains `MEMORY.md`, preserving provenance, uncertainty and conflicting claims. Each round has a 200-model-request ceiling.
 
 A business run's seal durably marks a coalesced organization opportunity when both switches are enabled. A bounded control sweep admits at most one active round per session, skipping disabled, deleted, empty or unchanged memory. The enabling principal's frozen execution authority bounds admission, which also checks current grants and resource availability. Organization uses ordinary Runs, Attempts, leases, checkpoints, cancellation, usage and write attribution. No transaction spans model execution. Disabling prevents future admission and leaves an already accepted round unchanged. Maintenance seals never enqueue themselves.
 

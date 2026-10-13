@@ -28,7 +28,7 @@ All API paths below are under `/api/v1`.
 
 ## Session memory
 
-Use **Session memory** when threads in one session should share saved facts without configuring a memory resource first. Both session memory and automatic organization are off by default.
+Use **Session memory** when threads in one session should share saved facts without configuring a memory resource first. The Service provides this capability by default, without a deployment feature flag. Each session opts into memory and automatic organization separately; both session settings default off.
 
 1. Enable **Session memory** when starting a conversation, or open **Memory** in an existing session header.
 2. Optionally enable **Automatically organize saved memory** and select an organization model.
@@ -36,7 +36,7 @@ Use **Session memory** when threads in one session should share saved facts with
 
 Enabling provisions a dedicated file memory. Future runs mount it as `session`; an explicit mount with that name or memory identity takes precedence. Already accepted runs keep their mounts. Disabling retains files and history, and re-enabling uses the same memory. The memory uses workspace permissions, so it is not private to one participant. Changing these settings requires `write` and `run`.
 
-Automatic organization uses the selected model after a business run finishes, only when saved memory is nonempty and changed. It consolidates saved files and maintains a `MEMORY.md` index. It does not extract facts from conversation transcripts. Each round starts fresh with only memory tools and a 40-model-request limit. Organization has ordinary model costs, shown in run usage. Disabling prevents new rounds; already accepted rounds continue.
+Automatic organization uses the selected model after a business run finishes, only when saved memory is nonempty and changed. It consolidates saved files and maintains a `MEMORY.md` index. It does not extract facts from conversation transcripts. Each round starts fresh with only memory tools and a 200-model-request limit. Organization has ordinary model costs, shown in run usage. Disabling prevents new rounds; already accepted rounds continue.
 
 Failed or cancelled organization retains committed edits but does not mark memory as processed. Concurrent edits remain eligible for a later round. You can inspect file history and restore earlier content through the existing memory controls.
 

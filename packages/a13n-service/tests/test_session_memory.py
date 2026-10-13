@@ -95,6 +95,7 @@ async def test_organization_coalesces_and_uses_only_memory_with_fresh_rounds(ser
     await asyncio.gather(organize(service.runtime), organize(service.runtime))
     [round_one] = await history(service, session_id)
     assert round_one["parent_run_id"] is None and round_one["environment_mounts"] == []
+    assert round_one["options"]["max_usage"]["requests"] == 200
     assert len(round_one["memory_mounts"]) == 1
     after = (await service.client.get(f"{service.api}/sessions/{session_id}")).json()
     assert after["preview"] == before["preview"]

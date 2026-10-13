@@ -82,7 +82,7 @@ async def _admit(session: AsyncSession, runtime: Runtime, owner: SessionRow, pol
         payload=MessagePayload(
             content=(TextPart(type="text", text="Organize the current saved session memory files."),)
         ),
-        options=RunOptions(max_usage=UsageLimit(requests=40)),
+        options=RunOptions(max_usage=UsageLimit(requests=200)),
     )
     revision, overrides = await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
     session.add(thread)
