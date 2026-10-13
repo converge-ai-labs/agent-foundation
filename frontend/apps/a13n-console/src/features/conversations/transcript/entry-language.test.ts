@@ -95,7 +95,7 @@ it("words a lifecycle fact in prose and draws it by what it says", () => {
   expect(entryGlyph(failed)).toBe(XIcon);
   expect(entryGlyph(outcome({ status: "cancelled" }))).toBe(SquareIcon);
   const waiting = outcome({ status: "waiting", wait_reason: "call" });
-  expect(entryLabel(waiting, t).name).toBe("Waiting for call results · call");
+  expect(entryLabel(waiting, t).name).toBe("Waiting for call results");
   expect(entryGlyph(waiting)).toBe(PauseIcon);
 });
 

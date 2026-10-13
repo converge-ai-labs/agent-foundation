@@ -1,3 +1,4 @@
+import { LogoAnimation } from "a13n-ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../../shared/identity";
@@ -17,42 +18,33 @@ import styles from "./transcript.module.css";
 
 /**
  * One identity for the whole answer: the agent is named once, then its work,
- * guidance it received, and its prose follow in the order they were observed.
+ * guidance it received, and its prose follow in the order they were observed,
+ * all from the same left edge as the name's avatar.
  */
 export function AgentTurn({
   blocks,
-  runState,
   durationMs,
   agentName,
   agentId,
   agentImageUrl,
   childPath,
+  footer,
   children,
 }: {
   blocks: readonly TranscriptBlock[];
-  runState?: string;
-  /** How long the run took, shown after the name once it completed. */
+  /** How long a completed run took; the transcript shows every other state. */
   durationMs?: number | null;
   agentName?: string;
   agentId?: string;
   agentImageUrl?: string | null;
   /** Where a delegated child thread can be opened, when one is resolvable. */
   childPath?: string | null;
+  /** The quiet actions that close the answer. */
+  footer?: ReactNode;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
   if (!blocks.length && !children) return null;
-  // The name carries one fact: what the run is doing, or how long it took.
-  const status =
-    runState === "waiting"
-      ? t("waiting for you")
-      : ["running", "queued", "accepted"].includes(runState ?? "")
-        ? t("working")
-        : ["failed", "cancelled"].includes(runState ?? "")
-          ? t("stopped")
-          : durationMs != null
-            ? formatDuration(durationMs)
-            : null;
   return (
     <section className={styles.agentTurn} aria-label={t("Agent response")}>
       <div className={styles.agentHeading}>
@@ -63,9 +55,9 @@ export function AgentTurn({
           className={styles.agentAvatar}
         />
         <strong>{agentName ?? t("Agent")}</strong>
-        {status && (
-          <span className={styles.agentStatus} data-state={runState}>
-            {status}
+        {durationMs != null && (
+          <span className={styles.agentDuration}>
+            {formatDuration(durationMs)}
           </span>
         )}
       </div>
@@ -90,6 +82,7 @@ export function AgentTurn({
           ),
         )}
         {children}
+        {footer}
       </div>
     </section>
   );
@@ -97,7 +90,6 @@ export function AgentTurn({
 
 function AgentMessage({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
-  const stored = useStoredReference(entry.id, "text");
   const streaming = entry.state === "in_progress";
   return (
     <article
@@ -115,25 +107,24 @@ function AgentMessage({ entry }: { entry: ContentEntry }) {
       )}
       {entry.failure != null && <JsonView value={entry.failure} />}
       <LegacyTruncation itemId={entry.id} />
-      {entry.text && entry.state === "completed" && !stored && (
-        <div className={styles.messageActions}>
-          <CopyButton
-            value={entry.text}
-            iconOnly
-            copyLabel={t("Copy message")}
-          />
-        </div>
-      )}
     </article>
   );
 }
 
-/** The agent is still moving: a quiet row in place of the next step. */
+/** The answer as a whole is copied from its last reply, once it is complete. */
+export function CopyReply({ entry }: { entry: ContentEntry }) {
+  const { t } = useTranslation();
+  // A reply kept in storage is read whole from its own view, never from a preview.
+  if (useStoredReference(entry.id, "text")) return null;
+  return <CopyButton value={entry.text} iconOnly copyLabel={t("Copy reply")} />;
+}
+
+/** The agent is still moving: the mark turns in place of the next step. */
 export function WorkingRow({ connected }: { connected: boolean }) {
   const { t } = useTranslation();
   return (
     <p className={styles.workingRow} role="status">
-      <span className={styles.workingDot} aria-hidden="true" />
+      <LogoAnimation size={16} />
       {t(connected ? "Working…" : "Connecting to run…")}
     </p>
   );

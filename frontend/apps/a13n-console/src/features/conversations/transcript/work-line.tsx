@@ -48,15 +48,13 @@ export function WorkLine({
         >
           <StateMark state={lineState(summary)} size={13} decorative />
           <span className={styles.workText}>
+            {/* The card below names the call; the line only says whose turn it is. */}
             {summary.waiting ? (
-              <>
-                <Name entry={summary.waiting} />{" "}
-                {t(
-                  asksAQuestion(summary.waiting)
-                    ? "waiting for your answer"
-                    : "waiting for your approval",
-                )}
-              </>
+              t(
+                asksAQuestion(summary.waiting)
+                  ? "Waiting for your answer"
+                  : "Waiting for your approval",
+              )
             ) : (
               <>
                 {summary.named.map((work, index) => (

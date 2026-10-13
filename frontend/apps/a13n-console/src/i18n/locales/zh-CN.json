@@ -775,7 +775,6 @@
   "state.succeeded": "成功",
   "state.waiting": "等待回应",
   "state.yielded": "已让出",
-  "stopped": "已停止",
   "stopping": "停止中",
   "subagent": "子 Agent",
   "succeeded": "成功",
@@ -1411,9 +1410,7 @@
   "Waiting": "等待中",
   "Waiting for a tool result": "等待工具结果",
   "and {{count}} more": "等共 {{count}} 项",
-  "waiting for you": "等待你的响应",
   "waiting for your approval": "等待你的批准",
-  "working": "工作中",
   "Started by {{trigger}}": "由{{trigger}}触发",
   "Root thread": "根对话",
   "Child thread": "子对话",
@@ -2105,5 +2102,9 @@
   "Cloud hosting": "云端",
   "Own hosting": "自有",
   "Hosting mode": "托管方式",
-  "Used when the session has no working environment. Saving the Agent does not start an environment.": "会话未指定工作环境时，将使用此模板。保存 Agent 不会立即启动环境。"
+  "Used when the session has no working environment. Saving the Agent does not start an environment.": "会话未指定工作环境时，将使用此模板。保存 Agent 不会立即启动环境。",
+  "Waiting for your answer": "等待你的回答",
+  "Waiting for your approval": "等待你的批准",
+  "Your messages are saved.": "消息已保存。",
+  "Working…": "正在工作…"
 }

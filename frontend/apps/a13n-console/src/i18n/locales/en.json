@@ -775,7 +775,6 @@
   "state.succeeded": "Succeeded",
   "state.waiting": "Waiting",
   "state.yielded": "Yielded",
-  "stopped": "stopped",
   "stopping": "stopping",
   "subagent": "subagent",
   "succeeded": "succeeded",
@@ -1411,9 +1410,7 @@
   "Waiting": "Waiting",
   "Waiting for a tool result": "Waiting for a tool result",
   "and {{count}} more": "and {{count}} more",
-  "waiting for you": "waiting for you",
   "waiting for your approval": "waiting for your approval",
-  "working": "working",
   "Started by {{trigger}}": "Started by {{trigger}}",
   "Root thread": "Root thread",
   "Child thread": "Child thread",
@@ -2105,5 +2102,9 @@
   "Cloud hosting": "Cloud",
   "Own hosting": "Own infrastructure",
   "Hosting mode": "Hosting mode",
-  "Used when the session has no working environment. Saving the Agent does not start an environment.": "Used when the session has no working environment. Saving the Agent does not start an environment."
+  "Used when the session has no working environment. Saving the Agent does not start an environment.": "Used when the session has no working environment. Saving the Agent does not start an environment.",
+  "Waiting for your answer": "Waiting for your answer",
+  "Waiting for your approval": "Waiting for your approval",
+  "Your messages are saved.": "Your messages are saved.",
+  "Working…": "Working…"
 }

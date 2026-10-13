@@ -70,6 +70,7 @@ vi.mock("./assistant-message", () => ({
       ))}
     </>
   ),
+  CopyReply: () => null,
 }));
 
 /** The reader's viewport, which the sentinel and the ancestors live in. */
