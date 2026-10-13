@@ -38,7 +38,7 @@ function useVoice() {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   return { ...state, start: session.start, stop: session.stop };
 }
-function useVoiceSettings() {
+export function useVoiceSettings() {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["voice-status"],
@@ -55,6 +55,7 @@ export function VoiceIndicator() {
     voice.error ||
     (!(connectionNotice && isConnectionError(settings.error)) &&
       settings.error?.message);
+  if (!settings.data?.enabled && !running) return null;
   return (
     <div className={styles.workspaceVoice}>
       <div className={styles.indicator} data-active={voice.status === "active"}>
@@ -76,12 +77,6 @@ export function VoiceIndicator() {
               <span className={styles.controlLabel}>Stop</span>
             </Button>
           </>
-        ) : !settings.isPending &&
-          !settings.data?.enabled &&
-          !settings.error ? (
-          <Link to="/settings#live">
-            <Microphone size={16} /> Set up voice
-          </Link>
         ) : (
           <Button
             size="sm"

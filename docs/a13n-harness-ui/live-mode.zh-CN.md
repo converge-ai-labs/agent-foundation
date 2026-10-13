@@ -12,6 +12,8 @@ Live 模式为 WebUI 提供连续语音对话，并保留任务与决策记录�
 3. 选择音色，以及是否允许 Live 执行器使用文件工具，然后保存设置。
 4. 在工作区顶部或 **Live** 页面点击 **Start voice**，并在浏览器询问时允许访问麦克风。
 
+启用 Live 后，工作区顶部的 Start voice 按钮和侧栏 Live 入口才会显示。请从 Settings 启用；工作区不会显示设置提示。
+
 请使用支持麦克风采集和 WebRTC 的浏览器，通过 HTTPS 或 localhost 访问。所选账户和网络必须支持 Codex Live。普通 Model 请求成功并不代表语音功能可用。
 
 初始设置和添加 Codex Model 时会提供默认勾选的 Live 选项。取消勾选即可保持未配置状态。已有 Live 设置会保留，升级不会自动启用 Live。

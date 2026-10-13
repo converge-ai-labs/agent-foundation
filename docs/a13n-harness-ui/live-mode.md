@@ -12,6 +12,8 @@ Live Mode gives the WebUI a continuous voice conversation with a persistent plac
 3. Choose the voice and whether the Live executor can use file tools. Save the settings.
 4. Press **Start voice** in the workspace header or on the **Live** page. Allow microphone access when the browser asks.
 
+The workspace Start voice control and sidebar Live link appear only after Live is enabled. Enable it from Settings; the workspace does not show a setup prompt.
+
 Use HTTPS or localhost in a browser that supports microphone capture and WebRTC. The selected account and network must support Codex Live. A successful ordinary Model request does not verify voice availability.
 
 Setup and adding a Codex Model offer an initially checked Live option. Clear it to leave Live unconfigured. Existing Live settings are preserved. Upgrades do not turn Live on automatically.

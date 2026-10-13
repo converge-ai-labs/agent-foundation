@@ -60,23 +60,23 @@ function Workspace() {
     </>
   );
 }
-function mount(enabled = true) {
+function mount(enabled = true, response?: () => Promise<Response>) {
   vi.stubGlobal(
     "fetch",
     vi.fn(
-      async () =>
-        new Response(JSON.stringify({ enabled }), {
-          headers: { "Content-Type": "application/json" },
-        }),
+      response ??
+        (async () =>
+          new Response(JSON.stringify({ enabled }), {
+            headers: { "Content-Type": "application/json" },
+          })),
     ),
   );
   const transport = createTransport("test", vi.fn());
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={client}>
       <TransportContext.Provider value={transport}>
         <MemoryRouter initialEntries={["/threads/thread-example"]}>
           <VoiceProvider>
@@ -89,6 +89,7 @@ function mount(enabled = true) {
       </TransportContext.Provider>
     </QueryClientProvider>,
   );
+  return client;
 }
 
 it("starts voice in place, retains the call on navigation, and hides pending captions after stop", async () => {
@@ -153,10 +154,67 @@ it("shows workspace connection errors and allows explicit retry or startup cance
   expect(screen.getByText("/threads/thread-example")).toBeTruthy();
 });
 
-it("offers settings instead of microphone capture when Live is not configured", async () => {
-  mount(false);
-  const setup = await screen.findByRole("link", { name: "Set up voice" });
-  expect(setup.getAttribute("href")).toBe("/settings#live");
+it("hides workspace voice controls until enabled settings arrive", async () => {
+  let resolve!: (response: Response) => void;
+  mount(
+    true,
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
   expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Set up voice" })).toBeNull();
+  await waitFor(() => expect(resolve).toBeTypeOf("function"));
+  resolve(
+    new Response(JSON.stringify({ enabled: true }), {
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  expect(
+    await screen.findByRole("button", { name: "Start voice" }),
+  ).toBeTruthy();
   expect(voice.start).not.toHaveBeenCalled();
 });
+
+it.each(["disabled", "unavailable"])(
+  "hides workspace voice controls when settings are %s",
+  async (state) => {
+    const client = mount(
+      false,
+      state === "unavailable"
+        ? async () => {
+            throw new TypeError("Failed to fetch");
+          }
+        : undefined,
+    );
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(client.getQueryState(["voice-status"])?.status).toBe(
+      state === "disabled" ? "success" : "error",
+    );
+    expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Set up voice" })).toBeNull();
+    expect(voice.start).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["starting", "connecting", "active"] as const)(
+  "retains Stop when Live is disabled during a %s call",
+  async (status) => {
+    const client = mount();
+    await screen.findByRole("button", { name: "Start voice" });
+    act(() => {
+      publish({ status });
+      client.setQueryData(["voice-status"], { enabled: false });
+    });
+    await waitFor(() =>
+      expect(client.getQueryData(["voice-status"])).toEqual({ enabled: false }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice" }));
+    expect(voice.stop).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Open Live conversation" }),
+    ).toBeNull();
+  },
+);

@@ -1,5 +1,5 @@
 import { ModelsPage } from "../configuration/models";
-import { VoicePage, VoiceIndicator } from "../voice";
+import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -111,6 +111,7 @@ function WorkbenchContent({
 }) {
   const results = useResults();
   const setup = useSetup();
+  const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
   const [theme, setTheme] = useState(() => readPreference("theme", "light"));
@@ -185,7 +186,9 @@ function WorkbenchContent({
     ...(memoryMode && memoryEnabled
       ? [{ to: "/", label: "Home", icon: House }]
       : []),
-    { to: "/live", label: "Live", icon: Waveform },
+    ...(voiceSettings.data?.enabled
+      ? [{ to: "/live", label: "Live", icon: Waveform }]
+      : []),
     { to: "/archived", label: "Archived", icon: Archive },
     ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Gear },
