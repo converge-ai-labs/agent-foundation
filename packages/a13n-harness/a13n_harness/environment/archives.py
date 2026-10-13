@@ -37,9 +37,7 @@ async def extract_archive_files(files: FileOperator, path: str, archive: FileArc
     """Extract using a provider's bounded file primitives into an absent directory."""
     try:
         with ZipFile(BytesIO(archive.content)) as source:
-            selected = zip_members(
-                source, archive.root, archive.entries, max((n for _, n in archive.entries), default=0)
-            )
+            selected = zip_members(source, archive.root, archive.entries)
             result = await files.mkdir(path, parents=True, exist_ok=False)
             directories = sorted({name.rpartition("/")[0] for name, _ in selected if "/" in name})
             for directory in directories:

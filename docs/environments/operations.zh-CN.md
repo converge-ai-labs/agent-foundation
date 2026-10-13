@@ -55,7 +55,7 @@ Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合
 
 写入模式为 `create`（新文件）、`replace`（已有文件）、`upsert`（创建或替换）和 `append`，没有隐式默认值。回执报告所属操作结果，不代表多个文件操作组成通用事务。跨挂载复制由 Host/聚合层负责，不能给 `FileOperator.copy()` 虚构第二个别名参数。
 
-`batch` 接受 `FileStatOperation`、`FileMkdirOperation`、`FileWriteTextOperation` 和 `FileRemoveOperation`，每批最多 128 项，JSON 请求最多 64 KiB。所有路径必须属于同一文件作用域。stat 和 remove 可设置 `missing_ok=True`。操作按顺序执行，遇到首个错误即停止；失败或取消不会回滚已经完成的操作，也不会自动重放。原生远程 provider 将整批操作合并为一次客体命令。
+`batch` 接受 `FileStatOperation`、`FileMkdirOperation`、`FileWriteTextOperation` 和 `FileRemoveOperation`，每批最多 128 项，JSON 请求最多 64 KiB。所有路径必须属于同一文件作用域。批量文本写入使用 `create`、`replace` 或 `upsert`；追加写入仍使用单独的 `write_text`。stat 和 remove 可设置 `missing_ok=True`。操作按顺序执行，遇到首个错误即停止；失败或取消不会回滚已经完成的操作，也不会自动重放。原生远程 provider 将整批操作合并为一次客体命令。
 
 `FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` 指定 ZIP 字节、相对文件路径及解压后大小，可选 `root` 选择压缩包内的目录。`write_archive` 只创建新目录；使用单独的 `move` 发布完整候选目录。它不恢复归档中的链接或权限。自定义 `FileOperator` 必须实现 `batch` 和 `write_archive`；无逐文件兼容分支。
 

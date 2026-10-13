@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import anyio
 from a13n_harness.capabilities import SkillCatalogItem, SkillManager, SkillsCapability, SkillsPolicy
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.files import FileMetadata, FileOperator, FileStatOperation
 from a13n_harness.environment.models import EnvironmentError
 from a13n_logging import get_logger
@@ -23,15 +24,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.concurrency import map_concurrently
 from a13n_service.infra.errors import ServiceError, invalid, not_found
 from a13n_service.resources.agents.schemas import IsolatedSkillSync, SharedSkillSync, SkillSelection, SkillSync
-from a13n_service.resources.skills.content import SkillPackage, load_packages
+from a13n_service.resources.skills.content import load_packages
 from a13n_service.resources.skills.package import validate_name
 from a13n_service.resources.skills.schemas import SkillManifest
 from a13n_service.resources.skills.tables import SkillRevisionRow
 from a13n_service.runs import placement
 from a13n_service.runs.environments.mounts import has_primary
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.skill_cache import FILE_BATCH, Cache
 from a13n_service.runs.skill_cache import ROOT as _ROOT
-from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.tables import RunRow
 
 logger = get_logger(__name__)
@@ -160,28 +161,9 @@ class _PinnedSkills:
         if not selected and not sync.cleanup:
             return
         await self.prove_lease()
-        packages = (
-            await load_packages(
-                self.runtime.storage, self.runtime.objects, self.workspace_id, [skill.revision_id for skill in selected]
-            )
-            if selected
-            else ()
-        )
         await files.mkdir(_SHARED, parents=True, exist_ok=True)
-        candidates = [
-            (skill, package, f"{_AGENTS}/.skill-stage-{uuid4().hex}")
-            for skill, package in zip(selected, packages, strict=True)
-        ]
-        await map_concurrently(candidates, lambda item: files.write_archive(item[2], item[1].archive))
-        for skill, _, candidate in candidates:
-            await self.prove_lease()
-            try:
-                await files.move(candidate, skill.directory, replace=sync.overwrite)
-            except EnvironmentError as error:
-                if sync.overwrite or error.code != "environment_conflict":
-                    raise
-                # Additive publication preserves the concurrent winner.
-                await files.remove(candidate, recursive=True)
+        if selected:
+            await self._publish_shared(files, sync, selected)
         if sync.cleanup:
             names = {skill.name for skill in self.skills}
             stale: list[str] = []
@@ -195,6 +177,36 @@ class _PinnedSkills:
             for path in stale:
                 await self.prove_lease()
                 await self._discard(files, path)
+
+    async def _publish_shared(self, files: FileOperator, sync: SharedSkillSync, selected: list[PinnedSkill]) -> None:
+        archives = await load_packages(
+            self.runtime.storage, self.runtime.objects, self.workspace_id, [skill.revision_id for skill in selected]
+        )
+        # One stage holds every candidate and its transferred archive, so a failure leaves nothing else behind.
+        stage = f"{_AGENTS}/.skill-stage-{uuid4().hex}"
+        cleanup = True
+        try:
+            await map_concurrently(
+                list(zip(selected, archives, strict=True)),
+                lambda item: files.write_archive(f"{stage}/{item[0].name}", item[1]),
+            )
+            for skill in selected:
+                await self.prove_lease()
+                # Cancellation may leave the provider's rename in flight. Never race it with removal.
+                cleanup = False
+                try:
+                    await files.move(f"{stage}/{skill.name}", skill.directory, replace=sync.overwrite)
+                except EnvironmentError as error:
+                    if error.code != "environment_conflict":
+                        raise
+                    cleanup = True  # A rejected move leaves its candidate in the stage.
+                    if sync.overwrite:
+                        raise
+                    # Additive publication preserves the concurrent winner.
+                cleanup = True
+        finally:
+            if cleanup:
+                await _remove_staging(files, stage)
 
     @staticmethod
     async def _discard(files: FileOperator, path: str) -> None:
@@ -211,29 +223,21 @@ class _PinnedSkills:
     async def _materialize(self, files: FileOperator) -> None:
         acquired = await self.cache.acquire_many(files, [skill.digest for skill in self.skills])
         uses = {skill.digest: use for skill, use in zip(self.skills, acquired, strict=True)}
-        published = []
-        for offset in range(0, len(self.skills), 32):
-            values = await files.batch(
-                [
-                    FileStatOperation(path=skill.cached_directory, missing_ok=True)
-                    for skill in self.skills[offset : offset + 32]
-                ]
-            )
-            published.extend(isinstance(value, FileMetadata) and value.kind == "directory" for value in values)
+        published = await _published(files, self.skills)
         missing = [skill for skill, exists in zip(self.skills, published, strict=True) if not exists]
         if not missing:
             return
         await self.prove_lease()
-        packages = await load_packages(
+        archives = await load_packages(
             self.runtime.storage, self.runtime.objects, self.workspace_id, [skill.revision_id for skill in missing]
         )
 
-        async def publish(item: tuple[PinnedSkill, SkillPackage]) -> None:
-            skill, package = item
+        async def publish(item: tuple[PinnedSkill, FileArchive]) -> None:
+            skill, archive = item
             candidate = f"{_ROOT}/.staging/{uuid4().hex}"
             cleanup = True
             try:
-                await files.write_archive(f"{candidate}/{skill.name}", package.archive)
+                await files.write_archive(f"{candidate}/{skill.name}", archive)
                 await self.prove_lease()
                 # Cancellation may leave the provider's rename in flight. Never race it with removal.
                 cleanup = False
@@ -246,26 +250,32 @@ class _PinnedSkills:
                         raise
                     cleanup = True  # A rejected no-replace move cannot publish this candidate.
                     uses[skill.digest].retain = False
-                    if not await _published(files, skill):
+                    if not (await _published(files, [skill]))[0]:
                         raise
             finally:
                 if cleanup:
-                    with anyio.move_on_after(5, shield=True):
-                        try:
-                            await files.remove(candidate, recursive=True)
-                        except EnvironmentError as error:
-                            if error.code != "environment_not_found":
-                                logger.warning(
-                                    "Skill staging cleanup failed", extra={"path": candidate, "code": error.code}
-                                )
+                    await _remove_staging(files, candidate)
 
-        await map_concurrently(list(zip(missing, packages, strict=True)), publish)
+        await map_concurrently(list(zip(missing, archives, strict=True)), publish)
 
 
-async def _published(files: FileOperator, skill: PinnedSkill) -> bool:
-    try:
-        return (await files.stat(skill.cached_directory)).kind == "directory"
-    except EnvironmentError as error:
-        if error.code == "environment_not_found":
-            return False
-        raise
+async def _published(files: FileOperator, skills: Sequence[PinnedSkill]) -> list[bool]:
+    published: list[bool] = []
+    for offset in range(0, len(skills), FILE_BATCH):
+        values = await files.batch(
+            [
+                FileStatOperation(path=skill.cached_directory, missing_ok=True)
+                for skill in skills[offset : offset + FILE_BATCH]
+            ]
+        )
+        published.extend(isinstance(value, FileMetadata) and value.kind == "directory" for value in values)
+    return published
+
+
+async def _remove_staging(files: FileOperator, path: str) -> None:
+    with anyio.move_on_after(5, shield=True):
+        try:
+            await files.remove(path, recursive=True)
+        except EnvironmentError as error:
+            if error.code != "environment_not_found":
+                logger.warning("Skill staging cleanup failed", extra={"path": path, "code": error.code})

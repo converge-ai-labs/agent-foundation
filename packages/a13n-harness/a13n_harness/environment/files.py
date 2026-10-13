@@ -11,6 +11,8 @@ from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.models import EnvironmentOperationReceipt
 
 type FileWriteMode = Literal["create", "replace", "upsert", "append"]
+MAX_FILE_BATCH_OPERATIONS = 128
+MAX_FILE_BATCH_BYTES = 64 * 1024
 type FileKind = Literal["file", "directory", "symlink", "other"]
 type FileIgnoreMode = Literal["none", "git"]
 
@@ -145,7 +147,8 @@ class FileMkdirOperation(_FileOperation):
 class FileWriteTextOperation(_FileOperation):
     action: Literal["write_text"] = "write_text"
     text: str
-    mode: FileWriteMode
+    # Batches carry whole small texts; append remains an individual read/modify/write operation.
+    mode: Literal["create", "replace", "upsert"]
 
 
 class FileRemoveOperation(_FileOperation):
@@ -160,7 +163,9 @@ type FileBatchValue = FileMetadata | FileMutationResult | FileWriteResult | None
 
 class FileOperator(Protocol):
     async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
-        """Run up to 128 operations (64 KiB JSON) in order in one file scope, stopping on error.
+        """Run bounded operations in order in one file scope, stopping on error.
+
+        `MAX_FILE_BATCH_OPERATIONS` and `MAX_FILE_BATCH_BYTES` (JSON) bound one batch.
 
         A failed or cancelled batch may have completed a prefix; it is not a transaction and is never replayed.
         """

@@ -244,7 +244,7 @@ async def test_guest_batch_runs_ordered_operations_with_one_command(tmp_path, gu
         [
             FileMkdirOperation(path="/cache"),
             FileWriteTextOperation(path="/cache/pin", text="first", mode="create"),
-            FileWriteTextOperation(path="/cache/pin", text=" second", mode="append"),
+            FileWriteTextOperation(path="/cache/pin", text="first second", mode="upsert"),
             FileStatOperation(path="/cache/pin"),
             FileStatOperation(path="/cache/absent", missing_ok=True),
             FileRemoveOperation(path="/cache/absent", missing_ok=True),
@@ -252,7 +252,7 @@ async def test_guest_batch_runs_ordered_operations_with_one_command(tmp_path, gu
     )
     assert calls == ["batch"]
     assert results[1].bytes_written == 5
-    assert results[2].bytes_written == 7
+    assert results[2].bytes_written == 12
     assert results[3].size == 12
     assert results[4:] == (None, None)
     assert (tmp_path / "cache/pin").read_text() == "first second"
@@ -284,10 +284,8 @@ async def test_guest_batch_rejects_oversize_before_dispatch(guest_files, monkeyp
     assert error.value.code == "environment_too_large"
 
 
-@pytest.mark.parametrize("content", [b"binary\x00", b"\xff"])
-async def test_guest_batch_append_rejects_nontext_without_replacing_it(tmp_path, guest_files, content):
-    (tmp_path / "target").write_bytes(content)
+async def test_guest_batch_rejects_nul_text_without_writing(tmp_path, guest_files):
     with pytest.raises(EnvironmentError) as error:
-        await guest_files.batch([FileWriteTextOperation(path="/target", text="new", mode="append")])
+        await guest_files.batch([FileWriteTextOperation(path="/target", text="new\x00", mode="create")])
     assert error.value.code == "environment_unsupported"
-    assert (tmp_path / "target").read_bytes() == content
+    assert not list(tmp_path.iterdir())

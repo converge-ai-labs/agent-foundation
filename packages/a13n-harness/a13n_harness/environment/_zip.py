@@ -1,13 +1,14 @@
 """Bounded ZIP extraction shared with the standard-library guest helper."""
 
 import hashlib
+import shutil
 import stat
 import zipfile
 from pathlib import Path
 
 
 def zip_members(
-    source: zipfile.ZipFile, root: str, entries: tuple[tuple[str, int], ...], maximum: int
+    source: zipfile.ZipFile, root: str, entries: tuple[tuple[str, int], ...]
 ) -> list[tuple[str, zipfile.ZipInfo]]:
     """Resolve an exact manifest before creating any destination files."""
     if root:
@@ -30,8 +31,6 @@ def zip_members(
         kind = stat.S_IFMT(item.external_attr >> 16)
         if kind not in (0, stat.S_IFREG) or item.file_size != size:
             raise ValueError("archive member differs from its manifest")
-        if size > maximum:
-            raise OverflowError("archive member exceeds the file limit")
         selected.append((path, item))
     return selected
 
@@ -50,7 +49,6 @@ def extract_zip(
     digest: str,
     root: str,
     entries: tuple[tuple[str, int], ...],
-    maximum: int,
 ) -> None:
     """Extract only the manifest into a new directory; never restore archive permissions or links."""
     with archive.open("rb") as data:
@@ -61,18 +59,13 @@ def extract_zip(
             raise ValueError("archive checksum mismatch")
         data.seek(0)
         with zipfile.ZipFile(data) as source:
-            selected = zip_members(source, root, entries, maximum)
+            selected = zip_members(source, root, entries)
             destination.mkdir(parents=True)
             for path, item in selected:
                 target = destination / path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with source.open(item) as reader, target.open("xb") as writer:
-                    remaining = item.file_size
-                    while remaining:
-                        chunk = reader.read(min(65536, remaining))
-                        if not chunk:
-                            raise ValueError("archive member ended early")
-                        writer.write(chunk)
-                        remaining -= len(chunk)
-                    if reader.read(1):
-                        raise ValueError("archive member exceeds its declared size")
+                    # zipfile stops at the declared size and checks its CRC; a shorter member still differs.
+                    shutil.copyfileobj(reader, writer)
+                    if writer.tell() != item.file_size:
+                        raise ValueError("archive member differs from its manifest")

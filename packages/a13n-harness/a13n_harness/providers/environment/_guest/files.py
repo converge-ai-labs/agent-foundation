@@ -228,8 +228,6 @@ def execute(request: dict) -> dict:
     config, action = request["configuration"], request["action"]
     if action == "batch":
         operations = request["arguments"]["operations"]
-        if len(operations) > 128 or len(json.dumps(operations).encode()) > 65536:
-            raise OverflowError("file batch exceeds request limit")
         if any(item["action"] not in {"stat", "mkdir", "write_text", "remove"} for item in operations):
             raise ValueError("invalid batch operation")
         results = []
@@ -302,27 +300,9 @@ def execute(request: dict) -> dict:
         text, mode = arguments["text"], arguments["mode"]
         if "\x00" in text:
             raise UnsupportedTextError("text contains NUL")
-        if mode not in {"create", "replace", "upsert", "append"}:
+        if mode not in {"create", "replace", "upsert"}:
             raise ValueError("invalid write mode")
         content = text.encode("utf-8")
-        size = len(content)
-        if mode == "append":
-            try:
-                require_regular_file(path)
-                with path.open("rb") as reader:
-                    previous = reader.read(config["max_file_bytes"] + 1)
-            except FileNotFoundError:
-                previous = b""
-            if len(previous) > config["max_file_bytes"]:
-                raise OverflowError("file exceeds configured limit")
-            if b"\x00" in previous:
-                raise UnsupportedTextError("file contains NUL")
-            try:
-                previous.decode("utf-8")
-            except UnicodeDecodeError as error:
-                raise UnsupportedTextError("file is not UTF-8 text") from error
-            content = previous + content
-            mode = "upsert"
         if len(content) > config["max_file_bytes"]:
             raise OverflowError("file exceeds configured limit")
         with NamedTemporaryFile(dir=path.parent, prefix=".a13n-write-", delete=False) as file:
@@ -346,7 +326,7 @@ def execute(request: dict) -> dict:
             )
         finally:
             staged.unlink(missing_ok=True)
-        return {"bytes_written": size}
+        return {"bytes_written": len(content)}
     if action == "archive":
         staged = resolve(root, arguments["staged"])
         require_regular_file(staged)
@@ -357,7 +337,6 @@ def execute(request: dict) -> dict:
                 digest=arguments["digest"],
                 root=arguments["root"],
                 entries=arguments["entries"],
-                maximum=config["max_file_bytes"],
             )
         finally:
             staged.unlink()

@@ -4,6 +4,8 @@ import json
 from collections.abc import Sequence
 
 from a13n_harness.environment.files import (
+    MAX_FILE_BATCH_BYTES,
+    MAX_FILE_BATCH_OPERATIONS,
     FileBatchValue,
     FileMkdirOperation,
     FileOperation,
@@ -16,7 +18,10 @@ from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 
 
 def validate_file_batch(operations: Sequence[FileOperation]) -> None:
-    if len(operations) > 128 or len(json.dumps([item.model_dump() for item in operations]).encode()) > 65536:
+    if (
+        len(operations) > MAX_FILE_BATCH_OPERATIONS
+        or len(json.dumps([item.model_dump() for item in operations]).encode()) > MAX_FILE_BATCH_BYTES
+    ):
         raise EnvironmentError("File batch exceeds its request limit.", code="environment_too_large")
 
 

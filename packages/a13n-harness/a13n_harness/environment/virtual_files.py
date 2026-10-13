@@ -67,17 +67,11 @@ class VirtualFileOperator:
                 await stack.enter_async_context(self._prepare(selected, file_operation_action(item)))
                 for selected, item in zip(selections, operations, strict=True)
             ]
-            first = prepared[0]
-            if any(
-                item.selected.mount_id != first.selected.mount_id or item.backend is not first.backend
-                for item in prepared
-            ):
-                raise EnvironmentError("File batch crosses a file scope.", code="environment_selection_invalid")
             routed = [
                 item.model_copy(update={"path": route.selected.path})
                 for item, route in zip(operations, prepared, strict=True)
             ]
-            results = await first.backend.batch(routed)
+            results = await prepared[0].backend.batch(routed)
             if len(results) != len(operations):
                 raise EnvironmentError("Invalid file batch response.", code="environment_provider_failure")
             values: list[FileBatchValue] = []

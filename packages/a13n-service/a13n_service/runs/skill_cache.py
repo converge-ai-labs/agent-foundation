@@ -26,6 +26,8 @@ from a13n_logging import get_logger
 
 ROOT = "/workspace/.agents/skill-cache"
 _STATE = f"{ROOT}/.cache"
+# Skills per file batch: three pin operations each stay within the Harness batch limit.
+FILE_BATCH = 32
 logger = get_logger(__name__)
 
 
@@ -45,10 +47,9 @@ class Cache:
 
     async def acquire_many(self, files: FileOperator, digests: Sequence[str]) -> list[Use]:
         uses: list[Use] = []
-        for offset in range(0, len(digests), 32):
-            batch = digests[offset : offset + 32]
-            created = [Use(f"{_STATE}/pins/{digest}/{uuid4().hex}", retain=True) for digest in batch]
-            self.uses.extend(created)
+        for offset in range(0, len(digests), FILE_BATCH):
+            batch = digests[offset : offset + FILE_BATCH]
+            created = [Use(f"{_STATE}/pins/{digest}/{uuid4().hex}") for digest in batch]
             operations: list[FileOperation] = []
             for digest, use in zip(batch, created, strict=True):
                 operations.extend(
@@ -58,10 +59,9 @@ class Cache:
                         FileStatOperation(path=f"{_STATE}/evict/{digest}", missing_ok=True),
                     )
                 )
-            # A failed/cancelled batch may still be creating pins remotely. Retain the whole dispatched batch.
+            # Own pins only after a confirmed batch; a failed or cancelled one may still create them remotely.
             results = await files.batch(operations)
-            for use in created:
-                use.retain = False
+            self.uses.extend(created)
             uses.extend(created)
             pending = [digest for digest, result in zip(batch, results[2::3], strict=True) if result is not None]
             try:
@@ -81,14 +81,14 @@ class Cache:
         return uses
 
     async def touch_many(self, files: FileOperator, digests: Sequence[str]) -> None:
-        for offset in range(0, len(digests), 32):
+        for offset in range(0, len(digests), FILE_BATCH):
             operations: list[FileOperation] = [
                 FileMkdirOperation(path=f"{_STATE}/entries", parents=True, exist_ok=True),
             ]
             timestamp = str(time.time_ns())
             operations.extend(
                 FileWriteTextOperation(path=f"{_STATE}/entries/{digest}", text=timestamp, mode="upsert")
-                for digest in digests[offset : offset + 32]
+                for digest in digests[offset : offset + FILE_BATCH]
             )
             await files.batch(operations)
 
@@ -96,11 +96,14 @@ class Cache:
         """Called before the primary execution closes its file client; unknown pins are retained."""
         uses, self.uses = self.uses, []
         paths = [f"{root.rstrip('/')}/{use.path.removeprefix(ROOT + '/')}" for use in uses if not use.retain]
-        for offset in range(0, len(paths), 32):
+        for offset in range(0, len(paths), FILE_BATCH):
             with anyio.move_on_after(5, shield=True) as cleanup:
                 try:
                     await files.batch(
-                        [FileRemoveOperation(path=path, missing_ok=True) for path in paths[offset : offset + 32]]
+                        [
+                            FileRemoveOperation(path=path, missing_ok=True)
+                            for path in paths[offset : offset + FILE_BATCH]
+                        ]
                     )
                 except EnvironmentError as error:
                     logger.warning("Skill pin release failed", extra={"code": error.code})
