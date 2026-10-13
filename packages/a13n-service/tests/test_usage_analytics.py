@@ -33,7 +33,7 @@ async def observed_run(service, kit, agent, *, started=START, seconds=10, record
         attempt.status, attempt.started_at, attempt.finished_at = "failed", started, end
         thread.current_run_id = None
         thread.last_run_id = run_id
-        for model, input_tokens, output_tokens, cached, cost, ingested in records:
+        for model, input_tokens, output_tokens, cached, cost, ingested, *timing in records:
             model_id = await session.scalar(select(ModelRow.id).where(ModelRow.key == model)) if model else None
             record = ModelUsageRecord(
                 record_id=new_object_id("usage"),
@@ -45,6 +45,7 @@ async def observed_run(service, kit, agent, *, started=START, seconds=10, record
                 request_usage=BoundedRequestUsage(
                     input_tokens=input_tokens, output_tokens=output_tokens, cache_read_tokens=cached, cost=cost
                 ),
+                **(streamed(*timing[0]) if timing else {}),
             )
             session.add(
                 UsageRecordRow(
@@ -63,6 +64,15 @@ async def observed_run(service, kit, agent, *, started=START, seconds=10, record
     return run_id, lease.attempt_id
 
 
+def streamed(waited: float, generated: float) -> dict[str, datetime]:
+    first_chunk = START + timedelta(seconds=waited)
+    return {
+        "request_started_at": START,
+        "first_chunk_at": first_chunk,
+        "request_ended_at": first_chunk + timedelta(seconds=generated),
+    }
+
+
 async def read(service, path="overview", **params):  # type: ignore[no-untyped-def]
     response = await service.client.get(f"{service.api}/usage/{path}", params={**WINDOW, **params})
     assert response.status_code == 200, response.text
@@ -74,8 +84,8 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     agent = await runs_kit.create_agent(service, scripted_model)
     second = await runs_kit.add_agent(service, "Empty run", "scripted")
     records = [
-        ("scripted", 100, 20, 90, Decimal("0.1"), START),
-        ("scripted", 900, 30, 90, None, START + timedelta(days=1)),
+        ("scripted", 100, 20, 90, Decimal("0.1"), START, (1, 2)),
+        ("scripted", 900, 30, 90, None, START + timedelta(days=1), (3, 1)),
         (None, 50, 10, 0, None, START + timedelta(days=2)),
         ("scripted", 9999, 0, 0, Decimal("99"), START + timedelta(days=3)),
     ]
@@ -124,6 +134,11 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     ).json()
     assert [(row["model"], row["requests"]) for row in summary["models"]] == [("scripted", 3), (None, 1)]
     assert all("cache_write_tokens" in row for row in summary["models"])
+    # Only streamed requests are timed; the late Run's request was not streamed.
+    timing = [
+        (row["average_time_to_first_chunk_seconds"], row["output_tokens_per_second"]) for row in summary["models"]
+    ]
+    assert timing == [(2, pytest.approx(50 / 3)), (None, None)]
     assert [run["run_id"] for run in summary["runs"]] == [first_run, late_run]
     first = summary["runs"][0]
     assert [(row["model"], row["requests"], row["input_tokens"], row["cost"]) for row in first["models"]] == [
@@ -138,6 +153,7 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
         )
     only = (await service.client.get(f"{service.api}/usage", params={"run_id": late_run})).json()
     assert [run["run_id"] for run in only["runs"]] == [late_run] and only["models"] == only["runs"][0]["models"]
+    assert only["models"][0]["output_tokens_per_second"] is None
 
 
 async def test_calendar_buckets_empty_state_and_invalid_windows(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]

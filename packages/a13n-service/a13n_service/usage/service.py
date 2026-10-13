@@ -8,7 +8,20 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import BigInteger, ColumnElement, Numeric, RowMapping, Select, case, func, or_, select, tuple_
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    DateTime,
+    Numeric,
+    RowMapping,
+    Select,
+    and_,
+    case,
+    func,
+    or_,
+    select,
+    tuple_,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -233,9 +246,23 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
     statement groups both ways, so the per-Run rows always add up to the per-model totals.
     """
     by_run = (RunRow.created_at, RunRow.id, RunRow.thread_id)
+    record = UsageRecordRow.record
+    started, first_chunk, ended = (
+        record[name].astext.cast(DateTime(timezone=True))
+        for name in ("request_started_at", "first_chunk_at", "request_ended_at")
+    )
+    # Only a completed stream separates waiting for the model from generating.
+    timed = and_(record["outcome"].astext == "completed", first_chunk < ended)
+    generating = func.sum(func.extract("epoch", ended - first_chunk)).filter(timed)
     query = (
         _model_totals()
         .add_columns(
+            func.avg(func.extract("epoch", first_chunk - started))
+            .filter(timed)
+            .label("average_time_to_first_chunk_seconds"),
+            (
+                func.sum(record["request_usage"]["output_tokens"].astext.cast(BigInteger)).filter(timed) / generating
+            ).label("output_tokens_per_second"),
             ModelRow.key.label("model"),
             RunRow.id.label("run_id"),
             RunRow.thread_id,
