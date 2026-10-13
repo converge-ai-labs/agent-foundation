@@ -77,4 +77,6 @@ Agent Composer 不能被编辑、添加修订版本、归档或设置头像（�
 
 内置 Skill 通过 Worker 的只读本地 Environment 读取随包发布的文档，不需要用户 Environment 或容器。它与用户 Skill 共用 Harness 的目录和读取事件机制，同时启用时显示在同一个目录中。Agent 配置 schema 随文档一起发布，位于 `/platform-skills/platform-operations/schemas`。`/platform-instance` 中的实例目录在进程启动时生成一次，供后续 attempt 共用。
 
+读取所选 Skill 需要启用标准文件工具：`view`、`ls`、`glob` 和 `grep`。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
+
 已有 agent 仍可使用旧的 `configuration` 工具集。它的 `create_agent_revision` 现在要求提供原始读取结果中的 `expected_version`；缺少该值时，需要重新读取并提交新的调用。历史 run 保留原有工具。

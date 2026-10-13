@@ -15,7 +15,7 @@ from a13n_service.infra.db import Storage
 from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents.schemas import Agent, AgentConfig, PlatformSelection
-from a13n_service.resources.agents.toolsets import ToolsetSelection
+from a13n_service.resources.agents.toolsets import ToolSelection, ToolsetSelection, default_toolsets
 from a13n_service.tenancy.authorize import Principal
 
 NAME = "Agent Composer"
@@ -39,7 +39,12 @@ def configuration(model: str) -> AgentConfig:
         model=model,
         instructions=_INSTRUCTIONS,
         toolsets={
-            "files": ToolsetSelection(enabled=False),
+            "files": ToolsetSelection(
+                tools={
+                    key: ToolSelection(enabled=key in {"view", "ls", "glob", "grep"})
+                    for key in default_toolsets()["files"].tools
+                }
+            ),
             "shell": ToolsetSelection(enabled=False),
             "memory": ToolsetSelection(enabled=False),
             "configuration": ToolsetSelection(enabled=False),

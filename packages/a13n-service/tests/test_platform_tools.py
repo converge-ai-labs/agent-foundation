@@ -311,14 +311,12 @@ async def test_native_platform_read_and_write_review_survive_resume(service, scr
         scripted_model,
         platform_tools={"groups": ["agents"]},
         builtin_skills=["platform-operations"],
-        toolsets={"files": {"enabled": False}, "shell": {"enabled": False}},
+        toolsets={"files": {"enabled": True}, "shell": {"enabled": False}},
     )
     schema = service.app.openapi()["paths"]
     read_name = tool_name(schema["/api/v1/agents"]["get"]["operationId"])
     write_name = tool_name(schema["/api/v1/agents/{agent_id}"]["patch"]["operationId"])
-    scripted_model.call(
-        "platform_view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide"
-    )
+    scripted_model.call("view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide")
     scripted_model.call(read_name, {}, call_id="read")
     scripted_model.call(
         write_name,
@@ -364,14 +362,14 @@ async def test_inline_child_reads_builtin_skill_without_parent_skill_or_user_env
         "inline",
         worker={
             "builtin_skills": ["platform-operations"],
-            "toolsets": {"files": {"enabled": False}, "shell": {"enabled": False}},
+            "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
         },
     )
     scripted_model.call(
         "delegate", {"subagent": "helper", "prompt": "read the guide"}, call_id="delegate", to="coordinator"
     )
     scripted_model.call(
-        "platform_view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide", to="worker"
+        "view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide", to="worker"
     )
     scripted_model.say("Guide read", to="worker")
     scripted_model.say("Done", to="coordinator")

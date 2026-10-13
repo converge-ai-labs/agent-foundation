@@ -468,7 +468,7 @@ async def test_composer_reads_durable_finding_without_changing_the_target(servic
     assert {
         read_finding,
         tool_name(paths["/api/v1/agents/{agent_id}/revisions"]["post"]["operationId"]),
-        "platform_view",
+        "view",
     } <= names
     assert "submit_finding" not in names and "report_analysis" not in names
     assert finding(agent, run)["suggestion"] in str(request["messages"])

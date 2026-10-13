@@ -24,6 +24,7 @@ from a13n_harness import (
     RunError,
 )
 from a13n_harness.capabilities.web import WebCapability, WebSearchRequest, WebSearchResponse, WebSearchResult
+from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.errors import DefinitionError
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
@@ -40,7 +41,14 @@ from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents.schemas import IsolatedSkillSync, SkillSelection
-from a13n_service.resources.agents.toolsets import FetchConfiguration, SearchConfiguration, WebTools, web_configuration
+from a13n_service.resources.agents.toolsets import (
+    FetchConfiguration,
+    SearchConfiguration,
+    WebTools,
+    default_toolsets,
+    environment_configuration,
+    web_configuration,
+)
 from a13n_service.resources.assets.service import get_asset, read_asset_content
 from a13n_service.resources.providers.schemas import ProviderCreate
 from a13n_service.resources.providers.service import create_provider
@@ -391,7 +399,7 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
     assert not (root / pinned.digest).exists()
 
 
-async def test_builtin_and_pinned_skills_share_catalog_without_widening_file_tools(runtime, tenant, tmp_path):
+async def test_builtin_and_pinned_skills_share_catalog_and_standard_file_tools(runtime, tenant, tmp_path):
     from a13n_service.runs.builtin_skills import ROOT, SOURCE
     from a13n_service.runs.skill_cache import Cache
 
@@ -413,18 +421,23 @@ async def test_builtin_and_pinned_skills_share_catalog_without_widening_file_too
     user_document = f"/workspace/.agents/skill-cache/{pinned.digest}/{pinned.name}/SKILL.md"
     script = Script(
         [
-            ("platform_view", {"file_path": f"{ROOT}/SKILL.md"}, "builtin"),
-            ("platform_view", {"file_path": user_document}, "user"),
+            ("view", {"file_path": f"{ROOT}/SKILL.md"}, "builtin"),
+            ("view", {"file_path": user_document}, "user"),
             "done",
         ]
     )
     builtin = runtime.builtin_skills
-    result = await run(script, [skills, builtin.files], environment=environment, builtin_mounts=builtin.mounts)
+    result = await run(
+        script,
+        [skills, DynamicEnvironmentCapability(environment_configuration(default_toolsets()))],
+        environment=environment,
+        builtin_mounts=builtin.mounts,
+    )
     assert result.output == "done"
     assert script.instructions[0].count("<available-skills>") == 1
     assert 'name="platform-operations"' in script.instructions[0] and f'name="{pinned.name}"' in script.instructions[0]
     assert script.results[0]["ok"] and "# Platform operations" in script.results[0]["content"]
-    assert not script.results[1]["ok"] and script.results[1]["error"]["code"] == "environment_denied"
+    assert script.results[1]["ok"] and "# Review" in script.results[1]["content"]
     assert (
         tmp_path / ENVIRONMENT / ".agents" / "skill-cache" / pinned.digest / pinned.name / "SKILL.md"
     ).read_bytes() == SKILL

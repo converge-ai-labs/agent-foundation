@@ -77,4 +77,6 @@ Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. S
 
 The built-in Skill reads packaged documents through a read-only local Environment in the Worker. It requires no user Environment or container. Its catalog and read events use the same Harness Skills lifecycle as user Skills; when both are selected, they appear in one catalog. The Agent configuration schema ships with the documents under `/platform-skills/platform-operations/schemas`. The deployment-specific catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
 
+Keep the standard file tools enabled to read the selected Skill: `view`, `ls`, `glob` and `grep`. Composer enables only these four file tools. Builtin document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
+
 Existing agents can still use the legacy `configuration` toolset. Its `create_agent_revision` now requires the `expected_version` from the original resource read; calls missing that value must read again and submit a new request. Historical runs retain their original tools.

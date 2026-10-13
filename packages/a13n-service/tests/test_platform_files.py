@@ -8,13 +8,17 @@ from tempfile import TemporaryDirectory
 import pytest
 from a13n_harness import HarnessBuilder, HarnessEvent, HarnessExtensionEvent, RunBindings
 from a13n_harness.capabilities import SkillManager, SkillsCapability
+from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.files import FileQueryRequest, FileTextSearchRequest
-from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from a13n_service.app import _registry
 from a13n_service.distribution import OSS
+from a13n_service.resources.agents.composer import configuration
 from a13n_service.resources.agents.schemas import AgentConfig
-from a13n_service.runs.builtin_skills import INSTANCE_ROOT, ROOT, SOURCE, _BuiltinScopes, open_builtin_skills
+from a13n_service.resources.agents.toolsets import environment_configuration
+from a13n_service.runs.builtin_skills import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_builtin_skills
+from a13n_service.runs.host import _environment
 from a13n_service.settings import Settings
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -56,10 +60,9 @@ async def test_local_mounts_schema_references_and_permissions():
                     await files.read_bytes(path)
                 with pytest.raises(EnvironmentError, match="denied"):
                     await files.write_text(path, "changed", mode="replace")
-            scopes = _BuiltinScopes(bound)
             for path in ("/etc/passwd", f"{ROOT}/../../secret", "/platform-skills-other/file"):
                 with pytest.raises(EnvironmentError):
-                    await scopes.resolve_files(path)
+                    await bound.resolve_files(path)
         with pytest.raises(EnvironmentError):
             await files.read_text(f"{ROOT}/SKILL.md")
 
@@ -79,14 +82,14 @@ async def test_builtin_skill_without_user_environment_emits_standard_events():
         ]
         if not returns:
             assert {tool.name for tool in info.function_tools} == {
-                "platform_view",
-                "platform_ls",
-                "platform_glob",
-                "platform_grep",
+                "view",
+                "ls",
+                "glob",
+                "grep",
             }
             yield {
                 0: DeltaToolCall(
-                    name="platform_view", json_args=json.dumps({"file_path": f"{ROOT}/SKILL.md"}), tool_call_id="guide"
+                    name="view", json_args=json.dumps({"file_path": f"{ROOT}/SKILL.md"}), tool_call_id="guide"
                 )
             }
         else:
@@ -98,7 +101,10 @@ async def test_builtin_skill_without_user_environment_emits_standard_events():
             AgentSpec(),
             output_type=str,
             model=FunctionModel(stream_function=model),
-            capabilities=(SkillsCapability(SkillManager((SOURCE,))), builtin.files),
+            capabilities=(
+                SkillsCapability(SkillManager((SOURCE,))),
+                DynamicEnvironmentCapability(environment_configuration(configuration("test").toolsets)),
+            ),
         )
         events = []
         async with executable.stream("read", environments=builtin.mounts, bindings=RunBindings.embedded()) as run:
@@ -150,3 +156,47 @@ async def test_process_reuses_references_across_runs_and_removes_them_on_shutdow
             assert catalog.read_bytes() == original and catalog.stat().st_mtime_ns == created_at
         assert tuple(tmp_path.iterdir()) == (directory,)
     assert not directory.exists()
+
+
+@pytest.mark.parametrize("name", ["workspace", "user-files"])
+async def test_host_preserves_user_default_with_builtin_mounts(tmp_path, name):
+    (tmp_path / "note.txt").write_text("user file")
+    async with startup() as builtin:
+        environment = _environment({name: _mount(tmp_path, "/user-files")}, builtin.mounts)
+        async with environment.bind(
+            thread_id="thread-test", run_id="run-test", instance=RunBindings.embedded().instance, host_refs={}
+        ) as bound:
+            assert bound.snapshot.default_mount == name
+            assert (await bound.files.read_text("note.txt")).text == "user file"
+            assert (await bound.files.read_text(f"{ROOT}/SKILL.md")).text.startswith("---")
+            with pytest.raises(EnvironmentError):
+                await bound.files.write_text(f"{ROOT}/SKILL.md", "changed", mode="replace")
+
+
+async def test_composer_does_not_offer_mutations_with_writable_user_environment(tmp_path):
+    async def model(messages, info):
+        assert {tool.name for tool in info.function_tools} == {"view", "ls", "glob", "grep"}
+        yield "done"
+
+    from dataclasses import replace
+
+    user = replace(
+        _mount(tmp_path, "/user"), permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
+    )
+    async with startup() as builtin:
+        executable = HarnessBuilder(configured_plugins_enabled=False).build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(
+                SkillsCapability(SkillManager((SOURCE,))),
+                DynamicEnvironmentCapability(environment_configuration(configuration("test").toolsets)),
+            ),
+        )
+        result = await executable.run(
+            "read",
+            environments={"workspace": user, **builtin.mounts},
+            default_environment="workspace",
+            bindings=RunBindings.embedded(),
+        )
+        assert result.output == "done"

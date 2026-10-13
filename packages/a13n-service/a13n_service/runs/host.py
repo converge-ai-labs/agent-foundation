@@ -15,10 +15,12 @@ from functools import partial
 from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
+from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.agents.schemas import PlatformSelection, SharedSkillSync
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
@@ -34,6 +36,7 @@ from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.builtin_skills import SOURCE
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
+from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.findings.tools import FindingCapability
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
@@ -117,7 +120,7 @@ class Host:
     webs: Mapping[str, WebBinding]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
-    builtin_mounts: Mapping[str, EnvironmentMount]
+    environment: EnvironmentRuntime
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
@@ -173,6 +176,7 @@ async def open_host(
     cursors: MemoryCursors,
     configuration: RunConfiguration,
     skill_cache: Cache,
+    environments: Mapping[str, EnvironmentMount],
 ) -> AsyncIterator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
@@ -193,8 +197,6 @@ async def open_host(
                     settings=runtime.settings.providers,
                 )
             )
-            if parts.builtin_skill and builtin is not None:
-                tools[revision_id] += (builtin.files,)
             if parts.platform.groups:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
                 tools[revision_id] += (platform,)
@@ -235,5 +237,13 @@ async def open_host(
             tools,
             webs,
             memory,
-            builtin.mounts if builtin else {},
+            _environment(environments, builtin.mounts if builtin else {}),
         )
+
+
+def _environment(user: Mapping[str, EnvironmentMount], builtin: Mapping[str, EnvironmentMount]) -> EnvironmentRuntime:
+    """Preserve the user's default while adding non-default Host document mounts."""
+    if user.keys() & builtin.keys():
+        raise ServiceError("invalid_argument", "Environment names conflict with builtin Skill mounts")
+    default = PRIMARY if PRIMARY in user else next(iter(user)) if len(user) == 1 else None
+    return create_environment_runtime(mounts={**user, **builtin}, default_mount=default)
