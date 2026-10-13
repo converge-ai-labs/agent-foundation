@@ -1,5 +1,6 @@
 """Explicit admission and operation effects shared by HTTP, MCP and internal agents."""
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -18,8 +19,15 @@ PLATFORM_GROUPS: tuple[PlatformGroup, ...] = (
     "execution",
 )
 PLATFORM_METADATA = "x-a13n-platform"
-RUN_CREDENTIAL = "platform_run_credential"
-RUN_GROUPS = "platform_run_groups"
+
+
+@dataclass(frozen=True, slots=True)
+class PlatformAccess:
+    """Selected operations and execution origin carried by an authenticated credential."""
+
+    groups: frozenset[PlatformGroup]
+    run_id: str
+    attempt_id: str
 
 
 class PlatformOperation(BaseModel):

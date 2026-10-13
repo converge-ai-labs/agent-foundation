@@ -6,21 +6,29 @@ then intersects current grants with the persisted acceptance ceiling. There is n
 
 import base64
 import hmac
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
+from starlette.responses import Response
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation, secret_hash
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.infra.platform import PlatformGroup
+from a13n_service.infra.platform import PlatformAccess, PlatformGroup
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, authorize_execution, lock_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, RunRow
-from a13n_service.tenancy.access import Authenticated, unauthenticated
-from a13n_service.tenancy.authorize import ExecutionAuthority, Grant, WorkspaceScope, allowed_verbs
+from a13n_service.tenancy.access import (
+    Authenticated,
+    Authenticator,
+    login_session_required,
+    require_active_workspace,
+    unauthenticated,
+)
+from a13n_service.tenancy.authorize import ExecutionAuthority
 
 PREFIX = "a13n_run_"
 _LOCATION = SecretLocation(None, "run_platform_tokens", "platform_operations_v1", "service")
@@ -34,6 +42,37 @@ class Claims(BaseModel):
     lease_hash: str = Field(min_length=64, max_length=64)
     groups: frozenset[PlatformGroup]
     expires_at: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RunCredential(Authenticated):
+    claims: Claims = field(repr=False)
+
+
+class RunAuthenticator:
+    """Authenticate Run credentials; delegate other credentials to the Distribution's authenticator."""
+
+    def __init__(self, delegate: Authenticator):
+        self.delegate = delegate
+
+    async def authenticate(self, request: Request, response: Response) -> Authenticated | None:
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        token = token.strip()
+        if scheme.lower() == "bearer" and token.startswith(PREFIX):
+            return await authenticate(request.app.state.runtime, token)
+        return await self.delegate.authenticate(request, response)
+
+    async def recheck(self, session: AsyncSession, credential: Authenticated) -> None:
+        if isinstance(credential, RunCredential):
+            run = await _live_run(session, credential.claims)
+            await require_active_workspace(session, run.workspace_id)
+        else:
+            await self.delegate.recheck(session, credential)
+
+    async def logout(self, request: Request, response: Response, credential: Authenticated) -> None:
+        if isinstance(credential, RunCredential):
+            raise login_session_required()
+        await self.delegate.logout(request, response, credential)
 
 
 def _decode(keys: KeyRing, token: str) -> Claims:
@@ -65,14 +104,26 @@ async def issue(runtime: Runtime, lease: Lease, groups: frozenset[PlatformGroup]
     return PREFIX + base64.urlsafe_b64encode(envelope.model_dump_json().encode()).decode()
 
 
-async def authenticate(runtime: Runtime, token: str) -> tuple[Authenticated, Claims]:
+async def authenticate(runtime: Runtime, token: str) -> RunCredential:
     claims = _decode(runtime.keys, token)
     async with transaction(runtime.storage) as session:
-        credential = await _authenticate(session, runtime, claims)
-    return credential, claims
+        run = await _live_run(session, claims)
+        try:
+            principal = await authorize_execution(session, runtime.access, run)
+        except AuthorityRevoked:
+            raise unauthenticated() from None
+        credential = RunCredential(
+            principal,
+            claims.attempt_id,
+            "run",
+            authority=ExecutionAuthority.model_validate(run.authority),
+            platform=PlatformAccess(claims.groups, claims.run_id, claims.attempt_id),
+            claims=claims,
+        )
+        return replace(credential, principal=credential.constrain(principal))
 
 
-async def _authenticate(session: AsyncSession, runtime: Runtime, claims: Claims) -> Authenticated:
+async def _live_run(session: AsyncSession, claims: Claims) -> RunRow:
     run = await session.get(RunRow, claims.run_id)
     attempt = await session.get(AttemptRow, claims.attempt_id)
     current = await now(session)
@@ -89,12 +140,4 @@ async def _authenticate(session: AsyncSession, runtime: Runtime, claims: Claims)
         or not hmac.compare_digest(attempt.lease_token_hash, claims.lease_hash)
     ):
         raise unauthenticated()
-    try:
-        principal = await authorize_execution(session, runtime.access, run)
-    except AuthorityRevoked:
-        raise unauthenticated() from None
-    ceiling = ExecutionAuthority.model_validate(run.authority)
-    scope = WorkspaceScope(run.organization_id, run.workspace_id)
-    verbs = allowed_verbs(principal, scope) & ceiling.verbs
-    principal = replace(principal, confinement=scope, grants=(Grant(scope.organization_id, scope.workspace_id, verbs),))
-    return Authenticated(principal, attempt.id, "run")
+    return run

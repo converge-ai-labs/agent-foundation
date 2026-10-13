@@ -24,6 +24,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from a13n_service.api_access import CredentialAccess
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
 from a13n_service.infra.db import Storage, short_session
@@ -38,13 +39,13 @@ from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.mcp import WorkspaceKey, build_mcp
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
-from a13n_service.platform_auth import RunTokenBoundary
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
 from a13n_service.runs.builtin_skills import open_builtin_skills
 from a13n_service.runs.execute import execute
+from a13n_service.runs.platform_tokens import RunAuthenticator
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadHub
 from a13n_service.runs.worker import Worker
@@ -177,6 +178,7 @@ async def open_runtime(
     objects = await open_objects(stack, config.objects)
     tasks = Tasks()
     stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
+    access = distribution.access()
     return Runtime(
         storage=storage,
         objects=objects,
@@ -186,7 +188,7 @@ async def open_runtime(
         settings=config,
         registry=registry,
         builtin_skills=builtin_skills,
-        access=distribution.access(),
+        access=replace(access, authenticator=RunAuthenticator(access.authenticator)),
         plugins=build_harness_plugin_factory_catalog(plugin_keys=config.plugins.keys),
         admission=distribution.admission,
         instrumentation=instrumentation,
@@ -351,7 +353,7 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
-        app.add_middleware(RunTokenBoundary, routes=api_routes)
+        app.add_middleware(CredentialAccess, routes=api_routes)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))
     if serves_api and (console / "index.html").is_file():

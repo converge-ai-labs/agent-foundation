@@ -16,12 +16,13 @@ from fastmcp.tools import Tool, ToolResult
 from mcp.types import ToolAnnotations
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from a13n_service.api_access import credential_context
 from a13n_service.api_tools import api_tools
 from a13n_service.documentation import Documents
-from a13n_service.infra.platform import PLATFORM_METADATA, RUN_GROUPS, PlatformOperation
+from a13n_service.infra.platform import PLATFORM_METADATA, PlatformOperation
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import unauthenticated
-from a13n_service.tenancy.requests import current_credential, current_runtime, current_workspace
+from a13n_service.tenancy.requests import cached_credential, current_credential, current_runtime, current_workspace
 
 
 class WorkspaceKey:
@@ -42,6 +43,9 @@ class WorkspaceKey:
             if credential.principal.confinement is None:
                 raise unauthenticated()
             await current_workspace(credential.principal, request.headers.get("x-workspace-id"))
+            with credential_context(credential, scope):
+                await self.app(scope, receive, send)
+            return
         await self.app(scope, receive, send)
 
 
@@ -56,9 +60,12 @@ class RunToolScope(Middleware):
         }
 
     def admitted(self, name: str) -> bool:
-        groups = get_http_request().scope.get("state", {}).get(RUN_GROUPS)
+        credential = cached_credential(get_http_request())
+        if credential is None:
+            raise unauthenticated()
+        platform = credential.platform
         operation = self.operations.get(name)
-        return groups is None or (operation is not None and operation.group in groups)
+        return platform is None or (operation is not None and operation.group in platform.groups)
 
     async def on_list_tools(
         self, context: MiddlewareContext[mt.ListToolsRequest], call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]]

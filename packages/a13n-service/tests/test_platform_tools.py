@@ -7,13 +7,18 @@ import pytest
 from a13n_service.api_tools import tool_name
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import now, transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.claim import claim
 from a13n_service.runs.platform_tokens import issue
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow
+from a13n_service.tenancy.access import reauthenticate
+from a13n_service.tenancy.authorize import WorkspaceScope, allowed_verbs
 from a13n_service.tenancy.tables import GrantRow, PrincipalRow, TokenRow, WorkspaceRow
 from sqlalchemy import delete, select, update
+from starlette.requests import Request
+from starlette.responses import Response
 
 from .mcp_support import call, client, rpc
 
@@ -39,6 +44,21 @@ async def lease_for(service, scripted_model, runs_kit):
     submitted = await runs_kit.start_thread(service, agent, "configure resources")
     (lease,) = await claim(service.runtime, worker_id="platform-test", worker_build="test", limit=1)
     return lease, agent, submitted
+
+
+async def authenticate_token(service, token):
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/agents",
+            "headers": [(b"authorization", ("Bearer " + token).encode())],
+            "app": service.app,
+        }
+    )
+    credential = await service.runtime.access.authenticator.authenticate(request, Response())
+    assert credential is not None
+    return credential
 
 
 async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted_model, runs_kit):
@@ -113,6 +133,7 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
 async def test_run_token_fails_closed_after_execution_or_authority_changes(service, scripted_model, runs_kit, change):
     lease, _, _ = await lease_for(service, scripted_model, runs_kit)
     token = await issue(service.runtime, lease, frozenset({"agents"}))
+    credential = await authenticate_token(service, token)
     async with client(service, {"secret": token}) as http:
         assert (await rpc(http, "tools/list")).status_code == 200
         async with transaction(service.runtime.storage) as session:
@@ -136,6 +157,10 @@ async def test_run_token_fails_closed_after_execution_or_authority_changes(servi
             else:
                 http.headers["authorization"] = "Bearer " + token[:-12] + "AAAAAAAAAAAA"
         assert (await rpc(http, "tools/list")).status_code == 401
+    if change != "tamper":
+        async with transaction(service.runtime.storage) as session:
+            with pytest.raises(ServiceError):
+                await reauthenticate(session, service.runtime.access, credential)
 
 
 async def test_recovered_attempt_issues_new_credentials_and_rejects_old_worker(service, scripted_model, runs_kit):
@@ -253,9 +278,19 @@ async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, run
         await set_role(session, service, "runner")
     await runs_kit.start_thread(service, agent, "read only authority")
     (lease,) = await claim(service.runtime, worker_id="platform-test", worker_build="test", limit=1)
+    token = await issue(service.runtime, lease, frozenset({"agents"}))
+    credential = await authenticate_token(service, token)
+    assert credential.kind == "run"
+    assert credential.platform.groups == frozenset({"agents"})
+    assert credential.platform.run_id == lease.run_id
+    assert credential.platform.attempt_id == lease.attempt_id
     async with transaction(service.runtime.storage) as session:
         await set_role(session, service, "admin")
-    token = await issue(service.runtime, lease, frozenset({"agents"}))
+    async with transaction(service.runtime.storage) as session:
+        refreshed = await reauthenticate(session, service.runtime.access, credential)
+    workspace = WorkspaceScope(service.tenant.organization_id, service.tenant.workspace_id)
+    assert refreshed.confinement == workspace
+    assert allowed_verbs(refreshed, workspace) == frozenset({"read", "run"})
     async with client(service, {"secret": token}) as http:
         result = await call(
             http,
