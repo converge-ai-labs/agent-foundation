@@ -75,4 +75,6 @@ Agent Composer 不能被编辑、添加修订版本、归档或设置头像（�
 
 两项选择默认均为空。权限可设为 `allow`、`ask` 或 `deny`。只启用 skill 不会获得操作权限。后续修改配置不会扩大正在执行的 run 的授权或工具范围。
 
+内置 Skill 通过 Worker 的只读本地 Environment 读取随包发布的文档，不需要用户 Environment 或容器。它与用户 Skill 共用 Harness 的目录和读取事件机制，同时启用时显示在同一个目录中。生成的 schema 和实例参考文件在本次 attempt 期间通过 `/platform-instance` 提供。
+
 已有 agent 仍可使用旧的 `configuration` 工具集。它的 `create_agent_revision` 现在要求提供原始读取结果中的 `expected_version`；缺少该值时，需要重新读取并提交新的调用。历史 run 保留原有工具。

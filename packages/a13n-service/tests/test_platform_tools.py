@@ -1,5 +1,6 @@
 """Run-scoped MCP operations keep their authority through discovery, HTTP and recovery."""
 
+import json
 from dataclasses import replace
 
 import pytest
@@ -316,3 +317,32 @@ async def test_native_platform_read_and_write_review_survive_resume(service, scr
         assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
         changed = (await service.client.get(f"/api/v1/agents/{agent['id']}")).json()
         assert changed["description"] == "Reviewed change"
+
+
+async def test_inline_child_reads_builtin_skill_without_parent_skill_or_user_environment(
+    service, scripted_model, runs_kit
+):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.delegating(
+        service,
+        scripted_model,
+        "inline",
+        worker={
+            "builtin_skills": ["platform-operations"],
+            "toolsets": {"files": {"enabled": False}, "shell": {"enabled": False}},
+        },
+    )
+    scripted_model.call(
+        "delegate", {"subagent": "helper", "prompt": "read the guide"}, call_id="delegate", to="coordinator"
+    )
+    scripted_model.call(
+        "platform_view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide", to="worker"
+    )
+    scripted_model.say("Guide read", to="worker")
+    scripted_model.say("Done", to="coordinator")
+    submitted = await runs_kit.start_thread(service, agent, "ask the helper")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, submitted["run"]["id"])
+    assert run["status"] == "completed" and run["output"] == "Done", run
+    requests = [await scripted_model.request() for _ in range(4)]
+    assert "# Platform operations" in json.dumps(requests)

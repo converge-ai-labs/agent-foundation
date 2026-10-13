@@ -18,7 +18,7 @@ Read only the references needed for the current task:
 - [Versions and conflicts](references/versions-and-conflicts.md): ETags, review and partial success.
 - [Permissions and errors](references/permissions-and-errors.md): scope and safe failures.
 
-Use `platform_view`, `platform_ls`, `platform_glob`, and `platform_grep` under this directory. [AgentConfig](schemas/agent-config.json) is generated from the shared request model. [Instance catalog](instance/catalog.json) is generated from the deployment's registered Providers and Toolsets. Catalog support does not mean that the workspace has configured or authorized a resource.
+Use `platform_view`, `platform_ls`, `platform_glob`, and `platform_grep` under this directory or `/platform-instance`. [AgentConfig](/platform-instance/agent-config.json) is generated from the shared request model. [Instance catalog](/platform-instance/catalog.json) is generated from the deployment's registered Providers and Toolsets. Catalog support does not mean that the workspace has configured or authorized a resource.
 
 Keep questions focused on decisions that affect the result. Read current state before proposing a concrete change. When review is required, the request must show the exact target, parameters and original version. A changed target or configuration needs a new review. Report real result IDs and any unresolved errors.
 

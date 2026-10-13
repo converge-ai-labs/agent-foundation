@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import anyio
 from a13n_harness.capabilities import SkillCatalogItem, SkillManager, SkillsCapability, SkillsPolicy
+from a13n_harness.capabilities.skills import SkillSource
 from a13n_harness.environment.files import FileOperator
 from a13n_harness.environment.models import EnvironmentError
 from a13n_logging import get_logger
@@ -99,11 +100,15 @@ def skills_capability(
     prove_lease: LeaseProof,
     cache: Cache,
     sync: SkillSync = _DEFAULT_SYNC,
+    builtin: SkillSource | None = None,
 ) -> SkillsCapability:
     """The definition's skill catalog; the Harness materializes it when the run starts, before its first request."""
     pinned = _PinnedSkills(tuple(skills), runtime, workspace_id, prove_lease, cache=cache, sync=sync)
-    policy = SkillsPolicy(conflict="error", max_skills=max(1, len(skills)))
-    return SkillsCapability(SkillManager((pinned,), materializers=(pinned,), policy=policy))
+    materialize = bool(skills) or (isinstance(sync, SharedSkillSync) and sync.cleanup)
+    materializers = [pinned] if materialize else []
+    sources: list[SkillSource] = [*materializers, *(() if builtin is None else (builtin,))]
+    policy = SkillsPolicy(conflict="error", max_skills=max(1, len(skills) + int(builtin is not None)))
+    return SkillsCapability(SkillManager(sources, materializers=materializers, policy=policy))
 
 
 class _PinnedSkills:

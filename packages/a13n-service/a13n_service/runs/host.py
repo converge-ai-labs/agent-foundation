@@ -12,7 +12,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 
-from a13n_harness import AgentContext, RunBindings, RunConfiguration
+from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
 from pydantic_ai.capabilities import AbstractCapability
@@ -31,7 +31,7 @@ from a13n_service.resources.connections.runtime import SelectedConnection, open_
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
-from a13n_service.runs.builtin_skills import platform_skill
+from a13n_service.runs.builtin_skills import SOURCE, open_builtin_skills
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
 from a13n_service.runs.findings.tools import FindingCapability
@@ -117,17 +117,20 @@ class Host:
     webs: Mapping[str, WebBinding]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
+    builtin_mounts: Mapping[str, EnvironmentMount]
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
         features = list(self.tools[agent.revision_id])
-        skills = self.plan.parts[agent.revision_id].skills
+        parts = self.plan.parts[agent.revision_id]
+        skills = parts.skills
         sync = agent.config.skill_sync
-        if skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
+        if parts.builtin_skill or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
                 skills_capability(
                     skills,
                     cache=self.skill_cache,
+                    builtin=SOURCE if parts.builtin_skill else None,
                     sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
@@ -174,6 +177,11 @@ async def open_host(
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
+        builtin = (
+            await stack.enter_async_context(open_builtin_skills(runtime))
+            if any(parts.builtin_skill for parts in plan.parts.values())
+            else None
+        )
         tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
         webs: dict[str, WebBinding] = {}
         for revision_id, parts in plan.parts.items():
@@ -189,8 +197,8 @@ async def open_host(
                     settings=runtime.settings.providers,
                 )
             )
-            if parts.builtin_skill:
-                tools[revision_id] += (await platform_skill(runtime),)
+            if parts.builtin_skill and builtin is not None:
+                tools[revision_id] += (builtin.files,)
             if parts.platform.groups:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
                 tools[revision_id] += (platform,)
@@ -220,4 +228,16 @@ async def open_host(
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, principal, authority, plan, models, skill_cache, tools, webs, memory)
+        yield Host(
+            runtime,
+            lease,
+            principal,
+            authority,
+            plan,
+            models,
+            skill_cache,
+            tools,
+            webs,
+            memory,
+            builtin.mounts if builtin else {},
+        )
