@@ -75,6 +75,6 @@ Any agent can independently select platform groups and the local operating skill
 
 Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. Selecting the skill alone grants no operations. A later configuration change does not widen an active run's authority or tool selection.
 
-The built-in Skill reads packaged documents through a read-only local Environment in the Worker. It requires no user Environment or container. Its catalog and read events use the same Harness Skills lifecycle as user Skills; when both are selected, they appear in one catalog. Generated schema and instance references are available under `/platform-instance` for the duration of the attempt.
+The built-in Skill reads packaged documents through a read-only local Environment in the Worker. It requires no user Environment or container. Its catalog and read events use the same Harness Skills lifecycle as user Skills; when both are selected, they appear in one catalog. The Agent configuration schema ships with the documents under `/platform-skills/platform-operations/schemas`. The deployment-specific catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
 
 Existing agents can still use the legacy `configuration` toolset. Its `create_agent_revision` now requires the `expected_version` from the original resource read; calls missing that value must read again and submit a new request. Historical runs retain their original tools.

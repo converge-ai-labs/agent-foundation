@@ -392,7 +392,7 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
 
 
 async def test_builtin_and_pinned_skills_share_catalog_without_widening_file_tools(runtime, tenant, tmp_path):
-    from a13n_service.runs.builtin_skills import ROOT, SOURCE, open_builtin_skills
+    from a13n_service.runs.builtin_skills import ROOT, SOURCE
     from a13n_service.runs.skill_cache import Cache
 
     pinned, _ = await pin_skill(runtime, tenant)
@@ -418,8 +418,8 @@ async def test_builtin_and_pinned_skills_share_catalog_without_widening_file_too
             "done",
         ]
     )
-    async with open_builtin_skills(runtime) as builtin:
-        result = await run(script, [skills, builtin.files], environment=environment, builtin_mounts=builtin.mounts)
+    builtin = runtime.builtin_skills
+    result = await run(script, [skills, builtin.files], environment=environment, builtin_mounts=builtin.mounts)
     assert result.output == "done"
     assert script.instructions[0].count("<available-skills>") == 1
     assert 'name="platform-operations"' in script.instructions[0] and f'name="{pinned.name}"' in script.instructions[0]

@@ -17,6 +17,7 @@ from a13n_service.infra.tasks import Tasks
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.runs.admission import AdmissionPolicy
+from a13n_service.runs.builtin_skills import BuiltinSkills
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
@@ -30,6 +31,7 @@ class Runtime:
     keys: KeyRing
     settings: Settings
     registry: Registry
+    builtin_skills: BuiltinSkills
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     tasks: Tasks

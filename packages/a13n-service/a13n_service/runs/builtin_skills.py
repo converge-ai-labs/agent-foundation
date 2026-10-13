@@ -30,11 +30,10 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
-from a13n_service.providers.registry import web_operations
-from a13n_service.resources.agents.schemas import AgentConfig
+from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources.agents.toolsets import catalog
 from a13n_service.resources.providers.service import list_provider_types
-from a13n_service.runs.runtime import Runtime
+from a13n_service.settings import Settings
 
 ROOT = "/platform-skills/platform-operations"
 INSTANCE_ROOT = "/platform-instance"
@@ -90,8 +89,8 @@ class BuiltinSkills:
 
 
 @asynccontextmanager
-async def open_builtin_skills(runtime: Runtime) -> AsyncIterator[BuiltinSkills]:
-    registry = runtime.registry
+async def open_builtin_skills(registry: Registry, settings: Settings) -> AsyncIterator[BuiltinSkills]:
+    """Prepare deployment-specific references once for the process, outside individual attempts."""
     instance = {
         "providers": {
             kind: list_provider_types(registry, kind).model_dump(mode="json")
@@ -100,12 +99,9 @@ async def open_builtin_skills(runtime: Runtime) -> AsyncIterator[BuiltinSkills]:
         "toolsets": catalog(
             frozenset(operation for definition in registry.web.values() for operation in web_operations(definition))
         ).model_dump(mode="json"),
-        "plugins": list(runtime.settings.plugins.keys),
+        "plugins": list(settings.plugins.keys),
     }
-    references = {
-        "agent-config.json": json.dumps(AgentConfig.model_json_schema(), indent=2),
-        "catalog.json": json.dumps(instance, indent=2),
-    }
+    references = {"catalog.json": json.dumps(instance, indent=2)}
     directory = await asyncio.to_thread(TemporaryDirectory, prefix="a13n-platform-")
     try:
         root = Path(directory.name)

@@ -43,6 +43,7 @@ from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
+from a13n_service.runs.builtin_skills import open_builtin_skills
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadHub
@@ -171,6 +172,8 @@ async def open_runtime(
             content=HarnessTraceContent(telemetry.trace_content),
         )
     )
+    registry = _registry(distribution, config)
+    builtin_skills = await stack.enter_async_context(open_builtin_skills(registry, config))
     objects = await open_objects(stack, config.objects)
     tasks = Tasks()
     stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
@@ -181,7 +184,8 @@ async def open_runtime(
         redis=redis,
         keys=_key_ring(config.encryption),
         settings=config,
-        registry=_registry(distribution, config),
+        registry=registry,
+        builtin_skills=builtin_skills,
         access=distribution.access(),
         plugins=build_harness_plugin_factory_catalog(plugin_keys=config.plugins.keys),
         admission=distribution.admission,

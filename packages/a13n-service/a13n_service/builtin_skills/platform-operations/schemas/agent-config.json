@@ -1,0 +1,1197 @@
+{
+  "$defs": {
+    "AgentModelCharacteristics": {
+      "additionalProperties": false,
+      "description": "The agent's context policy, layered over what the model declares.",
+      "properties": {
+        "compact_threshold": {
+          "default": 0.9,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Compact Threshold",
+          "type": "number"
+        },
+        "context_window_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Window Tokens"
+        },
+        "proactive_context_management_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.65,
+          "title": "Proactive Context Management Threshold"
+        }
+      },
+      "title": "AgentModelCharacteristics",
+      "type": "object"
+    },
+    "AgentReviewer": {
+      "additionalProperties": false,
+      "description": "The model reviewing calls whose permission is `review`, selected by model key.",
+      "properties": {
+        "instruction": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction"
+        },
+        "model": {
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+          "title": "Model",
+          "type": "string"
+        },
+        "model_settings": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Settings"
+        },
+        "on_error": {
+          "default": "approval_required",
+          "enum": [
+            "deny",
+            "approval_required",
+            "allow"
+          ],
+          "title": "On Error",
+          "type": "string"
+        },
+        "on_flagged": {
+          "default": "deny",
+          "enum": [
+            "deny",
+            "approval_required"
+          ],
+          "title": "On Flagged",
+          "type": "string"
+        },
+        "risk_threshold": {
+          "$ref": "#/$defs/ToolRiskLevel",
+          "default": "extra_high"
+        },
+        "rules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolReviewRule"
+          },
+          "maxProperties": 1024,
+          "title": "Rules",
+          "type": "object"
+        },
+        "shell_instruction": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shell Instruction"
+        },
+        "timeout_seconds": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "title": "Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "title": "AgentReviewer",
+      "type": "object"
+    },
+    "ChildEnvironmentPolicy": {
+      "additionalProperties": false,
+      "description": "What a child run mounts: no environment, the parent's, or a new one from `template_id`.",
+      "properties": {
+        "mode": {
+          "default": "shared",
+          "enum": [
+            "none",
+            "shared",
+            "dedicated"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "template_id": {
+          "anyOf": [
+            {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template Id"
+        }
+      },
+      "title": "ChildEnvironmentPolicy",
+      "type": "object"
+    },
+    "ClientToolDefinition": {
+      "additionalProperties": false,
+      "description": "Portable model guidance for one externally executed client tool.",
+      "properties": {
+        "description": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "instruction": {
+          "anyOf": [
+            {
+              "maxLength": 16384,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "parameters_json_schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameters Json Schema",
+          "type": "object"
+        },
+        "permission": {
+          "default": "inherit",
+          "enum": [
+            "inherit",
+            "allow",
+            "deny"
+          ],
+          "title": "Permission",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "parameters_json_schema"
+      ],
+      "title": "ClientToolDefinition",
+      "type": "object"
+    },
+    "ConnectionSelection": {
+      "additionalProperties": false,
+      "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+      "properties": {
+        "connection_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "defer_loading": {
+          "default": false,
+          "title": "Defer Loading",
+          "type": "boolean"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermissionSetting",
+          "default": "inherit"
+        },
+        "permissions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolPermissionSetting"
+          },
+          "maxProperties": 128,
+          "propertyNames": {
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "title": "Permissions",
+          "type": "object"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 128,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        }
+      },
+      "required": [
+        "connection_id"
+      ],
+      "title": "ConnectionSelection",
+      "type": "object"
+    },
+    "DelegationContextPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "history": {
+          "default": "none",
+          "enum": [
+            "none",
+            "summary",
+            "selected"
+          ],
+          "title": "History",
+          "type": "string"
+        },
+        "include_task": {
+          "default": true,
+          "title": "Include Task",
+          "type": "boolean"
+        },
+        "task_state": {
+          "default": "shared",
+          "enum": [
+            "shared",
+            "isolated"
+          ],
+          "title": "Task State",
+          "type": "string"
+        }
+      },
+      "title": "DelegationContextPolicy",
+      "type": "object"
+    },
+    "IsolatedSkillSync": {
+      "additionalProperties": false,
+      "description": "Reuse immutable package directories, with a soft count budget.",
+      "properties": {
+        "cache_count": {
+          "default": 128,
+          "minimum": 0,
+          "title": "Cache Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "isolated",
+          "default": "isolated",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "IsolatedSkillSync",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "MediaUnderstandingSelection": {
+      "additionalProperties": false,
+      "description": "The model, by key, describing each media kind a model cannot read; a kind without one is unavailable.",
+      "properties": {
+        "audio": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "video": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video"
+        }
+      },
+      "title": "MediaUnderstandingSelection",
+      "type": "object"
+    },
+    "MemoryAccess": {
+      "enum": [
+        "read",
+        "write"
+      ],
+      "type": "string"
+    },
+    "MemoryMount": {
+      "additionalProperties": false,
+      "description": "A memory under the name the model addresses it by, exposing the tools its access allows. `recall` lets a\nrecord memory recall records into each run's first input; file memories ignore it.",
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/MemoryAccess"
+        },
+        "memory_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "recall": {
+          "default": true,
+          "title": "Recall",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "memory_id",
+        "access"
+      ],
+      "title": "MemoryMount",
+      "type": "object"
+    },
+    "OutputSpec": {
+      "additionalProperties": false,
+      "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "resources": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "variants": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/OutputVariant"
+              },
+              "maxItems": 32,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variants"
+        }
+      },
+      "title": "OutputSpec",
+      "type": "object"
+    },
+    "OutputVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "resources": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        },
+        "schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Schema",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "schema"
+      ],
+      "title": "OutputVariant",
+      "type": "object"
+    },
+    "PlatformGroup": {
+      "enum": [
+        "agents",
+        "models",
+        "connections",
+        "skills",
+        "environment_templates",
+        "providers",
+        "execution"
+      ],
+      "type": "string"
+    },
+    "PlatformSelection": {
+      "additionalProperties": false,
+      "description": "Platform MCP groups selected independently of local operating instructions.",
+      "properties": {
+        "groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlatformGroup"
+          },
+          "title": "Groups",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "read_permission": {
+          "default": "allow",
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ],
+          "title": "Read Permission",
+          "type": "string"
+        },
+        "write_permission": {
+          "default": "ask",
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ],
+          "title": "Write Permission",
+          "type": "string"
+        }
+      },
+      "title": "PlatformSelection",
+      "type": "object"
+    },
+    "PluginSelection": {
+      "additionalProperties": false,
+      "description": "One instance of a Harness plugin factory the deployment installed.",
+      "properties": {
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        },
+        "instance_name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Instance Name",
+          "type": "string"
+        },
+        "plugin_key": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Plugin Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instance_name",
+        "plugin_key"
+      ],
+      "title": "PluginSelection",
+      "type": "object"
+    },
+    "RetryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "output": {
+          "default": 0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Output",
+          "type": "integer"
+        },
+        "tools": {
+          "default": 0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Tools",
+          "type": "integer"
+        }
+      },
+      "title": "RetryConfig",
+      "type": "object"
+    },
+    "SharedSkillSync": {
+      "additionalProperties": false,
+      "description": "Publish mutable conventional names; the last completed publication wins.",
+      "properties": {
+        "cleanup": {
+          "default": false,
+          "title": "Cleanup",
+          "type": "boolean"
+        },
+        "mode": {
+          "const": "shared",
+          "default": "shared",
+          "title": "Mode",
+          "type": "string"
+        },
+        "overwrite": {
+          "default": true,
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "title": "SharedSkillSync",
+      "type": "object"
+    },
+    "SkillSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "skill_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Skill Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill_id"
+      ],
+      "title": "SkillSelection",
+      "type": "object"
+    },
+    "SubagentSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/DelegationContextPolicy"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "environment": {
+          "$ref": "#/$defs/ChildEnvironmentPolicy"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "usage_limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UsageLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "agent_id"
+      ],
+      "title": "SubagentSelection",
+      "type": "object"
+    },
+    "ToolPermissionMode": {
+      "enum": [
+        "allow",
+        "deny",
+        "ask",
+        "review"
+      ],
+      "type": "string"
+    },
+    "ToolPermissionSetting": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolPermissionMode"
+        },
+        {
+          "const": "inherit",
+          "type": "string"
+        }
+      ]
+    },
+    "ToolReviewRule": {
+      "additionalProperties": false,
+      "description": "A matching rule overrides the supplied fields of the global policy.",
+      "properties": {
+        "on_flagged": {
+          "anyOf": [
+            {
+              "enum": [
+                "deny",
+                "approval_required"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Flagged"
+        },
+        "risk_threshold": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolRiskLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ToolReviewRule",
+      "type": "object"
+    },
+    "ToolRiskLevel": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "extra_high"
+      ],
+      "title": "ToolRiskLevel",
+      "type": "string"
+    },
+    "ToolSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermissionSetting",
+          "default": "inherit"
+        }
+      },
+      "title": "ToolSelection",
+      "type": "object"
+    },
+    "ToolsetKey": {
+      "enum": [
+        "files",
+        "shell",
+        "web",
+        "memory",
+        "assets",
+        "configuration",
+        "traces",
+        "findings"
+      ],
+      "type": "string"
+    },
+    "ToolsetSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "tools": {
+          "maxProperties": 64,
+          "patternProperties": {
+            "^[a-z][a-z0-9_]{0,63}$": {
+              "$ref": "#/$defs/ToolSelection"
+            }
+          },
+          "title": "Tools",
+          "type": "object"
+        }
+      },
+      "title": "ToolsetSelection",
+      "type": "object"
+    },
+    "UsageLimits": {
+      "description": "Limits on model usage.\n\nThe request count is tracked by Pydantic AI, and the request limit is checked at the start of each step of the\nagent loop. Token counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.",
+      "properties": {
+        "cost_limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Limit"
+        },
+        "count_tokens_before_request": {
+          "default": false,
+          "title": "Count Tokens Before Request",
+          "type": "boolean"
+        },
+        "input_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens Limit"
+        },
+        "output_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens Limit"
+        },
+        "per_request_input_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Per Request Input Tokens Limit"
+        },
+        "request_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 50,
+          "title": "Request Limit"
+        },
+        "tool_calls_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Calls Limit"
+        },
+        "total_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Tokens Limit"
+        }
+      },
+      "title": "UsageLimits",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "builtin_skills": {
+      "default": [],
+      "items": {
+        "const": "platform-operations",
+        "type": "string"
+      },
+      "title": "Builtin Skills",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "client_tools": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ClientToolDefinition"
+      },
+      "maxItems": 128,
+      "title": "Client Tools",
+      "type": "array"
+    },
+    "connection_tools": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ConnectionSelection"
+      },
+      "maxItems": 128,
+      "title": "Connection Tools",
+      "type": "array"
+    },
+    "default_environment_template_id": {
+      "anyOf": [
+        {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Default Environment Template Id"
+    },
+    "instructions": {
+      "default": "",
+      "maxLength": 262144,
+      "title": "Instructions",
+      "type": "string"
+    },
+    "lazy_environment": {
+      "default": true,
+      "title": "Lazy Environment",
+      "type": "boolean"
+    },
+    "media_understanding": {
+      "$ref": "#/$defs/MediaUnderstandingSelection"
+    },
+    "memory_mounts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MemoryMount"
+      },
+      "maxItems": 32,
+      "title": "Memory Mounts",
+      "type": "array"
+    },
+    "model": {
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+      "title": "Model",
+      "type": "string"
+    },
+    "model_characteristics": {
+      "$ref": "#/$defs/AgentModelCharacteristics"
+    },
+    "model_settings": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Model Settings",
+      "type": "object"
+    },
+    "output_spec": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "platform_tools": {
+      "$ref": "#/$defs/PlatformSelection"
+    },
+    "plugins": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PluginSelection"
+      },
+      "maxItems": 128,
+      "title": "Plugins",
+      "type": "array"
+    },
+    "retries": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "reviewer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentReviewer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "skill_sync": {
+      "discriminator": {
+        "mapping": {
+          "isolated": "#/$defs/IsolatedSkillSync",
+          "shared": "#/$defs/SharedSkillSync"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SharedSkillSync"
+        },
+        {
+          "$ref": "#/$defs/IsolatedSkillSync"
+        }
+      ],
+      "title": "Skill Sync"
+    },
+    "skills": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SkillSelection"
+      },
+      "maxItems": 512,
+      "title": "Skills",
+      "type": "array"
+    },
+    "subagent_mode": {
+      "default": "inline",
+      "enum": [
+        "inline",
+        "async"
+      ],
+      "title": "Subagent Mode",
+      "type": "string"
+    },
+    "subagents": {
+      "maxProperties": 128,
+      "patternProperties": {
+        "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+          "$ref": "#/$defs/SubagentSelection"
+        }
+      },
+      "title": "Subagents",
+      "type": "object"
+    },
+    "toolsets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolsetSelection"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/ToolsetKey"
+      },
+      "title": "Toolsets",
+      "type": "object"
+    },
+    "user_questions": {
+      "default": false,
+      "title": "User Questions",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "model"
+  ],
+  "title": "AgentConfig",
+  "type": "object"
+}
