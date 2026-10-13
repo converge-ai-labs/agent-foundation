@@ -101,7 +101,9 @@ it("saves the environment choice together with other configuration edits", async
     " Keep the draft.",
   );
   await user.click(
-    screen.getByRole("combobox", { name: "Default environment template" }),
+    screen.getByRole("combobox", {
+      name: "Default runtime environment (optional)",
+    }),
   );
   const cloud = await screen.findByRole("group", { name: "Cloud hosting" });
   expect(
@@ -112,8 +114,9 @@ it("saves the environment choice together with other configuration edits", async
   ).toBeTruthy();
   await user.click(within(cloud).getByRole("option", { name: "Sandbox E2B" }));
   expect(
-    screen.getByRole("combobox", { name: "Default environment template" })
-      .textContent,
+    screen.getByRole("combobox", {
+      name: "Default runtime environment (optional)",
+    }).textContent,
   ).toContain("E2B");
   expect(submit).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));

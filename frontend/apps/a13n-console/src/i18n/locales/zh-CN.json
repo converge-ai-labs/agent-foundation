@@ -175,7 +175,7 @@
   "Authorization": "授权",
   "Authorization context is missing or expired. Sign in and start authorization again in this tab.": "授权上下文缺失或已过期。请登录后在当前标签页重新发起授权。",
   "Authorization is pending. Refresh the connection after completing the provider flow.": "授权尚未完成。完成供应商流程后，请刷新连接。",
-  "Automatically creates a managed environment when the session has no workspace mount. Select external targets in session options.": "会话未挂载 workspace 时自动创建托管环境。外部目标请在会话选项中选择。",
+  "Choose a template for file access and command execution. Optional for model-only conversations; you can also specify an environment when starting a session.": "需要读写文件、执行命令时，可以选择环境模板。仅进行模型对话可不选，也可以在开始会话时指定环境。",
   "Available models": "可用模型",
   "Avatar": "头像",
   "Back": "返回",
@@ -270,7 +270,7 @@
   "Dedicated identities for applications and automation.": "供应用和自动化使用的专用身份。",
   "Default": "默认",
   "Default branch": "默认分支",
-  "Default environment template": "默认环境模板",
+  "Default runtime environment (optional)": "默认运行环境（可选）",
   "Defaults": "默认值",
   "Delete": "删除",
   "Delete after idle seconds": "空闲多少秒后删除",
@@ -428,7 +428,7 @@
   "Next": "下一页",
   "No API keys": "暂无 API 密钥",
   "No activity yet": "暂无活动",
-  "No default environment template": "无默认环境模板",
+  "Do not create an environment automatically": "不自动创建环境",
   "No environment templates": "暂无环境模板",
   "No environments yet": "暂无环境",
   "No expiration": "永不过期",
@@ -2104,5 +2104,6 @@
   "Environment runtime": "运行方式",
   "Cloud hosting": "云端",
   "Own hosting": "自有",
-  "Hosting mode": "托管方式"
+  "Hosting mode": "托管方式",
+  "Used when the session has no working environment. Saving the Agent does not start an environment.": "会话未指定工作环境时，将使用此模板。保存 Agent 不会立即启动环境。"
 }

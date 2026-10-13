@@ -61,21 +61,31 @@ export function AgentEnvironment({
   });
   return (
     <Section
-      title={t("Default environment template")}
+      title={t("Default runtime environment (optional)")}
       description={t(
-        "Automatically creates a managed environment when the session has no workspace mount. Select external targets in session options.",
+        "Choose a template for file access and command execution. Optional for model-only conversations; you can also specify an environment when starting a session.",
       )}
     >
       <ChoiceField
-        label={t("Default environment template")}
+        label={t("Default runtime environment (optional)")}
         hideLabel
+        description={
+          value
+            ? t(
+                "Used when the session has no working environment. Saving the Agent does not start an environment.",
+              )
+            : undefined
+        }
         disabled={disabled}
         value={value ?? "none"}
         onValueChange={(selected) =>
           onChange(selected === "none" ? null : selected)
         }
         options={[
-          { value: "none", label: t("No default environment template") },
+          {
+            value: "none",
+            label: t("Do not create an environment automatically"),
+          },
           ...groups.flatMap((group) =>
             choices
               .filter((item) => item.category === group.key)
