@@ -118,14 +118,18 @@ async def test_concurrent_publication_preserves_complete_winner(sync_root, monke
     await second.materialize(files=files)
     release.set()
     await task
-    assert (root / "review" / "SKILL.md").read_text() == "second"
-    assert {item.name for item in (root / "review").iterdir()} == {"SKILL.md", "second"}
+    winner = "first" if overwrite else "second"
+    assert (root / "review" / "SKILL.md").read_text() == winner
+    assert {item.name for item in (root / "review").iterdir()} == {"SKILL.md", winner}
     assert not list(root.parent.glob(".skill-stage-*"))
 
 
-async def test_cancelled_publication_keeps_outstanding_candidate(sync_root, monkeypatch):
+@pytest.mark.parametrize("overwrite", [False, True])
+async def test_cancelled_publication_keeps_outstanding_candidate(sync_root, monkeypatch, overwrite):
     files, root = sync_root
-    source = materializer(monkeypatch, overwrite=False)
+    if overwrite:
+        await materializer(monkeypatch, "old").materialize(files=files)
+    source = materializer(monkeypatch, overwrite=overwrite)
     move = files.move
     ready, release = asyncio.Event(), asyncio.Event()
     outstanding = []
@@ -189,3 +193,49 @@ async def test_cleanup_requires_primary_even_without_selected_skills():
         await skills.resolve_skills(
             None, SimpleNamespace(environment_mounts=[]), (), sync=SharedSkillSync(cleanup=True)
         )
+
+
+@pytest.mark.parametrize("failure", ["stage", "environment_unsupported", "environment_conflict"])
+async def test_failed_overwrite_preserves_old_directory(sync_root, monkeypatch, failure):
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_service.infra.errors import ServiceError
+
+    files, root = sync_root
+    await materializer(monkeypatch, "old").materialize(files=files)
+    source = materializer(monkeypatch)
+
+    async def fail(*args, **kwargs):
+        raise EnvironmentError("Publication failed", code="environment_unsupported" if failure == "stage" else failure)
+
+    if failure == "stage":
+        monkeypatch.setattr(skills.placement, "write", fail)
+    else:
+        monkeypatch.setattr(files, "move", fail)
+    with pytest.raises(ServiceError):
+        await source.materialize(files=files)
+    assert (root / "review" / "SKILL.md").read_text() == "old"
+    assert {item.name for item in (root / "review").iterdir()} == {"SKILL.md", "old"}
+
+
+async def test_overwrite_keeps_old_directory_until_publication(sync_root, monkeypatch):
+    files, root = sync_root
+    await materializer(monkeypatch, "old").materialize(files=files)
+    source = materializer(monkeypatch)
+    move = files.move
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(candidate, destination, *, replace=False):
+        assert replace is True
+        assert (root / "review" / "SKILL.md").read_text() == "old"
+        assert await files.read_bytes(candidate + "/SKILL.md") == b"new"
+        ready.set()
+        await release.wait()
+        return await move(candidate, destination, replace=replace)
+
+    monkeypatch.setattr(files, "move", delayed)
+    task = asyncio.create_task(source.materialize(files=files))
+    await asyncio.wait_for(ready.wait(), 5)
+    assert (root / "review" / "SKILL.md").read_text() == "old"
+    release.set()
+    await task
+    assert (root / "review" / "SKILL.md").read_text() == "new"

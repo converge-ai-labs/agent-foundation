@@ -175,14 +175,12 @@ class _PinnedSkills:
             for path, content in package.files.items():
                 await placement.write(files, f"{candidate}/{path}", content)
             await self.prove_lease()
-            if sync.overwrite:
-                await self._discard(files, skill.directory)
             try:
-                await files.move(candidate, skill.directory)
+                await files.move(candidate, skill.directory, replace=sync.overwrite)
             except EnvironmentError as error:
-                if error.code != "environment_conflict":
+                if sync.overwrite or error.code != "environment_conflict":
                     raise
-                # A concurrent publisher installed a complete tree after the detach.
+                # Additive publication preserves the concurrent winner.
                 await files.remove(candidate, recursive=True)
         if sync.cleanup:
             names = {skill.name for skill in self.skills}

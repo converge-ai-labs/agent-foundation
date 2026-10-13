@@ -775,9 +775,27 @@ class LocalFileOperator:
             destination_metadata.st_mode
         ):
             raise EnvironmentError("Move source and destination kinds differ.", code="environment_request_invalid")
-        # One native replacement preserves directory shape and non-empty-directory
-        # preconditions. Moving the destination aside first would bypass both.
-        os.replace(source_native, destination_native)
+        try:
+            os.replace(source_native, destination_native)
+        except OSError as exc:
+            if not stat_module.S_ISDIR(source_metadata.st_mode):
+                raise
+            if sys.platform == "win32":
+                if destination_metadata is None or exc.errno not in {errno.EACCES, errno.EEXIST, errno.ENOTEMPTY}:
+                    raise
+                raise EnvironmentError(
+                    "Atomic directory replacement is unavailable.", code="environment_unsupported"
+                ) from exc
+            if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                raise
+            _rename_atomic(source_native, destination_native, exchange=True)
+            try:
+                shutil.rmtree(source_native)
+            except OSError as cleanup_error:
+                raise EnvironmentError(
+                    "Directory replacement published, but displaced source cleanup failed.",
+                    code="environment_unknown_outcome",
+                ) from cleanup_error
 
     async def remove(
         self,
@@ -953,25 +971,30 @@ def _rename_no_replace(source: Path, destination: Path) -> None:
     if sys.platform == "win32":
         os.rename(source, destination)
         return
+    _rename_atomic(source, destination, exchange=False)
+
+
+def _rename_atomic(source: Path, destination: Path, *, exchange: bool) -> None:
+    """Use the platform's no-replace or exchange publication primitive."""
     if sys.platform not in {"linux", "darwin"}:
-        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
 
     library = ctypes.CDLL(None, use_errno=True)
     name = "renamex_np" if sys.platform == "darwin" else "renameat2"
     rename = getattr(library, name, None)
     if rename is None:
-        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
     rename.restype = ctypes.c_int
     if sys.platform == "darwin":
         rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
+        result = rename(os.fsencode(source), os.fsencode(destination), 2 if exchange else 4)  # SWAP / EXCL
     else:
         rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 2 if exchange else 1)
     if result != 0:
         number = ctypes.get_errno()
         if number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
-            raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+            raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
         raise OSError(number, os.strerror(number))
 
 

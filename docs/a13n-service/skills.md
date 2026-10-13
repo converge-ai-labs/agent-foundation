@@ -72,7 +72,9 @@ Configure all selected skills with one `skill_sync` block in the agent configura
 
 Shared mode publishes each selected package at `/workspace/.agents/skills/<name>` before the agent's first model request. Overwriting replaces the whole directory, including removal of obsolete files. Set `overwrite: false` to preserve existing names. Set `cleanup: true` to remove unselected entries from that shared directory; an empty selection then clears it. Shared mode does not use the package cache.
 
-Shared paths can change while another run or child agent reads them. Replacement has a brief missing-path window, and concurrent publication preserves the complete directory that wins publication. Ordering follows materialization, not run completion; the complete selection is not one atomic update.
+Each skill directory is atomically published from a complete staged package. Overwriting nonempty directories uses atomic replacement on supported platforms and filesystems. Where this operation is unsupported, preparation fails and preserves the old directory; it never deletes the old directory first. Failure before publication also preserves the old directory. Cancellation or an uncertain provider outcome can leave the replacement published or the candidate staged.
+
+Shared paths can change while another run or child agent reads them. The last atomic publication wins, regardless of run completion order. Separate reads can span versions, and the complete selection is not one atomic update. Cleanup can delete skills another active agent still needs. Leave the default `cleanup: false` when independent writers select different skills, or coordinate ownership of the shared directory.
 
 When agents need conflicting versions in the same environment, choose isolated mode:
 
@@ -81,6 +83,20 @@ When agents need conflicting versions in the same environment, choose isolated m
 ```
 
 Its catalog paths are `/workspace/.agents/skill-cache/<package-digest>/<name>`. Different packages coexist, while identical archive bytes reuse the same directory without downloading again. `cache_count` is a nonnegative soft package-count budget for this environment; `0` disables trimming. Each agent applies its own configured budget when materializing. Active packages stay pinned until execution teardown; bounded least-recently-used trimming removes idle packages and may leave the cache above budget. Shared cleanup never touches this cache.
+
+Isolated mode shares immutable package content, rather than allocating a copy per agent. Immutability is a Service publication guarantee; authorized file and shell operations can still modify the files. Cache publication failure leaves existing packages intact. Cancellation or uncertain mutation outcomes retain protection against eviction, and can leave staging directories or pins for later operator cleanup.
+
+| Scenario                                  | Result                                                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Shared, different names, cleanup disabled | Both names remain available.                                                                                    |
+| Shared, same name and identical package   | Overwrite republishes equivalent content.                                                                       |
+| Shared, same name and different packages  | The last atomic publication wins, including for readers already running.                                        |
+| Shared, `overwrite: false`                | The existing name or concurrent winner stays, even if it differs from the selected revision.                    |
+| Shared, `cleanup: true`                   | Unselected names are removed, including those used by another agent; an empty selection clears the shared root. |
+| Isolated, identical package bytes         | Agents and revisions reuse the same directory.                                                                  |
+| Isolated, different versions of one name  | Each catalog uses its own digest path; both versions coexist.                                                   |
+| Isolated, cache over budget               | Active packages remain pinned; bounded trimming evicts idle packages in least-recently-used order.              |
+| Shared and isolated in one environment    | Separate roots keep shared overwrite and cleanup away from the isolated cache.                                  |
 
 Use `options.overrides.skill_sync` to select a policy for one run:
 

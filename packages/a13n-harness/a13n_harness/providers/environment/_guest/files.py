@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import ctypes
+import errno
 import json
 import os
 import re
@@ -281,20 +283,24 @@ def execute(request: dict) -> dict:
             path.rmdir()
         return {}
     if action == "move":
-        destination = resolve(root, arguments["destination"])
-        if destination == root:
+        destination = resolve(root, arguments["destination"], follow=False)
+        if destination == root or destination.is_symlink():
             raise PermissionError()
+        if path == destination:
+            return {}
         if arguments["replace"]:
-            os.replace(path, destination)
+            try:
+                os.replace(path, destination)
+            except OSError as exc:
+                if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST} or not path.is_dir():
+                    raise
+                rename_atomic(path, destination, exchange=True)
+                try:
+                    shutil.rmtree(path)
+                except OSError:
+                    return {"error": "environment_unknown_outcome"}
         else:
-            # Linux renameat2 provides an atomic no-replace publication for files and directories.
-            import ctypes
-
-            libc = ctypes.CDLL(None, use_errno=True)
-            result = libc.renameat2(-100, os.fsencode(path), -100, os.fsencode(destination), 1)
-            if result != 0:
-                number = ctypes.get_errno()
-                raise OSError(number, os.strerror(number))
+            rename_atomic(path, destination, exchange=False)
         return {}
     if action == "list":
         return query(root, path, {**arguments, "pattern": "*", "recursive": False}, config)
@@ -303,6 +309,25 @@ def execute(request: dict) -> dict:
     if action == "search":
         return search(root, path, arguments, config)
     raise ValueError("unknown operation")
+
+
+def rename_atomic(source: Path, destination: Path, *, exchange: bool) -> None:
+    if sys.platform not in {"linux", "darwin"}:
+        raise OSError(errno.ENOTSUP, "atomic directory move is unavailable")
+    library = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(library, "renamex_np" if sys.platform == "darwin" else "renameat2", None)
+    if rename is None:
+        raise OSError(errno.ENOTSUP, "atomic directory move is unavailable")
+    rename.restype = ctypes.c_int
+    if sys.platform == "darwin":
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(os.fsencode(source), os.fsencode(destination), 2 if exchange else 4)
+    else:
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 2 if exchange else 1)
+    if result != 0:
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number))
 
 
 def main() -> None:
@@ -322,8 +347,9 @@ def main() -> None:
         result = {"error": "environment_request_invalid", "details": exc.details}
     except (ValueError, NotADirectoryError, IsADirectoryError, re.error):
         result = {"error": "environment_request_invalid"}
-    except OSError:
-        result = {"error": "environment_provider_failure"}
+    except OSError as exc:
+        unsupported = exc.errno in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}
+        result = {"error": "environment_unsupported" if unsupported else "environment_provider_failure"}
     print(json.dumps(result, separators=(",", ":")))
 
 
