@@ -150,3 +150,34 @@
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
+
+.referenceSection {
+  margin: 20px 0;
+}
+.referenceSection h3 {
+  font-size: var(--a13n-text-sm);
+  font-weight: 600;
+}
+.referenceList {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.referenceList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.referenceList li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.referenceList small {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  margin-top: 4px;
+}

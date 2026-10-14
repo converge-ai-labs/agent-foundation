@@ -49,6 +49,7 @@ export function ProviderTable<T extends { id: string }>({
   nextCursor,
   onRowActivate,
   canActivateRow,
+  rowActionLabel = "Edit",
   rowMenu,
   action,
   notice,
@@ -63,6 +64,7 @@ export function ProviderTable<T extends { id: string }>({
   nextCursor?: string | null;
   onRowActivate?: (item: T, element: HTMLElement) => void;
   canActivateRow?: (item: T) => boolean;
+  rowActionLabel?: string;
   /** Extra overflow entries after Edit; each is a `MenuItem`. */
   rowMenu?: (item: T) => ReactNode;
   /** Rendered above the table, before the collection. */
@@ -112,13 +114,14 @@ export function ProviderTable<T extends { id: string }>({
       {notice}
       <ResourceTable
         items={items}
-        caption={t("Providers")}
+        caption={t(category === "environments" ? "Connections" : "Providers")}
         onRowActivate={onRowActivate}
         canActivateRow={canActivateRow}
         rowMenu={
           onRowActivate || rowMenu
             ? (item) => (
                 <ProviderRowMenu
+                  label={rowActionLabel}
                   edit={
                     opens(item)
                       ? (element) => onRowActivate?.(item, element)
@@ -132,7 +135,7 @@ export function ProviderTable<T extends { id: string }>({
         }
         columns={[
           {
-            label: t("Provider"),
+            label: t(category === "environments" ? "Connection" : "Provider"),
             tone: "primary",
             render: (item) => {
               const value = row(item);
@@ -160,7 +163,12 @@ export function ProviderTable<T extends { id: string }>({
         ]}
       />
       <CollectionFooter
-        count={t("{{count}} providers", { count: items.length })}
+        count={t(
+          category === "environments"
+            ? "{{count}} connections"
+            : "{{count}} providers",
+          { count: items.length },
+        )}
       >
         {page && <Pagination page={page} next={nextCursor} />}
       </CollectionFooter>
@@ -169,9 +177,11 @@ export function ProviderTable<T extends { id: string }>({
 }
 
 function ProviderRowMenu({
+  label,
   edit,
   children,
 }: {
+  label: string;
   edit?: (element: HTMLElement) => void;
   children?: ReactNode;
 }) {
@@ -182,7 +192,7 @@ function ProviderRowMenu({
       {edit && (
         <MenuItem onClick={(event) => edit(event.currentTarget as HTMLElement)}>
           <PencilSimpleIcon aria-hidden="true" />
-          {t("Edit")}
+          {t(label)}
         </MenuItem>
       )}
       {children}

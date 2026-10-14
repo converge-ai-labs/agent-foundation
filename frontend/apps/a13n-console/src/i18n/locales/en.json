@@ -2194,5 +2194,16 @@
   "Custom image": "Custom image",
   "Run commands and work with files. The standard image and execution method are configured automatically.": "Run commands and work with files. The standard image and execution method are configured automatically.",
   "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate.": "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate.",
-  "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.": "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept."
+  "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.": "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.",
+  "View and edit connections, or delete unused ones. Your template draft stays here.": "View and edit connections, or delete unused ones. Your template draft stays here.",
+  "Delete connection": "Delete connection",
+  "This connection is in use and cannot be deleted. Disabled templates and historical environments also count as references.": "This connection is in use and cannot be deleted. Disabled templates and historical environments also count as references.",
+  "This connection has no references. Deleting it permanently removes its configuration and saved credentials.": "This connection has no references. Deleting it permanently removes its configuration and saved credentials.",
+  "Refresh references": "Refresh references",
+  "Showing the first {{count}} references.": "Showing the first {{count}} references.",
+  "Changing connection settings requires replacing or removing saved credentials.": "Changing connection settings requires replacing or removing saved credentials.",
+  "No environment connections yet": "No environment connections yet",
+  "Add a connection before creating templates.": "Add a connection before creating templates.",
+  "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.": "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.",
+  "How this connection is listed across the console.": "How this connection is listed across the console."
 }

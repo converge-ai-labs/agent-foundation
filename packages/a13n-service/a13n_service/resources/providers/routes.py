@@ -9,7 +9,7 @@ from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IfMatch, PageLimit, answer_headers, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.registry import ProviderKind
-from a13n_service.resources.providers import callback, discovery, oauth, service
+from a13n_service.resources.providers import callback, discovery, environment_connections, oauth, service
 from a13n_service.resources.providers.oauth import (
     AuthorizationCallback,
     AuthorizationDisconnect,
@@ -18,6 +18,7 @@ from a13n_service.resources.providers.oauth import (
     ProviderAuthorizationRequest,
 )
 from a13n_service.resources.providers.schemas import (
+    EnvironmentProviderReferences,
     Provider,
     ProviderCreate,
     ProviderModel,
@@ -133,6 +134,25 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
 
 for _row_type in (ModelProviderRow, EnvironmentProviderRow, ConnectorProviderRow, WebProviderRow, MemoryProviderRow):
     _add_routes(_row_type)
+
+
+@router.get(
+    "/environment-providers/{provider_id}/references",
+    response_model=EnvironmentProviderReferences,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def environment_provider_references(
+    workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
+) -> EnvironmentProviderReferences:
+    return await environment_connections.references(runtime.storage, actor, workspace_id, provider_id)
+
+
+@router.delete("/environment-providers/{provider_id}", status_code=204, openapi_extra={"x-a13n-mcp": True})
+async def delete_environment_provider(
+    workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
+) -> Response:
+    await environment_connections.delete(runtime.storage, actor, workspace_id, provider_id, if_match=if_match)
+    return Response(status_code=204)
 
 
 @router.get("/provider-types/{kind}", response_model=ProviderTypePage, openapi_extra={"x-a13n-mcp": True})

@@ -26,6 +26,8 @@ Local and Docker provisioning default off; enable them in [Service settings](con
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
+In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Changing configuration requires replacing or removing any saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
+
 ![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.webp)
 
 *Provider selection in a seeded workspace. Local directory appears only when `provisioning.local.enabled` is set, which is meant for development.*

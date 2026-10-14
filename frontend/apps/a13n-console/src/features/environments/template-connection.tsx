@@ -7,6 +7,12 @@ import type { Schema } from "../../shared/api";
 import { BrandTitle } from "../../shared/dialogs";
 import { ProviderIcon } from "../../shared/identity";
 import { ProviderForm } from "../providers";
+import { EnvironmentProviders } from "./providers";
+import {
+  PageActionsTarget,
+  PageActionClaimed,
+  PageEmptyAction,
+} from "../../shared/page/page-actions";
 import styles from "./environments.module.css";
 
 /** Connection creation owns its credentials; closing unmounts and discards that draft. */
@@ -26,6 +32,7 @@ export function TemplateConnection({
   const { t } = useTranslation(),
     { can } = useWorkspace();
   const [open, setOpen] = useState(false);
+  const [managing, setManaging] = useState(false);
   const choices = providers.filter(
     (item) => item.enabled && item.type === definition.type,
   );
@@ -78,6 +85,31 @@ export function TemplateConnection({
             )}
           </ModalFrame>
         )}
+        <ModalFrame
+          open={managing}
+          onOpenChange={setManaging}
+          trigger={
+            <Button type="button" variant="outline">
+              {t("Manage connections")}
+            </Button>
+          }
+          title={t("Manage connections")}
+          description={t(
+            "View and edit connections, or delete unused ones. Your template draft stays here.",
+          )}
+          closeLabel={t("Close")}
+          size="lg"
+        >
+          {managing && (
+            <PageActionsTarget value={null}>
+              <PageActionClaimed value={false}>
+                <PageEmptyAction value={null}>
+                  <EnvironmentProviders />
+                </PageEmptyAction>
+              </PageActionClaimed>
+            </PageActionsTarget>
+          )}
+        </ModalFrame>
       </div>
       {!choices.length && (
         <p className={styles.panelNote}>

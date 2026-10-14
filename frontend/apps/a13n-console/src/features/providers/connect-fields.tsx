@@ -29,6 +29,7 @@ export function ProviderConnectFields({
   onConfigurationChange = () => {},
   name,
   onNameChange,
+  nameDescription = "How this provider is listed across the console.",
   keyLink,
   advancedOpen,
   onAdvancedOpenChange,
@@ -41,6 +42,7 @@ export function ProviderConnectFields({
   /** Omitted by a category whose services configure nothing. */
   configuration?: Record<string, unknown>;
   onConfigurationChange?: (value: Record<string, unknown>) => void;
+  nameDescription?: string;
   name: string;
   onNameChange: (value: string) => void;
   /** Where the service hands out the secret, if that page is known. */
@@ -49,6 +51,56 @@ export function ProviderConnectFields({
   advancedOpen?: boolean;
   onAdvancedOpenChange?: (open: boolean) => void;
   /** Category guidance that belongs between the name and the actions. */
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {hasFields(credentialSchema) && (
+        <SchemaFields
+          secret
+          autoFocus
+          labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
+          schema={credentialSchema ?? {}}
+          value={credential}
+          onChange={onCredentialChange}
+        />
+      )}
+      <ProviderConfigurationFields
+        schema={configurationSchema}
+        value={configuration}
+        onChange={onConfigurationChange}
+        advancedOpen={advancedOpen}
+        onAdvancedOpenChange={onAdvancedOpenChange}
+      >
+        <FormField label={t("Name")} description={t(nameDescription)}>
+          <Input
+            required
+            maxLength={128}
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+          />
+        </FormField>
+      </ProviderConfigurationFields>
+      {children}
+    </>
+  );
+}
+
+/** Configuration controls shared by connection creation and editing. */
+export function ProviderConfigurationFields({
+  schema: configurationSchema,
+  value: configuration,
+  onChange: onConfigurationChange,
+  advancedOpen,
+  onAdvancedOpenChange,
+  children,
+}: {
+  schema?: Record<string, unknown> | null;
+  value: Record<string, unknown>;
+  onChange: (value: Record<string, unknown>) => void;
+  advancedOpen?: boolean;
+  onAdvancedOpenChange?: (open: boolean) => void;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -67,16 +119,6 @@ export function ProviderConnectFields({
   const { primary, advanced } = splitConfigurationSchema(baseSchema);
   return (
     <>
-      {hasFields(credentialSchema) && (
-        <SchemaFields
-          secret
-          autoFocus
-          labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
-          schema={credentialSchema ?? {}}
-          value={credential}
-          onChange={onCredentialChange}
-        />
-      )}
       {hasFields(primary) && (
         <SchemaFields
           schema={primary}
@@ -84,17 +126,7 @@ export function ProviderConnectFields({
           onChange={onConfigurationChange}
         />
       )}
-      <FormField
-        label={t("Name")}
-        description={t("How this provider is listed across the console.")}
-      >
-        <Input
-          required
-          maxLength={128}
-          value={name}
-          onChange={(event) => onNameChange(event.target.value)}
-        />
-      </FormField>
+      {children}
       {hasFields(advanced) && (
         <DisclosureSection
           title={hasDockerHttp ? t("Docker Engine") : t("Advanced settings")}
@@ -145,7 +177,6 @@ export function ProviderConnectFields({
           )}
         </>
       )}
-      {children}
     </>
   );
 }

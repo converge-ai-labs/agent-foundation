@@ -4441,6 +4441,40 @@
         "title": "EnvironmentPermissionSet",
         "type": "object"
       },
+      "EnvironmentProviderReferences": {
+        "properties": {
+          "environment_count": {
+            "title": "Environment Count",
+            "type": "integer"
+          },
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderReference"
+            },
+            "title": "Environments",
+            "type": "array"
+          },
+          "template_count": {
+            "title": "Template Count",
+            "type": "integer"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderReference"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "template_count",
+          "templates",
+          "environment_count",
+          "environments"
+        ],
+        "title": "EnvironmentProviderReferences",
+        "type": "object"
+      },
       "EnvironmentUpdate": {
         "additionalProperties": false,
         "description": "Fields left out stay unchanged. Only an external target has an endpoint and token; a new endpoint comes with\nits token, so a stored token never reaches an endpoint it was not entered for.",
@@ -10341,6 +10375,29 @@
           "next_cursor"
         ],
         "title": "ProviderPage",
+        "type": "object"
+      },
+      "ProviderReference": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "title": "ProviderReference",
         "type": "object"
       },
       "ProviderTest": {
@@ -19177,6 +19234,84 @@
       }
     },
     "/api/v1/environment-providers/{provider_id}": {
+      "delete": {
+        "operationId": "delete_environment_provider_api_v1_environment_providers__provider_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Delete Environment Provider",
+        "tags": [
+          "providers"
+        ],
+        "x-a13n-mcp": true
+      },
       "get": {
         "operationId": "get_provider_api_v1_environment_providers__provider_id__get",
         "parameters": [
@@ -19337,6 +19472,73 @@
           }
         ],
         "summary": "Update environment provider",
+        "tags": [
+          "providers"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environment-providers/{provider_id}/references": {
+      "get": {
+        "operationId": "environment_provider_references_api_v1_environment_providers__provider_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentProviderReferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Environment Provider References",
         "tags": [
           "providers"
         ],

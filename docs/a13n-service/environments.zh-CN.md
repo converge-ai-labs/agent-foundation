@@ -26,6 +26,8 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 环境 provider 是运行环境所用的账号。像其他 [provider](resources.md#providers) 一样，在 `/api/v1/environment-providers` 中创建。`GET /api/v1/provider-types/environment` 返回各类型的配置、凭据和 recipe schema。
 
+在 Console 中，模板的**连接**选择框旁提供**管理连接**，打开连接列表后不会丢失当前模板草稿。也可从 **Workspace settings → Providers → Environment** 进入同一列表。打开连接可查看配置；拥有工作空间写权限的用户可修改名称、启用状态、配置和凭据，或选择**删除连接**。修改配置时，已有凭据必须重新填写或移除。删除前会列出引用它的模板和环境实例；已停用模板、保留的历史实例也会阻止删除。只有没有引用的连接才能永久删除，删除范围仅为已保存的连接配置和凭据，不会删除 Docker 引擎或原生资源。
+
 ![Console 中的 Sandbox 与环境 provider 目录](../../.github/assets/console-sandbox-providers.webp)
 
 *图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*

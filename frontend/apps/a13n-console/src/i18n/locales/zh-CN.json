@@ -2194,5 +2194,16 @@
   "Custom image": "自定义镜像",
   "Run commands and work with files. The standard image and execution method are configured automatically.": "执行命令、读写文件。已自动配置标准镜像和执行方式，无需额外选择。",
   "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate.": "提供 Linux 桌面，可截图、点击和输入。已自动配置桌面镜像和执行方式。所选连接需支持 Envd HTTP；Agent 工具和挂载权限需另行开启。",
-  "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.": "自行指定镜像和高级配置。切换为内置环境会恢复默认高级配置，保留 CPU、内存和挂载设置。"
+  "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.": "自行指定镜像和高级配置。切换为内置环境会恢复默认高级配置，保留 CPU、内存和挂载设置。",
+  "View and edit connections, or delete unused ones. Your template draft stays here.": "查看、编辑连接，或删除未被引用的连接。关闭后可继续编辑当前模板。",
+  "Delete connection": "删除连接",
+  "This connection is in use and cannot be deleted. Disabled templates and historical environments also count as references.": "此连接正被引用，无法删除。已停用的模板和历史环境记录也会计入引用。",
+  "This connection has no references. Deleting it permanently removes its configuration and saved credentials.": "此连接没有引用。删除后，其配置和已保存的凭据将被永久移除。",
+  "Refresh references": "刷新引用",
+  "Showing the first {{count}} references.": "显示前 {{count}} 条引用。",
+  "Changing connection settings requires replacing or removing saved credentials.": "修改连接配置时，必须重新填写或移除已保存的凭据。",
+  "No environment connections yet": "尚无环境连接",
+  "Add a connection before creating templates.": "创建模板前，请先添加连接。",
+  "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.": "本地目录运行在 Worker 所在机器。Docker 连接使用管理员配置的引擎和网络通路。",
+  "How this connection is listed across the console.": "该连接在控制台中显示的名称。"
 }

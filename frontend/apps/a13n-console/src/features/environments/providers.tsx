@@ -23,7 +23,7 @@ export function EnvironmentProviders() {
       notice={
         <p className={providerStyles.notice}>
           {t(
-            "Direct Local and Docker require a single-host deployment and operator configuration.",
+            "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.",
           )}
         </p>
       }

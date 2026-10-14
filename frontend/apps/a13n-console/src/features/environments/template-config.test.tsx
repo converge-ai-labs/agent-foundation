@@ -754,3 +754,35 @@ it("creates a desktop preset without exposing image or execution controls", asyn
     desktop: true,
   });
 });
+
+it("manages connections in place without losing the template draft", async () => {
+  mountCreationPage();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Unsaved template",
+  );
+  const recipe = screen.getByRole("textbox", {
+    name: "E2B template name or ID",
+  });
+  await user.clear(recipe);
+  await user.type(recipe, "custom-recipe");
+  await user.click(screen.getByRole("button", { name: "Manage connections" }));
+  const management = await screen.findByRole("dialog", {
+    name: "Manage connections",
+  });
+  expect(
+    await within(management).findByRole("table", { name: "Connections" }),
+  ).toBeTruthy();
+  await user.click(within(management).getByRole("button", { name: "Close" }));
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value,
+  ).toBe("Unsaved template");
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", {
+      name: "E2B template name or ID",
+    }).value,
+  ).toBe("custom-recipe");
+  expect(state.POST).not.toHaveBeenCalled();
+});

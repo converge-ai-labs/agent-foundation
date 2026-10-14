@@ -690,7 +690,8 @@ export interface paths {
     get: operations["get_provider_api_v1_environment_providers__provider_id__get"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete Environment Provider */
+    delete: operations["delete_environment_provider_api_v1_environment_providers__provider_id__delete"];
     options?: never;
     head?: never;
     /**
@@ -698,6 +699,23 @@ export interface paths {
      * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
      */
     patch: operations["update_provider_api_v1_environment_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Environment Provider References */
+    get: operations["environment_provider_references_api_v1_environment_providers__provider_id__references_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/api/v1/environment-providers/{provider_id}/test": {
@@ -4699,6 +4717,17 @@ export interface components {
       /** Operations */
       operations?: components["schemas"]["EnvironmentAction"][];
     };
+    /** EnvironmentProviderReferences */
+    EnvironmentProviderReferences: {
+      /** Environment Count */
+      environment_count: number;
+      /** Environments */
+      environments: components["schemas"]["ProviderReference"][];
+      /** Template Count */
+      template_count: number;
+      /** Templates */
+      templates: components["schemas"]["ProviderReference"][];
+    };
     /**
      * EnvironmentUpdate
      * @description Fields left out stay unchanged. Only an external target has an endpoint and token; a new endpoint comes with
@@ -6785,6 +6814,15 @@ export interface components {
       items: components["schemas"]["Provider"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** ProviderReference */
+    ProviderReference: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
     };
     /** ProviderTest */
     ProviderTest: {
@@ -9929,6 +9967,33 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  delete_environment_provider_api_v1_environment_providers__provider_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   update_provider_api_v1_environment_providers__provider_id__patch: {
     parameters: {
       query?: never;
@@ -9956,6 +10021,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  environment_provider_references_api_v1_environment_providers__provider_id__references_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentProviderReferences"];
         };
       };
       400: components["responses"]["Error"];
