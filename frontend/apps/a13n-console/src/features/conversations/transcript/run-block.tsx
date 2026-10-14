@@ -7,6 +7,7 @@ import { MarkdownContent } from "../../../shared/markdown";
 import { isActiveRun } from "../api";
 import { runRequest } from "../request";
 import { ForkRun } from "../fork-run";
+import { RunModelButton } from "../run-agent";
 import type { RunTimeline } from "../timeline";
 import { AgentTurn, CopyReply } from "./assistant-message";
 import { hasDelegation, transcriptBlocks } from "./items";
@@ -81,6 +82,7 @@ export function RunBlock({
         agentName={agentName}
         agentId={run.agent_id}
         agentImageUrl={agentImageUrl}
+        model={<RunModelButton run={run} />}
         childPath={child && childThreadPath(basePath, child)}
         footer={
           (copy || branch || action) && (

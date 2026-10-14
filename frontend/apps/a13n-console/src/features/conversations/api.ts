@@ -28,6 +28,8 @@ export function conversationKeys(workspaceId: string) {
     entry: (threadId: string, entryId: string) =>
       [...root, "inbox", threadId, "entry", entryId] as const,
     run: (runId: string) => [...root, "run", runId] as const,
+    /** The agent one Run executes; frozen at acceptance, it never changes. */
+    agent: (runId: string) => [...root, "agent", runId] as const,
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
@@ -82,6 +84,19 @@ export function conversationQueries(client: Client, workspaceId: string) {
               signal,
             })
             .then(data),
+      }),
+    agent: (run_id: string) =>
+      queryOptions({
+        queryKey: keys.agent(run_id),
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/runs/{run_id}/agent", {
+              params: { path: { run_id } },
+              signal,
+            })
+            .then(data),
+        staleTime: Infinity,
       }),
     environments: (thread_id: string) =>
       queryOptions({

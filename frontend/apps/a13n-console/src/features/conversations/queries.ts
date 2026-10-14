@@ -13,6 +13,13 @@ export function useRun(runId?: string | null) {
   });
 }
 
+/** The agent a Run executes: its revision with the Run's overrides applied. */
+export function useRunAgent(runId: string) {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  return useQuery(conversationQueries(client, workspace.id).agent(runId));
+}
+
 export function useSession(sessionId?: string | null) {
   const client = useClient(),
     { workspace } = useWorkspace();

@@ -2,6 +2,7 @@ import { Button } from "a13n-ui";
 import {
   ArrowCounterClockwiseIcon,
   CaretRightIcon,
+  SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,6 +25,7 @@ import { usageTotals } from "../../usage-table";
 import { runOutcome } from "../../lifecycle";
 import { runRequest, type RunRequest } from "../../request";
 import { ForkRun } from "../../fork-run";
+import { RunAgentDialog } from "../../run-agent";
 import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { RequestContent, requestLabel } from "../user-message";
@@ -35,7 +37,12 @@ import {
 } from "../thread-runs";
 import { useRunOpen } from "./collapse";
 import { RunDetailsDialog } from "./run-details";
-import { CompletedRow, EventRow, TimelineRows } from "./timeline-rows";
+import {
+  AgentRow,
+  CompletedRow,
+  EventRow,
+  TimelineRows,
+} from "./timeline-rows";
 import { useNow } from "./use-now";
 import type { RunScope } from "./scope";
 import styles from "./debug.module.css";
@@ -65,6 +72,7 @@ export function DebugRunSection({
   const { t } = useTranslation();
   const { can, basePath } = useWorkspace();
   const [open, toggleOpen] = useRunOpen(run.id);
+  const [configuring, setConfiguring] = useState(false);
   const active = isActiveRun(run.status) || run.status === "waiting";
   const now = useNow(active);
   const children = useChildThreads(run.session_id, run.thread_id);
@@ -140,6 +148,17 @@ export function DebugRunSection({
               index={index}
               compact
             />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={t("Agent configuration")}
+              aria-haspopup="dialog"
+              onClick={() => setConfiguring(true)}
+            >
+              <SlidersHorizontalIcon size={14} aria-hidden="true" />
+              <span data-action-label>{t("Configuration")}</span>
+            </Button>
             <RunDetailsDialog run={run} index={index} />
           </span>
         </div>
@@ -147,6 +166,7 @@ export function DebugRunSection({
       </header>
       {open && (
         <RunLog>
+          <AgentRow scope={scope} onOpen={() => setConfiguring(true)} />
           <LogBlock
             time={formatOffset(0)}
             label={t("Input")}
@@ -184,6 +204,11 @@ export function DebugRunSection({
           <RunOutput output={run.output} />
         </RunLog>
       )}
+      <RunAgentDialog
+        run={run}
+        open={configuring}
+        onOpenChange={setConfiguring}
+      />
     </section>
   );
 }

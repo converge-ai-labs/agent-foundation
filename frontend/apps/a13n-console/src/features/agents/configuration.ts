@@ -6,30 +6,51 @@ import {
 } from "../../shared/forms/validation";
 
 export type AgentConfig = Schema["AgentConfig-Input"];
-const commonFields = new Set([
-  "toolsets",
-  "model",
-  "model_settings",
-  "media_understanding",
-  "instructions",
-  "skills",
-  "connection_tools",
-  "memory_mounts",
-  "reviewer",
-  "default_environment_template_id",
-  "plugins",
+/** The fields each editor section shows; the advanced JSON holds the rest. */
+const sectionFields = {
+  model: ["model", "model_settings", "media_understanding"],
+  instructions: ["instructions"],
+  skills: ["skills"],
+  connections: ["connection_tools"],
+  memory: ["memory_mounts"],
+  toolsets: ["toolsets"],
+  environment: ["default_environment_template_id"],
+} as const;
+export type EditorSection = keyof typeof sectionFields | "advanced";
+/** Shown by no section and kept verbatim by a save. */
+const retainedFields = ["reviewer", "plugins"];
+const commonFields = new Set<string>([
+  ...Object.values(sectionFields).flat(),
+  ...retainedFields,
 ]);
 export function initialConfig(): AgentConfig {
   return { model: "", instructions: "" };
 }
-export function advancedConfig(config: AgentConfig) {
+/** The advanced JSON; a read-only view also lists the fields a save retains. */
+export function advancedConfig(config: AgentConfig, readOnly = false) {
   return JSON.stringify(
     Object.fromEntries(
-      Object.entries(config).filter(([key]) => !commonFields.has(key)),
+      Object.entries(config).filter(
+        ([key]) =>
+          !commonFields.has(key) || (readOnly && retainedFields.includes(key)),
+      ),
     ),
     null,
     2,
   );
+}
+/** The editor sections that show any of these fields. */
+export function sectionsOf(fields: Iterable<string>) {
+  const sections = new Set<EditorSection>();
+  for (const field of fields) {
+    const section = (
+      Object.keys(sectionFields) as (keyof typeof sectionFields)[]
+    ).find((name) =>
+      (sectionFields[name] as readonly string[]).includes(field),
+    );
+    sections.add(section ?? "advanced");
+  }
+  return sections;
 }
 export function buildConfig(
   original: AgentConfig,

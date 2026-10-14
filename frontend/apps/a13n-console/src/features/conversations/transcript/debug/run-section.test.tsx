@@ -12,6 +12,7 @@ import {
   fixtureAttempt,
   fixtureExecution,
   fixtureRun,
+  fixtureRunAgent,
   fixtureThread,
   fixtureTimeline,
 } from "../fixture";
@@ -61,6 +62,8 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/agent"))
+        return Response.json(fixtureRunAgent());
       requests.push(url.pathname);
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
@@ -169,6 +172,26 @@ it("reads one run as the executor's record: input, steps and output", async () =
   expect(screen.queryByText(/Run accepted/)).toBeNull();
   // Attempts are still loaded only when Details opens.
   expect(requests.filter((path) => path.includes("/attempts"))).toEqual([]);
+});
+
+it("starts the log with the agent the run executed and what it overrode", async () => {
+  show({
+    run: fixtureRun({
+      options: { overrides: { instructions: "Only this run." } },
+    }),
+  });
+  const agent = (await screen.findByText("v2")).closest<HTMLElement>(
+    "[data-kind]",
+  )!;
+  expect(agent.getAttribute("data-kind")).toBe("agent");
+  expect(within(agent).getByText("1 overrides")).toBeTruthy();
+  // The line opens the configuration, as the header's action does.
+  expect(within(agent).getByRole("button").getAttribute("aria-haspopup")).toBe(
+    "dialog",
+  );
+  expect(
+    screen.getByRole("button", { name: "Agent configuration" }),
+  ).toBeTruthy();
 });
 
 it("keeps a closed run to its header and one line of input", async () => {

@@ -85,6 +85,13 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
     # The run shows the options it froze, never the caller headers frozen with them.
     assert waiting["options"]["overrides"]["instructions"] == "Role: stand-in"
     assert "mcp_headers" not in waiting["options"]
+    # The run's agent is its revision's configuration with the override applied.
+    executed = await executing.client.get(f"{executing.api}/runs/{waiting['id']}/agent")
+    assert executed.status_code == 200, executed.text
+    revision, config = executed.json()["revision"], executed.json()["config"]
+    assert revision["id"] == waiting["agent_revision_id"]
+    assert (revision["config"]["instructions"], config["instructions"]) == ("Role: default", "Role: stand-in")
+    assert config["client_tools"] == revision["config"]["client_tools"]
 
     scripted_model.say("Done")
     answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}

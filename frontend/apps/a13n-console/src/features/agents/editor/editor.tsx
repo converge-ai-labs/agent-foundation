@@ -1,3 +1,4 @@
+import { Badge } from "a13n-ui";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
@@ -6,7 +7,11 @@ import { DetailLayout, SaveBar } from "../../../shared/page";
 import { ModelIcon } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
 import { useAgentChoices } from "../choices";
-import type { AgentConfig } from "../configuration";
+import {
+  sectionsOf,
+  type AgentConfig,
+  type EditorSection,
+} from "../configuration";
 import { AgentEnvironment } from "../environment";
 import { AgentToolsets } from "../toolsets";
 import { AdvancedSection } from "./advanced";
@@ -44,6 +49,7 @@ export function AgentEditor({
   identity,
   saveLabel,
   saveDisabled = false,
+  overridden,
 }: {
   /** The agent a save publishes a version of; none while creating. */
   agentId?: string;
@@ -61,6 +67,8 @@ export function AgentEditor({
   identity?: ReactNode;
   saveLabel?: string;
   saveDisabled?: boolean;
+  /** Fields a read-only view's configuration changes from its version. */
+  overridden?: Iterable<string>;
 }) {
   const { t } = useTranslation();
   const creating = version === undefined;
@@ -100,6 +108,13 @@ export function AgentEditor({
     error instanceof ApiError && [400, 422].includes(error.status);
   const dirty = creating || draft.dirty;
   const nextVersion = (version ?? 0) + 1;
+  const marked = sectionsOf(overridden ?? []);
+  const mark = (section: EditorSection) =>
+    marked.has(section) && (
+      <Badge variant="info" size="sm">
+        {t("Overridden")}
+      </Badge>
+    );
 
   function save(event: FormEvent) {
     if (event.target !== event.currentTarget) return;
@@ -141,16 +156,27 @@ export function AgentEditor({
             choices={choices}
             thinkingOptions={thinkingOptions}
             readOnly={readonly}
+            mark={mark("model")}
             expanded={modelExpanded || (invalidResponse && !!modelValidation)}
             onExpandedChange={setModelExpanded}
             validation={modelValidation}
           />
-          <InstructionsSection draft={draft} readOnly={readonly} />
-          <SkillsSection draft={draft} choices={choices} readOnly={readonly} />
+          <InstructionsSection
+            draft={draft}
+            readOnly={readonly}
+            mark={mark("instructions")}
+          />
+          <SkillsSection
+            draft={draft}
+            choices={choices}
+            readOnly={readonly}
+            mark={mark("skills")}
+          />
           <ConnectionsSection
             draft={draft}
             choices={choices}
             readOnly={readonly}
+            mark={mark("connections")}
           />
           <MemorySection draft={draft} readOnly={readonly} />
           <AgentToolsets
@@ -159,15 +185,18 @@ export function AgentEditor({
             config={built.ok ? built.config : undefined}
             agentId={agentId}
             readOnly={readonly}
+            mark={mark("toolsets")}
           />
           <AgentEnvironment
             value={draft.environmentTemplateId}
             onChange={draft.setEnvironmentTemplateId}
-            disabled={readonly || pending}
+            disabled={pending}
+            readOnly={readonly}
           />
           <AdvancedSection
             draft={draft}
             readOnly={readonly}
+            mark={mark("advanced")}
             expanded={advancedExpanded || (invalidResponse && !!validation)}
             onExpandedChange={setAdvancedExpanded}
             validation={validation}

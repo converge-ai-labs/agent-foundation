@@ -408,6 +408,46 @@
   color: var(--a13n-text);
   text-decoration: underline;
 }
+/* The agent line names the agent, its version and its model in one row; it
+   has no figures, so it takes their columns too. */
+.line[data-kind="agent"] > .lineBody {
+  grid-column: 2 / -1;
+  padding-right: 16px;
+}
+.line[data-kind="agent"] > .cache,
+.line[data-kind="agent"] > .tokens,
+.line[data-kind="agent"] > .duration {
+  display: none;
+}
+.line[data-kind="agent"] .subject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The agent's name gives way first: the page names it, and the model is what
+   this line adds. */
+.lineAgent {
+  flex: 0 4 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lineVersion {
+  flex: none;
+  font-family: var(--a13n-mono);
+}
+.lineModel {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--a13n-text-supporting);
+}
+.lineModel > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* A lifecycle fact's head carries its tone. */
 .line[data-kind="event"] .name {
   font-size: var(--a13n-text-xs);
@@ -563,6 +603,11 @@
   .logHead > .tokens,
   .line > .cache,
   .line > .tokens {
+    display: none;
+  }
+  /* The agent line keeps its model; the page and the dialog name the rest. */
+  .lineAgent,
+  .lineVersion {
     display: none;
   }
   .detail,

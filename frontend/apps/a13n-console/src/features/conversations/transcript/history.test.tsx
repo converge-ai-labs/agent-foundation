@@ -13,7 +13,7 @@ import { MemoryRouter } from "react-router";
 import { useRef, type ReactNode } from "react";
 import type { DisplayItem } from "a13n-ui/display";
 import { createClient, type Client } from "../../../service-client";
-import { fixtureRun, fixtureThread } from "./fixture";
+import { fixtureRun, fixtureRunAgent, fixtureThread } from "./fixture";
 import { HistoryTranscript } from "./history";
 import { useTranscriptScroll } from "./use-transcript-scroll";
 
@@ -224,6 +224,8 @@ function ancestorService(
     auth: { type: "session" },
     fetch: async (input) => {
       const url = new URL((input as Request).url);
+      if (url.pathname.endsWith("/agent"))
+        return Response.json(fixtureRunAgent());
       requests.push(url);
       await beforeRead?.(url);
       if (url.pathname.endsWith("/lineage")) {
@@ -452,6 +454,8 @@ it("reveals an ancestor as a debug section that reads its own display", async ()
     auth: { type: "session" },
     fetch: async (input) => {
       const url = new URL((input as Request).url);
+      if (url.pathname.endsWith("/agent"))
+        return Response.json(fixtureRunAgent());
       requests.push(url);
       if (url.pathname.endsWith("/lineage"))
         return Response.json({
@@ -531,6 +535,8 @@ it.each(["reply", "reasoning", "tool"] as const)(
       fetch: async (input) => {
         const request = input as Request;
         const url = new URL(request.url);
+        if (url.pathname.endsWith("/agent"))
+          return Response.json(fixtureRunAgent());
         if (url.pathname.includes("/contents/")) {
           contentRequests.push(request);
           return Response.json({
@@ -652,6 +658,8 @@ it("prepares all of an earlier Debug Run before insertion and preserves position
     auth: { type: "session" },
     fetch: async (input) => {
       const url = new URL((input as Request).url);
+      if (url.pathname.endsWith("/agent"))
+        return Response.json(fixtureRunAgent());
       requests.push(url);
       if (url.pathname.endsWith("/lineage"))
         return Response.json({

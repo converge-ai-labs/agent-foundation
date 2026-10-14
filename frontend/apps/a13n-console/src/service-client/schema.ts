@@ -1668,6 +1668,26 @@ export interface paths {
     patch: operations["update_run_api_v1_runs__run_id__patch"];
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/agent": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Run Agent
+     * @description The agent configuration the run executes: its revision with the run's override applied.
+     */
+    get: operations["run_agent_api_v1_runs__run_id__agent_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/attempts": {
     parameters: {
       query?: never;
@@ -6983,6 +7003,15 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /**
+     * RunAgent
+     * @description The agent a run executes: its frozen revision, and that revision's configuration with the run's override
+     *     applied. Models, connections and templates the configuration names stay live.
+     */
+    RunAgent: {
+      config: components["schemas"]["AgentConfig-Output"];
+      revision: components["schemas"]["AgentRevision"];
     };
     /**
      * RunConfiguration
@@ -12415,6 +12444,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  run_agent_api_v1_runs__run_id__agent_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunAgent"];
         };
       };
       400: components["responses"]["Error"];
