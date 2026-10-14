@@ -10,12 +10,12 @@ import pytest
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.providers.memory import MemoryStoreError, Origin
 from a13n_service.infra.db import short_session, transaction
-from a13n_service.resources.memories.schemas import MemoryMount
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.boundaries import Boundaries, Staged
 from a13n_service.runs.display import DisplayFold, Tail
 from a13n_service.runs.memories.execution import PlannedMemory, file_memory
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, ExecutionAuthority, Grant, Principal
@@ -297,7 +297,7 @@ async def test_store_calls_recheck_the_run_principal_under_its_authority(service
         workspace_id=tenant.workspace_id,
         principal_id=tenant.principal_id,
     )
-    planned = (PlannedMemory(MemoryMount(name="team", memory_id=memory["id"], access="write"), None, ()),)
+    planned = (PlannedMemory(FrozenMemoryMount(name="team", memory_id=memory["id"], access="write"), None, ()),)
     capability = file_memory(
         service.runtime.storage,
         service.runtime.settings.memory,

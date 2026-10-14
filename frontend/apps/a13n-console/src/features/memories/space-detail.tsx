@@ -56,7 +56,9 @@ function SpaceTabs({ resource }: { resource: SpaceResource }) {
       tabs={tabs.map((value) => ({
         value,
         label: labels[value],
-        ...(value === "files" && { count: space.file_count }),
+        ...(value === "files" && {
+          count: backing.data?.value.file_count ?? space.file_count,
+        }),
       }))}
       tab={tab}
       onTabChange={setTab}
@@ -81,11 +83,6 @@ function SpaceTabs({ resource }: { resource: SpaceResource }) {
         <SpaceSessions spaceId={space.id} />
       ) : (
         <>
-          <p className="text-muted-foreground text-xs mb-5">
-            {t(
-              "Agents see global/ and their own sessions/<session-id>/ folder. Workspace members can manage all files here.",
-            )}
-          </p>
           <ErrorNotice
             error={backing.error}
             retry={() => void backing.refetch()}
