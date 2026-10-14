@@ -30,6 +30,7 @@ from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, S
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
@@ -336,7 +337,9 @@ class EnvironmentMount(_Frozen):
     permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 
 
-class SessionMemoryStatus(_Frozen):
+class SpaceOrganizationStatus(_Frozen):
+    session_id: str | None = None
+    history_gap: bool = False
     pending: bool = False
     active_run_id: str | None = None
     last_run_id: str | None = None
@@ -393,8 +396,7 @@ class SessionView(BaseModel):
     last_run_id: str | None
     run_count: int = 0
     memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
-    memory_id: str | None = None
-    memory_status: SessionMemoryStatus = Field(default_factory=SessionMemoryStatus)
+    purpose: Literal["conversation", "memory_organization"] = "conversation"
     preview: SessionPreview | None = None
     version: int
     created_at: datetime
@@ -484,7 +486,7 @@ class RunView(BaseModel):
     wait_reason: WaitReason | None
     pending: Pending | None
     environment_mounts: list[EnvironmentMount]
-    memory_mounts: list[MemoryMount]
+    memory_mounts: list[MemoryMount | FrozenMemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.
     options: RunOptions
     current_attempt_id: str | None

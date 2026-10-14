@@ -19,7 +19,7 @@ from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunQuery, RunView
 from a13n_service.runs.seal import stop
-from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow, SessionRow, ThreadRow
+from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -80,32 +80,6 @@ async def list_thread_runs(
             (RunRow.created_at, RunRow.id),
             kind="thread_runs",
             owner=thread.id,
-            cursor=cursor,
-            limit=limit,
-            newest_first=True,
-        )
-        return RunPage(items=await run_views(session, rows), next_cursor=next_cursor)
-
-
-async def list_organization_runs(
-    storage: Storage, actor: Principal, workspace_id: str, session_id: str, *, limit: int, cursor: str | None
-) -> RunPage:
-    """Maintenance history uses ordinary Run views, attempts and usage, newest first."""
-    async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        owner = await session.scalar(
-            select(SessionRow).where(SessionRow.workspace_id == scope.workspace_id, SessionRow.id == session_id)
-        )
-        if owner is None:
-            raise not_found("session", session_id)
-        rows, next_cursor = await cursors.keyset_page(
-            session,
-            select(RunRow)
-            .join(ThreadRow, ThreadRow.id == RunRow.thread_id)
-            .where(RunRow.session_id == owner.id, ThreadRow.purpose == "memory_organization"),
-            (RunRow.created_at, RunRow.id),
-            kind="memory_organization_runs",
-            owner=owner.id,
             cursor=cursor,
             limit=limit,
             newest_first=True,

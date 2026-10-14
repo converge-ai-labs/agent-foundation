@@ -58,6 +58,16 @@ const SkillDetail = lazy(() =>
     default: module.SkillDetail,
   })),
 );
+const MemorySpacesPage = lazy(() =>
+  import("./features/memories/spaces").then((module) => ({
+    default: module.MemorySpacesPage,
+  })),
+);
+const MemorySpaceDetail = lazy(() =>
+  import("./features/memories/space-detail").then((module) => ({
+    default: module.MemorySpaceDetail,
+  })),
+);
 const MemoriesPage = lazy(() =>
   import("./features/memories/page").then((module) => ({
     default: module.MemoriesPage,
@@ -256,6 +266,14 @@ function AppContent() {
                       />
                       <Route path="skills" element={<SkillsPage />} />
                       <Route path="skills/:skillId" element={<SkillDetail />} />
+                      <Route
+                        path="memory-spaces"
+                        element={<MemorySpacesPage />}
+                      />
+                      <Route
+                        path="memory-spaces/:spaceId"
+                        element={<MemorySpaceDetail />}
+                      />
                       <Route path="memories" element={<MemoriesPage />} />
                       <Route
                         path="memories/:memoryId"

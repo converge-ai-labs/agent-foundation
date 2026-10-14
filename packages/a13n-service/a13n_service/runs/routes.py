@@ -110,20 +110,6 @@ async def get_message_authors(
     return await authors.message_authors(runtime.storage, actor, workspace_id, session_id, query)
 
 
-@router.get("/sessions/{session_id}/memory/organizations", response_model=RunPage, openapi_extra={"x-a13n-mcp": True})
-async def list_memory_organizations(
-    runtime: CurrentRuntime,
-    workspace_id: WorkspaceId,
-    session_id: str,
-    actor: Actor,
-    limit: PageLimit = 50,
-    cursor: str | None = None,
-) -> RunPage:
-    return await runs.list_organization_runs(
-        runtime.storage, actor, workspace_id, session_id, limit=limit, cursor=cursor
-    )
-
-
 # Threads
 
 

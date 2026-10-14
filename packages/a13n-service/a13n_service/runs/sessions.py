@@ -8,17 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
-from a13n_service.infra.errors import not_found
+from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
-from a13n_service.runs.memories.organization_tables import SessionMemoryRow
 from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     SessionCreate,
-    SessionMemoryStatus,
     SessionPage,
     SessionPreview,
     SessionQuery,
@@ -27,7 +25,7 @@ from a13n_service.runs.schemas import (
 )
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.tenancy.access import workspace_scope
-from a13n_service.tenancy.authorize import Principal, authorize
+from a13n_service.tenancy.authorize import Principal
 
 PREVIEW_INPUT = 256
 PREVIEW_OUTPUT = 512
@@ -85,20 +83,20 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
         .tuples()
         .all()
     )
-    policies = {
-        policy.session_id: SessionMemoryStatus.model_validate(policy, from_attributes=True)
-        for policy in await session.scalars(select(SessionMemoryRow).where(SessionMemoryRow.session_id.in_(ids)))
-    }
     return [
         SessionView.model_validate(row).model_copy(
             update={
                 "preview": previews.get(row.id),
                 "run_count": counts.get(row.id, 0),
-                "memory_status": policies.get(row.id, SessionMemoryStatus()),
             }
         )
         for row in rows
     ]
+
+
+def require_conversation(row: SessionRow) -> None:
+    if row.purpose != "conversation":
+        raise conflict("session", row.id, "managed_organization")
 
 
 async def find_session(session: AsyncSession, workspace_id: str, session_id: str, *, lock: bool = False) -> SessionRow:
@@ -114,7 +112,9 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(SessionRow).where(
-            SessionRow.workspace_id == scope.workspace_id, label_filter(SessionRow.labels, list(filters.label))
+            SessionRow.workspace_id == scope.workspace_id,
+            SessionRow.purpose == "conversation",
+            label_filter(SessionRow.labels, list(filters.label)),
         )
         if filters.q:
             by_thread = select(ThreadRow.session_id).where(
@@ -161,7 +161,6 @@ async def create_session(runtime: Runtime, actor: Principal, workspace_id: str, 
         session.add(row)
         await session.flush()
         if body.memory is not None:
-            authorize(actor, scope, "write")
             await configure(session, runtime, actor, row, body.memory)
             await session.flush()
         return (await _views(session, [row]))[0]
@@ -177,7 +176,7 @@ async def update_session(
         if body.labels is not None:
             row.labels = dict(body.labels)
         if body.memory is not None:
-            authorize(actor, scope, "write")
+            require_conversation(row)
             await configure(session, runtime, actor, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

@@ -318,6 +318,14 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Memories
 
+| Path                                   | Methods            | Owner                                     |
+| -------------------------------------- | ------------------ | ----------------------------------------- |
+| `/memory-spaces`                       | GET, POST          | [11](11-memory.md#memory-spaces)          |
+| `/memory-spaces/{space}`               | GET, PATCH, DELETE | [11](11-memory.md#memory-spaces)          |
+| `/memory-spaces/{space}/organization`  | GET                | [11](11-memory.md#organization-lifecycle) |
+| `/memory-spaces/{space}/organizations` | GET, POST          | [11](11-memory.md#organization-lifecycle) |
+| `/memory-spaces/{space}/sessions`      | GET                | [11](11-memory.md#organization-lifecycle) |
+
 | Path                                         | Methods            | Owner                                                |
 | -------------------------------------------- | ------------------ | ---------------------------------------------------- |
 | `/memories`                                  | GET, POST          | [11](11-memory.md#memories)                          |

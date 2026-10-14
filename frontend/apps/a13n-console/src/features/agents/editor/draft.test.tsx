@@ -190,7 +190,10 @@ it("preserves raw settings and distinguishes inheritance from explicit clearing"
 });
 
 it("publishes session memory defaults independently of shared mounts", () => {
-  const memory = { enabled: true, auto_organize: true, model: "organizer" };
+  const memory = {
+    enabled: true,
+    spaces: [{ name: "team", space_id: "msp_00000000000000000001" }],
+  };
   const draft = draftFor({ memory });
   expect(draft.current.memory).toEqual(memory);
   expect(JSON.parse(draft.current.advanced)).not.toHaveProperty("memory");
@@ -206,13 +209,12 @@ it("publishes session memory defaults independently of shared mounts", () => {
   act(() =>
     draft.current.setMemory({
       enabled: true,
-      auto_organize: true,
-      model: null,
+      spaces: [{ name: "Invalid name", space_id: "msp_00000000000000000001" }],
     }),
   );
   const invalid = buildDraftConfig(draft.current, undefined, asIs);
   expect(invalid.ok).toBe(false);
   expect(!invalid.ok && invalid.error.message).toBe(
-    "Choose an organization model.",
+    "Use unique mount names: lowercase letters, digits and hyphens, starting with a letter.",
   );
 });

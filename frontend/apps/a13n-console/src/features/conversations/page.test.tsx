@@ -226,7 +226,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
 it.each(["inherit", "off", "on"])(
   "starts a Console session with memory %s, reusing preparation on retry",
   async (memoryChoice) => {
-    allowed = memoryChoice === "inherit" ? ["run"] : ["run", "write"];
+    allowed = ["run"];
     const posts: { path: string; body: unknown; key: string | null }[] = [];
     let failures = 1;
     client = createClient({
@@ -328,7 +328,7 @@ it.each(["inherit", "off", "on"])(
       );
       if (memoryChoice === "on")
         await user.click(
-          screen.getByRole("switch", { name: "Session memory" }),
+          screen.getByRole("switch", { name: "Use Memory Spaces" }),
         );
     }
     await user.type(
@@ -356,8 +356,7 @@ it.each(["inherit", "off", "on"])(
         : {
             memory: {
               enabled: memoryChoice === "on",
-              auto_organize: false,
-              model: null,
+              spaces: [],
             },
           }),
     });

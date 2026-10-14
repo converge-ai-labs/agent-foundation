@@ -43,19 +43,90 @@ MountName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,62}$")]
 MAX_MOUNTS = 32
 
 
+class SpaceBinding(BaseModel):
+    """A named Space selected by the App or inherited from Agent defaults."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, from_attributes=True)
+    name: MountName
+    space_id: ObjectId
+    access: MemoryAccess = "write"
+
+
 class SessionMemorySettings(BaseModel):
-    """Agent defaults and the independent settings a Session retains."""
+    """Participation and complete Space selection; policy belongs to each Space."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
-    auto_organize: bool = False
+    spaces: tuple[SpaceBinding, ...] = Field(default=(), max_length=MAX_MOUNTS)
+
+    @model_validator(mode="after")
+    def unique_bindings(self) -> "SessionMemorySettings":
+        if len({item.name for item in self.spaces}) != len(self.spaces):
+            raise ValueError("Space mount names must be unique")
+        if len({item.space_id for item in self.spaces}) != len(self.spaces):
+            raise ValueError("A Space can only be mounted once")
+        return self
+
+
+class OrganizationPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    enabled: bool = False
     model: Key | None = None
 
     @model_validator(mode="after")
-    def organization_model(self) -> "SessionMemorySettings":
-        if self.auto_organize and self.model is None:
+    def organization_model(self) -> "OrganizationPolicy":
+        if self.enabled and self.model is None:
             raise ValueError("Automatic organization requires a model key")
         return self
+
+
+class MemorySpaceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: MemoryName
+    description: Description | None = None
+    labels: Labels = Field(default_factory=dict)
+    enabled: bool = True
+    organization: OrganizationPolicy = Field(default_factory=OrganizationPolicy)
+    guide: Guide | None = None
+    always_load: AlwaysLoad = ("global/MEMORY.md",)
+
+
+class MemorySpaceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: MemoryName | None = None
+    description: Description | None = None
+    labels: Labels | None = None
+    enabled: bool | None = None
+    organization: OrganizationPolicy | None = None
+    guide: Guide | None = None
+    always_load: AlwaysLoad | None = None
+
+
+class MemorySpace(BaseModel):
+    id: str
+    organization_id: str
+    workspace_id: str
+    name: str
+    description: str | None
+    labels: dict[str, str]
+    enabled: bool
+    organization: OrganizationPolicy
+    memory_id: str
+    guide: str | None
+    always_load: list[str]
+    file_count: int
+    content_bytes: int
+    history_bytes: int
+    version: int
+    created_by_id: str
+    updated_by_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemorySpacePage(BaseModel):
+    items: list[MemorySpace]
+    next_cursor: str | None
 
 
 class MemoryCreate(BaseModel):

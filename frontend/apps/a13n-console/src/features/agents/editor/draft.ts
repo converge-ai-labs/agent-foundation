@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import { jsonObject, validateSettings } from "../../../shared/forms";
@@ -162,8 +163,12 @@ export function buildDraftConfig(
     };
   }
   try {
-    if (draft.memory.auto_organize && !draft.memory.model)
-      throw new Error(t("Choose an organization model."));
+    if (!validSpaceSelection(draft.memory))
+      throw new Error(
+        t(
+          "Use unique mount names: lowercase letters, digits and hyphens, starting with a letter.",
+        ),
+      );
     return {
       ok: true,
       config: buildConfig(

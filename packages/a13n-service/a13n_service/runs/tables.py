@@ -62,6 +62,7 @@ class SessionRow(Stamped, Base):
     __tablename__ = "sessions"
     __table_args__ = (
         Index("ix_sessions_workspace_updated", "workspace_id", "updated_at", "id"),
+        CheckConstraint("purpose IN ('conversation', 'memory_organization')", name="purpose"),
         UniqueConstraint("workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
@@ -79,7 +80,7 @@ class SessionRow(Stamped, Base):
     labels: Mapped[dict] = mapped_column(JSONB)
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     memory: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
-    memory_id: Mapped[str | None] = mapped_column(ForeignKey("memories.id", ondelete="SET NULL"))
+    purpose: Mapped[str] = mapped_column(String, default="conversation", server_default=text("'conversation'"))
     # The most recently accepted business run: maintenance never replaces this preview.
     last_run_id: Mapped[str | None] = mapped_column(String(72))
 

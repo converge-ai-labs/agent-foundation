@@ -63,6 +63,33 @@ class MemoryRow(Stamped, Base):
     updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
 
 
+class MemorySpaceRow(Stamped, Base):
+    """Shared lifecycle and policy around one managed file Memory."""
+
+    __tablename__ = "memory_spaces"
+    KIND: ClassVar[str] = "memory_space"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id"),
+        UniqueConstraint("memory_id"),
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "memory_id"], ["memories.workspace_id", "memories.id"]),
+        rules(identity_guarded("memory_spaces")),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    memory_id: Mapped[str] = mapped_column(String(72))
+    name: Mapped[str]
+    description: Mapped[str | None]
+    labels: Mapped[dict] = mapped_column(JSONB)
+    enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    organization: Mapped[dict] = mapped_column(JSONB)
+    # The configuring actor delegates organization; business writers never replace this authority.
+    authority: Mapped[dict | None] = mapped_column(JSONB)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+
+
 class MemoryFileStoreRow(Base):
     """A PostgreSQL file memory's write lock, change sequence and byte counters. Every write locks it first, so
     changes are numbered without gaps and the byte total is exact."""

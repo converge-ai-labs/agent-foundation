@@ -240,7 +240,11 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert {
         ("/api/v1/sessions", "get"),
         ("/api/v1/sessions/{session_id}", "get"),
-        ("/api/v1/sessions/{session_id}/memory/organizations", "get"),
+        ("/api/v1/memory-spaces", "get"),
+        ("/api/v1/memory-spaces/{space_id}", "get"),
+        ("/api/v1/memory-spaces/{space_id}/organization", "get"),
+        ("/api/v1/memory-spaces/{space_id}/organizations", "get"),
+        ("/api/v1/memory-spaces/{space_id}/sessions", "get"),
     } <= selected
     assert {
         ("/api/v1/findings", "get"),

@@ -35,6 +35,7 @@ import { SessionHeader } from "./session-header";
 import {
   defaultSessionMemory,
   SessionMemoryFields,
+  validSpaceSelection,
 } from "../memories/session-settings";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { ThreadInbox } from "./transcript/inbox";
@@ -154,7 +155,7 @@ export function NewConversation() {
             },
           ]}
         />
-        {can("write") && (
+        {can("run") && (
           <div className="grid gap-4">
             <div className="grid gap-1">
               <Label className="flex items-center gap-2">
@@ -189,7 +190,7 @@ export function NewConversation() {
           disabled={
             !can("run") ||
             !agentId ||
-            (!!memory?.auto_organize && !memory.model)
+            (memory !== null && !validSpaceSelection(memory))
           }
           agentName={selected?.name}
           options={<RunOptions options={options} showAgent={false} />}

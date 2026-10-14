@@ -11,7 +11,7 @@ import { isInteractive } from "./transcript/run-actions";
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
   PATCH: vi.fn(),
-  writable: true,
+  runnable: true,
 }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ workspace: () => mocks }),
@@ -20,7 +20,7 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
     basePath: "/w",
-    can: () => mocks.writable,
+    can: (verb: string) => verb === "run" && mocks.runnable,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -29,25 +29,17 @@ vi.mock("react-i18next", () => ({
     i18n: { resolvedLanguage: "en" },
   }),
 }));
-
+const spaces = [{ name: "team", space_id: "msp_team", access: "write" }];
 beforeEach(() => {
-  mocks.writable = true;
+  mocks.runnable = true;
   mocks.PATCH.mockReset().mockResolvedValue({ data: {} });
   mocks.GET.mockImplementation(async (path: string) => ({
-    data: path.endsWith("/organizations")
-      ? { items: [fixtureRun({ status: "completed" })], next_cursor: null }
-      : path.endsWith("/models")
-        ? {
-            items: [{ key: "local", name: "Local model", enabled: true }],
-            next_cursor: null,
-          }
-        : {
-            id: "ses_1",
-            version: 3,
-            memory: { enabled: false, auto_organize: false, model: null },
-            memory_id: "mem_1",
-            memory_status: { pending: false },
-          },
+    data: path.endsWith("/memory-spaces")
+      ? {
+          items: [{ id: "msp_team", name: "Team knowledge", enabled: false }],
+          next_cursor: null,
+        }
+      : { id: "ses_1", version: 3, memory: { enabled: false, spaces } },
   }));
 });
 function show() {
@@ -63,59 +55,106 @@ function show() {
   );
   return cache;
 }
-
-it("keeps opt-ins off, requires an explicit model, and saves with the session version", async () => {
-  const cache = show();
-  const user = userEvent.setup();
+it("saves a participation override with run permission and retains disabled Space selections", async () => {
+  const cache = show(),
+    user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Memory" }));
-  const memory = await screen.findByRole("switch", { name: "Session memory" });
+  const memory = await screen.findByRole("switch", {
+    name: "Use Memory Spaces",
+  });
   expect(memory.getAttribute("aria-checked")).toBe("false");
-  await user.click(memory);
-  await user.click(
-    screen.getByRole("switch", { name: "Automatically organize saved memory" }),
-  );
   expect(
-    screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
-  ).toBe(true);
-  await user.click(
-    screen.getByRole("combobox", { name: "Organization model" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "Local model" }));
+    (await screen.findByRole("link", { name: "Team knowledge" })).getAttribute(
+      "href",
+    ),
+  ).toBe("/w/memory-spaces/msp_team");
+  await user.click(memory);
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(mocks.PATCH).toHaveBeenCalledWith(
       "/api/v1/sessions/{session_id}",
       expect.objectContaining({
         headers: { "If-Match": '"ses_1:3"' },
-        body: {
-          memory: { enabled: true, auto_organize: true, model: "local" },
-        },
+        body: { memory: { enabled: true } },
       }),
     ),
   );
-  expect(
-    screen
-      .getByRole("link", { name: "Browse files and revisions" })
-      .getAttribute("href"),
-  ).toBe("/w/memories/mem_1");
-  expect(
-    screen
-      .getByRole("link", { name: "View run and usage" })
-      .getAttribute("href"),
-  ).toContain("view=debug");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   cache.clear();
 });
-
-it("allows readers to inspect history without changing settings", async () => {
-  mocks.writable = false;
+it("keeps untouched participation omitted when explicitly clearing Space selection", async () => {
+  const cache = show(),
+    user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Memory" }));
+  await user.click(await screen.findByRole("button", { name: "Remove Space" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(mocks.PATCH).toHaveBeenCalledWith(
+      "/api/v1/sessions/{session_id}",
+      expect.objectContaining({ body: { memory: { spaces: [] } } }),
+    ),
+  );
+  cache.clear();
+});
+it("keeps the Agent's Space default unresolved when only participation changes before first acceptance", async () => {
+  mocks.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/memory-spaces")
+      ? { items: [], next_cursor: null }
+      : {
+          id: "ses_1",
+          version: 1,
+          last_run_id: null,
+          memory: { enabled: false, spaces: [] },
+        },
+  }));
+  const cache = show(),
+    user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Memory" }));
+  await user.click(
+    await screen.findByRole("switch", { name: "Use Memory Spaces" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(mocks.PATCH).toHaveBeenCalledWith(
+      "/api/v1/sessions/{session_id}",
+      expect.objectContaining({ body: { memory: { enabled: true } } }),
+    ),
+  );
+  cache.clear();
+});
+it("preserves the draft and displays a rejected save", async () => {
+  mocks.PATCH.mockResolvedValue({
+    error: { error: { code: "conflict", message: "Space changed" } },
+    response: new Response(null, { status: 409 }),
+  });
+  const cache = show(),
+    user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Memory" }));
+  await user.click(
+    await screen.findByRole("switch", { name: "Use Memory Spaces" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(mocks.PATCH).toHaveBeenCalled());
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("switch", { name: "Use Memory Spaces" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  cache.clear();
+});
+it("lets readers inspect selections without changing them", async () => {
+  mocks.runnable = false;
   const cache = show();
   await userEvent.click(screen.getByRole("button", { name: "Memory" }));
-  const memory = await screen.findByRole("switch", { name: "Session memory" });
+  const memory = await screen.findByRole("switch", {
+    name: "Use Memory Spaces",
+  });
   expect(memory.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.queryByRole("button", { name: "Add Space" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   cache.clear();
 });
-
 it("labels organizer input as maintenance and excludes conversation controls", () => {
   const thread = fixtureThread({ purpose: "memory_organization" });
   expect(runRequest(fixtureRun(), thread).kind).toBe("memory_organization");

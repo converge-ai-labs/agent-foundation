@@ -1,4 +1,4 @@
-"""Durable, coalesced organization opportunities for a session's dedicated file memory."""
+"""One durable organization lifecycle per Memory Space."""
 
 from datetime import datetime
 
@@ -9,20 +9,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.infra.db import Base
 
 
-class SessionMemoryRow(Base):
-    __tablename__ = "session_memories"
-    __table_args__ = (
-        Index("ix_session_memories_pending", "due_at", postgresql_where=text("pending OR active_run_id IS NOT NULL")),
-    )
-    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"), primary_key=True)
-    # Settings belong to Session; these are execution delegation and maintenance progress.
-    authority: Mapped[dict | None] = mapped_column(JSONB)
-    agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"))
-    revision_id: Mapped[str | None] = mapped_column(ForeignKey("agent_revisions.id"))
+class SpaceOrganizationRow(Base):
+    __tablename__ = "memory_space_organizations"
+    __table_args__ = (Index("ix_memory_space_organizations_due", "due_at"),)
+    space_id: Mapped[str] = mapped_column(ForeignKey("memory_spaces.id", ondelete="CASCADE"), primary_key=True)
+    session_id: Mapped[str | None] = mapped_column(ForeignKey("sessions.id"), unique=True)
     pending: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"))
     last_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"))
     source_seq: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    observed_seq: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     processed_seq: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    configuration_version: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    history_gap: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     failure: Mapped[dict | None] = mapped_column(JSONB)

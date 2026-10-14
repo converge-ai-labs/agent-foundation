@@ -26,7 +26,7 @@ export function MemorySection({
       <Section
         title={t("Session memory defaults")}
         description={t(
-          "New sessions inherit these settings. Each session keeps its own files and can override these defaults.",
+          "New sessions inherit this Space selection. Apps can replace it for each session.",
         )}
       >
         <SessionMemoryFields
@@ -36,7 +36,7 @@ export function MemorySection({
         />
       </Section>
       <Section
-        title={t("Shared memories")}
+        title={t("Standalone memories")}
         description={t(
           "What the agent keeps across conversations. New conversations mount these memories.",
         )}

@@ -37,12 +37,14 @@ from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.memories import provenance
 from a13n_service.resources.memories.records import RecordMemory, backend, open_record_store, record_memory
-from a13n_service.resources.memories.schemas import MemoryMount, MemoryRecordSource
+from a13n_service.resources.memories.schemas import MemoryRecordSource
 from a13n_service.resources.memories.service import inherited_guide
 from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.tables import MemoryProviderRow
 from a13n_service.runs.attempts import Lease
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
+from a13n_service.runs.memories.view import SpaceFileView
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import MemorySettings
@@ -57,7 +59,7 @@ type Gate = Callable[[Verb], None]
 class PlannedMemory:
     """One frozen mount whose memory exists, with the memory's configuration as the attempt read it."""
 
-    mount: MemoryMount
+    mount: FrozenMemoryMount
     guide: str | None
     always_load: tuple[str, ...]
     # A record memory with its enabled provider; None for a file memory.
@@ -65,7 +67,7 @@ class PlannedMemory:
 
 
 async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedMemory, ...]:
-    mounts = [MemoryMount.model_validate(mount) for mount in run.memory_mounts]
+    mounts = [FrozenMemoryMount.model_validate(mount) for mount in run.memory_mounts]
     if not mounts:
         return ()
     rows = {
@@ -90,7 +92,13 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
                     raise
                 logger.warning("Record memory skipped", extra={"memory_id": row.id, "reason": "provider_disabled"})
                 continue
-        planned.append(PlannedMemory(mount, row.guide, tuple(row.always_load), record))
+        always_load = tuple(row.always_load)
+        if mount.space_id is not None:
+            always_load = tuple(path for path in always_load if path.startswith(mount.roots))
+            own_index = f"sessions/{run.session_id}/MEMORY.md"
+            if own_index.startswith(mount.roots) and own_index not in always_load:
+                always_load += (own_index,)
+        planned.append(PlannedMemory(mount, row.guide, always_load, record))
     return tuple(planned)
 
 
@@ -110,9 +118,15 @@ def _gate(lease: Lease, principal: Principal, authority: ExecutionAuthority) -> 
 
 
 def _guide(memory: PlannedMemory, settings: MemorySettings) -> str:
-    if memory.guide is not None:
-        return memory.guide
-    return inherited_guide(settings, "file" if memory.record is None else "record")
+    guide = (
+        memory.guide
+        if memory.guide is not None
+        else inherited_guide(settings, "file" if memory.record is None else "record")
+    )
+    if memory.mount.space_id is not None:
+        guide += "\nThis Memory Space exposes: " + ", ".join(memory.mount.roots)
+        guide += ". Save shared knowledge under global/ and conversation notes under your Session folder."
+    return guide
 
 
 def file_memory(
@@ -134,11 +148,19 @@ def file_memory(
     mounts = [
         FileMount(
             name=memory.mount.name,
-            store=PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate),
+            store=(
+                SpaceFileView(
+                    PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate),
+                    memory.mount.roots,
+                    file_format(settings),
+                )
+                if memory.mount.space_id is not None
+                else PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate)
+            ),
             access=memory.mount.access,
             guide=_guide(memory, settings),
             always_load=memory.always_load,
-            cursor_key=memory.mount.memory_id,
+            cursor_key=memory.mount.cursor_key,
         )
         for memory in files
     ]
