@@ -18,6 +18,7 @@ from a13n_service.runs.contents import INLINE_BYTES, MAX_CONTENT_BYTES, PREVIEW_
 from a13n_service.runs.display import DisplayFold, Item, Page, Snapshot, StreamPosition, Tail
 from a13n_service.runs.tables import RunItemPageRow, RunRow
 from a13n_stream_protocol.display import DisplayFold as SemanticFold
+from pydantic_ai import BinaryContent
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     PartDeltaEvent,
@@ -330,3 +331,119 @@ async def test_history_content_api_authorizes_references_and_page_cleanup_keeps_
     )()
     response = await service.client.get(path)
     assert response.status_code == 200 and response.json()["value"] == saved
+
+
+async def test_screenshots_are_references_on_the_stream_and_survive_page_retention(
+    service, scripted_model, runs_kit
+) -> None:
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    first = await runs_kit.start_thread(service, agent, "observe")
+    run_id = first["run"]["id"]
+    lease = Lease(
+        run_id,
+        "rat_image",
+        first["thread"]["id"],
+        service.tenant.organization_id,
+        service.tenant.workspace_id,
+        1,
+        "w",
+        "t",
+    )
+    contents = Contents()
+    fold = DisplayFold(run_id, Tail(), attempt=1, page_items=1, page_bytes=1024)
+    streamed = []
+
+    class Sink:
+        def delta(self, value):
+            streamed.append(value)
+
+    png = b"\x89PNG\r\n\x1a\n" + b"image bytes" * 5000
+    part = ToolReturnPart(
+        "computer_observe",
+        [BinaryContent(data=png, media_type="image/png")],
+        "observe",
+        metadata={"a13n.computer.screenshot": True},
+    )
+    source = HarnessEvent(
+        thread_id="thread", run_id="harness", sequence=1, occurred_at=AT, event=FunctionToolResultEvent(part)
+    )
+    async with Coalescer(fold, Sink(), window=0, contents=contents) as output:
+        output.observe(source)
+    [tool] = [value for value in fold.items.values() if value.kind == "tool_call"]
+    [public] = tool.content["tool_images"]
+    assert public["media_type"] == "image/png" and public["size_bytes"] == len(png)
+    assert all(len(value.model_dump_json()) < 4000 for value in streamed)
+    path = f"{service.api}/runs/{run_id}/images/{public['id']}"
+    assert (await service.client.get(path)).status_code == 404, "uncommitted observations cannot be read"
+    published = await checkpoints.publish_display(service.runtime, lease, fold.snapshot(), contents=contents)
+    assert not contents.pending_images and contents.pending_image_bytes == 0
+    assert published.pages and published.pages[0].refs[0].purpose == "image"
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get(RunRow, run_id)
+        checkpoints.record_display(session, run, published)
+    response = await service.client.get(path)
+    assert response.status_code == 200 and response.content == png
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert (await service.client.get(f"{service.api}/runs/{run_id}/contents/{public['id']}")).status_code == 404
+    other = await runs_kit.start_thread(service, agent, "other")
+    assert (
+        await service.client.get(f"{service.api}/runs/{other['run']['id']}/images/{public['id']}")
+    ).status_code == 404
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get(RunRow, run_id)
+        await checkpoints.reclaim(session, run, before_attempt=2)
+    await Delivery(
+        service.runtime.storage,
+        {checkpoints.CLEANUP: partial(checkpoints.clean, service.runtime)},
+        owner="clean",
+        policies=service.runtime.settings.outbox.policies,
+    )()
+    assert (await service.client.get(path)).content == png
+
+
+async def test_screenshot_tail_restores_without_decoding_binary_as_json(runtime, tenant) -> None:
+    lease = Lease("run_images", "rat_images", "thr_images", tenant.organization_id, tenant.workspace_id, 1, "w", "t")
+    contents = Contents()
+    image = contents.image(b"image", "image/png")
+    original = item([image.model_dump(mode="json")], "tool_images")
+    first = await checkpoints.publish_display(runtime, lease, Snapshot([], Tail(items=[original])), contents=contents)
+    tail = await checkpoints.load_tail(runtime.objects, first.tail, hydrate=True)
+    restored = Contents(tail.items, tail.refs)
+    second = await checkpoints.publish_display(runtime, lease, Snapshot([], tail), contents=restored)
+    assert second.tail.refs == first.tail.refs
+    restored.retire([original.id])
+    assert not restored.refs
+
+
+def test_screenshot_capture_has_per_image_and_pending_byte_limits() -> None:
+    contents = Contents()
+    assert contents.image(b"x" * (8 * 1024 * 1024 + 1), "image/png") is None
+    for _ in range(4):
+        assert contents.image(b"x" * (8 * 1024 * 1024), "image/png") is not None
+    assert contents.image(b"x", "image/png") is None
+    tiny = Contents()
+    for _ in range(64):
+        assert tiny.image(b"", "image/png") is not None
+    assert tiny.image(b"", "image/png") is None
+
+
+@pytest.mark.parametrize("marked", [False, True])
+def test_screenshot_collection_requires_the_explicit_marker_and_preserves_child_identity(marked) -> None:
+    from a13n_service.runs.images import observe
+
+    contents = Contents()
+    image = BinaryContent(data=b"image", media_type="image/png")
+    part = ToolReturnPart("computer_observe", [image], "same-call", metadata={"a13n.computer.screenshot": marked})
+    event = HarnessEvent(
+        thread_id="thread", run_id="child", sequence=1, occurred_at=AT, event=FunctionToolResultEvent(part)
+    )
+    result = observe(event, root_run_id="root", contents=contents)
+    if marked:
+        assert result["subagentRunId"] == "child"
+        assert result["value"]["event"]["tool_call_id"] == "same-call"
+        assert part.content == [image]
+    else:
+        assert result is None and not contents.pending_images

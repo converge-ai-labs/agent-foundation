@@ -3,7 +3,12 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.models import (
+    FILE_EXECUTION_ACTIONS,
+    EnvironmentAction,
+    EnvironmentPermissionSet,
+    EnvironmentState,
+)
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints
 
 from a13n_service.infra.ids import ObjectId
@@ -11,6 +16,7 @@ from a13n_service.providers import envd
 
 # Desired mounts one thread holds at most; a run freezes them, plus a primary sandbox its agent reserves.
 MAX_MOUNTS = 32
+DEFAULT_MOUNT_PERMISSIONS = EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS)
 # The Harness mount-name rule; `workspace` is the primary mount.
 MountName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,62}$")]
 
@@ -129,6 +135,12 @@ class MountCreate(BaseModel):
     environment_id: ObjectId
     # The mount's default directory inside the environment and the root of its route.
     working_directory: WorkingDirectory | None = None
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
+
+
+class MountUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    permission_ceiling: EnvironmentPermissionSet
 
 
 class MountView(BaseModel):
@@ -136,8 +148,19 @@ class MountView(BaseModel):
     name: str
     environment_id: str
     working_directory: str | None
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 
 
 class MountPage(BaseModel):
     items: list[MountView]
     next_cursor: str | None = None
+
+
+class ComputerCheck(BaseModel):
+    """A point-in-time capability probe, not an Agent or mount permission grant."""
+
+    status: Literal["checked", "unsupported", "not_ready"]
+    observe_ready: bool = False
+    input_ready: bool = False
+    display_count: int = 0
+    operations: list[EnvironmentAction] = Field(default_factory=list)

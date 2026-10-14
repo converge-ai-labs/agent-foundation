@@ -524,7 +524,12 @@ class DisplayFold:
         name, part = event.get("name"), value.get("part")
         native = isinstance(part, dict) and part.get("part_kind") in {"builtin-tool-call", "builtin-tool-return"}
         result = name in {"a13n.pydantic_ai.function_tool_result", "a13n.pydantic_ai.output_tool_result"}
-        supplement = name in {"a13n.filesystem.edit_applied", "a13n.harness-ui.tool_images", "a13n.harness-ui.mcp_apps"}
+        supplement = name in {
+            "a13n.filesystem.edit_applied",
+            "a13n.tool_images",
+            "a13n.harness-ui.tool_images",
+            "a13n.harness-ui.mcp_apps",
+        }
         source = part if native or result else value if supplement else None
         if not isinstance(source, dict) or not isinstance(call_id := source.get("tool_call_id"), str):
             return None
@@ -548,7 +553,7 @@ class DisplayFold:
         if supplement:
             if name == "a13n.filesystem.edit_applied":
                 content["applied_edit"] = {key: source.get(key) for key in ("file_path", "before", "after")}
-            elif name == "a13n.harness-ui.tool_images":
+            elif name in {"a13n.tool_images", "a13n.harness-ui.tool_images"}:
                 content["tool_images"] = source.get("images", [])
                 content["tool_image_unavailable"] = source.get("unavailable", False)
             else:

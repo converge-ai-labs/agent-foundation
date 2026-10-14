@@ -42,7 +42,7 @@ environments   (env_)
   INDEX (renew_at) WHERE renew_at IS NOT NULL
 
 thread_environments
-  thread_id  environment_id  organization_id  workspace_id  name  working_directory NULL  created_at
+  thread_id  environment_id  organization_id  workspace_id  name  working_directory NULL  permission_ceiling JSONB  created_at
   PRIMARY KEY (thread_id, name)
   UNIQUE (thread_id, environment_id)
 ```
@@ -70,7 +70,7 @@ A template is live configuration ([04](04-resources.md#environment-templates)). 
 
 ## Mounts
 
-A thread's **desired mounts** are the environments later runs will use. `POST …/threads/{thread}/environments` adds one (`{name, environment_id, working_directory?}`) and `DELETE …/threads/{thread}/environments/{name}` removes one; both need `run` and the thread `If-Match`, answer with the new thread ETag, and are audited as `thread_environment.create` and `.delete`. Adding needs an open thread. Replacing a mount is explicit: remove the name, then add it again. A duplicate name is `already_exists` (kind `mount`); an environment already mounted on the thread is `conflict` (`already_mounted`). A thread holds at most 32 desired mounts: a path that would add more is `conflict` (`mount_limit`, details `limit`), and a request naming more than 32 is `invalid_argument`. Acceptance's primary reservation below may add one beyond them, and a `shared` child adopts all of its parent run's frozen mounts. `GET` lists the mounts with the thread ETag.
+A thread's **desired mounts** are the environments later runs will use. `POST …/threads/{thread}/environments` adds one (`{name, environment_id, working_directory?, permission_ceiling?}`) and `DELETE …/threads/{thread}/environments/{name}` removes one; both need `run` and the thread `If-Match`, answer with the new thread ETag, and are audited as `thread_environment.create` and `.delete`. Adding needs an open thread. Replacing a mount is explicit: remove the name, then add it again. A duplicate name is `already_exists` (kind `mount`); an environment already mounted on the thread is `conflict` (`already_mounted`). A thread holds at most 32 desired mounts: a path that would add more is `conflict` (`mount_limit`, details `limit`), and a request naming more than 32 is `invalid_argument`. Acceptance's primary reservation below may add one beyond them, and a `shared` child adopts all of its parent run's frozen mounts. `GET` lists the mounts with the thread ETag.
 
 Every new use checks the instance under its row lock:
 
@@ -91,6 +91,12 @@ While a run is accepted or running, its frozen `environment_mounts` is the durab
 `POST …/environments {template_id, name?}` explicitly requests creation: it reserves the identity and begins `creating` in the same transaction (`run`; 201; audited as `environment.create`); the name defaults to the template's name. This retains the explicit create API's eager behavior. Service may also prepare a run's source ahead of first use by calling the same readiness path; there is no separate lifecycle implementation or Harness mode.
 
 Existing instances retain their status and outstanding operation when `reserved` is introduced; an existing `creating` instance is never downgraded to a reservation. API representations and status filters include `reserved` as a non-ready state. Clients must not infer native allocation from the presence of an environment ID.
+
+Each mount carries an exact Harness `EnvironmentPermissionSet` as `permission_ceiling`. Omission, including on historical frozen Run mounts, preserves the file/execution action set and grants no `environment.computer.*` actions. `PATCH …/threads/{thread}/environments/{name}` replaces this ceiling with `{permission_ceiling}` under `run`, an open thread and the thread `If-Match`; it rechecks authority over the target, returns the new thread ETag and audits `thread_environment.update`. The primary `workspace` mount is editable through the same route. Accepted Runs freeze the ceiling with the mount; changing desired permissions never mutates an accepted Run. Forks sharing desired mounts and children sharing frozen mounts preserve those ceilings.
+
+Computer Use requires both the Agent's enabled `computer` toolset and explicit Computer actions in a mount ceiling. Harness intersects this authority with the provider's supported actions and current readiness at execution. Enabling it does not provision a desktop or add one to an existing headless image. These permissions govern Computer operations only; file, shell and other separately authorized operations retain their own authority. A shared desktop has no exclusive human/Agent input ownership under this contract.
+
+`POST …/environments/{id}/computer/check` requires workspace `run` and the same private-target ownership as execution. It probes only a ready instance using a bounded temporary execution after closing the authorization read session. It neither starts an instance, captures pixels nor sends input. The result distinguishes `not_ready`, `unsupported` and `checked`, reporting observation/input readiness, display count and exact Computer actions. Provider errors remain failures, not unsupported results. The probe releases its execution on completion, failure and cancellation; its result is a point-in-time capability observation, not a permission grant or a guarantee for a later Run.
 
 ## One outstanding external operation
 

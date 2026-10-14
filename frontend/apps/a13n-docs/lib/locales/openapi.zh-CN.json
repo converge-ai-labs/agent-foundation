@@ -399,9 +399,15 @@
   "Ready while started and the database holds a usable schema. Redis only speeds work up, so losing it\nis reported as degraded rather than taking the replica out of service.": "进程已启动且数据库 schema 可用时就绪。Redis 仅用于加速，因此丢失时报告降级，不会将副本移出服务。",
   "Ready": "就绪检查",
   "One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories.": "核心问题的主要类型，与分析预设、影响程度和审阅独立。不确定性写在说明或局限中，不要自行创建类型。",
+  "A platform-confirmed write, not an asserted source message or complete provider history.": "平台已确认的写入，不代表原始消息引用或供应商的完整历史。",
+  "Exact authorization values in the locked first-party catalog.": "锁定的第一方动作目录中的精确授权值。",
+  "Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.": "读取已提交运行历史中保存的截图。此二进制媒体接口不是 MCP 查询端点。",
+  "Run Image": "读取运行截图",
+  "A point-in-time capability probe, not an Agent or mount permission grant.": "某一时刻的环境能力检查，不授予 Agent 或挂载权限。",
+  "Check Computer": "检查桌面",
+  "Probe desktop readiness without capturing the screen, sending input or starting the instance.": "检查桌面就绪状态，不截图、不发送输入，也不启动实例。",
   "List Runs": "列出运行",
   "Get Attempt": "读取执行尝试",
   "Platform MCP groups selected independently of local operating instructions.": "独立于本地操作说明选择的平台 MCP 工具组。",
-  "Workspace execution search; timestamps bound creation time, newest first.": "工作空间执行查询；按创建时间范围筛选，最新记录在前。",
-  "A platform-confirmed write, not an asserted source message or complete provider history.": "平台已确认的写入，不代表原始消息引用或供应商的完整历史。"
+  "Workspace execution search; timestamps bound creation time, newest first.": "工作空间执行查询；按创建时间范围筛选，最新记录在前。"
 }

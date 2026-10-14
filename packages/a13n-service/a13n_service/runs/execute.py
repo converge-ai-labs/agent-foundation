@@ -447,7 +447,9 @@ class _Attempt:
             )
             self.live = live
             output = await stack.enter_async_context(
-                Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
+                Coalescer(
+                    self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds, contents=self.contents
+                )
             )
 
             def freeze_display(_open_calls: frozenset[str]) -> Snapshot:

@@ -159,6 +159,14 @@ Tail and page objects list their unique dependencies; the commit records those l
 
 Display publication accompanies checkpoints or terminal failure/cancellation, with no periodic display-only commit. Saved values are captured before the [live transport limits](#the-thread-stream). Console loads them on explicit expansion through the [content API](05-runs.md#reads), shows truncation before and after expansion, and keeps loaded values out of the live normalizer and any separate content cache. Append deltas leave referenced previews intact until a newer committed snapshot arrives.
 
+### Retained Computer observations
+
+Only native tool results explicitly marked `a13n.computer.screenshot` expose screenshots to Service presentation. The synchronous producer observer captures bounded PNG/JPEG bytes without modifying model content. A host-authenticated `a13n.tool_images` supplement associates opaque `{id, media_type, size_bytes}` references with the root or inline-child tool call. No screenshot bytes, base64, object keys or storage credentials enter the public delta.
+
+A screenshot is at most 8 MiB; an attempt retains at most 64 pending screenshots and 32 MiB of pending screenshot bytes before publication. Exceeding a limit omits that presentation image and sets `tool_image_unavailable`, without changing the model's tool result. Images are saved outside database sessions through the display publication path, become readable only after its fenced commit, and are retained by tail/page dependency metadata independently of model history. Recovery reuses committed image references without decoding binary as JSON. Unchanged images are not rewritten at later checkpoints; orphan cleanup follows the same attempt fencing and reachability rules as other display contents. Object-store failure follows the existing checkpoint failure policy; screenshot publication never retries a Computer action itself.
+
+Console explicitly loads a retained screenshot through the [Run image API](05-runs.md#reads). The view labels it as a historical observation; it grants no input authority and is not a live desktop viewer.
+
 ## The thread stream
 
 Each thread has one Redis stream, `a13n:thread:{thread}`, written only by workers. It carries the in-flight tail of the thread's output; the committed display holds everything before it. An attempt appends two kinds of entries: output **deltas** carrying the run ID, attempt number, per-attempt sequence, a raw AG-UI `event` and its optional `item` reference; and a **boundary** marker after each checkpoint commit, carrying the sequence its display covers. Appends go through a bounded in-memory buffer (1024 entries) and a background writer, bounded by `redis.timeout`, so event delivery and checkpoint publication do not wait for Redis; a full buffer, a delta over 262144 bytes or a Redis failure drops output, which readers see as a gap. Nothing in the stream needs to survive: durable output is in display objects.

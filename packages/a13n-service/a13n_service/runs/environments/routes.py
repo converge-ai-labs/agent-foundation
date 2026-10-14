@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Response
 from a13n_service.infra.http import IfMatch, PageLimit, etag, tagged
 from a13n_service.runs.environments import mounts, service
 from a13n_service.runs.environments.schemas import (
+    ComputerCheck,
     EnvironmentPage,
     EnvironmentUpdate,
     EnvironmentView,
@@ -14,6 +15,7 @@ from a13n_service.runs.environments.schemas import (
     ManagedEnvironmentCreate,
     MountCreate,
     MountPage,
+    MountUpdate,
     MountView,
 )
 from a13n_service.runs.environments.tables import STATUSES
@@ -149,3 +151,33 @@ async def remove_mount(
 ) -> Response:
     version = await mounts.remove_mount(runtime.storage, actor, workspace_id, thread_id, name, if_match=if_match)
     return Response(status_code=204, headers={"ETag": etag(thread_id, version)})
+
+
+@router.patch("/threads/{thread_id}/environments/{name}", response_model=MountView, openapi_extra={"x-a13n-mcp": True})
+async def update_mount(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    name: str,
+    body: MountUpdate,
+    actor: Actor,
+    if_match: IfMatch = None,
+) -> MountView:
+    mount, version = await mounts.update_mount(
+        runtime.storage, actor, workspace_id, thread_id, name, body, if_match=if_match
+    )
+    response.headers["ETag"] = etag(thread_id, version)
+    return mount
+
+
+@router.post(
+    "/environments/{environment_id}/computer/check",
+    response_model=ComputerCheck,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def check_computer(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, environment_id: str, actor: Actor
+) -> ComputerCheck:
+    """Probe desktop readiness without capturing the screen, sending input or starting the instance."""
+    return await service.check_computer(runtime, actor, workspace_id, environment_id)

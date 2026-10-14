@@ -139,3 +139,13 @@ Review with Composer is unavailable for expected or false-positive Findings. Oth
 Agent tool settings place configuration, trace-query and finding tools under a collapsed Advanced / Platform Features disclosure. Opening it changes no selection. Group toggles preserve platform tools' individual enabled settings and permissions; configuration writes default to asking even when the draft omits a permission.
 
 Platform MCP groups and builtin operating Skills are independent `AgentConfig` selections, editable through advanced configuration JSON. Existing editors preserve both fields. Their permissions use the same tool review interface, displaying the exact operation and request arguments before approval; approval cannot widen the Run's server-enforced authority.
+
+## Computer Use configuration and observations
+
+The conversation header exposes a Computer permission summary and a direct link to environment settings, including explicit loading, failed, no-environment and mixed-permission states. Run Details displays each frozen mount ceiling separately from desired settings and explains that later changes do not affect that Run.
+
+Thread environment settings expose the Computer action ceiling as Off, Observe, Interact, or Custom. Only callers with `run` on an interactive open thread can edit it, including the primary `workspace` mount. Presets replace Computer actions while preserving every non-Computer action. Custom exact action sets remain visible and unchanged until a preset is selected. The form explains that the Agent Computer toolset and provider support are also required and edits affect later Runs.
+
+Tool entries offer an explicit screenshot preview when a retained image reference exists. Preview uses the authenticated Run image API, releases browser object URLs on close, and labels the image as the Agent's observation at that step. Pending or unavailable image reads remain retryable. This preview has no click, keyboard, takeover or live streaming behavior.
+
+Each environment mount shows separately labeled Computer permissions and desktop status. Permission labels describe allowed actions, never readiness. Desktop status starts as Not checked; callers with `run` can explicitly check it from the mount list. An unsupported result explicitly explains that granting permissions does not add desktop support. Results are labeled as the last check, not a live monitor. It reports unsupported, not running, observation-only, ready or failed states without conflating provider capability with Agent permission. A check never captures pixels, sends input or starts an environment. Exact input capabilities remain provider-dependent.

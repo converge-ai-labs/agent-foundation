@@ -456,6 +456,28 @@ async def run_attempts(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_i
 
 
 @router.get(
+    "/runs/{run_id}/images/{image_id}",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+            }
+        }
+    },
+)
+async def run_image(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, image_id: str, actor: Actor
+) -> Response:
+    """Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint."""
+    data, media_type = await runs.image(runtime, actor, workspace_id, run_id, image_id)
+    return Response(
+        data, media_type=media_type, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+    )
+
+
+@router.get(
     "/runs/{run_id}/attempts/{attempt_id}",
     response_model=AttemptView,
     openapi_extra=platform_operation("execution", "read"),

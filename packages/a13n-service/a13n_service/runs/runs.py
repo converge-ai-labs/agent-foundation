@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, TailPointer
-from a13n_service.runs.contents import ContentObject, decode
+from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunQuery, RunView
@@ -240,19 +241,27 @@ async def _load(runtime: Runtime, window: _Window) -> tuple[Tail, list[Page]]:
     )
 
 
-async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, content_id: str) -> RunContent:
+async def _content_ref(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    content_id: str,
+    *,
+    purpose: Literal["value", "image"],
+) -> ContentObject:
     """Read only values reachable from this run's committed tail or immutable pages; no object I/O in the session."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
         refs = TailPointer.model_validate(run.tail).refs if run.tail is not None else ()
-        ref = next((value for value in refs if value.id == content_id and value.purpose == "value"), None)
+        ref = next((value for value in refs if value.id == content_id and value.purpose == purpose), None)
         if ref is None:
             page_refs = await session.scalar(
                 select(RunItemPageRow.refs)
                 .where(
                     RunItemPageRow.run_id == run.id,
-                    RunItemPageRow.refs.contains([{"id": content_id, "purpose": "value"}]),
+                    RunItemPageRow.refs.contains([{"id": content_id, "purpose": purpose}]),
                 )
                 .limit(1)
             )
@@ -261,6 +270,22 @@ async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id:
             )
         if ref is None:
             raise not_found("run_content", content_id)
+    return ref
+
+
+async def image(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, image_id: str) -> tuple[bytes, str]:
+    ref = await _content_ref(runtime, actor, workspace_id, run_id, image_id, purpose="image")
+    if ref.media_type not in {"image/png", "image/jpeg"} or ref.size_bytes > MAX_IMAGE_BYTES:
+        raise not_found("run_image", image_id)
+    value = await checkpoints.load(runtime.objects, ref)
+    if len(value) != ref.size_bytes:
+        raise ServiceError("unavailable", "Image length does not match its reference", {"dependency": "objects"})
+    return value, ref.media_type
+
+
+async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, content_id: str) -> RunContent:
+    ref = await _content_ref(runtime, actor, workspace_id, run_id, content_id, purpose="value")
+    assert ref.media_type == "text/plain" or ref.media_type == "application/json"
     value = decode(await checkpoints.load(runtime.objects, ref), ref)
     return RunContent(id=ref.id, media_type=ref.media_type, value=value, truncated=ref.truncated)
 

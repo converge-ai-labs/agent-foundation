@@ -263,6 +263,7 @@ async def open_mounts(
         yield {
             source.mount.name: HarnessMount(
                 source=source,
+                permission_ceiling=source.mount.permission_ceiling,
                 working_directory=source.mount.working_directory,
                 mount_path=None if source.mount.name == PRIMARY else f"/mnt/{source.mount.name}",
                 provider_root=source.mount.working_directory or source.descriptor.working_directory,

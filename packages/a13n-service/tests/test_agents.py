@@ -83,6 +83,7 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     assert [toolset.key for toolset in catalogue.items] == [
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
@@ -109,6 +110,7 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     assert set(selected.toolsets) == {
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
@@ -828,6 +830,7 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
     assert [toolset["key"] for toolset in catalogue.json()["items"]] == [
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
@@ -992,3 +995,21 @@ async def test_workspace_media_defaults_fill_what_an_agent_leaves_unselected(ser
     assert disabled.status_code == 200, disabled.text
     # A default that stopped working leaves the kind unavailable instead of failing the agent's runs.
     assert await media() == {}
+
+
+def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choices() -> None:
+    legacy = config().toolsets
+    assert not legacy["computer"].enabled
+    assert not toolsets.environment_configuration(legacy).computer_enabled
+    legacy.pop("computer")
+    assert not toolsets.environment_configuration(legacy).computer_enabled
+    selected = config(
+        toolsets={
+            "computer": {"enabled": True, "tools": {"click": {"enabled": False}, "type_text": {"permission": "ask"}}}
+        }
+    )
+    projected = toolsets.environment_configuration(selected.toolsets)
+    assert projected.computer_enabled
+    assert "computer_observe" in projected.computer_tools
+    assert "computer_click" not in projected.computer_tools
+    assert selected.toolsets["computer"].tools["type_text"].permission == "ask"

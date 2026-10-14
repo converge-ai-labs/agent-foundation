@@ -21,7 +21,7 @@ from a13n_service.runs.environments.external import seal
 from a13n_service.runs.environments.lifecycle import Fault, Outcome, claim, perform, publish
 from a13n_service.runs.environments.lifecycle import advance as dispatch_pending
 from a13n_service.runs.environments.maintenance import maintain_environments
-from a13n_service.runs.environments.schemas import MAX_MOUNTS
+from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -110,7 +110,9 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     await interrupt(env, run["id"])
     next_run = await follow_up(env, thread_id, "use next directory")
     assert next_run.status_code == 201, next_run.text
-    assert changed in next_run.json()["run"]["environment_mounts"]
+    assert {**changed, "permission_ceiling": DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json")} in next_run.json()[
+        "run"
+    ]["environment_mounts"]
     assert (await client.get(f"{env.api}/runs/{run['id']}")).json()["environment_mounts"] == run["environment_mounts"]
 
 
@@ -124,7 +126,14 @@ async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new
     assert BACKEND.instances == {sandbox["id"]: "running"}
 
     # Mounted as `workspace` by a new thread, it replaces the primary sandbox the agent's template would reserve.
-    mounts = [{"name": "workspace", "environment_id": sandbox["id"], "working_directory": "/work/app"}]
+    mounts = [
+        {
+            "name": "workspace",
+            "environment_id": sandbox["id"],
+            "working_directory": "/work/app",
+            "permission_ceiling": DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json"),
+        }
+    ]
     submitted = await start(env, environments=mounts)
     assert submitted["run"]["environment_mounts"] == mounts
     listing = await client.get(f"{env.api}/threads/{submitted['thread']['id']}/environments")
@@ -183,7 +192,11 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
     thread = await runs_kit.get_thread(env, origin["thread"]["id"])
     added = await env.client.post(
         f"{env.api}/threads/{thread['id']}/environments",
-        json={"name": "data", "environment_id": first},
+        json={
+            "name": "data",
+            "environment_id": first,
+            "permission_ceiling": {"operations": ["environment.computer.observe"]},
+        },
         headers=runs_kit.if_match(thread),
     )
     assert added.status_code == 201, added.text
@@ -200,7 +213,11 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
         return [(mount["name"], mount["environment_id"]) for mount in response.json()["run"]["environment_mounts"]]
 
     extra = [{"name": "extra", "environment_id": second}]
-    assert mounted(await fork("shared", environments=extra)) == [("data", first), ("extra", second)]
+    shared = await fork("shared", environments=extra)
+    assert mounted(shared) == [("data", first), ("extra", second)]
+    assert shared.json()["run"]["environment_mounts"][0]["permission_ceiling"] == {
+        "operations": ["environment.computer.observe"]
+    }
     primary = [{"name": "workspace", "environment_id": second}]
     assert mounted(await fork("fresh", fresh_environments=True, environments=primary)) == [("workspace", second)]
     clash = await fork("clash", environments=[{"name": "data", "environment_id": second}])
@@ -566,6 +583,9 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
         key = await client.post(f"{accounts}/{account['id']}/keys", json={"name": role})
         bearers[role] = {"authorization": "Bearer " + key.json()["secret"]}
 
+    assert (
+        await client.post(f"{env.api}/environments/{environment_id}/computer/check", headers=bearers["viewer"])
+    ).status_code == 403
     templates = f"{env.api}/environment-templates"
     body = {"name": "Other", "provider_id": env.provider["id"]}
     assert (await client.post(templates, json=body, headers=bearers["runner"])).status_code == 403
@@ -593,6 +613,10 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
         )
         target.token = seal(env.runtime.keys, target, "laptop-token")
         session.add(target)
+    assert (
+        await client.post(f"{env.api}/environments/{device}/computer/check", headers=bearers["runner"])
+    ).status_code == 403
+
     assert (await environment(env, device))["device_id"] == "laptop"
     mounts = f"{env.api}/threads/{thread}/environments"
     version = (await client.get(mounts)).headers["etag"]
@@ -1212,3 +1236,153 @@ async def test_tool_first_use_rejects_invalid_mount_directory_without_breaking_i
     instance = await environment(env, identity)
     assert instance["status"] == "ready" and instance["failure"] is None
     assert not (root / "missing").exists()
+
+
+async def test_mount_permission_changes_are_versioned_and_frozen_per_run(env) -> None:
+    first = await start(env)
+    thread_id, run = first["thread"]["id"], first["run"]
+    path = f"{env.api}/threads/{thread_id}/environments"
+    listing = await env.client.get(path)
+    original = listing.json()["items"][0]["permission_ceiling"]
+    assert original == DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json")
+    assert not any(action.startswith("environment.computer.") for action in original["operations"])
+    body = {"permission_ceiling": {"operations": ["environment.computer.describe", "environment.computer.observe"]}}
+    assert (await env.client.patch(f"{path}/workspace", json=body)).status_code == 428
+    changed = await env.client.patch(f"{path}/workspace", json=body, headers={"if-match": listing.headers["etag"]})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["permission_ceiling"] == body["permission_ceiling"]
+    assert (
+        await env.client.patch(f"{path}/workspace", json=body, headers={"if-match": listing.headers["etag"]})
+    ).status_code == 412
+    current = (await env.client.get(f"{env.api}/runs/{run['id']}")).json()
+    assert current["environment_mounts"][0]["permission_ceiling"] == original
+    await interrupt(env, run["id"])
+    following = await follow_up(env, thread_id, "observe the desktop")
+    assert following.status_code == 201, following.text
+    assert following.json()["run"]["environment_mounts"][0]["permission_ceiling"] == body["permission_ceiling"]
+    invalid = await env.client.patch(
+        f"{path}/workspace",
+        json={"permission_ceiling": {"operations": ["computer.*"]}},
+        headers={"if-match": changed.headers["etag"]},
+    )
+    assert invalid.status_code == 400
+
+
+def test_old_run_mounts_keep_file_execution_defaults() -> None:
+    mount = EnvironmentMount.model_validate({"name": "workspace", "environment_id": "env_legacy"})
+    assert mount.permission_ceiling == DEFAULT_MOUNT_PERMISSIONS
+
+
+@pytest.mark.parametrize("tool_enabled,mount_enabled", [(True, True), (False, True), (True, False)])
+async def test_service_executes_computer_observation_and_retains_its_screenshot(
+    env, scripted_model, runs_kit, monkeypatch, tool_enabled, mount_enabled
+) -> None:
+    import base64
+    from datetime import UTC, datetime
+
+    from a13n_harness.environment.computer import ComputerDescription, ComputerObservation, ComputerScreenshot
+    from a13n_harness.environment.models import EnvironmentAvailability, EnvironmentPermissionSet
+    from a13n_harness.environment.operations import EnvironmentOperations
+
+    from . import environments_support as support
+
+    await runs_kit.pause_sweeps(env)
+    permissions = EnvironmentPermissionSet(operations={"environment.computer.observe", "environment.computer.describe"})
+    monkeypatch.setattr(
+        support,
+        "DESCRIPTOR",
+        support.DESCRIPTOR.model_copy(
+            update={"operation_families": frozenset({"computer"}), "permissions": permissions}
+        ),
+    )
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV2kAAAAASUVORK5CYII="
+    )
+    calls = []
+
+    class Desktop:
+        def __init__(self, execution):
+            self.execution = execution
+
+        async def describe(self):
+            return ComputerDescription(targets=(), observe_ready=True, input_ready=False)
+
+        async def observe(self, *, target_id=None, max_dimension=1280):
+            calls.append((target_id, max_dimension))
+            return ComputerScreenshot(
+                ComputerObservation(
+                    execution_id=self.execution.execution_id,
+                    observed_generation="g1",
+                    observation_id="frame-1",
+                    target_id="screen-1",
+                    width=1,
+                    height=1,
+                    mime_type="image/png",
+                    captured_at=datetime.now(UTC),
+                ),
+                png,
+            )
+
+    monkeypatch.setattr(
+        support.FakeExecution, "operations", property(lambda self: EnvironmentOperations(computer=Desktop(self)))
+    )
+    monkeypatch.setattr(
+        support.FakeExecution,
+        "availability",
+        property(lambda self: EnvironmentAvailability(status="available", ready_families=frozenset({"computer"}))),
+    )
+    agent = await runs_kit.create_agent(env, scripted_model, toolsets={"computer": {"enabled": tool_enabled}})
+    target = await reserve(env, env.template["id"])
+    started = await runs_kit.start_thread(
+        env,
+        agent,
+        "observe",
+        environments=[
+            {
+                "name": "workspace",
+                "environment_id": target["id"],
+                "permission_ceiling": (permissions if mount_enabled else DEFAULT_MOUNT_PERMISSIONS).model_dump(
+                    mode="json"
+                ),
+            }
+        ],
+    )
+    if tool_enabled and mount_enabled:
+        scripted_model.call("computer_observe", {}, call_id="observe")
+    scripted_model.say("Observed the desktop.")
+    await (await runs_kit.attempt(env))
+    run = await runs_kit.get_run(env, started["run"]["id"])
+    assert run["status"] == "completed", run
+    request = await scripted_model.request()
+    names = {tool["function"]["name"] for tool in request.get("tools", [])}
+    if not (tool_enabled and mount_enabled):
+        assert not calls
+        assert not any(name.startswith("computer_") for name in names)
+        return
+    assert calls == [(None, 1280)]
+    assert "computer_observe" in names and "computer_click" not in names
+    observed = await runs_kit.items(env, run["id"])
+    tool = next(item for item in observed["items"] if item["content"].get("toolCallId") == "observe")
+    [image] = tool["content"]["tool_images"]
+    response = await env.client.get(f"{env.api}/runs/{run['id']}/images/{image['id']}")
+    assert response.status_code == 200 and response.content == png
+
+
+async def test_computer_check_reports_unsupported_and_never_starts_stopped_targets(env) -> None:
+    target = await reserve(env, env.template["id"])
+    path = f"{env.api}/environments/{target['id']}/computer/check"
+    before = list(BACKEND.preparations)
+    response = await env.client.post(path)
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_ready"
+    assert BACKEND.preparations == before
+    await dispatch_pending(env.runtime, target["id"], owner="desktop-check-test")
+    response = await env.client.post(path)
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "unsupported",
+        "observe_ready": False,
+        "input_ready": False,
+        "display_count": 0,
+        "operations": [],
+    }

@@ -2928,6 +2928,47 @@
         "title": "ClientToolDefinition",
         "type": "object"
       },
+      "ComputerCheck": {
+        "description": "A point-in-time capability probe, not an Agent or mount permission grant.",
+        "properties": {
+          "display_count": {
+            "default": 0,
+            "title": "Display Count",
+            "type": "integer"
+          },
+          "input_ready": {
+            "default": false,
+            "title": "Input Ready",
+            "type": "boolean"
+          },
+          "observe_ready": {
+            "default": false,
+            "title": "Observe Ready",
+            "type": "boolean"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentAction"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "checked",
+              "unsupported",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ComputerCheck",
+        "type": "object"
+      },
       "Connection": {
         "properties": {
           "auth": {
@@ -4183,6 +4224,52 @@
         "title": "EntryView",
         "type": "object"
       },
+      "EnvironmentAction": {
+        "description": "Exact authorization values in the locked first-party catalog.",
+        "enum": [
+          "environment.file.stat",
+          "environment.file.read_text",
+          "environment.file.read_bytes",
+          "environment.file.write_text",
+          "environment.file.patch_text",
+          "environment.file.list",
+          "environment.file.query",
+          "environment.file.search_text",
+          "environment.file.mkdir",
+          "environment.file.move",
+          "environment.file.remove",
+          "environment.file.write_bytes",
+          "environment.file.copy_source",
+          "environment.file.copy_destination",
+          "environment.shell.exec",
+          "environment.process.list",
+          "environment.process.start",
+          "environment.process.inspect",
+          "environment.process.read_output",
+          "environment.process.write_stdin",
+          "environment.process.close_stdin",
+          "environment.process.signal",
+          "environment.process.wait",
+          "environment.process.kill",
+          "environment.process.release",
+          "environment.output.read",
+          "environment.output.release",
+          "environment.port.inspect",
+          "environment.port.wait",
+          "environment.state.export",
+          "environment.state.restore",
+          "environment.computer.describe",
+          "environment.computer.observe",
+          "environment.computer.click",
+          "environment.computer.move",
+          "environment.computer.drag",
+          "environment.computer.scroll",
+          "environment.computer.type_text",
+          "environment.computer.press_keys"
+        ],
+        "title": "EnvironmentAction",
+        "type": "string"
+      },
       "EnvironmentFailure": {
         "additionalProperties": false,
         "description": "The last error of the outstanding operation or, on a ready instance, of its last renewal.\n\n`unknown` means the call may have taken effect: only the same operation may continue. `permanent` failures\nrefuse new mounts and acceptance until the cause is fixed or the instance is deleted; `environment_lost` means\nthe provider no longer has the sandbox.",
@@ -4241,6 +4328,44 @@
             "title": "Name",
             "type": "string"
           },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Output",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          },
           "working_directory": {
             "anyOf": [
               {
@@ -4286,6 +4411,34 @@
           "next_cursor"
         ],
         "title": "EnvironmentPage",
+        "type": "object"
+      },
+      "EnvironmentPermissionSet-Input": {
+        "properties": {
+          "operations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentAction"
+            },
+            "title": "Operations",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "title": "EnvironmentPermissionSet",
+        "type": "object"
+      },
+      "EnvironmentPermissionSet-Output": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentAction"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "title": "EnvironmentPermissionSet",
         "type": "object"
       },
       "EnvironmentUpdate": {
@@ -8788,6 +8941,44 @@
             "title": "Name",
             "type": "string"
           },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          },
           "working_directory": {
             "anyOf": [
               {
@@ -8834,6 +9025,19 @@
         "title": "MountPage",
         "type": "object"
       },
+      "MountUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input"
+          }
+        },
+        "required": [
+          "permission_ceiling"
+        ],
+        "title": "MountUpdate",
+        "type": "object"
+      },
       "MountView": {
         "properties": {
           "environment_id": {
@@ -8843,6 +9047,44 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Output",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
           },
           "working_directory": {
             "anyOf": [
@@ -14222,6 +14464,7 @@
         "enum": [
           "files",
           "shell",
+          "computer",
           "web",
           "memory",
           "assets",
@@ -19938,6 +20181,75 @@
           }
         ],
         "summary": "Update Environment",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environments/{environment_id}/computer/check": {
+      "post": {
+        "description": "Probe desktop readiness without capturing the screen, sending input or starting the instance.",
+        "operationId": "check_computer_api_v1_environments__environment_id__computer_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputerCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Check Computer",
         "tags": [
           "environments"
         ],
@@ -26331,6 +26643,89 @@
         ]
       }
     },
+    "/api/v1/runs/{run_id}/images/{image_id}": {
+      "get": {
+        "description": "Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.",
+        "operationId": "run_image_api_v1_runs__run_id__images__image_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Run Image",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/v1/runs/{run_id}/interrupt": {
       "post": {
         "operationId": "interrupt_run_api_v1_runs__run_id__interrupt_post",
@@ -29709,6 +30104,110 @@
           }
         ],
         "summary": "Remove Mount",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      },
+      "patch": {
+        "operationId": "update_mount_api_v1_threads__thread_id__environments__name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MountUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MountView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Mount",
         "tags": [
           "environments"
         ],

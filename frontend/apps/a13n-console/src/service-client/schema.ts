@@ -793,6 +793,26 @@ export interface paths {
     patch: operations["update_environment_api_v1_environments__environment_id__patch"];
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/computer/check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check Computer
+     * @description Probe desktop readiness without capturing the screen, sending input or starting the instance.
+     */
+    post: operations["check_computer_api_v1_environments__environment_id__computer_check_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/stop": {
     parameters: {
       query?: never;
@@ -1742,6 +1762,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/images/{image_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Run Image
+     * @description Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.
+     */
+    get: operations["run_image_api_v1_runs__run_id__images__image_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/interrupt": {
     parameters: {
       query?: never;
@@ -2231,7 +2271,8 @@ export interface paths {
     delete: operations["remove_mount_api_v1_threads__thread_id__environments__name__delete"];
     options?: never;
     head?: never;
-    patch?: never;
+    /** Update Mount */
+    patch: operations["update_mount_api_v1_threads__thread_id__environments__name__patch"];
     trace?: never;
   };
   "/api/v1/threads/{thread_id}/inbox": {
@@ -4077,6 +4118,34 @@ export interface components {
        */
       permission?: "inherit" | "allow" | "deny";
     };
+    /**
+     * ComputerCheck
+     * @description A point-in-time capability probe, not an Agent or mount permission grant.
+     */
+    ComputerCheck: {
+      /**
+       * Display Count
+       * @default 0
+       */
+      display_count?: number;
+      /**
+       * Input Ready
+       * @default false
+       */
+      input_ready?: boolean;
+      /**
+       * Observe Ready
+       * @default false
+       */
+      observe_ready?: boolean;
+      /** Operations */
+      operations?: components["schemas"]["EnvironmentAction"][];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "checked" | "unsupported" | "not_ready";
+    };
     /** Connection */
     Connection: {
       auth: components["schemas"]["ConnectionAuth"];
@@ -4495,6 +4564,51 @@ export interface components {
       thread_id: string;
     };
     /**
+     * EnvironmentAction
+     * @description Exact authorization values in the locked first-party catalog.
+     * @enum {string}
+     */
+    EnvironmentAction:
+      | "environment.file.stat"
+      | "environment.file.read_text"
+      | "environment.file.read_bytes"
+      | "environment.file.write_text"
+      | "environment.file.patch_text"
+      | "environment.file.list"
+      | "environment.file.query"
+      | "environment.file.search_text"
+      | "environment.file.mkdir"
+      | "environment.file.move"
+      | "environment.file.remove"
+      | "environment.file.write_bytes"
+      | "environment.file.copy_source"
+      | "environment.file.copy_destination"
+      | "environment.shell.exec"
+      | "environment.process.list"
+      | "environment.process.start"
+      | "environment.process.inspect"
+      | "environment.process.read_output"
+      | "environment.process.write_stdin"
+      | "environment.process.close_stdin"
+      | "environment.process.signal"
+      | "environment.process.wait"
+      | "environment.process.kill"
+      | "environment.process.release"
+      | "environment.output.read"
+      | "environment.output.release"
+      | "environment.port.inspect"
+      | "environment.port.wait"
+      | "environment.state.export"
+      | "environment.state.restore"
+      | "environment.computer.describe"
+      | "environment.computer.observe"
+      | "environment.computer.click"
+      | "environment.computer.move"
+      | "environment.computer.drag"
+      | "environment.computer.scroll"
+      | "environment.computer.type_text"
+      | "environment.computer.press_keys";
+    /**
      * EnvironmentFailure
      * @description The last error of the outstanding operation or, on a ready instance, of its last renewal.
      *
@@ -4524,6 +4638,44 @@ export interface components {
       environment_id: string;
       /** Name */
       name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -4533,6 +4685,19 @@ export interface components {
       items: components["schemas"]["EnvironmentView"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** EnvironmentPermissionSet */
+    "EnvironmentPermissionSet-Input": {
+      /**
+       * Operations
+       * @default []
+       */
+      operations?: components["schemas"]["EnvironmentAction"][];
+    };
+    /** EnvironmentPermissionSet */
+    "EnvironmentPermissionSet-Output": {
+      /** Operations */
+      operations?: components["schemas"]["EnvironmentAction"][];
     };
     /**
      * EnvironmentUpdate
@@ -6064,6 +6229,44 @@ export interface components {
       environment_id: string;
       /** Name */
       name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -6074,12 +6277,54 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
+    /** MountUpdate */
+    MountUpdate: {
+      permission_ceiling: components["schemas"]["EnvironmentPermissionSet-Input"];
+    };
     /** MountView */
     MountView: {
       /** Environment Id */
       environment_id: string;
       /** Name */
       name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
       /** Working Directory */
       working_directory: string | null;
     };
@@ -7873,6 +8118,7 @@ export interface components {
     ToolsetKey:
       | "files"
       | "shell"
+      | "computer"
       | "web"
       | "memory"
       | "assets"
@@ -10004,6 +10250,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  check_computer_api_v1_environments__environment_id__computer_check_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ComputerCheck"];
         };
       };
       400: components["responses"]["Error"];
@@ -12303,6 +12576,35 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  run_image_api_v1_runs__run_id__images__image_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        image_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "image/jpeg": Binary;
+          "image/png": Binary;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   interrupt_run_api_v1_runs__run_id__interrupt_post: {
     parameters: {
       query?: never;
@@ -13416,6 +13718,40 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_mount_api_v1_threads__thread_id__environments__name__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MountUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MountView"];
+        };
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];

@@ -6,6 +6,9 @@ calls happen in the fenced lifecycle, never in the request. Registering an exter
 new endpoint or token, verifies the target outside any transaction first.
 """
 
+import anyio
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.models import COMPUTER_ACTIONS, EnvironmentError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +18,10 @@ from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.providers.service import resolve_provider
+from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import external
+from a13n_service.runs.environments.adapters import Target, close, execution_connector, provider_identity
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
     begin,
@@ -27,11 +33,14 @@ from a13n_service.runs.environments.lifecycle import (
     supports,
     unusable,
 )
+from a13n_service.runs.environments.mounts import require_usable
 from a13n_service.runs.environments.schemas import (
+    ComputerCheck,
     EnvironmentPage,
     EnvironmentUpdate,
     EnvironmentView,
     ExternalTargetCreate,
+    Handle,
     ManagedEnvironmentCreate,
 )
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
@@ -301,3 +310,47 @@ async def delete_environment(
         await session.flush()
         _audit(session, actor, environment, "delete")
         return EnvironmentView.model_validate(environment)
+
+
+async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str) -> ComputerCheck:
+    """Probe a ready target without starting it, observing pixels or dispatching input."""
+    async with short_session(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "run")
+        environment = await _find(session, scope, environment_id)
+        require_usable(environment, actor.id)
+        if environment.status != "ready":
+            return ComputerCheck(status="not_ready")
+        if environment.template_id is None:
+            target = Target(environment.id, external.account(environment), {}, None)
+        else:
+            assert environment.provider_id is not None
+            provider = await resolve_provider(session, actor, EnvironmentProviderRow, scope, environment.provider_id)
+            if environment.provider_identity != provider_identity(runtime.registry, provider):
+                raise conflict("environment", environment.id, "provider_identity_changed")
+            handle = Handle.model_validate(environment.handle)
+            target = Target(environment.id, provider, handle.recipe, handle.state)
+    execution = None
+    try:
+        with anyio.fail_after(runtime.settings.providers.operation_seconds):
+            connector = await execution_connector(runtime, target)
+            execution = await connector.open()
+            computer = execution.operations.computer
+            if computer is None:
+                return ComputerCheck(status="unsupported")
+            description = await computer.describe()
+            return ComputerCheck(
+                status="checked",
+                observe_ready=description.observe_ready,
+                input_ready=description.input_ready,
+                display_count=len(description.targets),
+                operations=sorted(execution.descriptor.permissions.operations & COMPUTER_ACTIONS),
+            )
+    except (EnvironmentProviderError, EnvironmentError, TimeoutError) as error:
+        raise ServiceError(
+            "unavailable",
+            "The desktop could not be checked",
+            {"reason": "environment_timeout" if isinstance(error, TimeoutError) else error.code},
+        ) from None
+    finally:
+        if execution is not None:
+            await close(execution)

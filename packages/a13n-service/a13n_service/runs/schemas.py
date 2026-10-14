@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from a13n_harness.configuration import RunConfiguration
+from a13n_harness.environment.models import EnvironmentPermissionSet
 from a13n_stream_protocol.display import DisplayContinuation
 from pydantic import (
     AfterValidator,
@@ -27,7 +28,7 @@ from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
 from a13n_service.runs.display import Item
-from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
+from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
 from a13n_service.tenancy.schemas import PrincipalSummary
 
@@ -332,6 +333,7 @@ class EnvironmentMount(_Frozen):
     name: str
     environment_id: str
     working_directory: str | None = None
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 
 
 class SessionCreate(_Frozen):

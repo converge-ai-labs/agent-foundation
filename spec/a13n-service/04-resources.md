@@ -69,7 +69,7 @@ agent_revisions   revision columns; config: AgentConfig
 
 - `model`: a model key, with `model_settings`, native settings for the model's calling API, and `model_characteristics`, the context characteristics the agent assumes.
 - `instructions`.
-- `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource.
+- `toolsets`: the built-in toolsets `files`, `shell`, `computer`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource. The `computer` toolset defaults off; its describe, observe and input tools retain per-tool permission policy and require a compatible, explicitly authorized [environment mount](06-environments.md#mounts).
 - `skills`: `{skill_id, revision_id}` selections, with one `skill_sync` policy ([Skill materialization](#skill-materialization)). An Agent revision stores the policy; `options.overrides.skill_sync` replaces the whole block for a Run.
 - `platform_tools`: selected platform MCP `groups`, with `read_permission` (default `allow`) and `write_permission` (default `ask`), each `allow`, `ask` or `deny`. Groups default empty.
 - `builtin_skills`: independently selected instance-local instructions; currently `platform-operations`, default empty. Neither selection grants tenant permissions.

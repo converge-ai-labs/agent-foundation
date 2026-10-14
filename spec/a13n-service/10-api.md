@@ -299,6 +299,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/runs/{run}/resume`                  | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
 | `/runs/{run}/items`                   | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/contents/{content}`      | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/images/{image}`          | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/lineage`                 | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/attempts`                | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/attempts/{attempt}`      | GET                | [05](05-runs.md#reads)                           |
@@ -313,7 +314,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/environments/{environment}`           | GET, PATCH, DELETE | [06](06-environments.md#stop-start-and-delete), [external targets](06-environments.md#external-targets) |
 | `/environments/{environment}/stop`      | POST               | [06](06-environments.md#stop-start-and-delete)                                                          |
 | `/threads/{thread}/environments`        | GET, POST          | [06](06-environments.md#mounts)                                                                         |
-| `/threads/{thread}/environments/{name}` | DELETE             | [06](06-environments.md#mounts)                                                                         |
+| `/threads/{thread}/environments/{name}` | PATCH, DELETE      | [06](06-environments.md#mounts)                                                                         |
 
 ### Memories
 
