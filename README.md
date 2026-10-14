@@ -16,6 +16,8 @@ Agent Foundation is an open-source library and platform for building and running
 - **Extend with Harness.** Embed the runtime directly and shape its behavior through plugins, custom tools, and providers.
 - **Explore with Harness UI.** Try models, tools, and agent configurations in a terminal and web playground—without building an application first.
 
+[![Terminal-Bench 4.0: A13N Harness 58.06% versus official Codex 58.77% scored pass rate across 62 tasks; inference cost across 61 matched tasks is $98.73 estimated versus $97.70 per round. Click for methodology and full results.](.github/assets/terminal-bench-4-comparison.png)](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
+
 > These guides track `main`. For an installed release, use its release notes and package metadata.
 
 ## Run Service with Docker Compose
