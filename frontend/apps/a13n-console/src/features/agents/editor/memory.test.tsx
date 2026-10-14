@@ -103,5 +103,34 @@ it("lists default memories read-only", async () => {
   expect(screen.queryByRole("button", { name: "Remove handbook" })).toBeNull();
   expect(screen.getByText("Read")).toBeTruthy();
   expect(screen.getByText("Recall")).toBeTruthy();
-  expect(screen.queryByRole("switch")).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Recall for facts" })).toBeNull();
+  expect(
+    screen
+      .getByRole("switch", { name: "Session memory" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("switch", { name: "Automatically organize saved memory" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+});
+
+it("edits session memory defaults without changing shared mounts", async () => {
+  const { user, draft } = show();
+  const mounts = draft().memoryMounts;
+  const memory = screen.getByRole("switch", { name: "Session memory" });
+  const organization = screen.getByRole("switch", {
+    name: "Automatically organize saved memory",
+  });
+  expect(memory.getAttribute("aria-checked")).toBe("false");
+  expect(organization.getAttribute("aria-disabled")).toBe("true");
+  await user.click(memory);
+  expect(draft().memory.enabled).toBe(true);
+  expect(organization.getAttribute("aria-disabled")).not.toBe("true");
+  expect(draft().memoryMounts).toEqual(mounts);
+  expect(draft().dirty).toBe(true);
+  await user.click(memory);
+  expect(draft().memory.enabled).toBe(false);
+  expect(organization.getAttribute("aria-disabled")).toBe("true");
 });
