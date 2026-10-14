@@ -34,21 +34,25 @@ Agent Composer 需要一个已启用且调用者有权使用的模型。准备�
 
 ## 可执行的操作
 
-Agent Composer 使用 `configuration` 工具集。每个工具都以启动该运行的主体身份执行，受该主体的权限约束：
+Agent Composer 与外部客户端共用平台 MCP 工具。Service 为当前 run 提供短期凭据，你不需要创建 API key。操作同时受用户当前权限、run 接受时的授权上限和所选工作空间限制。
 
-| 工具                    | 作用                                                                                  | 默认权限 |
-| ----------------------- | ------------------------------------------------------------------------------------- | -------- |
-| `find_resources`        | 列出 agent、模型、skill、连接或环境模板，每次 20 条。                                 | allow    |
-| `read_resource`         | 读取一个资源；模型按 key，其余按 ID。Agent 返回默认修订版本，或指定的 `revision_id`。 | allow    |
-| `describe_agent_config` | 返回 agent 配置 schema 和工具集目录。                                                 | allow    |
-| `create_agent`          | 使用名称、描述和配置创建 agent，返回 `agent_id` 和 `default_revision_id`。            | ask      |
-| `create_agent_revision` | 将完整配置添加为 agent 的新修订版本，默认将其设为默认修订版本。                       | ask      |
+| 工具组   | 支持的操作                                                                 |
+| -------- | -------------------------------------------------------------------------- |
+| Agent    | 创建、读取、重命名、修改标签、归档，以及配置修订版本和默认版本管理。       |
+| 模型     | 读取、创建和更新已配置的模型。                                             |
+| 连接     | 读取、创建、更新、发现工具和测试连接。                                     |
+| Skill    | 校验和导入上传包或公开 GitHub 来源、更新元数据和管理修订版本。             |
+| 环境模板 | 读取、创建和更新供后续实例使用的模板。                                     |
+| Provider | 读取有权访问的 provider；凭据通过 Console 配置。                           |
+| 执行查询 | 查询 session、thread、输入队列、run、attempt、展示内容、trace 和 finding。 |
 
-每次写入调用都会让运行进入 `waiting`，直到你给出[审批](agents-and-runs.md#waits-approvals-and-questions)；Console 显示拟执行的调用，供你批准或拒绝。验证错误或缺少权限等拒绝结果会返回 Agent Composer，由它说明。
+读取默认直接执行。写入和连接测试使用[审批](agents-and-runs.md#waits-approvals-and-questions)，Console 展示实际调用供你批准或拒绝。批准不会增加平台权限。
 
-修改 agent 时，Agent Composer 读取你指定的修订版本，否则读取默认修订版本，然后写入完整的新修订版本，保留所有未要求修改的字段。它只使用工具返回的模型 key 和资源 ID。
+修改 agent 时，Composer 读取所选修订版本，在完整新配置中保留无关字段，并使用最初读取的资源版本。发生并发修改时，它需要重新读取和审阅，不会偷偷替换成最新版本后继续写入。
 
-Agent Composer 不能重命名 agent、修改标签、归档 agent，也不能管理连接和 provider。它不会索取凭据值：请先自行配置连接，再让 Agent Composer 使用。
+内置 `platform-operations` skill 通过只读文件工具提供本地说明，不需要用户环境。Composer 可以在不知道 session ID 的情况下查找历史失败 run，并区分某次 attempt 失败与最终恢复成功。缺少 trace 证据时会明确说明。
+
+Composer 不编辑 skill 包内文件、不操作 memory、不配置 plugin、不控制环境实例，也不启动或取消 run。它不会索取秘密值；凭据和 OAuth 使用已有的 Console 连接或 provider 页面。写入结果不确定时，需要先查询状态再决定是否重试。
 
 ## 内置 agent 规则
 
@@ -56,4 +60,23 @@ Agent Composer 不能被编辑、添加修订版本、归档或设置头像（�
 
 ## 在自己的 agent 中使用工具集
 
-任何 agent 都可以在修订版本中启用 `configuration` 工具集。写入工具默认设为 `ask`；修订版本可以为每个工具设置其他[权限](agents-and-runs.md#tool-permissions)。
+任何 agent 都可以通过高级配置 JSON 分别选择平台工具组和本地操作 skill：
+
+```json
+{
+  "platform_tools": {
+    "groups": ["agents", "models", "skills", "execution"],
+    "read_permission": "allow",
+    "write_permission": "ask"
+  },
+  "builtin_skills": ["platform-operations"]
+}
+```
+
+两项选择默认均为空。权限可设为 `allow`、`ask` 或 `deny`。只启用 skill 不会获得操作权限。后续修改配置不会扩大正在执行的 run 的授权或工具范围。
+
+内置 Skill 通过 Worker 的只读本地 Environment 读取随包发布的文档，不需要用户 Environment 或容器。它与用户 Skill 共用 Harness 的目录和读取事件机制，同时启用时显示在同一个目录中。Agent 配置 schema 随文档一起发布，位于 `/platform-skills/platform-operations/schemas`。`/platform-instance` 中的实例目录在进程启动时生成一次，供后续 attempt 共用。
+
+读取所选 Skill 需要启用标准文件工具：`view`、`ls`、`glob` 和 `grep`。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
+
+已有 agent 仍可使用旧的 `configuration` 工具集。它的 `create_agent_revision` 现在要求提供原始读取结果中的 `expected_version`；缺少该值时，需要重新读取并提交新的调用。历史 run 保留原有工具。

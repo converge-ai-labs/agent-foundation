@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from a13n_service.infra.http import PageLimit
+from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.connector_providers import catalog
 from a13n_service.resources.connector_providers.schemas import ConnectorActionPage, ConnectorApp, ConnectorAppPage
 from a13n_service.resources.requests import CurrentRuntime
@@ -13,7 +14,7 @@ from a13n_service.tenancy.requests import Actor, WorkspaceId
 router = APIRouter(prefix="/api/v1/connector-providers/{provider_id}", tags=["connections"])
 
 
-@router.get("/apps", response_model=ConnectorAppPage, openapi_extra={"x-a13n-mcp": True})
+@router.get("/apps", response_model=ConnectorAppPage, openapi_extra=platform_operation("connections", "read"))
 async def list_apps(
     workspace_id: WorkspaceId,
     provider_id: str,
@@ -41,7 +42,7 @@ async def list_apps(
     )
 
 
-@router.get("/apps/{app}", response_model=ConnectorApp, openapi_extra={"x-a13n-mcp": True})
+@router.get("/apps/{app}", response_model=ConnectorApp, openapi_extra=platform_operation("connections", "read"))
 async def get_app(
     workspace_id: WorkspaceId, provider_id: str, app: str, actor: Actor, runtime: CurrentRuntime
 ) -> ConnectorApp:
@@ -58,7 +59,9 @@ async def get_app(
     )
 
 
-@router.get("/apps/{app}/actions", response_model=ConnectorActionPage, openapi_extra={"x-a13n-mcp": True})
+@router.get(
+    "/apps/{app}/actions", response_model=ConnectorActionPage, openapi_extra=platform_operation("connections", "read")
+)
 async def list_actions(
     workspace_id: WorkspaceId, provider_id: str, app: str, actor: Actor, runtime: CurrentRuntime
 ) -> ConnectorActionPage:

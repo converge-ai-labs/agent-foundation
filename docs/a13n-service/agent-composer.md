@@ -34,21 +34,25 @@ When the workspace has no usable model, preparing fails with `409 conflict` and 
 
 ## What it can do
 
-Agent Composer uses the `configuration` toolset. Every tool acts as the principal who started the run, within that principal's permissions:
+Agent Composer uses the same platform MCP tools as external clients. The Service supplies a short-lived credential for the current run; you do not need to create an API key. Operations remain limited by your current permissions, the run's accepted authority and its selected workspace.
 
-| Tool                    | Effect                                                                                                                               | Default permission |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
-| `find_resources`        | Lists agents, models, skills, connections or environment templates, 20 at a time.                                                    | allow              |
-| `read_resource`         | Reads one of them, a model by key and anything else by ID; an agent is returned at its default revision, or the named `revision_id`. | allow              |
-| `describe_agent_config` | Returns the agent configuration schema and the toolset catalog.                                                                      | allow              |
-| `create_agent`          | Creates an agent with a name, description and configuration, and returns its `agent_id` and `default_revision_id`.                   | ask                |
-| `create_agent_revision` | Adds a complete configuration as a new revision of an agent, by default making it the default revision.                              | ask                |
+| Group                 | Available work                                                                                |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| Agents                | Create, read, rename, label, archive and manage configuration revisions and defaults.         |
+| Models                | Read, create and update configured models.                                                    |
+| Connections           | Read, create, update, discover tools and test connections.                                    |
+| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions. |
+| Environment templates | Read, create and update templates for later instances.                                        |
+| Providers             | Read authorized provider resources; configure credentials through Console.                    |
+| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings. |
 
-Each write call puts the run in `waiting` until you give your [approval](agents-and-runs.md#waits-approvals-and-questions); Console shows the proposed call to approve or deny. Refusals, such as a validation error or a missing permission, are returned to Agent Composer, which reports them.
+Reads run directly by default. Writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions); Console shows the exact call to approve or deny. Approval does not grant additional platform permissions.
 
-To change an agent, Agent Composer reads the revision you name, or else its default revision, and writes a whole new revision that keeps every field you did not ask to change. It uses only the model keys and resource IDs its tools returned.
+To change an agent, Composer reads the selected revision and preserves unrelated fields in a complete new configuration. It retains the resource version originally read. A concurrent change causes a conflict and requires a fresh read and review. It never silently replaces the original version with the latest one.
 
-Agent Composer does not rename agents or change their labels, archive them, or manage connections and providers. It never asks for credential values: set up connections yourself, then ask Agent Composer to use them.
+The built-in `platform-operations` skill supplies local instructions through read-only file tools. It needs no user environment. Composer can diagnose a past failed run without knowing its session ID, and distinguishes a failed attempt from a run that later recovered. Missing trace evidence is reported as a limitation.
+
+Composer does not edit skill package files, operate memory, configure plugins, control environment instances or start/cancel runs. It never asks for secret values; use the existing Console connection or provider page for credentials and OAuth. Unknown write outcomes require checking resource state before retrying.
 
 ## Built-in agent rules
 
@@ -56,4 +60,23 @@ Agent Composer cannot be edited, revised, archived or given an avatar (`409 conf
 
 ## Use the toolset in your own agents
 
-Any agent can enable the `configuration` toolset in its revision. Its write tools default to `ask`; a revision can set another [permission](agents-and-runs.md#tool-permissions) for each tool.
+Any agent can independently select platform groups and the local operating skill through its advanced configuration JSON:
+
+```json
+{
+  "platform_tools": {
+    "groups": ["agents", "models", "skills", "execution"],
+    "read_permission": "allow",
+    "write_permission": "ask"
+  },
+  "builtin_skills": ["platform-operations"]
+}
+```
+
+Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. Selecting the skill alone grants no operations. A later configuration change does not widen an active run's authority or tool selection.
+
+The built-in Skill reads packaged documents through a read-only local Environment in the Worker. It requires no user Environment or container. Its catalog and read events use the same Harness Skills lifecycle as user Skills; when both are selected, they appear in one catalog. The Agent configuration schema ships with the documents under `/platform-skills/platform-operations/schemas`. The deployment-specific catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
+
+Keep the standard file tools enabled to read the selected Skill: `view`, `ls`, `glob` and `grep`. Composer enables only these four file tools. Builtin document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
+
+Existing agents can still use the legacy `configuration` toolset. Its `create_agent_revision` now requires the `expected_version` from the original resource read; calls missing that value must read again and submit a new request. Historical runs retain their original tools.

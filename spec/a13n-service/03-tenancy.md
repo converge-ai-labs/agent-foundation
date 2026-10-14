@@ -123,6 +123,8 @@ class Authenticated:
     principal: Principal     # validated identity, current grants and confinement
     credential_id: str
     kind: str                # the local authenticator issues "session" and "key"
+    authority: ExecutionAuthority | None   # an accepted execution's ceiling, when present
+    platform: PlatformAccess | None        # selected operation groups and source Run/Attempt IDs
 
 class Authenticator(Protocol):
     async def authenticate(self, request: Request, response: Response) -> Authenticated | None: ...
@@ -131,7 +133,7 @@ class Authenticator(Protocol):
     async def logout(self, request: Request, response: Response, credential: Authenticated) -> None: ...
 ```
 
-Long-lived requests such as thread streams call `recheck` and reload current status and grants on their refresh interval ([07](07-facts-and-delivery.md#the-thread-stream)). Membership, grant, API-key, service-account and account management keep working under a replacement, because they are tenancy functions that take a principal value. The local account routes stay installed; session restore (`GET /auth/session`) requires a local login session (403 `forbidden` otherwise).
+Long-lived requests such as thread streams call `recheck` and reload current status and grants on their refresh interval ([07](07-facts-and-delivery.md#the-thread-stream)). Refresh preserves credential confinement and intersects current grants with any accepted execution ceiling. Membership, grant, API-key, service-account and account management keep working under a replacement, because they are tenancy functions that take a principal value. The local account routes stay installed; session restore (`GET /auth/session`) requires a local login session (403 `forbidden` otherwise).
 
 ## Authorization
 
@@ -223,6 +225,18 @@ class ExecutionAuthority:       # conceptual; stored as JSON on inbox entries an
 Accepting work requires `run` in the workspace and records the caller's verbs there, already narrowed by credential confinement. Successor and child runs inherit their parent's authority unchanged ([05](05-runs.md)). Every later use authorizes against both the ceiling and the principal's current status and grants, confined to the run's workspace: the ceiling must name the verb, the target must lie in its workspace, and the principal must currently hold the verb. Revoking grants or disabling the principal narrows or stops execution; a grant added later never widens it. An archived workspace stops execution: acceptance refuses it with `disabled`, so a queued or new entry fails in place, and attempt planning and every authority renewal treat it as lost authority, so a running run fails with `authority_revoked` within `worker.authority_seconds` ([05](05-runs.md#claim-heartbeat-and-authority)). Service tools and resource resolution during execution use this authority and the run's principal, never an identity of the worker.
 
 Credential expiry, logout and API-key revocation stop further requests, not accepted work. Accepted work is stopped by interrupt, by disabling the principal, by removing its grants or by archiving the workspace. The worker rechecks authority every `worker.authority_seconds`, and a run whose principal lost it fails with `authority_revoked` ([05](05-runs.md#claim-heartbeat-and-authority)); calls already dispatched still complete.
+
+### Run platform credentials
+
+Application assembly composes Run credential authentication with the Distribution's authenticator. All requests obtain credentials through the same `Authenticator` contract; Run credentials are handled by their execution owner, and other credentials are delegated to the Distribution. Execution owns issuance and liveness, including long-lived-request rechecks. HTTP and MCP own operation admission and audit context using the authenticated credential's restrictions and origin; they do not decode credentials or replace authentication through separate Run-specific request state.
+
+A trusted Worker holding the current unexpired Attempt lease may issue a short-lived platform credential for the Host's frozen tool selection. It is an encrypted, purpose-bound claim using the Service key ring, valid for at most five minutes, referencing the accepted Run, Attempt, lease digest and selected operation groups. There is no model-visible or public mint/refresh endpoint, and no caller-supplied principal or authority. The persisted Run supplies identity, workspace and acceptance ceiling.
+
+Every MCP or direct HTTP request validates token integrity and expiry, the Run's running and non-cancelled state, current Attempt and lease, active principal and workspace, and current execution authority. The resulting principal is confined to the Run's workspace with the intersection of current verbs and the persisted ceiling. New grants never widen old work. Session logout or expiry/revocation of the original accepting API key does not revoke this independent accepted-work credential. Cancelled/sealed Runs and expired, yielded or replaced Attempts cannot issue or use it.
+
+The HTTP boundary admits only explicitly marked platform operations in the selected groups. MCP discovery and invocation apply that same metadata. Account, permission and credential management, execution control, browser authorization and unselected operations refuse even if addressed directly. Forwarding preserves the Run token; it never substitutes a broader user credential. Existing business authorization and version checks still apply.
+
+The Host refreshes before sending requests and never retries an unknown write as part of refresh. Accepted calls retain their ordinary completion semantics; revocation does not undo effects already committed. Audit keeps the actual actor and adds source Run, Attempt and request IDs. Tokens, lease secrets, cookies and credential headers remain outside model-visible values and stored Agent configuration.
 
 ## Tenant integrity
 

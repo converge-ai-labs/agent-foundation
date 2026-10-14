@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import get_args
 
 import pytest
+from a13n_service.api_tools import tool_name
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import correlation_attributes
@@ -442,21 +443,33 @@ async def test_analysis_backend_unavailable_and_delegated_tool_authority(service
     assert "delegation" in str(denied.value).lower() or "forbidden" in str(denied.value).lower()
 
 
-async def test_composer_reads_durable_finding_without_changing_the_target(service, scripted_model, runs_kit):
+async def test_composer_reads_durable_finding_without_changing_the_target(service, scripted_model, runs_kit, listen):
     agent, run = await target(service, scripted_model, runs_kit)
     created = await service.client.post("/api/v1/findings", json=finding(agent, run))
     assert created.status_code == 201, created.text
     composer = await service.client.post("/api/v1/agent-composer")
     assert composer.status_code == 200, composer.text
-    scripted_model.call("read_finding", {"finding_id": created.json()["id"]}, call_id="read-finding")
+    paths = service.app.openapi()["paths"]
+    read_finding = tool_name(paths["/api/v1/findings/{finding_id}"]["get"]["operationId"])
+    scripted_model.call(read_finding, {"finding_id": created.json()["id"]}, call_id="read-finding")
     scripted_model.say("Review the suggestion before approving a change.")
     started = await runs_kit.start_thread(service, composer.json(), "Review " + created.json()["id"])
-    await (await runs_kit.attempt(service))
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        await (await runs_kit.attempt(service, runtime=runtime))
     assert (await runs_kit.get_run(service, started["run"]["id"]))["status"] == "completed"
     while not scripted_model.requests.empty():
         request = scripted_model.requests.get_nowait()
     names = {tool["function"]["name"] for tool in request["tools"]}
-    assert {"read_finding", "read_trace", "create_agent_revision"} <= names
+    assert {
+        read_finding,
+        tool_name(paths["/api/v1/agents/{agent_id}/revisions"]["post"]["operationId"]),
+        "view",
+    } <= names
     assert "submit_finding" not in names and "report_analysis" not in names
     assert finding(agent, run)["suggestion"] in str(request["messages"])
     unchanged = (await service.client.get(f"/api/v1/agents/{agent['id']}")).json()
@@ -474,6 +487,8 @@ async def test_final_findings_migration_backfills_composer_and_preserves_other_h
     await runs_kit.create_model(service, scripted_model)
     composer = (await service.client.post("/api/v1/agent-composer")).json()
     finder = (await service.client.post("/api/v1/finding-agent")).json()
+    # Drain maintenance before synchronous DDL can block the event loop while waiting for its locks.
+    await service.runtime.tasks.close(timeout=service.runtime.settings.server.shutdown_timeout)
     with migration_connection(database, OSS) as config:
         final = ScriptDirectory.from_config(config).get_revision("797996a323b1")
         assert final is not None and final.down_revision == "7dc8ec393cc1"

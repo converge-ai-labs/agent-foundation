@@ -123,6 +123,7 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
 
 /** The one line of prose that follows the name: what the step was about. */
 export function entrySubject(entry: TimelineEntry): string {
+  if (entry.kind === "event") return noticeDetail(entry.notice);
   if (!("arguments" in entry))
     return "text" in entry ? resultExcerpt(entry.text, 140) : "";
   // A human request is described by what it asks, not by its raw arguments.
@@ -202,19 +203,26 @@ function noticeText(notice: LifecycleNotice, t: TFunction): string {
           delay: notice.delaySeconds,
         })
       : t("Model retry scheduled");
-  const head =
-    notice.status === "failed"
-      ? t("Run failed")
-      : notice.status === "cancelled"
-        ? t("Run cancelled")
-        : notice.reason === "approval"
-          ? t("Waiting for approval")
-          : notice.reason === "multiple"
-            ? t("Waiting for approvals and call results")
-            : t("Waiting for call results");
-  // A wait's head already names its reason; only a stop adds one.
-  const reason = notice.status === "waiting" ? null : notice.reason;
-  return [head, reason, notice.message].filter(Boolean).join(" · ");
+  return notice.status === "failed"
+    ? t("Run failed")
+    : notice.status === "cancelled"
+      ? t("Run cancelled")
+      : notice.reason === "approval"
+        ? t("Waiting for approval")
+        : notice.reason === "multiple"
+          ? t("Waiting for approvals and call results")
+          : t("Waiting for call results");
+}
+
+/** What follows a lifecycle fact's head: a stop's reason and its message. */
+function noticeDetail(notice: LifecycleNotice): string {
+  if (notice.kind !== "outcome") return "";
+  // A wait's head already names its reason, and a stop's head its status.
+  const reason =
+    notice.status === "waiting" || notice.reason === notice.status
+      ? null
+      : notice.reason;
+  return [reason, notice.message].filter(Boolean).join(" · ");
 }
 
 function noticeGlyph(notice: LifecycleNotice): Icon {
@@ -231,11 +239,13 @@ export function StateMark({
   state,
   size = 12,
   decorative = false,
+  className,
 }: {
   state: WorkState;
   size?: number;
   /** The surrounding text already says it; the mark is then only a tint. */
   decorative?: boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   if (state === "unknown") return null;
@@ -261,7 +271,7 @@ export function StateMark({
             : CheckIcon;
   return (
     <span
-      className={styles.mark}
+      className={className ? `${styles.mark} ${className}` : styles.mark}
       data-state={state}
       {...(decorative
         ? { "aria-hidden": "true" as const }

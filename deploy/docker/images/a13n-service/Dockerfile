@@ -43,8 +43,10 @@ COPY packages/a13n-stream-protocol packages/a13n-stream-protocol
 COPY packages/a13n-logging packages/a13n-logging
 COPY packages/a13n-service packages/a13n-service
 COPY docs/a13n-service docs/a13n-service
+COPY scripts/export-a13n-service-openapi.py scripts/export-a13n-service-openapi.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package a13n-service \
+    && uv run --no-sync python scripts/export-a13n-service-openapi.py --skills-only \
     && rm -rf packages/a13n-envd-client/tests \
         packages/a13n-harness/tests \
         packages/a13n-stream-protocol/tests \

@@ -440,7 +440,8 @@ a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production 
 	@pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
 .PHONY: a13n-service-assets
-a13n-service-assets: a13n-console-build ## Place the Console production build in the a13n-service package it serves from
+a13n-service-assets: a13n-console-build ## Prepare bundled Skill schemas and Console production assets
+	@uv run --locked python scripts/export-a13n-service-openapi.py --skills-only
 	@rm -rf packages/a13n-service/a13n_service/static
 	@cp -R frontend/apps/a13n-console/dist packages/a13n-service/a13n_service/static
 

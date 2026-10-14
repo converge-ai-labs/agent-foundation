@@ -15,6 +15,7 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.infra.platform import PlatformGroup
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
@@ -156,6 +157,14 @@ class PluginSelection(_Frozen):
     config: JsonObject = Field(default_factory=dict)
 
 
+class PlatformSelection(_Frozen):
+    """Platform MCP groups selected independently of local operating instructions."""
+
+    groups: frozenset[PlatformGroup] = frozenset()
+    read_permission: Literal["allow", "ask", "deny"] = "allow"
+    write_permission: Literal["allow", "ask", "deny"] = "ask"
+
+
 class AgentConfig(_Frozen):
     model: Key
     # Native settings layered over the model's own defaults.
@@ -166,6 +175,8 @@ class AgentConfig(_Frozen):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
+    platform_tools: PlatformSelection = Field(default_factory=PlatformSelection)
+    builtin_skills: frozenset[Literal["platform-operations"]] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
     user_questions: bool = False
@@ -232,6 +243,8 @@ class AgentOverride(_Frozen):
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
     skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
+    platform_tools: PlatformSelection | None = None
+    builtin_skills: frozenset[Literal["platform-operations"]] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
@@ -250,6 +263,8 @@ _REPLACED = (
     "skills",
     "skill_sync",
     "connection_tools",
+    "platform_tools",
+    "builtin_skills",
     "client_tools",
     "output_spec",
 )

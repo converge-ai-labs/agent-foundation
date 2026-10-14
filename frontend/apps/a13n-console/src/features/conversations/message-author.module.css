@@ -7,12 +7,14 @@
   max-width: 100%;
   font-size: var(--a13n-text-xs);
 }
+/* A layout that keeps glyphs in their own column sets the two variables. */
 .trigger {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--author-gap, 5px);
   min-width: 0;
   max-width: 100%;
+  margin-left: var(--author-inset, 0);
   border: 0;
   border-radius: 5px;
   padding: 2px 3px;

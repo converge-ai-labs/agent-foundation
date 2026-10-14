@@ -405,5 +405,9 @@
   "Run Image": "读取运行截图",
   "A point-in-time capability probe, not an Agent or mount permission grant.": "某一时刻的环境能力检查，不授予 Agent 或挂载权限。",
   "Check Computer": "检查桌面",
-  "Probe desktop readiness without capturing the screen, sending input or starting the instance.": "检查桌面就绪状态，不截图、不发送输入，也不启动实例。"
+  "Probe desktop readiness without capturing the screen, sending input or starting the instance.": "检查桌面就绪状态，不截图、不发送输入，也不启动实例。",
+  "List Runs": "列出运行",
+  "Get Attempt": "读取执行尝试",
+  "Platform MCP groups selected independently of local operating instructions.": "独立于本地操作说明选择的平台 MCP 工具组。",
+  "Workspace execution search; timestamps bound creation time, newest first.": "工作空间执行查询；按创建时间范围筛选，最新记录在前。"
 }

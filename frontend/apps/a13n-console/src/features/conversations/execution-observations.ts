@@ -130,14 +130,21 @@ export function applyObservation(
         });
       if (type === "model_request_completed")
         return updateStep(next, at, id, { state: "completed" });
-      if (type === "model_request_failed")
-        return updateStep(next, at, id, {
-          state: "failed",
-          errorCode:
-            typeof payload.error_code === "string"
-              ? payload.error_code
-              : undefined,
-        });
+      if (type === "model_request_failed") {
+        const errorCode =
+          typeof payload.error_code === "string"
+            ? payload.error_code
+            : undefined;
+        // A cancelled request was stopped, not failed.
+        return updateStep(
+          next,
+          at,
+          id,
+          errorCode === "cancelled"
+            ? { state: "interrupted" }
+            : { state: "failed", errorCode },
+        );
+      }
     }
   }
   if (name === "a13n.harness.recovery" && type === "model_retry_scheduled") {

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from functools import partial
 
 from a13n_harness import HarnessInstrumentation
+from a13n_harness.environment import EnvironmentMount
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from redis.asyncio import Redis
@@ -30,6 +31,7 @@ class Runtime:
     keys: KeyRing
     settings: Settings
     registry: Registry
+    platform_mounts: dict[str, EnvironmentMount]
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     tasks: Tasks

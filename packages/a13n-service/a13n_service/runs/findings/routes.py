@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Response
 
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.agents import presets
 from a13n_service.resources.agents.schemas import Agent
 from a13n_service.runs.findings import analysis, preset, service
@@ -57,7 +58,7 @@ async def start_analysis(
     return result
 
 
-@router.get("/finding-analyses", response_model=AnalysisPage, openapi_extra={"x-a13n-mcp": True})
+@router.get("/finding-analyses", response_model=AnalysisPage, openapi_extra=platform_operation("execution", "read"))
 async def list_analyses(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, limit: PageLimit = 20, cursor: str | None = None
 ) -> AnalysisPage:
@@ -71,7 +72,7 @@ async def create_finding(
     return tagged(response, await service.create_finding(runtime.storage, actor, workspace_id, body))
 
 
-@router.get("/findings", response_model=FindingPage, openapi_extra={"x-a13n-mcp": True})
+@router.get("/findings", response_model=FindingPage, openapi_extra=platform_operation("execution", "read"))
 async def list_findings(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -98,7 +99,7 @@ async def list_findings(
     )
 
 
-@router.get("/findings/{finding_id}", response_model=Finding, openapi_extra={"x-a13n-mcp": True})
+@router.get("/findings/{finding_id}", response_model=Finding, openapi_extra=platform_operation("execution", "read"))
 async def get_finding(
     response: Response, runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, finding_id: str
 ) -> Finding:

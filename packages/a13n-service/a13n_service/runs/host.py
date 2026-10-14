@@ -12,14 +12,16 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 
-from a13n_harness import AgentContext, RunBindings, RunConfiguration
+from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
+from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.resources.agents.schemas import SharedSkillSync
+from a13n_service.infra.errors import ServiceError
+from a13n_service.resources.agents.schemas import PlatformSelection, SharedSkillSync
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
     enabled_tools,
@@ -33,6 +35,7 @@ from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
+from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.findings.tools import FindingCapability
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
@@ -40,6 +43,8 @@ from a13n_service.runs.memories.execution import (
     record_memory_capability,
     resolve_memories,
 )
+from a13n_service.runs.platform_files import SOURCE
+from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
@@ -53,6 +58,8 @@ class _Parts:
     connections: tuple[SelectedConnection, ...]
     web: ResolvedWeb | None
     skills: tuple[PinnedSkill, ...]
+    platform: PlatformSelection
+    builtin_skill: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +96,8 @@ async def resolve_host(
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
             skills=await resolve_skills(session, run, config.skills, sync=config.skill_sync),
+            platform=config.platform_tools,
+            builtin_skill="platform-operations" in config.builtin_skills,
         )
     return HostPlan(
         parts,
@@ -111,17 +120,20 @@ class Host:
     webs: Mapping[str, WebBinding]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
+    environment: EnvironmentRuntime
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
         features = list(self.tools[agent.revision_id])
-        skills = self.plan.parts[agent.revision_id].skills
+        parts = self.plan.parts[agent.revision_id]
+        skills = parts.skills
         sync = agent.config.skill_sync
-        if skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
+        if parts.builtin_skill or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
                 skills_capability(
                     skills,
                     cache=self.skill_cache,
+                    builtin=SOURCE if parts.builtin_skill else None,
                     sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
@@ -164,10 +176,12 @@ async def open_host(
     cursors: MemoryCursors,
     configuration: RunConfiguration,
     skill_cache: Cache,
+    environments: Mapping[str, EnvironmentMount],
 ) -> AsyncIterator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
+        platform_mounts = runtime.platform_mounts if any(parts.builtin_skill for parts in plan.parts.values()) else {}
         tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
         webs: dict[str, WebBinding] = {}
         for revision_id, parts in plan.parts.items():
@@ -183,6 +197,9 @@ async def open_host(
                     settings=runtime.settings.providers,
                 )
             )
+            if parts.platform.groups:
+                platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
+                tools[revision_id] += (platform,)
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)
@@ -209,4 +226,24 @@ async def open_host(
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, principal, authority, plan, models, skill_cache, tools, webs, memory)
+        yield Host(
+            runtime,
+            lease,
+            principal,
+            authority,
+            plan,
+            models,
+            skill_cache,
+            tools,
+            webs,
+            memory,
+            _environment(environments, platform_mounts),
+        )
+
+
+def _environment(user: Mapping[str, EnvironmentMount], builtin: Mapping[str, EnvironmentMount]) -> EnvironmentRuntime:
+    """Preserve the user's default while adding non-default Host document mounts."""
+    if user.keys() & builtin.keys():
+        raise ServiceError("invalid_argument", "Environment names conflict with builtin Skill mounts")
+    default = PRIMARY if PRIMARY in user else next(iter(user)) if len(user) == 1 else None
+    return create_environment_runtime(mounts={**user, **builtin}, default_mount=default)

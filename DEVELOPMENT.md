@@ -44,6 +44,14 @@ Organize business code by feature and add layers only for a real capability; do 
 - Durable asynchronous lifecycles use idempotent sweeps and fenced attempts. Model, tool, Redis, and stream waits happen outside database transactions.
 - Process-role wiring selects routers and bounded background work; roles share the same domain models. [Runtime composition](spec/a13n-service/09-runtime.md) owns their business contributions.
 
+### Built-in Agent Skill Consistency
+
+When a change alters a resource schema, tool signature or behavior, provider definition or capability, or configuration lifecycle covered by a built-in agent Skill, update the affected `SKILL.md`, reference documents, examples, and generated schema assets in the same change. Apply this rule to Distribution-contributed providers as well as built-in providers. Resource-specific operating guidance belongs in the Skill's references; keep general agent instructions limited to responsibilities and rules that must always apply.
+
+Generate machine-readable schema assets from the owning request models, tool definitions, and provider registry instead of maintaining a second handwritten schema. Release-bundled files must match the consuming release. Any deployment-specific provider descriptions must reflect the assembled registry and remain consistent for the execution that reads them; a packaged list of supported types must not be presented as the deployment's enabled inventory.
+
+Validate affected Skill links, generated schema consistency, and examples against their owning contracts. When changing an input covered by a Skill, verify its dependent references even if no Skill file was initially edited. Explain when a change has no effect on the Skill's exposed contract rather than making unrelated documentation edits to satisfy a file-change requirement.
+
 ### MCP Query Endpoints
 
 New or changed Service JSON query endpoints (read, list and search, including read-only `POST` searches) default to explicit MCP admission within the [MCP management surface](spec/a13n-service/10-api.md#mcp-management-surface). Add `openapi_extra={"x-a13n-mcp": True}` to the owning FastAPI route, preserving any existing OpenAPI extras. Apply the same convention to Distribution-contributed queries.

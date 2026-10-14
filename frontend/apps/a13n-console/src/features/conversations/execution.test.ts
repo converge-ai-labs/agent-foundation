@@ -64,6 +64,17 @@ it("deduplicates starts and separates each attempt's requests with the same requ
   expect(state.steps[1]?.errorCode).toBe("provider_timeout");
 });
 
+it("reads a cancelled request as interrupted, not failed", () => {
+  const state = fold(
+    lifecycle("model_request_started"),
+    lifecycle("model_request_failed", "model-request-1", {
+      error_code: "cancelled",
+    }),
+  );
+  expect(state.steps[0]?.state).toBe("interrupted");
+  expect(state.steps[0]?.errorCode).toBeUndefined();
+});
+
 it("records the observed start and terminal time of every step", () => {
   const search = tool("search", "tool", {}, "2026-09-12T00:00:01Z");
   const state = fold(

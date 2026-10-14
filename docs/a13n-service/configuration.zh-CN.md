@@ -190,6 +190,8 @@ http_origins = ["http://host.docker.internal:11434"]
 
 `provisioning.local.enabled = true` 提供 `local` 环境 provider，直接在 worker 宿主机执行命令，没有隔离。仅用于开发。
 
+Worker 无法通过 `server.public_url` 访问控制 API 时，设置 `server.control_url`（或 `A13N_SERVER__CONTROL_URL`）为 Worker 可访问的控制 API 地址。内部平台 MCP 调用使用该地址，并保留配置的公开 HTTP Host。该地址由部署配置指定，不能由 agent 选择。
+
 `plugins.keys` 按入口 key 列出 agent 可选择的已安装 Harness 插件工厂。`composer.models` 列出 [Agent Composer](agent-composer.md)优先使用的上游模型名称。
 
 ## 日志、指标与 trace

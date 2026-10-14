@@ -31,23 +31,31 @@
   border-top: 1px solid var(--a13n-border-soft);
 }
 
-/* Heading ---------------------------------------------------------------- */
+/* Heading ----------------------------------------------------------------
+   Every line of a run starts on one of two edges: glyphs centre in the 22px
+   rail, and text starts 30px in. The heading's caret is a glyph and its name
+   is text, so the run reads down two straight lines. */
 .heading {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.headingLine {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 26px;
+  min-height: 28px;
 }
 .headingTitle {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 22px auto;
   align-items: center;
-  gap: 4px;
+  column-gap: 8px;
   flex: none;
-  height: 22px;
-  padding: 0 5px 0 2px;
-  margin-left: -4px;
-  border-radius: 6px;
+  height: 26px;
+  padding: 0 8px 0 0;
+  border-radius: var(--a13n-radius-tile);
   color: var(--a13n-text);
   background: none;
   border: 0;
@@ -61,6 +69,7 @@
   outline-offset: 1px;
 }
 .caret {
+  justify-self: center;
   color: var(--a13n-secondary);
   transition: transform 0.12s ease-out;
 }
@@ -79,19 +88,27 @@
   font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
+/* What the run cost sits under its name, where it never crowds the actions. */
+/* Separators sit in the gap; one that would start a wrapped line is clipped. */
 .headingMeta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-left: auto;
+  gap: 0 17px;
+  margin: 0 0 0 30px;
+  overflow: hidden;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  line-height: 1.6;
 }
-.headingMeta span + span::before {
+.headingMeta > span {
+  position: relative;
+}
+.headingMeta > span::before {
   content: "·";
-  margin-right: 8px;
+  position: absolute;
+  left: -11px;
   color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
 }
 .headingDuration {
@@ -104,7 +121,7 @@
   align-items: center;
   gap: 2px;
   flex: none;
-  margin-right: -6px;
+  margin: 0 -2px 0 auto;
 }
 .headingActions > :global(button),
 .headingActions > :global(a) {
@@ -116,16 +133,37 @@
 }
 
 /* Request ---------------------------------------------------------------- */
+/* The author's avatar is the request's glyph: it centres in the rail. */
 .request {
+  --author-gap: 9px;
+  --author-inset: -2px;
   display: grid;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
-  padding: 10px 0 14px 30px;
+  padding: 16px 0 12px;
+}
+.requestHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 .requestLabel {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
+}
+/* Reads as the author line's own "· You" detail. */
+.requestHead .requestLabel::before {
+  content: "· ";
+}
+/* Guidance arrives between steps and keeps their rhythm. */
+.timeline > .request {
+  padding: 6px 0 4px;
+}
+.request > .requestLabel,
+.requestBody {
+  padding-left: 30px;
 }
 .requestBody {
   min-width: 0;
@@ -153,9 +191,11 @@
 }
 
 /* Timeline --------------------------------------------------------------- */
+/* Steps are separated by more space than the lines inside one step. */
 .timeline {
   display: flex;
   flex-direction: column;
+  gap: 6px;
   min-width: 0;
 }
 .children {
@@ -180,7 +220,7 @@
   align-items: center;
   column-gap: 8px;
   width: 100%;
-  min-height: 30px;
+  min-height: 34px;
   padding-right: 8px;
   border-radius: var(--a13n-radius-tile);
   color: inherit;
@@ -195,7 +235,7 @@
   align-items: center;
   column-gap: 8px;
   min-width: 0;
-  min-height: 30px;
+  min-height: 34px;
   padding: 3px 0;
   border: 0;
   border-radius: var(--a13n-radius-tile);
@@ -226,13 +266,40 @@
   color: var(--a13n-text);
   text-decoration: underline;
 }
+/* A step is a node on the rail: a 20px disc, the size of an author's avatar,
+   so every mark in the rail has one size and one centre. What a step emitted
+   hangs beneath it with a plain glyph. */
 .marker {
   display: grid;
   place-items: center;
+  justify-self: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--a13n-surface);
+  box-shadow: inset 0 0 0 1px var(--a13n-border-soft);
   color: var(--a13n-secondary);
+}
+.marker svg {
+  width: 12px;
+  height: 12px;
 }
 .entry[data-kind="model"] > .row .marker {
   color: var(--a13n-text);
+}
+.children .marker {
+  width: auto;
+  height: auto;
+  background: none;
+  box-shadow: none;
+}
+.children .marker svg {
+  width: 13px;
+  height: 13px;
+}
+.children .row,
+.children .rowTrigger {
+  min-height: 30px;
 }
 .rowBody {
   display: flex;
@@ -265,28 +332,52 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The figures are columns: each fact keeps its track on every row and at
+   every depth, so the eye scans one straight edge per fact. A row without
+   token figures gives their tracks to its subject. */
 .rowMeta {
-  display: flex;
+  display: grid;
+  grid-template-columns: [extra] auto [duration] 48px [bar] 64px [state] 12px;
   align-items: center;
-  gap: 8px;
-  flex: none;
+  column-gap: 8px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
 }
+.rowMeta[data-usage] {
+  grid-template-columns:
+    [extra] auto [cache] 88px [tokens] 84px [duration] 48px [bar] 64px
+    [state] 12px;
+}
+.extra {
+  grid-column: extra / duration;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cache,
 .tokens,
-.cache {
+.duration {
+  justify-self: end;
   white-space: nowrap;
 }
 .cache {
+  grid-column: cache;
   color: color-mix(in srgb, var(--a13n-secondary) 82%, transparent);
 }
+.tokens {
+  grid-column: tokens;
+}
 .duration {
-  min-width: 44px;
-  text-align: right;
-  white-space: nowrap;
+  grid-column: duration;
+}
+.state {
+  grid-column: state;
 }
 .bar {
+  grid-column: bar;
   position: relative;
   width: 64px;
   height: 4px;
@@ -317,6 +408,7 @@
 }
 
 /* Events ----------------------------------------------------------------- */
+/* A lifecycle fact's head carries its tone; what follows stays secondary. */
 .eventRow[data-tone="danger"] .eventName,
 .eventRow[data-tone="danger"] .marker {
   color: var(--a13n-danger);
@@ -325,21 +417,29 @@
 .eventRow[data-tone="warning"] .marker {
   color: var(--a13n-warning);
 }
+.eventRow[data-tone="danger"] .marker {
+  background: color-mix(in srgb, var(--a13n-danger) 10%, transparent);
+  box-shadow: none;
+}
+.eventRow[data-tone="warning"] .marker {
+  background: color-mix(in srgb, var(--a13n-warning) 12%, transparent);
+  box-shadow: none;
+}
 .eventName {
-  min-width: 0;
-  overflow: hidden;
+  flex: none;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
-  text-overflow: ellipsis;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 /* Reply ------------------------------------------------------------------ */
+/* The reply sits close under the call that wrote it. */
 .reply {
   display: grid;
   gap: 4px;
   min-width: 0;
-  padding: 10px 0 6px 30px;
+  padding: 2px 0 12px 30px;
 }
 .reply[data-interrupted] {
   color: var(--a13n-secondary);
@@ -357,25 +457,49 @@
   font-size: var(--a13n-text-body);
   line-height: 1.65;
 }
+/* Dock -------------------------------------------------------------------
+   An answer to a wait starts on the text edge, like the run it resumes. */
+.feedback {
+  min-width: 0;
+  padding: 8px 0 0 30px;
+}
+
+/* Inbox ------------------------------------------------------------------
+   The Thread's inbox closes the level on the runs' own grid: its caret is a
+   glyph in the rail and its title starts on the text edge. */
+.inbox {
+  padding-top: 8px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.inbox > [data-slot="disclosure-surface"] {
+  border-radius: 0;
+  background: none;
+}
+/* Past the trigger's 1px border, the 14px caret spans 4–18 and centres at 11. */
+.inbox > [data-slot="disclosure-surface"] > button {
+  gap: 12px;
+  padding-left: 3px;
+  padding-right: 8px;
+  font-size: var(--a13n-text-sm);
+}
+.inbox > [data-slot="disclosure-surface"] > button > svg {
+  margin: 0;
+}
+.inbox [data-slot="collapsible-panel"] > div {
+  padding: 4px 0 8px 30px;
+}
+
 @media (max-width: 760px) {
-  .heading {
+  .headingLine {
     flex-wrap: wrap;
-    row-gap: 2px;
   }
-  .headingMeta,
-  .cache {
-    display: none;
+  .rowMeta {
+    grid-template-columns: [extra] auto [duration] 44px [state] 12px;
   }
-  .headingActions {
-    margin-left: auto;
+  .rowMeta[data-usage] {
+    grid-template-columns: [extra] auto [tokens] 72px [duration] 44px [state] 12px;
   }
-  .request,
-  .reply,
-  .coverage,
-  .structured {
-    padding-left: 0;
-    margin-left: 0;
-  }
+  .cache,
   .bar {
     display: none;
   }
