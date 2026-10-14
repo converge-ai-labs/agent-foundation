@@ -70,6 +70,7 @@ from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
+from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.findings.routes import router as findings_router
@@ -322,6 +323,7 @@ OSS = Distribution(
         organization_router,
         member_router,
         providers_router,
+        environment_provider_lifecycle_router,
         models_router,
         agents_router,
         uploads_router,

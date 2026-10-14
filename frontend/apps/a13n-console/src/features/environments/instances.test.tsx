@@ -68,7 +68,9 @@ async function openCreate() {
   const user = userEvent.setup();
   await screen.findByText("No environments yet");
   expect(
-    screen.getByRole("link", { name: "Manage providers" }).getAttribute("href"),
+    screen
+      .getByRole("link", { name: "Manage connections" })
+      .getAttribute("href"),
   ).toContain("environments");
   await user.click(screen.getByRole("button", { name: "Create environment" }));
   return { cache, user };
@@ -101,7 +103,7 @@ it.each([
         "/workspace/ws_test/environments/new",
       );
     expect(create.closest("header")).toBeNull();
-    const manage = screen.getByRole("link", { name: "Manage providers" });
+    const manage = screen.getByRole("link", { name: "Manage connections" });
     expect(manage.closest("header")).not.toBeNull();
     expect(manage.getAttribute("href")).toBe(
       "/workspace/ws_test/settings/providers?category=environments",

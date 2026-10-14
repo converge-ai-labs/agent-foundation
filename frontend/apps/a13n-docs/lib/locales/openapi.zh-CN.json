@@ -412,5 +412,7 @@
   "List Runs": "列出运行",
   "Get Attempt": "读取执行尝试",
   "Platform MCP groups selected independently of local operating instructions.": "独立于本地操作说明选择的平台 MCP 工具组。",
-  "Workspace execution search; timestamps bound creation time, newest first.": "工作空间执行查询；按创建时间范围筛选，最新记录在前。"
+  "Workspace execution search; timestamps bound creation time, newest first.": "工作空间执行查询；按创建时间范围筛选，最新记录在前。",
+  "Delete Environment Provider": "删除环境连接",
+  "Environment Provider References": "环境连接引用"
 }

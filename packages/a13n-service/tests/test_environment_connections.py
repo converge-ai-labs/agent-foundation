@@ -7,7 +7,7 @@ from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
-from a13n_service.resources.providers import environment_connections
+from a13n_service.runs.environments import provider_connections as environment_connections
 from a13n_service.runs.environments.tables import EnvironmentRow
 from sqlalchemy import select, update
 
