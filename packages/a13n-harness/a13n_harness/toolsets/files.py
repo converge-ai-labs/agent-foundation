@@ -56,6 +56,7 @@ from .file_media import (
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
     NativeInputMediaKind,
+    media_source_byte_limit,
 )
 from .file_results import (
     FileCopyItem,
@@ -90,7 +91,7 @@ _MAX_MODEL_TEXT_BYTES = 256 * 1024
 _MAX_MODEL_TEXT_PAGE_BYTES = 4 * 1024 * 1024
 _MAX_MODEL_EDIT_BYTES = 16 * 1024 * 1024
 _MAX_MODEL_RESULTS = 1_000
-_MAX_MODEL_MEDIA_BYTES = MAX_MEDIA_UNDERSTANDING_BYTES
+_MAX_MODEL_VIEW_OUTPUT_BYTES = MAX_MEDIA_UNDERSTANDING_BYTES
 _MAX_MODEL_TEXT_RULE_PAGE_BYTES = 16 * 1024 * 1024
 _SKILL_MARKDOWN_LINE_LIMIT = 800
 _SKILL_MARKDOWN_MAX_LINE_LENGTH = 20_000
@@ -262,7 +263,7 @@ class FileToolset:
                     "Read bounded text or analyze common image, video, and audio files. "
                     "Uses configured media understanding when the active model lacks native media support."
                 ),
-                max_output_bytes=_MAX_MODEL_MEDIA_BYTES,
+                max_output_bytes=_MAX_MODEL_VIEW_OUTPUT_BYTES,
             ),
             self._tool(
                 self.write,
@@ -460,6 +461,8 @@ class FileToolset:
         retention_metadata = {COLD_START_RETENTION_METADATA_KEY: "preserve"} if profile.preserve_on_cold_start else None
         media_type = _MEDIA_TYPES.get(extension)
         if media_type is not None:
+            kind = cast(NativeInputMediaKind, media_type.split("/", maxsplit=1)[0])
+            maximum = media_source_byte_limit(kind)
             try:
                 async with self._file_access.scope(file_path) as files:
                     self._guard_execution()
@@ -469,7 +472,7 @@ class FileToolset:
                             "Media view source is not a file.",
                             code="environment_request_invalid",
                         )
-                    if metadata.size is not None and metadata.size > _MAX_MODEL_MEDIA_BYTES:
+                    if metadata.size is not None and metadata.size > maximum:
                         raise EnvironmentError(
                             "Media file exceeds the model view limit.",
                             code="environment_too_large",
@@ -478,7 +481,7 @@ class FileToolset:
                     content = bytearray()
                     async with closing_stream(files.read_bytes_stream(file_path)) as stream:
                         async for chunk in stream:
-                            if len(content) + len(chunk) > _MAX_MODEL_MEDIA_BYTES:
+                            if len(content) + len(chunk) > maximum:
                                 raise EnvironmentError(
                                     "Media file exceeds the model view limit.",
                                     code="environment_too_large",
@@ -489,7 +492,6 @@ class FileToolset:
             except EnvironmentError as exc:
                 return _environment_error_result(exc)
 
-            kind = cast(NativeInputMediaKind, media_type.split("/", maxsplit=1)[0])
             if _model_supports_native_media(ctx, kind):
                 message = f"The {media_type} file {file_path} is attached in this tool result."
                 return ToolReturn(

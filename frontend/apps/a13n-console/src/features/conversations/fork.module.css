@@ -99,7 +99,10 @@
   font-size: var(--a13n-text-2xs);
   color: var(--a13n-secondary);
 }
+/* The conversation name gives way before any other header control. */
 .branchTrigger {
+  flex-shrink: 1;
+  min-width: 0;
   max-width: 200px;
 }
 .branchTrigger span {

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -100,20 +106,15 @@ it("steps within the current thread and cannot continue into a child or fork", a
   ).toBeTruthy();
 });
 
-it("shows a single fork Run without parent runs and disables cross-thread stepping", async () => {
+it("draws nothing for a lone fork Run, since parent runs are not its own", async () => {
   show(fixtureForkThread, "run_fork");
-  const list = await openList(/^Run 1 of 1$/);
-  expect(list.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(
-    ["Run 1Alternative proposal12s"],
-  );
-  expect(list.queryByText("Root thread")).toBeNull();
-  expect(list.queryByText("Fork")).toBeNull();
-  expect(screen.getByRole("button", { name: "Previous run" })).toHaveProperty(
-    "disabled",
-    true,
-  );
-  expect(screen.getByRole("button", { name: "Next run" })).toHaveProperty(
-    "disabled",
-    true,
-  );
+  // Once the Thread's Runs are read, the fork still has only its own one.
+  await waitFor(() => {
+    const queries = cache.getQueryCache().getAll();
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.every((query) => query.state.status === "success")).toBe(
+      true,
+    );
+  });
+  expect(screen.queryByRole("button", { name: "Previous run" })).toBeNull();
 });

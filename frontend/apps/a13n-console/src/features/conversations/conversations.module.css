@@ -123,6 +123,9 @@ a.agentLink:focus-visible {
   gap: 8px;
   flex: none;
 }
+.headerState {
+  display: contents;
+}
 .breadcrumb {
   display: inline-flex;
   align-items: center;
@@ -264,19 +267,27 @@ a.agentLink:focus-visible {
   }
 }
 @media (max-width: 760px) {
+  /* The name and the actions menu keep the first line; the view controls
+     take the second, the level switch at its end. */
   .sessionHeader {
     flex-wrap: wrap;
     height: auto;
     min-height: 52px;
     padding-block: 8px;
+    row-gap: 6px;
   }
   .sessionControls {
-    flex-wrap: wrap;
+    order: 1;
     flex-basis: 100%;
-    justify-content: flex-end;
-    margin-left: auto;
     gap: 4px;
-    max-width: 100%;
+    min-width: 0;
+  }
+  .levelSwitch {
+    margin-left: auto;
+  }
+  /* The Run itself says what it is doing; the line keeps room for the views. */
+  .headerState {
+    display: none;
   }
   .agentLink {
     max-width: 100%;
