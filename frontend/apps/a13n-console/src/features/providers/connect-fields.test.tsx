@@ -60,7 +60,7 @@ it("keeps native connections valid and configures HTTP routing independently", a
     envd_http: null,
   });
   await user.click(
-    screen.getByRole("switch", { name: "Envd HTTP connection" }),
+    screen.getByRole("switch", { name: "Environment operation channel" }),
   );
   await user.type(screen.getByLabelText("Reachable host"), "10.0.0.8");
   expect(JSON.parse(screen.getByTestId("saved").textContent!)).toEqual({
@@ -68,7 +68,7 @@ it("keeps native connections valid and configures HTTP routing independently", a
     envd_http: { host: "10.0.0.8", bind_host: "127.0.0.1" },
   });
   await user.click(
-    screen.getByRole("switch", { name: "Envd HTTP connection" }),
+    screen.getByRole("switch", { name: "Environment operation channel" }),
   );
   expect(screen.queryByLabelText("Reachable host")).toBeNull();
   expect(JSON.parse(screen.getByTestId("saved").textContent!).docker_host).toBe(

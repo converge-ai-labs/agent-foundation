@@ -2205,5 +2205,9 @@
   "No environment connections yet": "No environment connections yet",
   "Add a connection before creating templates.": "Add a connection before creating templates.",
   "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.": "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.",
-  "How this connection is listed across the console.": "How this connection is listed across the console."
+  "How this connection is listed across the console.": "How this connection is listed across the console.",
+  "Container management": "Container management",
+  "Environment operation channel": "Environment operation channel",
+  "Docker Engine creates, starts, stops and deletes containers. Leave the host empty to use your deployment's default engine.": "Docker Engine creates, starts, stops and deletes containers. Leave the host empty to use your deployment's default engine.",
+  "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.": "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives."
 }

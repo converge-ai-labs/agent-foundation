@@ -129,7 +129,9 @@ export function ProviderConfigurationFields({
       {children}
       {hasFields(advanced) && (
         <DisclosureSection
-          title={hasDockerHttp ? t("Docker Engine") : t("Advanced settings")}
+          title={
+            hasDockerHttp ? t("Container management") : t("Advanced settings")
+          }
           summary={
             advancedConfigured(advanced, configuration)
               ? t("Configured")
@@ -138,6 +140,13 @@ export function ProviderConfigurationFields({
           open={advancedOpen}
           onOpenChange={onAdvancedOpenChange}
         >
+          {hasDockerHttp && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Docker Engine creates, starts, stops and deletes containers. Leave the host empty to use your deployment's default engine.",
+              )}
+            </p>
+          )}
           <SchemaFields
             schema={advanced}
             value={configuration}
@@ -148,9 +157,9 @@ export function ProviderConfigurationFields({
       {hasDockerHttp && (
         <>
           <SettingsRow
-            label={t("Envd HTTP connection")}
+            label={t("Environment operation channel")}
             description={t(
-              "Configure a separate reachable address for EIP execution. Docker Engine access alone does not provide this route.",
+              "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.",
             )}
             controlId={httpId}
           >
