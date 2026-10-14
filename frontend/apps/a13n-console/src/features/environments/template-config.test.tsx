@@ -70,6 +70,18 @@ const localSchema = {
 };
 
 const dockerSchema = {
+  "x-environment-presets": {
+    standard: {
+      image: "a13n-sandbox:dev",
+      execution: "native",
+      desktop: false,
+    },
+    desktop: {
+      image: "a13n-sandbox:dev-desktop",
+      execution: "envd_http",
+      desktop: true,
+    },
+  },
   type: "object",
   additionalProperties: false,
   "x-primary-fields": [
@@ -86,6 +98,12 @@ const dockerSchema = {
       type: "string",
       title: "Image",
       default: "a13n-sandbox:dev",
+    },
+    execution: {
+      type: "string",
+      title: "Execution connection",
+      default: "native",
+      enum: ["native", "envd_http"],
     },
     desktop: { type: "boolean", default: false },
     memory_gb: { type: "number", title: "Memory (GB)" },
@@ -313,6 +331,7 @@ it("shows the Service's refusal of a recipe beside the recipe", async () => {
   );
   const user = userEvent.setup();
   await selectProvider(user, "Docker");
+  await user.click(screen.getByRole("button", { name: "Custom image" }));
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Docker");
   await user.click(screen.getByRole("button", { name: "JSON" }));
   await user.clear(
@@ -657,6 +676,7 @@ it("keeps a late connection result without replacing a newly selected runtime", 
 it("preserves advanced Docker settings when switching desktop capability and JSON mode", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "Docker");
+  await user.click(screen.getByRole("button", { name: "Custom image" }));
   await user.click(screen.getByRole("button", { name: "JSON" }));
   const json = screen.getByRole("textbox", {
     name: "Template configuration (JSON)",
@@ -681,5 +701,56 @@ it("preserves advanced Docker settings when switching desktop capability and JSO
     shell: "/bin/bash",
     desktop: true,
     execution: "envd_http",
+  });
+  await user.click(screen.getByRole("button", { name: "Fields" }));
+  await user.click(
+    screen.getByRole("button", { name: "Standard environment" }),
+  );
+  expect(screen.queryByRole("textbox", { name: "Container image" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Custom image" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
+  expect(
+    JSON.parse(
+      (
+        screen.getByRole("textbox", {
+          name: "Template configuration (JSON)",
+        }) as HTMLTextAreaElement
+      ).value,
+    ),
+  ).toEqual({
+    image: "sandbox:desktop",
+    shell: "/bin/bash",
+    desktop: true,
+    execution: "envd_http",
+  });
+});
+
+it("creates a desktop preset without exposing image or execution controls", async () => {
+  const user = userEvent.setup();
+  await selectProvider(user, "Docker");
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Linux desktop",
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Standard environment" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Desktop environment" }));
+  expect(screen.queryByRole("textbox", { name: "Container image" })).toBeNull();
+  expect(
+    screen.queryByRole("combobox", { name: "Execution connection" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("switch", { name: "Desktop capability" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "JSON" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Create template" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  expect(state.POST.mock.calls[0]?.[1].body.config.recipe).toEqual({
+    image: "a13n-sandbox:dev-desktop",
+    execution: "envd_http",
+    desktop: true,
   });
 });

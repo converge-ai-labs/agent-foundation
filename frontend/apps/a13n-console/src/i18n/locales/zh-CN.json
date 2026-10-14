@@ -2187,5 +2187,12 @@
   "Credential file": "凭据文件路径",
   "Native Docker": "Docker 原生",
   "Envd HTTP (EIP)": "Envd HTTP（EIP）",
-  "Docker Engine": "Docker Engine 连接"
+  "Docker Engine": "Docker Engine 连接",
+  "Environment type": "环境类型",
+  "Standard environment": "标准环境",
+  "Desktop environment": "桌面环境",
+  "Custom image": "自定义镜像",
+  "Run commands and work with files. The standard image and execution method are configured automatically.": "执行命令、读写文件。已自动配置标准镜像和执行方式，无需额外选择。",
+  "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate.": "提供 Linux 桌面，可截图、点击和输入。已自动配置桌面镜像和执行方式。所选连接需支持 Envd HTTP；Agent 工具和挂载权限需另行开启。",
+  "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.": "自行指定镜像和高级配置。切换为内置环境会恢复默认高级配置，保留 CPU、内存和挂载设置。"
 }

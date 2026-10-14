@@ -308,3 +308,31 @@
     flex-direction: column;
   }
 }
+
+.environmentKinds {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.environmentKinds legend {
+  margin-bottom: 10px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.environmentKindChoices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.environmentKindChoices button {
+  justify-content: center;
+  min-height: 44px;
+  text-align: center;
+}
+.environmentKindDescription {
+  margin: 12px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.6;
+}

@@ -44,9 +44,10 @@ RC 和开发版发布都不会推进 `latest`、`slim` 或 `desktop`。本文介
 
 1. 在所选 Docker Engine 构建 `a13n-sandbox:local-desktop`，或选择包含该功能的桌面版发布镜像。
 2. Console 中添加 Docker 连接。**Docker 主机**继续用于管理容器；单独开启 **Envd HTTP 连接**，填写所有 Service / Worker 均可访问的主机名或 IP。本机进程连接 Docker Desktop 时，可达主机和绑定地址均可填 `127.0.0.1`；远端 Engine 需明确配置可达私网地址、端口绑定接口，并允许可信私网明文连接。
-3. 创建模板，镜像填 `a13n-sandbox:local-desktop`，执行连接选择 `envd_http`，开启 **桌面能力**（`desktop: true`）；本地构建设 `pull_policy: never`。不能禁用网络。镜像负责启动桌面和 envd，无需额外初始化脚本。
-4. 创建环境。Service 发布 envd 端口，读取 Docker 分配的主机端口，通过认证 EIP 校验设备身份，并检查实际桌面就绪状态。
-5. 给 Agent 开启 Computer 工具，并授予挂载环境相应电脑操作权限。权限不会让没有桌面的镜像获得桌面。
+3. 在 Console 模板编辑器中选择 **桌面环境**，系统会自动配置桌面镜像和 HTTP EIP 执行方式，此模式下不能单独修改这些字段。选择 **标准环境** 则使用标准镜像和 Docker 原生执行。两者仍可配置 CPU、内存和挂载。
+4. 使用本地构建或自己的镜像时，选择 **自定义镜像**，再展开镜像、执行连接、桌面能力及高级/JSON 配置。镜像填 `a13n-sandbox:local-desktop`，执行连接选择 `envd_http`，开启 **桌面能力**（`desktop: true`），本地构建设 `pull_policy: never`。不能禁用网络。镜像负责启动桌面和 envd，无需额外初始化脚本。
+5. 创建环境。Service 发布 envd 端口，读取 Docker 分配的主机端口，通过认证 EIP 校验设备身份，并检查实际桌面就绪状态。
+6. 给 Agent 开启 Computer 工具，并授予挂载环境相应电脑操作权限。权限不会让没有桌面的镜像获得桌面。
 
 可信私网的 Docker 连接配置示例：
 

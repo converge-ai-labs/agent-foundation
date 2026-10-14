@@ -13,12 +13,12 @@ from collections.abc import Sequence
 from dataclasses import replace
 from importlib.metadata import version
 from pathlib import PurePosixPath
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from a13n_harness.providers.environment.docker.configuration import DockerMountConfiguration
 from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration as HarnessAccount
 from packaging.version import Version
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from a13n_service.providers.endpoints import engine_endpoint
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
@@ -68,6 +68,15 @@ def docker(*, host: str | None, mount_roots: Sequence[PurePosixPath]) -> Environ
             return value
 
     class DockerEnvironmentConfiguration(DockerRecipe):
+        model_config = ConfigDict(
+            json_schema_extra={
+                **cast(dict[str, Any], DockerRecipe.model_config["json_schema_extra"]),
+                "x-environment-presets": {
+                    "standard": {"image": default_image(), "execution": "native", "desktop": False},
+                    "desktop": {"image": f"{default_image()}-desktop", "execution": "envd_http", "desktop": True},
+                },
+            }
+        )
         image: Annotated[str, Field(min_length=1, max_length=1024)] = default_image()
         mounts: tuple[DockerMountConfiguration, ...] = Field(
             default=(),

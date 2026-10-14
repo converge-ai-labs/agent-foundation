@@ -44,9 +44,10 @@ RC and development publication never advance `latest`, `slim` or `desktop`. Thes
 
 1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or select a published desktop tag containing this feature.
 2. In Console, add a Docker connection. Configure the existing **Docker host** for Engine management, then enable **Envd HTTP connection** and enter the hostname or IP reachable by every Service/Worker. For a local process connecting to Docker Desktop, use `127.0.0.1` for both the reachable host and bind address. For a remote Engine, explicitly configure its reachable private address and port-binding interface, and opt into the trusted plaintext private link.
-3. Create a template with image `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** enabled (`desktop: true`), and `pull_policy: never` for a local build. Do not disable networking. The image supplies desktop/envd startup; no custom initialization script is needed.
-4. Create an Environment. Service publishes envd's port, discovers its Docker-assigned host port, verifies its device identity through authenticated EIP, and checks actual desktop readiness.
-5. Enable Computer tools on the Agent and allow the required Computer operations on its environment mount. These permissions do not supply a missing desktop.
+3. In the Console template editor, select **Desktop environment**. Service selects the desktop image and HTTP EIP execution together; these fields cannot be edited in this mode. **Standard environment** selects the standard image and native Docker execution. CPU, memory and mounts remain configurable.
+4. For a local build or your own image, select **Custom image** to expose image, execution, desktop and advanced/JSON settings. Use `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** enabled (`desktop: true`), and `pull_policy: never`. Do not disable networking. The image supplies desktop/envd startup; no custom initialization script is needed.
+5. Create an Environment. Service publishes envd's port, discovers its Docker-assigned host port, verifies its device identity through authenticated EIP, and checks actual desktop readiness.
+6. Enable Computer tools on the Agent and allow the required Computer operations on its environment mount. These permissions do not supply a missing desktop.
 
 Example Docker connection configuration for a trusted private network:
 
