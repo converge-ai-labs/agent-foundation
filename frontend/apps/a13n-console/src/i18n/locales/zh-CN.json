@@ -1395,7 +1395,7 @@
   "Keep": "保留",
   "Removed when you save": "保存后将移除",
   "Token ID and secret": "令牌 ID 与密钥",
-  "Keep the saved key": "保留已保存的密钥",
+  "Cancel replacement": "取消替换",
   "Copy raw JSON": "复制原始 JSON",
   "Ended": "结束时间",
   "{{count}} nested": "{{count}} 个子项",
