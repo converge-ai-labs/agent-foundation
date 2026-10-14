@@ -215,6 +215,9 @@
           "media_understanding": {
             "$ref": "#/components/schemas/MediaUnderstandingSelection"
           },
+          "memory": {
+            "$ref": "#/components/schemas/SessionMemorySettings"
+          },
           "memory_mounts": {
             "default": [],
             "items": {
@@ -406,6 +409,9 @@
           },
           "media_understanding": {
             "$ref": "#/components/schemas/MediaUnderstandingSelection"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/SessionMemorySettings"
           },
           "memory_mounts": {
             "default": [],
@@ -11632,7 +11638,14 @@
             "type": "object"
           },
           "memory": {
-            "$ref": "#/components/schemas/SessionMemorySettings"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionMemorySettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "SessionCreate",
@@ -11640,6 +11653,7 @@
       },
       "SessionMemorySettings": {
         "additionalProperties": false,
+        "description": "Agent defaults and the independent settings a Session retains.",
         "properties": {
           "auto_organize": {
             "default": false,

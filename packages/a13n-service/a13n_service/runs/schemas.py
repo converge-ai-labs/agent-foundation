@@ -21,11 +21,11 @@ from pydantic import (
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
-from a13n_service.infra.ids import Key, ObjectId
+from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.connections.headers import normalize_headers
-from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
+from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
@@ -334,18 +334,6 @@ class EnvironmentMount(_Frozen):
     working_directory: str | None = None
 
 
-class SessionMemorySettings(_Frozen):
-    enabled: bool = False
-    auto_organize: bool = False
-    model: Key | None = None
-
-    @model_validator(mode="after")
-    def organization_model(self) -> "SessionMemorySettings":
-        if self.auto_organize and self.model is None:
-            raise ValueError("Automatic organization requires a model key")
-        return self
-
-
 class SessionMemoryStatus(_Frozen):
     pending: bool = False
     active_run_id: str | None = None
@@ -357,7 +345,8 @@ class SessionMemoryStatus(_Frozen):
 
 class SessionCreate(_Frozen):
     labels: Labels = Field(default_factory=dict)
-    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
+    # Omitted/null inherits the first accepted business Agent revision's defaults.
+    memory: SessionMemorySettings | None = None
 
 
 class SessionUpdate(_Frozen):

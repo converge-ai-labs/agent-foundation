@@ -655,6 +655,37 @@
       "title": "RetryConfig",
       "type": "object"
     },
+    "SessionMemorySettings": {
+      "additionalProperties": false,
+      "description": "Agent defaults and the independent settings a Session retains.",
+      "properties": {
+        "auto_organize": {
+          "default": false,
+          "title": "Auto Organize",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        }
+      },
+      "title": "SessionMemorySettings",
+      "type": "object"
+    },
     "SharedSkillSync": {
       "additionalProperties": false,
       "description": "Publish mutable conventional names; the last completed publication wins.",
@@ -1057,6 +1088,9 @@
     },
     "media_understanding": {
       "$ref": "#/$defs/MediaUnderstandingSelection"
+    },
+    "memory": {
+      "$ref": "#/$defs/SessionMemorySettings"
     },
     "memory_mounts": {
       "default": [],

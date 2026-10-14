@@ -1,4 +1,5 @@
 {
+  "Agent defaults and the independent settings a Session retains.": "Agent 默认值，以及会话独立保存的设置。",
   "List Memory Organizations": "列出记忆整理运行",
   "Reuse immutable package directories, with a soft count budget.": "复用不可变的软件包目录，采用数量软预算。",
   "Publish mutable conventional names; the last completed publication wins.": "按约定名称发布可变目录，最后成功发布的内容生效。",

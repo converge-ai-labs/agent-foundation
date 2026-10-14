@@ -252,3 +252,145 @@ async def test_revocation_blocks_pending_admission(service, scripted_model, runs
             await session.scalar(select(GrantRow.id).where(GrantRow.principal_id == service.tenant.principal_id))
             is None
         )
+
+
+async def test_agent_defaults_snapshot_once_and_isolate_sessions(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    defaults = {"enabled": True, "auto_organize": True, "model": model}
+    agent = await runs_kit.add_agent(service, "Remember", model, memory=defaults)
+    created = await service.client.post(f"{service.api}/sessions", json={})
+    session_id = created.json()["id"]
+    assert created.json()["memory_id"] is None
+    # Two first acceptances of different Threads must provision exactly one Session memory.
+    first, second = await asyncio.gather(
+        runs_kit.start_thread(service, agent, "one", session_id=session_id),
+        runs_kit.start_thread(service, agent, "two", session_id=session_id),
+    )
+    current = (await service.client.get(f"{service.api}/sessions/{session_id}")).json()
+    assert current["memory"] == defaults
+    assert first["run"]["memory_mounts"] == second["run"]["memory_mounts"]
+    assert first["run"]["memory_mounts"][0]["memory_id"] == current["memory_id"]
+    assert current["memory_status"]["active_run_id"] is None
+    separate = await runs_kit.start_thread(service, agent, "separate")
+    assert separate["run"]["memory_mounts"][0]["memory_id"] != current["memory_id"]
+    other = await runs_kit.add_agent(service, "Forget", model)
+    joined = await runs_kit.start_thread(service, other, "same session", session_id=session_id)
+    assert joined["run"]["memory_mounts"] == first["run"]["memory_mounts"]
+    await settings(service, session_id, enabled=False)
+    disabled = await runs_kit.start_thread(service, agent, "override", session_id=session_id)
+    assert disabled["run"]["memory_mounts"] == []
+
+
+@pytest.mark.parametrize("agent_enabled,session_enabled", [(True, False), (False, True)])
+async def test_explicit_session_choice_wins_over_agent(
+    service, scripted_model, runs_kit, agent_enabled, session_enabled
+) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "Default", model, memory={"enabled": agent_enabled})
+    created = await service.client.post(f"{service.api}/sessions", json={"memory": {"enabled": session_enabled}})
+    assert created.status_code == 201, created.text
+    owner = created.json()
+    started = await runs_kit.start_thread(service, agent, "choice", session_id=owner["id"])
+    assert bool(started["run"]["memory_mounts"]) is session_enabled
+    assert (await service.client.get(f"{service.api}/sessions/{owner['id']}")).json()["memory"] == owner["memory"]
+
+
+async def test_agent_defaults_do_not_reconfigure_existing_sessions(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "Changing defaults", model)
+    first = await runs_kit.start_thread(service, agent, "old")
+    session_id = first["thread"]["session_id"]
+    changed = await service.client.post(
+        f"{service.api}/agents/{agent['id']}/revisions",
+        json={"config": {"model": model, "memory": {"enabled": True}}},
+        headers=runs_kit.if_match(agent),
+    )
+    assert changed.status_code == 201, changed.text
+    selected = {**agent, "default_revision_id": changed.json()["id"]}
+    # Explicit revision selection proves the new config is used, independently of the head's default.
+    new = await runs_kit.start_thread(service, selected, "new", agent_revision_id=changed.json()["id"])
+    assert new["run"]["memory_mounts"]
+    old = await runs_kit.start_thread(
+        service, selected, "old session", session_id=session_id, agent_revision_id=changed.json()["id"]
+    )
+    assert old["run"]["memory_mounts"] == []
+    # Existing pre-defaults Sessions store {}; their business acceptance still protects their settings.
+    from a13n_service.runs.tables import SessionRow
+
+    async with transaction(service.runtime.storage) as session:
+        await session.execute(update(SessionRow).where(SessionRow.id == session_id).values(memory={}))
+    legacy = await runs_kit.start_thread(
+        service, selected, "legacy", session_id=session_id, agent_revision_id=changed.json()["id"]
+    )
+    assert legacy["run"]["memory_mounts"] == []
+
+
+async def test_runner_inherits_defaults_without_resource_write_permission(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(
+        service, "Runner memory", model, memory={"enabled": True, "auto_organize": True, "model": model}
+    )
+    accounts = f"{service.workspace}/service-accounts"
+    account = (await service.client.post(accounts, json={"name": "runner"})).json()
+    key = (await service.client.post(f"{accounts}/{account['id']}/keys", json={"name": "run"})).json()
+    headers = {"authorization": "Bearer " + key["secret"]}
+    started = await service.client.post(
+        f"{service.api}/threads", json=runs_kit.message(agent, "inherit"), headers={**headers, **runs_kit.fresh_key()}
+    )
+    assert started.status_code == 201, started.text
+    run = started.json()["run"]
+    assert run is not None and run["memory_mounts"]
+    owner = await service.client.get(f"{service.api}/sessions/{run['session_id']}", headers=headers)
+    rejected = await service.client.patch(
+        f"{service.api}/sessions/{run['session_id']}",
+        json={"memory": {"enabled": False}},
+        headers={**headers, "if-match": owner.headers["etag"]},
+    )
+    assert rejected.status_code == 403
+    async with transaction(service.runtime.storage) as session:
+        policy = await session.get_one(SessionMemoryRow, run["session_id"])
+        assert policy.authority["principal_id"] == account["id"]
+        assert set(policy.authority["verbs"]) == {"read", "run"}
+
+
+async def test_refused_first_run_rolls_back_default_provisioning(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    defaults = {"enabled": True, "auto_organize": True, "model": model}
+    agent = await runs_kit.add_agent(service, "Too many mounts", model, memory=defaults)
+    owner = (await service.client.post(f"{service.api}/sessions", json={})).json()
+    mounts = []
+    for index in range(service.runtime.settings.memory.mounts_per_thread):
+        memory = (await service.client.post(f"{service.api}/memories", json={"name": f"Memory {index}"})).json()
+        mounts.append({"name": f"m{index}", "memory_id": memory["id"], "access": "read"})
+    failed = await runs_kit.start_thread(service, agent, "no room", session_id=owner["id"], memories=mounts)
+    assert failed["run"] is None and failed["entry"]["status"] == "failed"
+    current = (await service.client.get(f"{service.api}/sessions/{owner['id']}")).json()
+    assert current["memory_id"] is None and not current["memory"]["enabled"]
+    assert current["version"] == owner["version"]
+    accepted = await runs_kit.start_thread(service, agent, "retry", session_id=owner["id"])
+    assert accepted["run"]["memory_mounts"]
+
+
+async def test_settled_session_inheritance_does_not_lock_before_memory(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.resources.memories.schemas import SessionMemorySettings
+    from a13n_service.runs.memories.session_memory import inherit_defaults
+    from a13n_service.runs.tables import SessionRow
+    from a13n_service.tenancy.access import principal_for
+    from a13n_service.tenancy.authorize import WorkspaceScope, execution_authority
+    from sqlalchemy import select, text
+
+    agent = await runs_kit.create_agent(service, scripted_model, memory={"enabled": True})
+    started = await runs_kit.start_thread(service, agent, "initialized")
+    run = started["run"]
+    async with transaction(service.runtime.storage) as holder:
+        owner = await holder.scalar(select(SessionRow).where(SessionRow.id == run["session_id"]).with_for_update())
+        assert owner is not None
+        async with transaction(service.runtime.storage) as contender:
+            actor = await principal_for(contender, service.runtime.access, run["principal_id"])
+            scope = WorkspaceScope(owner.organization_id, owner.workspace_id)
+            await contender.execute(text("SET LOCAL lock_timeout = '100ms'"))
+            await inherit_defaults(
+                contender, service.runtime, actor, owner.id, SessionMemorySettings(), execution_authority(actor, scope)
+            )
+            retained = await contender.get_one(SessionRow, owner.id)
+            assert retained.memory_id == owner.memory_id and retained.memory["enabled"]

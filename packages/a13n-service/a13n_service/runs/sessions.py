@@ -27,7 +27,7 @@ from a13n_service.runs.schemas import (
 )
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.tenancy.access import workspace_scope
-from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.authorize import Principal, authorize
 
 PREVIEW_INPUT = 256
 PREVIEW_OUTPUT = 512
@@ -160,7 +160,8 @@ async def create_session(runtime: Runtime, actor: Principal, workspace_id: str, 
         row.labels = dict(body.labels)
         session.add(row)
         await session.flush()
-        if body.memory.enabled or body.memory.auto_organize:
+        if body.memory is not None:
+            authorize(actor, scope, "write")
             await configure(session, runtime, actor, row, body.memory)
             await session.flush()
         return (await _views(session, [row]))[0]
@@ -176,6 +177,7 @@ async def update_session(
         if body.labels is not None:
             row.labels = dict(body.labels)
         if body.memory is not None:
+            authorize(actor, scope, "write")
             await configure(session, runtime, actor, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

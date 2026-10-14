@@ -1,4 +1,10 @@
 {
+  "Session memory defaults": "Session memory defaults",
+  "New sessions inherit these settings. Each session keeps its own files and can override these defaults.": "New sessions inherit these settings. Each session keeps its own files and can override these defaults.",
+  "Shared memories": "Shared memories",
+  "Use agent memory defaults": "Use agent memory defaults",
+  "The first agent's settings apply to this session. Turn off to choose your own.": "The first agent's settings apply to this session. Turn off to choose your own.",
+  "Choose an organization model.": "Choose an organization model.",
   "Add memory record": "Add memory record",
   "Agent configuration": "Agent configuration",
   "Append to memory file": "Append to memory file",

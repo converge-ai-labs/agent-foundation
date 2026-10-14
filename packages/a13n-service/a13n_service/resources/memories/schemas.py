@@ -5,9 +5,9 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from a13n_harness.providers.memory import MemoryAccess
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.memories.tables import MemoryKind
 
@@ -41,6 +41,21 @@ RecordText = Annotated[str, StringConstraints(min_length=1, max_length=8000)]
 MountName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,62}$")]
 # Memories one mount list holds at most; `memory.mounts_per_thread` bounds a thread's.
 MAX_MOUNTS = 32
+
+
+class SessionMemorySettings(BaseModel):
+    """Agent defaults and the independent settings a Session retains."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    enabled: bool = False
+    auto_organize: bool = False
+    model: Key | None = None
+
+    @model_validator(mode="after")
+    def organization_model(self) -> "SessionMemorySettings":
+        if self.auto_organize and self.model is None:
+            raise ValueError("Automatic organization requires a model key")
+        return self
 
 
 class MemoryCreate(BaseModel):

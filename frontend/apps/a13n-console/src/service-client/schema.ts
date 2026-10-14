@@ -3208,6 +3208,7 @@ export interface components {
        */
       lazy_environment?: boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
+      memory?: components["schemas"]["SessionMemorySettings"];
       /**
        * Memory Mounts
        * @default []
@@ -3288,6 +3289,7 @@ export interface components {
        */
       lazy_environment?: boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
+      memory?: components["schemas"]["SessionMemorySettings"];
       /**
        * Memory Mounts
        * @default []
@@ -7047,9 +7049,12 @@ export interface components {
       labels?: {
         [key: string]: string;
       };
-      memory?: components["schemas"]["SessionMemorySettings"];
+      memory?: components["schemas"]["SessionMemorySettings"] | null;
     };
-    /** SessionMemorySettings */
+    /**
+     * SessionMemorySettings
+     * @description Agent defaults and the independent settings a Session retains.
+     */
     SessionMemorySettings: {
       /**
        * Auto Organize

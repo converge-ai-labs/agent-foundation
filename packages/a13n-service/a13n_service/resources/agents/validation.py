@@ -107,6 +107,9 @@ async def validate_config(
             with at_field(path):
                 await resolve_template(session, actor, scope, template_id, verb=verb, authority=authority)
     if held is None:
+        if config.memory.model is not None:
+            with at_field("memory.model"):
+                await resolve_model(session, actor, scope, config.memory.model, verb=verb, authority=authority)
         # A run's thread takes default mounts at its first acceptance, which checks them then.
         for index, mount in enumerate(config.memory_mounts):
             with at_field(f"memory_mounts.{index}.memory_id"):

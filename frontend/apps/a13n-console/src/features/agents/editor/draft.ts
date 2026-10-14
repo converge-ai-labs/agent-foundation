@@ -64,7 +64,8 @@ export function useAgentDraft(initial: AgentConfig) {
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
-    [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []);
+    [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
+    [memory, setMemory] = useState(initial.memory ?? {});
   const dirty =
     mediaKinds.some(
       ({ kind }) =>
@@ -83,6 +84,7 @@ export function useAgentDraft(initial: AgentConfig) {
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
     JSON.stringify(connections) !==
       JSON.stringify(initial.connection_tools ?? []) ||
+    JSON.stringify(memory) !== JSON.stringify(initial.memory ?? {}) ||
     JSON.stringify(memoryMounts) !==
       JSON.stringify(initial.memory_mounts ?? []);
   return {
@@ -112,6 +114,8 @@ export function useAgentDraft(initial: AgentConfig) {
     setConnections,
     memoryMounts,
     setMemoryMounts,
+    memory,
+    setMemory,
     dirty,
   };
 }
@@ -158,6 +162,8 @@ export function buildDraftConfig(
     };
   }
   try {
+    if (draft.memory.auto_organize && !draft.memory.model)
+      throw new Error(t("Choose an organization model."));
     return {
       ok: true,
       config: buildConfig(
@@ -175,6 +181,7 @@ export function buildDraftConfig(
             : {}),
           connection_tools: draft.connections,
           memory_mounts: draft.memoryMounts,
+          memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,
         },
         draft.advanced,

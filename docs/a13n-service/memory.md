@@ -28,11 +28,11 @@ All API paths below are under `/api/v1`.
 
 ## Session memory
 
-Use **Session memory** when threads in one session should share saved facts without configuring a memory resource first. The Service provides this capability by default, without a deployment feature flag. Each session opts into memory and automatic organization separately; both session settings default off.
+Use **Session memory** when threads in one session should share saved facts without configuring a memory resource first. The Service provides this capability by default, without a deployment feature flag. Configure the defaults once on the agent; each new session inherits them and keeps its own memory. Agents start with memory and automatic organization off.
 
-1. Enable **Session memory** when starting a conversation, or open **Memory** in an existing session header.
-2. Optionally enable **Automatically organize saved memory** and select an organization model.
-3. Save the settings. Open **Browse files and revisions** to inspect or correct saved facts. **Organization history** links to each maintenance run and its usage.
+1. Open the agent's **Memory** section. Under **Session memory defaults**, enable **Session memory** and optionally **Automatically organize saved memory**, then select an organization model.
+2. Save the agent. Leave **Use agent memory defaults** on when starting a session, or turn it off to explicitly enable or disable memory for that session.
+3. Open **Memory** in an existing session header to change its settings. Open **Browse files and revisions** to inspect or correct saved facts. **Organization history** links to each maintenance run and its usage.
 
 Enabling provisions a dedicated file memory. Future runs mount it as `session`; an explicit mount with that name or memory identity takes precedence. Already accepted runs keep their mounts. Disabling retains files and history, and re-enabling uses the same memory. The memory uses workspace permissions, so it is not private to one participant. Changing these settings requires `write` and `run`.
 
@@ -40,7 +40,11 @@ Automatic organization uses the selected model after a business run finishes, on
 
 Failed or cancelled organization retains committed edits but does not mark memory as processed. Concurrent edits remain eligible for a later round. You can inspect file history and restore earlier content through the existing memory controls.
 
-The API accepts the same settings on session creation or update:
+The agent's `config.memory` accepts the same settings as session creation or update. A session snapshots the selected agent revision when its first business run is accepted. Later agent changes affect new sessions; other agents and branches in an existing session retain that session's settings.
+
+Omit `memory` on `POST /sessions` to inherit. Send an explicit object, including `{"enabled": false}`, to override. Runners can inherit configured defaults without resource-write permission; changing the defaults or an explicit session choice requires `write`.
+
+Example settings:
 
 ```json
 {

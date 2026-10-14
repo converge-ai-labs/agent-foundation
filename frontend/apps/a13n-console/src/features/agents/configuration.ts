@@ -15,6 +15,7 @@ const commonFields = new Set([
   "skills",
   "connection_tools",
   "memory_mounts",
+  "memory",
   "reviewer",
   "default_environment_template_id",
   "plugins",
@@ -42,6 +43,7 @@ export function buildConfig(
     | "skills"
     | "connection_tools"
     | "memory_mounts"
+    | "memory"
     | "toolsets"
     | "reviewer"
     | "default_environment_template_id"

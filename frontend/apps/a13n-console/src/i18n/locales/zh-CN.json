@@ -1,4 +1,10 @@
 {
+  "Session memory defaults": "会话记忆默认设置",
+  "New sessions inherit these settings. Each session keeps its own files and can override these defaults.": "新会话继承这些设置。每个会话独立保存文件，也可以覆盖默认设置。",
+  "Shared memories": "共享记忆",
+  "Use agent memory defaults": "使用 Agent 记忆默认设置",
+  "The first agent's settings apply to this session. Turn off to choose your own.": "本会话使用首个 Agent 的记忆设置。关闭后可单独配置。",
+  "Choose an organization model.": "请选择整理模型。",
   "Add memory record": "添加记忆记录",
   "Agent configuration": "Agent 配置",
   "Append to memory file": "追加记忆文件内容",

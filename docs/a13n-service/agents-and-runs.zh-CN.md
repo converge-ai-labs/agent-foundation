@@ -72,6 +72,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `retries`                         | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                                                     |
 | `default_environment_template_id` | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                                                       |
 | `lazy_environment`                | 默认 `true`：首次使用时创建或启动实例。设为 `false` 可在进入 Harness 前准备全部实例；执行连接仍在首次使用时打开，参见[环境](environments.md#mount-environments-on-a-thread)。 |
+| `memory`                          | [会话记忆默认设置](memory.md#session-memory)：`enabled`、`auto_organize` 和整理 `model`。新会话继承这些设置，也可以单独覆盖。                                                 |
 | `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
 
 保存时按工作空间验证完整配置：每个引用的模型、skill、连接、provider 和 agent 必须存在且可由你使用，否则对应字段以 `invalid_argument` 拒绝；没有 `revision_id` 的 skill 和子 agent 引用会固定到当前默认修订版本。因此修订版本保留其配置以及 skill 和子 agent 的固定修订版本；它引用的模型、连接、provider 和模板是实时资源，每次使用时重新解析。

@@ -188,3 +188,31 @@ it("preserves raw settings and distinguishes inheritance from explicit clearing"
   built = buildDraftConfig(draft.current, undefined, asIs);
   expect(built.ok && built.config.model_settings).toEqual({ thinking: false });
 });
+
+it("publishes session memory defaults independently of shared mounts", () => {
+  const memory = { enabled: true, auto_organize: true, model: "organizer" };
+  const draft = draftFor({ memory });
+  expect(draft.current.memory).toEqual(memory);
+  expect(JSON.parse(draft.current.advanced)).not.toHaveProperty("memory");
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setMemory({ ...memory, enabled: false }));
+  expect(draft.current.dirty).toBe(true);
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.memory).toEqual({
+    ...memory,
+    enabled: false,
+  });
+  expect(built.ok && built.config.memory_mounts).toEqual([]);
+  act(() =>
+    draft.current.setMemory({
+      enabled: true,
+      auto_organize: true,
+      model: null,
+    }),
+  );
+  const invalid = buildDraftConfig(draft.current, undefined, asIs);
+  expect(invalid.ok).toBe(false);
+  expect(!invalid.ok && invalid.error.message).toBe(
+    "Choose an organization model.",
+  );
+});
