@@ -2,16 +2,9 @@ import type { TFunction } from "i18next";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
-import { CopyButton } from "../../../../shared/identity";
-import {
-  StoredContent,
-  LegacyTruncation,
-  useStoredReference,
-} from "../../stored-content";
 import { formatDuration, tokenFigures } from "../../format";
 import type {
   ActionEntry,
-  ContentEntry,
   EventEntry,
   ModelEntry,
   TimelineEntry,
@@ -26,7 +19,6 @@ import {
   workState,
   type WorkState,
 } from "../entry-language";
-import { MessageAuthor } from "../../message-author";
 import { EntryPane } from "./entry-pane";
 import { bar, type RunScope } from "./scope";
 import styles from "./debug.module.css";
@@ -58,14 +50,6 @@ function TimelineRow({
   entry: TimelineEntry;
   scope: RunScope;
 }) {
-  if (entry.kind === "reply" && !entry.subagentRunId)
-    return <ReplyBlock entry={entry} />;
-  if (
-    entry.kind === "guidance" &&
-    !entry.steeringSource &&
-    !entry.subagentRunId
-  )
-    return <GuidanceBlock entry={entry} />;
   if (entry.kind === "event") return <EventRow entry={entry} scope={scope} />;
   return <ExpandableRow entry={entry} scope={scope} />;
 }
@@ -84,15 +68,9 @@ function ExpandableRow({
   // of other observations is not one step: neither carries an outcome, a
   // duration or a place on the time bar.
   const content = "text" in entry || entry.kind === "other";
+  // What a call emitted, its reply included, is a step beneath it; the Run's
+  // output is read once, after its steps.
   const children = "children" in entry ? entry.children : [];
-  // A reply is the answer, not a step: it leaves the indent and reads as prose.
-  const nested = children.filter(
-    (child) => child.kind !== "reply" || child.subagentRunId,
-  );
-  const replies = children.filter(
-    (child): child is ContentEntry =>
-      child.kind === "reply" && !child.subagentRunId,
-  );
   const state = workState(entry.state, scope.run.status);
   const childPath =
     entry.kind === "subagent" ? (scope.child?.path ?? null) : null;
@@ -147,6 +125,10 @@ function ExpandableRow({
               {text.tokens}
             </span>
           )}
+          {/* Said, not done: only a reply cut short carries a state. */}
+          {content && "text" in entry && entry.state === "interrupted" && (
+            <StateMark state="interrupted" className={styles.state} />
+          )}
           {!content && (
             <>
               <span className={styles.duration}>
@@ -176,12 +158,9 @@ function ExpandableRow({
         </span>
       </div>
       {open && <EntryPane entry={entry} scope={scope} />}
-      {!!nested.length && (
-        <TimelineRows entries={nested} scope={scope} nested />
+      {!!children.length && (
+        <TimelineRows entries={children} scope={scope} nested />
       )}
-      {replies.map((reply) => (
-        <ReplyBlock key={reply.id} entry={reply} />
-      ))}
     </div>
   );
 }
@@ -267,47 +246,6 @@ function actionText(
       ),
   ].filter(Boolean) as string[];
   return { ...entryLabel(entry, t), subject: notes.join(" · ") };
-}
-
-/** Guidance is a message someone sent, so it reads like the Run's request. */
-function GuidanceBlock({ entry }: { entry: ContentEntry }) {
-  const { t } = useTranslation();
-  if (!entry.text.trim()) return null;
-  return (
-    <div className={styles.request}>
-      <div className={styles.requestHead}>
-        <MessageAuthor entryId={entry.sourceId} />
-        <span className={styles.requestLabel}>{t("Guidance")}</span>
-      </div>
-      <div className={styles.requestBody}>
-        <StoredContent itemId={entry.id} field="text" value={entry.text} />
-      </div>
-    </div>
-  );
-}
-
-/** The Agent's answer is prose, not a row: it reads at full width. */
-function ReplyBlock({ entry }: { entry: ContentEntry }) {
-  const { t } = useTranslation();
-  const reference = useStoredReference(entry.id, "text");
-  return (
-    <div
-      className={styles.reply}
-      data-interrupted={entry.state === "interrupted" || undefined}
-    >
-      <div className={styles.replyLabel}>
-        <span>{t("Reply")}</span>
-        {entry.state === "interrupted" && <span>{t("interrupted")}</span>}
-        {!reference && (
-          <CopyButton value={entry.text} iconOnly copyLabel={t("Copy reply")} />
-        )}
-      </div>
-      <div className={styles.replyBody}>
-        <StoredContent itemId={entry.id} field="text" value={entry.text} />
-        <LegacyTruncation itemId={entry.id} />
-      </div>
-    </div>
-  );
 }
 
 /** Lifecycle facts stay legible without competing with the work they bracket. */

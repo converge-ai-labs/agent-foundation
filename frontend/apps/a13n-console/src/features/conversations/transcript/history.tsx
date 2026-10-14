@@ -17,6 +17,7 @@ import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
 import { DebugRunSection } from "./debug/run-section";
 import { EarlierItems } from "./earlier-items";
+import { FailureNotice } from "./failure-notice";
 import { useThreadRuns } from "./thread-runs";
 import { RunBlock } from "./run-block";
 import debug from "./debug/debug.module.css";
@@ -326,7 +327,17 @@ function HistoricalRun({
               {t("View run")}
             </Link>
           }
-        />
+        >
+          {/* An earlier run that stopped short says so; only the latest offers
+              to resubmit. */}
+          {(run.failure != null ||
+            ["failed", "cancelled"].includes(run.status)) && (
+            <FailureNotice
+              failure={run.failure}
+              cancelled={run.status === "cancelled"}
+            />
+          )}
+        </RunBlock>
       </StoredContents>
     </div>
   );

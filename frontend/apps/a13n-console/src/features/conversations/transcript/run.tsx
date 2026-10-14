@@ -14,6 +14,7 @@ import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
 import { BranchOrigin } from "../thread-branches";
 import { RunNavigator } from "./debug/run-navigator";
+import { DebugPendingRun } from "./debug/run-section";
 import { useViewLevel } from "./debug/view";
 import { HistoryTranscript } from "./history";
 import { RunEntry } from "./run-entry";
@@ -22,6 +23,7 @@ import { isInteractive } from "./run-actions";
 import { useTranscriptScroll } from "./use-transcript-scroll";
 import { UserMessage } from "./user-message";
 import { inputText } from "../input";
+import type { RunRequest } from "../request";
 import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
@@ -185,17 +187,15 @@ function RunBody({
             prefill={id === run.id ? prefill : undefined}
           />
         ))}
-        {submitting && !runIds.includes(submitting.runId ?? "") && (
-          <div aria-busy="true">
-            <UserMessage
-              request={{
-                kind: "message",
-                input: submitting.payload,
-                text: inputText(submitting.payload),
-              }}
-            />
-          </div>
-        )}
+        {submitting &&
+          !runIds.includes(submitting.runId ?? "") &&
+          (level === "debug" ? (
+            <DebugPendingRun request={pendingRequest(submitting)} />
+          ) : (
+            <div aria-busy="true">
+              <UserMessage request={pendingRequest(submitting)} />
+            </div>
+          ))}
       </div>
       <RunDock
         run={run}
@@ -226,4 +226,13 @@ function RunBody({
       />
     </div>
   );
+}
+
+/** A message sent from the dock, read as the request it will become. */
+function pendingRequest(message: PendingMessage): RunRequest {
+  return {
+    kind: "message",
+    input: message.payload,
+    text: inputText(message.payload),
+  };
 }

@@ -1,18 +1,29 @@
 /* Sections ---------------------------------------------------------------
-   One run is one section. Space between sections is always larger than the
-   space inside them, and a hairline only marks where one run ends. */
+   Debug reads a Session as an executor's record, not a conversation: each Run
+   is one card, its border says where the Run starts and ends, and its header
+   names it before anything it did. */
 .sections {
   display: flex;
   flex-direction: column;
+  gap: 16px;
   min-width: 0;
-  padding-bottom: 24px;
+  padding: 16px 0 12px;
 }
 .section {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-top: 36px;
-  scroll-margin-top: 8px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 14px;
+  background: var(--a13n-canvas);
+  scroll-margin-top: 16px;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 14px 14px 12px;
 }
 /* Chat marks its runs for the same anchoring without changing their layout:
    the wrapper inherits the transcript's own grid rhythm. */
@@ -24,21 +35,22 @@
   min-width: 0;
   scroll-margin-top: 8px;
 }
-.sections > .section:first-child {
-  padding-top: 20px;
-}
-.section + .section {
-  border-top: 1px solid var(--a13n-border-soft);
-}
 
 /* Heading ----------------------------------------------------------------
-   Every line of a run starts on one of two edges: glyphs centre in the 22px
-   rail, and text starts 30px in. The heading's caret is a glyph and its name
-   is text, so the run reads down two straight lines. */
+   The header is the card's band. Its caret centres in the same 22px rail as
+   the steps below, and its name starts on their 30px text edge. */
 .heading {
   display: grid;
   gap: 1px;
   min-width: 0;
+  padding: 9px 14px 9px 12px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  border-radius: 13px 13px 0 0;
+  background: color-mix(in srgb, var(--a13n-surface) 60%, transparent);
+}
+/* A closed card is its band alone with one line of input. */
+.section:has(.headingTitle[aria-expanded="false"]) .body {
+  padding-block: 10px;
 }
 .headingLine {
   display: flex;
@@ -76,11 +88,16 @@
 .caret[data-expanded] {
   transform: rotate(90deg);
 }
-.runName {
+.runName,
+.pendingName {
   font-size: var(--a13n-text-sm);
   font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
   white-space: nowrap;
+}
+.pendingName {
+  padding-left: 30px;
+  line-height: 26px;
 }
 .lineage {
   flex: none;
@@ -88,8 +105,9 @@
   font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
-/* What the run cost sits under its name, where it never crowds the actions. */
-/* Separators sit in the gap; one that would start a wrapped line is clipped. */
+/* When the run started, how long it took and what it cost sit under its name,
+   where they never crowd the actions. Separators sit in the gap; one that
+   would start a wrapped line is clipped. */
 .headingMeta {
   display: flex;
   flex-wrap: wrap;
@@ -102,18 +120,14 @@
   font-variant-numeric: tabular-nums;
   line-height: 1.6;
 }
-.headingMeta > span {
+.headingMeta > * {
   position: relative;
 }
-.headingMeta > span::before {
+.headingMeta > * + *::before {
   content: "·";
   position: absolute;
   left: -11px;
   color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
-}
-.headingDuration {
-  color: var(--a13n-text);
-  font-weight: 500;
 }
 /* Branch and Details are the run's two quiet actions; they read alike. */
 .headingActions {
@@ -132,62 +146,102 @@
   color: var(--a13n-text);
 }
 
-/* Request ---------------------------------------------------------------- */
-/* The author's avatar is the request's glyph: it centres in the rail. */
-.request {
-  --author-gap: 9px;
-  --author-inset: -2px;
+/* Fields -----------------------------------------------------------------
+   The body reads input, steps, output: each part is labelled, and what was
+   given or returned sits in a well, so content is never mistaken for a
+   message in a conversation. */
+.field {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
-  padding: 16px 0 12px;
 }
-.requestHead {
+.fieldLabel {
+  --author-gap: 4px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-}
-.requestLabel {
+  min-height: 20px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
-/* Reads as the author line's own "· You" detail. */
-.requestHead .requestLabel::before {
-  content: "· ";
-}
-/* Guidance arrives between steps and keeps their rhythm. */
-.timeline > .request {
-  padding: 6px 0 4px;
-}
-.request > .requestLabel,
-.requestBody {
-  padding-left: 30px;
-}
-.requestBody {
+.fieldSource {
+  display: inline-flex;
   min-width: 0;
-  font-size: var(--a13n-text-md);
-  line-height: 1.6;
+  font-weight: 400;
 }
-.request[data-collapsed] .requestBody {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
+/* The author's trigger pads its name by 3px; the separator gives that back. */
+.fieldSource::before {
+  content: "·";
+  margin-right: 5px;
+  color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
+}
+.fieldAction {
+  margin-left: auto;
+}
+.well {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+  font-size: var(--a13n-text-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.excerpt {
+  margin: 0;
   overflow: hidden;
+  color: var(--a13n-text-supporting);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Long content stops at a fixed height and fades; the reader opens the rest. */
+.clamp {
+  max-height: 168px;
+  overflow: hidden;
+}
+.clamp[data-tall] {
+  max-height: 320px;
+}
+.clamp[data-expanded] {
+  max-height: none;
+}
+.clamp[data-overflows]:not([data-expanded]) {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+}
+.clamp > div > :first-child {
+  margin-top: 0;
+}
+.clamp > div > :last-child {
+  margin-bottom: 0;
+}
+.clampToggle {
+  margin: 6px 0 -2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a13n-secondary);
+  font: inherit;
+  font-size: var(--a13n-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+.clampToggle:hover {
+  color: var(--a13n-text);
+}
+.clampToggle:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
 }
 .coverage {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 8px;
-  padding-left: 30px;
+  margin: 0;
   color: var(--a13n-warning);
   font-size: var(--a13n-text-xs);
-}
-.structured {
-  margin: 12px 0 0 30px;
 }
 
 /* Timeline --------------------------------------------------------------- */
@@ -433,43 +487,28 @@
   white-space: nowrap;
 }
 
-/* Reply ------------------------------------------------------------------ */
-/* The reply sits close under the call that wrote it. */
-.reply {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 2px 0 12px 30px;
-}
-.reply[data-interrupted] {
-  color: var(--a13n-secondary);
-}
-.replyLabel {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-2xs);
-  font-weight: 500;
-}
-.replyBody {
-  min-width: 0;
-  font-size: var(--a13n-text-body);
-  line-height: 1.65;
-}
 /* Dock -------------------------------------------------------------------
-   An answer to a wait starts on the text edge, like the run it resumes. */
+   What the Session waits for and what is queued behind it are cards beside
+   the Runs, on their edges. */
+/* With the stage's 4px gap, every card stands 16px from the next. */
+.feedback,
+.inbox {
+  margin-bottom: 12px;
+}
 .feedback {
   min-width: 0;
-  padding: 8px 0 0 30px;
+  padding: 14px 14px 14px 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 14px;
 }
 
 /* Inbox ------------------------------------------------------------------
-   The Thread's inbox closes the level on the runs' own grid: its caret is a
-   glyph in the rail and its title starts on the text edge. */
+   The Thread's inbox is a card on the runs' own grid: its caret centres in
+   the rail and its title starts on the text edge. */
 .inbox {
-  padding-top: 8px;
-  border-top: 1px solid var(--a13n-border-soft);
+  padding: 3px 14px 3px 12px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 14px;
 }
 .inbox > [data-slot="disclosure-surface"] {
   border-radius: 0;
@@ -479,19 +518,23 @@
 .inbox > [data-slot="disclosure-surface"] > button {
   gap: 12px;
   padding-left: 3px;
-  padding-right: 8px;
+  padding-right: 0;
   font-size: var(--a13n-text-sm);
 }
 .inbox > [data-slot="disclosure-surface"] > button > svg {
   margin: 0;
 }
 .inbox [data-slot="collapsible-panel"] > div {
-  padding: 4px 0 8px 30px;
+  padding: 4px 0 10px 30px;
 }
 
 @media (max-width: 760px) {
   .headingLine {
     flex-wrap: wrap;
+  }
+  /* The run's two actions keep their glyphs and stay on the name's line. */
+  .headingActions [data-action-label] {
+    display: none;
   }
   .rowMeta {
     grid-template-columns: [extra] auto [duration] 44px [state] 12px;

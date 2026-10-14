@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import type { DisplayItem } from "a13n-ui/display";
 import { presentItems } from "../projection";
 import { createClient, type Client } from "../../../service-client";
@@ -59,8 +59,10 @@ vi.mock("./user-message", () => ({
 vi.mock("./assistant-message", () => ({
   AgentTurn: ({
     blocks,
+    children,
   }: {
     blocks: { id: string; entry?: { text: string } }[];
+    children?: ReactNode;
   }) => (
     <>
       {blocks.map((block) => (
@@ -68,6 +70,7 @@ vi.mock("./assistant-message", () => ({
           {block.entry?.text}
         </p>
       ))}
+      {children}
     </>
   ),
   CopyReply: () => null,
@@ -195,6 +198,9 @@ function stage(
   };
 }
 
+/** Ancestors a test marks as failed; every other one completed. */
+let failed = new Set<string>();
+
 /** A Run of the fixture Thread, as the lineage and the Run read serve it. */
 const ancestor = (id: string) =>
   fixtureRun({
@@ -203,6 +209,10 @@ const ancestor = (id: string) =>
     session_id: "session",
     agent_id: "agent",
     input: { content: [{ type: "text", text: "Earlier request" }] },
+    ...(failed.has(id) && {
+      status: "failed",
+      failure: { code: "agent_run_failed", message: "Agent failed." },
+    }),
   });
 
 /** The lineage in pages, nearest first, as the Service pages it. */
@@ -273,6 +283,20 @@ it("opens Chat with bounded recent history without requiring any scroll", async 
   ).not.toHaveProperty("disabled", true);
   await waitFor(() => expect(StageObserver.created).toHaveLength(1));
   expect(StageObserver.created[0]!.options.rootMargin).toBe("500px 0px 0px");
+  cache.clear();
+});
+
+it("says an earlier Chat run stopped short, and leaves resubmitting to the latest", async () => {
+  failed = new Set(["recent-2"]);
+  client = ancestorService([], [["current", ...recent, "parent"]]);
+  const { cache } = stage("chat");
+  await screen.findByText("Latest recent-5 message");
+  expect(await screen.findAllByText("The run could not finish")).toHaveLength(
+    1,
+  );
+  expect(screen.getByText("Error details")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resubmit" })).toBeNull();
+  failed = new Set();
   cache.clear();
 });
 
@@ -503,12 +527,17 @@ it.each(["reply", "reasoning", "tool"] as const)(
       await screen.findByRole("button", { name: "Load earlier runs" }),
     );
     await screen.findByText("Run");
-    if (kind !== "reply")
-      fireEvent.click(
-        await screen.findByRole("button", {
-          name: kind === "tool" ? /read_file/ : /Reasoning/,
-        }),
-      );
+    // Debug reads each entry as a step: its content opens with its row.
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name:
+          kind === "tool"
+            ? /read_file/
+            : kind === "reply"
+              ? /Reply/
+              : /Reasoning/,
+      }),
+    );
     expect(contentRequests).toHaveLength(0);
     fireEvent.click(
       await screen.findByRole("button", { name: "Expand full content" }),
