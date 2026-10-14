@@ -12,6 +12,12 @@ until xdpyinfo >/dev/null 2>&1; do
     sleep .1
 done
 openbox >/tmp/openbox.log 2>&1 &
+tries=0
+until xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 150 ]; then exit 1; fi
+    sleep .1
+done
 /usr/bin/python3 /app/dev/fixtures/linux-desktop/desktop.py /tmp/work/desktop.json >/tmp/desktop.log 2>&1 &
 tries=0
 until test -f /tmp/work/desktop.json; do

@@ -125,7 +125,7 @@ async def test_native_desktop_permissions_freeze_and_retained_screenshots(servic
         image = Image.open(BytesIO(response.content))
         assert image.size == (1024, 768)
         red, green, _ = image.getpixel((70, 100))
-        assert red > green if call_id == "observe" else green > red
+        assert red > green if call_id == "observe" else green > red, (call_id, image.getpixel((70, 100)))
     # Independent GUI event-loop evidence; no input injected outside Computer tools.
     connector = await execution_connector(service.runtime, await target(service, environment["id"]))
     async with await connector.open() as execution:
