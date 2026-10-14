@@ -159,71 +159,82 @@ function RunBody({
         scroll.jumpToLatest();
       }
     : undefined;
+  const debugLevel = level === "debug";
+  // Debug is a tool page: the Thread's run index beside its logs. Chat's
+  // wrappers add no box, and both levels keep them so a switch keeps the dock
+  // and its draft.
   return (
-    <div className={styles.run} ref={transcript}>
-      <ErrorNotice error={error} />
-      <BranchOrigin
-        thread={thread}
-        threads={threads.data ?? [thread]}
-        level={level}
-      />
-      {level === "debug" && <RunNavigator thread={thread} runId={run.id} />}
-      <div className={level === "debug" ? debug.sections : styles.transcript}>
-        <HistoryTranscript
-          runId={runIds[0]!}
-          thread={thread}
-          level={level}
-          preservePosition={scroll.preservePosition}
-          jumpToDock={scroll.jumpToLatest}
-        />
-        {runIds.map((id) => (
-          <RunEntry
-            key={id}
-            runId={id}
+    <div className={debugLevel ? debug.page : styles.page}>
+      <div className={debugLevel ? debug.frame : styles.page}>
+        {debugLevel && <RunNavigator thread={thread} runId={run.id} />}
+        <div
+          className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
+          ref={transcript}
+        >
+          <ErrorNotice error={error} />
+          <BranchOrigin
+            thread={thread}
+            threads={threads.data ?? [thread]}
+            level={level}
+          />
+          <div className={debugLevel ? debug.sections : styles.transcript}>
+            <HistoryTranscript
+              runId={runIds[0]!}
+              thread={thread}
+              level={level}
+              preservePosition={scroll.preservePosition}
+              jumpToDock={scroll.jumpToLatest}
+            />
+            {runIds.map((id) => (
+              <RunEntry
+                key={id}
+                runId={id}
+                thread={thread}
+                level={level}
+                followed={id === run.id}
+                jumpToDock={scroll.jumpToLatest}
+                prefill={id === run.id ? prefill : undefined}
+              />
+            ))}
+            {submitting &&
+              !runIds.includes(submitting.runId ?? "") &&
+              (debugLevel ? (
+                <DebugPendingRun request={pendingRequest(submitting)} />
+              ) : (
+                <div aria-busy="true">
+                  <UserMessage request={pendingRequest(submitting)} />
+                </div>
+              ))}
+          </div>
+          <RunDock
+            run={run}
             thread={thread}
             level={level}
-            followed={id === run.id}
-            jumpToDock={scroll.jumpToLatest}
-            prefill={id === run.id ? prefill : undefined}
+            agentName={agentName}
+            resubmit={resubmit}
+            pendingRunId={submitting?.runId}
+            onResubmitted={() => setResubmit(null)}
+            onSubmissionChange={(message) => {
+              setSubmitting(message);
+              if (message && !message.runId) scroll.followLatest();
+            }}
+            above={
+              scroll.showJump && (
+                <Button
+                  className={styles.jumpToLatest}
+                  size="sm"
+                  variant="outline"
+                  onClick={scroll.jumpToLatest}
+                  type="button"
+                >
+                  <ArrowDownIcon size={14} />
+                  {t("Jump to latest")}
+                </Button>
+              )
+            }
           />
-        ))}
-        {submitting &&
-          !runIds.includes(submitting.runId ?? "") &&
-          (level === "debug" ? (
-            <DebugPendingRun request={pendingRequest(submitting)} />
-          ) : (
-            <div aria-busy="true">
-              <UserMessage request={pendingRequest(submitting)} />
-            </div>
-          ))}
+        </div>
       </div>
-      <RunDock
-        run={run}
-        thread={thread}
-        level={level}
-        agentName={agentName}
-        resubmit={resubmit}
-        pendingRunId={submitting?.runId}
-        onResubmitted={() => setResubmit(null)}
-        onSubmissionChange={(message) => {
-          setSubmitting(message);
-          if (message && !message.runId) scroll.followLatest();
-        }}
-        above={
-          scroll.showJump && (
-            <Button
-              className={styles.jumpToLatest}
-              size="sm"
-              variant="outline"
-              onClick={scroll.jumpToLatest}
-              type="button"
-            >
-              <ArrowDownIcon size={14} />
-              {t("Jump to latest")}
-            </Button>
-          )
-        }
-      />
     </div>
   );
 }

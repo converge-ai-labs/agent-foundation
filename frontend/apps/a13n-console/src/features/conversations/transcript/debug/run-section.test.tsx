@@ -126,7 +126,8 @@ it("reads one run as the executor's record: input, steps and output", () => {
   expect(within(input).getByText("User")).toBeTruthy();
   // Totals come from reported usage; the duration is the run's own span.
   expect(screen.getByText("12s")).toBeTruthy();
-  expect(screen.getByText("1 model calls")).toBeTruthy();
+  const calls = screen.getByText("Model calls").parentElement!;
+  expect(within(calls).getByText("1")).toBeTruthy();
   expect(screen.getAllByText("3.1k → 210").length).toBe(2);
   expect(screen.getByText("$0.0041")).toBeTruthy();
   // Model requests are the skeleton; the edit and the reply are steps beneath.
@@ -137,6 +138,10 @@ it("reads one run as the executor's record: input, steps and output", () => {
   expect(within(steps).getByText("+2")).toBeTruthy();
   expect(within(steps).getByText("−1")).toBeTruthy();
   expect(within(steps).getByRole("button", { name: /Reply/ })).toBeTruthy();
+  // Each line says how far into the run it happened; a finished run ends on
+  // the line that says when it did.
+  const end = screen.getByText("Run completed").closest("[data-kind]")!;
+  expect(end.textContent).toContain("+12.0s");
   // What the run returned is read once, after its steps.
   const output = screen.getByText("Output").closest("section")!;
   expect(within(output).getByText("Patched the fold.")).toBeTruthy();

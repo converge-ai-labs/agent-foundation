@@ -1,8 +1,9 @@
 import type { TFunction } from "i18next";
+import { CheckIcon } from "@phosphor-icons/react";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
-import { formatDuration, tokenFigures } from "../../format";
+import { formatDuration, formatOffset, tokenFigures } from "../../format";
 import type {
   ActionEntry,
   EventEntry,
@@ -20,149 +21,203 @@ import {
   type WorkState,
 } from "../entry-language";
 import { EntryPane } from "./entry-pane";
-import { bar, type RunScope } from "./scope";
+import type { RunScope } from "./scope";
 import styles from "./debug.module.css";
 
-/** Model requests are the skeleton; what they emitted indents beneath them. */
+/**
+ * The Run's steps as lines of its log. Model requests are the skeleton; what
+ * they emitted indents beneath them, and each line opens its record in place.
+ */
 export function TimelineRows({
   entries,
   scope,
-  nested = false,
+  depth = 0,
 }: {
   entries: readonly TimelineEntry[];
   scope: RunScope;
-  nested?: boolean;
+  depth?: number;
 }) {
-  if (!entries.length) return null;
-  return (
-    <div className={nested ? styles.children : styles.timeline}>
-      {entries.map((entry) => (
-        <TimelineRow key={entry.id} entry={entry} scope={scope} />
-      ))}
-    </div>
+  return entries.map((entry) =>
+    entry.kind === "event" ? (
+      <EventRow key={entry.id} entry={entry} scope={scope} depth={depth} />
+    ) : (
+      <StepRow key={entry.id} entry={entry} scope={scope} depth={depth} />
+    ),
   );
 }
 
-function TimelineRow({
+function StepRow({
   entry,
   scope,
+  depth,
 }: {
   entry: TimelineEntry;
   scope: RunScope;
-}) {
-  if (entry.kind === "event") return <EventRow entry={entry} scope={scope} />;
-  return <ExpandableRow entry={entry} scope={scope} />;
-}
-
-function ExpandableRow({
-  entry,
-  scope,
-}: {
-  entry: TimelineEntry;
-  scope: RunScope;
+  depth: number;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const Glyph = entryGlyph(entry);
-  // Reasoning is something the agent said, not something it did, and a group
-  // of other observations is not one step: neither carries an outcome, a
-  // duration or a place on the time bar.
+  // Reasoning and replies are said, not done, and a group of other
+  // observations is not one step: neither carries an outcome or a duration.
   const content = "text" in entry || entry.kind === "other";
-  // What a call emitted, its reply included, is a step beneath it; the Run's
-  // output is read once, after its steps.
   const children = "children" in entry ? entry.children : [];
-  const state = workState(entry.state, scope.run.status);
+  const state = content
+    ? "text" in entry && entry.state === "interrupted"
+      ? "interrupted"
+      : "done"
+    : workState(entry.state, scope.run.status);
   const childPath =
     entry.kind === "subagent" ? (scope.child?.path ?? null) : null;
   const text = rowText(entry, state, t, childPath);
-  const track = bar(scope, entry.startedAt, entry.durationMs);
-  return (
-    <div className={styles.entry} data-kind={entry.kind}>
-      <div className={styles.row} data-open={open || undefined}>
-        <button
-          type="button"
-          className={styles.rowTrigger}
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <span className={styles.marker} aria-hidden="true">
-            <Glyph size={13} />
-          </span>
-          <span className={styles.rowBody}>
-            <span className={styles.name} data-mono={text.mono || undefined}>
-              {text.name}
-            </span>
-            {text.subject && (
-              <span className={styles.subject} title={text.subject}>
-                {text.subject}
-              </span>
-            )}
-          </span>
-        </button>
-        <span
-          className={styles.rowMeta}
-          data-usage={!!text.tokens || undefined}
-        >
-          {(childPath || ("edit" in entry && entry.edit)) && (
-            <span className={styles.extra}>
-              {childPath && (
-                <Link className={styles.rowLink} to={childPath}>
-                  {t("Open child thread")}
-                </Link>
-              )}
-              {"edit" in entry && entry.edit && (
-                <DiffBadges diff={entry.edit.diff} />
-              )}
-            </span>
-          )}
-          {text.cache && (
-            <span className={styles.cache} title={text.cacheTitle}>
-              {text.cache}
-            </span>
-          )}
-          {text.tokens && (
-            <span className={styles.tokens} title={text.tokensTitle}>
-              {text.tokens}
-            </span>
-          )}
-          {/* Said, not done: only a reply cut short carries a state. */}
-          {content && "text" in entry && entry.state === "interrupted" && (
-            <StateMark state="interrupted" className={styles.state} />
-          )}
-          {!content && (
-            <>
-              <span className={styles.duration}>
-                {entry.durationMs === null
-                  ? ""
-                  : formatDuration(entry.durationMs)}
-              </span>
-              <span
-                className={styles.bar}
-                aria-hidden="true"
-                style={
-                  track
-                    ? ({
-                        "--bar-left": `${track.left}%`,
-                        "--bar-width": `${track.width}%`,
-                      } as CSSProperties)
-                    : undefined
-                }
-                data-empty={track ? undefined : true}
-              />
-              {/* A step that completed needs no mark; only exceptions show. */}
-              {state !== "done" && (
-                <StateMark state={state} className={styles.state} />
-              )}
-            </>
-          )}
-        </span>
-      </div>
-      {open && <EntryPane entry={entry} scope={scope} />}
-      {!!children.length && (
-        <TimelineRows entries={children} scope={scope} nested />
+  const extra = (childPath || ("edit" in entry && entry.edit)) && (
+    <span className={styles.extra}>
+      {childPath && (
+        <Link className={styles.lineLink} to={childPath}>
+          {t("Open child thread")}
+        </Link>
       )}
+      {"edit" in entry && entry.edit && <DiffBadges diff={entry.edit.diff} />}
+    </span>
+  );
+  return (
+    <>
+      <LogLine
+        kind={entry.kind}
+        depth={depth}
+        open={open}
+        // A group of other observations has no one moment to place it at.
+        time={
+          entry.kind === "other"
+            ? ""
+            : formatOffset(offsetOf(entry.startedAt, scope))
+        }
+        mark={
+          // A step that completed needs no mark; an exception takes the
+          // glyph's place at the head of its line.
+          state === "done" || state === "unknown" ? (
+            <Glyph size={13} aria-hidden="true" />
+          ) : (
+            <StateMark state={state} size={13} />
+          )
+        }
+        name={text.name}
+        mono={text.mono}
+        subject={text.subject}
+        extra={extra}
+        cache={text.cache && <span title={text.cacheTitle}>{text.cache}</span>}
+        tokens={
+          text.tokens && <span title={text.tokensTitle}>{text.tokens}</span>
+        }
+        duration={
+          content || entry.durationMs === null
+            ? null
+            : formatDuration(entry.durationMs)
+        }
+        onToggle={() => setOpen((value) => !value)}
+      />
+      {open && (
+        <div
+          className={styles.detail}
+          style={{ "--depth": depth } as CSSProperties}
+        >
+          <EntryPane entry={entry} scope={scope} />
+        </div>
+      )}
+      {!!children.length && (
+        <TimelineRows entries={children} scope={scope} depth={depth + 1} />
+      )}
+    </>
+  );
+}
+
+/**
+ * One line of the log: when it happened, what it was, and the figures in
+ * fixed columns. The line's name opens it; links in it stay ordinary links.
+ */
+function LogLine({
+  kind,
+  depth,
+  open,
+  tone,
+  time,
+  mark,
+  name,
+  mono = false,
+  subject,
+  extra,
+  cache,
+  tokens,
+  duration,
+  onToggle,
+}: {
+  kind: string;
+  depth: number;
+  open?: boolean;
+  tone?: string;
+  time: string;
+  mark: ReactNode;
+  name: string;
+  mono?: boolean;
+  subject?: string;
+  extra?: ReactNode;
+  cache?: ReactNode;
+  tokens?: ReactNode;
+  duration?: ReactNode;
+  onToggle?: () => void;
+}) {
+  const label = (
+    <>
+      <span className={styles.mark}>{mark}</span>
+      <span className={styles.name} data-mono={mono || undefined}>
+        {name}
+      </span>
+      {subject && (
+        <span className={styles.subject} title={subject}>
+          {subject}
+        </span>
+      )}
+    </>
+  );
+  return (
+    <div
+      className={styles.line}
+      data-kind={kind}
+      data-tone={tone}
+      data-depth={depth}
+      data-open={open || undefined}
+    >
+      <span className={styles.time}>{time}</span>
+      <span
+        className={styles.lineBody}
+        style={{ "--depth": depth } as CSSProperties}
+      >
+        {onToggle ? (
+          <button
+            type="button"
+            className={styles.lineTrigger}
+            aria-expanded={open}
+            onClick={onToggle}
+          >
+            {label}
+          </button>
+        ) : (
+          <span className={styles.lineLabel}>{label}</span>
+        )}
+        {extra}
+      </span>
+      <span className={styles.cache}>{cache}</span>
+      <span className={styles.tokens}>{tokens}</span>
+      <span className={styles.duration}>{duration}</span>
     </div>
   );
+}
+
+/** Milliseconds from the Run's start, when the moment is known. */
+function offsetOf(at: string | null, scope: RunScope) {
+  if (!at) return null;
+  const offset = Date.parse(at) - scope.start;
+  return Number.isFinite(offset) ? offset : null;
 }
 
 interface RowText {
@@ -223,7 +278,7 @@ function modelText(entry: ModelEntry, t: TFunction): RowText {
     ...label,
     tokens: figures.pair,
     tokensTitle: figures.pairTitle,
-    cache: figures.cache,
+    cache: figures.rate,
     cacheTitle: figures.cacheTitle,
   };
 }
@@ -248,44 +303,42 @@ function actionText(
   return { ...entryLabel(entry, t), subject: notes.join(" · ") };
 }
 
-/** Lifecycle facts stay legible without competing with the work they bracket. */
+/** A lifecycle fact: its head carries its tone, what follows stays secondary. */
 export function EventRow({
   entry,
   scope,
-  action,
+  depth = 0,
 }: {
   entry: EventEntry;
   scope: RunScope;
-  action?: ReactNode;
+  depth?: number;
 }) {
   const { t } = useTranslation();
   const Glyph = entryGlyph(entry);
-  const subject = entrySubject(entry);
-  // A fact with no known time has no offset to show.
-  const offset = Math.max(0, Date.parse(entry.occurredAt ?? "") - scope.start);
   return (
-    <div className={styles.entry} data-kind="event">
-      <div className={styles.eventRow} data-tone={entry.notice.tone}>
-        <span className={styles.marker} aria-hidden="true">
-          <Glyph size={13} />
-        </span>
-        <span className={styles.rowBody}>
-          <span className={styles.eventName}>{entryLabel(entry, t).name}</span>
-          {subject && (
-            <span className={styles.subject} title={subject}>
-              {subject}
-            </span>
-          )}
-        </span>
-        <span className={styles.rowMeta}>
-          {action && <span className={styles.extra}>{action}</span>}
-          <span className={styles.duration}>
-            {Number.isFinite(offset) && offset > 0
-              ? `+${formatDuration(offset)}`
-              : ""}
-          </span>
-        </span>
-      </div>
-    </div>
+    <LogLine
+      kind="event"
+      tone={entry.notice.tone}
+      depth={depth}
+      time={formatOffset(offsetOf(entry.occurredAt, scope))}
+      mark={<Glyph size={13} aria-hidden="true" />}
+      name={entryLabel(entry, t).name}
+      subject={entrySubject(entry)}
+    />
+  );
+}
+
+/** The last line of a Run that finished: when it did. */
+export function CompletedRow({ scope }: { scope: RunScope }) {
+  const { t } = useTranslation();
+  return (
+    <LogLine
+      kind="event"
+      tone="success"
+      depth={0}
+      time={formatOffset(offsetOf(scope.run.sealed_at, scope))}
+      mark={<CheckIcon size={13} aria-hidden="true" />}
+      name={t("Run completed")}
+    />
   );
 }

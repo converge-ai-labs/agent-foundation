@@ -1,29 +1,62 @@
+/* Page -------------------------------------------------------------------
+   Debug is a tool page: the Thread's run index beside the Runs' logs. The
+   page measures its own width, so a collapsed sidebar gives the index room. */
+.page {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+/* A flex column below the index width, so the pinned run pill sticks across
+   the whole page; a grid beside the index above it. */
+.frame {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.main {
+  flex: 1 0 auto;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 0 0;
+}
+@container (min-width: 1000px) {
+  .frame:has(> [data-run-index]) {
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr);
+    column-gap: 32px;
+    max-width: 1360px;
+    padding: 0 28px;
+  }
+}
+@container (max-width: 600px) {
+  .frame {
+    padding: 0 16px;
+  }
+}
+
 /* Sections ---------------------------------------------------------------
-   Debug reads a Session as an executor's record, not a conversation: each Run
-   is one card, its border says where the Run starts and ends, and its header
-   names it before anything it did. */
+   Each Run is one card: its header names it and gives its figures, and its
+   body is the executor's log of it. */
 .sections {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
-  padding: 16px 0 12px;
+  padding-bottom: 12px;
 }
 .section {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   border: 1px solid var(--a13n-border-soft);
-  border-radius: 14px;
+  border-radius: var(--a13n-radius-group);
   background: var(--a13n-canvas);
-  scroll-margin-top: 16px;
-}
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-  padding: 14px 14px 14px 12px;
+  overflow: clip;
+  scroll-margin-top: 12px;
 }
 /* Chat marks its runs for the same anchoring without changing their layout:
    the wrapper inherits the transcript's own grid rhythm. */
@@ -37,20 +70,16 @@
 }
 
 /* Heading ----------------------------------------------------------------
-   The header is the card's band. Its caret centres in the same 22px rail as
-   the steps below, and its name starts on their 30px text edge. */
+   The caret centres 21px into the card, the name and the figures start at
+   39px: the same two edges as the inbox below the Runs. */
 .heading {
   display: grid;
-  gap: 1px;
+  gap: 8px;
   min-width: 0;
-  padding: 9px 14px 9px 12px;
-  border-bottom: 1px solid var(--a13n-border-soft);
-  border-radius: 13px 13px 0 0;
-  background: color-mix(in srgb, var(--a13n-surface) 60%, transparent);
+  padding: 10px 12px 12px 10px;
 }
-/* A closed card is its band alone with one line of input. */
-.section:has(.headingTitle[aria-expanded="false"]) .body {
-  padding-block: 10px;
+.section:has(.headingTitle[aria-expanded="false"]) .heading {
+  padding-bottom: 10px;
 }
 .headingLine {
   display: flex;
@@ -61,16 +90,16 @@
 }
 .headingTitle {
   display: grid;
-  grid-template-columns: 22px auto;
+  grid-template-columns: 20px auto;
   align-items: center;
   column-gap: 8px;
   flex: none;
-  height: 26px;
+  height: 28px;
   padding: 0 8px 0 0;
-  border-radius: var(--a13n-radius-tile);
-  color: var(--a13n-text);
-  background: none;
   border: 0;
+  border-radius: var(--a13n-radius-tile);
+  background: none;
+  color: var(--a13n-text);
   cursor: pointer;
 }
 .headingTitle:hover {
@@ -90,14 +119,14 @@
 }
 .runName,
 .pendingName {
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
+  font-size: var(--a13n-text-md);
+  font-weight: 600;
   letter-spacing: var(--a13n-tracking-heading);
   white-space: nowrap;
 }
 .pendingName {
-  padding-left: 30px;
-  line-height: 26px;
+  padding-left: 28px;
+  line-height: 28px;
 }
 .lineage {
   flex: none;
@@ -105,29 +134,22 @@
   font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
-/* When the run started, how long it took and what it cost sit under its name,
-   where they never crowd the actions. Separators sit in the gap; one that
-   would start a wrapped line is clipped. */
-.headingMeta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 17px;
-  margin: 0 0 0 30px;
+.headingExcerpt {
+  min-width: 0;
+  padding-left: 4px;
   overflow: hidden;
   color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.headingDuration {
+  flex: none;
+  margin-left: auto;
+  color: var(--a13n-secondary);
+  font-family: var(--a13n-mono);
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
-  line-height: 1.6;
-}
-.headingMeta > * {
-  position: relative;
-}
-.headingMeta > * + *::before {
-  content: "·";
-  position: absolute;
-  left: -11px;
-  color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
 }
 /* Branch and Details are the run's two quiet actions; they read alike. */
 .headingActions {
@@ -137,6 +159,9 @@
   flex: none;
   margin: 0 -2px 0 auto;
 }
+.headingDuration + .headingActions {
+  margin-left: 6px;
+}
 .headingActions > :global(button),
 .headingActions > :global(a) {
   color: var(--a13n-secondary);
@@ -145,56 +170,347 @@
 .headingActions > :global(a):hover {
   color: var(--a13n-text);
 }
-
-/* Fields -----------------------------------------------------------------
-   The body reads input, steps, output: each part is labelled, and what was
-   given or returned sits in a well, so content is never mistaken for a
-   message in a conversation. */
-.field {
-  display: grid;
-  gap: 8px;
+/* Each figure is named; values read as figures, in the monospace face. */
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 22px;
+  min-width: 0;
+  margin: 0;
+  padding-left: 28px;
+  font-size: var(--a13n-text-xs);
+}
+.fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
 }
-.fieldLabel {
-  --author-gap: 4px;
+.fact dt {
+  color: var(--a13n-secondary);
+  white-space: nowrap;
+}
+.fact dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--a13n-text);
+  font-family: var(--a13n-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.factId {
+  align-items: center;
+  margin-left: auto;
+}
+.factId dd {
+  color: var(--a13n-text-supporting);
+}
+
+/* Log --------------------------------------------------------------------
+   One line per thing the Run was given, did and returned. A time gutter, like
+   line numbers, says how far into the Run each line happened; the figures
+   keep fixed columns on every line and at every depth. */
+.log {
+  --gutter: 64px;
+  container-type: inline-size;
+  border-top: 1px solid var(--a13n-border-soft);
+  background:
+    linear-gradient(var(--a13n-border-soft), var(--a13n-border-soft))
+      var(--gutter) 0 / 1px 100% no-repeat,
+    linear-gradient(
+        color-mix(in srgb, var(--a13n-text) 2.5%, transparent),
+        color-mix(in srgb, var(--a13n-text) 2.5%, transparent)
+      )
+      0 0 / var(--gutter) 100% no-repeat;
+}
+.logHead,
+.line,
+.blockHead {
+  display: grid;
+  grid-template-columns: var(--gutter) minmax(0, 1fr) 72px 112px 72px;
+  align-items: center;
+}
+.logHead {
+  height: 30px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 500;
+}
+.logHead > .time {
+  font-family: inherit;
+  font-size: inherit;
+}
+.logHeadSteps {
+  padding-left: 16px;
+}
+.time {
+  padding-right: 12px;
+  color: var(--a13n-tertiary);
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.cache,
+.tokens,
+.duration {
+  padding-right: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.line > .cache,
+.line > .tokens,
+.line > .duration {
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-xs);
+}
+.line > .cache {
+  color: var(--a13n-tertiary);
+}
+.line > .tokens {
+  color: var(--a13n-secondary);
+}
+.line > .duration {
+  color: var(--a13n-text-supporting);
+}
+/* The line's name opens it; its stretched hit area covers the whole line, and
+   the links on it sit above that. */
+.line {
+  position: relative;
+  min-height: 30px;
+}
+.line[data-depth="0"] {
+  border-top: 1px solid
+    color-mix(in srgb, var(--a13n-border-soft) 60%, transparent);
+}
+.logHead + .line {
+  border-top-color: transparent;
+}
+.block + .line {
+  border-top-color: var(--a13n-border-soft);
+}
+.line:hover {
+  background: color-mix(in srgb, var(--a13n-text) 3%, transparent);
+}
+.line[data-open] {
+  background: var(--a13n-selected);
+}
+.line:has(.lineTrigger:focus-visible) {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+/* One guide per depth, under the mark of the line it hangs from. */
+.lineBody {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 20px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-2xs);
-  font-weight: 500;
+  height: 100%;
+  min-height: inherit;
+  padding-left: calc(16px + var(--depth, 0) * 22px);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--a13n-border) 0 1px,
+    transparent 1px 22px
+  );
+  background-position: 22px 0;
+  background-repeat: no-repeat;
+  background-size: calc(var(--depth, 0) * 22px) 100%;
 }
-.fieldSource {
-  display: inline-flex;
+.lineTrigger,
+.lineLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
   min-width: 0;
-  font-weight: 400;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
-/* The author's trigger pads its name by 3px; the separator gives that back. */
-.fieldSource::before {
-  content: "·";
-  margin-right: 5px;
-  color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
+.lineTrigger {
+  cursor: pointer;
 }
-.fieldAction {
-  margin-left: auto;
+.lineTrigger::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
-.well {
-  min-width: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--a13n-surface);
-  font-size: var(--a13n-text-sm);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
+.lineTrigger:focus-visible {
+  outline: none;
 }
-.excerpt {
-  margin: 0;
-  overflow: hidden;
+.mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 13px;
+  color: var(--a13n-tertiary);
+}
+.line[data-kind="model"] .mark {
   color: var(--a13n-text-supporting);
+}
+.line[data-kind="subagent"] .mark,
+.line[data-kind="guidance"] .mark {
+  color: var(--a13n-signal);
+}
+/* The name gives way to the subject last; it is bounded by the log's width,
+   not by the line it shares. */
+.name {
+  flex: none;
+  max-width: 50cqw;
+  overflow: hidden;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.line:not([data-depth="0"]) .name {
+  color: var(--a13n-text-supporting);
+}
+.name[data-mono] {
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.subject {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extra {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: var(--a13n-text-xs);
+}
+.lineLink {
+  color: var(--a13n-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lineLink:hover {
+  color: var(--a13n-text);
+  text-decoration: underline;
+}
+/* A lifecycle fact's head carries its tone. */
+.line[data-kind="event"] .name {
+  font-size: var(--a13n-text-xs);
+}
+.line[data-tone="success"] .name,
+.line[data-tone="success"] .mark {
+  color: var(--success-foreground);
+}
+.line[data-tone="danger"] .name,
+.line[data-tone="danger"] .mark {
+  color: var(--a13n-danger);
+}
+.line[data-tone="warning"] .name,
+.line[data-tone="warning"] .mark {
+  color: var(--a13n-warning);
+}
+/* What an opened line held, under it and level with its name. */
+.detail {
+  margin-left: calc(var(--gutter) + 1px);
+  padding: 6px 16px 14px calc(36px + var(--depth, 0) * 22px);
+  background: color-mix(in srgb, var(--a13n-text) 2.5%, transparent);
+}
+.coverage {
+  margin: 0;
+  padding: 8px 16px 8px calc(var(--gutter) + 16px);
+  border-top: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-warning);
+  font-size: var(--a13n-text-xs);
+}
+
+/* Blocks -----------------------------------------------------------------
+   The Run's input and output are lines of the log that hold their content,
+   and fold back to their line. */
+.block {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.logHead + .block {
+  border-top: 0;
+}
+.blockHead {
+  min-height: 32px;
+}
+.blockHead > .lineBody {
+  grid-column: 2 / -1;
+  padding-right: 10px;
+}
+.blockToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 24px;
+  padding: 0 6px 0 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--a13n-text);
+  font: inherit;
+  cursor: pointer;
+}
+.blockToggle:hover .caret {
+  color: var(--a13n-text);
+}
+.blockToggle:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 1px;
+}
+.blockLabel {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.blockSource {
+  display: inline-flex;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.blockAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.blockAction > :global(button) {
+  color: var(--a13n-secondary);
+}
+.blockAction > :global(button[aria-pressed="true"]) {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.blockBody {
+  min-width: 0;
+  margin-left: calc(var(--gutter) + 1px);
+  padding: 0 24px 14px 36px;
+  overflow-wrap: anywhere;
+}
+.raw {
+  margin: 0;
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 /* Long content stops at a fixed height and fades; the reader opens the rest. */
 .clamp {
@@ -235,288 +551,55 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
 }
-.coverage {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--a13n-warning);
-  font-size: var(--a13n-text-xs);
-}
 
-/* Timeline --------------------------------------------------------------- */
-/* Steps are separated by more space than the lines inside one step. */
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.children {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  margin-left: 10px;
-  padding-left: 11px;
-  border-left: 1px solid var(--a13n-border-soft);
-}
-.entry {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-/* The row is one line of facts; only the facts themselves toggle it, so the
-   links in its right cluster stay ordinary links. */
-.row,
-.eventRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 8px;
-  width: 100%;
-  min-height: 34px;
-  padding-right: 8px;
-  border-radius: var(--a13n-radius-tile);
-  color: inherit;
-  text-align: left;
-}
-.eventRow {
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-}
-.rowTrigger {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 8px;
-  min-width: 0;
-  min-height: 34px;
-  padding: 3px 0;
-  border: 0;
-  border-radius: var(--a13n-radius-tile);
-  background: none;
-  color: inherit;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.row:hover {
-  background: var(--a13n-hover);
-}
-.row[data-open] {
-  background: var(--a13n-surface);
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
-}
-.rowTrigger:focus-visible {
-  outline: 2px solid var(--a13n-focus);
-  outline-offset: -2px;
-}
-.rowLink {
-  color: var(--a13n-secondary);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.rowLink:hover {
-  color: var(--a13n-text);
-  text-decoration: underline;
-}
-/* A step is a node on the rail: a 20px disc, the size of an author's avatar,
-   so every mark in the rail has one size and one centre. What a step emitted
-   hangs beneath it with a plain glyph. */
-.marker {
-  display: grid;
-  place-items: center;
-  justify-self: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--a13n-surface);
-  box-shadow: inset 0 0 0 1px var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-}
-.marker svg {
-  width: 12px;
-  height: 12px;
-}
-.entry[data-kind="model"] > .row .marker {
-  color: var(--a13n-text);
-}
-.children .marker {
-  width: auto;
-  height: auto;
-  background: none;
-  box-shadow: none;
-}
-.children .marker svg {
-  width: 13px;
-  height: 13px;
-}
-.children .row,
-.children .rowTrigger {
-  min-height: 30px;
-}
-.rowBody {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-.name {
-  flex: none;
-  max-width: 55%;
-  overflow: hidden;
-  color: var(--a13n-text-supporting);
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry[data-kind="model"] .name {
-  color: var(--a13n-text);
-}
-.name[data-mono] {
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-xs);
-}
-.subject {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The figures are columns: each fact keeps its track on every row and at
-   every depth, so the eye scans one straight edge per fact. A row without
-   token figures gives their tracks to its subject. */
-.rowMeta {
-  display: grid;
-  grid-template-columns: [extra] auto [duration] 48px [bar] 64px [state] 12px;
-  align-items: center;
-  column-gap: 8px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  font-variant-numeric: tabular-nums;
-}
-.rowMeta[data-usage] {
-  grid-template-columns:
-    [extra] auto [cache] 88px [tokens] 84px [duration] 48px [bar] 64px
-    [state] 12px;
-}
-.extra {
-  grid-column: extra / duration;
-  justify-self: end;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.cache,
-.tokens,
-.duration {
-  justify-self: end;
-  white-space: nowrap;
-}
-.cache {
-  grid-column: cache;
-  color: color-mix(in srgb, var(--a13n-secondary) 82%, transparent);
-}
-.tokens {
-  grid-column: tokens;
-}
-.duration {
-  grid-column: duration;
-}
-.state {
-  grid-column: state;
-}
-.bar {
-  grid-column: bar;
-  position: relative;
-  width: 64px;
-  height: 4px;
-  flex: none;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--a13n-text) 8%, transparent);
-}
-.bar[data-empty] {
-  background: none;
-}
-.bar::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--bar-left, 0%);
-  width: var(--bar-width, 0%);
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--a13n-text) 30%, transparent);
-}
-.bar[data-empty]::after {
-  display: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .caret {
-    transition: none;
+/* A narrow log keeps the time, the step and its duration. */
+@container (max-width: 560px) {
+  .logHead,
+  .line,
+  .blockHead {
+    grid-template-columns: var(--gutter) minmax(0, 1fr) 64px;
   }
-}
-
-/* Events ----------------------------------------------------------------- */
-/* A lifecycle fact's head carries its tone; what follows stays secondary. */
-.eventRow[data-tone="danger"] .eventName,
-.eventRow[data-tone="danger"] .marker {
-  color: var(--a13n-danger);
-}
-.eventRow[data-tone="warning"] .eventName,
-.eventRow[data-tone="warning"] .marker {
-  color: var(--a13n-warning);
-}
-.eventRow[data-tone="danger"] .marker {
-  background: color-mix(in srgb, var(--a13n-danger) 10%, transparent);
-  box-shadow: none;
-}
-.eventRow[data-tone="warning"] .marker {
-  background: color-mix(in srgb, var(--a13n-warning) 12%, transparent);
-  box-shadow: none;
-}
-.eventName {
-  flex: none;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  font-weight: 500;
-  white-space: nowrap;
+  .logHead > .cache,
+  .logHead > .tokens,
+  .line > .cache,
+  .line > .tokens {
+    display: none;
+  }
+  .detail,
+  .blockBody {
+    padding-right: 12px;
+  }
 }
 
 /* Dock -------------------------------------------------------------------
    What the Session waits for and what is queued behind it are cards beside
    the Runs, on their edges. */
-/* With the stage's 4px gap, every card stands 16px from the next. */
+/* With the stage's 4px gap, every card stands 12px from the next. */
 .feedback,
 .inbox {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .feedback {
   min-width: 0;
   padding: 14px 14px 14px 16px;
   border: 1px solid var(--a13n-border-soft);
-  border-radius: 14px;
+  border-radius: var(--a13n-radius-group);
 }
 
 /* Inbox ------------------------------------------------------------------
-   The Thread's inbox is a card on the runs' own grid: its caret centres in
-   the rail and its title starts on the text edge. */
+   Past the trigger's 1px border, the 14px caret centres 21px into the card
+   and the title starts at 39px, on the Runs' own edges. */
 .inbox {
-  padding: 3px 14px 3px 12px;
+  padding: 3px 14px 3px 9px;
   border: 1px solid var(--a13n-border-soft);
-  border-radius: 14px;
+  border-radius: var(--a13n-radius-group);
 }
 .inbox > [data-slot="disclosure-surface"] {
   border-radius: 0;
   background: none;
 }
-/* Past the trigger's 1px border, the 14px caret spans 4–18 and centres at 11. */
 .inbox > [data-slot="disclosure-surface"] > button {
-  gap: 12px;
+  gap: 11px;
   padding-left: 3px;
   padding-right: 0;
   font-size: var(--a13n-text-sm);
@@ -525,10 +608,10 @@
   margin: 0;
 }
 .inbox [data-slot="collapsible-panel"] > div {
-  padding: 4px 0 10px 30px;
+  padding: 4px 0 10px 29px;
 }
 
-@media (max-width: 760px) {
+@container (max-width: 640px) {
   .headingLine {
     flex-wrap: wrap;
   }
@@ -536,14 +619,12 @@
   .headingActions [data-action-label] {
     display: none;
   }
-  .rowMeta {
-    grid-template-columns: [extra] auto [duration] 44px [state] 12px;
+  .factId {
+    margin-left: 0;
   }
-  .rowMeta[data-usage] {
-    grid-template-columns: [extra] auto [tokens] 72px [duration] 44px [state] 12px;
-  }
-  .cache,
-  .bar {
-    display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    transition: none;
   }
 }

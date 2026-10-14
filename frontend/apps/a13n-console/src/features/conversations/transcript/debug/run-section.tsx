@@ -1,16 +1,24 @@
 import { Button } from "a13n-ui";
-import { CaretRightIcon } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwiseIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../../layout/workspace";
 import type { Schema } from "../../../../shared/api";
 import { StatePill } from "../../../../shared/feedback";
 import { JsonView } from "../../../../shared/forms";
-import { CopyButton } from "../../../../shared/identity";
+import { CopyableId, CopyButton } from "../../../../shared/identity";
 import { MarkdownContent } from "../../../../shared/markdown";
 import { isActiveRun } from "../../api";
 import { formatCost } from "../../../../shared/cost";
-import { formatDuration, resultExcerpt, tokenFigures } from "../../format";
+import {
+  formatDuration,
+  formatOffset,
+  resultExcerpt,
+  tokenFigures,
+} from "../../format";
 import { runOutcome } from "../../lifecycle";
 import { runRequest, type RunRequest } from "../../request";
 import { ForkRun } from "../../fork-run";
@@ -25,14 +33,14 @@ import {
 } from "../thread-runs";
 import { useRunOpen } from "./collapse";
 import { RunDetailsDialog } from "./run-details";
-import { EventRow, TimelineRows } from "./timeline-rows";
+import { CompletedRow, EventRow, TimelineRows } from "./timeline-rows";
 import { useNow } from "./use-now";
 import type { RunScope } from "./scope";
 import styles from "./debug.module.css";
 
 /**
- * One Run, read as the executor's record of it: what it was given, the steps
- * it took and what it returned, under a header that says how it went.
+ * One Run, read as the executor's log of it: a header with its figures, then
+ * one timed line for each thing it was given, did and returned.
  */
 export function DebugRunSection({
   run,
@@ -66,7 +74,6 @@ export function DebugRunSection({
   const scope: RunScope = {
     run,
     start: started,
-    span: Math.max(ended - started, 1),
     child: child && {
       path: childThreadPath(basePath, child),
       runs: child.runs.length,
@@ -98,7 +105,32 @@ export function DebugRunSection({
           </button>
           <StatePill state={run.status} />
           <Lineage run={run} />
+          {/* A closed run keeps one line of what it was given. */}
+          {!open && (
+            <>
+              <span className={styles.headingExcerpt}>
+                {resultExcerpt(request.text, 200) || t("No request text")}
+              </span>
+              <span className={styles.headingDuration}>
+                {formatDuration(duration)}
+              </span>
+            </>
+          )}
           <span className={styles.headingActions}>
+            {/* Sending a stopped run again is the run's action, beside its
+                other two. */}
+            {resubmit && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={t("Resubmit")}
+                onClick={resubmit}
+              >
+                <ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
+                <span data-action-label>{t("Resubmit")}</span>
+              </Button>
+            )}
             <ForkRun
               run={run}
               thread={thread}
@@ -109,75 +141,49 @@ export function DebugRunSection({
             <RunDetailsDialog run={run} index={index} />
           </span>
         </div>
-        <p className={styles.headingMeta}>
-          <StartTime at={run.started_at ?? run.created_at} />
-          <span>{formatDuration(duration)}</span>
-          <span>
-            {t("{{count}} model calls", { count: timeline.totals.modelCalls })}
-          </span>
-          <TokenFigures totals={timeline.totals} />
-          {timeline.totals.costUsd && (
-            <span>{formatCost(timeline.totals.costUsd)}</span>
-          )}
-        </p>
+        {open && (
+          <RunFacts run={run} totals={timeline.totals} duration={duration} />
+        )}
       </header>
-      <div className={styles.body}>
-        <Field
-          label={t("Input")}
-          source={
-            request.kind === "message" ? (
-              <MessageAuthor
-                entryId={run.source_entry_id}
-                principalId={run.principal_id}
-                plain
-              />
-            ) : (
-              requestLabel(request, t)
-            )
-          }
-        >
-          {open ? (
+      {open && (
+        <RunLog>
+          <LogBlock
+            time={formatOffset(0)}
+            label={t("Input")}
+            source={
+              request.kind === "message" ? (
+                <MessageAuthor
+                  entryId={run.source_entry_id}
+                  principalId={run.principal_id}
+                  plain
+                />
+              ) : (
+                requestLabel(request, t)
+              )
+            }
+          >
             <Clamp>
               <RequestContent request={request} />
             </Clamp>
-          ) : (
-            // A closed run keeps one line of what it was given.
-            <p className={`${styles.well} ${styles.excerpt}`}>
-              {resultExcerpt(request.text, 240) || t("No request text")}
+          </LogBlock>
+          {timeline.coverage !== "complete" && (
+            <p role="status" className={styles.coverage}>
+              {t(
+                timeline.coverage === "unavailable"
+                  ? "Execution history is unavailable; showing retained messages."
+                  : "Execution history is incomplete; showing retained messages.",
+              )}
             </p>
           )}
-        </Field>
-        {open && (
-          <>
-            <Field label={t("Steps")}>
-              {timeline.coverage !== "complete" && (
-                <p role="status" className={styles.coverage}>
-                  {t(
-                    timeline.coverage === "unavailable"
-                      ? "Execution history is unavailable; showing retained messages."
-                      : "Execution history is incomplete; showing retained messages.",
-                  )}
-                </p>
-              )}
-              <TimelineRows entries={timeline.entries} scope={scope} />
-              {outcome && (
-                <EventRow
-                  entry={outcome}
-                  scope={scope}
-                  action={
-                    resubmit && (
-                      <Button size="xs" variant="outline" onClick={resubmit}>
-                        {t("Resubmit")}
-                      </Button>
-                    )
-                  }
-                />
-              )}
-            </Field>
-            <RunOutput output={run.output} />
-          </>
-        )}
-      </div>
+          <TimelineRows entries={timeline.entries} scope={scope} />
+          {outcome ? (
+            <EventRow entry={outcome} scope={scope} />
+          ) : (
+            run.status === "completed" && <CompletedRow scope={scope} />
+          )}
+          <RunOutput output={run.output} />
+        </RunLog>
+      )}
     </section>
   );
 }
@@ -193,38 +199,137 @@ export function DebugPendingRun({ request }: { request: RunRequest }) {
           <StatePill state="accepted" />
         </div>
       </header>
-      <div className={styles.body}>
-        <Field label={t("Input")}>
+      <RunLog>
+        <LogBlock time="" label={t("Input")}>
           <Clamp>
             <RequestContent request={request} />
           </Clamp>
-        </Field>
-      </div>
+        </LogBlock>
+      </RunLog>
     </section>
   );
 }
 
-/** One labelled part of a Run's record: its input, its steps or its output. */
-function Field({
+/** The log's frame: a time gutter, then the lines under one column head. */
+function RunLog({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.log}>
+      <div className={styles.logHead} aria-hidden="true">
+        <span className={styles.time}>{t("Time")}</span>
+        <span className={styles.logHeadSteps}>{t("Steps")}</span>
+        <span className={styles.cache}>{t("Cache")}</span>
+        <span className={styles.tokens}>{t("Tokens")}</span>
+        <span className={styles.duration}>{t("Duration")}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** The Run's figures, each named, on one line under its name. */
+function RunFacts({
+  run,
+  totals,
+  duration,
+}: {
+  run: Schema["RunView"];
+  totals: RunTimeline["totals"];
+  duration: number | null;
+}) {
+  const { t } = useTranslation();
+  // Tokens nobody reported are unknown, never zero, so they are not shown.
+  const figures =
+    totals.reportedUsage &&
+    tokenFigures(t, {
+      input: totals.inputTokens,
+      output: totals.outputTokens,
+      cached: totals.cacheReadTokens,
+    });
+  return (
+    <dl className={styles.facts}>
+      <Fact label={t("Started")}>
+        <StartTime at={run.started_at ?? run.created_at} />
+      </Fact>
+      <Fact label={t("Duration")}>{formatDuration(duration)}</Fact>
+      <Fact label={t("Model calls")}>{totals.modelCalls}</Fact>
+      {figures && (
+        <Fact label={t("Tokens")}>
+          <span title={figures.pairTitle}>{figures.pair}</span>
+        </Fact>
+      )}
+      {figures && figures.rate && (
+        <Fact label={t("Cache")}>
+          <span title={figures.cacheTitle}>{figures.rate}</span>
+        </Fact>
+      )}
+      {totals.costUsd && (
+        <Fact label={t("Cost")}>{formatCost(totals.costUsd)}</Fact>
+      )}
+      <div className={`${styles.fact} ${styles.factId}`}>
+        <dt>{t("Run ID")}</dt>
+        <dd>
+          <CopyableId value={run.id} />
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={styles.fact}>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * What the Run was given or returned: a line of its log that holds the
+ * content beneath it, and folds back to that line.
+ */
+function LogBlock({
+  time,
   label,
   source,
   action,
   children,
 }: {
+  time: string;
   label: string;
-  /** Where the part came from, read as a fact beside its label. */
+  /** Where the content came from, read as a fact beside its label. */
   source?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(true);
   return (
-    <section className={styles.field}>
-      <div className={styles.fieldLabel}>
-        <span>{label}</span>
-        {source && <span className={styles.fieldSource}>{source}</span>}
-        {action && <span className={styles.fieldAction}>{action}</span>}
+    <section className={styles.block} aria-label={label}>
+      <div className={styles.blockHead}>
+        <span className={styles.time}>{time}</span>
+        <span className={styles.lineBody}>
+          <button
+            type="button"
+            className={styles.blockToggle}
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <span className={styles.mark}>
+              <CaretRightIcon
+                size={11}
+                className={styles.caret}
+                data-expanded={open || undefined}
+                aria-hidden="true"
+              />
+            </span>
+            <span className={styles.blockLabel}>{label}</span>
+          </button>
+          {source && <span className={styles.blockSource}>{source}</span>}
+          {action && <span className={styles.blockAction}>{action}</span>}
+        </span>
       </div>
-      {children}
+      {open && <div className={styles.blockBody}>{children}</div>}
     </section>
   );
 }
@@ -232,24 +337,42 @@ function Field({
 /** What the Run returned: its text, or the structure its output spec asked for. */
 function RunOutput({ output }: { output: Schema["RunView"]["output"] }) {
   const { t } = useTranslation();
+  const [raw, setRaw] = useState(false);
   if (output == null || output === "") return null;
   if (typeof output !== "string")
     return (
-      <Field label={t("Output")}>
+      <LogBlock time="" label={t("Output")}>
         <JsonView value={output} />
-      </Field>
+      </LogBlock>
     );
   return (
-    <Field
+    <LogBlock
+      time=""
       label={t("Output")}
       action={
-        <CopyButton value={output} iconOnly copyLabel={t("Copy output")} />
+        <>
+          {/* Rendered Markdown hides its own markup; Raw shows the text. */}
+          <Button
+            size="xs"
+            variant="ghost"
+            type="button"
+            aria-pressed={raw}
+            onClick={() => setRaw((value) => !value)}
+          >
+            {t("Raw")}
+          </Button>
+          <CopyButton value={output} iconOnly copyLabel={t("Copy output")} />
+        </>
       }
     >
       <Clamp tall>
-        <MarkdownContent text={output} />
+        {raw ? (
+          <pre className={styles.raw}>{output}</pre>
+        ) : (
+          <MarkdownContent text={output} />
+        )}
       </Clamp>
-    </Field>
+    </LogBlock>
   );
 }
 
@@ -282,7 +405,7 @@ function Clamp({
     return () => observer.disconnect();
   }, [expanded]);
   return (
-    <div className={styles.well}>
+    <>
       <div
         ref={frame}
         className={styles.clamp}
@@ -302,40 +425,23 @@ function Clamp({
           {t(expanded ? "Show less" : "Show all")}
         </button>
       )}
-    </div>
+    </>
   );
 }
 
-/** When the Run started: the time today, the date as well on another day. */
+/** When the Run started, to the second: the date as well on another day. */
 function StartTime({ at }: { at: string }) {
   const { i18n } = useTranslation();
   const date = new Date(at);
   const today = date.toDateString() === new Date().toDateString();
   const format = new Intl.DateTimeFormat(i18n?.resolvedLanguage, {
     ...(!today && { dateStyle: "medium" }),
-    timeStyle: "short",
+    timeStyle: "medium",
   });
   return (
     <time dateTime={at} title={date.toLocaleString(i18n?.resolvedLanguage)}>
       {format.format(date)}
     </time>
-  );
-}
-
-/** Tokens nobody reported are unknown, never zero, so they are not shown. */
-function TokenFigures({ totals }: { totals: RunTimeline["totals"] }) {
-  const { t } = useTranslation();
-  if (!totals.reportedUsage) return null;
-  const figures = tokenFigures(t, {
-    input: totals.inputTokens,
-    output: totals.outputTokens,
-    cached: totals.cacheReadTokens,
-  });
-  return (
-    <>
-      <span title={figures.pairTitle}>{figures.pair}</span>
-      {figures.cache && <span title={figures.cacheTitle}>{figures.cache}</span>}
-    </>
   );
 }
 
