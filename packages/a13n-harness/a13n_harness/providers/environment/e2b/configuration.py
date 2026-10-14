@@ -73,7 +73,7 @@ class E2BEnvironmentConfiguration(BaseModel):
     python: str = "/usr/bin/python3"
     request_timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
     allow_internet_access: bool = Field(default=True, title="Allow internet access")
-    max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
+    max_file_bytes: int = Field(default=100 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
     max_observation_bytes: int = Field(default=1024 * 1024, gt=0, le=16 * 1024 * 1024)
     max_active_observations: int = Field(default=128, gt=0, le=1024)
     max_retained_output_bytes: int = Field(default=128 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)

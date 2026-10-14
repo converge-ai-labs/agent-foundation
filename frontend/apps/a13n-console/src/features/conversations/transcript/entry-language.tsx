@@ -212,7 +212,9 @@ function noticeText(notice: LifecycleNotice, t: TFunction): string {
           : notice.reason === "multiple"
             ? t("Waiting for approvals and call results")
             : t("Waiting for call results");
-  return [head, notice.reason, notice.message].filter(Boolean).join(" · ");
+  // A wait's head already names its reason; only a stop adds one.
+  const reason = notice.status === "waiting" ? null : notice.reason;
+  return [head, reason, notice.message].filter(Boolean).join(" · ");
 }
 
 function noticeGlyph(notice: LifecycleNotice): Icon {

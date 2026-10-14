@@ -358,6 +358,10 @@
   line-height: 1.65;
 }
 @media (max-width: 760px) {
+  .heading {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
   .headingMeta,
   .cache {
     display: none;

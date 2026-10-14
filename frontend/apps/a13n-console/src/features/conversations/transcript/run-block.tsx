@@ -4,10 +4,11 @@ import { GitBranchIcon } from "@phosphor-icons/react";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
 import { MarkdownContent } from "../../../shared/markdown";
+import { isActiveRun } from "../api";
 import { runRequest } from "../request";
 import { ForkRun } from "../fork-run";
 import type { RunTimeline } from "../timeline";
-import { AgentTurn } from "./assistant-message";
+import { AgentTurn, CopyReply } from "./assistant-message";
 import { hasDelegation, transcriptBlocks } from "./items";
 import { childThreadOf, childThreadPath, useChildThreads } from "./thread-runs";
 import { UserMessage } from "./user-message";
@@ -16,7 +17,8 @@ import styles from "./transcript.module.css";
 /**
  * One assembly renders every run in the transcript, whether it is the run being
  * followed or an ancestor loaded above it. Runs are separated by space alone:
- * the page reads as one conversation, not as a stack of labelled cards.
+ * the page reads as one conversation, not as a stack of labelled cards, and a
+ * finished answer closes with its quiet actions.
  */
 export function RunBlock({
   run,
@@ -24,7 +26,7 @@ export function RunBlock({
   timeline,
   agentName,
   agentImageUrl,
-  separatorAction,
+  action,
   earlier,
   children,
 }: {
@@ -36,12 +38,12 @@ export function RunBlock({
   agentName?: string;
   agentImageUrl?: string | null;
   /** A quiet link for this turn, such as "View run" on an ancestor. */
-  separatorAction?: ReactNode;
+  action?: ReactNode;
   /** What the transcript cannot show of this run's own earlier Items. */
   earlier?: ReactNode;
   children?: ReactNode;
 }) {
-  const { basePath } = useWorkspace();
+  const { basePath, can } = useWorkspace();
   const { t } = useTranslation();
   const blocks = transcriptBlocks(timeline.entries, run.status);
   // Only a run that delegated has a child thread to resolve; nothing else asks
@@ -51,9 +53,16 @@ export function RunBlock({
     run.thread_id,
   );
   const child = childThreadOf(threads, run.id);
-  const spoken = blocks.some(
-    (block) => block.kind === "message" && !!block.entry.text,
+  const replies = blocks.flatMap((block) =>
+    block.kind === "message" && block.entry.text ? [block.entry] : [],
   );
+  const reply = replies.at(-1);
+  // Actions belong to a finished answer. A working run has none to offer yet,
+  // and a run waiting for the person offers only its answer below the turn.
+  const finished =
+    !!run.sealed_at && !isActiveRun(run.status) && run.status !== "waiting";
+  const branch = finished && can("run");
+  const copy = finished && reply?.state === "completed" ? reply : null;
   return (
     <article className={styles.turn} data-run-id={run.id}>
       {run.lineage === "fork" && (
@@ -61,9 +70,6 @@ export function RunBlock({
           <GitBranchIcon size={14} aria-hidden="true" />
           {t("New branch starts here")}
         </div>
-      )}
-      {separatorAction && (
-        <div className={styles.turnAction}>{separatorAction}</div>
       )}
       <UserMessage
         request={runRequest(run, thread)}
@@ -73,20 +79,27 @@ export function RunBlock({
       {earlier}
       <AgentTurn
         blocks={blocks}
-        runState={run.status}
-        durationMs={timeline.totals.durationMs}
+        durationMs={
+          run.status === "completed" ? timeline.totals.durationMs : null
+        }
         agentName={agentName}
         agentId={run.agent_id}
         agentImageUrl={agentImageUrl}
         childPath={child && childThreadPath(basePath, child)}
+        footer={
+          (copy || branch || action) && (
+            <div className={styles.turnActions}>
+              {copy && <CopyReply entry={copy} />}
+              {branch && <ForkRun run={run} thread={thread} level="chat" />}
+              {action}
+            </div>
+          )
+        }
       >
-        {!spoken && typeof run.output === "string" && run.output && (
+        {!reply && typeof run.output === "string" && run.output && (
           <MarkdownContent text={run.output} />
         )}
         {children}
-        <div className={styles.runActions}>
-          <ForkRun run={run} thread={thread} level="chat" />
-        </div>
       </AgentTurn>
     </article>
   );

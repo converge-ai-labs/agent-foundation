@@ -86,9 +86,10 @@ function ExpandableRow({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const Glyph = entryGlyph(entry);
-  // Reasoning is something the agent said, not something it did: it carries no
-  // outcome, no duration and no place on the time bar.
-  const content = "text" in entry;
+  // Reasoning is something the agent said, not something it did, and a group
+  // of other observations is not one step: neither carries an outcome, a
+  // duration or a place on the time bar.
+  const content = "text" in entry || entry.kind === "other";
   const children = "children" in entry ? entry.children : [];
   // A reply is the answer, not a step: it leaves the indent and reads as prose.
   const nested = children.filter(

@@ -109,6 +109,13 @@ class GuestFiles:
         if offset < 0 or (length is not None and (length < 0 or length > maximum)):
             raise EnvironmentError("Invalid Guest read range.", code="environment_request_invalid")
         result = bytearray()
+        if offset == 0 and length is None:
+            async with closing_stream(self.read_bytes_stream(path)) as stream:
+                async for chunk in stream:
+                    result.extend(chunk)
+            return bytes(result)
+        # Keep ranged reads seek-based: the native download API has no range
+        # support, and discarding an arbitrary prefix would amplify transfer I/O.
         needed = length if length is not None else maximum + 1
         while len(result) < needed:
             size = min(65536, needed - len(result))

@@ -21,7 +21,8 @@ export function RunNavigator({
 }) {
   const { t } = useTranslation();
   const tree = useRunOutline(thread, runId);
-  if (tree.nodes.length === 0) return null;
+  // A lone Run has nowhere to go: its own heading already names it.
+  if (tree.nodes.length < 2) return null;
   const position = tree.nodes.findIndex((node) => node.run.id === tree.inView);
   const step = (offset: number) => {
     const next = tree.nodes[position + offset]?.run;

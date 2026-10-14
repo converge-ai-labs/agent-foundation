@@ -775,7 +775,6 @@
   "state.succeeded": "成功",
   "state.waiting": "等待回应",
   "state.yielded": "已让出",
-  "stopped": "已停止",
   "stopping": "停止中",
   "subagent": "子 Agent",
   "succeeded": "成功",
@@ -1411,9 +1410,7 @@
   "Waiting": "等待中",
   "Waiting for a tool result": "等待工具结果",
   "and {{count}} more": "等共 {{count}} 项",
-  "waiting for you": "等待你的响应",
   "waiting for your approval": "等待你的批准",
-  "working": "工作中",
   "Started by {{trigger}}": "由{{trigger}}触发",
   "Root thread": "根对话",
   "Child thread": "子对话",
@@ -2164,5 +2161,9 @@
   "Allowing Computer actions does not add desktop support.": "允许电脑操作不会让环境自动具备桌面能力。",
   "Desktop support has not been checked. Permissions alone do not make a desktop available.": "尚未检查桌面能力；配置权限不代表环境具备可用桌面。",
   "Last check result; check again if the environment changes.": "以上为上次检查结果；环境变化后请重新检查。",
-  "Desktop unsupported": "不支持桌面"
+  "Desktop unsupported": "不支持桌面",
+  "Waiting for your answer": "等待你的回答",
+  "Waiting for your approval": "等待你的批准",
+  "Your messages are saved.": "消息已保存。",
+  "Working…": "正在工作…"
 }

@@ -17,6 +17,7 @@ from a13n_harness.toolsets import (
     MediaUnderstandingRequest,
 )
 from PIL import Image
+from pydantic import ValidationError
 from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -512,3 +513,19 @@ async def test_standalone_media_receipt_retains_provider_cost_including_cost_onl
     assert {m.unit: m.quantity for m in receipt.measures} == {"requests": 1}
     assert receipt.cost == Decimal("0.123")
     assert receipt.currency == "USD"
+
+
+@pytest.mark.parametrize(
+    "kind,maximum", [("image", 100 * 1024 * 1024), ("audio", 16 * 1024 * 1024), ("video", 16 * 1024 * 1024)]
+)
+@pytest.mark.parametrize("extra", [0, 1])
+def test_media_request_validates_kind_specific_source_limit(kind, maximum, extra):
+    data = b"x" * (maximum + extra)
+    arguments = dict(kind=kind, media_type=f"{kind}/test", source_name="media", source_bytes=data)
+    if extra:
+        with pytest.raises(ValidationError):
+            MediaUnderstandingRequest(**arguments)
+    else:
+        request = MediaUnderstandingRequest(**arguments)
+        assert request.source_bytes is data
+        assert MediaUnderstandingRequest.model_validate(request).source_bytes is data

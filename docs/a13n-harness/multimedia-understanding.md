@@ -76,6 +76,8 @@ The dedicated media-understanding Agents use packaged, kind-specific production 
 
 All three prompts prioritize accuracy over speculation, preserve original-language transcription, mark unreadable or inaudible content explicitly, and avoid assigning identities that are not stated. A focused `view(..., instructions=...)` value narrows the analysis while those anti-hallucination rules remain in force. Without focused instructions, the media-understanding Agent uses a comprehensive kind-specific default and reports unclear or omitted content.
 
+`view` accepts source images up to 100 MiB and source audio/video up to 16 MiB, subject to any smaller Environment provider limit. E2B defaults to a 100 MiB file limit; other providers retain their own defaults. Default image preparation runs after reading and limits each image or segment to 5 MiB of base64-encoded data and static source processing to 80 million pixels. It changes the model request, not the original bytes retained in native image history. Audio and video do not use this image compression.
+
 The runtime bounds each file read, media-understanding Agent timeout, output, output-validation retries, and transient HTTP retries. Video receives a longer timeout than image or audio. The Environment file scope is released after the bounded read, before the media-understanding Agent or custom provider performs external model work.
 
 ## Use from `view`

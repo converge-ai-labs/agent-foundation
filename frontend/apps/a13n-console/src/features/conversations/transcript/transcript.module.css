@@ -48,25 +48,6 @@
   gap: 14px;
   min-width: 0;
 }
-.turnAction {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: -6px;
-}
-.turnAction a,
-.turnAction button,
-.separatorLink {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  text-decoration: none;
-}
-.turnAction a:hover,
-.turnAction button:hover,
-.separatorLink:hover {
-  color: var(--a13n-text);
-  text-decoration: underline;
-}
-
 /* What the person sent --------------------------------------------------- */
 .userTurn {
   display: grid;
@@ -184,19 +165,17 @@
   color: var(--a13n-text);
   font-size: var(--a13n-text-2xs);
 }
-.agentStatus {
+.agentDuration {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
 }
-.agentStatus[data-state="waiting"] {
-  color: var(--a13n-warning);
-}
+/* Everything the agent did and said starts on the avatar's left edge: one
+   reading line for the name, its work, its prose and its actions. */
 .agentContent {
   display: grid;
   gap: 14px;
   min-width: 0;
-  padding-left: 28px;
 }
 .agentMessage {
   min-width: 0;
@@ -218,48 +197,58 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-md);
 }
-.messageActions {
-  display: flex;
-  justify-content: flex-start;
-  gap: 4px;
-  margin-top: 2px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.runActions {
+/* A finished answer closes with its quiet actions in secondary text; the
+   first control's glyph sits on the content edge. */
+.turnActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   flex-wrap: wrap;
+  min-height: 28px;
+  margin: -6px 0 0 -7px;
 }
-.agentMessage:hover .messageActions,
-.agentMessage:focus-within .messageActions {
-  opacity: 1;
+/* One row rhythm: every control is 28px tall and every glyph 14px. */
+.turnActions button {
+  height: 28px;
+  min-width: 28px;
 }
-@media (pointer: coarse) {
-  .messageActions {
-    opacity: 1;
-  }
+.turnActions svg {
+  width: 14px;
+  height: 14px;
 }
+.turnActions button,
+.turnLink {
+  color: var(--a13n-secondary);
+}
+.turnActions button:hover,
+.turnLink:hover {
+  color: var(--a13n-text);
+}
+.turnLink {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--a13n-radius-row);
+  font-size: var(--a13n-text-sm);
+  text-decoration: none;
+}
+.turnLink:hover {
+  background: var(--a13n-hover);
+}
+.turnLink:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+/* The mark that stands for a working run sits where the next step will. */
 .workingRow {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 24px;
   margin: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
-}
-.workingDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: pulse 1.8s ease-in-out infinite;
-}
-@keyframes pulse {
-  50% {
-    opacity: 0.3;
-  }
 }
 @keyframes caret {
   50% {
@@ -267,27 +256,33 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .workingDot,
-  .messageActions,
   .agentMessage[data-streaming] > :last-child::after {
     animation: none;
-    transition: none;
   }
 }
 
 /* Failure and structured output ------------------------------------------ */
+/* The glyph hangs in its own column; the title, the explanation and the
+   error fold all start on the same line after it. */
 .failure {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   padding: 12px 14px;
   border-radius: var(--a13n-radius-group);
-  background: color-mix(in srgb, var(--a13n-danger) 7%, var(--a13n-canvas));
+  background: color-mix(in srgb, var(--a13n-danger) 6%, var(--a13n-canvas));
+}
+.failure[data-tone="neutral"] {
+  background: var(--a13n-surface);
 }
 .failureHeading {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 28px;
   color: var(--a13n-danger);
+}
+.failure[data-tone="neutral"] .failureHeading {
+  color: var(--a13n-secondary);
 }
 .failure h3 {
   flex: 1;
@@ -302,17 +297,24 @@
   font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
+.failure > p,
+.failure > .inlineDisclosure {
+  margin-left: 23px;
+}
 .failureActions {
   display: flex;
   flex: none;
   gap: 8px;
+  margin-block: -2px;
 }
 .structuredOutput,
 .inlineDisclosure {
   min-width: 0;
 }
-/* Inside the danger notice the error fold is part of it, not a second block. */
+/* Inside the notice the error fold is part of it, not a second block: its
+   caret takes the text line and its surface reaches into the padding. */
 .failure [data-slot="disclosure-surface"] {
+  margin-left: -12px;
   background: transparent;
 }
 
@@ -389,9 +391,6 @@
   }
   .userMessage {
     max-width: 92%;
-  }
-  .agentContent {
-    padding-left: 0;
   }
 }
 .branchBoundary {

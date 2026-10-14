@@ -18,8 +18,18 @@ from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.providers.environment._guest import files as guest_helpers
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_harness.toolsets.file_media import MAX_MEDIA_UNDERSTANDING_BYTES, MediaUnderstandingResult
+from a13n_harness.toolsets.file_media import (
+    MAX_IMAGE_UNDERSTANDING_BYTES,
+    MAX_MEDIA_UNDERSTANDING_BYTES,
+    AgentMediaUnderstandingProvider,
+    MediaUnderstandingResult,
+    media_source_byte_limit,
+)
 from a13n_harness.toolsets.files import FileToolset
+from PIL import Image
+from pydantic_ai import BinaryContent
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.models.function import FunctionModel
 
 pytestmark = [
     pytest.mark.anyio,
@@ -28,8 +38,10 @@ pytestmark = [
 
 
 class Commands:
-    def __init__(self, root: Path, *, maximum: int = MAX_MEDIA_UNDERSTANDING_BYTES) -> None:
-        self.configuration = E2BEnvironmentConfiguration(root=str(root), max_file_bytes=maximum)
+    def __init__(self, root: Path, *, maximum: int | None = None) -> None:
+        self.configuration = E2BEnvironmentConfiguration(root=str(root))
+        if maximum is not None:
+            self.configuration = self.configuration.model_copy(update={"max_file_bytes": maximum})
         self.closed = False
         self.started = asyncio.Event()
         self.block = False
@@ -147,13 +159,13 @@ async def test_oversized_media_closes_all_readers_and_mount_leases(tmp_path, rep
     assert not provider.requests
 
 
-async def test_media_view_respects_smaller_provider_limit(tmp_path):
-    (tmp_path / "media.mp4").write_bytes(b"a" * 129)
+@pytest.mark.parametrize("extension", ["png", "mp4", "wav"])
+async def test_media_view_respects_smaller_provider_limit(tmp_path, extension):
+    path = f"/media.{extension}"
+    (tmp_path / path.removeprefix("/")).write_bytes(b"a" * 129)
     commands = Commands(tmp_path, maximum=128)
     provider = Understanding(commands)
-    result = await FileToolset(cast(Any, GuestFiles(commands)), media_understanding=provider).view(
-        context(), "/media.mp4"
-    )
+    result = await FileToolset(cast(Any, GuestFiles(commands)), media_understanding=provider).view(context(), path)
     assert result["error"]["code"] == "environment_too_large"
     assert commands.closed
     assert not provider.requests
@@ -172,3 +184,77 @@ async def test_cancelled_media_view_closes_provider_reader(tmp_path):
         await task
     assert commands.closed
     assert not provider.requests
+
+
+@pytest.mark.parametrize("native", [False, True])
+async def test_image_view_accepts_exactly_100_mib(tmp_path, native):
+    maximum = MAX_IMAGE_UNDERSTANDING_BYTES
+    assert maximum == 100 * 1024 * 1024
+    with (tmp_path / "image.png").open("wb") as source:
+        source.truncate(maximum)
+    commands = Commands(tmp_path)
+    provider = Understanding(commands)
+    result = await FileToolset(cast(Any, GuestFiles(commands)), media_understanding=provider).view(
+        context(native="image" if native else None), "/image.png"
+    )
+    assert commands.closed
+    if native:
+        assert len(result.content[0].data) == maximum
+        assert not provider.requests
+    else:
+        assert result.return_value == "media understood"
+        assert len(provider.requests[0].source_bytes) == maximum
+
+
+@pytest.mark.parametrize("kind,extension", [("image", "png"), ("video", "mp4"), ("audio", "wav")])
+@pytest.mark.parametrize("reported_size", ["actual", None, 1])
+async def test_kind_limit_rejects_metadata_or_stream_overflow(tmp_path, kind, extension, reported_size):
+    maximum = media_source_byte_limit(kind)
+    with (tmp_path / f"media.{extension}").open("wb") as source:
+        source.truncate(maximum + 1)
+    commands = Commands(tmp_path, maximum=maximum * 2)
+    commands.hide_size = reported_size != "actual"
+    commands.reported_size = reported_size
+    provider = Understanding(commands)
+    result = await FileToolset(cast(Any, GuestFiles(commands)), media_understanding=provider).view(
+        context(), f"/media.{extension}"
+    )
+    assert result["error"]["code"] == "environment_too_large"
+    assert commands.started.is_set() == (reported_size != "actual")
+    assert commands.closed == (reported_size != "actual")
+    assert not provider.requests
+
+
+async def test_large_image_view_reaches_default_compression_before_model(tmp_path, reviewer_context):
+    path = tmp_path / "image.png"
+    with Image.new("RGB", (2500, 2500), "red") as image:
+        image.save(path, format="PNG", compress_level=0)
+    original = path.read_bytes()
+    assert MAX_MEDIA_UNDERSTANDING_BYTES < len(original) < MAX_IMAGE_UNDERSTANDING_BYTES
+    commands = Commands(tmp_path)
+    calls = []
+
+    def understand(messages, info):
+        assert commands.closed
+        images = [
+            item
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and isinstance(part.content, list)
+            for item in part.content
+            if isinstance(item, BinaryContent)
+        ]
+        assert len(images) == 1
+        assert images[0].media_type == "image/jpeg"
+        assert len(images[0].data) <= (5 * 1024 * 1024 // 4) * 3
+        calls.append(images[0])
+        return ModelResponse(parts=[TextPart("large image understood")])
+
+    provider = AgentMediaUnderstandingProvider(models={"image": FunctionModel(understand)})
+    ctx = cast(Any, SimpleNamespace(deps=reviewer_context, tool_call_id="large-image-view"))
+    result = await FileToolset(cast(Any, GuestFiles(commands)), media_understanding=provider).view(ctx, "/image.png")
+    assert not isinstance(result, dict), result
+    assert result.return_value == "large image understood"
+    assert len(calls) == 1
+    assert path.read_bytes() == original
