@@ -49,7 +49,7 @@ Model execution failures and unexpected errors also produce a private `a13n-harn
 
 If asyncio reports `Task was destroyed but it is pending!` without an accompanying exception, the TUI shows a warning and stays open, preserving your draft. The report includes the asyncio task identity, coroutine location, suspended stack locations, and creation stack locations when available. Keeping the TUI open does not recover the lost asyncio task or confirm that active work succeeded. Check `/status`, use `/cancel` if work stops progressing, and review the report before sharing it. No work is retried automatically. Other unhandled TUI event-loop failures still exit with recovery instructions.
 
-Startup order is **update confirmation → setup if needed → conversation**. The update prompt, setup, and conversation replace the view inside the same TUI rather than exiting and reopening it or appending notices to your terminal. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache; offline failure silently continues startup. Both ordinary launch and `a13n-harness-ui setup` follow this order.
+Startup order is **setup if needed → conversation**. Package update detection runs in the background without delaying either step. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache; offline failure is silent. Setup-only invocations exit without waiting for detection or showing an update question. Closing the terminal cancels any pending check.
 
 Update detection is enabled by default. To disable it in `a13n-harness-ui.yaml`:
 
@@ -60,7 +60,7 @@ process:
 
 Use `a13n-harness-ui --no-update-check` to skip detection for one invocation. `make a13n-harness-ui` always disables it for repository development. Development versions, help/version, and noninteractive commands also skip detection.
 
-**Startup never installs without confirmation.** For a recognized uv-tool installation, the prompt shows the command and tool directory, with **Update now** and **Not now** (the default). Choosing Not now, Escape, or Ctrl+C at this prompt continues startup. If a newer version remains available, the next enabled launch asks again. Choosing Update now closes the App and TUI before running the installer, then asks you to restart; an installer failure is reported without retry or continuing setup. Other installation methods receive manual instructions rather than a guessed update command. To update immediately without waiting for the next startup check:
+**Startup never installs updates.** When a newer stable release is available, the conversation displays one System notice with both versions. For a recognized uv-tool installation it asks you to exit Harness UI and run `a13n-harness-ui update`; other installations receive manual package-manager guidance. The notice does not interrupt typing or require a choice. A newer cached version can produce another notice on the next enabled conversational launch. To update explicitly:
 
 ```console
 a13n-harness-ui update
