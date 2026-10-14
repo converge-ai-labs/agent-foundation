@@ -487,6 +487,8 @@ async def test_final_findings_migration_backfills_composer_and_preserves_other_h
     await runs_kit.create_model(service, scripted_model)
     composer = (await service.client.post("/api/v1/agent-composer")).json()
     finder = (await service.client.post("/api/v1/finding-agent")).json()
+    # Drain maintenance before synchronous DDL can block the event loop while waiting for its locks.
+    await service.runtime.tasks.close(timeout=service.runtime.settings.server.shutdown_timeout)
     with migration_connection(database, OSS) as config:
         final = ScriptDirectory.from_config(config).get_revision("797996a323b1")
         assert final is not None and final.down_revision == "7dc8ec393cc1"
