@@ -45,6 +45,8 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
 
+使用 Docker HTTP 执行时，开启**环境操作通道**并填写**主机访问地址**。监听地址自动使用该 IP（`localhost` 使用 `127.0.0.1`），端口由 Docker 分配。**高级配置**中可覆盖监听 IP、明确允许可信私网 HTTP，或修改凭据文件路径。其他域名需要明确填写监听 IP，因为域名解析结果不一定属于 Docker 宿主机的网络接口。已有明确配置的监听地址会保留。
+
 云托管类型访问厂商持有的 API。E2B 可选择官方云或其他兼容 E2B 协议的服务；其他云托管账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
 
 接入其他兼容 E2B 协议的服务时，使用它提供的沙箱域名和 API Key 创建 `e2b` provider：

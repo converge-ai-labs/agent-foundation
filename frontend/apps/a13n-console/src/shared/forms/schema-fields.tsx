@@ -22,7 +22,7 @@ function humanize(key: string) {
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function fieldSchema(
+export function fieldSchema(
   value: unknown,
   root: Record<string, unknown>,
 ): Record<string, unknown> {

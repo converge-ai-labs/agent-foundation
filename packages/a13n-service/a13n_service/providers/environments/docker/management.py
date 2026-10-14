@@ -193,7 +193,7 @@ class DockerManagement(DockerReference, ManagementBackend):
         ports = None
         if self.config.execution == "envd_http":
             assert connection is not None
-            ports = {"8888/tcp": (connection.bind_host, 0)}
+            ports = {"8888/tcp": (connection.listen_address, 0)}
             environment.update(
                 {
                     "A13N_ENVD_DEVICE_ID": self.allocation_id,

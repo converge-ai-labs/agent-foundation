@@ -350,7 +350,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field                          | Required | Type / choices | Constraints and default                                 |
 | ------------------------------ | -------- | -------------- | ------------------------------------------------------- |
 | `host`                         | true     | string         | minLength=1; maxLength=253                              |
-| `bind_host`                    | false    | string         | default="127.0.0.1"                                     |
+| `bind_host`                    | false    | string or null | default=null                                            |
 | `allow_plaintext_private_link` | false    | boolean        | default=false                                           |
 | `credential_file`              | false    | string         | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
 

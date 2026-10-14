@@ -12,15 +12,15 @@ class DockerHttpConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     host: str = Field(
-        title="Reachable host",
+        title="Host access address",
         min_length=1,
         max_length=253,
-        description="Docker host address reachable by every Service/Worker; not the Docker API URL.",
+        description="Host name or IP reachable by Service/Worker, without a scheme or port. Ports are assigned automatically.",
     )
-    bind_host: str = Field(
-        default="127.0.0.1",
-        title="Port binding address",
-        description="Engine host IP on which to publish envd. Use a private interface for remote access.",
+    bind_host: str | None = Field(
+        default=None,
+        title="Listen address",
+        description="Leave empty to use the host IP (localhost uses 127.0.0.1). Other hostnames require an explicit Engine host IP.",
     )
     allow_plaintext_private_link: bool = Field(
         default=False,
@@ -52,8 +52,20 @@ class DockerHttpConfiguration(BaseModel):
 
     @field_validator("bind_host")
     @classmethod
-    def valid_bind(cls, value: str) -> str:
-        return str(ipaddress.ip_address(value))
+    def valid_bind(cls, value: str | None) -> str | None:
+        return str(ipaddress.ip_address(value)) if value else None
+
+    @property
+    def listen_address(self) -> str:
+        if self.bind_host is not None:
+            return self.bind_host
+        host = urlsplit(f"http://{self.host}:8888").hostname
+        if host == "localhost":
+            return "127.0.0.1"
+        try:
+            return str(ipaddress.ip_address(host or ""))
+        except ValueError as exc:
+            raise ValueError("Hostnames require a listen address in advanced settings; use an Engine host IP") from exc
 
     @field_validator("credential_file")
     @classmethod
@@ -68,7 +80,7 @@ class DockerHttpConfiguration(BaseModel):
     def validate_transport(self) -> DockerHttpConfiguration:
         from a13n_harness.providers.environment.remote_envd.configuration import HttpEnvdConnectionConfiguration
 
-        if not ipaddress.ip_address(self.bind_host).is_loopback and not self.allow_plaintext_private_link:
+        if not ipaddress.ip_address(self.listen_address).is_loopback and not self.allow_plaintext_private_link:
             raise ValueError("Non-loopback port publication requires explicit plaintext private-link consent")
         HttpEnvdConnectionConfiguration(
             endpoint=f"http://{self.host}:8888", allow_plaintext_private_link=self.allow_plaintext_private_link

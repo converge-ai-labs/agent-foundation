@@ -2209,5 +2209,9 @@
   "Container management": "容器管理",
   "Environment operation channel": "环境操作通道",
   "Docker Engine creates, starts, stops and deletes containers. Leave the host empty to use your deployment's default engine.": "通过 Docker Engine 创建、启动、停止和删除容器。主机地址留空时，使用部署配置的默认引擎。",
-  "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.": "桌面环境需要开启。通过 envd 执行命令、读写文件和操作桌面；Docker Engine 仍负责容器管理，两者配合使用，不是二选一。"
+  "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.": "桌面环境需要开启。通过 envd 执行命令、读写文件和操作桌面；Docker Engine 仍负责容器管理，两者配合使用，不是二选一。",
+  "Host access address": "主机访问地址",
+  "Listen address": "监听地址",
+  "Host name or IP reachable by Service/Worker, without a scheme or port. Ports are assigned automatically.": "填写 Service/Worker 可访问的主机名或 IP，不带协议和端口。端口自动分配；远端私网 HTTP 请在高级配置中明确允许。",
+  "Leave empty to use the host IP (localhost uses 127.0.0.1). Other hostnames require an explicit Engine host IP.": "留空时使用主机访问 IP（localhost 使用 127.0.0.1）。其他域名需要手动指定 Docker 宿主机的监听 IP。"
 }

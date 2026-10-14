@@ -389,11 +389,17 @@ async def test_native_execution_user_prefers_recipe_then_image_label(native, con
         await env.close()
 
 
-async def test_desktop_creation_uses_image_startup_and_private_eip(native, monkeypatch):
+@pytest.mark.parametrize("host", ["127.0.0.1", "10.0.0.8"])
+async def test_desktop_creation_uses_image_startup_and_private_eip(native, monkeypatch, host):
     _old, engine, container = native
     config = DockerRecipe(image="sandbox:desktop", desktop=True, execution="envd_http")
     env = DockerManagement(
-        config, "env_desktop", None, DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+        config,
+        "env_desktop",
+        None,
+        DockerProviderRuntime(
+            engine, DockerHttpConfiguration(host=host, allow_plaintext_private_link=host != "127.0.0.1")
+        ),
     )
     container.labels = env.labels
     engine.client.images.get.return_value.labels = {}
@@ -403,7 +409,7 @@ async def test_desktop_creation_uses_image_startup_and_private_eip(native, monke
     options = engine.client.containers.create.call_args.kwargs
     assert options["entrypoint"] is None and options["command"] is None
     assert options["user"] == "root"
-    assert options["ports"] == {"8888/tcp": ("127.0.0.1", 0)}
+    assert options["ports"] == {"8888/tcp": (host, 0)}
     assert options["environment"]["A13N_ENVD_HTTP_BIND"] == "0.0.0.0:8888"
     assert options["environment"]["A13N_ENVD_DEVICE_ID"] == "env_desktop"
     assert options["environment"]["A13N_ENVD_TRANSPORT"] == "http"

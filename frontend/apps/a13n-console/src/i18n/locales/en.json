@@ -2209,5 +2209,9 @@
   "Container management": "Container management",
   "Environment operation channel": "Environment operation channel",
   "Docker Engine creates, starts, stops and deletes containers. Leave the host empty to use your deployment's default engine.": "Docker Engine creates, starts, stops and deletes containers. Leave the host empty to use your deployment's default engine.",
-  "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.": "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives."
+  "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.": "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.",
+  "Host access address": "Host access address",
+  "Listen address": "Listen address",
+  "Host name or IP reachable by Service/Worker, without a scheme or port. Ports are assigned automatically.": "Host name or IP reachable by Service/Worker, without a scheme or port. Ports are assigned automatically.",
+  "Leave empty to use the host IP (localhost uses 127.0.0.1). Other hostnames require an explicit Engine host IP.": "Leave empty to use the host IP (localhost uses 127.0.0.1). Other hostnames require an explicit Engine host IP."
 }

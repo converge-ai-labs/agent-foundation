@@ -7,6 +7,7 @@ import {
 } from "a13n-ui";
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { fieldSchema } from "../../shared/forms/schema-fields";
 import { ProviderKeyLink, SchemaFields } from "../../shared/forms";
 import {
   advancedConfigured,
@@ -175,17 +176,46 @@ export function ProviderConfigurationFields({
             />
           </SettingsRow>
           {configuration.envd_http != null && (
-            <SchemaFields
-              schema={{
-                ...configurationSchema,
-                properties: { envd_http: properties.envd_http },
-              }}
-              value={configuration}
-              onChange={onConfigurationChange}
+            <DockerOperationFields
+              schema={fieldSchema(
+                properties.envd_http,
+                configurationSchema ?? {},
+              )}
+              value={configuration.envd_http as Record<string, unknown>}
+              onChange={(envd_http) =>
+                onConfigurationChange({ ...configuration, envd_http })
+              }
             />
           )}
         </>
       )}
     </>
+  );
+}
+
+/** The host is enough for IP routes; deployment-specific overrides stay optional. */
+function DockerOperationFields({
+  schema,
+  value,
+  onChange,
+}: {
+  schema: Record<string, unknown>;
+  value: Record<string, unknown>;
+  onChange: (value: Record<string, unknown>) => void;
+}) {
+  const { t } = useTranslation();
+  const { primary, advanced } = splitConfigurationSchema(schema);
+  return (
+    <div className="grid gap-4 py-4">
+      <SchemaFields schema={primary} value={value} onChange={onChange} />
+      <DisclosureSection
+        title={t("Advanced settings")}
+        summary={
+          advancedConfigured(advanced, value) ? t("Configured") : undefined
+        }
+      >
+        <SchemaFields schema={advanced} value={value} onChange={onChange} />
+      </DisclosureSection>
+    </div>
   );
 }

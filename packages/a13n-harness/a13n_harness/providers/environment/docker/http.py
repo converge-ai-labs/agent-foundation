@@ -52,7 +52,7 @@ async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
     # Inspect the exact owned container on every attachment: Docker may reassign
     # its published port after a restart. Never infer a host from docker_host.
     bindings = container.attrs.get("NetworkSettings", {}).get("Ports", {}).get("8888/tcp") or []
-    if len(bindings) != 1 or bindings[0].get("HostIp") != connection.bind_host:
+    if len(bindings) != 1 or bindings[0].get("HostIp") != connection.listen_address:
         raise provider_error("docker", "envd_http_binding_invalid", Category.INVALID)
     try:
         port = int(bindings[0]["HostPort"])
