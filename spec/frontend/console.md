@@ -142,7 +142,7 @@ Platform MCP groups and builtin operating Skills are independent `AgentConfig` s
 
 ## Computer Use configuration and observations
 
-The conversation header exposes a Computer permission summary and a direct link to environment settings, including explicit loading, failed, no-environment and mixed-permission states. Run Details displays each frozen mount ceiling separately from desired settings and explains that later changes do not affect that Run.
+The session actions menu opens Environments and memory, where Computer permissions are configured per mount. Run Details displays each frozen mount ceiling separately from desired settings and explains that later changes do not affect that Run.
 
 Thread environment settings expose the Computer action ceiling as Off, Observe, Interact, or Custom. Only callers with `run` on an interactive open thread can edit it, including the primary `workspace` mount. Presets replace Computer actions while preserving every non-Computer action. Custom exact action sets remain visible and unchanged until a preset is selected. The form explains that the Agent Computer toolset and provider support are also required and edits affect later Runs.
 
