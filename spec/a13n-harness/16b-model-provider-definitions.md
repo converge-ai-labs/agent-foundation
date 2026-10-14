@@ -22,6 +22,8 @@ The built-in `openai_chatgpt` definition discovers through the official Sign in 
 
 ## Authentication
 
+The built-in `anthropic` Provider uses one `api_key` credential for both `X-Api-Key: <key>` and `Authorization: Bearer <key>` on native Model requests and connection probes, including custom base URLs. Both header names are Provider-owned and cannot be supplied through extra headers, request settings, or session-affinity configuration. Existing custom `Authorization` entries must be removed; no separate bearer credential is required.
+
 Model Providers use the shared [`Authentication` declaration](22-provider-subsystem.md#authentication) for static credential presence. A definition may instead declare a `ModelOAuth` runtime-source capability. Such a definition requires an authorized Host token source at construction and never accepts user-supplied access tokens. It may separately declare a server-side OAuth client-authentication credential through the same `Authentication` schema. The default public ChatGPT client forbids that credential and can be saved before authorization; `client_secret_basic` requires a client secret. This does not weaken API-key Providers' presence rules. A local provider may omit setup help. Console applies the declared defaults and conditions without switching on a vendor name: ordinary choices, numbers, and nested fields retain their declared JSON types, while secrets remain write-only.
 
 ## Native Construction and Lifetime

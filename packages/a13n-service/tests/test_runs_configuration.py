@@ -2,13 +2,77 @@
 
 import asyncio
 import re
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
+from a13n_harness import RunError
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
+from a13n_service.runs.execute import _deterministic, _own
 from a13n_service.runs.inbox import Request
 from a13n_service.runs.schemas import Message
 
 pytestmark = pytest.mark.anyio
+
+
+def test_wrapped_endpoint_refusals_keep_the_safe_reason():
+    refusal = EndpointPolicyError("endpoint must use HTTPS")
+    wrapped = RunError("Agent execution failed.", code="agent_run_failed")
+    wrapped.__cause__ = refusal
+    outcome = _deterministic(_own(wrapped))
+    assert outcome is not None and outcome.failure is not None
+    assert outcome.failure.model_dump() == {
+        "code": "provider_endpoint_denied",
+        "message": "endpoint must use HTTPS",
+    }
+
+
+@pytest.mark.parametrize(
+    ("base_url", "reason"),
+    [
+        ("http://model.example/v1", "endpoint must use HTTPS"),
+        ("https://model bad.example/v1", "allowed hosts must be exact DNS hostnames or IP literals"),
+        ("https://user:private-secret@model.example/v1", "endpoint must not contain user information"),
+        ("https://model.example/v1?api_key=private-secret", "endpoint query contains a sensitive parameter"),
+    ],
+)
+async def test_model_endpoint_refusal_is_visible_without_retrying(serve, settings, runs_kit, base_url, reason):
+    providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
+    async with serve(settings=settings.model_copy(update={"providers": providers})) as service:
+        agent = await runs_kit.create_agent(service, SimpleNamespace(url=base_url))
+        run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+        await (await runs_kit.attempt(service))
+        run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "failed" and run["attempts"] == 1, run
+    assert run["failure"] == {"code": "provider_endpoint_denied", "message": reason}
+    assert "private-secret" not in str(run["failure"])
+
+
+async def test_model_http_failure_preserves_status_without_exposing_the_response(service, runs_kit, listen):
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    app = FastAPI()
+    requests = []
+
+    @app.post("/v1/chat/completions")
+    async def rejected():
+        requests.append(True)
+        return JSONResponse(
+            {"error": {"message": "private-secret upstream authentication details", "type": "authentication_error"}},
+            status_code=401,
+        )
+
+    async with listen(app) as url:
+        agent = await runs_kit.create_agent(service, SimpleNamespace(url=f"{url}/v1"))
+        run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+        await (await runs_kit.attempt(service))
+        run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "failed" and run["attempts"] == 1, run
+    assert run["failure"]["code"] == "agent_run_failed"
+    assert "HTTP 401" in run["failure"]["message"]
+    assert "private-secret" not in str(run["failure"])
+    assert requests == [True]
 
 
 def test_configuration_has_canonical_idempotency_digest():

@@ -18569,7 +18569,7 @@
         }
       },
       "patch": {
-        "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
+        "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
         "operationId": "update_provider_api_v1_connector_providers__provider_id__patch",
         "parameters": [
           {
@@ -19247,7 +19247,7 @@
         }
       },
       "patch": {
-        "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
+        "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
         "operationId": "update_provider_api_v1_environment_providers__provider_id__patch",
         "parameters": [
           {
@@ -23261,7 +23261,7 @@
         "x-a13n-mcp": true
       },
       "patch": {
-        "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
+        "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
         "operationId": "update_provider_api_v1_memory_providers__provider_id__patch",
         "parameters": [
           {
@@ -23691,7 +23691,7 @@
         }
       },
       "patch": {
-        "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
+        "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
         "operationId": "update_provider_api_v1_model_providers__provider_id__patch",
         "parameters": [
           {
@@ -33369,7 +33369,7 @@
         }
       },
       "patch": {
-        "description": "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.",
+        "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
         "operationId": "update_provider_api_v1_web_providers__provider_id__patch",
         "parameters": [
           {

@@ -98,7 +98,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         runtime: CurrentRuntime,
         if_match: IfMatch = None,
     ) -> Provider:
-        """A `config` change must also replace or remove a stored credential: it never follows a new endpoint."""
+        """Omitted credentials and extra headers keep their saved values, including when `config` changes."""
         result = await service.update_provider(
             runtime.storage,
             actor,

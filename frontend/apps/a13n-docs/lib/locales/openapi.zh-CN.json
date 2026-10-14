@@ -170,7 +170,7 @@
   "List connector providers": "列出 connector provider",
   "Create connector provider": "创建 connector provider",
   "Get connector provider": "获取 connector provider",
-  "A `config` change must also replace or remove a stored credential: it never follows a new endpoint.": "修改 `config` 必须同时替换或移除已保存凭据，凭据不会随配置发送到新端点。",
+  "Omitted credentials and extra headers keep their saved values, including when `config` changes.": "未提交的凭据和额外请求头保留已保存的值，修改 `config` 时也一样。",
   "Update connector provider": "更新 connector provider",
   "List Apps": "列出应用",
   "Get App": "获取应用",

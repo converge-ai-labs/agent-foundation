@@ -100,6 +100,8 @@ Start from the `X-Request-Id` of the response, which error bodies repeat as `req
 
 4. For a webhook or email that never arrived, search for the `Outbox` records of its `kind`: a dead delivery names its `reason`.
 
+Run failure messages include endpoint-policy reasons, such as requiring HTTPS, and model HTTP status codes, such as `HTTP 401` for authentication failures. Endpoint-policy refusals fail without retrying the same configuration. Raw upstream response bodies are not returned.
+
 ## Usage
 
 Per-workspace usage is recorded as facts in PostgreSQL, never in metrics. A workspace reads its own through the [usage API](agents-and-runs.md#usage). Operators can import the usage dashboard from the monitoring bundle, which reads runs and model usage per organization, workspace and model through a read-only database role.

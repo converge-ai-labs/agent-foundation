@@ -3,8 +3,8 @@
 `config` and `credential` are validated by the registered definition for `type`. The credential, and each
 extra header value a model provider sends, is encrypted for its exact row and column (a header also for its
 name) and never returned; views expose only whether a credential is configured and which header names are.
-Both are bound to the configuration they were entered with: a change of `config` must replace or remove the
-credential and every stored header, so a new endpoint or account never inherits them.
+Updates preserve omitted credentials and header values, including when the configuration changes. The
+updated configuration still validates the retained credential's presence and every header name.
 """
 
 import json
@@ -192,11 +192,6 @@ async def update_provider[R: ProviderRow](
             )
         # Only a configuration the body sets is compared: the stored one stays as it was normalized.
         changed = [] if body.config is None else assign(row, {"config": config})
-        if changed:
-            if row.credential is not None and not replaces_credential:
-                raise invalid("credential", "a configuration change must replace or remove the credential")
-            if not row.extra_headers.keys() <= body.extra_headers.keys():
-                raise invalid("extra_headers", "a configuration change must replace or remove every stored header")
         oauth_config_changed = bool(changed) or replaces_credential
         if replaces_credential and (body.credential is not None or row.credential is not None):
             row.credential = None if body.credential is None else _protect(keys, row, body.credential)

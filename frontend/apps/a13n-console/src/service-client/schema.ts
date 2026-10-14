@@ -588,7 +588,7 @@ export interface paths {
     head?: never;
     /**
      * Update connector provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_connector_providers__provider_id__patch"];
     trace?: never;
@@ -695,7 +695,7 @@ export interface paths {
     head?: never;
     /**
      * Update environment provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_environment_providers__provider_id__patch"];
     trace?: never;
@@ -1207,7 +1207,7 @@ export interface paths {
     head?: never;
     /**
      * Update memory provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_memory_providers__provider_id__patch"];
     trace?: never;
@@ -1283,7 +1283,7 @@ export interface paths {
     head?: never;
     /**
      * Update model provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
     trace?: never;
@@ -2818,7 +2818,7 @@ export interface paths {
     head?: never;
     /**
      * Update web provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_web_providers__provider_id__patch"];
     trace?: never;

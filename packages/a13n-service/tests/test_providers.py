@@ -342,6 +342,39 @@ def models_endpoint() -> Iterator[tuple[str, list[str], list[dict[str, str]]]]:
         yield f"http://127.0.0.1:{port}/v1", requests, headers
 
 
+async def test_anthropic_provider_uses_saved_key_for_both_authentication_headers(service) -> None:  # type: ignore[no-untyped-def]
+    with models_endpoint() as (base_url, requests, received):
+        created = await create(
+            service,
+            "model",
+            {
+                "type": "anthropic",
+                "name": "Gateway",
+                "config": {"base_url": base_url.removesuffix("/v1")},
+                "credential": {"api_key": "good"},
+            },
+        )
+        item = f"{service.api}/model-providers/{created['id']}"
+        assert created["credential_configured"] and created["header_names"] == []
+        changed = await service.client.patch(
+            item,
+            json={"config": {**created["config"], "session_affinity_header": "x-session-id"}},
+            headers={"if-match": etag(created)},
+        )
+        assert changed.status_code == 200, changed.text
+        result = await service.client.post(item + "/test")
+        assert result.status_code == 200 and result.json()["status"] == "succeeded", result.text
+        assert requests == ["/v1/models"]
+        assert received[0]["x-api-key"] == "good"
+        assert received[0]["authorization"] == "Bearer good"
+        refused = await service.client.patch(
+            item,
+            json={"extra_headers": {"Authorization": "Bearer other"}},
+            headers={"if-match": etag(changed.json())},
+        )
+        assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "extra_headers"
+
+
 async def test_provider_test_probes_without_paid_calls(service) -> None:  # type: ignore[no-untyped-def]
     def openai(name: str, base_url: str) -> dict:
         return {
@@ -382,32 +415,67 @@ async def test_provider_test_probes_without_paid_calls(service) -> None:  # type
     assert denied["status"] == "failed"
 
 
-async def test_a_configuration_change_never_carries_the_stored_credential(service) -> None:  # type: ignore[no-untyped-def]
-    """A credential is bound to the endpoint it was entered for; moving the endpoint must replace or remove it."""
-
-    def account(base_url: str) -> dict:
-        return {"config": {"base_url": base_url}, "credential": {"api_key": "good"}}
-
-    with models_endpoint() as (first, first_requests, _), models_endpoint() as (second, second_requests, _):
-        created = await create(service, "model", {"type": "openai", "name": "OpenAI", **account(first)})
-        item = f"{service.api}/model-providers/{created['id']}"
-
-        moved = await service.client.patch(
-            item, json={"config": {"base_url": second}}, headers={"if-match": etag(created)}
+@pytest.mark.parametrize("header_updates", [None, {}], ids=["omitted-headers", "empty-headers"])
+async def test_configuration_changes_keep_saved_credentials_and_headers(service, header_updates) -> None:  # type: ignore[no-untyped-def]
+    """Changing an endpoint or affinity setting keeps omitted secrets usable without rewriting their envelopes."""
+    gateway = "gw-saved-secret"
+    with models_endpoint() as (first, first_requests, _), models_endpoint() as (second, second_requests, received):
+        created = await create(
+            service,
+            "model",
+            {
+                "type": "openai",
+                "name": "Gateway",
+                "config": {"base_url": first},
+                "credential": {"api_key": "good"},
+                "extra_headers": {"x-gateway-key": gateway, "x-team": "research"},
+            },
         )
-        assert moved.status_code == 400 and moved.json()["error"]["details"]["field"] == "credential"
-        assert (await service.client.post(item + "/test")).json()["status"] == "succeeded"
-        assert first_requests == ["/v1/models"] and second_requests == []
+        item = f"{service.api}/model-providers/{created['id']}"
+        async with short_session(service.runtime.storage) as session:
+            before = await session.get_one(ModelProviderRow, created["id"])
+            encrypted = before.credential, before.extra_headers
+        current = created
+        for config in ({"base_url": second}, {"base_url": second, "session_affinity_header": "x-session-id"}):
+            body = {"config": config}
+            if header_updates is not None:
+                body["extra_headers"] = header_updates
+            updated = await service.client.patch(item, json=body, headers={"if-match": etag(current)})
+            assert updated.status_code == 200, updated.text
+            assert gateway not in updated.text
+            assert updated.json()["config"] == config
+            assert updated.json()["credential_configured"]
+            assert updated.json()["header_names"] == ["x-gateway-key", "x-team"]
+            assert updated.json()["version"] == current["version"] + 1
+            current = updated.json()
+            assert (await service.client.post(item + "/test")).json()["status"] == "succeeded"
+            assert received[-1]["authorization"] == "Bearer good"
+            assert (received[-1]["x-gateway-key"], received[-1]["x-team"]) == (gateway, "research")
+        assert first_requests == [] and second_requests == ["/v1/models", "/v1/models"]
 
-        rebound = await service.client.patch(item, json=account(second), headers={"if-match": etag(created)})
-        assert rebound.status_code == 200, rebound.text
-        assert (await service.client.post(item + "/test")).json()["status"] == "succeeded"
-        assert first_requests == ["/v1/models"] and second_requests == ["/v1/models"]
+        # Retained headers still cannot collide with the updated configuration's managed names.
+        refused = await service.client.patch(
+            item,
+            json={"config": {"base_url": second, "session_affinity_header": "x-gateway-key"}},
+            headers={"if-match": etag(current)},
+        )
+        assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "extra_headers"
+        assert (await service.client.get(item)).json() == current
+        async with short_session(service.runtime.storage) as session:
+            after = await session.get_one(ModelProviderRow, created["id"])
+            assert (after.credential, after.extra_headers) == encrypted
+            events = (
+                await session.scalars(
+                    select(AuditEventRow.details).where(
+                        AuditEventRow.target_id == created["id"], AuditEventRow.action == "model_provider.update"
+                    )
+                )
+            ).all()
+        assert events == [{"fields": ["config"]}, {"fields": ["config"]}]
 
 
 async def test_model_provider_headers_are_write_only_secrets_sent_with_each_request(service) -> None:  # type: ignore[no-untyped-def]
-    """Extra header values are encrypted per name, never returned, and bound to the configuration like the
-    credential."""
+    """Extra header values are encrypted per name, never returned, and retained unless explicitly changed."""
     gateway = "gw-secret-value"
     with models_endpoint() as (base_url, requests, received):
         created = await create(
@@ -462,14 +530,13 @@ async def test_model_provider_headers_are_write_only_secrets_sent_with_each_requ
         transport = await service.client.patch(item, json={"extra_headers": {"host": "elsewhere"}}, headers=current)
         assert transport.status_code == 400 and "elsewhere" not in transport.text
 
-        # A new endpoint inherits neither the credential nor a header value.
-        moved = {"config": {"base_url": "http://127.0.0.1:9/v1"}, "credential": {"api_key": "good"}}
-        kept = await service.client.patch(item, json=moved, headers=current)
-        assert kept.status_code == 400 and kept.json()["error"]["details"]["field"] == "extra_headers"
-        rebound = await service.client.patch(
+        # A header can be explicitly removed while the endpoint changes and the credential is retained.
+        moved = {"config": {"base_url": "http://127.0.0.1:9/v1"}}
+        removed = await service.client.patch(
             item, json={**moved, "extra_headers": {"x-gateway-key": None}}, headers=current
         )
-        assert rebound.status_code == 200 and rebound.json()["header_names"] == []
+        assert removed.status_code == 200 and removed.json()["header_names"] == []
+        assert removed.json()["credential_configured"]
 
     # Only model providers send extra headers.
     web = await service.client.post(
