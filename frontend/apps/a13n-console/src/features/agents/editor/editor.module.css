@@ -62,3 +62,32 @@
   font-family: var(--a13n-mono);
   font-size: var(--a13n-text-xs);
 }
+
+.reviewSummary {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.reviewSummary span {
+  color: var(--a13n-secondary);
+}
+.reviewRule {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.reviewRuleHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.reviewRule strong,
+.reviewRule small {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}

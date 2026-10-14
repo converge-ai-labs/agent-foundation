@@ -14,11 +14,12 @@ const sectionFields = {
   connections: ["connection_tools"],
   memory: ["memory_mounts"],
   toolsets: ["toolsets"],
+  reviewer: ["reviewer"],
   environment: ["default_environment_template_id"],
 } as const;
 export type EditorSection = keyof typeof sectionFields | "advanced";
 /** Shown by no section and kept verbatim by a save. */
-const retainedFields = ["reviewer", "plugins"];
+const retainedFields = ["plugins"];
 const commonFields = new Set<string>([
   ...Object.values(sectionFields).flat(),
   ...retainedFields,

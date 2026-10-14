@@ -6,6 +6,7 @@ import {
   mediaKinds,
   mediaSelected,
 } from "../../models/media-understanding-fields";
+import { requiresReviewer, validateReviewer } from "../reviewer";
 import {
   advancedConfig,
   buildConfig,
@@ -62,10 +63,12 @@ export function useAgentDraft(initial: AgentConfig) {
       initial.default_environment_template_id ?? null,
     ),
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
+    [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []);
   const dirty =
+    JSON.stringify(reviewer) !== JSON.stringify(initial.reviewer) ||
     mediaKinds.some(
       ({ kind }) =>
         (mediaUnderstanding[kind] ?? null) !==
@@ -106,6 +109,8 @@ export function useAgentDraft(initial: AgentConfig) {
     setEnvironmentTemplateId,
     toolsets,
     setToolsets,
+    reviewer,
+    setReviewer,
     skills,
     setSkills,
     connections,
@@ -118,7 +123,7 @@ export function useAgentDraft(initial: AgentConfig) {
 
 export type DraftBuild =
   | { ok: true; config: AgentConfig }
-  | { ok: false; stage: "model" | "advanced"; error: Error };
+  | { ok: false; stage: "model" | "reviewer" | "advanced"; error: Error };
 
 /** Validates the draft and produces the configuration a save would publish. */
 export function buildDraftConfig(
@@ -158,6 +163,23 @@ export function buildDraftConfig(
     };
   }
   try {
+    if (
+      requiresReviewer(draft.toolsets, draft.connections) &&
+      !draft.reviewer?.model
+    )
+      throw new Error(
+        t("Choose a review model before saving automatic review permissions."),
+      );
+    if (draft.reviewer) validateReviewer(draft.reviewer);
+  } catch (error) {
+    return {
+      ok: false,
+      stage: "reviewer",
+      error:
+        error instanceof Error ? error : new Error(t("Invalid configuration")),
+    };
+  }
+  try {
     return {
       ok: true,
       config: buildConfig(
@@ -165,7 +187,7 @@ export function buildDraftConfig(
         {
           instructions: draft.instructions,
           toolsets: draft.toolsets,
-          reviewer: initial.reviewer,
+          reviewer: draft.reviewer,
           model: draft.model,
           model_settings: modelSettings,
           skills: draft.skills,
