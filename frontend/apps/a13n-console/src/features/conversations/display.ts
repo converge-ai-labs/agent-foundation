@@ -1,6 +1,6 @@
 import { DisplayNormalizer, type DisplayItem } from "a13n-ui/display";
 import { isRecord, type Client, type ThreadDelta } from "../../service-client";
-import { data } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 
 export type { DisplayItem } from "a13n-ui/display";
 export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
@@ -23,6 +23,52 @@ export function readDisplay(
       signal,
     })
     .then(data);
+}
+
+export type FullDisplay = Schema["RunItems"] & {
+  /** Items before this ordinal were read from immutable history pages. */
+  immutableBefore: number;
+};
+
+/** Read every Item of one Run, keeping the newest read's live baseline. */
+export async function readFullDisplay(
+  client: Client,
+  workspaceId: string,
+  runId: string,
+  signal?: AbortSignal,
+  previous?: FullDisplay,
+): Promise<FullDisplay> {
+  const latest = await readDisplay(client, workspaceId, runId, signal);
+  const first = latest.items[0]?.ordinal ?? 1;
+  // A former tail can have changed before becoming history. Only reuse Items
+  // that were already outside the mutable tail when we read them.
+  const history =
+    previous?.items.filter(
+      (item) => item.ordinal < Math.min(first, previous.immutableBefore),
+    ) ?? [];
+  let after = history.at(-1)?.ordinal ?? 0;
+  while (after < first - 1) {
+    signal?.throwIfAborted();
+    const page = await readDisplay(client, workspaceId, runId, signal, {
+      after,
+      limit: Math.min(500, first - 1 - after),
+    });
+    // Dense, fixed ordinals prove progress. A failed or non-advancing page
+    // leaves the prior display visible and offers retry, never silent loss.
+    if (!page.items.length)
+      throw new Error("Run history could not be fully loaded.");
+    for (const item of page.items) {
+      if (item.ordinal !== after + 1 || item.ordinal >= first)
+        throw new Error("Run history could not be fully loaded.");
+      history.push(item);
+      after = item.ordinal;
+    }
+  }
+  return {
+    ...latest,
+    items: [...history, ...latest.items],
+    immutableBefore: first,
+  };
 }
 
 const POSITION = /^(0|[1-9]\d*)-(0|[1-9]\d*)$/;

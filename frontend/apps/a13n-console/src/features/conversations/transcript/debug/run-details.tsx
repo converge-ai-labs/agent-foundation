@@ -27,7 +27,7 @@ import { EnvironmentReference } from "../../../environments/reference";
 import { MemoryMountRows } from "../../../memories/mounts";
 import { conversationQueries, runPath } from "../../api";
 import { formatDuration } from "../../format";
-import { useRun } from "../../queries";
+import { useRun, useRunUsage } from "../../queries";
 import { UsageTable } from "../../usage-table";
 import {
   computerPermissionMode,
@@ -74,18 +74,19 @@ export function RunDetailsDialog({
         </Button>
       }
     >
-      <RunDetails runId={run.id} />
+      <RunDetails selected={run} />
     </ModalFrame>
   );
 }
 
-function RunDetails({ runId }: { runId: string }) {
+function RunDetails({ selected }: { selected: Run }) {
   const { t } = useTranslation(),
     { workspace, basePath, can } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
+  const runId = selected.id;
   const runQuery = useRun(runId);
-  const usage = useQuery(queries.usage({ run_id: runId }));
+  const usage = useRunUsage(selected);
   const attempts = useQuery(queries.attempts(runId));
   const lineage = useInfiniteQuery(queries.lineage(runId));
   const related = lineage.data?.pages.flatMap((page) => page.items);
@@ -103,7 +104,7 @@ function RunDetails({ runId }: { runId: string }) {
     run.started_at && run.sealed_at
       ? Date.parse(run.sealed_at) - Date.parse(run.started_at)
       : null;
-  const models = usage.data?.models ?? [];
+  const models = usage.data ?? [];
   return (
     <div className={styles.details}>
       <Section title={t("Usage")}>

@@ -1,4 +1,4 @@
-import { schemaProperties } from "./schemas";
+import { hasFields, schemaProperties } from "./schemas";
 
 /**
  * What a service asks you for, read from its credential schema: the tile hint
@@ -6,7 +6,7 @@ import { schemaProperties } from "./schemas";
  */
 export function credentialHint(schema?: Record<string, unknown> | null) {
   const keys = Object.keys(schemaProperties(schema));
-  if (!keys.length) return "No credentials";
+  if (!keys.length) return hasFields(schema) ? "Credentials" : "No credentials";
   if (keys.length > 1) return "Credentials";
   if (keys[0] === "api_key") return "API key";
   if (keys[0] === "token") return "Token";
@@ -16,7 +16,8 @@ export function credentialHint(schema?: Record<string, unknown> | null) {
 /** Interpolates `provider`; pass the definition's display name. */
 export function credentialDescription(schema?: Record<string, unknown> | null) {
   const keys = Object.keys(schemaProperties(schema));
-  if (!keys.length) return "This service needs no credentials.";
+  if (!keys.length && !hasFields(schema))
+    return "This service needs no credentials.";
   if (keys.length === 1)
     return keys[0] === "token"
       ? "Paste the access token for {{provider}}."

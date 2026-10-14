@@ -30,9 +30,9 @@ function setup() {
       disconnect() {}
     },
   );
-  function Transcript() {
+  function Transcript({ level }: { level?: string }) {
     const ref = useRef<HTMLDivElement>(null);
-    scroll = useTranscriptScroll(ref);
+    scroll = useTranscriptScroll(ref, level);
     return (
       <div
         data-session-stage
@@ -52,6 +52,7 @@ function setup() {
       >
         <div ref={ref}>
           <div
+            key={level}
             data-run="current"
             ref={(node) => {
               if (node)
@@ -80,6 +81,9 @@ function setup() {
   return {
     stage,
     writes,
+    switchLevel(level: string) {
+      view.rerender(<Transcript level={level} />);
+    },
     scroll: () => scroll,
     resize: () => act(resize),
     grow(amount: number) {
@@ -214,4 +218,28 @@ it("updates the jump from the actual distance when layout changes without a read
   view.grow(-250);
   view.resize();
   expect(screen.getByText("At latest")).toBeTruthy();
+});
+
+it("restores the same Run before paint when a level switch replaces its DOM", () => {
+  const view = setup();
+  view.readAt(100);
+  const oldRun = view.stage.querySelector("[data-run]");
+  view.prepend(400);
+  view.switchLevel("debug");
+  expect(view.stage.querySelector("[data-run]")).not.toBe(oldRun);
+  expect(
+    view.stage.querySelector("[data-run]")!.getBoundingClientRect().top,
+  ).toBe(-100);
+  expect(view.stage.scrollTop).toBe(500);
+  view.grow(200);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(500);
+});
+
+it("keeps following the latest output across a level switch", () => {
+  const view = setup();
+  view.grow(400);
+  view.switchLevel("chat");
+  expect(view.stage.scrollTop).toBe(1900);
+  expect(view.writes.mock.calls.at(-1)?.[0].behavior).toBe("instant");
 });

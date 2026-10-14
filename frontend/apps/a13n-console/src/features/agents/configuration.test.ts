@@ -1,5 +1,10 @@
 import { expect, test } from "vitest";
-import { advancedConfig, buildConfig, initialConfig } from "./configuration";
+import {
+  advancedConfig,
+  buildConfig,
+  initialConfig,
+  sectionsOf,
+} from "./configuration";
 
 const model = "model-0123456789abcdef0123";
 
@@ -122,6 +127,35 @@ test("media understanding is a dedicated field kept out of advanced configuratio
       original,
       { model: original.model },
       '{"media_understanding": {"image": "model-fedcba9876543210fedc"}}',
+    ),
+  ).toThrow(/dedicated field/);
+});
+
+test("session memory stays in its dedicated section when viewing and saving configuration", () => {
+  const original = {
+    ...initialConfig(),
+    model,
+    memory: { enabled: false, spaces: [] },
+    memory_mounts: [],
+  };
+  expect(sectionsOf(["memory", "memory_mounts"])).toEqual(new Set(["memory"]));
+  for (const readOnly of [false, true]) {
+    const advanced = JSON.parse(advancedConfig(original, readOnly));
+    expect(advanced).not.toHaveProperty("memory");
+    expect(advanced).not.toHaveProperty("memory_mounts");
+  }
+  expect(
+    buildConfig(
+      original,
+      { model, memory: original.memory },
+      advancedConfig(original),
+    ).memory,
+  ).toEqual(original.memory);
+  expect(() =>
+    buildConfig(
+      original,
+      { model },
+      JSON.stringify({ memory: original.memory }),
     ),
   ).toThrow(/dedicated field/);
 });

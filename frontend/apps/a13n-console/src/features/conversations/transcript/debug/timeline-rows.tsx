@@ -1,9 +1,14 @@
 import type { TFunction } from "i18next";
-import { CheckIcon } from "@phosphor-icons/react";
+import { Badge } from "a13n-ui";
+import { CheckIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
+import { useAgent } from "../../../agents/queries";
+import { ModelKeyLabel } from "../../../models/model-icon";
 import { formatDuration, formatOffset, tokenFigures } from "../../format";
+import { useRunAgent } from "../../queries";
+import { overriddenFields } from "../../run-agent";
 import type {
   ActionEntry,
   EventEntry,
@@ -149,6 +154,7 @@ function LogLine({
   cache,
   tokens,
   duration,
+  popup = false,
   onToggle,
 }: {
   kind: string;
@@ -159,11 +165,13 @@ function LogLine({
   mark: ReactNode;
   name: string;
   mono?: boolean;
-  subject?: string;
+  subject?: ReactNode;
   extra?: ReactNode;
   cache?: ReactNode;
   tokens?: ReactNode;
   duration?: ReactNode;
+  /** The line opens a dialog rather than its record in place. */
+  popup?: boolean;
   onToggle?: () => void;
 }) {
   const label = (
@@ -173,7 +181,10 @@ function LogLine({
         {name}
       </span>
       {subject && (
-        <span className={styles.subject} title={subject}>
+        <span
+          className={styles.subject}
+          title={typeof subject === "string" ? subject : undefined}
+        >
           {subject}
         </span>
       )}
@@ -196,7 +207,8 @@ function LogLine({
           <button
             type="button"
             className={styles.lineTrigger}
-            aria-expanded={open}
+            aria-expanded={popup ? undefined : !!open}
+            aria-haspopup={popup ? "dialog" : undefined}
             onClick={onToggle}
           >
             {label}
@@ -324,6 +336,57 @@ export function EventRow({
       mark={<Glyph size={13} aria-hidden="true" />}
       name={entryLabel(entry, t).name}
       subject={entrySubject(entry)}
+    />
+  );
+}
+
+/**
+ * The first line of the log: the agent the Run executed, at which version and
+ * on which model. It opens the Run's whole agent configuration.
+ */
+export function AgentRow({
+  scope,
+  onOpen,
+}: {
+  scope: RunScope;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation();
+  const { run } = scope;
+  const agent = useAgent(run.agent_id);
+  const executed = useRunAgent(run.id);
+  const overrides = overriddenFields(run).length;
+  return (
+    <LogLine
+      kind="agent"
+      depth={0}
+      time=""
+      mark={<SlidersHorizontalIcon size={13} aria-hidden="true" />}
+      name={t("Agent")}
+      subject={
+        <>
+          <span className={styles.lineAgent}>{agent.data?.name}</span>
+          {executed.data && (
+            <>
+              <span className={styles.lineVersion}>
+                v{executed.data.revision.number}
+              </span>
+              <ModelKeyLabel
+                className={styles.lineModel}
+                modelKey={executed.data.config.model}
+                size={13}
+              />
+            </>
+          )}
+          {!!overrides && (
+            <Badge variant="info" size="sm">
+              {t("{{count}} overrides", { count: overrides })}
+            </Badge>
+          )}
+        </>
+      }
+      popup
+      onToggle={onOpen}
     />
   );
 }

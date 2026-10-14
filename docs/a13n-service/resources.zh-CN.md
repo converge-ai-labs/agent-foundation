@@ -58,7 +58,7 @@ curl -X POST "$A13N_URL/api/v1/model-providers" \
 ```
 
 - **凭据只写不读。** 凭据使用部署的密钥环加密，永不返回；视图只显示 `credential_configured`。`PATCH` 中提供 `credential` 值会替换凭据，`null` 会移除，不提供则保留。
-- **凭据绑定其配置。** 存有凭据时，通过 `PATCH` 修改 `config` 必须同时替换或移除凭据（以及模型 provider 存储的全部额外请求头），否则返回 `invalid_argument`。这样可以避免将凭据发送到原先未授权的端点。
+- **修改配置保留已保存的密钥。** 修改 `config`（包括 Base URL）时，未提交的凭据和额外请求头保留原值。`extra_headers` 为空对象也会保留已保存的值；将某个请求头设为 `null` 才会移除它。更新后的配置仍须允许已保存的凭据和请求头名称。
 - **端点遵循部署的出站策略。** Base URL 和其他端点必须通过[端点策略](configuration.md#outbound-requests)；明文 HTTP 端点需要运维人员显式允许其 origin。此策略不阻止私有 IP 地址；请在部署边界实施网络限制。
 - **禁用：** 使用 `PATCH {"enabled": false}`。已禁用的 provider 以 `disabled` 拒绝新使用；环境 provider 被禁用后，其已有环境仍会得到维护。
 - **测试：** 使用 `POST …/{provider_id}/test`（需要 `run` 权限）。它使用保存的配置发送一次低成本探测，返回 `succeeded`、`failed`（附带消息）或 `unsupported`。Web provider、`openai_chatgpt`、`google_vertex`、`aws_bedrock`、`vercel` 和 `typesafe` 模型类型，以及除 `docker` 外的所有环境类型都没有测试，返回 `unsupported`。`docker` 测试只 ping Docker Engine，不创建资源。记忆 provider 的测试列出一个未被任何记忆使用的命名空间中的一页数据。

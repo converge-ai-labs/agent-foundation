@@ -8,7 +8,13 @@ import {
 } from "a13n-ui";
 import { CaretDownIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -34,6 +40,7 @@ export function AgentToolsets({
   config,
   agentId,
   readOnly = false,
+  mark,
 }: {
   value: Toolsets;
   onChange: Dispatch<SetStateAction<Toolsets>>;
@@ -42,6 +49,8 @@ export function AgentToolsets({
   /** The agent the configuration would become a version of; none while creating. */
   agentId?: string;
   readOnly?: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -409,6 +418,7 @@ export function AgentToolsets({
       description={t(
         "Choose the tools this agent can use and set access for each action.",
       )}
+      actions={mark}
     >
       <div className={styles.toolsetCard}>
         {catalog.data?.items

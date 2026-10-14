@@ -9,15 +9,13 @@ import { ErrorNotice, Loading } from "../../../shared/feedback";
 import type { Schema } from "../../../shared/api";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
-import { emptyExecution } from "../execution";
+import { runExecution } from "../execution";
+import { isOmitted } from "../display";
 import { presentItems } from "../projection";
-import { useEarlierItems } from "../earlier-items";
 import { StoredContents } from "../stored-content";
-import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
-import { DebugRunSection } from "./debug/run-section";
-import { EarlierItems } from "./earlier-items";
 import { FailureNotice } from "./failure-notice";
+import { DebugRunSection } from "./debug/run-section";
 import { useThreadRuns } from "./thread-runs";
 import { RunBlock } from "./run-block";
 import debug from "./debug/debug.module.css";
@@ -26,8 +24,8 @@ import styles from "./transcript.module.css";
 const CHAT_HISTORY_BATCH = 5;
 
 /**
- * Open Chat with recent context, then prepare another bounded batch before
- * the reader reaches its beginning. Debug reveals one full Run at a time.
+ * Keep the same loaded Runs across levels. Chat prepares a bounded batch on
+ * upward scrolling; Debug reveals one full Run per explicit request.
  */
 export function HistoryTranscript({
   runId,
@@ -47,13 +45,9 @@ export function HistoryTranscript({
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     queries = conversationQueries(client, workspace.id),
-    [limit, setLimit] = useState(level === "chat" ? CHAT_HISTORY_BATCH : 0),
+    [limit, setLimit] = useState(0),
     [visible, setVisible] = useState(0);
   const lineage = useInfiniteQuery(queries.lineage(runId));
-  useEffect(() => {
-    if (level === "chat")
-      setLimit((value) => Math.max(value, CHAT_HISTORY_BATCH));
-  }, [level]);
   // The lineage reads nearest first and starts at the Run itself.
   const ancestors = (lineage.data?.pages ?? [])
     .flatMap((page) => page.items)
@@ -69,23 +63,27 @@ export function HistoryTranscript({
   }, [beyond, isFetchingNextPage, fetchNextPage]);
   // Prepare the next batch off screen. Existing messages never move
   // to make room for a skeleton that will have a different height.
-  const loaded = useQueries({
-    queries:
-      level === "chat"
-        ? ancestors
-            .slice(visible, limit)
-            .flatMap((entry) => [
-              { ...queries.run(entry.id), staleTime: 60_000 },
-              { ...queries.items(entry.id), staleTime: 60_000 },
-              ...(entry.thread_id !== thread.id
-                ? [{ ...queries.thread(entry.thread_id), staleTime: 60_000 }]
-                : []),
-            ])
-        : [],
-    combine: (results) => results.every((result) => !result.isPending),
+  const prepared = useQueries({
+    queries: ancestors
+      .slice(visible, limit)
+      .flatMap((entry) => [
+        { ...queries.run(entry.id), staleTime: 60_000 },
+        queries.items(entry.id),
+        ...(level === "debug"
+          ? [{ ...queries.attempts(entry.id), staleTime: 60_000 }]
+          : []),
+        ...(entry.thread_id !== thread.id
+          ? [{ ...queries.thread(entry.thread_id), staleTime: 60_000 }]
+          : []),
+      ]),
   });
+  const loadError = prepared.find((result) => result.isError)?.error;
+  const loaded = prepared.every((result) => result.isSuccess);
   const settled =
-    !lineage.isPending && loaded && !beyond && !isFetchingNextPage;
+    !lineage.isPending &&
+    !prepared.some((result) => result.isFetching) &&
+    !beyond &&
+    !isFetchingNextPage;
   const restore = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     restore.current?.();
@@ -95,6 +93,7 @@ export function HistoryTranscript({
     if (
       limit === visible ||
       !settled ||
+      !loaded ||
       (limit > ancestors.length && lineage.hasNextPage)
     )
       return;
@@ -104,6 +103,7 @@ export function HistoryTranscript({
     limit,
     visible,
     settled,
+    loaded,
     ancestors.length,
     lineage.hasNextPage,
     preservePosition,
@@ -118,27 +118,60 @@ export function HistoryTranscript({
       level !== "chat" ||
       limit !== visible ||
       !settled ||
+      !loaded ||
       !more ||
       !mark ||
       !(stage instanceof HTMLElement)
     )
       return;
     if (typeof IntersectionObserver === "undefined") return;
+    let nearTop = false;
+    let upward = false;
+    let requested = false;
+    let active = true;
+    let lastTop = stage.scrollTop;
+    const request = () => {
+      if (!active || !nearTop || !upward || requested) return;
+      requested = true;
+      observer.disconnect();
+      setLimit((value) => value + CHAT_HISTORY_BATCH);
+    };
+    const onScroll = () => {
+      if (stage.scrollTop < lastTop) upward = true;
+      lastTop = stage.scrollTop;
+      request();
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) upward = true;
+      request();
+    };
     const observer = new IntersectionObserver(
       (records) => {
-        if (!records.some((record) => record.isIntersecting)) return;
-        // Reconnect only after the prepared batch has rendered.
-        observer.disconnect();
-        setLimit((value) => value + CHAT_HISTORY_BATCH);
+        nearTop = records.some((record) => record.isIntersecting);
+        request();
       },
       { root: stage, rootMargin: `${stage.clientHeight}px 0px 0px` },
     );
     observer.observe(mark);
-    return () => observer.disconnect();
-  }, [level, limit, visible, settled, more]);
+    stage.addEventListener("scroll", onScroll, { passive: true });
+    stage.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      active = false;
+      observer.disconnect();
+      stage.removeEventListener("scroll", onScroll);
+      stage.removeEventListener("wheel", onWheel);
+    };
+  }, [level, limit, visible, settled, loaded, more]);
   return (
     <>
       <ErrorNotice error={lineage.error} retry={() => void lineage.refetch()} />
+      <ErrorNotice
+        error={loadError}
+        retry={() => {
+          for (const result of prepared)
+            if (result.isError) void result.refetch();
+        }}
+      />
       {more && (
         <div ref={sentinel} className={styles.earlierRuns} aria-busy={!settled}>
           <Button
@@ -146,7 +179,7 @@ export function HistoryTranscript({
             variant="ghost"
             className={styles.earlierRunsAction}
             loading={!settled}
-            disabled={!settled}
+            disabled={!settled || !!loadError || !!lineage.error}
             onClick={() =>
               setLimit(
                 (value) => value + (level === "chat" ? CHAT_HISTORY_BATCH : 1),
@@ -160,20 +193,15 @@ export function HistoryTranscript({
           </Button>
         </div>
       )}
-      {[...shown]
-        .reverse()
-        .map((entry) =>
-          level === "debug" ? (
-            <DebugAncestor
-              key={entry.id}
-              runId={entry.id}
-              thread={thread}
-              jumpToDock={jumpToDock}
-            />
-          ) : (
-            <HistoricalRun key={entry.id} runId={entry.id} thread={thread} />
-          ),
-        )}
+      {[...shown].reverse().map((entry) => (
+        <HistoricalRun
+          key={entry.id}
+          runId={entry.id}
+          thread={thread}
+          level={level}
+          jumpToDock={jumpToDock}
+        />
+      ))}
     </>
   );
 }
@@ -202,68 +230,16 @@ function useOwnThread(
   };
 }
 
-/** An ancestor is read at the level the reader chose, with its own stream. */
-function DebugAncestor({
+function HistoricalRun({
   runId,
   thread,
+  level,
   jumpToDock,
 }: {
   runId: string;
   thread: Schema["ThreadView"];
+  level: ViewLevel;
   jumpToDock: () => void;
-}) {
-  const client = useClient(),
-    { workspace } = useWorkspace(),
-    queries = conversationQueries(client, workspace.id);
-  const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
-  const live = useRunDisplay(runId);
-  const run = runQuery.data;
-  const own = useOwnThread(run, thread);
-  const { number } = useThreadRuns(run?.thread_id ?? "");
-  const timeline = useMemo(
-    () =>
-      run &&
-      runTimeline({
-        run,
-        attempts: live.attempts,
-        items: live.items,
-        execution: live.execution,
-        coverage: live.execution.coverage,
-      }),
-    [run, live.attempts, live.items, live.execution],
-  );
-  if (runQuery.isPending || own.pending)
-    return <Loading variant="list" rows={3} />;
-  if (!run || !timeline || !own.thread)
-    return (
-      <ErrorNotice
-        error={runQuery.error ?? own.error}
-        retry={() => {
-          void runQuery.refetch();
-          void own.refetch();
-        }}
-      />
-    );
-  return (
-    <StoredContents runId={runId} items={live.displayItems}>
-      <EarlierItems earlier={live.earlier} />
-      <DebugRunSection
-        run={run}
-        thread={own.thread}
-        timeline={timeline}
-        index={number(run.id)}
-        jumpToDock={jumpToDock}
-      />
-    </StoredContents>
-  );
-}
-
-function HistoricalRun({
-  runId,
-  thread,
-}: {
-  runId: string;
-  thread: Schema["ThreadView"];
 }) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
@@ -272,30 +248,36 @@ function HistoricalRun({
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
   const own = useOwnThread(runQuery.data, thread);
   const agent = useAgent(runQuery.data?.agent_id);
-  const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
-  const earlier = useEarlierItems(runId, retained.data?.items[0]?.ordinal);
-  const items = useMemo(
-    () => presentItems([...earlier.items, ...(retained.data?.items ?? [])]),
-    [earlier.items, retained.data],
+  const retained = useQuery(queries.items(runId));
+  const attempts = useQuery({
+    ...queries.attempts(runId),
+    enabled: level === "debug",
+    staleTime: 60_000,
+  });
+  const { number } = useThreadRuns(
+    level === "debug" ? (runQuery.data?.thread_id ?? "") : "",
   );
   const run = runQuery.data;
-  // A historical run is read from its retained Items alone: the timeline
-  // reports the calls they recorded without inferring a complete history.
-  const timeline = useMemo(
-    () =>
-      run &&
-      runTimeline({
-        run,
-        items,
-        execution: emptyExecution(),
-        coverage: "unavailable",
-      }),
-    [run, items],
-  );
+  const timeline = useMemo(() => {
+    if (!run || !retained.data) return undefined;
+    const items = retained.data.items;
+    return runTimeline({
+      run,
+      attempts: attempts.data,
+      items: presentItems(items),
+      execution: runExecution(run, items),
+      coverage: items.some(
+        (item) => isOmitted(item.content) || item.content.incomplete === true,
+      )
+        ? "partial"
+        : "complete",
+    });
+  }, [run, retained.data, attempts.data]);
   const reload = () => {
     void runQuery.refetch();
     void retained.refetch();
     void own.refetch();
+    if (level === "debug") void attempts.refetch();
   };
   if (runQuery.isPending || retained.isPending || own.pending)
     return <Loading variant="list" rows={2} />;
@@ -307,38 +289,43 @@ function HistoricalRun({
       />
     );
   return (
-    <div className={debug.runAnchor} data-run={run.id}>
-      <StoredContents
-        runId={runId}
-        items={[...earlier.items, ...retained.data.items]}
-      >
-        <RunBlock
+    <StoredContents runId={runId} items={retained.data.items}>
+      {level === "debug" ? (
+        <DebugRunSection
           run={run}
           thread={own.thread}
           timeline={timeline}
-          agentName={agent.data?.name}
-          agentImageUrl={agent.data?.image_url}
-          earlier={<EarlierItems earlier={earlier} />}
-          action={
-            <Link
-              className={styles.turnLink}
-              to={runPath(basePath, { ...run, run_id: run.id })}
-            >
-              {t("View run")}
-            </Link>
-          }
-        >
-          {/* An earlier run that stopped short says so; only the latest offers
-              to resubmit. */}
-          {(run.failure != null ||
-            ["failed", "cancelled"].includes(run.status)) && (
-            <FailureNotice
-              failure={run.failure}
-              cancelled={run.status === "cancelled"}
-            />
-          )}
-        </RunBlock>
-      </StoredContents>
-    </div>
+          index={number(run.id)}
+          jumpToDock={jumpToDock}
+        />
+      ) : (
+        <div className={debug.runAnchor} data-run={run.id}>
+          <RunBlock
+            run={run}
+            thread={own.thread}
+            timeline={timeline}
+            agentName={agent.data?.name}
+            agentImageUrl={agent.data?.image_url}
+            action={
+              <Link
+                className={styles.turnLink}
+                to={runPath(basePath, { ...run, run_id: run.id })}
+              >
+                {t("View run")}
+              </Link>
+            }
+          >
+            {/* Only the latest Run offers to resubmit; ancestors retain their outcome. */}
+            {(run.failure != null ||
+              ["failed", "cancelled"].includes(run.status)) && (
+              <FailureNotice
+                failure={run.failure}
+                cancelled={run.status === "cancelled"}
+              />
+            )}
+          </RunBlock>
+        </div>
+      )}
+    </StoredContents>
   );
 }

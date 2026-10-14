@@ -7,6 +7,7 @@ import {
   comparePositions,
   isOmitted,
   readDisplay,
+  readFullDisplay,
   type DisplayItem,
 } from "./display";
 import { RunDisplayState } from "./run-display-state";
@@ -390,3 +391,138 @@ it("keeps reply memory sources from END metadata without altering the answer", (
   ).toBe("r1");
   expect(isItemRef({ ...end.item, memory_sources: [null] })).toBe(false);
 });
+
+it("loads all pages of a large Run without using historical pages as a live baseline", async () => {
+  const requests: URL[] = [];
+  const items = Array.from({ length: 867 }, (_, index) => ({
+    ...item(),
+    id: `item_${index + 1}`,
+    ordinal: index + 1,
+  }));
+  const client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (input) => {
+      const url = new URL((input as Request).url);
+      requests.push(url);
+      const after = url.searchParams.get("after");
+      return Response.json(
+        after === null
+          ? {
+              ...baseline(900),
+              items: items.slice(-200),
+              resume_after: "123-0",
+              continuation: { retained: true },
+            }
+          : {
+              ...baseline(0, true),
+              baseline: false,
+              position: null,
+              continuation: null,
+              items: items.slice(
+                Number(after),
+                Number(after) + Number(url.searchParams.get("limit")),
+              ),
+            },
+      );
+    },
+  });
+  const result = await readFullDisplay(client, "ws_1", "run_2");
+  expect(result.items).toEqual(items);
+  expect(result).toMatchObject({
+    baseline: true,
+    complete: false,
+    position: "1-900",
+    resume_after: "123-0",
+    continuation: { retained: true },
+    immutableBefore: 668,
+  });
+  expect(requests.map((url) => url.search)).toEqual([
+    "",
+    "?after=0&limit=500",
+    "?after=500&limit=167",
+  ]);
+  client.close();
+});
+
+it("reuses immutable pages but refreshes a former mutable tail before retaining it", async () => {
+  const requests: URL[] = [];
+  const items = Array.from({ length: 5 }, (_, index) => ({
+    ...item(),
+    id: `item_${index + 1}`,
+    ordinal: index + 1,
+  }));
+  let first = 3;
+  const client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (input) => {
+      const url = new URL((input as Request).url);
+      requests.push(url);
+      const after = url.searchParams.get("after");
+      return Response.json({
+        ...baseline(first),
+        baseline: after === null,
+        items:
+          after === null
+            ? [items[first - 1]]
+            : items.slice(
+                Number(after),
+                Number(after) + Number(url.searchParams.get("limit")),
+              ),
+      });
+    },
+  });
+  const previous = await readFullDisplay(client, "ws_1", "run_2");
+  first = 5;
+  items[2] = {
+    ...items[2]!,
+    content: { ...items[2]!.content, text: "Final answer" },
+    state: "completed",
+  };
+  const next = await readFullDisplay(
+    client,
+    "ws_1",
+    "run_2",
+    undefined,
+    previous,
+  );
+  expect(next.items).toEqual(items);
+  expect(previous.items[2]!.content.text).toBe("Hello");
+  expect(requests.map((url) => url.search)).toEqual([
+    "",
+    "?after=0&limit=2",
+    "",
+    "?after=2&limit=2",
+  ]);
+  client.close();
+});
+
+it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
+  "rejects missing or non-advancing history $ordinals without looping",
+  async ({ ordinals }) => {
+    let requests = 0;
+    const client = createClient({
+      baseUrl: "https://test.invalid",
+      auth: { type: "session" },
+      fetch: async (input) => {
+        requests++;
+        const historical = new URL((input as Request).url).searchParams.has(
+          "after",
+        );
+        return Response.json({
+          ...baseline(3),
+          items: (historical ? ordinals : [3]).map((ordinal) => ({
+            ...item(),
+            ordinal,
+          })),
+        });
+      },
+    });
+    await expect(readFullDisplay(client, "ws_1", "run_2")).rejects.toThrow(
+      "Run history could not be fully loaded.",
+    );
+    expect(requests).toBe(2);
+    client.close();
+  },
+);

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,11 +36,13 @@ async def run_terminal(
 ) -> UpdateCommand | None:
     from .lifecycle import resume_hint
     from .onboarding import LandingScreen, run_setup
-    from .updates import prompt_update
+    from .updates import notify_update
 
     directory = (directory or Path.cwd()).resolve()
     status = Status(mode=request.display or "concise", mode_explicit=request.display is not None)
     shell: CliShell | None = None
+    update_task: asyncio.Task[None] | None = None
+    chat_ready = asyncio.Event()
 
     landing = LandingScreen()
 
@@ -70,9 +72,9 @@ async def run_terminal(
                     configuration = await backend.app.current_configuration()
                     if configuration is None or configuration.document.process.terminal_update_check:
                         root = resolve_harness_ui_data_root(request.config_path, data_root=request.data_root)
-                        update = await prompt_update(root, landing)
-                        if update is not None:
-                            return update
+                        update_task = asyncio.create_task(
+                            notify_update(root, chat_ready, emit), name="harness-ui-update-check"
+                        )
                 landing.emit("Restoring session…" if request.thread_id else "Preparing session…")
                 session_started = time.perf_counter()
                 configured = await backend.initialize()
@@ -104,12 +106,18 @@ async def run_terminal(
                 from .shell import CliShell
 
                 shell = CliShell(request, directory=directory, status=status)
+                chat_ready.set()
                 await landing.run_chat(shell, backend)
     except asyncio.CancelledError:
         if not landing.cancel_requested:
             raise
         print_formatted_text("Startup cancelled. Completed credential or configuration writes are retained.")
         return
+    finally:
+        if update_task is not None:
+            update_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await update_task
     # The App and terminal have both finished cleanup before these primary-screen hints.
     if status.session_id:
         print_formatted_text(terminal_text(resume_hint(request, status.session_id, directory)))

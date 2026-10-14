@@ -25,6 +25,7 @@ from a13n_service.runs.schemas import (
     MessageAuthors,
     NewThread,
     Resume,
+    RunAgent,
     RunContent,
     RunItems,
     RunLabels,
@@ -422,6 +423,12 @@ async def run_items(
     """A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose
     items live output can still change; `before` and `after` page from an ordinal and exclude each other."""
     return await runs.items(runtime, actor, workspace_id, run_id, before=before, after=after, limit=limit)
+
+
+@router.get("/runs/{run_id}/agent", response_model=RunAgent, openapi_extra=platform_operation("execution", "read"))
+async def run_agent(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> RunAgent:
+    """The agent configuration the run executes: its revision with the run's override applied."""
+    return await runs.agent(runtime.storage, actor, workspace_id, run_id)
 
 
 @router.get("/runs/{run_id}/lineage", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { TextAreaField } from "../../../shared/forms";
 import { Section } from "../../../shared/page";
@@ -8,9 +9,12 @@ import styles from "./editor.module.css";
 export function InstructionsSection({
   draft,
   readOnly,
+  mark,
 }: {
   draft: AgentDraft;
   readOnly: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -19,6 +23,7 @@ export function InstructionsSection({
       description={t(
         "The role, boundaries, and approach the agent follows on every run.",
       )}
+      actions={mark}
     >
       <TextAreaField
         readOnly={readOnly}

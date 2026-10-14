@@ -136,7 +136,7 @@ function RunBody({
     enabled: thread.origin === "fork",
   });
   const transcript = useRef<HTMLDivElement>(null);
-  const scroll = useTranscriptScroll(transcript);
+  const scroll = useTranscriptScroll(transcript, level);
   const stopped = ["failed", "cancelled"].includes(run.status);
   // A stopped Run is asked again from the dock, while it is still the
   // Thread's latest: its message is prefilled there to be sent again.

@@ -2,6 +2,7 @@ import { Button } from "a13n-ui";
 import {
   ArrowCounterClockwiseIcon,
   CaretRightIcon,
+  SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,16 +13,19 @@ import { JsonView } from "../../../../shared/forms";
 import { CopyableId, CopyButton } from "../../../../shared/identity";
 import { MarkdownContent } from "../../../../shared/markdown";
 import { isActiveRun } from "../../api";
-import { formatCost } from "../../../../shared/cost";
+import { exactCost, formatCost } from "../../../../shared/cost";
 import {
   formatDuration,
   formatOffset,
   resultExcerpt,
   tokenFigures,
 } from "../../format";
+import { useRunUsage } from "../../queries";
+import { usageTotals } from "../../usage-table";
 import { runOutcome } from "../../lifecycle";
 import { runRequest, type RunRequest } from "../../request";
 import { ForkRun } from "../../fork-run";
+import { RunAgentDialog } from "../../run-agent";
 import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { RequestContent, requestLabel } from "../user-message";
@@ -33,7 +37,12 @@ import {
 } from "../thread-runs";
 import { useRunOpen } from "./collapse";
 import { RunDetailsDialog } from "./run-details";
-import { CompletedRow, EventRow, TimelineRows } from "./timeline-rows";
+import {
+  AgentRow,
+  CompletedRow,
+  EventRow,
+  TimelineRows,
+} from "./timeline-rows";
 import { useNow } from "./use-now";
 import type { RunScope } from "./scope";
 import styles from "./debug.module.css";
@@ -63,6 +72,7 @@ export function DebugRunSection({
   const { t } = useTranslation();
   const { can, basePath } = useWorkspace();
   const [open, toggleOpen] = useRunOpen(run.id);
+  const [configuring, setConfiguring] = useState(false);
   const active = isActiveRun(run.status) || run.status === "waiting";
   const now = useNow(active);
   const children = useChildThreads(run.session_id, run.thread_id);
@@ -138,15 +148,25 @@ export function DebugRunSection({
               index={index}
               compact
             />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={t("Agent configuration")}
+              aria-haspopup="dialog"
+              onClick={() => setConfiguring(true)}
+            >
+              <SlidersHorizontalIcon size={14} aria-hidden="true" />
+              <span data-action-label>{t("Configuration")}</span>
+            </Button>
             <RunDetailsDialog run={run} index={index} />
           </span>
         </div>
-        {open && (
-          <RunFacts run={run} totals={timeline.totals} duration={duration} />
-        )}
+        {open && <RunFacts run={run} duration={duration} />}
       </header>
       {open && (
         <RunLog>
+          <AgentRow scope={scope} onOpen={() => setConfiguring(true)} />
           <LogBlock
             time={formatOffset(0)}
             label={t("Input")}
@@ -184,6 +204,11 @@ export function DebugRunSection({
           <RunOutput output={run.output} />
         </RunLog>
       )}
+      <RunAgentDialog
+        run={run}
+        open={configuring}
+        onOpenChange={setConfiguring}
+      />
     </section>
   );
 }
@@ -230,21 +255,25 @@ function RunLog({ children }: { children: ReactNode }) {
 /** The Run's figures, each named, on one line under its name. */
 function RunFacts({
   run,
-  totals,
   duration,
 }: {
   run: Schema["RunView"];
-  totals: RunTimeline["totals"];
   duration: number | null;
 }) {
   const { t } = useTranslation();
+  // The heading and Details share one recorded usage snapshot.
+  const usage = useRunUsage(run);
+  const totals = usage.data && usageTotals(usage.data);
   // Tokens nobody reported are unknown, never zero, so they are not shown.
   const figures =
-    totals.reportedUsage &&
+    totals &&
+    (totals.inputTokens > 0 ||
+      totals.outputTokens > 0 ||
+      totals.cachedTokens > 0) &&
     tokenFigures(t, {
       input: totals.inputTokens,
       output: totals.outputTokens,
-      cached: totals.cacheReadTokens,
+      cached: totals.cachedTokens,
     });
   return (
     <dl className={styles.facts}>
@@ -252,7 +281,7 @@ function RunFacts({
         <StartTime at={run.started_at ?? run.created_at} />
       </Fact>
       <Fact label={t("Duration")}>{formatDuration(duration)}</Fact>
-      <Fact label={t("Model calls")}>{totals.modelCalls}</Fact>
+      {totals && <Fact label={t("Model calls")}>{totals.requests}</Fact>}
       {figures && (
         <Fact label={t("Tokens")}>
           <span title={figures.pairTitle}>{figures.pair}</span>
@@ -263,8 +292,19 @@ function RunFacts({
           <span title={figures.cacheTitle}>{figures.rate}</span>
         </Fact>
       )}
-      {totals.costUsd && (
-        <Fact label={t("Cost")}>{formatCost(totals.costUsd)}</Fact>
+      {totals && totals.cost !== null && (
+        <Fact label={t("Cost")}>
+          <span
+            title={
+              totals.unpriced
+                ? t("Known subtotal; some requests were not priced.")
+                : exactCost(totals.cost)
+            }
+          >
+            {formatCost(totals.cost)}
+            {totals.unpriced && "*"}
+          </span>
+        </Fact>
       )}
       <div className={`${styles.fact} ${styles.factId}`}>
         <dt>{t("Run ID")}</dt>

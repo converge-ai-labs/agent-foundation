@@ -8,6 +8,8 @@ API key 模型使用原生 provider 凭据。应用需要已实现的订阅登�
 
 直接可用的本地登录体验见 [Harness UI 模型与身份验证](../a13n-harness-ui/models-and-authentication.md)。下面示例展示 Python API；登录函数调用时会联系外部服务，必须由用户发起。这些示例不是离线测试，也不保证账号符合 provider 资格。
 
+内置 `anthropic` 适配器在模型请求和连接测试中，会将同一个已保存的 API key 同时放入 `X-Api-Key` 和 `Authorization: Bearer`，自定义网关地址也使用这一行为。只需填写一次 key，无需额外填写 Authorization 请求头。这两个名称均由 provider 管理，升级时请移除已有的自定义 Authorization 条目。
+
 ## 分离登录、存储与模型使用
 
 1. 登录流程生成完整凭据值。

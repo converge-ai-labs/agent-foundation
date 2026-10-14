@@ -8,6 +8,8 @@ Use native Provider credentials for API-key Models. Use `a13n_harness.providers.
 
 For a ready-to-use local login experience, follow [Harness UI Models and authentication](../a13n-harness-ui/models-and-authentication.md). The examples below show Python APIs; login functions contact external services when called and must be initiated by the user. The examples are not offline tests or a guarantee of provider account eligibility.
 
+The built-in `anthropic` adapter sends the same saved API key in both `X-Api-Key` and `Authorization: Bearer` on model requests and connection tests, including custom gateway URLs. Enter the key once; no separate Authorization header is needed. Both names are reserved, so remove any existing custom Authorization entry when upgrading.
+
 ## Separate login, storage, and model use
 
 1. A login flow produces a complete credential value.

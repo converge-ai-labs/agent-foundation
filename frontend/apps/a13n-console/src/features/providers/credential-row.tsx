@@ -68,7 +68,7 @@ export function CredentialRow({
             className={styles.credentialKeep}
             onClick={close}
           >
-            {t("Keep the saved key")}
+            {t("Cancel replacement")}
           </button>
         )}
       </div>

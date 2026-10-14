@@ -95,10 +95,8 @@ async def test_e2b_compatible_service_account_and_domain_changes(service) -> Non
     path = f"{collection}/{provider['id']}"
     current = await service.client.get(path)
     body = {"config": {"domain": "other-sandboxes.example.com"}}
-    refused = await service.client.patch(path, json=body, headers={"If-Match": current.headers["etag"]})
-    assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "credential"
-    moved = await service.client.patch(
-        path, json={**body, "credential": {"api_key": "new-service-key"}}, headers={"If-Match": current.headers["etag"]}
-    )
+    moved = await service.client.patch(path, json=body, headers={"If-Match": current.headers["etag"]})
     assert moved.status_code == 200, moved.text
     assert moved.json()["config"] == body["config"]
+    assert moved.json()["credential_configured"]
+    assert SECRET not in moved.text

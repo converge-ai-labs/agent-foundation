@@ -16,6 +16,7 @@ import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
   fixtureRun,
+  fixtureRunAgent,
   fixtureThread,
   fixtureTimeline,
 } from "./transcript/fixture";
@@ -102,6 +103,8 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/agent"))
+        return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/runs"))
         return Response.json({
           items: [fixtureRun({ id: "run_1" }), fixtureRun()],

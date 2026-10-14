@@ -1,9 +1,8 @@
-import { readDisplay } from "./display";
+import { readFullDisplay, type FullDisplay } from "./display";
 import type { Client, paths } from "../../service-client";
 import {
   infiniteQueryOptions,
   queryOptions,
-  skipToken,
   type QueryClient,
 } from "@tanstack/react-query";
 import { allPages, data, type Schema } from "../../shared/api";
@@ -29,6 +28,8 @@ export function conversationKeys(workspaceId: string) {
     entry: (threadId: string, entryId: string) =>
       [...root, "inbox", threadId, "entry", entryId] as const,
     run: (runId: string) => [...root, "run", runId] as const,
+    /** The agent one Run executes; frozen at acceptance, it never changes. */
+    agent: (runId: string) => [...root, "agent", runId] as const,
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
@@ -84,6 +85,19 @@ export function conversationQueries(client: Client, workspaceId: string) {
             })
             .then(data),
       }),
+    agent: (run_id: string) =>
+      queryOptions({
+        queryKey: keys.agent(run_id),
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/runs/{run_id}/agent", {
+              params: { path: { run_id } },
+              signal,
+            })
+            .then(data),
+        staleTime: Infinity,
+      }),
     environments: (thread_id: string) =>
       queryOptions({
         queryKey: [...keys.thread(thread_id), "environments"],
@@ -112,19 +126,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
     items: (run_id: string) =>
       queryOptions({
         queryKey: keys.items(run_id),
-        queryFn: ({ signal }) =>
-          readDisplay(client, workspaceId, run_id, signal),
-      }),
-    /**
-     * The Items a reader has read before a Run's newest window, in ordinal
-     * order. They never change, so the Run keeps them as that window moves;
-     * `useEarlierItems` adds each page it reads.
-     */
-    earlierItems: (run_id: string) =>
-      queryOptions<Schema["Item"][]>({
-        queryKey: [...keys.items(run_id), "earlier"],
-        queryFn: skipToken,
-        staleTime: Infinity,
+        queryFn: ({ signal, client: cache }) =>
+          readFullDisplay(
+            client,
+            workspaceId,
+            run_id,
+            signal,
+            cache.getQueryData<FullDisplay>(keys.items(run_id)),
+          ),
+        staleTime: (query) => (query.state.data?.complete ? Infinity : 0),
       }),
     /**
      * The Run and its ancestors, nearest first, across fork origins. Pages are
