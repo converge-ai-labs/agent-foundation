@@ -217,8 +217,11 @@ function noticeText(notice: LifecycleNotice, t: TFunction): string {
 /** What follows a lifecycle fact's head: a stop's reason and its message. */
 function noticeDetail(notice: LifecycleNotice): string {
   if (notice.kind !== "outcome") return "";
-  // A wait's head already names its reason; only a stop adds one.
-  const reason = notice.status === "waiting" ? null : notice.reason;
+  // A wait's head already names its reason, and a stop's head its status.
+  const reason =
+    notice.status === "waiting" || notice.reason === notice.status
+      ? null
+      : notice.reason;
   return [reason, notice.message].filter(Boolean).join(" · ");
 }
 

@@ -223,9 +223,11 @@ function modelText(entry: ModelEntry, t: TFunction): RowText {
           ? t("called {{count}} tools", { count: actions.length })
           : entry.children.some((child) => child.kind === "reply")
             ? t("wrote the reply")
-            : entry.endedAt
-              ? t("no output")
-              : t("thinking…");
+            : entry.state === "interrupted"
+              ? t("interrupted")
+              : entry.endedAt
+                ? t("no output")
+                : t("thinking…");
   const label = {
     ...entryLabel(entry, t),
     subject: [entry.model, outcome].filter(Boolean).join(" · "),
