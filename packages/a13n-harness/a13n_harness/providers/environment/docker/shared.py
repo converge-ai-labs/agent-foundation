@@ -131,9 +131,13 @@ class DockerConnectionConfiguration(EnvironmentProviderConfiguration):
 
 
 def _fingerprint(configuration: DockerEnvironmentConfiguration) -> str:
+    values = configuration.model_dump(mode="json", include=set(DockerEnvironmentConfiguration.model_fields))
+    # Existing native targets must keep the fingerprint computed before desktop mode existed.
+    if not configuration.desktop:
+        values.pop("desktop")
     return hashlib.sha256(
         json.dumps(
-            configuration.model_dump(mode="json", include=set(DockerEnvironmentConfiguration.model_fields)),
+            values,
             sort_keys=True,
         ).encode()
     ).hexdigest()

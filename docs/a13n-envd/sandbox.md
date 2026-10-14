@@ -3,11 +3,12 @@ title: Sandbox image
 description: Choose a minimal Envd runtime or a development sandbox with browser automation and optional workspace skills.
 ---
 
-The `a13n-sandbox` image has two variants. Both start Envd as root and run Session commands and file operations as the provisioned `sandbox` account (`1000:1000`). The standard variant also grants that account passwordless sudo. The outer container or VM supplies isolation; the standard variant's default UID is not a barrier against intentional root access.
+The `a13n-sandbox` image has three variants. All start Envd as root and run Session commands and file operations as the provisioned `sandbox` account (`1000:1000`). The standard and desktop variants also grant that account passwordless sudo. The outer container or VM supplies isolation; these variants' default UID is not a barrier against intentional root access.
 
 | Variant            | Contents                                                                           | Intended use                                                                               |
 | ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Standard (default) | Envd, the development toolchain, agent-browser, Chromium, fonts and bundled skills | Agent development through Envd or the native Docker Provider                               |
+| Desktop            | Standard toolchain plus Xvfb, Openbox and supervised desktop startup               | Computer Use through an image-managed Envd                                                 |
 | Slim               | Envd, Debian's basic shell/utilities, runtime libraries, CA certificates and tini  | Envd operation or a base for a custom image; no Python, Node.js, compiler, sudo or browser |
 
 Slim does not meet the native Docker Provider's Python prerequisite. It does not include the optional controlled-egress network tools; use the standard variant or provision those tools in a derived image.
@@ -23,19 +24,32 @@ make image-sandbox
 make image-check-sandbox
 make image-sandbox-slim
 make image-check-sandbox-slim
+make image-sandbox-desktop
+make image-check-sandbox-desktop
 ```
 
-The local tags are `a13n-sandbox:local` and `a13n-sandbox:local-slim`. Smoke checks verify daemon startup, identity and directory permissions for both variants. Standard checks also cover the toolchain, sudo, skill initialization and offline browser snapshots/screenshots. Container CI runs these checks on native AMD64 and ARM64 runners. Protocol and execution-isolation tests remain in the Envd test suite.
+The local tags are `a13n-sandbox:local`, `a13n-sandbox:local-slim` and `a13n-sandbox:local-desktop`. Smoke checks verify daemon startup, identity and directory permissions for all variants. Standard checks also cover the toolchain, sudo, skill initialization and offline browser snapshots/screenshots. Container CI runs these checks on native AMD64 and ARM64 runners. Protocol and execution-isolation tests remain in the Envd test suite.
 
-Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd release tag matching your EIP client. Both variants contain the same daemon version.
+Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd release tag matching your EIP client. All variants contain the same daemon version.
 
-| Channel           | Standard          | Slim                 |
-| ----------------- | ----------------- | -------------------- |
-| Stable release    | `X.Y.Z`, `latest` | `X.Y.Z-slim`, `slim` |
-| Release candidate | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    |
-| Main development  | `dev`             | `dev-slim`           |
+| Channel           | Standard          | Slim                 | Desktop                    |
+| ----------------- | ----------------- | -------------------- | -------------------------- |
+| Stable release    | `X.Y.Z`, `latest` | `X.Y.Z-slim`, `slim` | `X.Y.Z-desktop`, `desktop` |
+| Release candidate | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    | `X.Y.Z-rc.N-desktop`       |
+| Main development  | `dev`             | `dev-slim`           | `dev-desktop`              |
 
-RC and development publication never advance `latest` or `slim`. These instructions describe the source images in this checkout, not a promise that an older published tag already has these defaults.
+RC and development publication never advance `latest`, `slim` or `desktop`. These instructions describe the source images in this checkout, not a promise that an older published tag already has these defaults.
+
+## Managed Docker desktop in Service
+
+1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or choose a published desktop tag that includes this feature.
+2. In Console, select a Docker Provider with the existing `docker_host` connection. Create a template with image `a13n-sandbox:local-desktop`, **X11 desktop** enabled (`desktop: true`), and `pull_policy: never` for a local build.
+3. Create an Environment from the template. The image starts its desktop and envd automatically; Service checks actual desktop readiness before marking it ready. No custom initialization script is needed.
+4. Enable Computer tools on the Agent and allow the required Computer operations on the environment mount. These permissions do not start a desktop on a standard/slim image.
+
+Local and remote Engines use the same connection. Service tunnels EIP through Docker exec; no container ports or additional desktop address are required, including when `disable_network` is enabled. Failed readiness retains the allocated container for inspection. Closing a Run leaves it running; stop/start retains files and starts a fresh graphical session. This is Agent screenshot/input support, not a live remote-desktop viewer or human takeover. X11 supports key events; literal Unicode `type_text` remains unsupported.
+
+The desktop launcher runs as root, with Xvfb/Openbox and Session operations under `sandbox`. It creates an Xauthority cookie, disables X11 TCP listening, supervises all required processes, and fails the container if the desktop dies. The standard image's passwordless sudo behavior also applies. Desktop smoke checks cover authenticated daemon startup, non-root X11 access, stop/start file retention and failure propagation.
 
 ## Run with a Host
 

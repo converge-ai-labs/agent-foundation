@@ -205,6 +205,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | ----------------------------- | ----- | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | `image`                       | false | string                                    | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
 | `pull_policy`                 | false | "never", "if_missing"                     | default="if_missing"                                                             |
+| `desktop`                     | false | boolean                                   | default=false                                                                    |
 | `mounts`                      | false | 数组，元素类型为 DockerMountConfiguration | default=[]                                                                       |
 | `environment`                 | false | object                                    | —; 默认值由模型工厂计算                                                          |
 | `init_script`                 | false | string 或 null                            | maxLength=1048576; format="multiline"; default=null                              |
@@ -243,7 +244,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `timeout_seconds`           | false | integer       | minimum=30; maximum=86400; default=3600                   |
 | `request_timeout_seconds`   | false | number        | maximum=300; exclusiveMinimum=0; default=30               |
 | `allow_internet_access`     | false | boolean       | default=true                                              |
-| `max_file_bytes`            | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=16777216  |
+| `max_file_bytes`            | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
 | `max_observation_bytes`     | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576     |
 | `max_active_observations`   | false | integer       | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=134217728 |

@@ -386,3 +386,84 @@ async def test_native_execution_user_prefers_recipe_then_image_label(native, con
         assert engine.client.containers.create.call_args.kwargs["user"] == expected
     finally:
         await env.close()
+
+
+@pytest.mark.parametrize("disable_network", [False, True])
+async def test_desktop_creation_uses_image_startup_and_private_eip(native, monkeypatch, disable_network):
+    old, engine, container = native
+    config = DockerRecipe(image="sandbox:desktop", desktop=True, disable_network=disable_network)
+    env = DockerManagement(config, "env_desktop", None, old.runtime)
+    container.labels = env.labels
+    engine.client.images.get.return_value.labels = {"ai.a13n.sandbox.variant": "desktop"}
+    ready = AsyncMock()
+    monkeypatch.setattr(env, "_wait_desktop", ready)
+    await env.create()
+    options = engine.client.containers.create.call_args.kwargs
+    assert options["entrypoint"] is None and options["command"] is None
+    assert options["user"] == "root"
+    assert "ports" not in options
+    assert options["environment"]["A13N_ENVD_HTTP_BIND"] == "127.0.0.1:8888"
+    assert options["environment"]["A13N_ENVD_DEVICE_ID"] == "env_desktop"
+    assert options["environment"]["A13N_ENVD_TRANSPORT"] == "http"
+    assert not any("TOKEN" in key or "CREDENTIAL" in key for key in options["environment"])
+    assert set(env.state.state) == {"environment_id", "container_id", "configuration_fingerprint"}
+    ready.assert_awaited_once()
+
+
+async def test_desktop_readiness_failure_retains_target_and_retry_does_not_initialize_again(native, monkeypatch):
+    old, engine, container = native
+    config = DockerRecipe(image="sandbox:desktop", desktop=True, init_script="echo initialized")
+    env = DockerManagement(config, "env_desktop", None, old.runtime)
+    container.labels = env.labels
+    engine.client.images.get.return_value.labels = {"ai.a13n.sandbox.variant": "desktop"}
+    ready = AsyncMock(side_effect=EnvironmentError("Not ready", code="environment_unavailable"))
+    monkeypatch.setattr(env, "_wait_desktop", ready)
+    with pytest.raises(EnvironmentError, match="Not ready"):
+        await env.create()
+    assert env.state.state["container_id"] == container.id
+    engine.client.containers.get.side_effect = None
+    engine.client.containers.get.return_value = container
+    DockerCommands.execute.reset_mock()
+    ready.side_effect = None
+    await env.create()
+    engine.client.containers.create.assert_called_once()
+    assert all("echo initialized" not in str(call) for call in DockerCommands.execute.call_args_list)
+    container.status = "exited"
+    await env.start()
+    assert ready.await_count == 3
+    engine.client.containers.create.assert_called_once()
+
+
+async def test_desktop_rejects_incompatible_image_without_allocating(native):
+    old, engine, _ = native
+    runtime = old.runtime
+    env = DockerManagement(DockerRecipe(image="python:3.13-slim", desktop=True), "env_desktop", None, runtime)
+    with pytest.raises(EnvironmentProviderError) as rejected:
+        await env.create()
+    assert rejected.value.code == "desktop_image_required"
+    engine.client.containers.create.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"user": "root"},
+        {"environment": {"A13N_ENVD_DEVICE_ID": "another"}},
+        {"environment": {"DISPLAY": ":0"}},
+        {"max_spool_bytes": 1},
+    ],
+)
+def test_desktop_template_rejects_overrides_that_break_its_startup_contract(overrides):
+    with pytest.raises(ValueError):
+        DockerRecipe(desktop=True, **overrides)
+
+
+def test_existing_native_target_fingerprint_remains_compatible():
+    from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+    from a13n_harness.providers.environment.docker.shared import _fingerprint
+
+    assert (
+        _fingerprint(DockerEnvironmentConfiguration())
+        == "12409a53f006e75584be211cf262d53b0d15068603c9f6a95a3c11418d1df69c"
+    )
+    assert _fingerprint(DockerEnvironmentConfiguration(desktop=True)) != _fingerprint(DockerEnvironmentConfiguration())

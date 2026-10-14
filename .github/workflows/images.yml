@@ -129,7 +129,7 @@ jobs:
                   "tag": "dev",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
-              for variant in ("standard", "slim"):
+              for variant in ("standard", "slim", "desktop"):
                   images.append({
                       "name": "a13n-sandbox",
                       "runner": "ubuntu-24.04",
@@ -138,7 +138,7 @@ jobs:
                       "context": ".",
                       "platforms": "linux/amd64,linux/arm64",
                       "variant": variant,
-                      "tag": "dev" if variant == "standard" else "dev-slim",
+                      "tag": "dev" if variant == "standard" else f"dev-{variant}",
                   })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")

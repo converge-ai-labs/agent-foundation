@@ -18,6 +18,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | `server.host`              | `A13N_SERVER__HOST`              | string          | default="127.0.0.1"                             |
 | `server.port`              | `A13N_SERVER__PORT`              | integer         | minimum=1; maximum=65535; default=8000          |
 | `server.public_url`        | `A13N_SERVER__PUBLIC_URL`        | string          | maxLength=2048; default="http://127.0.0.1:8000" |
+| `server.control_url`       | `A13N_SERVER__CONTROL_URL`       | string or null  | maxLength=2048; default=null                    |
 | `server.trusted_proxies`   | `A13N_SERVER__TRUSTED_PROXIES`   | array of string | default=[]                                      |
 | `server.request_bytes`     | `A13N_SERVER__REQUEST_BYTES`     | integer         | minimum=1024; maximum=33554432; default=2097152 |
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | number          | maximum=60; exclusiveMinimum=0; default=10      |

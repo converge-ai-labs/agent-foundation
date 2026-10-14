@@ -298,7 +298,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [standard, slim]
+        variant: [standard, slim, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -350,9 +350,9 @@ jobs:
         run: |
           suffix=""
           stable=latest
-          if [[ "$VARIANT" == slim ]]; then
-            suffix=-slim
-            stable=slim
+          if [[ "$VARIANT" != standard ]]; then
+            suffix="-$VARIANT"
+            stable="$VARIANT"
           fi
           {
             echo "tags<<EOF"
@@ -387,9 +387,9 @@ jobs:
         run: |
           suffix=""
           stable=latest
-          if [[ "$VARIANT" == slim ]]; then
-            suffix=-slim
-            stable=slim
+          if [[ "$VARIANT" != standard ]]; then
+            suffix="-$VARIANT"
+            stable="$VARIANT"
           fi
           version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION$suffix" --format '{{json .Manifest.Digest}}')"
           test -n "$version_digest"

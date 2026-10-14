@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Literal
 
-from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
+from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.configuration import DockerProviderStateData
+from a13n_harness.providers.environment.docker.desktop import desktop_execution
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.shared import _KEY, DockerReference, _missing
 
@@ -95,6 +97,8 @@ class DockerManagement(DockerReference, ManagementBackend):
                     await self._check_initialized(commands)
             finally:
                 commands.closed = True
+            if self.config.desktop:
+                await self._wait_desktop()
 
     async def start(self) -> None:
         with engine_errors(mutation=True):
@@ -109,6 +113,45 @@ class DockerManagement(DockerReference, ManagementBackend):
                 await self._check_initialized(commands)
             finally:
                 commands.closed = True
+            if self.config.desktop:
+                await self._wait_desktop()
+
+    async def _wait_desktop(self) -> None:
+        try:
+            async with asyncio.timeout(self.config.request_timeout_seconds):
+                while True:
+                    execution = desktop_execution(self)
+                    try:
+                        await execution.open(execution_id="desktop-readiness")
+                        await execution.check_ready(frozenset({"computer"}))
+                        computer = execution.operations.computer
+                        if computer is not None:
+                            description = await computer.describe()
+                            if description.observe_ready and description.input_ready and description.targets:
+                                return
+                    except EnvironmentProviderError as error:
+                        if (
+                            error.category
+                            not in {
+                                EnvironmentProviderErrorCategory.UNAVAILABLE,
+                                EnvironmentProviderErrorCategory.TIMEOUT,
+                            }
+                            or error.code == "environment_stopped"
+                        ):
+                            raise
+                    except EnvironmentError as error:
+                        if error.code not in {"environment_provider_failure", "environment_unavailable"}:
+                            raise
+                    finally:
+                        await execution.close()
+                    await asyncio.sleep(0.1)
+        except TimeoutError:
+            raise provider_error(
+                _KEY,
+                "desktop_not_ready",
+                EnvironmentProviderErrorCategory.UNAVAILABLE,
+                description="Desktop did not become ready; the allocated container is retained for inspection",
+            ) from None
 
     def _create(self):
         from docker.types import Mount
@@ -118,22 +161,53 @@ class DockerManagement(DockerReference, ManagementBackend):
         image_id = image.id
         if not isinstance(image_id, str) or not image_id:
             raise EnvironmentError("Docker did not return an image identity", code="environment_provider_failure")
+        entrypoint = None if self.config.desktop else [self.config.python, "-I", "-c"]
+        command = None if self.config.desktop else ["import signal; signal.pause()"]
+        user = "root" if self.config.desktop else self.config.user or image.labels.get("ai.a13n.environment.user")
+        environment = dict(self.config.environment)
+        if self.config.desktop:
+            if image.labels.get("ai.a13n.sandbox.variant") != "desktop":
+                raise provider_error(
+                    _KEY,
+                    "desktop_image_required",
+                    EnvironmentProviderErrorCategory.INVALID,
+                    description="Select an a13n-sandbox desktop image for desktop mode",
+                )
+            environment.update(
+                {
+                    "A13N_ENVD_DEVICE_ID": self.allocation_id,
+                    "A13N_ENVD_TRANSPORT": "http",
+                    "A13N_ENVD_HTTP_BIND": "127.0.0.1:8888",
+                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "loopback",
+                    "A13N_ENVD_CONFIG_JSON": json.dumps(
+                        {
+                            "limits": {
+                                "max_file_bytes": self.config.max_file_bytes,
+                                "max_output_preview_bytes": self.config.max_output_preview_bytes,
+                                "max_output_bytes_per_stream": self.config.max_output_bytes_per_stream,
+                                "max_spool_bytes": self.config.max_spool_bytes,
+                                "max_processes": self.config.max_concurrent_processes,
+                            },
+                        }
+                    ),
+                }
+            )
         return client.containers.create(
             image_id,
             name="a13n-" + self.allocation_id,
-            entrypoint=[self.config.python, "-I", "-c"],
-            command=["import signal; signal.pause()"],
-            init=True,
+            init=not self.config.desktop,
             detach=True,
-            user=self.config.user or image.labels.get("ai.a13n.environment.user"),
             working_dir="/workspace",
-            environment=self.config.environment,
+            environment=environment,
             network_mode="none" if self.config.disable_network else "bridge",
             mounts=[Mount(str(m.target), m.source, type="bind", read_only=m.read_only) for m in self.config.mounts],
             labels=self.labels,
             nano_cpus=int(self.config.cpus * 1_000_000_000) if self.config.cpus is not None else None,
             mem_limit=int(self.config.memory_gb * 1_000_000_000) if self.config.memory_gb is not None else None,
             pids_limit=self.config.pids_limit,
+            entrypoint=entrypoint,
+            command=command,
+            user=user,
         )
 
     async def inspect(self) -> Literal["running", "stopped", "absent"]:

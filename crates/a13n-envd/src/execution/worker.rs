@@ -123,6 +123,10 @@ pub(crate) fn run_internal(ready: bool) -> io::Result<()> {
         return Err(Command::new(format!("{RUNTIME}/envd"))
             .arg("--internal-egress-ready")
             .env_clear()
+            .envs(desktop_environment(
+                bootstrap.computer_use,
+                bootstrap.command.as_ref(),
+            ))
             .exec());
     }
     // Executing resets dumpability; restore it before any payload can start.
@@ -141,6 +145,26 @@ pub(crate) fn run_internal(ready: bool) -> io::Result<()> {
         command.drop_supervisor_capabilities = true;
     }
     serve(socket, bootstrap)
+}
+
+/// X11 workers need the host-selected display after identity changes. Do not
+/// inherit unrelated daemon variables, credentials or dynamic-loader settings.
+#[cfg(target_os = "linux")]
+pub(super) fn desktop_environment(
+    enabled: bool,
+    command: Option<&CommandConfig>,
+) -> impl Iterator<Item = (&str, &str)> {
+    command
+        .into_iter()
+        .flat_map(|command| &command.base_environment)
+        .filter(move |(name, _)| {
+            enabled
+                && matches!(
+                    name.as_str(),
+                    "DISPLAY" | "XAUTHORITY" | "WAYLAND_DISPLAY" | "XDG_SESSION_TYPE"
+                )
+        })
+        .map(|(name, value)| (name.as_str(), value.as_str()))
 }
 
 /// The managed restricted helper prepares networking only. Bubblewrap owns the

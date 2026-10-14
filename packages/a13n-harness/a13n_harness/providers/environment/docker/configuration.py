@@ -44,6 +44,7 @@ class DockerEnvironmentConfiguration(BaseModel):
         json_schema_extra={
             "x-primary-fields": [
                 "image",
+                "desktop",
                 "environment",
                 "init_script",
                 "disable_network",
@@ -55,6 +56,14 @@ class DockerEnvironmentConfiguration(BaseModel):
     )
 
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
+    desktop: bool = Field(
+        default=False,
+        title="X11 desktop",
+        description=(
+            "Use an a13n-sandbox desktop image and its envd startup through the configured Docker Engine. "
+            "Local and remote Engines use the same connection. Computer permissions remain separate."
+        ),
+    )
     mounts: tuple[DockerMountConfiguration, ...] = Field(
         default=(),
         title="Host directory mounts",
@@ -112,6 +121,13 @@ class DockerEnvironmentConfiguration(BaseModel):
             raise ValueError("Invalid container environment variables")
         if self.max_output_preview_bytes > self.max_output_bytes_per_stream:
             raise ValueError("Output preview exceeds the per-stream capture limit")
+        if self.desktop:
+            if self.max_spool_bytes < 2 * self.max_output_bytes_per_stream:
+                raise ValueError("Desktop spool capacity must hold both output streams")
+            if self.user is not None:
+                raise ValueError("Desktop images own daemon and Session identities; do not override user")
+            if any(key.startswith("A13N_ENVD_") or key in {"DISPLAY", "XAUTHORITY"} for key in self.environment):
+                raise ValueError("Desktop mode owns envd configuration and display variables")
         return self
 
 

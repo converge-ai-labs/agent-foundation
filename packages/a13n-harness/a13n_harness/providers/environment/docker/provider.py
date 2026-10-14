@@ -49,6 +49,10 @@ async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) ->
 def _describe(configuration: DockerEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, DockerEnvironmentConfiguration):
         raise TypeError("Docker requires DockerEnvironmentConfiguration")
+    if configuration.desktop:
+        from a13n_harness.providers.environment.eip.binding import configured_descriptor
+
+        return configured_descriptor(working_directory="/workspace")
     return descriptor("unprepared", configuration)
 
 
@@ -68,6 +72,10 @@ def _construct_execution(
 ) -> ExecutionBackend:
     if not isinstance(configuration, DockerEnvironmentConfiguration) or runtime is None:
         raise TypeError("Docker requires typed configuration and runtime")
+    if configuration.desktop:
+        from a13n_harness.providers.environment.docker.desktop import DesktopReference, desktop_execution
+
+        return desktop_execution(DesktopReference(configuration, environment_id, state, runtime))
     return DockerExecution(configuration, environment_id, state, runtime)
 
 

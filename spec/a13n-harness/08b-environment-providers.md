@@ -52,7 +52,7 @@ Local Envd retains no durable target beyond Host-selected files and returns `Non
 
 ### Docker
 
-`docker` attaches to an existing running container through the Docker Engine SDK. No Envd executable, EIP connection, bootstrap credential, or control port exists in this execution backend. Account configuration supplies `docker_host`; Service owns the [allocation recipe and lifecycle](../a13n-service/06a-environment-management.md#docker).
+`docker` attaches to an existing running container through the Docker Engine SDK. In its default native mode (`desktop=false`), no Envd executable, EIP connection, bootstrap credential, or control port exists in this execution backend. Account configuration supplies `docker_host`; Service owns the [allocation recipe and lifecycle](../a13n-service/06a-environment-management.md#docker).
 
 The selected image must provide Linux, Python 3.10 or later, the configured shell, and a user able to write `/workspace` and `/tmp/a13n`, with Git additionally required for Git-ignore queries. Files and ports use bounded one-shot Python standard-library commands through Docker exec and the common native helper. Execution validates target-compatible configuration and the initialization completion evidence without creating a container or rerunning initialization.
 
@@ -61,6 +61,8 @@ Access to the selected Docker Engine grants that Engine's Docker authority. The 
 State contains the allocation's `environment_id`, exact `container_id`, and `configuration_fingerprint`. Canonical target identity is the container ID. `connector.open()` attaches only to that validated running container. A connection failure is not absence, and a stopped or lost target is reported without starting or replacing it. `close()` disconnects observations while preserving the container and its background processes.
 
 Commands use native Docker exec with a configured shell or explicit argv, supporting stdin, separate stdout and stderr, bounded output, explicit process inspection, and targeted signaling. Signal controls verify the command's in-container PID generation before signaling its group and never stop the shared container; process-tree cleanup is not promised. Per-command resource limits and network policies the container cannot enforce are rejected explicitly. Output observations are scoped to the current Environment execution, with per-stream and aggregate limits that discard excess bytes and report incomplete coverage. Rebinding a known exec identity can inspect native status but does not reconstruct lost output or stdin, and native command output is never replayed after a Worker restart.
+
+With `desktop=true`, Docker attaches to the existing image-managed envd through the same Engine connection. A bounded Docker exec tunnel forwards authenticated HTTP EIP to container loopback, independent of whether `docker_host` is local or remote. No container ports are published. File, process and Computer operations use the existing EIP binding; target ownership, exact container identity and initialization checks remain Docker-owned. Attachment never starts or replaces a stopped/missing container. Each execution owns its EIP Session and tunnel; closing them leaves the desktop and daemon running. Image startup, readiness and restart guarantees belong to Service management. Computer availability follows the live descriptor and does not grant mount permissions.
 
 ### Cloud Providers
 

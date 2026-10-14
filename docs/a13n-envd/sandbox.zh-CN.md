@@ -3,11 +3,12 @@ title: 沙箱镜像
 description: 选择最小 Envd 运行镜像，或带浏览器自动化和可选工作目录 skill 的开发沙箱。
 ---
 
-`a13n-sandbox` 提供两个变体。两者都以 root 启动 Envd，并以预置的 `sandbox` 账号（`1000:1000`）执行会话命令和文件操作。标准版还授予该账号免密码 sudo。隔离由外层容器或虚拟机提供；标准版的默认 UID 无法阻止主动获取 root 权限。
+`a13n-sandbox` 提供三个变体。三者都以 root 启动 Envd，并以预置的 `sandbox` 账号（`1000:1000`）执行会话命令和文件操作。标准版和桌面版还授予该账号免密码 sudo。隔离由外层容器或虚拟机提供；这些变体的默认 UID 无法阻止主动获取 root 权限。
 
 | 变体           | 内容                                                        | 用途                                                                      |
 | -------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
 | 标准版（默认） | Envd、开发工具链、agent-browser、Chromium、字体和内置 skill | 通过 Envd 或原生 Docker Provider 进行 agent 开发                          |
+| 桌面版         | 标准工具链、Xvfb、Openbox 和启动管理                        | 通过镜像内的 Envd 使用 Computer Use                                       |
 | Slim           | Envd、Debian 基础 shell/工具、运行库、CA 证书和 tini        | 运行 Envd 或派生自定义镜像；不包含 Python、Node.js、编译器、sudo 或浏览器 |
 
 Slim 不满足原生 Docker Provider 对 Python 的要求，也不包含可选受控出站网络所需的网络工具；请使用标准版，或在派生镜像中安装这些工具。
@@ -23,11 +24,13 @@ make image-sandbox
 make image-check-sandbox
 make image-sandbox-slim
 make image-check-sandbox-slim
+make image-sandbox-desktop
+make image-check-sandbox-desktop
 ```
 
-本地标签为 `a13n-sandbox:local` 和 `a13n-sandbox:local-slim`。冒烟检查验证两个变体的守护进程启动、身份和目录权限。标准版还检查工具链、sudo、skill 初始化及离线浏览器快照与截图。容器 CI 在原生 AMD64 和 ARM64 runner 上执行这些检查。协议和执行隔离测试仍由 Envd 测试套件负责。
+本地标签为 `a13n-sandbox:local`、`a13n-sandbox:local-slim` 和 `a13n-sandbox:local-desktop`。冒烟检查验证三个变体的守护进程启动、身份和目录权限。标准版还检查工具链、sudo、skill 初始化及离线浏览器快照与截图。容器 CI 在原生 AMD64 和 ARM64 runner 上执行这些检查。协议和执行隔离测试仍由 Envd 测试套件负责。
 
-发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 Envd 发布标签。两个变体包含相同版本的守护进程。
+发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 Envd 发布标签。三个变体包含相同版本的守护进程。
 
 | 通道        | 标准版            | Slim                 |
 | ----------- | ----------------- | -------------------- |
@@ -35,7 +38,20 @@ make image-check-sandbox-slim
 | 候选版      | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    |
 | Main 开发版 | `dev`             | `dev-slim`           |
 
-RC 和开发版发布都不会推进 `latest` 或 `slim`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
+RC 和开发版发布都不会推进 `latest`、`slim` 或 `desktop`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
+
+## 在 Service 中创建 Docker 桌面
+
+1. 在所选 Docker Engine 上构建 `a13n-sandbox:local-desktop`，或选择包含该功能的桌面版发布镜像。
+2. Console 中选择现有 Docker Provider，沿用它的 `docker_host` 连接。创建模板，镜像填 `a13n-sandbox:local-desktop`，开启 **X11 desktop**（`desktop: true`）；本地构建可设 `pull_policy: never`。
+3. 从模板创建环境。镜像自动启动 Xvfb、Openbox 和 envd；Service 确认桌面可观察、可输入后才标记就绪，无需每次编写启动脚本。
+4. 在 Agent 中开启 Computer 工具，在环境挂载中允许相应电脑操作。权限与桌面就绪是独立条件，授权不会让普通镜像自动拥有桌面。
+
+本机和远端均沿用 Docker Engine 连接，通过 Docker exec 隧道传输 EIP。不发布容器端口，不需要额外桌面地址；`disable_network: true` 也可使用。就绪检查失败会保留已创建的容器供排查。Run 结束不会停止桌面；停止后启动保留文件，但重新创建图形会话，不保留未保存的 GUI 状态和旧观察句柄。
+
+桌面版复用标准版工具链、Chromium 和字体，增加 Xvfb、Openbox 及启动管理。启动器和 envd 使用 root，桌面与 Session 使用 `sandbox`；标准版允许 sudo 的行为仍然适用。X11 使用认证 cookie 并禁用 TCP 监听。任一必需进程退出会终止容器，避免桌面已失效却仍显示运行中。
+
+桌面版标签为 `X.Y.Z-desktop`（稳定选择器 `desktop`）、`X.Y.Z-rc.N-desktop`、`dev-desktop`；RC 和开发镜像不推进稳定选择器。这里描述的是本次源码能力，不表示旧镜像已经包含。当前支持 Agent 截图与输入，不包含实时远程桌面 viewer 或人工接管；X11 的 Unicode `type_text` 仍不支持，可使用已支持的按键操作。
 
 ## 配合 Host 运行
 

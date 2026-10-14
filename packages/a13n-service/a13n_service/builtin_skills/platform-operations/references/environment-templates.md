@@ -1,3 +1,5 @@
 # Environment templates
 
 Templates describe how later Environment instances are created. Query the authorized environment Providers and use their deployed recipe schema from the instance catalog. Read the template and its ETag before updating it. A template update does not create, start or reconfigure an existing instance. Explain which future instances use it. Agent default environment selection and lazy startup have their existing lifecycle rules; preserve unrelated values. Instance start/stop/delete, shell and file access are outside this platform tool selection.
+
+For Docker Computer Use, select a desktop variant of `a13n-sandbox` and set recipe `desktop: true`. The existing Provider `docker_host` selects the local or remote Engine; no separate desktop endpoint or published port is needed. Do not override the desktop image's user, display or envd environment variables. A template grants no Agent tools or mount permissions. Native recipes default to `desktop: false`; selecting a desktop image alone does not change that mode.
