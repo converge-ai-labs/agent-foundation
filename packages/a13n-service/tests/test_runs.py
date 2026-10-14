@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+from a13n_service.api_tools import tool_name
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.admission import CallContext
@@ -446,103 +447,146 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
     assert "42" in str(runs_kit.user_texts(received[-1]))
 
 
-async def test_the_agent_composer_creates_an_agent_once_approved(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    model = await runs_kit.create_model(executing, scripted_model)
-    agents = f"{executing.api}/agents"
-    prepared = await executing.client.post(f"{executing.api}/agent-composer")
-    assert prepared.status_code == 200, prepared.text
-    composer = prepared.json()
-    assert composer["source"] == "builtin"
-    builtin = (await executing.client.get(agents, params={"source": "builtin"})).json()["items"]
-    assert [agent["id"] for agent in builtin] == [composer["id"]]
-    again = (await executing.client.post(f"{executing.api}/agent-composer")).json()
-    assert again["default_revision_id"] == composer["default_revision_id"]
-    edited = await executing.client.post(
-        f"{agents}/{composer['id']}/revisions",
-        json={"config": {"model": model}},
-        headers={"if-match": f'"{composer["id"]}:{composer["version"]}"'},
-    )
-    assert edited.status_code == 409 and edited.json()["error"]["details"]["reason"] == "builtin"
+async def test_the_agent_composer_creates_an_agent_once_approved(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    paths = service.app.openapi()["paths"]
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        model = await runs_kit.create_model(service, scripted_model)
+        agents = f"{service.api}/agents"
+        prepared = await service.client.post(f"{service.api}/agent-composer")
+        assert prepared.status_code == 200, prepared.text
+        composer = prepared.json()
+        assert composer["source"] == "builtin"
+        builtin = (await service.client.get(agents, params={"source": "builtin"})).json()["items"]
+        assert [agent["id"] for agent in builtin] == [composer["id"]]
+        again = (await service.client.post(f"{service.api}/agent-composer")).json()
+        assert again["default_revision_id"] == composer["default_revision_id"]
+        edited = await service.client.post(
+            f"{agents}/{composer['id']}/revisions",
+            json={"config": {"model": model}},
+            headers={"if-match": f'"{composer["id"]}:{composer["version"]}"'},
+        )
+        assert edited.status_code == 409 and edited.json()["error"]["details"]["reason"] == "builtin"
 
-    async def custom() -> list[dict[str, Any]]:
-        return (await executing.client.get(agents, params={"source": "custom"})).json()["items"]
+        async def custom() -> list[dict[str, Any]]:
+            return (await service.client.get(agents, params={"source": "custom"})).json()["items"]
 
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find")
-    config = {"model": model, "instructions": "Greet people."}
-    scripted_model.call("create_agent", {"name": "Greeter", "config": config}, call_id="call_create")
-    waiting = await runs_kit.sealed(
-        executing, (await runs_kit.start_thread(executing, composer, "make a greeter"))["run"]["id"]
-    )
-    assert waiting["status"] == "waiting" and waiting["wait_reason"] == "approval", waiting
-    assert await custom() == []
+        scripted_model.call(tool_name(paths["/api/v1/models"]["get"]["operationId"]), {}, call_id="call_find")
+        config = {"model": model, "instructions": "Greet people."}
+        scripted_model.call(
+            tool_name(paths["/api/v1/agents"]["post"]["operationId"]),
+            {"request_body": {"name": "Greeter", "config": config}},
+            call_id="call_create",
+        )
+        started = await runs_kit.start_thread(service, composer, "make a greeter")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        waiting = await runs_kit.sealed(service, started["run"]["id"])
+        assert waiting["status"] == "waiting" and waiting["wait_reason"] == "approval", waiting
+        assert await custom() == []
 
-    scripted_model.say("Created the greeter")
-    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
-    resumed = await executing.client.post(
-        f"{executing.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
-    )
-    assert resumed.status_code == 201, resumed.text
-    assert (await runs_kit.sealed(executing, resumed.json()["id"]))["status"] == "completed"
-    [greeter] = await custom()
-    assert greeter["name"] == "Greeter"
-    revision = f"{agents}/{greeter['id']}/revisions/{greeter['default_revision_id']}"
-    # Created with the authority of the user whose message started the run.
-    assert (await executing.client.get(revision)).json()["created_by_id"] == executing.tenant.principal_id
-    requests = [await scripted_model.request() for _ in range(3)]
-    found = [message for message in requests[1]["messages"] if message["role"] == "tool"]
-    assert model in found[0]["content"]
-    created = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
-    assert json.loads(created["content"]) == {
-        "agent_id": greeter["id"],
-        "default_revision_id": greeter["default_revision_id"],
-    }
-
-
-async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    await runs_kit.create_model(executing, scripted_model)
-    composer = (await executing.client.post(f"{executing.api}/agent-composer")).json()
-    config = {"model": "Bad Model", "instructions": "Greet people."}
-    scripted_model.call("create_agent", {"name": "Greeter", "config": config}, call_id="call_create")
-    waiting = await runs_kit.sealed(
-        executing, (await runs_kit.start_thread(executing, composer, "make a greeter"))["run"]["id"]
-    )
-    scripted_model.say("That model does not fit")
-    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
-    resumed = await executing.client.post(
-        f"{executing.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
-    )
-    assert (await runs_kit.sealed(executing, resumed.json()["id"]))["status"] == "completed"
-    requests = [await scripted_model.request() for _ in range(2)]
-    [failure] = [
-        json.loads(message["content"])["error"] for message in requests[1]["messages"] if message["role"] == "tool"
-    ]
-    # The location and the schema's own message, never the submitted value.
-    assert failure.startswith("config.model: String should match pattern") and "Bad Model" not in failure, failure
+        scripted_model.say("Created the greeter")
+        approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
+        resumed = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
+        )
+        assert resumed.status_code == 201, resumed.text
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, resumed.json()["id"]))["status"] == "completed"
+        [greeter] = await custom()
+        assert greeter["name"] == "Greeter"
+        revision = f"{agents}/{greeter['id']}/revisions/{greeter['default_revision_id']}"
+        # Created with the authority of the user whose message started the run.
+        assert (await service.client.get(revision)).json()["created_by_id"] == service.tenant.principal_id
+        requests = [await scripted_model.request() for _ in range(3)]
+        found = [message for message in requests[1]["messages"] if message["role"] == "tool"]
+        assert model in found[0]["content"]
+        created = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
+        result = json.loads(created["content"])
+        assert result["status"] == 201
+        assert result["body"]["id"] == greeter["id"]
+        assert result["body"]["default_revision_id"] == greeter["default_revision_id"]
 
 
-async def test_the_agent_composer_reads_the_revision_it_starts_from(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(
+    service, scripted_model, runs_kit, listen
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    paths = service.app.openapi()["paths"]
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        await runs_kit.create_model(service, scripted_model)
+        composer = (await service.client.post(f"{service.api}/agent-composer")).json()
+        config = {"model": "Bad Model", "instructions": "Greet people."}
+        scripted_model.call(
+            tool_name(paths["/api/v1/agents"]["post"]["operationId"]),
+            {"request_body": {"name": "Greeter", "config": config}},
+            call_id="call_create",
+        )
+        started = await runs_kit.start_thread(service, composer, "make a greeter")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        waiting = await runs_kit.sealed(service, started["run"]["id"])
+        scripted_model.say("That model does not fit")
+        approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
+        resumed = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
+        )
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, resumed.json()["id"]))["status"] == "completed"
+        requests = [await scripted_model.request() for _ in range(2)]
+        [failure] = [
+            json.loads(message["content"])["error"] for message in requests[1]["messages"] if message["role"] == "tool"
+        ]
+        # The original HTTP field path and classified reason, never the submitted value.
+        result = json.loads(failure)
+        assert result["status"] == 400
+        assert result["body"]["error"]["details"]["fields"] == [
+            {"field": "body.config.model", "reason": "string_pattern_mismatch"}
+        ]
+        assert "Bad Model" not in failure
+
+
+async def test_the_agent_composer_reads_the_revision_it_starts_from(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
     """Configuring from an older version names a revision other than the default, which the composer reads."""
-    model = await runs_kit.create_model(executing, scripted_model)
-    target = await runs_kit.add_agent(executing, "research", model, instructions="Version one.")
-    newer = await executing.client.post(
-        f"{executing.api}/agents/{target['id']}/revisions",
-        json={"config": {"model": model, "instructions": "Version two."}},
-        headers=runs_kit.if_match(target),
-    )
-    assert newer.status_code == 201, newer.text
-    composer = (await executing.client.post(f"{executing.api}/agent-composer")).json()
+    await runs_kit.pause_sweeps(service)
+    paths = service.app.openapi()["paths"]
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        model = await runs_kit.create_model(service, scripted_model)
+        target = await runs_kit.add_agent(service, "research", model, instructions="Version one.")
+        newer = await service.client.post(
+            f"{service.api}/agents/{target['id']}/revisions",
+            json={"config": {"model": model, "instructions": "Version two."}},
+            headers=runs_kit.if_match(target),
+        )
+        assert newer.status_code == 201, newer.text
+        composer = (await service.client.post(f"{service.api}/agent-composer")).json()
 
-    older = {"kind": "agent", "reference": target["id"], "revision_id": target["default_revision_id"]}
-    scripted_model.call("read_resource", older, call_id="call_read")
-    scripted_model.call("read_resource", {**older, "kind": "model", "reference": model}, call_id="call_model")
-    scripted_model.say("Read it")
-    started = await runs_kit.start_thread(executing, composer, "change research from version 1")
-    assert (await runs_kit.sealed(executing, started["run"]["id"]))["status"] == "completed"
-    requests = [await scripted_model.request() for _ in range(3)]
-    [read] = [message for message in requests[1]["messages"] if message["role"] == "tool"]
-    assert "Version one." in read["content"] and "Version two." not in read["content"]
-    refused = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
-    assert "only an agent is read at a revision" in refused["content"]
+        older = {"agent_id": target["id"], "revision_id": target["default_revision_id"]}
+        scripted_model.call(
+            tool_name(paths["/api/v1/agents/{agent_id}/revisions/{revision_id}"]["get"]["operationId"]),
+            older,
+            call_id="call_read",
+        )
+        scripted_model.say("Read it")
+        started = await runs_kit.start_thread(service, composer, "change research from version 1")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, started["run"]["id"]))["status"] == "completed"
+        requests = [await scripted_model.request() for _ in range(2)]
+        [read] = [message for message in requests[1]["messages"] if message["role"] == "tool"]
+        assert "Version one." in read["content"] and "Version two." not in read["content"]
 
 
 async def test_the_agent_composer_follows_the_usable_models(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

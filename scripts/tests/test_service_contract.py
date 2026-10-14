@@ -6,6 +6,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
+from a13n_service.resources.agents.schemas import AgentConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("service_contract", ROOT / "scripts/export-a13n-service-openapi.py")
@@ -29,6 +30,7 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
 def test_export_and_drift_check_work_without_sdk_directory(tmp_path: Path, monkeypatch, capsys) -> None:
     target = tmp_path / "proto/a13n-service"
     monkeypatch.setattr(contract, "TARGET", target)
+    monkeypatch.setattr(contract, "SKILL_SCHEMA", tmp_path / "package/agent-config.json")
     monkeypatch.setattr(contract, "documents", lambda: {"openapi.json": {"info": {"version": "1"}}})
     monkeypatch.setattr("sys.argv", ["export"])
     contract.main()
@@ -61,3 +63,19 @@ def test_console_dependency_and_development_commands_do_not_require_sdk() -> Non
     for name in ("frontend-check", "frontend-test", "a13n-console-build"):
         definition = next(line for line in makefile.splitlines() if line.startswith(f"{name}:"))
         assert "sdk" not in definition
+
+
+def test_bundled_skill_schema_is_current_and_can_be_built_independently(tmp_path, monkeypatch):
+    assert json.loads(contract.SKILL_SCHEMA.read_text()) == AgentConfig.model_json_schema()
+    target = tmp_path / "skills/schemas/agent-config.json"
+    monkeypatch.setattr(contract, "SKILL_SCHEMA", target)
+    monkeypatch.setattr(contract, "documents", lambda: pytest.fail("Skill packaging must not export HTTP contracts"))
+    monkeypatch.setattr("sys.argv", ["export", "--skills-only"])
+    contract.main()
+    assert json.loads(target.read_text()) == AgentConfig.model_json_schema()
+    monkeypatch.setattr("sys.argv", ["export", "--skills-only", "--check"])
+    contract.main()
+    target.write_text("{}")
+    with pytest.raises(SystemExit, match="1"):
+        contract.main()
+    assert target.read_text() == "{}"

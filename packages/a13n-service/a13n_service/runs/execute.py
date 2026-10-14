@@ -421,6 +421,7 @@ class _Attempt:
                     cursors=self.cursors,
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
+                    environments=environments,
                 )
             )
             executable = agent.build(
@@ -457,6 +458,7 @@ class _Attempt:
             bindings = replace(
                 host.bindings(root, self._bindings(agent.model_resolver(root, models))),
                 producer_observer=output.observe,
+                environment=host.environment,
             )
             start = partial(
                 executable.stream,
@@ -470,12 +472,7 @@ class _Attempt:
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
             )
-            # The Harness takes no empty environment set; a run without mounts runs without one.
-            stream = (
-                start(environments=environments, default_environment=PRIMARY if PRIMARY in environments else None)
-                if environments
-                else start()
-            )
+            stream = start()
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
             async with stream:
                 interrupt = asyncio.create_task(self._cancel_when_stopped(stream))

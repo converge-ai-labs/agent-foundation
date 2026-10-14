@@ -26,7 +26,7 @@ import {
   workState,
   type WorkState,
 } from "../entry-language";
-import { GuidanceMessage } from "../user-message";
+import { MessageAuthor } from "../../message-author";
 import { EntryPane } from "./entry-pane";
 import { bar, type RunScope } from "./scope";
 import styles from "./debug.module.css";
@@ -65,13 +65,7 @@ function TimelineRow({
     !entry.steeringSource &&
     !entry.subagentRunId
   )
-    return (
-      <GuidanceMessage
-        text={entry.text}
-        itemId={entry.id}
-        sourceId={entry.sourceId}
-      />
-    );
+    return <GuidanceBlock entry={entry} />;
   if (entry.kind === "event") return <EventRow entry={entry} scope={scope} />;
   return <ExpandableRow entry={entry} scope={scope} />;
 }
@@ -127,14 +121,21 @@ function ExpandableRow({
             )}
           </span>
         </button>
-        <span className={styles.rowMeta}>
-          {childPath && (
-            <Link className={styles.rowLink} to={childPath}>
-              {t("Open child thread")}
-            </Link>
-          )}
-          {"edit" in entry && entry.edit && (
-            <DiffBadges diff={entry.edit.diff} />
+        <span
+          className={styles.rowMeta}
+          data-usage={!!text.tokens || undefined}
+        >
+          {(childPath || ("edit" in entry && entry.edit)) && (
+            <span className={styles.extra}>
+              {childPath && (
+                <Link className={styles.rowLink} to={childPath}>
+                  {t("Open child thread")}
+                </Link>
+              )}
+              {"edit" in entry && entry.edit && (
+                <DiffBadges diff={entry.edit.diff} />
+              )}
+            </span>
           )}
           {text.cache && (
             <span className={styles.cache} title={text.cacheTitle}>
@@ -166,7 +167,10 @@ function ExpandableRow({
                 }
                 data-empty={track ? undefined : true}
               />
-              <StateMark state={state} />
+              {/* A step that completed needs no mark; only exceptions show. */}
+              {state !== "done" && (
+                <StateMark state={state} className={styles.state} />
+              )}
             </>
           )}
         </span>
@@ -219,9 +223,11 @@ function modelText(entry: ModelEntry, t: TFunction): RowText {
           ? t("called {{count}} tools", { count: actions.length })
           : entry.children.some((child) => child.kind === "reply")
             ? t("wrote the reply")
-            : entry.endedAt
-              ? t("no output")
-              : t("thinking…");
+            : entry.state === "interrupted"
+              ? t("interrupted")
+              : entry.endedAt
+                ? t("no output")
+                : t("thinking…");
   const label = {
     ...entryLabel(entry, t),
     subject: [entry.model, outcome].filter(Boolean).join(" · "),
@@ -263,6 +269,23 @@ function actionText(
   return { ...entryLabel(entry, t), subject: notes.join(" · ") };
 }
 
+/** Guidance is a message someone sent, so it reads like the Run's request. */
+function GuidanceBlock({ entry }: { entry: ContentEntry }) {
+  const { t } = useTranslation();
+  if (!entry.text.trim()) return null;
+  return (
+    <div className={styles.request}>
+      <div className={styles.requestHead}>
+        <MessageAuthor entryId={entry.sourceId} />
+        <span className={styles.requestLabel}>{t("Guidance")}</span>
+      </div>
+      <div className={styles.requestBody}>
+        <StoredContent itemId={entry.id} field="text" value={entry.text} />
+      </div>
+    </div>
+  );
+}
+
 /** The Agent's answer is prose, not a row: it reads at full width. */
 function ReplyBlock({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
@@ -299,6 +322,7 @@ export function EventRow({
 }) {
   const { t } = useTranslation();
   const Glyph = entryGlyph(entry);
+  const subject = entrySubject(entry);
   // A fact with no known time has no offset to show.
   const offset = Math.max(0, Date.parse(entry.occurredAt ?? "") - scope.start);
   return (
@@ -309,9 +333,14 @@ export function EventRow({
         </span>
         <span className={styles.rowBody}>
           <span className={styles.eventName}>{entryLabel(entry, t).name}</span>
+          {subject && (
+            <span className={styles.subject} title={subject}>
+              {subject}
+            </span>
+          )}
         </span>
         <span className={styles.rowMeta}>
-          {action}
+          {action && <span className={styles.extra}>{action}</span>}
           <span className={styles.duration}>
             {Number.isFinite(offset) && offset > 0
               ? `+${formatDuration(offset)}`

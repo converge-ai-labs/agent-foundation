@@ -177,8 +177,10 @@ it("names the failure of a failed run and leaves continuing to the dock", () => 
     failure: { code: "model_rate_limited", message: "Upstream said no." },
   });
   show({ run, timeline: fixtureTimeline({ run }) });
+  // The head names the outcome; its reason and message follow it.
+  expect(screen.getByText("Run failed")).toBeTruthy();
   expect(
-    screen.getByText("Run failed · model_rate_limited · Upstream said no."),
+    screen.getByText("model_rate_limited · Upstream said no."),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
@@ -240,8 +242,7 @@ it("leaves a model request without reported tokens unstated, never zeroed", () =
   );
   execution.usage = { model: [], provider: [], recordIds: [] };
   show({ timeline: fixtureTimeline({ execution }) });
-  expect(screen.queryByText(/→/)?.textContent).toBe("— → —");
-  expect(screen.queryByText("0 → 0")).toBeNull();
+  expect(screen.queryByText(/→/)).toBeNull();
 });
 
 it("reads an asynchronous child's result as the child's own reply", () => {

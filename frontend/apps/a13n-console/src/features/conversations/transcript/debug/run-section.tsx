@@ -7,7 +7,7 @@ import { StatePill } from "../../../../shared/feedback";
 import { JsonView } from "../../../../shared/forms";
 import { isActiveRun } from "../../api";
 import { formatCost } from "../../../../shared/cost";
-import { formatDuration, formatTokens, tokenFigures } from "../../format";
+import { formatDuration, tokenFigures } from "../../format";
 import { runOutcome } from "../../lifecycle";
 import { runRequest } from "../../request";
 import { ForkRun } from "../../fork-run";
@@ -73,26 +73,38 @@ export function DebugRunSection({
   return (
     <section className={styles.section} data-run={run.id}>
       <header className={styles.heading}>
-        <button
-          type="button"
-          className={styles.headingTitle}
-          aria-expanded={open}
-          onClick={toggleOpen}
-        >
-          <CaretRightIcon
-            size={12}
-            className={styles.caret}
-            data-expanded={open || undefined}
-            aria-hidden="true"
-          />
-          <span className={styles.runName}>
-            {index === null ? t("Run") : t("Run {{index}}", { index })}
+        <div className={styles.headingLine}>
+          <button
+            type="button"
+            className={styles.headingTitle}
+            aria-expanded={open}
+            onClick={toggleOpen}
+          >
+            <CaretRightIcon
+              size={12}
+              className={styles.caret}
+              data-expanded={open || undefined}
+              aria-hidden="true"
+            />
+            <span className={styles.runName}>
+              {index === null ? t("Run") : t("Run {{index}}", { index })}
+            </span>
+          </button>
+          <StatePill state={run.status} />
+          <Lineage run={run} />
+          <span className={styles.headingActions}>
+            <ForkRun
+              run={run}
+              thread={thread}
+              level="debug"
+              index={index}
+              compact
+            />
+            <RunDetailsDialog run={run} index={index} />
           </span>
-        </button>
-        <StatePill state={run.status} />
-        <Lineage run={run} />
-        <span className={styles.headingMeta}>
-          {/* The request beneath says when; Details has the exact start. */}
+        </div>
+        {/* The request beneath says when; Details has the exact start. */}
+        <p className={styles.headingMeta}>
           <span className={styles.headingDuration}>
             {formatDuration(duration)}
           </span>
@@ -103,17 +115,7 @@ export function DebugRunSection({
           {timeline.totals.costUsd && (
             <span>{formatCost(timeline.totals.costUsd)}</span>
           )}
-        </span>
-        <span className={styles.headingActions}>
-          <ForkRun
-            run={run}
-            thread={thread}
-            level="debug"
-            index={index}
-            compact
-          />
-          <RunDetailsDialog run={run} index={index} />
-        </span>
+        </p>
       </header>
       <div className={styles.request} data-collapsed={!open || undefined}>
         {request.kind === "message" ? (
@@ -148,7 +150,7 @@ export function DebugRunSection({
               scope={scope}
               action={
                 resubmit && (
-                  <Button size="sm" variant="outline" onClick={resubmit}>
+                  <Button size="xs" variant="outline" onClick={resubmit}>
                     {t("Resubmit")}
                   </Button>
                 )
@@ -169,11 +171,10 @@ export function DebugRunSection({
   );
 }
 
-/** Tokens nobody reported are unknown, never zero. */
+/** Tokens nobody reported are unknown, never zero, so they are not shown. */
 function TokenFigures({ totals }: { totals: RunTimeline["totals"] }) {
   const { t } = useTranslation();
-  if (!totals.reportedUsage)
-    return <span>{`${formatTokens(null)} → ${formatTokens(null)}`}</span>;
+  if (!totals.reportedUsage) return null;
   const figures = tokenFigures(t, {
     input: totals.inputTokens,
     output: totals.outputTokens,

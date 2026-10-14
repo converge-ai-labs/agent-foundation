@@ -7,7 +7,7 @@ scripting the tool calls a run's model would make.
 import io
 import json
 import zipfile
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,7 @@ from a13n_harness import (
     RunError,
 )
 from a13n_harness.capabilities.web import WebCapability, WebSearchRequest, WebSearchResponse, WebSearchResult
+from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.errors import DefinitionError
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
@@ -40,7 +41,14 @@ from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents.schemas import IsolatedSkillSync, SkillSelection
-from a13n_service.resources.agents.toolsets import FetchConfiguration, SearchConfiguration, WebTools, web_configuration
+from a13n_service.resources.agents.toolsets import (
+    FetchConfiguration,
+    SearchConfiguration,
+    WebTools,
+    default_toolsets,
+    environment_configuration,
+    web_configuration,
+)
 from a13n_service.resources.assets.service import get_asset, read_asset_content
 from a13n_service.resources.providers.schemas import ProviderCreate
 from a13n_service.resources.providers.service import create_provider
@@ -120,6 +128,7 @@ async def run(
     definition: Sequence[AbstractCapability[AgentContext]],
     *,
     environment: EnvironmentMount | None = None,
+    builtin_mounts: Mapping[str, EnvironmentMount] | None = None,
     **bindings: Any,
 ) -> HarnessRunResult[str]:
     """One Harness run of an agent built with the `definition` capabilities, as `runs/execute.py` starts it."""
@@ -133,10 +142,13 @@ async def run(
         identity=AgentIdentityRef(issuer="a13n-service", subject="usr_x"), agent_instance_id="run_x"
     )
     start = RunBindings(instance=instance, **bindings)
-    if environment is None:
+    mounts = dict(builtin_mounts or {})
+    if environment is not None:
+        mounts["workspace"] = environment
+    if not mounts:
         return await executable.run("go", bindings=start)
     return await executable.run(
-        "go", environments={"workspace": environment}, default_environment="workspace", bindings=start
+        "go", environments=mounts, default_environment="workspace" if environment else None, bindings=start
     )
 
 
@@ -385,6 +397,49 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
     cause = failed.value.__cause__
     assert isinstance(cause, ServiceError) and (cause.code, cause.details) == ("unavailable", {"dependency": "objects"})
     assert not (root / pinned.digest).exists()
+
+
+async def test_builtin_and_pinned_skills_share_catalog_and_standard_file_tools(runtime, tenant, tmp_path):
+    from a13n_service.runs.platform_files import ROOT, SOURCE
+    from a13n_service.runs.skill_cache import Cache
+
+    pinned, _ = await pin_skill(runtime, tenant)
+
+    async def prove_lease():
+        pass
+
+    skills = build_skills(
+        [pinned],
+        runtime=runtime,
+        workspace_id=tenant.workspace_id,
+        prove_lease=prove_lease,
+        cache=Cache(),
+        sync=IsolatedSkillSync(),
+        builtin=SOURCE,
+    )
+    environment = mount(tmp_path)
+    user_document = f"/workspace/.agents/skill-cache/{pinned.digest}/{pinned.name}/SKILL.md"
+    script = Script(
+        [
+            ("view", {"file_path": f"{ROOT}/SKILL.md"}, "builtin"),
+            ("view", {"file_path": user_document}, "user"),
+            "done",
+        ]
+    )
+    result = await run(
+        script,
+        [skills, DynamicEnvironmentCapability(environment_configuration(default_toolsets()))],
+        environment=environment,
+        builtin_mounts=runtime.platform_mounts,
+    )
+    assert result.output == "done"
+    assert script.instructions[0].count("<available-skills>") == 1
+    assert 'name="platform-operations"' in script.instructions[0] and f'name="{pinned.name}"' in script.instructions[0]
+    assert script.results[0]["ok"] and "# Platform operations" in script.results[0]["content"]
+    assert script.results[1]["ok"] and "# Review" in script.results[1]["content"]
+    assert (
+        tmp_path / ENVIRONMENT / ".agents" / "skill-cache" / pinned.digest / pinned.name / "SKILL.md"
+    ).read_bytes() == SKILL
 
 
 # Assets.

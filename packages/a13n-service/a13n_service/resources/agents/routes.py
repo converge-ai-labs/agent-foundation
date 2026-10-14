@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra import images
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.agents import composer, service
 from a13n_service.resources.agents.schemas import (
     Agent,
@@ -28,7 +29,7 @@ from a13n_service.tenancy.requests import Actor, ImageBody, WorkspaceId
 router = APIRouter(prefix="/api/v1", tags=["agents"])
 
 
-@router.post("/agents", response_model=Agent, status_code=201, openapi_extra={"x-a13n-mcp": True})
+@router.post("/agents", response_model=Agent, status_code=201, openapi_extra=platform_operation("agents", "write"))
 async def create_agent(
     response: Response, workspace_id: WorkspaceId, body: AgentCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Agent:
@@ -38,7 +39,7 @@ async def create_agent(
     return tagged(response, created)
 
 
-@router.post("/agents/validate", status_code=204, openapi_extra={"x-a13n-mcp": True})
+@router.post("/agents/validate", status_code=204, openapi_extra=platform_operation("agents", "read"))
 async def validate_revision(
     workspace_id: WorkspaceId, body: AgentValidate, actor: Actor, runtime: CurrentRuntime
 ) -> None:
@@ -68,7 +69,7 @@ async def prepare_composer(
     return tagged(response, prepared)
 
 
-@router.get("/agents", response_model=AgentPage, openapi_extra={"x-a13n-mcp": True})
+@router.get("/agents", response_model=AgentPage, openapi_extra=platform_operation("agents", "read"))
 async def list_agents(
     workspace_id: WorkspaceId,
     actor: Actor,
@@ -102,14 +103,14 @@ async def list_agents(
     )
 
 
-@router.get("/agents/{agent_id}", response_model=Agent, openapi_extra={"x-a13n-mcp": True})
+@router.get("/agents/{agent_id}", response_model=Agent, openapi_extra=platform_operation("agents", "read"))
 async def get_agent(
     response: Response, workspace_id: WorkspaceId, agent_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Agent:
     return tagged(response, await service.get_agent(runtime.storage, actor, workspace_id, agent_id))
 
 
-@router.patch("/agents/{agent_id}", response_model=Agent, openapi_extra={"x-a13n-mcp": True})
+@router.patch("/agents/{agent_id}", response_model=Agent, openapi_extra=platform_operation("agents", "write"))
 async def update_agent(
     response: Response,
     workspace_id: WorkspaceId,
@@ -160,7 +161,7 @@ async def get_avatar(workspace_id: WorkspaceId, agent_id: str, actor: Actor, run
     return await images.serve(runtime.objects, agent_id, image)
 
 
-@router.post("/agents/{agent_id}/archive", response_model=Agent, openapi_extra={"x-a13n-mcp": True})
+@router.post("/agents/{agent_id}/archive", response_model=Agent, openapi_extra=platform_operation("agents", "write"))
 async def archive_agent(
     response: Response,
     workspace_id: WorkspaceId,
@@ -175,7 +176,7 @@ async def archive_agent(
     return tagged(response, archived)
 
 
-@router.post("/agents/{agent_id}/unarchive", response_model=Agent, openapi_extra={"x-a13n-mcp": True})
+@router.post("/agents/{agent_id}/unarchive", response_model=Agent, openapi_extra=platform_operation("agents", "write"))
 async def unarchive_agent(
     response: Response,
     workspace_id: WorkspaceId,
@@ -190,7 +191,12 @@ async def unarchive_agent(
     return tagged(response, restored)
 
 
-@router.post("/agents/{agent_id}/duplicate", response_model=Agent, status_code=201, openapi_extra={"x-a13n-mcp": True})
+@router.post(
+    "/agents/{agent_id}/duplicate",
+    response_model=Agent,
+    status_code=201,
+    openapi_extra=platform_operation("agents", "write"),
+)
 async def duplicate_agent(
     response: Response,
     workspace_id: WorkspaceId,
@@ -206,7 +212,10 @@ async def duplicate_agent(
 
 
 @router.post(
-    "/agents/{agent_id}/revisions", response_model=AgentRevision, status_code=201, openapi_extra={"x-a13n-mcp": True}
+    "/agents/{agent_id}/revisions",
+    response_model=AgentRevision,
+    status_code=201,
+    openapi_extra=platform_operation("agents", "write"),
 )
 async def create_revision(
     workspace_id: WorkspaceId,
@@ -229,7 +238,9 @@ async def create_revision(
     )
 
 
-@router.get("/agents/{agent_id}/revisions", response_model=AgentRevisionPage, openapi_extra={"x-a13n-mcp": True})
+@router.get(
+    "/agents/{agent_id}/revisions", response_model=AgentRevisionPage, openapi_extra=platform_operation("agents", "read")
+)
 async def list_revisions(
     workspace_id: WorkspaceId,
     agent_id: str,
@@ -242,7 +253,9 @@ async def list_revisions(
 
 
 @router.get(
-    "/agents/{agent_id}/revisions/{revision_id}", response_model=AgentRevision, openapi_extra={"x-a13n-mcp": True}
+    "/agents/{agent_id}/revisions/{revision_id}",
+    response_model=AgentRevision,
+    openapi_extra=platform_operation("agents", "read"),
 )
 async def get_revision(
     workspace_id: WorkspaceId, agent_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
@@ -251,7 +264,9 @@ async def get_revision(
 
 
 @router.post(
-    "/agents/{agent_id}/revisions/{revision_id}/set-default", response_model=Agent, openapi_extra={"x-a13n-mcp": True}
+    "/agents/{agent_id}/revisions/{revision_id}/set-default",
+    response_model=Agent,
+    openapi_extra=platform_operation("agents", "write"),
 )
 async def set_default(
     response: Response,
@@ -275,6 +290,6 @@ async def set_default(
     return tagged(response, updated)
 
 
-@router.get("/toolsets", response_model=ToolsetCatalog, openapi_extra={"x-a13n-mcp": True})
+@router.get("/toolsets", response_model=ToolsetCatalog, openapi_extra=platform_operation("agents", "read"))
 async def list_toolsets(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> ToolsetCatalog:
     return await service.toolset_catalog(runtime.storage, actor, workspace_id, registry=runtime.registry)

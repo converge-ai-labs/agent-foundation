@@ -22,13 +22,21 @@ async def current_runtime(request: Request) -> Runtime:
 CurrentRuntime = Annotated[Runtime, Depends(current_runtime)]
 
 
+def cached_credential(request: Request) -> Authenticated | None:
+    """The credential already authenticated in this HTTP request, including before an MCP mount."""
+    return getattr(request.state, "credential", None)
+
+
 async def current_credential(request: Request, runtime: CurrentRuntime) -> Authenticated:
     """The request's credential. What authentication sets on the answer, such as a renewed login cookie, and
     `Cache-Control: no-store` reach every response to the request, including a route's own and an error."""
     answer = answer_headers(request)
-    credential = await runtime.access.authenticator.authenticate(request, answer)
+    credential = cached_credential(request)
+    if credential is None:
+        credential = await runtime.access.authenticator.authenticate(request, answer)
     if credential is None:
         raise unauthenticated()
+    request.state.credential = credential
     answer.headers["Cache-Control"] = "no-store"
     return credential
 

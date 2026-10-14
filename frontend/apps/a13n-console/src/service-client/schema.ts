@@ -1610,6 +1610,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Runs */
+    get: operations["list_runs_api_v1_runs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}": {
     parameters: {
       query?: never;
@@ -1640,6 +1657,23 @@ export interface paths {
     };
     /** Run Attempts */
     get: operations["run_attempts_api_v1_runs__run_id__attempts_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/attempts/{attempt_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Attempt */
+    get: operations["get_attempt_api_v1_runs__run_id__attempts__attempt_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3147,6 +3181,11 @@ export interface components {
     /** AgentConfig */
     "AgentConfig-Input": {
       /**
+       * Builtin Skills
+       * @default []
+       */
+      builtin_skills?: "platform-operations"[];
+      /**
        * Client Tools
        * @default []
        */
@@ -3182,6 +3221,7 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"];
       /**
        * Plugins
        * @default []
@@ -3221,6 +3261,11 @@ export interface components {
     /** AgentConfig */
     "AgentConfig-Output": {
       /**
+       * Builtin Skills
+       * @default []
+       */
+      builtin_skills?: "platform-operations"[];
+      /**
        * Client Tools
        * @default []
        */
@@ -3256,6 +3301,7 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"];
       /**
        * Plugins
        * @default []
@@ -3352,6 +3398,8 @@ export interface components {
      *     edge removes it; every other field replaces the revision's value.
      */
     "AgentOverride-Input": {
+      /** Builtin Skills */
+      builtin_skills?: "platform-operations"[] | null;
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
       /** Connection Tools */
@@ -3371,6 +3419,7 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
@@ -3401,6 +3450,8 @@ export interface components {
      *     edge removes it; every other field replaces the revision's value.
      */
     "AgentOverride-Output": {
+      /** Builtin Skills */
+      builtin_skills?: "platform-operations"[] | null;
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
       /** Connection Tools */
@@ -3420,6 +3471,7 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
@@ -6244,6 +6296,38 @@ export interface components {
       tool_call_id: components["schemas"]["ToolCallId"];
       /** Tool Name */
       tool_name: string;
+    };
+    /** @enum {string} */
+    PlatformGroup:
+      | "agents"
+      | "models"
+      | "connections"
+      | "skills"
+      | "environment_templates"
+      | "providers"
+      | "execution";
+    /**
+     * PlatformSelection
+     * @description Platform MCP groups selected independently of local operating instructions.
+     */
+    PlatformSelection: {
+      /**
+       * Groups
+       * @default []
+       */
+      groups?: components["schemas"]["PlatformGroup"][];
+      /**
+       * Read Permission
+       * @default allow
+       * @enum {string}
+       */
+      read_permission?: "allow" | "ask" | "deny";
+      /**
+       * Write Permission
+       * @default ask
+       * @enum {string}
+       */
+      write_permission?: "allow" | "ask" | "deny";
     };
     /**
      * PluginSelection
@@ -12025,6 +12109,50 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_runs_api_v1_runs_get: {
+    parameters: {
+      query?: {
+        agent_id?: string | null;
+        session_id?: string | null;
+        thread_id?: string | null;
+        principal_id?: string | null;
+        status?:
+          | (
+              | "accepted"
+              | "running"
+              | "waiting"
+              | "completed"
+              | "failed"
+              | "cancelled"
+            )
+          | null;
+        created_after?: string | null;
+        created_before?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_run_api_v1_runs__run_id__get: {
     parameters: {
       query?: never;
@@ -12106,6 +12234,34 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Attempts"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_attempt_api_v1_runs__run_id__attempts__attempt_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttemptView"];
         };
       };
       400: components["responses"]["Error"];
