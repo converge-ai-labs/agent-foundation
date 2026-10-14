@@ -349,15 +349,7 @@ export function ProviderForm({
       const credential = section.payload();
       if (credential) validateSettings(section.schema, credential);
       if (basis) {
-        if (configChanged) {
-          validateSettings(configSchema, configuration);
-          if (basis.value.credential_configured && credential === undefined)
-            throw new Error(
-              t(
-                "Changing connection settings requires replacing or removing saved credentials.",
-              ),
-            );
-        }
+        if (configChanged) validateSettings(configSchema, configuration);
         return api.updateProvider(basis.value.id, basis.etag, {
           name,
           enabled,
@@ -499,13 +491,6 @@ export function ProviderForm({
             configuration={configuration}
             schema={configSchema}
           />
-        )}
-        {configChanged && basis.value.credential_configured && (
-          <p>
-            {t(
-              "Changing connection settings requires replacing or removing saved credentials.",
-            )}
-          </p>
         )}
       </ProviderGroup>
       <ErrorNotice error={save.error} retry={() => void reload()} />

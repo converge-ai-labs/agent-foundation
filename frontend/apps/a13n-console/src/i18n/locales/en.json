@@ -2213,7 +2213,6 @@
   "This connection has no references. Deleting it permanently removes its configuration and saved credentials.": "This connection has no references. Deleting it permanently removes its configuration and saved credentials.",
   "Refresh references": "Refresh references",
   "Showing the first {{count}} references.": "Showing the first {{count}} references.",
-  "Changing connection settings requires replacing or removing saved credentials.": "Changing connection settings requires replacing or removing saved credentials.",
   "No environment connections yet": "No environment connections yet",
   "Add a connection before creating templates.": "Add a connection before creating templates.",
   "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.": "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.",

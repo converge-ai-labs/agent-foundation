@@ -197,10 +197,24 @@ it("edits connection settings without submitting the enclosing template", async 
   );
   expect(outerSubmit).not.toHaveBeenCalled();
 });
-it("requires a fresh credential when moving an authenticated connection", async () => {
-  const user = userEvent.setup();
+it("preserves the saved credential when editing an authenticated connection", async () => {
+  const user = userEvent.setup(),
+    close = vi.fn();
+  const saved = {
+    ...provider,
+    name: "E2B connection",
+    type: "e2b",
+    config: { api_url: "https://old.example" },
+    credential_configured: true,
+  };
   const auth = {
     ...definition,
+    type: "e2b",
+    display_name: "E2B",
+    configuration_schema: {
+      type: "object",
+      properties: { api_url: { type: "string", title: "API URL" } },
+    },
     authentication: { mode: "required" as const },
     credential_schema: {
       type: "object",
@@ -208,24 +222,32 @@ it("requires a fresh credential when moving an authenticated connection", async 
       properties: { api_key: { type: "string", title: "API key" } },
     },
   };
+  state.PATCH.mockResolvedValue({ data: { ...saved, version: 3 } });
   mount(
     <ProviderForm
       kind="environment"
-      initial={{ value: { ...provider, credential_configured: true } }}
+      initial={{ value: saved, etag: '"eprov_test:2"' }}
       definitions={[auth]}
-      close={vi.fn()}
+      close={close}
       reload={async () => {}}
     />,
   );
   await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
-  await user.type(screen.getByLabelText("Docker host"), "/changed");
+  const input = screen.getByLabelText("API URL");
+  await user.clear(input);
+  await user.type(input, "https://new.example");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() =>
-    expect(
-      screen.getAllByText(
-        "Changing connection settings requires replacing or removing saved credentials.",
-      ).length,
-    ).toBeGreaterThan(0),
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
+  expect(state.PATCH).toHaveBeenCalledWith(
+    "/api/v1/environment-providers/{provider_id}",
+    expect.objectContaining({
+      headers: { "If-Match": '"eprov_test:2"' },
+      body: {
+        name: saved.name,
+        enabled: true,
+        config: { api_url: "https://new.example" },
+      },
+    }),
   );
-  expect(state.PATCH).not.toHaveBeenCalled();
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
 });

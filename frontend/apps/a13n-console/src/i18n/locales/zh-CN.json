@@ -2213,7 +2213,6 @@
   "This connection has no references. Deleting it permanently removes its configuration and saved credentials.": "此连接没有引用。删除后，其配置和已保存的凭据将被永久移除。",
   "Refresh references": "刷新引用",
   "Showing the first {{count}} references.": "显示前 {{count}} 条引用。",
-  "Changing connection settings requires replacing or removing saved credentials.": "修改连接配置时，必须重新填写或移除已保存的凭据。",
   "No environment connections yet": "尚无环境连接",
   "Add a connection before creating templates.": "创建模板前，请先添加连接。",
   "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.": "本地目录运行在 Worker 所在机器。Docker 连接使用管理员配置的引擎和网络通路。",
