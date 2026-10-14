@@ -208,14 +208,16 @@ it("changes only Computer permissions on the primary mount and uses the Thread v
   const cache = show(),
     user = userEvent.setup();
   await user.click(
-    await screen.findByRole("button", { name: "Computer: custom" }),
+    await screen.findByRole("button", { name: "Computer permissions: custom" }),
   );
   expect(screen.getByText(/Changes apply to later runs/)).toBeTruthy();
   await user.click(
     screen.getByRole("combobox", { name: "Computer permissions" }),
   );
   await user.click(
-    await screen.findByRole("option", { name: "Computer: observe" }),
+    await screen.findByRole("option", {
+      name: "Computer permissions: allow observation",
+    }),
   );
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
@@ -255,9 +257,13 @@ it("shows Computer permissions without offering edits to a reader", async () => 
     },
   ];
   const cache = show();
-  await screen.findByText("Computer: observe");
+  await screen.findByText("Computer permissions: allow observation");
+  expect(screen.queryByRole("button", { name: "Check desktop" })).toBeNull();
+  expect(mocks.POST).not.toHaveBeenCalled();
   expect(
-    screen.queryByRole("button", { name: "Computer: observe" }),
+    screen.queryByRole("button", {
+      name: "Computer permissions: allow observation",
+    }),
   ).toBeNull();
   cache.clear();
 });
@@ -276,9 +282,8 @@ it("checks actual desktop support without changing mount permissions", async () 
   });
   const cache = show();
   const user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("button", { name: "Computer: custom" }),
-  );
+  await screen.findByText("Not checked", { exact: false });
+  expect(mocks.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Check desktop" }));
   await screen.findByText(
     "This environment does not provide desktop operations.",
@@ -289,6 +294,52 @@ it("checks actual desktop support without changing mount permissions", async () 
       params: { path: { environment_id: "env_device" } },
     },
   );
+  expect(
+    screen.getByText("Allowing Computer actions does not add desktop support."),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Computer permissions: custom" }),
+  ).toBeTruthy();
+  expect(mocks.PATCH).not.toHaveBeenCalled();
+  cache.clear();
+});
+
+it("rechecks readiness without retaining stale success after a failed check", async () => {
+  mocks.mounts = [
+    {
+      name: "workspace",
+      environment_id: "env_device",
+      working_directory: null,
+    },
+  ];
+  mocks.POST.mockResolvedValueOnce({
+    data: {
+      status: "checked",
+      observe_ready: true,
+      input_ready: true,
+      display_count: 1,
+      operations: [],
+    },
+  }).mockRejectedValueOnce(new Error("Desktop connection lost"));
+  const cache = show();
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Check desktop" }),
+  );
+  await screen.findByText("Desktop ready for observation and input.");
+  // A ready desktop does not grant the Agent Computer permissions.
+  expect(
+    screen.getByRole("button", { name: "Computer permissions: off" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText("Desktop connection lost");
+  expect(screen.getByRole("status").textContent).toContain("Check failed");
+  expect(
+    screen.queryByText("Desktop ready for observation and input."),
+  ).toBeNull();
+  expect(
+    screen.queryByText("This environment does not provide desktop operations."),
+  ).toBeNull();
   expect(mocks.PATCH).not.toHaveBeenCalled();
   cache.clear();
 });

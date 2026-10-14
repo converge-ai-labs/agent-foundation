@@ -12,10 +12,10 @@ export const computerActions = [
 ] satisfies Schema["EnvironmentAction"][];
 export const observationActions = computerActions.slice(0, 2);
 export const computerPermissionLabels = {
-  off: "Computer: off",
-  observe: "Computer: observe",
-  interact: "Computer: interact",
-  custom: "Computer: custom",
+  off: "Computer permissions: off",
+  observe: "Computer permissions: allow observation",
+  interact: "Computer permissions: allow interaction",
+  custom: "Computer permissions: custom",
 } as const;
 type Mode = keyof typeof computerPermissionLabels;
 

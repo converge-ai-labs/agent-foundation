@@ -30,14 +30,14 @@ export function ThreadComputerSummary({
     ),
   );
   const label = mounts.isPending
-    ? "Computer: loading…"
+    ? "Computer permissions: loading…"
     : mounts.isError
-      ? "Computer: unavailable"
+      ? "Computer permissions: unavailable"
       : !mounts.data?.length
-        ? "Computer: no environment"
+        ? "Computer permissions: no environment"
         : modes.size === 1
           ? computerPermissionLabels[[...modes][0]]
-          : "Computer: varies by environment";
+          : "Computer permissions: varies by environment";
   return (
     <Button
       type="button"

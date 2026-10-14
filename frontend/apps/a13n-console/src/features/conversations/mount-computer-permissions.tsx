@@ -15,7 +15,6 @@ import {
   computerPermissionLabels as labels,
   computerPermissionMode as modeOf,
 } from "./computer-permissions";
-import { ComputerCheck } from "./computer-check";
 type Mode = keyof typeof labels;
 
 /** These are Agent action ceilings for later Runs, not human desktop control. */
@@ -134,7 +133,6 @@ function PermissionsForm({
           "This controls Computer tools only. Terminal commands and other tools keep their existing permissions.",
         )}
       </p>
-      <ComputerCheck environmentId={mount.environment_id} />
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

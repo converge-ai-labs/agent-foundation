@@ -10,6 +10,7 @@ import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { WorkingDirectory } from "../environments/working-directory";
+import { ComputerCheck } from "./computer-check";
 import { MountComputerPermissions } from "./mount-computer-permissions";
 import { EnvironmentReference } from "../environments/reference";
 import { conversationQueries, invalidateConversation } from "./api";
@@ -68,19 +69,24 @@ export function ThreadEnvironmentMounts({
               icon={<MonitorIcon size={16} />}
               name={mount.name}
               secondary={mount.working_directory ?? undefined}
-              control={
-                <div className="flex items-center gap-2">
-                  {thread.data && (
-                    <MountComputerPermissions
-                      thread={thread.data}
-                      mount={mount}
-                      editable={can("run") && isInteractive(thread.data)}
-                    />
-                  )}
-                  <EnvironmentReference id={mount.environment_id} />
-                </div>
-              }
-            />
+              className="flex-wrap"
+              control={<EnvironmentReference id={mount.environment_id} />}
+            >
+              <div className="order-last flex w-full flex-col items-start gap-3 pt-2">
+                {thread.data && (
+                  <MountComputerPermissions
+                    thread={thread.data}
+                    mount={mount}
+                    editable={can("run") && isInteractive(thread.data)}
+                  />
+                )}
+                <ComputerCheck
+                  key={mount.environment_id}
+                  environmentId={mount.environment_id}
+                  canCheck={can("run")}
+                />
+              </div>
+            </ListRow>
           ))}
         </ListRows>
       ) : (

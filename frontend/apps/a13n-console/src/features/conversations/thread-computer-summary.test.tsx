@@ -38,7 +38,7 @@ it("shows changed desired permissions and opens configuration without conflating
   );
   await userEvent.click(
     await screen.findByRole("button", {
-      name: "Computer: varies by environment",
+      name: "Computer permissions: varies by environment",
     }),
   );
   expect(configure).toHaveBeenCalledOnce();
@@ -48,7 +48,7 @@ it("shows changed desired permissions and opens configuration without conflating
     },
   });
   await cache.invalidateQueries();
-  await screen.findByRole("button", { name: "Computer: off" });
+  await screen.findByRole("button", { name: "Computer permissions: off" });
   cache.clear();
 });
 
@@ -62,7 +62,9 @@ it("keeps a failed permission read distinct from disabled permissions", async ()
       <ThreadComputerSummary threadId="thr_test" onConfigure={() => {}} />
     </QueryClientProvider>,
   );
-  await screen.findByRole("button", { name: "Computer: unavailable" });
-  expect(screen.queryByText("Computer: off")).toBeNull();
+  await screen.findByRole("button", {
+    name: "Computer permissions: unavailable",
+  });
+  expect(screen.queryByText("Computer permissions: off")).toBeNull();
   cache.clear();
 });

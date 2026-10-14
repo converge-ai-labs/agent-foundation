@@ -7,7 +7,13 @@ import { data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 
 /** Explicit live probe; no screenshot, input, or implicit environment startup. */
-export function ComputerCheck({ environmentId }: { environmentId: string }) {
+export function ComputerCheck({
+  environmentId,
+  canCheck,
+}: {
+  environmentId: string;
+  canCheck: boolean;
+}) {
   const { t } = useTranslation();
   const client = useClient();
   const { workspace } = useWorkspace();
@@ -21,6 +27,21 @@ export function ComputerCheck({ environmentId }: { environmentId: string }) {
         .then(data),
   });
   const result = check.data;
+  const status = check.isPending
+    ? "Checking…"
+    : check.isError
+      ? "Check failed"
+      : !result
+        ? "Not checked"
+        : result.status === "unsupported"
+          ? "Desktop unsupported"
+          : result.status === "not_ready"
+            ? "Not ready"
+            : result.observe_ready && result.input_ready
+              ? "Ready for observation and input"
+              : result.observe_ready
+                ? "Observation only"
+                : "Not ready";
   const label =
     result?.status === "unsupported"
       ? "This environment does not provide desktop operations."
@@ -32,19 +53,45 @@ export function ComputerCheck({ environmentId }: { environmentId: string }) {
             ? "The screen is available, but desktop input is not ready."
             : "The desktop is not ready. Check its display and system permissions.";
   return (
-    <div className="flex flex-col items-start gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={check.isPending}
-        onClick={() => check.mutate()}
-      >
-        {t(check.isPending ? "Checking desktop…" : "Check desktop")}
-      </Button>
+    <div className="flex w-full flex-col items-start gap-2">
+      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+        <p role="status" className="text-sm">
+          <span className="text-muted-foreground">{t("Desktop status")}：</span>{" "}
+          {t(status)}
+        </p>
+        {canCheck && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={check.isPending}
+            onClick={() => check.mutate()}
+          >
+            {t(
+              check.isPending
+                ? "Checking desktop…"
+                : result || check.isError
+                  ? "Check again"
+                  : "Check desktop",
+            )}
+          </Button>
+        )}
+      </div>
+      {!result && !check.isPending && !check.isError && (
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Desktop support has not been checked. Permissions alone do not make a desktop available.",
+          )}
+        </p>
+      )}
       {result && !check.isPending && !check.isError && (
-        <div role="status" className="text-sm text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           <p>{t(label)}</p>
+          {result.status === "unsupported" && (
+            <p>
+              {t("Allowing Computer actions does not add desktop support.")}
+            </p>
+          )}
           {result.observe_ready && (
             <p>
               {t("{{count}} displays detected", {
@@ -64,6 +111,9 @@ export function ComputerCheck({ environmentId }: { environmentId: string }) {
             {t(
               "This checks the environment only. Agent tools and mount permissions still apply at execution time.",
             )}
+          </p>
+          <p>
+            {t("Last check result; check again if the environment changes.")}
           </p>
         </div>
       )}
