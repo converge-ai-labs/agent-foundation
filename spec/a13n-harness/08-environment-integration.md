@@ -440,7 +440,7 @@ Environment ports are observations only. Public exposure, URL allocation, proxy 
 
 ## Multimedia Understanding
 
-File-media understanding pins and reads one exact file scope, releases the provider lease before external inference, supplies `EnvironmentPath` only as provenance, and records nested provider usage. The external model or service cannot retain Environment authority.
+File `view` shares [native-first dispatch and provider selection](16-input-model-and-output.md#media-url-and-file-understanding) with `read_media_url`. File-media understanding pins and reads one exact file scope, releases the provider lease before external inference, supplies `EnvironmentPath` only as provenance, and records nested provider usage. The external model or service cannot retain Environment authority.
 
 Media `view` and detached media-understanding requests accept at most 100 MiB of original image bytes or 16 MiB of original audio/video bytes. `view` enforces the kind-specific limit against both available metadata and the actual stream; a smaller Environment Provider limit still applies. These acquisition bounds are independent of request-only [image preparation](16-input-model-and-output.md#request-and-history-filters), whose encoded-byte and pixel limits remain in force. Native image history retains the original bytes; image compression does not reduce the source read or retained history.
 

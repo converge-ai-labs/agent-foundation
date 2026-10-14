@@ -14,12 +14,8 @@ from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import AbstractModelContextCapability
 from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
+from a13n_harness.toolsets._media import resolve_media_understanding
 from a13n_harness.toolsets.computer import ComputerToolset
-from a13n_harness.toolsets.file_media import (
-    AgentMediaUnderstandingProvider,
-    MediaUnderstandingProvider,
-    NativeInputMediaKind,
-)
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.shell import ShellToolset
 
@@ -81,7 +77,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self._file_toolset = FileToolset(
             environment.files,
             file_scopes=environment,
-            media_understanding=_resolve_file_media_understanding,
+            media_understanding=resolve_media_understanding,
         )
 
         self._toolset = DynamicToolset(
@@ -158,14 +154,6 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
 
     async def _close_processes(self) -> None:
         await self._shell_toolset.close()
-
-
-def _resolve_file_media_understanding(
-    ctx: RunContext[AgentContext],
-    kind: NativeInputMediaKind,
-) -> MediaUnderstandingProvider | None:
-    provider = ctx.deps.file_media_understanding
-    return provider if provider is not None else AgentMediaUnderstandingProvider.from_environment(kind=kind)
 
 
 __all__ = [

@@ -118,10 +118,11 @@ async def test_guest_media_view_preserves_native_delivery(tmp_path):
     commands = Commands(tmp_path)
     provider = Understanding(commands)
     result = await FileToolset(cast(Any, GuestFiles(commands)), media_understanding=provider).view(
-        context(native="image"), "/image.png"
+        context(native="image"), "/image.png", instructions="Read the label."
     )
     assert result.content[0].data == b"image bytes"
     assert result.content[0].media_type == "image/png"
+    assert "Read the label." in result.return_value
     assert commands.closed
     assert not provider.requests
 

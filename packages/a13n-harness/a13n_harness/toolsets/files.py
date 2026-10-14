@@ -10,9 +10,8 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
-from pydantic_ai import BinaryContent, RunContext, ToolReturn
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic_ai import RunContext, ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._json import redact_json
@@ -30,11 +29,8 @@ from a13n_harness.environment.files import (
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeProvider
-from a13n_harness.errors import HarnessError
 from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
 from a13n_harness.filters.cold_start import COLD_START_RETENTION_METADATA_KEY
-from a13n_harness.metering import ModelUsageBinding
-from a13n_harness.spec import ModelCapability
 from a13n_harness.tools.metadata import (
     CanonicalResource,
     HarnessTool,
@@ -43,18 +39,16 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     ToolResourceResolver,
 )
-from a13n_harness.usage import ProviderUsage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._media import dispatch_media
 from ._results import ToolError, ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 from .events import FileEditAppliedEvent
 from .file_media import (
     MAX_MEDIA_UNDERSTANDING_BYTES,
-    MediaUnderstandingError,
     MediaUnderstandingProvider,
     MediaUnderstandingRequest,
-    MediaUnderstandingResult,
     NativeInputMediaKind,
     media_source_byte_limit,
 )
@@ -492,57 +486,21 @@ class FileToolset:
             except EnvironmentError as exc:
                 return _environment_error_result(exc)
 
-            if _model_supports_native_media(ctx, kind):
-                message = f"The {media_type} file {file_path} is attached in this tool result."
-                return ToolReturn(
-                    return_value=message,
-                    metadata=retention_metadata,
-                    content=[BinaryContent(data=data, media_type=media_type)],
-                )
-
-            try:
-                provider = self._resolve_media_understanding(ctx, kind)
-            except (HarnessError, UsageLimitExceeded):
-                raise
-            except MediaUnderstandingError as exc:
-                await _record_media_understanding_usage(ctx, exc.usage)
-                return _media_understanding_error(exc.code)
-            except Exception:
-                return _media_understanding_error("media_understanding_failed")
-            if provider is None:
-                return _media_understanding_error("media_understanding_unavailable")
-
-            request = MediaUnderstandingRequest(
-                kind=kind,
-                media_type=media_type,
-                source=source,
-                source_name=file_path,
-                source_bytes=data,
-                instructions=instructions,
+            return await dispatch_media(
+                ctx,
+                MediaUnderstandingRequest(
+                    kind=kind,
+                    media_type=media_type,
+                    source=source,
+                    source_name=file_path,
+                    source_bytes=data,
+                    instructions=instructions,
+                ),
+                resolve=self._resolve_media_understanding,
+                tool_id="filesystem.view",
+                usage_source="files.media_understanding",
+                metadata=retention_metadata,
             )
-            try:
-                raw = await provider.understand(
-                    request,
-                    usage=ModelUsageBinding.for_context(
-                        ctx.deps,
-                        source="files.media_understanding",
-                        tool_id="filesystem.view",
-                        tool_call_id=ctx.tool_call_id,
-                    ),
-                )
-            except (HarnessError, UsageLimitExceeded):
-                raise
-            except MediaUnderstandingError as exc:
-                await _record_media_understanding_usage(ctx, exc.usage)
-                return _media_understanding_error(exc.code)
-            except Exception:
-                return _media_understanding_error("media_understanding_failed")
-            try:
-                result = MediaUnderstandingResult.model_validate(raw)
-            except ValidationError:
-                return _media_understanding_error("media_understanding_response_invalid")
-            await _record_media_understanding_usage(ctx, result.usage)
-            return ToolReturn(return_value=result.text, metadata=retention_metadata)
 
         effective_line_limit = line_limit
         if line_offset in {None, 0}:
@@ -1232,30 +1190,6 @@ class FileToolset:
             self._guard_execution()
 
 
-def _model_supports_native_media(
-    ctx: RunContext[AgentContext],
-    kind: NativeInputMediaKind,
-) -> bool:
-    configuration = ctx.deps.model_characteristics
-    if configuration is None:
-        return False
-    capability = ModelCapability(f"{kind}_understanding")
-    return capability in configuration.capabilities
-
-
-async def _record_media_understanding_usage(
-    ctx: RunContext[AgentContext],
-    usage_receipts: Sequence[ProviderUsage],
-) -> None:
-    for usage in usage_receipts:
-        await ctx.deps.record_provider_usage(
-            usage,
-            source="files.media_understanding",
-            tool_id="filesystem.view",
-            tool_call_id=ctx.tool_call_id,
-        )
-
-
 async def _emit_filesystem_changed(
     ctx: RunContext[AgentContext],
     *,
@@ -1269,14 +1203,6 @@ async def _emit_filesystem_changed(
         tool_id=tool_id,
         name="filesystem.changed",
         value=FilesystemChangedValue(changes=changes),
-    )
-
-
-def _media_understanding_error(code: str) -> ToolFailure:
-    return tool_failure(
-        code,
-        "Media understanding could not complete. Check the configured media model and provider.",
-        retry_hint="dependency_change",
     )
 
 
