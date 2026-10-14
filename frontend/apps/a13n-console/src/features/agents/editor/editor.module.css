@@ -43,3 +43,22 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* A read-only model reads as the picker's option does: logo, name and key. */
+.readOnlyModel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.readOnlyModel > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 500;
+}
+.readOnlyKey {
+  color: var(--a13n-secondary);
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-xs);
+}

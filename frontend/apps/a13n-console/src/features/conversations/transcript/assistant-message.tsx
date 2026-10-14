@@ -27,6 +27,7 @@ export function AgentTurn({
   agentName,
   agentId,
   agentImageUrl,
+  model,
   childPath,
   footer,
   children,
@@ -37,6 +38,8 @@ export function AgentTurn({
   agentName?: string;
   agentId?: string;
   agentImageUrl?: string | null;
+  /** The model the run executed, beside the agent's name. */
+  model?: ReactNode;
   /** Where a delegated child thread can be opened, when one is resolvable. */
   childPath?: string | null;
   /** The quiet actions that close the answer. */
@@ -55,6 +58,7 @@ export function AgentTurn({
           className={styles.agentAvatar}
         />
         <strong>{agentName ?? t("Agent")}</strong>
+        {model}
         {durationMs != null && (
           <span className={styles.agentDuration}>
             {formatDuration(durationMs)}

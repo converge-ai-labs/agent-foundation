@@ -32,20 +32,12 @@ vi.mock("react-i18next", () => ({
 }));
 const stream = vi.hoisted(() => ({
   calls: [] as { live?: boolean }[],
-  earlier: {
-    items: [],
-    more: false,
-    loading: false,
-    error: null,
-    load: () => {},
-  },
 }));
 vi.mock("../run-display", () => ({
   useRunDisplay: (_runId: string, options: { live?: boolean } = {}) => {
     stream.calls.push(options);
     return {
       items: [],
-      earlier: stream.earlier,
       state: "connected",
       execution: {
         steps: [],
@@ -64,7 +56,6 @@ vi.mock("./inbox", () => ({ ThreadInbox: () => <p>Thread inbox</p> }));
 beforeEach(() => {
   requests.length = 0;
   stream.calls.length = 0;
-  stream.earlier = { ...stream.earlier, more: false, load: vi.fn() };
   labels = { "a13n.console": "debug" };
   vi.stubGlobal(
     "ResizeObserver",
@@ -186,17 +177,4 @@ it("reads the level from the URL and follows the Thread at either level", async 
     (request) => new URL(request.url).pathname.split("/").at(-1) === "attempts",
   );
   expect(panels).toEqual([]);
-});
-it("offers the run's earlier items at either level", async () => {
-  stream.earlier = { ...stream.earlier, more: true };
-  show();
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Show earlier items" }),
-  );
-  expect(stream.earlier.load).toHaveBeenCalledTimes(1);
-  cleanup();
-  show("/?view=debug");
-  expect(
-    await screen.findByRole("button", { name: "Show earlier items" }),
-  ).toBeTruthy();
 });

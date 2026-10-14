@@ -48,6 +48,14 @@ export function ModelIcon({
   return <BrandIcon identity={identity} alias={identity} size={size} />;
 }
 
+/** The workspace's model with this key, once its models have loaded. */
+function useWorkspaceModel(modelKey: string | null) {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  const models = useQuery(workspaceModelsQuery(client, workspace.id));
+  return models.data?.find((entry) => entry.key === modelKey);
+}
+
 /**
  * A model named only by its key, as usage records name it: the workspace's
  * model decides the brand, as on the Models page, and an unknown key has none.
@@ -59,15 +67,34 @@ export function ModelKeyIcon({
   modelKey: string | null;
   size?: number;
 }) {
-  const client = useClient(),
-    { workspace } = useWorkspace();
-  const models = useQuery(workspaceModelsQuery(client, workspace.id));
-  const model = models.data?.find((entry) => entry.key === modelKey);
+  const model = useWorkspaceModel(modelKey);
   return (
     <ModelIcon
       upstream={model?.config.model_name ?? ""}
       catalogRef={model ? model.catalog_ref : null}
       size={size}
     />
+  );
+}
+
+/**
+ * A configuration's model: its brand and display name, or the key alone when
+ * the workspace no longer has it. The key stays on hover.
+ */
+export function ModelKeyLabel({
+  modelKey,
+  size = 14,
+  className,
+}: {
+  modelKey: string;
+  size?: number;
+  className?: string;
+}) {
+  const model = useWorkspaceModel(modelKey);
+  return (
+    <span className={className} title={modelKey}>
+      <ModelKeyIcon modelKey={modelKey} size={size} />
+      <span>{model?.name ?? modelKey}</span>
+    </span>
   );
 }

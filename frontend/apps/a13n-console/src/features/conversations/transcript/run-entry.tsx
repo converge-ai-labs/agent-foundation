@@ -2,7 +2,7 @@ import { Button, DisclosureSection } from "a13n-ui";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../shared/api";
-import { ErrorNotice } from "../../../shared/feedback";
+import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { JsonView } from "../../../shared/forms";
 import { useAgent } from "../../agents/queries";
 import { isActiveRun, type ViewLevel } from "../api";
@@ -12,7 +12,6 @@ import { StoredContents, StoredObservations } from "../stored-content";
 import { runTimeline } from "../timeline";
 import { WorkingRow } from "./assistant-message";
 import { DebugRunSection } from "./debug/run-section";
-import { EarlierItems } from "./earlier-items";
 import { FailureNotice } from "./failure-notice";
 import { RunBlock } from "./run-block";
 import { useThreadRuns } from "./thread-runs";
@@ -56,6 +55,9 @@ export function RunEntry({
     [run, live.attempts, live.items, live.execution],
   );
   if (!run || !timeline) return <ErrorNotice error={query.error} />;
+  if (live.loading) return <Loading variant="list" rows={3} />;
+  if (live.error && !live.displayItems.length)
+    return <ErrorNotice error={live.error} retry={live.reconnect} />;
   const active = isActiveRun(run.status);
   const stopped = ["failed", "cancelled"].includes(run.status);
   return (
@@ -79,7 +81,6 @@ export function RunEntry({
       )}
       {level === "debug" ? (
         <>
-          <EarlierItems earlier={live.earlier} />
           <DebugRunSection
             run={run}
             thread={thread}
@@ -98,7 +99,6 @@ export function RunEntry({
             timeline={timeline}
             agentName={agentName}
             agentImageUrl={agentImageUrl}
-            earlier={<EarlierItems earlier={live.earlier} />}
           >
             {active && <WorkingRow connected={live.state === "connected"} />}
             {(run.failure != null || stopped) && (

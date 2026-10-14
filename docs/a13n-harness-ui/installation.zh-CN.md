@@ -21,7 +21,7 @@ a13n-harness-ui
 
 通过 uv tool 安装时，运行 `a13n-harness-ui update` 或 `uv tool upgrade a13n-harness-ui`，然后重启 Harness UI。`a13n-harness-ui update` 要求 PATH 中有 uv，且不会再次询问。其他安装方式请使用原来的包管理器。
 
-启动时可以检查更新，但未经确认不会安装。使用 `--no-update-check` 可在本次启动时关闭检查，在 `a13n-harness-ui.yaml` 中设置 `process.terminal_update_check: false` 可永久关闭。见[更新与故障行为](automation-and-troubleshooting.md#logs-updates-and-exit)。
+启动时会在后台检查更新，进入对话后显示提示；不会自动安装更新。使用 `--no-update-check` 可在本次启动时关闭检查，在 `a13n-harness-ui.yaml` 中设置 `process.terminal_update_check: false` 可永久关闭。见[更新与故障行为](automation-and-troubleshooting.md#logs-updates-and-exit)。
 
 ### 依赖兼容性
 

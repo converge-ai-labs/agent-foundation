@@ -25,9 +25,11 @@ def _build_provider(
     from anthropic import AsyncAnthropic
     from pydantic_ai.providers.anthropic import AnthropicProvider
 
+    api_key = require_credential(provider)
     return AnthropicProvider(
         anthropic_client=AsyncAnthropic(
-            api_key=require_credential(provider),
+            api_key=api_key,
+            auth_token=api_key,
             base_url=require_endpoint(provider),
             http_client=http_client,
             max_retries=0,
@@ -37,10 +39,12 @@ def _build_provider(
 
 
 def _request(provider: ModelConnection[ProviderConfiguration, ApiKeyCredential]) -> ConnectionProbeRequest:
+    api_key = require_credential(provider)
     return ConnectionProbeRequest(
         url=join_url(require_endpoint(provider), "v1/models"),
         headers={
-            "x-api-key": require_credential(provider),
+            "x-api-key": api_key,
+            "authorization": f"Bearer {api_key}",
             "anthropic-version": "2023-06-01",
         },
     )
@@ -56,7 +60,7 @@ DEFINITION = ModelProviderDefinition(
     supported_model_apis=("anthropic.messages",),
     build_provider=_build_provider,
     endpoint="https://api.anthropic.com",
-    reserved_headers=("x-api-key", "anthropic-version", "anthropic-beta"),
+    reserved_headers=("authorization", "x-api-key", "anthropic-version", "anthropic-beta"),
     connection_probe=_request,
 )
 

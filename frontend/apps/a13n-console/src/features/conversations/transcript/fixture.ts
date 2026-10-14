@@ -58,6 +58,24 @@ export function fixtureRun(
   };
 }
 
+/** The agent a fixture Run executed: its revision, with no overrides. */
+export function fixtureRunAgent(): Schema["RunAgent"] {
+  const config = { model: "scripted", instructions: "Check the fold." };
+  return {
+    revision: {
+      id: "rev_1",
+      agent_id: "agt_1",
+      number: 2,
+      config,
+      digest: "digest",
+      note: null,
+      created_by_id: "usr_1",
+      created_at: START,
+    },
+    config,
+  };
+}
+
 export function fixtureThread(
   overrides: Partial<Schema["ThreadView"]> = {},
 ): Schema["ThreadView"] {

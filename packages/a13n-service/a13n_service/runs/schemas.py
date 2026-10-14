@@ -24,7 +24,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
-from a13n_service.resources.agents.schemas import AgentOverride
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
 from a13n_service.runs.display import Item
@@ -517,6 +517,14 @@ class RunQuery(_Frozen):
 class RunPage(BaseModel):
     items: list[RunView]
     next_cursor: str | None
+
+
+class RunAgent(BaseModel):
+    """The agent a run executes: its frozen revision, and that revision's configuration with the run's override
+    applied. Models, connections and templates the configuration names stay live."""
+
+    revision: AgentRevision
+    config: AgentConfig
 
 
 class RunLabels(_Frozen):

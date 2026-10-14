@@ -12,12 +12,25 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.resources.agents.schemas import AgentRevision, apply_override
+from a13n_service.resources.agents.tables import AgentRevisionRow
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunQuery, RunView
+from a13n_service.runs.schemas import (
+    Attempts,
+    AttemptView,
+    RunAgent,
+    RunContent,
+    RunItems,
+    RunLabels,
+    RunOptions,
+    RunPage,
+    RunQuery,
+    RunView,
+)
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -65,6 +78,18 @@ async def get(storage: Storage, actor: Principal, workspace_id: str, run_id: str
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         return await run_view(session, await get_run(session, scope.workspace_id, run_id))
+
+
+async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: str) -> RunAgent:
+    """The revision the run froze at acceptance and the configuration it executes with the run's override."""
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        run = await get_run(session, scope.workspace_id, run_id)
+        # The run's foreign key keeps its revision, and revisions are never deleted.
+        revision = AgentRevision.model_validate(await session.get(AgentRevisionRow, run.agent_revision_id))
+    override = RunOptions.model_validate(run.options).overrides
+    config = revision.config if override is None else apply_override(revision.config, override)
+    return RunAgent(revision=revision, config=config)
 
 
 async def list_thread_runs(

@@ -16,6 +16,17 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${minutes}m ${Math.round((ms % 60_000) / 1000)}s`;
 }
 
+/** When something happened within a Run, counted from the Run's start. */
+export function formatOffset(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "";
+  const seconds = Math.max(0, ms) / 1000;
+  if (seconds < 60) return `+${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return `+${minutes}m${String(Math.floor(seconds % 60)).padStart(2, "0")}s`;
+  return `+${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+}
+
 export function formatTokens(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value))
     return UNKNOWN;
@@ -43,16 +54,16 @@ export function tokenFigures(
   { input, output, cached }: { input: number; output: number; cached: number },
 ) {
   const exact = (value: number) => value.toLocaleString();
+  const rate = input > 0 && cached > 0 ? percent(cached / input) : undefined;
   return {
     pair: `${formatTokens(input)} → ${formatTokens(output)}`,
     pairTitle: t("Input {{input}} tokens, output {{output}} tokens", {
       input: exact(input),
       output: exact(output),
     }),
-    cache:
-      input > 0 && cached > 0
-        ? t("{{rate}} cached", { rate: percent(cached / input) })
-        : undefined,
+    /** The cached share alone, for a place already labelled Cache. */
+    rate,
+    cache: rate && t("{{rate}} cached", { rate }),
     cacheTitle: t("{{cached}} of {{input}} input tokens were cached", {
       cached: exact(cached),
       input: exact(input),

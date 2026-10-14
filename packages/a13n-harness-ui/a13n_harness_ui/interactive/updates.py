@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -13,11 +15,7 @@ from pathlib import Path
 import httpx2
 from packaging.version import InvalidVersion, Version
 
-from a13n_harness_ui.updater import UpdateCommand, update_command
-
-from .onboarding import LandingScreen, SetupBack, SetupCancelled
-from .selection import Choice, Selection, resolve_choice
-from .setup import Question
+from a13n_harness_ui.updater import update_command
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,48 +83,19 @@ async def check_update(root: Path, *, current: str | None = None) -> AvailableUp
         return None
 
 
-async def prompt_update(root: Path, landing: LandingScreen) -> UpdateCommand | None:
-    """Return an installer command only after this launch's explicit confirmation."""
-    landing.title = "Harness UI · Update"
-    landing.emit("Checking for updates…")
+async def notify_update(root: Path, chat_ready: asyncio.Event, emit: Callable[[str], None]) -> None:
+    """Check without delaying startup; notify only after entering chat."""
     try:
         update = await check_update(root)
         if update is None:
-            return None
-        command = update_command()
-        details = (
-            f"Run: uv tool upgrade a13n-harness-ui\nTool directory: {command.tool_directory}\n"
-            "The terminal will close before installation. Restart a13n-harness-ui afterwards."
-            if command is not None
-            else "This installation has no recognized updater. Update with its original package manager.\n"
-            "For uv-tool installations: uv tool upgrade a13n-harness-ui"
+            return
+        await chat_ready.wait()
+        instruction = (
+            "To update, exit Harness UI and run: a13n-harness-ui update"
+            if update_command() is not None
+            else "Update with this installation's original package manager."
         )
-        notice = f"Update available: a13n-harness-ui {update.current} → {update.latest}\n{details}"
-        landing.emit(notice)
-        choices = (
-            *((Choice("update", "Update now", "Run the displayed command, then exit"),) if command else ()),
-            Choice("later", "Not now", "Continue startup; ask again next time a newer version is available"),
-        )
-        values = tuple(choice.value for choice in choices)
-        while True:
-            try:
-                answer = await landing.ask(
-                    Question("update", "Install this update?" if command else "Continue startup?", "later", values),
-                    Selection(choices, cursor=len(choices) - 1),
-                )
-            except (SetupBack, SetupCancelled):
-                return None
-            try:
-                selected = resolve_choice(answer, values)
-                if selected not in values:
-                    raise ValueError("Choose one of the displayed options.")
-            except ValueError as exc:
-                landing.emit(f"{notice}\n{exc}")
-                continue
-            if selected == "update":
-                return command
-            if selected == "later":
-                return None
-    finally:
-        landing.title = "Harness UI · Startup"
-        landing.emit("Checking local configuration…")
+        emit(f"Update available: a13n-harness-ui {update.current} → {update.latest}\n{instruction}")
+    except Exception as exc:
+        # Optional update detection must never interrupt a working conversation.
+        logging.getLogger(__name__).warning("Background update check failed (%s)", type(exc).__name__)

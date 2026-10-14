@@ -1,12 +1,15 @@
 import type { ThreadDelta } from "../../service-client";
-import { isCancelledError, useQueryClient } from "@tanstack/react-query";
+import {
+  isCancelledError,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
 import { comparePositions, isOmitted, type DisplayItem } from "./display";
-import { useEarlierItems } from "./earlier-items";
 import { RunDisplayState } from "./run-display-state";
 import {
   emptyExecution,
@@ -27,8 +30,6 @@ const SEAL_CHECK_MS = 10_000;
 interface Published {
   run?: Schema["RunView"];
   items: DisplayItem[];
-  /** The ordinal of the first committed Item read. */
-  first?: number;
   /** Saved or live output is known to be missing. */
   partial: boolean;
 }
@@ -45,7 +46,7 @@ const UNPUBLISHED: Published = { items: [], partial: true };
  * own output while it is active, and the Thread's changes at any time. An
  * attempt reset discards provisional output; a gap heals when a saved display
  * covers its missing range. Connection retries keep the contiguous local suffix.
- * Items before the newest committed read are read on request.
+ * Every committed Item of this Run is loaded before replacing its display.
  */
 export function useRunDisplay(
   runId: string,
@@ -56,6 +57,12 @@ export function useRunDisplay(
     cache = useQueryClient(),
     identity = useRef(""),
     retained = useRef(new RunDisplayState());
+  // Keep this displayed Run's immutable history in the shared cache even
+  // during a long quiet execution; only the stream owner refreshes it.
+  useQuery({
+    ...conversationQueries(client, workspace.id).items(runId),
+    enabled: false,
+  });
   const [published, setPublished] = useState(UNPUBLISHED),
     [attempts, setAttempts] = useState<Schema["AttemptView"][]>([]),
     [state, setState] = useState<
@@ -92,7 +99,6 @@ export function useRunDisplay(
         setPublished({
           run: read.run,
           items: [...buffer.items.values()],
-          first: read.items[0]?.ordinal,
           partial: omitted || buffer.incomplete,
         });
         setAttempts(known);
@@ -113,9 +119,7 @@ export function useRunDisplay(
     /** Read the display again, with the output it does not cover yet. */
     async function reconcile(discard = false) {
       const [next, list] = await Promise.all([
-        current(() =>
-          cache.fetchQuery({ ...queries.items(runId), staleTime: 0 }),
-        ),
+        current(() => cache.fetchQuery(queries.items(runId))),
         current(() =>
           cache.fetchQuery({ ...queries.attempts(runId), staleTime: 0 }),
         ),
@@ -235,23 +239,17 @@ export function useRunDisplay(
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
   }, [client, workspace.id, runId, cache, generation, live]);
-  const earlier = useEarlierItems(runId, published.first);
-  const all = useMemo(
-    () => [...earlier.items, ...published.items],
-    [earlier.items, published.items],
-  );
+  const all = published.items;
   const items = useMemo(() => presentItems(all), [all]);
   const execution = useMemo<RunExecution>(
     () =>
       published.run
         ? {
             ...runExecution(published.run, all),
-            // Unread or missing Items take their execution facts with them.
-            coverage:
-              published.partial || earlier.more ? "partial" : "complete",
+            coverage: published.partial ? "partial" : "complete",
           }
         : { ...emptyExecution(), coverage: "partial" },
-    [published, all, earlier.more],
+    [published, all],
   );
   return {
     items,
@@ -261,7 +259,7 @@ export function useRunDisplay(
     state,
     gap,
     incomplete,
-    earlier,
+    loading: !published.run && !error,
     error,
     reconnect: () => setGeneration((value) => value + 1),
   };

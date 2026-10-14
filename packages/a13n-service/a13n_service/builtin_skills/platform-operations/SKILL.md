@@ -9,7 +9,7 @@ Use the selected platform MCP tools. Read their schemas for exact parameters; JS
 
 Read only the references needed for the current task:
 
-- [Agents](references/agents.md): full configuration revisions and selected resources.
+- [Agents](references/agents.md): read before answering whether an Agent can be changed or proposing configuration changes; covers editing restrictions, full configuration revisions and selected resources.
 - [Models](references/models.md): model keys and shared settings.
 - [Connections](references/connections.md): tools, tests and authorization.
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.

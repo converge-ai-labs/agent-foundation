@@ -1,6 +1,7 @@
 import { Button } from "a13n-ui";
 import { PuzzlePieceIcon, XIcon } from "@phosphor-icons/react";
 import { useQueries } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../../auth/context";
@@ -29,10 +30,13 @@ export function SkillsSection({
   draft,
   choices,
   readOnly,
+  mark,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -49,7 +53,9 @@ export function SkillsSection({
       title={t("Skills")}
       description={t("Reusable knowledge and procedures the agent can load.")}
       actions={
-        !readOnly && (
+        readOnly ? (
+          mark
+        ) : (
           <ResourcePicker
             label={t("Add skill")}
             searchLabel={t("Search skills")}
@@ -165,10 +171,13 @@ export function ConnectionsSection({
   draft,
   choices,
   readOnly,
+  mark,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { basePath } = useWorkspace();
@@ -181,7 +190,9 @@ export function ConnectionsSection({
         "External services and MCP servers whose tools the agent may call.",
       )}
       actions={
-        !readOnly && (
+        readOnly ? (
+          mark
+        ) : (
           <ResourcePicker
             label={t("Add connection")}
             searchLabel={t("Search connections")}

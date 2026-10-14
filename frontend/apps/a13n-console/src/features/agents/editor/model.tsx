@@ -4,13 +4,15 @@ import {
   DisclosureSection,
   FormField,
   Input,
+  ReadOnlyField,
   SearchPicker,
   SettingsSection,
 } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "../../../layout/workspace";
 import { AddModel } from "../../models/add-model";
+import { ModelKeyLabel } from "../../models/model-icon";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
@@ -33,6 +35,7 @@ export function ModelSection({
   choices,
   thinkingOptions,
   readOnly,
+  mark,
   expanded,
   onExpandedChange,
   validation,
@@ -41,6 +44,8 @@ export function ModelSection({
   choices: ReturnType<typeof useAgentChoices>;
   thinkingOptions: { value: string; label: string }[];
   readOnly: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
   expanded: boolean;
   onExpandedChange: (value: boolean) => void;
   validation?: Error;
@@ -58,47 +63,56 @@ export function ModelSection({
     <Section
       title={t("Model")}
       description={t("The model that powers this agent and how it reasons.")}
+      actions={mark}
     >
-      <SearchPicker
-        label={t("Model")}
-        placeholder={t("Choose a model…")}
-        emptyMessage={t(
-          "No models available. Configure a provider and model first.",
-        )}
-        popupClassName={modelPopupWidth}
-        value={draft.model}
-        disabled={readOnly}
-        groups={[
-          {
-            label: t("Available models"),
-            options:
-              choices.data?.models.map((item) =>
-                modelOption(item, identity.providerName(item.provider_id)),
-              ) ?? [],
-          },
-        ]}
-        onValueChange={draft.setModel}
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        triggerRef={modelPicker}
-        footer={
-          !readOnly && can("write") ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              onClick={() => {
-                setPickerOpen(false);
-                setAdding(true);
-              }}
-            >
-              <PlusIcon size={14} aria-hidden="true" />
-              {t("Add model")}
-            </Button>
-          ) : undefined
-        }
-      />
+      {readOnly ? (
+        <ReadOnlyField label={t("Model")} hideLabel>
+          <span className={styles.readOnlyModel}>
+            <ModelKeyLabel modelKey={draft.model} size={20} />
+            <span className={styles.readOnlyKey}>{draft.model}</span>
+          </span>
+        </ReadOnlyField>
+      ) : (
+        <SearchPicker
+          label={t("Model")}
+          placeholder={t("Choose a model…")}
+          emptyMessage={t(
+            "No models available. Configure a provider and model first.",
+          )}
+          popupClassName={modelPopupWidth}
+          value={draft.model}
+          groups={[
+            {
+              label: t("Available models"),
+              options:
+                choices.data?.models.map((item) =>
+                  modelOption(item, identity.providerName(item.provider_id)),
+                ) ?? [],
+            },
+          ]}
+          onValueChange={draft.setModel}
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          triggerRef={modelPicker}
+          footer={
+            !readOnly && can("write") ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => {
+                  setPickerOpen(false);
+                  setAdding(true);
+                }}
+              >
+                <PlusIcon size={14} aria-hidden="true" />
+                {t("Add model")}
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
       {adding && (
         <AddModel
           controlledOpen

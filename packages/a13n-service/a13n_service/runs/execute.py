@@ -14,6 +14,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
+from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -40,6 +41,7 @@ from a13n_harness.capabilities.steering import steering_input_ids
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -174,7 +176,11 @@ def _own(error: Exception) -> Exception:
     current: BaseException = error
     while isinstance(current, HarnessError) and current.__cause__ is not None:
         current = current.__cause__
-    return current if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable) else error
+    return (
+        current
+        if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable | EndpointPolicyError)
+        else error
+    )
 
 
 def _deterministic(error: Exception) -> Outcome | None:
@@ -182,13 +188,23 @@ def _deterministic(error: Exception) -> Outcome | None:
         return error.outcome
     if isinstance(error, ServiceError):
         return None if error.code == "unavailable" else Outcome.refused(error)
+    if isinstance(error, EndpointPolicyError):
+        return Outcome.failed("provider_endpoint_denied", str(error))
     if isinstance(error, HarnessError):
-        return Outcome.failed(error.code, str(error))
+        return Outcome.failed(error.code, _harness_failure_message(str(error), error.details))
     if isinstance(error, EnvironmentUnavailable):
         return Outcome.failed("environment_unavailable", str(error))
     if isinstance(error, EnvironmentProviderError) and error.category not in _TRANSIENT_ENVIRONMENT:
         return Outcome.failed("environment_unavailable", error.safe_projection().message)
     return None
+
+
+def _harness_failure_message(message: str, details: Mapping[str, JsonValue]) -> str:
+    """Keep the Harness's safe HTTP status without exposing an upstream body or exception message."""
+    status = details.get("status_code")
+    if details.get("exception_type") == "ModelHTTPError" and type(status) is int and 400 <= status <= 599:
+        return f"{message} Model provider returned HTTP {status}."
+    return message
 
 
 async def _release(runtime: Runtime, lease: Lease, error: Exception) -> None:
@@ -703,7 +719,9 @@ class _Attempt:
         if result.status == "failed":
             assert result.failure is not None
             await self._record_usage()
-            failed = Outcome.failed(result.failure.code, result.failure.message)
+            failed = Outcome.failed(
+                result.failure.code, _harness_failure_message(result.failure.message, result.failure.details)
+            )
             await self._seal_interrupted(self._refusal() or failed)
             return
         if result.status == "cancelled":

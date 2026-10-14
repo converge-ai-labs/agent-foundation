@@ -33,6 +33,7 @@
   max-height: 240px;
   padding: 6px 0;
   border: 0;
+  scrollbar-gutter: auto;
   resize: none;
   background: transparent;
   color: inherit;

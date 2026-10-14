@@ -66,6 +66,8 @@ export function Composer({
     if (!input) return;
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
+    // A message that still fits has nothing to scroll, whatever the rounding.
+    input.style.overflowY = input.scrollHeight > 240 ? "auto" : "hidden";
   }, [text]);
   const [attachments, setAttachments] = useState<Attachment[]>(
     initial?.content.flatMap((part): Attachment[] =>

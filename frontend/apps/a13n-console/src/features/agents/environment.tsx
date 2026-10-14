@@ -14,10 +14,12 @@ export function AgentEnvironment({
   value,
   onChange,
   disabled,
+  readOnly = false,
 }: {
   value: string | null;
   onChange: (value: string | null) => void;
   disabled: boolean;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -77,6 +79,7 @@ export function AgentEnvironment({
             : undefined
         }
         disabled={disabled}
+        readOnly={readOnly}
         value={value ?? "none"}
         onValueChange={(selected) =>
           onChange(selected === "none" ? null : selected)

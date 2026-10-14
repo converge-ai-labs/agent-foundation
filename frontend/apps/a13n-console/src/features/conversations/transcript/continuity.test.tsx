@@ -242,7 +242,11 @@ it.each(["chat", "debug"] as const)(
     });
     observer.observe(view.container, { childList: true, subtree: true });
     fireEvent.change(composer, { target: { value: "Next request" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: level === "debug" ? "Start run" : "Send message",
+      }),
+    );
     expect(
       await screen.findByText("Next request", { selector: "div" }),
     ).toBeTruthy();

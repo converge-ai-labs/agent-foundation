@@ -1,22 +1,39 @@
-/* The current Thread’s Run list, in either presentation: the outline panel in the stage's left
-   gutter, and the list the pinned pill opens where there is no gutter. */
-/* The panel is a table of contents, not a floating card: flat rows in the
-   gutter, the name and time on one line and the request beneath. Its first
-   row starts level with the first run's heading. */
+/* The current Thread's Run list, in either presentation: the index beside
+   the Runs, and the list the pinned pill opens where there is no room for it. */
+/* The index scrolls on its own below its sticky head, and its scrollbar shows
+   only while the pointer is over it. */
 .panel {
-  position: absolute;
-  top: 33px;
-  right: calc(100% + 24px);
   display: none;
-  width: 184px;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100dvh - 76px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
   pointer-events: auto;
 }
-@media (min-width: 1440px) {
+.panel:hover,
+.panel:focus-within {
+  scrollbar-color: var(--a13n-border) transparent;
+}
+@container (min-width: 1000px) {
   .panel {
     display: block;
   }
+}
+.panelHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--a13n-canvas);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 /* One Run ---------------------------------------------------------------- */
@@ -34,20 +51,19 @@
   background: var(--a13n-selected);
 }
 .panelRow {
-  grid-template-areas:
-    "dot name . meta"
-    ". excerpt excerpt excerpt";
-  row-gap: 1px;
   width: 100%;
-  padding: 5px 8px;
+  height: 30px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   color: inherit;
   font: inherit;
   font-size: var(--a13n-text-xs);
   text-align: left;
   cursor: pointer;
+  /* Scrolled into view, the current row clears the sticky head. */
+  scroll-margin-block: 32px 4px;
 }
 .panelRow:hover {
   background: var(--a13n-hover);
@@ -60,18 +76,6 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: -2px;
 }
-.panelRow > .dot {
-  grid-area: dot;
-}
-.panelRow > .name {
-  grid-area: name;
-}
-.panelRow > .excerpt {
-  grid-area: excerpt;
-}
-.panelRow > .meta {
-  grid-area: meta;
-}
 .dot {
   width: 6px;
   height: 6px;
@@ -81,9 +85,11 @@
 .dot[data-state="completed"] {
   background: var(--a13n-success);
 }
-.dot[data-state="failed"],
-.dot[data-state="cancelled"] {
+.dot[data-state="failed"] {
   background: var(--a13n-danger);
+}
+.dot[data-state="cancelled"] {
+  background: var(--a13n-secondary);
 }
 .dot[data-state="waiting"] {
   background: var(--a13n-warning);
@@ -94,6 +100,7 @@
 }
 .name {
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .excerpt {
@@ -104,8 +111,9 @@
   white-space: nowrap;
 }
 .meta {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
+  color: var(--a13n-tertiary);
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

@@ -7,7 +7,7 @@ import {
 } from "a13n-ui";
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { fieldSchema } from "../../shared/forms/schema-fields";
+import { fieldSchema } from "../../shared/forms/schema-definition";
 import { ProviderKeyLink, SchemaFields } from "../../shared/forms";
 import {
   advancedConfigured,

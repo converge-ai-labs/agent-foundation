@@ -12,6 +12,7 @@ interface ScrollController {
   jumpToLatest: () => void;
   preservePosition: () => () => void;
   align: () => void;
+  reflow: () => void;
 }
 
 /**
@@ -19,7 +20,10 @@ interface ScrollController {
  * history prepend restores a visible Run before paint. Only the explicit
  * return-to-latest action animates, never layout corrections or streaming.
  */
-export function useTranscriptScroll(content: RefObject<HTMLElement | null>) {
+export function useTranscriptScroll(
+  content: RefObject<HTMLElement | null>,
+  level?: string,
+) {
   const [showJump, setShowJump] = useState(false);
   const controller = useRef<ScrollController | null>(null);
   useLayoutEffect(() => {
@@ -28,6 +32,16 @@ export function useTranscriptScroll(content: RefObject<HTMLElement | null>) {
     if (!element || !(stage instanceof HTMLElement)) return;
     let mode: Mode = "following";
     let readerScrolling = false;
+    const capture = () => {
+      const edge = stage.getBoundingClientRect().top;
+      const run = [...element.querySelectorAll<HTMLElement>("[data-run]")].find(
+        (run) => run.getBoundingClientRect().bottom > edge,
+      );
+      return run
+        ? { id: run.dataset.run, top: run.getBoundingClientRect().top }
+        : undefined;
+    };
+    let anchor = capture();
     const atEnd = () =>
       stage.scrollHeight - stage.scrollTop - stage.clientHeight < 100;
     // Scroll intent controls following; actual geometry controls the button.
@@ -48,9 +62,10 @@ export function useTranscriptScroll(content: RefObject<HTMLElement | null>) {
       align();
     };
     const onScroll = () => {
-      if (readerScrolling && mode !== "jumping")
+      if (readerScrolling && mode !== "jumping") {
         setMode(atEnd() ? "following" : "reading");
-      else updateJump();
+        anchor = capture();
+      } else updateJump();
     };
     const onScrollEnd = () => {
       readerScrolling = false;
@@ -93,9 +108,34 @@ export function useTranscriptScroll(content: RefObject<HTMLElement | null>) {
       if (mode === "jumping") move(stage.scrollTop);
       readerScrolling = true;
       setMode("reading");
+      anchor = capture();
+    };
+    const restore = (saved: typeof anchor, changedLevel = false) => {
+      if (mode === "following") align();
+      else if (mode === "reading" && saved) {
+        const run = [
+          ...element.querySelectorAll<HTMLElement>("[data-run]"),
+        ].find((run) => run.dataset.run === saved.id);
+        if (!run) return;
+        const bounds = run.getBoundingClientRect();
+        // Chat can be much shorter than Debug. Keep the same Run in view
+        // without restoring an offset beyond its newly rendered content.
+        const top = changedLevel
+          ? Math.max(
+              saved.top,
+              stage.getBoundingClientRect().top -
+                Math.max(0, bounds.height - stage.clientHeight),
+            )
+          : saved.top;
+        readerScrolling = false;
+        move(stage.scrollTop + bounds.top - top);
+        updateJump();
+      }
+      anchor = capture();
     };
     controller.current = {
       align,
+      reflow: () => restore(anchor, true),
       followLatest,
       jumpToLatest() {
         if (atEnd() || matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -107,24 +147,9 @@ export function useTranscriptScroll(content: RefObject<HTMLElement | null>) {
         stage.scrollTo({ top: stage.scrollHeight, behavior: "smooth" });
       },
       preservePosition() {
-        const edge = stage.getBoundingClientRect().top;
-        const anchor = [...element.querySelectorAll("[data-run]")].find(
-          (run) => run.getBoundingClientRect().bottom > edge,
-        );
-        const top = anchor?.getBoundingClientRect().top;
-        return () => {
-          if (mode === "following") align();
-          else if (
-            mode === "reading" &&
-            anchor?.isConnected &&
-            top !== undefined
-          ) {
-            // Captured immediately before insertion, not before its network read.
-            readerScrolling = false;
-            move(stage.scrollTop + anchor.getBoundingClientRect().top - top);
-            updateJump();
-          }
-        };
+        // Capture immediately before insertion, not before its network read.
+        const saved = capture();
+        return () => restore(saved);
       },
     };
     const observer = new ResizeObserver(align);
@@ -149,6 +174,7 @@ export function useTranscriptScroll(content: RefObject<HTMLElement | null>) {
       controller.current = null;
     };
   }, [content]);
+  useLayoutEffect(() => controller.current?.reflow(), [level]);
   useLayoutEffect(() => controller.current?.align());
   const followLatest = useCallback(
     () => controller.current?.followLatest(),
