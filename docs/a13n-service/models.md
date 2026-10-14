@@ -41,6 +41,8 @@ Cerebras, SambaNova, Vercel AI Gateway, and xAI / Grok also accept API-key crede
 
 For Vercel, use the gateway's full model ID, such as `anthropic/claude-sonnet-4.6`. Verify its credentials by testing a saved model: its public model list is not an authentication check. The other three offer a connection test without inference. The xAI / Grok provider uses HTTP Chat Completions. These provider choices do not expose Responses API or xAI's native server-side search tools.
 
+For **Google Vertex AI**, choose **API key** to connect an API-key gateway or Vertex Express Mode. Leave Project ID and Location empty and set the gateway origin as **Base URL**, without `/v1beta1` or a model path. The SDK sends `x-goog-api-key` and uses `/v1beta1/publishers/google/models/...`. Choose **Service account** for existing Google Cloud IAM access, with the service-account fields and the required Project ID and Location. The API accepts either `credential: {"api_key": "..."}` or the existing flat service-account object; switching credentials clears the previous form draft.
+
 ## ChatGPT subscription provider
 
 Create an `openai_chatgpt` provider; the default flow registers an OAuth client dynamically and needs no static credential. In **Workspace settings → Providers**, choose **ChatGPT subscription**, add it, then use **Sign in with ChatGPT**. This authorization belongs to the provider and is shared by the workspace; it is not a personal connection.

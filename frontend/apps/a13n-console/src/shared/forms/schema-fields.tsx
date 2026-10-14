@@ -11,6 +11,12 @@ import { useState, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
+import {
+  fieldSchema,
+  matchingVariant,
+  object,
+  objectVariants,
+} from "./schema-definition";
 import { fieldLabel } from "./labels";
 import { jsonValue } from "./validation";
 
@@ -18,37 +24,6 @@ import { jsonValue } from "./validation";
 function humanize(key: string) {
   const words = key.replaceAll(/[_-]+/g, " ").trim();
   return words ? words[0].toLocaleUpperCase() + words.slice(1) : key;
-}
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function fieldSchema(
-  value: unknown,
-  root: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!object(value)) return {};
-  if (
-    typeof value.$ref === "string" &&
-    value.$ref.startsWith("#/$defs/") &&
-    object(root.$defs)
-  ) {
-    // A referenced schema carries its own type name as `title`. A field is
-    // named by the property that holds it, never by the type behind it.
-    const { title: _typeName, ...referenced } = fieldSchema(
-      root.$defs[value.$ref.slice(8)],
-      root,
-    );
-    return { ...referenced, ...value };
-  }
-  if (Array.isArray(value.anyOf))
-    return {
-      ...value,
-      ...fieldSchema(
-        value.anyOf.find((item) => object(item) && item.type !== "null"),
-        root,
-      ),
-    };
-  return value;
 }
 function visible(
   field: Record<string, unknown>,
@@ -68,6 +43,12 @@ export function withSchemaValues(
   schema: Record<string, unknown>,
   value: Record<string, unknown>,
 ) {
+  const variants = objectVariants(schema);
+  if (variants.length)
+    return withSchemaValues(
+      variants[Math.max(0, matchingVariant(variants, value))],
+      value,
+    );
   const result = { ...value };
   if (object(schema.properties)) {
     for (const [key, definition] of Object.entries(schema.properties)) {
@@ -120,6 +101,40 @@ export function SchemaFields({
   labelAction?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const [selected, setSelected] = useState(0);
+  const variants = objectVariants(schema);
+  if (variants.length) {
+    const matching = matchingVariant(variants, value);
+    const index =
+      matching >= 0 ? matching : Math.min(selected, variants.length - 1);
+    return (
+      <div className={styles.schemaFields}>
+        <ChoiceField
+          label={t("Authentication method")}
+          value={String(index)}
+          options={variants.map((variant, i) => ({
+            value: String(i),
+            label: t(String(variant.title ?? `Option ${i + 1}`)),
+          }))}
+          onValueChange={(next) => {
+            setSelected(Number(next));
+            onChange(withSchemaValues(variants[Number(next)], {}));
+          }}
+        />
+        <SchemaFields
+          key={index}
+          schema={variants[index]}
+          value={value}
+          onChange={onChange}
+          secret={secret}
+          descriptions={descriptions}
+          requireFields={requireFields}
+          autoFocus={autoFocus}
+          labelAction={labelAction}
+        />
+      </div>
+    );
+  }
   const properties = object(schema.properties) ? schema.properties : {};
   function change(key: string, next: unknown) {
     const draft = { ...value };

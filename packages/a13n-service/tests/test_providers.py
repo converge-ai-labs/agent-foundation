@@ -375,6 +375,57 @@ async def test_anthropic_provider_uses_saved_key_for_both_authentication_headers
         assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "extra_headers"
 
 
+async def test_vertex_gateway_keeps_its_api_key_on_configuration_changes(service) -> None:  # type: ignore[no-untyped-def]
+    created = await create(
+        service,
+        "model",
+        {
+            "type": "google_vertex",
+            "name": "Vertex gateway",
+            "credential": {"api_key": SECRET},
+            "config": {"base_url": "https://gateway.example"},
+        },
+    )
+    item = f"{service.api}/model-providers/{created['id']}"
+    response = await service.client.patch(
+        item,
+        headers={"if-match": etag(created)},
+        json={
+            "config": {"base_url": "https://another-gateway.example", "session_affinity_header": "x-session-id"},
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["credential_configured"] and SECRET not in response.text
+    async with short_session(service.runtime.storage) as session:
+        resolved = await providers.read_provider(session, ModelProviderRow, created["id"])
+    credential = resolved.reveal_credential(service.runtime.keys)
+    assert credential == {"api_key": SECRET}
+    definition = service.runtime.registry.get("model", "google_vertex")
+    assert definition.bind(resolved.config, credential).credential is not None
+    types = (await service.client.get(service.api + "/provider-types/model")).json()["items"]
+    schema = next(value["credential_schema"] for value in types if value["type"] == "google_vertex")
+    assert {choice["title"] for choice in schema["anyOf"]} == {"API key", "Service account"}
+    model = await service.client.post(
+        service.api + "/models",
+        json={
+            "provider_id": created["id"],
+            "name": "Gateway Gemini",
+            "config": {"model_name": "gemini-test", "model_api": "google.generate_content"},
+        },
+    )
+    assert model.status_code == 201, model.text
+    refused = await service.client.post(
+        service.api + "/model-providers",
+        json={
+            "type": "google_vertex",
+            "name": "Mixed authentication",
+            "credential": {"api_key": SECRET},
+            "config": {"project_id": "project", "location": "global"},
+        },
+    )
+    assert refused.status_code == 400 and SECRET not in refused.text
+
+
 async def test_provider_test_probes_without_paid_calls(service) -> None:  # type: ignore[no-untyped-def]
     def openai(name: str, base_url: str) -> dict:
         return {
