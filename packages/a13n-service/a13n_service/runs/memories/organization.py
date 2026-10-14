@@ -54,12 +54,11 @@ async def _settle(session: AsyncSession, space: MemorySpaceRow, state: SpaceOrga
     state.history_gap = store.pruned_through_seq > state.source_seq
     if run.status == "completed" and external is None and not state.history_gap:
         state.processed_seq = store.seq
-    state.observed_seq = store.seq
+    # Keep external changes eligible under the current automatic policy. Consume our own writes,
+    # including a history gap caused by them, so they do not schedule another round.
+    state.observed_seq = state.source_seq if external is not None else store.seq
     state.last_run_id, state.active_run_id = run.id, None
     state.failure = run.failure
-    automatic = OrganizationPolicy.model_validate(space.organization).enabled
-    # A history gap may be caused by our own writes. It alone never schedules more model work.
-    state.pending = space.enabled and automatic and external is not None
     state.due_at = await now(session) + COOLDOWN
     return False
 
@@ -165,17 +164,18 @@ async def organize(runtime: Runtime) -> None:
             changed = store.seq > state.observed_seq or (
                 space.version > state.configuration_version and store.seq > state.processed_seq
             )
-            state.configuration_version = space.version
             if not state.pending and not (automatic and changed):
                 continue
             if store.file_count == 0:
                 state.pending = False
                 state.observed_seq = store.seq
+                state.configuration_version = space.version
                 continue
             state.source_seq = store.seq
             try:
                 async with session.begin_nested():
                     await _admit(session, runtime, space, state)
+                    state.configuration_version = space.version
             except ServiceError as error:
                 state.failure = Failure.of(error).model_dump()
                 state.due_at = at + COOLDOWN

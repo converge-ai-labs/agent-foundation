@@ -273,7 +273,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             ),
         )
     if thread.purpose == "conversation":
-        await inherit_defaults(session, runtime, principal, thread.session_id, revision.config.memory, source.authority)
+        await inherit_defaults(session, thread.session_id, revision.config.memory)
     memories = await freeze_memories(
         session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
     )

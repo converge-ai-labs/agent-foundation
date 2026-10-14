@@ -228,10 +228,60 @@ async def test_concurrent_edits_requeue_without_false_progress(service, scripted
     await due(service, space)
     await organize(service.runtime)
     state = await status(service, space)
-    assert state["processed_seq"] == 0 and state["pending"]
+    assert state["processed_seq"] == 0 and not state["pending"]
     await due(service, space)
     await organize(service.runtime)
     assert len(await history(service, space)) == 2
+
+
+async def test_disabling_automatic_organization_stops_followup_but_allows_manual(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    space = await create_space(service, organization={"enabled": True, "model": model})
+    await save(service, space)
+    await organize(service.runtime)
+    await save(service, space, "global/concurrent.md")
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service))
+    await due(service, space)
+    await organize(service.runtime)
+    await patch(service, f"memory-spaces/{space['id']}", organization={"enabled": False, "model": model})
+    await due(service, space)
+    await organize(service.runtime)
+    assert len(await history(service, space)) == 1
+    requested = await service.client.post(f"{service.api}/memory-spaces/{space['id']}/organizations", json={})
+    assert requested.status_code == 202, requested.text
+    await organize(service.runtime)
+    assert len(await history(service, space)) == 2
+
+
+async def test_configuration_trigger_retries_after_model_is_reenabled(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    model = await runs_kit.create_model(service, scripted_model)
+    space = await create_space(service, organization={"enabled": True, "model": model})
+    await save(service, space)
+    await organize(service.runtime)
+    [first] = await history(service, space)
+    stopped = await service.client.post(f"{service.api}/runs/{first['id']}/interrupt")
+    assert stopped.status_code == 200, stopped.text
+    await due(service, space)
+    await organize(service.runtime)
+    assert (await status(service, space))["processed_seq"] == 0
+    await patch(service, f"memory-spaces/{space['id']}", guide="Organize project knowledge.")
+    await patch(service, f"models/{model}", enabled=False)
+    await due(service, space)
+    await organize(service.runtime)
+    failed = await status(service, space)
+    assert failed["failure"] is not None and failed["active_run_id"] is None
+    assert len(await history(service, space)) == 1
+    await patch(service, f"models/{model}", enabled=True)
+    # The recorded cooldown remains in effect after the model recovers.
+    await organize(service.runtime)
+    assert len(await history(service, space)) == 1
+    await due(service, space)
+    await organize(service.runtime)
+    assert len(await history(service, space)) == 2
+    assert (await status(service, space))["failure"] is None
 
 
 async def test_disable_stops_organization_and_reenable_resumes_saved_changes(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

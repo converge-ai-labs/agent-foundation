@@ -86,10 +86,6 @@ make dev
 
 These commands replace only this checkout's development stores. They do not reset the shared Langfuse stack or a hosted database. Recreate and reseed disposable hosted previews that used the earlier PR revisions before deploying this consolidated migration; do not apply this reset procedure to production data.
 
-### Earlier Session memory prototype databases
-
-Memory Spaces replaces PR989's unmerged Session memory prototype. The consolidated migration `8319baf5169b` follows mainline `628ef18fdc03`; it replaces unpublished revision `decbf2aab878` rather than upgrading it. Fresh databases and mainline upgrades use the normal migration path. A disposable preview already on the prototype revision must be recreated and reseeded intentionally. Preserve or export any needed prototype data first. Do not stamp an old database to the new revision, reuse it as a clean-upgrade check, or reset a shared or production database. There is no automatic migration of prototype Session memories into Spaces.
-
 ## Private development resources
 
 To use real providers in a seeded checkout, copy [dev-resources.example.toml](dev-resources.example.toml) to `~/.a13n/dev-resources.toml`, set its mode to `0600`, and fill in credentials. The file lives outside every checkout and is shared by all of them. It is read only as a regular file owned by the current user and not readable by others; errors name the offending location, never a value.

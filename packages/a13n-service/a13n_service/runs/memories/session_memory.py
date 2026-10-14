@@ -6,19 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.errors import not_found
 from a13n_service.resources.memories.schemas import SessionMemorySettings
 from a13n_service.resources.memories.tables import MemorySpaceRow
-from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import SessionRow
-from a13n_service.tenancy.authorize import ExecutionAuthority, Principal
 
 
 async def configure(
     session: AsyncSession,
-    runtime: Runtime,
-    actor: Principal,
     owner: SessionRow,
     settings: SessionMemorySettings,
-    *,
-    authority: ExecutionAuthority | None = None,
 ) -> None:
     """Update the caller-locked Session. An explicit list replaces, rather than merges, selection."""
     values = owner.memory | settings.model_dump(mode="json", exclude_unset=True)
@@ -44,11 +38,8 @@ async def configure(
 
 async def inherit_defaults(
     session: AsyncSession,
-    runtime: Runtime,
-    actor: Principal,
     session_id: str,
     defaults: SessionMemorySettings,
-    authority: ExecutionAuthority,
 ) -> None:
     """First business acceptance snapshots defaults, with explicit Session fields taking precedence."""
     owner = await session.scalar(
@@ -61,5 +52,5 @@ async def inherit_defaults(
         await session.get_one(SessionRow, session_id, populate_existing=True)
         return
     settings = SessionMemorySettings.model_validate(defaults.model_dump(mode="json") | owner.memory)
-    await configure(session, runtime, actor, owner, settings, authority=authority)
+    await configure(session, owner, settings)
     await session.flush()

@@ -116,8 +116,6 @@ async def test_refused_acceptance_rolls_back_default_snapshot(service, scripted_
 async def test_settled_inheritance_does_not_lock_session(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.resources.memories.schemas import SessionMemorySettings
     from a13n_service.runs.memories.session_memory import inherit_defaults
-    from a13n_service.tenancy.access import principal_for
-    from a13n_service.tenancy.authorize import WorkspaceScope, execution_authority
     from sqlalchemy import select, text
 
     agent = await runs_kit.create_agent(service, scripted_model, memory={"enabled": True})
@@ -126,12 +124,8 @@ async def test_settled_inheritance_does_not_lock_session(service, scripted_model
         owner = await holder.scalar(select(SessionRow).where(SessionRow.id == run["session_id"]).with_for_update())
         assert owner is not None
         async with transaction(service.runtime.storage) as contender:
-            actor = await principal_for(contender, service.runtime.access, run["principal_id"])
-            scope = WorkspaceScope(owner.organization_id, owner.workspace_id)
             await contender.execute(text("SET LOCAL lock_timeout = '100ms'"))
-            await inherit_defaults(
-                contender, service.runtime, actor, owner.id, SessionMemorySettings(), execution_authority(actor, scope)
-            )
+            await inherit_defaults(contender, owner.id, SessionMemorySettings())
             assert (await contender.get_one(SessionRow, owner.id)).memory == owner.memory
 
 

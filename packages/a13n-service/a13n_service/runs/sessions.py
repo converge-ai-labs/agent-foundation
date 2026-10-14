@@ -14,7 +14,6 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.runs.memories.session_memory import configure
-from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     SessionCreate,
     SessionPage,
@@ -152,24 +151,24 @@ async def get_session(storage: Storage, actor: Principal, workspace_id: str, ses
         return (await _views(session, [await find_session(session, scope.workspace_id, session_id)]))[0]
 
 
-async def create_session(runtime: Runtime, actor: Principal, workspace_id: str, body: SessionCreate) -> SessionView:
+async def create_session(storage: Storage, actor: Principal, workspace_id: str, body: SessionCreate) -> SessionView:
     """An empty session; threads join it through `POST /threads` with its ID."""
-    async with transaction(runtime.storage) as session:
+    async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = new_session(scope.organization_id, scope.workspace_id, actor.id)
         row.labels = dict(body.labels)
         session.add(row)
         await session.flush()
         if body.memory is not None:
-            await configure(session, runtime, actor, row, body.memory)
+            await configure(session, row, body.memory)
             await session.flush()
         return (await _views(session, [row]))[0]
 
 
 async def update_session(
-    runtime: Runtime, actor: Principal, workspace_id: str, session_id: str, body: SessionUpdate, *, if_match: str | None
+    storage: Storage, actor: Principal, workspace_id: str, session_id: str, body: SessionUpdate, *, if_match: str | None
 ) -> SessionView:
-    async with transaction(runtime.storage) as session:
+    async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find_session(session, scope.workspace_id, session_id, lock=True)
         require_match(if_match, row.id, row.version)
@@ -177,6 +176,6 @@ async def update_session(
             row.labels = dict(body.labels)
         if body.memory is not None:
             require_conversation(row)
-            await configure(session, runtime, actor, row, body.memory)
+            await configure(session, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

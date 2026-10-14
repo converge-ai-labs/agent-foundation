@@ -28,14 +28,14 @@ All API paths below are under `/api/v1`.
 
 ## Memory Spaces
 
-A **Memory Space** holds shared knowledge and session notes in one versioned file store. Create reusable Spaces for the users, projects or other scopes your application manages, then select them explicitly in sessions. An empty selection creates no Space and supplies no Space tools.
+A **Memory Space** holds shared knowledge and session notes in one versioned file store. Create Spaces for your application's users or projects, then select them in sessions.
 
 1. Open **Memory Spaces → Spaces** and create a named Space. In **Configuration**, set its instructions, always-loaded files and optional organizer model.
 2. In an agent's **Memory** section, enable memory participation and select the Spaces new sessions should use. Give each selection a tool-visible name and read or write access.
 3. When starting a session, inherit the agent defaults or choose an explicit selection. The session header's **Memory** control changes participation and selection for future runs.
 4. Open a Space to browse **Files**, inspect **File history**, review **Organization** rounds and see associated **Sessions**.
 
-Each ordinary run sees `global/` and its own `sessions/{session_id}/` folder in each selected Space. It can read or write those folders according to its binding, including shared files under `global/`. Other sessions' notes are outside its view. Workspace members manage all files through the Console; Spaces use workspace permissions, not separate per-Space access lists. Shared knowledge is indexed by `global/MEMORY.md`, the default always-loaded file. The run also receives its own session's `MEMORY.md` when present.
+Each ordinary run sees `global/` and its own `sessions/{session_id}/` folder, with the binding's read or write access. Context includes `global/MEMORY.md` by default and the session's `MEMORY.md` when present. Workspace permissions govern management of all Space files through the Console and API.
 
 ### Select Spaces
 
@@ -59,15 +59,15 @@ Use its returned `id` in the agent's `config.memory`, `POST /sessions`, or `PATC
 }
 ```
 
-Session selection needs `run`; PATCH also needs the session's `If-Match`. Names and Space IDs must be unique in the selection. Omitted fields inherit agent defaults at the first accepted business run; an explicit `spaces` list replaces the entire selection, and `[]` selects none. Later agent changes and branches keep the session's settled choices. Changing agent defaults or Space configuration needs `write`.
+Session selection needs `run`; PATCH also needs the session's `If-Match`. Names and Space IDs must be unique in the selection. Omitted fields inherit agent defaults at the first accepted business run. An explicit `spaces` list replaces the selection; `[]` supplies no Space context or tools. The session keeps its choices across later agent changes and branches. Changing agent defaults or Space configuration needs `write`.
 
-Turning participation off keeps the selection. Disabling a Space keeps its files, history and bindings while excluding it from new runs. Accepted runs retain their frozen mounts. Space names must not collide with standalone thread mounts; a collision refuses acceptance so access never changes silently.
+Turning participation off keeps the selection. Disabling a Space excludes it from new runs and preserves its files, history and bindings. Accepted runs retain their frozen mounts. Space mount names must be distinct from standalone thread mount names.
 
 ### Organize saved knowledge
 
-Configure an organizer model in the Space, then choose **Organize now** or enable **Automatic organization**. Automatic rounds discover changed, nonempty saved files, including API edits. The organizer sees all session folders and shared knowledge and maintains `global/MEMORY.md`. Each round starts a fresh thread in a dedicated organizer session, with only that Space's memory tools and a 200-model-request ceiling. It reads saved files, not business transcripts.
+Configure an organizer model, then choose **Organize now** or enable **Automatic organization**. Automatic rounds process saved changes, including API edits, while the store contains files. The organizer reads shared knowledge and all session folders to maintain `global/MEMORY.md`. Each round uses a fresh thread in a dedicated organizer session, with only that Space's memory tools and a 200-model-request ceiling.
 
-Organization uses ordinary runs, costs, traces and file revisions. It leaves business previews, activity order and run counts unchanged. Failed or cancelled rounds retain committed edits without marking the work processed. Concurrent external edits remain eligible for a later round; the organizer's own edits do not create an automatic retry loop. A revision-history gap pauses automatic progress until new external changes, policy reconfiguration or a manual request. Disabling stops new admission and preserves accepted work.
+The **Organization** tab shows status and run history, with costs, traces and file revisions. These runs stay separate from business conversations. Failed or cancelled rounds retain saved edits. If retained history is insufficient to confirm progress, status reports a history gap; **Organize now** requests another round.
 
 Read status at `GET /memory-spaces/{id}/organization`, request a round with `POST /memory-spaces/{id}/organizations`, and list rounds with `GET` on that same path. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists paginate with `limit` and `cursor`. File and revision APIs use the Space's returned `memory_id` under `/memories/{memory_id}`. The backing store is managed through the Space and stays out of standalone Memory lists.
 

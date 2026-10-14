@@ -72,7 +72,7 @@ async def list_sessions(
 async def create_session(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, body: SessionCreate, actor: Actor
 ) -> SessionView:
-    return tagged(response, await sessions.create_session(runtime, actor, workspace_id, body))
+    return tagged(response, await sessions.create_session(runtime.storage, actor, workspace_id, body))
 
 
 @router.get("/sessions/{session_id}", response_model=SessionView, openapi_extra=platform_operation("execution", "read"))
@@ -92,7 +92,7 @@ async def update_session(
     actor: Actor,
     if_match: IfMatch = None,
 ) -> SessionView:
-    result = await sessions.update_session(runtime, actor, workspace_id, session_id, body, if_match=if_match)
+    result = await sessions.update_session(runtime.storage, actor, workspace_id, session_id, body, if_match=if_match)
     return tagged(response, result)
 
 

@@ -14,6 +14,7 @@ class SpaceOrganizationRow(Base):
     __table_args__ = (Index("ix_memory_space_organizations_due", "due_at"),)
     space_id: Mapped[str] = mapped_column(ForeignKey("memory_spaces.id", ondelete="CASCADE"), primary_key=True)
     session_id: Mapped[str | None] = mapped_column(ForeignKey("sessions.id"), unique=True)
+    # An explicit manual request; automatic work is discovered from sequence/configuration changes.
     pending: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"))
