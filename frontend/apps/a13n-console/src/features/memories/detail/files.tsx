@@ -126,6 +126,7 @@ export function MemoryFiles({ memory }: { memory: Memory }) {
   return (
     <>
       <FileBrowser
+        embedded
         label={t("Memory files")}
         fileMenu={fileMenu}
         count={files.data.length}
@@ -143,14 +144,9 @@ export function MemoryFiles({ memory }: { memory: Memory }) {
           )
         }
         actions={newFile(
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t("New file")}
-            title={t("New file")}
-          >
+          <Button type="button" variant="ghost" size="sm">
             <FilePlusIcon />
+            {t("New file")}
           </Button>,
         )}
       >

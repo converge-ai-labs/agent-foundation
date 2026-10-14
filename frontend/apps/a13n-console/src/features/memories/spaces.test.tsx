@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
@@ -141,6 +141,18 @@ function show(route: string, conflict = false) {
         });
       if (path.endsWith("/memory-spaces"))
         return Response.json({ items: [current], next_cursor: null });
+      if (path.endsWith("/sessions"))
+        return Response.json({
+          items: [
+            {
+              id: "sess_onboarding",
+              preview: { input_text: "Onboarding priorities" },
+              memory: { enabled: true },
+              updated_at: space.updated_at,
+            },
+          ],
+          next_cursor: null,
+        });
       if (path.endsWith("/organization"))
         return Response.json({ pending: false });
       if (path.endsWith("/models"))
@@ -166,6 +178,7 @@ function show(route: string, conflict = false) {
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[route]}>
         <Routes>
+          <Route path="/w/sessions/:sessionId" element={<SessionLocation />} />
           <Route path="/w/memory-spaces" element={<MemorySpacesPage />} />
           <Route
             path="/w/memory-spaces/:spaceId"
@@ -177,6 +190,18 @@ function show(route: string, conflict = false) {
   );
   return { writes, cache, user: userEvent.setup() };
 }
+function SessionLocation() {
+  const location = useLocation();
+  return <p>{location.pathname + location.search}</p>;
+}
+it("opens an associated session directly in chat", async () => {
+  const { cache, user } = show(`/w/memory-spaces/${space.id}?tab=sessions`);
+  await user.click(
+    await screen.findByRole("link", { name: "Onboarding priorities" }),
+  );
+  await screen.findByText("/w/sessions/sess_onboarding?view=chat");
+  cache.clear();
+});
 it("creates a Space, edits its configuration with an ETag, and requests organization", async () => {
   const { writes, cache, user } = show("/w/memory-spaces");
   await screen.findByText("Team knowledge");

@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
@@ -102,7 +102,7 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
   const current = (filePath: string) =>
     files.data?.find((file) => file.path === filePath);
   return (
-    <>
+    <div className={styles.history}>
       <div className={styles.historyFilters}>
         <ChoiceField
           label={t("File")}
@@ -181,8 +181,9 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
               const open = expanded === revision.seq;
               const file = current(revision.path);
               return (
-                <Fragment key={revision.seq}>
+                <div className={styles.revisionGroup} key={revision.seq}>
                   <ListRow
+                    className={styles.revisionRow}
                     icon={<Icon size={15} />}
                     name={
                       <>
@@ -266,20 +267,16 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                     }
                   />
                   {open && <RevisionDiff memory={memory} seq={revision.seq} />}
-                </Fragment>
+                </div>
               );
             })}
           </ListRows>
-          <CollectionFooter
-            count={t("{{count}} changes on this page", {
-              count: revisions.data.items.length,
-            })}
-          >
+          <CollectionFooter>
             <Pagination page={page} next={revisions.data.next_cursor} />
           </CollectionFooter>
         </>
       )}
-    </>
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-import { ArrowsClockwiseIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
@@ -222,8 +222,14 @@ export function SpaceSessions({ spaceId }: { spaceId: string }) {
                 label: t("Session"),
                 tone: "primary",
                 render: (session) => (
-                  <Link to={`${basePath}/sessions/${session.id}`}>
-                    {session.preview?.input_text || t("Untitled session")}
+                  <Link
+                    className={styles.sessionLink}
+                    to={`${basePath}/sessions/${session.id}?view=chat`}
+                  >
+                    <span>
+                      {session.preview?.input_text || t("Untitled session")}
+                    </span>
+                    <ArrowRightIcon size={14} aria-hidden="true" />
                   </Link>
                 ),
               },

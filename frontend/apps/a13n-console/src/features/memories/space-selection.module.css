@@ -1,3 +1,17 @@
+.sessionLink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 500;
+}
+.sessionLink > span {
+  overflow-wrap: anywhere;
+}
+.sessionLink > svg {
+  flex: none;
+  align-self: center;
+  color: var(--a13n-secondary);
+}
 .selection {
   display: grid;
   gap: 20px;

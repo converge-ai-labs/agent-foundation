@@ -50,6 +50,7 @@ export function DetailPage({
   onTabChange,
   rail,
   className,
+  contentClassName,
   children,
 }: {
   back?: string;
@@ -60,6 +61,7 @@ export function DetailPage({
   onTabChange?: (value: string) => void;
   rail?: ReactNode;
   className?: string;
+  contentClassName?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -86,7 +88,7 @@ export function DetailPage({
           </TabsList>
         </Tabs>
       )}
-      <div className={styles.content}>
+      <div className={`${styles.content} ${contentClassName ?? ""}`}>
         {rail ? <DetailLayout rail={rail}>{children}</DetailLayout> : children}
       </div>
     </div>

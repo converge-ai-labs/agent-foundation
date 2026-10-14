@@ -79,6 +79,9 @@
 }
 
 /* File editor ------------------------------------------------------------- */
+.filesContent.filesContent {
+  padding-top: 8px;
+}
 .editor {
   display: grid;
   gap: 12px;
@@ -92,16 +95,20 @@
 }
 
 /* History ----------------------------------------------------------------- */
+.history {
+  max-width: 960px;
+}
 .historyFilters {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .historyFilters > :first-child {
-  flex: 0 1 320px;
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 160px;
+  max-width: min(100%, 360px);
 }
 .runFilter {
   display: inline-flex;
@@ -120,8 +127,31 @@
 .revision {
   font-variant-numeric: tabular-nums;
 }
+.revisionGroup {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.revisionRow.revisionRow {
+  background: transparent;
+}
 .revisionDiff {
   padding: 0 12px 12px;
+}
+.revisionDiff > div {
+  background: transparent;
+}
+@media (max-width: 600px) {
+  .revisionRow.revisionRow {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px 12px;
+  }
+  .revisionRow > :last-child {
+    grid-column: 2;
+    justify-self: end;
+  }
 }
 
 /* Records ------------------------------------------------------------------ */
