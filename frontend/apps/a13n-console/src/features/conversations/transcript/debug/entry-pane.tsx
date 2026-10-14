@@ -18,6 +18,7 @@ import type {
   OtherEntry,
   TimelineEntry,
 } from "../../timeline";
+import { MessageAuthor } from "../../message-author";
 import { readQuestions } from "../questions";
 import { workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
@@ -278,6 +279,10 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   return (
     <div className={styles.pane}>
+      {/* Guidance is someone's message; its author is part of the record. */}
+      {entry.kind === "guidance" && !entry.steeringSource && (
+        <MessageAuthor entryId={entry.sourceId} plain />
+      )}
       <div className={styles.reasoningProse}>
         {entry.text ? (
           <StoredContent itemId={entry.id} field="text" value={entry.text} />

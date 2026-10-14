@@ -9,7 +9,7 @@ from typing import Literal
 
 from a13n_harness import StoredRef
 from a13n_stream_protocol.display import MAX_OBSERVATION_BYTES, ContentRef, DisplayContinuation, Item
-from pydantic import Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
@@ -18,6 +18,9 @@ from a13n_service.infra.objects.interface import ObjectRef
 INLINE_BYTES = 32 * 1024
 PREVIEW_BYTES = 4 * 1024
 MAX_CONTENT_BYTES = 16 * 1024 * 1024
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_PENDING_IMAGE_BYTES = 32 * 1024 * 1024
+MAX_PENDING_IMAGES = 64
 
 
 class ContentObject(StoredRef):
@@ -25,11 +28,12 @@ class ContentObject(StoredRef):
 
     id: str
     size_bytes: int = Field(ge=0)
-    media_type: Literal["text/plain", "application/json"]
+    media_type: Literal["text/plain", "application/json", "image/png", "image/jpeg"]
     truncated: bool = False
-    purpose: Literal["value", "continuation"] = "value"
+    purpose: Literal["value", "continuation", "image"] = "value"
 
     def public(self, preview: str) -> ContentRef:
+        assert self.media_type == "text/plain" or self.media_type == "application/json"
         return ContentRef(
             id=self.id,
             size_bytes=self.size_bytes,
@@ -62,16 +66,50 @@ class _Saved:
     ref: ContentObject
 
 
+class ImageRef(BaseModel):
+    """An opaque screenshot identity; only the authenticated Run endpoint resolves it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    media_type: Literal["image/png", "image/jpeg"]
+    size_bytes: int = Field(ge=0)
+
+
+def image_ids(item: Item) -> tuple[str, ...]:
+    images = item.content.get("tool_images")
+    if not isinstance(images, list):
+        return ()
+    return tuple(
+        identifier for image in images if isinstance(image, dict) and isinstance(identifier := image.get("id"), str)
+    )
+
+
 class Contents:
     """One attempt's field identities. Unchanged values keep their original immutable object reference."""
 
     def __init__(self, items: Sequence[Item] = (), refs: Sequence[ContentObject] = ()) -> None:
         self.refs = {ref.id: ref for ref in refs}
+        self.pending_images: dict[str, tuple[ImageRef, bytes]] = {}
+        self.pending_image_bytes = 0
+        self.image_items = {item.id: image_ids(item) for item in items}
         self.saved: dict[tuple[str, str], _Saved] = {
             (item.id, field): _Saved(encode(item.content[field])[0], self.refs[ref.id])
             for item in items
             for field, ref in item.content_refs.items()
         }
+
+    def image(self, data: bytes, media_type: Literal["image/png", "image/jpeg"]) -> ImageRef | None:
+        # The synchronous producer observer cannot perform I/O or accumulate unbounded screenshots.
+        if (
+            len(data) > MAX_IMAGE_BYTES
+            or self.pending_image_bytes + len(data) > MAX_PENDING_IMAGE_BYTES
+            or len(self.pending_images) >= MAX_PENDING_IMAGES
+        ):
+            return None
+        ref = ImageRef(id=new_object_id("cnt"), media_type=media_type, size_bytes=len(data))
+        self.pending_images[ref.id] = (ref, data)
+        self.pending_image_bytes += len(data)
+        return ref
 
     async def value(
         self, owner: str, field: str, value: JsonValue, write: Callable[[bytes], Awaitable[ObjectRef]]
@@ -109,6 +147,23 @@ class Contents:
         return ref
 
     async def item(self, item: Item, write: Callable[[bytes], Awaitable[ObjectRef]]) -> Item:
+        self.image_items[item.id] = image_ids(item)
+        for identifier in self.image_items[item.id]:
+            pending = self.pending_images.get(identifier)
+            if pending is not None:
+                image, data = pending
+                stored = await write(data)
+                self.refs[identifier] = ContentObject(
+                    key=stored.key,
+                    digest=stored.digest,
+                    size=stored.size,
+                    id=image.id,
+                    size_bytes=image.size_bytes,
+                    media_type=image.media_type,
+                    purpose="image",
+                )
+                del self.pending_images[identifier]
+                self.pending_image_bytes -= len(data)
         content = dict(item.content)
         refs: dict[str, ContentRef] = {}
         for field, value in item.content.items():
@@ -126,13 +181,27 @@ class Contents:
         return item.model_copy(update={"content": content, "content_refs": refs})
 
     def dependencies(self, items: Sequence[Item]) -> tuple[ContentObject, ...]:
-        ids = dict.fromkeys(ref.id for item in items for ref in item.content_refs.values())
+        ids = dict.fromkeys(
+            identifier
+            for item in items
+            for identifier in (
+                *[ref.id for ref in item.content_refs.values()],
+                *(
+                    identifier
+                    for identifier in image_ids(item)
+                    if identifier in self.refs and self.refs[identifier].purpose == "image"
+                ),
+            )
+        )
         return tuple(self.refs[identifier] for identifier in ids)
 
     def retire(self, item_ids: Sequence[str]) -> None:
         retired = set(item_ids)
         self.saved = {key: value for key, value in self.saved.items() if key[0] not in retired}
-        needed = {value.ref.id for value in self.saved.values()}
+        self.image_items = {key: value for key, value in self.image_items.items() if key not in retired}
+        needed = {value.ref.id for value in self.saved.values()} | {
+            identifier for ids in self.image_items.values() for identifier in ids
+        }
         self.refs = {key: value for key, value in self.refs.items() if key in needed}
 
 

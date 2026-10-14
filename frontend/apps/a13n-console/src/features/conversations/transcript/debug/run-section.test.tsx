@@ -116,30 +116,50 @@ function show(props: Partial<Parameters<typeof DebugRunSection>[0]> = {}) {
   );
 }
 
-it("reads one run as a heading, its request and one timeline", () => {
+it("reads one run as the executor's record: input, steps and output", () => {
   show();
   expect(screen.getByText("Run 2")).toBeTruthy();
   expect(screen.getByText("state.completed")).toBeTruthy();
-  expect(screen.getByText("Run the checks")).toBeTruthy();
-  expect(screen.getByText("User")).toBeTruthy();
+  // The input names its author as a fact beside its label.
+  const input = screen.getByText("Input").closest("section")!;
+  expect(within(input).getByText("Run the checks")).toBeTruthy();
+  expect(within(input).getByText("User")).toBeTruthy();
   // Totals come from reported usage; the duration is the run's own span.
   expect(screen.getByText("12s")).toBeTruthy();
-  expect(screen.getByText("1 model calls")).toBeTruthy();
+  const calls = screen.getByText("Model calls").parentElement!;
+  expect(within(calls).getByText("1")).toBeTruthy();
   expect(screen.getAllByText("3.1k → 210").length).toBe(2);
   expect(screen.getByText("$0.0041")).toBeTruthy();
-  // Model requests are the skeleton, the edit nests beneath, the reply is prose.
-  expect(screen.getByText("Model call 1")).toBeTruthy();
-  expect(screen.getByText("gpt-5 · called 1 tools")).toBeTruthy();
-  expect(screen.getByText("edit_file")).toBeTruthy();
-  expect(screen.getByText("+2")).toBeTruthy();
-  expect(screen.getByText("−1")).toBeTruthy();
-  expect(screen.getByText("Patched the fold.")).toBeTruthy();
+  // Model requests are the skeleton; the edit and the reply are steps beneath.
+  const steps = screen.getByText("Steps").closest("section")!;
+  expect(within(steps).getByText("Model call 1")).toBeTruthy();
+  expect(within(steps).getByText("gpt-5 · called 1 tools")).toBeTruthy();
+  expect(within(steps).getByText("edit_file")).toBeTruthy();
+  expect(within(steps).getByText("+2")).toBeTruthy();
+  expect(within(steps).getByText("−1")).toBeTruthy();
+  expect(within(steps).getByRole("button", { name: /Reply/ })).toBeTruthy();
+  // Each line says how far into the run it happened; a finished run ends on
+  // the line that says when it did.
+  const end = screen.getByText("Run completed").closest("[data-kind]")!;
+  expect(end.textContent).toContain("+12.0s");
+  // What the run returned is read once, after its steps.
+  const output = screen.getByText("Output").closest("section")!;
+  expect(within(output).getByText("Patched the fold.")).toBeTruthy();
   // Routine lifecycle facts stay in the Details card: accepting the run and
   // starting its first attempt say nothing a reader can act on.
   expect(screen.queryByText(/Attempt 1/)).toBeNull();
   expect(screen.queryByText(/Run accepted/)).toBeNull();
   // Nothing was requested to render the section itself.
   expect(requests.filter((path) => path.includes("/attempts"))).toEqual([]);
+});
+
+it("keeps a closed run to its header and one line of input", async () => {
+  show();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Run 2/ }));
+  expect(screen.getByText("Run the checks")).toBeTruthy();
+  expect(screen.queryByText("Steps")).toBeNull();
+  expect(screen.queryByText("Output")).toBeNull();
 });
 
 it("opens a tool row in place with its arguments, result and patch", async () => {

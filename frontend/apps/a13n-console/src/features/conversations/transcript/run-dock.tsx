@@ -142,7 +142,7 @@ export function RunDock({
   return (
     <>
       <ErrorToast error={interrupt.error} />
-      {/* Debug answers a wait on the runs' text edge. */}
+      {/* Debug answers a wait in a card beside the runs. */}
       {feedback && level === "debug" ? (
         <div className={debug.feedback}>{feedback}</div>
       ) : (
@@ -170,7 +170,11 @@ export function RunDock({
                   run_id: latest,
                 })}${search}`}
               >
-                {t("Return to latest messages")}
+                {t(
+                  level === "debug"
+                    ? "Return to latest run"
+                    : "Return to latest messages",
+                )}
               </Link>
             )}
           </div>
@@ -181,13 +185,21 @@ export function RunDock({
                 key={resubmit ? "resubmit" : "message"}
                 initial={resubmit?.payload}
                 agentName={agentName}
-                label={t(active ? "Add guidance" : "Send message")}
+                label={t(
+                  active
+                    ? "Add guidance"
+                    : level === "debug"
+                      ? "Start run"
+                      : "Send message",
+                )}
                 placeholder={
                   active
                     ? t("Add guidance while it works")
-                    : agentName
-                      ? t("Message {{agent}}…", { agent: agentName })
-                      : t("Message your agent…")
+                    : level === "debug"
+                      ? t("Input for the next run…")
+                      : agentName
+                        ? t("Message {{agent}}…", { agent: agentName })
+                        : t("Message your agent…")
                 }
                 disabled={!can("run")}
                 stop={canStop ? () => interrupt.mutate() : undefined}

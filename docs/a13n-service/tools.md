@@ -5,7 +5,7 @@ description: Give agents built-in toolsets, MCP and app connections, client tool
 
 An agent's tools come from four places, all selected in its [revision](agents-and-runs.md#agent-configuration):
 
-- **Built-in toolsets**, which the Service runs itself: files, terminal, web, memory, asset publication, agent configuration, trace queries and findings.
+- **Built-in toolsets**, which the Service runs itself: files, terminal, computer, web, memory, asset publication, agent configuration, trace queries and findings.
 - **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
 - **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
 - **Skills**, which add instructions and files; see [Skills](skills.md).
@@ -16,16 +16,19 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 
 `GET /api/v1/toolsets` returns the catalog with each tool's key, the name the model sees, its default state and permission, and its configuration schema.
 
-| Toolset            | Tools (model names)                                                                                                                           | Default                                           |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                | Enabled                                           |
-| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                       | Enabled                                           |
-| `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                       | Each tool disabled                                |
-| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete` | Enabled                                           |
-| `assets`           | `publish_asset`                                                                                                                               | Disabled                                          |
-| `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                           | Disabled; see [Agent Composer](agent-composer.md) |
-| `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | Disabled                                          |
-| `findings`         | `read_finding`, `submit_finding`                                                                                                              | Disabled                                          |
+| Toolset            | Tools (model names)                                                                                                                                         | Default                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                              | Enabled                                            |
+| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                     | Enabled                                            |
+| `computer`         | `computer_describe`, `computer_observe`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys` | Disabled; also requires explicit mount permissions |
+| `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                                     | Each tool disabled                                 |
+| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`               | Enabled                                            |
+| `assets`           | `publish_asset`                                                                                                                                             | Disabled                                           |
+| `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                                         | Disabled; see [Agent Composer](agent-composer.md)  |
+| `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                                             | Disabled                                           |
+| `findings`         | `read_finding`, `submit_finding`                                                                                                                            | Disabled                                           |
+
+Computer tools require a compatible desktop and explicit action permissions on the mounted environment. See [Computer Use](environments.md#computer-use) for setup and screenshot previews.
 
 Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), with one primary category per issue. Unsupported values return a validation error. Categories are separate from the analysis rule presets.
 

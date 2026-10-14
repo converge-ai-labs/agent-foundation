@@ -892,6 +892,7 @@
       "enum": [
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",

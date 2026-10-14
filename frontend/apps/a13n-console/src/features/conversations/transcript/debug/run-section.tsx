@@ -1,15 +1,26 @@
-import { Button, DisclosureSection } from "a13n-ui";
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
+import {
+  ArrowCounterClockwiseIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../../layout/workspace";
 import type { Schema } from "../../../../shared/api";
 import { StatePill } from "../../../../shared/feedback";
 import { JsonView } from "../../../../shared/forms";
+import { CopyableId, CopyButton } from "../../../../shared/identity";
+import { MarkdownContent } from "../../../../shared/markdown";
 import { isActiveRun } from "../../api";
 import { formatCost } from "../../../../shared/cost";
-import { formatDuration, tokenFigures } from "../../format";
+import {
+  formatDuration,
+  formatOffset,
+  resultExcerpt,
+  tokenFigures,
+} from "../../format";
 import { runOutcome } from "../../lifecycle";
-import { runRequest } from "../../request";
+import { runRequest, type RunRequest } from "../../request";
 import { ForkRun } from "../../fork-run";
 import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
@@ -22,12 +33,15 @@ import {
 } from "../thread-runs";
 import { useRunOpen } from "./collapse";
 import { RunDetailsDialog } from "./run-details";
-import { EventRow, TimelineRows } from "./timeline-rows";
+import { CompletedRow, EventRow, TimelineRows } from "./timeline-rows";
 import { useNow } from "./use-now";
 import type { RunScope } from "./scope";
 import styles from "./debug.module.css";
 
-/** One Run, read as a section: what was asked, what ran, and what it cost. */
+/**
+ * One Run, read as the executor's log of it: a header with its figures, then
+ * one timed line for each thing it was given, did and returned.
+ */
 export function DebugRunSection({
   run,
   thread,
@@ -60,7 +74,6 @@ export function DebugRunSection({
   const scope: RunScope = {
     run,
     start: started,
-    span: Math.max(ended - started, 1),
     child: child && {
       path: childThreadPath(basePath, child),
       runs: child.runs.length,
@@ -92,7 +105,32 @@ export function DebugRunSection({
           </button>
           <StatePill state={run.status} />
           <Lineage run={run} />
+          {/* A closed run keeps one line of what it was given. */}
+          {!open && (
+            <>
+              <span className={styles.headingExcerpt}>
+                {resultExcerpt(request.text, 200) || t("No request text")}
+              </span>
+              <span className={styles.headingDuration}>
+                {formatDuration(duration)}
+              </span>
+            </>
+          )}
           <span className={styles.headingActions}>
+            {/* Sending a stopped run again is the run's action, beside its
+                other two. */}
+            {resubmit && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={t("Resubmit")}
+                onClick={resubmit}
+              >
+                <ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
+                <span data-action-label>{t("Resubmit")}</span>
+              </Button>
+            )}
             <ForkRun
               run={run}
               thread={thread}
@@ -103,37 +141,31 @@ export function DebugRunSection({
             <RunDetailsDialog run={run} index={index} />
           </span>
         </div>
-        {/* The request beneath says when; Details has the exact start. */}
-        <p className={styles.headingMeta}>
-          <span className={styles.headingDuration}>
-            {formatDuration(duration)}
-          </span>
-          <span>
-            {t("{{count}} model calls", { count: timeline.totals.modelCalls })}
-          </span>
-          <TokenFigures totals={timeline.totals} />
-          {timeline.totals.costUsd && (
-            <span>{formatCost(timeline.totals.costUsd)}</span>
-          )}
-        </p>
-      </header>
-      <div className={styles.request} data-collapsed={!open || undefined}>
-        {request.kind === "message" ? (
-          <MessageAuthor
-            entryId={run.source_entry_id}
-            principalId={run.principal_id}
-          />
-        ) : (
-          <span className={styles.requestLabel}>
-            {requestLabel(request, t)}
-          </span>
+        {open && (
+          <RunFacts run={run} totals={timeline.totals} duration={duration} />
         )}
-        <div className={styles.requestBody}>
-          <RequestContent request={request} />
-        </div>
-      </div>
+      </header>
       {open && (
-        <>
+        <RunLog>
+          <LogBlock
+            time={formatOffset(0)}
+            label={t("Input")}
+            source={
+              request.kind === "message" ? (
+                <MessageAuthor
+                  entryId={run.source_entry_id}
+                  principalId={run.principal_id}
+                  plain
+                />
+              ) : (
+                requestLabel(request, t)
+              )
+            }
+          >
+            <Clamp>
+              <RequestContent request={request} />
+            </Clamp>
+          </LogBlock>
           {timeline.coverage !== "complete" && (
             <p role="status" className={styles.coverage}>
               {t(
@@ -144,47 +176,272 @@ export function DebugRunSection({
             </p>
           )}
           <TimelineRows entries={timeline.entries} scope={scope} />
-          {outcome && (
-            <EventRow
-              entry={outcome}
-              scope={scope}
-              action={
-                resubmit && (
-                  <Button size="xs" variant="outline" onClick={resubmit}>
-                    {t("Resubmit")}
-                  </Button>
-                )
-              }
-            />
+          {outcome ? (
+            <EventRow entry={outcome} scope={scope} />
+          ) : (
+            run.status === "completed" && <CompletedRow scope={scope} />
           )}
-          {run.output != null && typeof run.output !== "string" && (
-            <DisclosureSection
-              className={styles.structured}
-              title={<>{t("Structured output")}</>}
-            >
-              <JsonView value={run.output} />
-            </DisclosureSection>
-          )}
-        </>
+          <RunOutput output={run.output} />
+        </RunLog>
       )}
     </section>
   );
 }
 
-/** Tokens nobody reported are unknown, never zero, so they are not shown. */
-function TokenFigures({ totals }: { totals: RunTimeline["totals"] }) {
+/** A Run submitted from this view, before the Service has accepted it. */
+export function DebugPendingRun({ request }: { request: RunRequest }) {
   const { t } = useTranslation();
-  if (!totals.reportedUsage) return null;
-  const figures = tokenFigures(t, {
-    input: totals.inputTokens,
-    output: totals.outputTokens,
-    cached: totals.cacheReadTokens,
-  });
+  return (
+    <section className={styles.section} aria-busy="true">
+      <header className={styles.heading}>
+        <div className={styles.headingLine}>
+          <span className={styles.pendingName}>{t("Run")}</span>
+          <StatePill state="accepted" />
+        </div>
+      </header>
+      <RunLog>
+        <LogBlock time="" label={t("Input")}>
+          <Clamp>
+            <RequestContent request={request} />
+          </Clamp>
+        </LogBlock>
+      </RunLog>
+    </section>
+  );
+}
+
+/** The log's frame: a time gutter, then the lines under one column head. */
+function RunLog({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.log}>
+      <div className={styles.logHead} aria-hidden="true">
+        <span className={styles.time}>{t("Time")}</span>
+        <span className={styles.logHeadSteps}>{t("Steps")}</span>
+        <span className={styles.cache}>{t("Cache")}</span>
+        <span className={styles.tokens}>{t("Tokens")}</span>
+        <span className={styles.duration}>{t("Duration")}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** The Run's figures, each named, on one line under its name. */
+function RunFacts({
+  run,
+  totals,
+  duration,
+}: {
+  run: Schema["RunView"];
+  totals: RunTimeline["totals"];
+  duration: number | null;
+}) {
+  const { t } = useTranslation();
+  // Tokens nobody reported are unknown, never zero, so they are not shown.
+  const figures =
+    totals.reportedUsage &&
+    tokenFigures(t, {
+      input: totals.inputTokens,
+      output: totals.outputTokens,
+      cached: totals.cacheReadTokens,
+    });
+  return (
+    <dl className={styles.facts}>
+      <Fact label={t("Started")}>
+        <StartTime at={run.started_at ?? run.created_at} />
+      </Fact>
+      <Fact label={t("Duration")}>{formatDuration(duration)}</Fact>
+      <Fact label={t("Model calls")}>{totals.modelCalls}</Fact>
+      {figures && (
+        <Fact label={t("Tokens")}>
+          <span title={figures.pairTitle}>{figures.pair}</span>
+        </Fact>
+      )}
+      {figures && figures.rate && (
+        <Fact label={t("Cache")}>
+          <span title={figures.cacheTitle}>{figures.rate}</span>
+        </Fact>
+      )}
+      {totals.costUsd && (
+        <Fact label={t("Cost")}>{formatCost(totals.costUsd)}</Fact>
+      )}
+      <div className={`${styles.fact} ${styles.factId}`}>
+        <dt>{t("Run ID")}</dt>
+        <dd>
+          <CopyableId value={run.id} />
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={styles.fact}>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * What the Run was given or returned: a line of its log that holds the
+ * content beneath it, and folds back to that line.
+ */
+function LogBlock({
+  time,
+  label,
+  source,
+  action,
+  children,
+}: {
+  time: string;
+  label: string;
+  /** Where the content came from, read as a fact beside its label. */
+  source?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className={styles.block} aria-label={label}>
+      <div className={styles.blockHead}>
+        <span className={styles.time}>{time}</span>
+        <span className={styles.lineBody}>
+          <button
+            type="button"
+            className={styles.blockToggle}
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <span className={styles.mark}>
+              <CaretRightIcon
+                size={11}
+                className={styles.caret}
+                data-expanded={open || undefined}
+                aria-hidden="true"
+              />
+            </span>
+            <span className={styles.blockLabel}>{label}</span>
+          </button>
+          {source && <span className={styles.blockSource}>{source}</span>}
+          {action && <span className={styles.blockAction}>{action}</span>}
+        </span>
+      </div>
+      {open && <div className={styles.blockBody}>{children}</div>}
+    </section>
+  );
+}
+
+/** What the Run returned: its text, or the structure its output spec asked for. */
+function RunOutput({ output }: { output: Schema["RunView"]["output"] }) {
+  const { t } = useTranslation();
+  const [raw, setRaw] = useState(false);
+  if (output == null || output === "") return null;
+  if (typeof output !== "string")
+    return (
+      <LogBlock time="" label={t("Output")}>
+        <JsonView value={output} />
+      </LogBlock>
+    );
+  return (
+    <LogBlock
+      time=""
+      label={t("Output")}
+      action={
+        <>
+          {/* Rendered Markdown hides its own markup; Raw shows the text. */}
+          <Button
+            size="xs"
+            variant="ghost"
+            type="button"
+            aria-pressed={raw}
+            onClick={() => setRaw((value) => !value)}
+          >
+            {t("Raw")}
+          </Button>
+          <CopyButton value={output} iconOnly copyLabel={t("Copy output")} />
+        </>
+      }
+    >
+      <Clamp tall>
+        {raw ? (
+          <pre className={styles.raw}>{output}</pre>
+        ) : (
+          <MarkdownContent text={output} />
+        )}
+      </Clamp>
+    </LogBlock>
+  );
+}
+
+/**
+ * A long input or output stays bounded so the next Run is never far away; the
+ * reader opens the rest in place.
+ */
+function Clamp({
+  tall = false,
+  children,
+}: {
+  tall?: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const frame = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  useLayoutEffect(() => {
+    const outer = frame.current;
+    const inner = content.current;
+    if (!outer || !inner || expanded) return;
+    const measure = () =>
+      setOverflows(inner.offsetHeight > outer.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [expanded]);
   return (
     <>
-      <span title={figures.pairTitle}>{figures.pair}</span>
-      {figures.cache && <span title={figures.cacheTitle}>{figures.cache}</span>}
+      <div
+        ref={frame}
+        className={styles.clamp}
+        data-tall={tall || undefined}
+        data-expanded={expanded || undefined}
+        data-overflows={overflows || undefined}
+      >
+        <div ref={content}>{children}</div>
+      </div>
+      {(overflows || expanded) && (
+        <button
+          type="button"
+          className={styles.clampToggle}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {t(expanded ? "Show less" : "Show all")}
+        </button>
+      )}
     </>
+  );
+}
+
+/** When the Run started, to the second: the date as well on another day. */
+function StartTime({ at }: { at: string }) {
+  const { i18n } = useTranslation();
+  const date = new Date(at);
+  const today = date.toDateString() === new Date().toDateString();
+  const format = new Intl.DateTimeFormat(i18n?.resolvedLanguage, {
+    ...(!today && { dateStyle: "medium" }),
+    timeStyle: "medium",
+  });
+  return (
+    <time dateTime={at} title={date.toLocaleString(i18n?.resolvedLanguage)}>
+      {format.format(date)}
+    </time>
   );
 }
 

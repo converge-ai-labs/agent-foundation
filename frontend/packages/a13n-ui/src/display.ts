@@ -306,6 +306,7 @@ export class DisplayNormalizer {
         const supplement = [
           "a13n.filesystem.edit_applied",
           "a13n.harness-ui.tool_images",
+          "a13n.tool_images",
           "a13n.harness-ui.mcp_apps",
         ].includes(name);
         const tool = supplement ? source : part;
@@ -319,7 +320,9 @@ export class DisplayNormalizer {
               before: tool.before,
               after: tool.after,
             };
-          else if (name === "a13n.harness-ui.tool_images") {
+          else if (
+            ["a13n.tool_images", "a13n.harness-ui.tool_images"].includes(name)
+          ) {
             content.tool_images = tool.images ?? [];
             content.tool_image_unavailable = tool.unavailable ?? false;
           } else content.mcp_apps = tool.apps ?? [];

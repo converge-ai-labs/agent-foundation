@@ -1,7 +1,7 @@
 """add optional session memory and organization
 
 Revision ID: decbf2aab878
-Revises: 957733469712
+Revises: 628ef18fdc03
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "decbf2aab878"
-down_revision = "957733469712"
+down_revision = "628ef18fdc03"
 branch_labels = None
 depends_on = None
 

@@ -30,3 +30,29 @@ The test exercises:
 - bounded process and Session teardown.
 
 Xvfb tests do not validate physical display drivers, compositor-specific behavior, real user keyboard races, macOS permissions, or Wayland. The backend deliberately neither mutates keyboard maps nor uses the clipboard for text entry.
+
+## Service integration
+
+This opt-in test is excluded from the ordinary Service CI suite, which requires zero skipped cases. Run it explicitly with this disposable desktop; do not count an unconfigured or skipped run as native Computer Use validation.
+
+The same native desktop can serve the opt-in Service test on an explicitly published **host loopback** port. This mode runs Service and its test-owned PostgreSQL/Redis on the host; it does not mount host display sockets, credentials or application data. The credential below is public fixture data and must never be used outside this disposable loopback fixture.
+
+After building `a13n-x11-test` above:
+
+```bash
+docker run -d --name a13n-service-x11-test \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --cpus 2 --memory 4g --memory-swap 4g --pids-limit 256 \
+  --tmpfs /tmp:rw,size=512m \
+  --tmpfs /home/lab:rw,uid=10001,gid=10001,size=64m \
+  -p 127.0.0.1::8888 \
+  a13n-x11-test sh /app/dev/fixtures/linux-desktop/serve.sh
+docker port a13n-service-x11-test 8888
+# Use the loopback port printed above; wait for the fixture daemon to start.
+A13N_SERVICE_X11_ENDPOINT=http://127.0.0.1:PORT \
+  uv run --locked pytest packages/a13n-service/tests/environment_providers/test_computer_x11.py -v
+docker stop a13n-service-x11-test
+docker rm a13n-service-x11-test
+```
+
+Start a fresh container, or restart this exact test container, before repeating the test: its GUI state is intentionally changed. Do not point the test at a personal desktop. The test performs actual native actions through Service and Harness with deterministic model responses. It checks that an accepted observation-only Run retains its ceiling after a mount edit, later Runs can interact, exact X11 capabilities remove unsupported text entry after activation, screenshot bytes reach the model and authenticated retained-image endpoint, and the independent GUI records the click and key with changed pixels. It activates the window before clicking the target control; a native input receipt proves dispatch, not that an application consumed the gesture. This is not a benchmark or a validation of autonomous model reasoning, arbitrary Unicode input, physical displays or other operating systems.

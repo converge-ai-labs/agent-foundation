@@ -84,6 +84,19 @@ export function conversationQueries(client: Client, workspaceId: string) {
             })
             .then(data),
       }),
+    environments: (thread_id: string) =>
+      queryOptions({
+        queryKey: [...keys.thread(thread_id), "environments"],
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads/{thread_id}/environments", {
+              params: { path: { thread_id } },
+              signal,
+            })
+            .then(data)
+            .then((page) => page.items),
+      }),
     thread: (thread_id: string) =>
       queryOptions({
         queryKey: keys.thread(thread_id),

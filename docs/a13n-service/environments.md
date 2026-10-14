@@ -190,3 +190,20 @@ In a new conversation's **Options**, select **Reuse existing** and optionally en
 The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories on first activation and reports missing or inaccessible paths without creating them or marking the shared instance broken.
 
 Two conversations can use different project directories on one instance, or deliberately use the same directory to share files. Relative file paths, the `/workspace` route and the default command cwd use the chosen directory. Processes, ports, installed software and native permissions remain shared: this is file organization, not security isolation. Removing a mount does not delete the directory; accepted runs keep their captured selection.
+
+## Computer Use
+
+An Agent can operate a compatible desktop without a person taking control first. This requires an environment whose provider exposes Computer operations and a working graphical session; enabling permissions does not add a desktop to a headless environment.
+
+1. Enable **Computer** in the Agent's tools and save its configuration. Per-tool approval settings still apply.
+2. Open the conversation's **Environments and memory** settings. Add the environment if needed, then open its **Computer permissions**. Choose **Observe** for screenshots and display information, or **Interact** to also allow mouse and keyboard actions. The primary `workspace` mount uses the same settings.
+3. Send a new message. Permissions are frozen when a Run is accepted; changing them does not revoke permissions from an existing Run.
+4. Expand the Agent's work and choose **View screenshot** on an observation step. It shows the saved screen at that step. During execution, a screenshot may become readable only at the next checkpoint; retry if it is not saved yet.
+
+The API accepts exact `permission_ceiling.operations` on initial mounts and mount creation. Update an existing mount with `PATCH /api/v1/threads/{thread_id}/environments/{name}`, using the Thread's `If-Match`. The request body is `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe"]}}` for Computer-only observation. This replaces the entire action set: include any file or execution permissions you want to preserve. Console presets preserve those other permissions automatically.
+
+Computer permissions default off. They do not constrain terminal commands or other independent tools. Screenshot preview is read-only and historical; interactive remote desktop and human takeover are not available in this view.
+
+When upgrading to this capability, upgrade Service control and worker roles together before accepting new Runs. Older workers cannot consume the new mount snapshots and screenshot dependency metadata. Existing mounts and old Run snapshots retain their original file/execution permissions with Computer operations disabled.
+
+The conversation header shows the Computer permission summary; click it to configure mounts. Run Details shows the permissions captured for that Run. The mount list separates **Computer permissions** from **Desktop status**. Status starts as **Not checked**; **Check desktop** probes a running environment without taking a screenshot or sending input. Unsupported environments explicitly explain that granting permissions does not add desktop support. Results describe the last check, not continuous monitoring. The result distinguishes absent desktop support, an unready desktop and supported operations; it does not grant Agent permissions or start stopped environments.

@@ -326,7 +326,11 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
                     {
                         "kind": "input",
                         "control_epoch": controlled["terminal"]["control_epoch"],
-                        "text": f"echo $$ > {shlex.quote(str(tmp_path / 'shell-pid'))}\n",
+                        "text": (
+                            f"echo $$ > {shlex.quote(str(tmp_path / 'shell-pid.tmp'))} && "
+                            f"mv {shlex.quote(str(tmp_path / 'shell-pid.tmp'))} "
+                            f"{shlex.quote(str(tmp_path / 'shell-pid'))}\n"
+                        ),
                     }
                 )
             )

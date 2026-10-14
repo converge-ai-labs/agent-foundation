@@ -1,3 +1,4 @@
+import { RunScreenshot } from "./run-screenshot";
 import { AguiContent, Button, readContentParts } from "a13n-ui";
 import {
   createContext,
@@ -193,7 +194,23 @@ export function ItemContents({
   const refs = Object.entries(item?.content_refs ?? {}).filter(
     ([field]) => !exclude.includes(field),
   );
-  if (!refs.length && item?.content.truncated !== true) return null;
+  const images = Array.isArray(item?.content.tool_images)
+    ? item.content.tool_images.filter(
+        (value): value is { id: string } =>
+          typeof value === "object" &&
+          value !== null &&
+          "id" in value &&
+          typeof value.id === "string",
+      )
+    : [];
+  const unavailable = item?.content.tool_image_unavailable === true;
+  if (
+    !refs.length &&
+    !images.length &&
+    !unavailable &&
+    item?.content.truncated !== true
+  )
+    return null;
   const labels: Record<string, string> = {
     text: "Message",
     arguments: "Arguments",
@@ -205,6 +222,17 @@ export function ItemContents({
   };
   return (
     <div className={className}>
+      {context &&
+        images.map((image) => (
+          <RunScreenshot
+            key={image.id}
+            runId={context.runId}
+            imageId={image.id}
+          />
+        ))}
+      {unavailable && (
+        <p role="status">{t("Some screenshots could not be retained.")}</p>
+      )}
       {refs.map(([field, ref]) => (
         <details key={ref.id}>
           <summary>
