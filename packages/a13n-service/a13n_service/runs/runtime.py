@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from functools import partial
 
 from a13n_harness import HarnessInstrumentation
+from a13n_harness.environment import EnvironmentMount
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from redis.asyncio import Redis
@@ -17,7 +18,6 @@ from a13n_service.infra.tasks import Tasks
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.runs.admission import AdmissionPolicy
-from a13n_service.runs.builtin_skills import BuiltinSkills
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
@@ -31,7 +31,7 @@ class Runtime:
     keys: KeyRing
     settings: Settings
     registry: Registry
-    builtin_skills: BuiltinSkills
+    platform_mounts: dict[str, EnvironmentMount]
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     tasks: Tasks

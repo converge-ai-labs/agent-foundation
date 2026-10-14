@@ -400,7 +400,7 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
 
 
 async def test_builtin_and_pinned_skills_share_catalog_and_standard_file_tools(runtime, tenant, tmp_path):
-    from a13n_service.runs.builtin_skills import ROOT, SOURCE
+    from a13n_service.runs.platform_files import ROOT, SOURCE
     from a13n_service.runs.skill_cache import Cache
 
     pinned, _ = await pin_skill(runtime, tenant)
@@ -426,12 +426,11 @@ async def test_builtin_and_pinned_skills_share_catalog_and_standard_file_tools(r
             "done",
         ]
     )
-    builtin = runtime.builtin_skills
     result = await run(
         script,
         [skills, DynamicEnvironmentCapability(environment_configuration(default_toolsets()))],
         environment=environment,
-        builtin_mounts=builtin.mounts,
+        builtin_mounts=runtime.platform_mounts,
     )
     assert result.output == "done"
     assert script.instructions[0].count("<available-skills>") == 1

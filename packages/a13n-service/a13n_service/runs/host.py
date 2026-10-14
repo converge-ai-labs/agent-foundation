@@ -33,7 +33,6 @@ from a13n_service.resources.connections.runtime import SelectedConnection, open_
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
-from a13n_service.runs.builtin_skills import SOURCE
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
 from a13n_service.runs.environments.mounts import PRIMARY
@@ -44,6 +43,7 @@ from a13n_service.runs.memories.execution import (
     record_memory_capability,
     resolve_memories,
 )
+from a13n_service.runs.platform_files import SOURCE
 from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.skill_cache import Cache
@@ -181,7 +181,7 @@ async def open_host(
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
-        builtin = runtime.builtin_skills if any(parts.builtin_skill for parts in plan.parts.values()) else None
+        platform_mounts = runtime.platform_mounts if any(parts.builtin_skill for parts in plan.parts.values()) else {}
         tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
         webs: dict[str, WebBinding] = {}
         for revision_id, parts in plan.parts.items():
@@ -237,7 +237,7 @@ async def open_host(
             tools,
             webs,
             memory,
-            _environment(environments, builtin.mounts if builtin else {}),
+            _environment(environments, platform_mounts),
         )
 
 

@@ -17,8 +17,8 @@ from a13n_service.distribution import OSS
 from a13n_service.resources.agents.composer import configuration
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.toolsets import environment_configuration
-from a13n_service.runs.builtin_skills import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_builtin_skills
 from a13n_service.runs.host import _environment
+from a13n_service.runs.platform_files import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_platform_mounts
 from a13n_service.settings import Settings
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -29,13 +29,13 @@ pytestmark = pytest.mark.anyio
 
 def startup(settings=None):
     settings = settings or Settings()
-    return open_builtin_skills(_registry(OSS, settings), settings)
+    return open_platform_mounts(_registry(OSS, settings), settings)
 
 
 async def test_local_mounts_schema_references_and_permissions():
     bindings = RunBindings.embedded()
-    async with startup() as builtin:
-        environment = create_environment_runtime(mounts=builtin.mounts)
+    async with startup() as mounts:
+        environment = create_environment_runtime(mounts=mounts)
         async with environment.bind(
             thread_id="thread-test", run_id="run-test", instance=bindings.instance, host_refs={}
         ) as bound:
@@ -96,7 +96,7 @@ async def test_builtin_skill_without_user_environment_emits_standard_events():
             results.append(returns[-1].content)
             yield "done"
 
-    async with startup() as builtin:
+    async with startup() as mounts:
         executable = HarnessBuilder(configured_plugins_enabled=False).build(
             AgentSpec(),
             output_type=str,
@@ -107,7 +107,7 @@ async def test_builtin_skill_without_user_environment_emits_standard_events():
             ),
         )
         events = []
-        async with executable.stream("read", environments=builtin.mounts, bindings=RunBindings.embedded()) as run:
+        async with executable.stream("read", environments=mounts, bindings=RunBindings.embedded()) as run:
             async for event in run:
                 if isinstance(event, HarnessEvent) and isinstance(event.event, HarnessExtensionEvent):
                     events.append(event.event.payload)
@@ -122,14 +122,14 @@ async def test_builtin_skill_without_user_environment_emits_standard_events():
 
 
 async def test_process_reuses_references_across_runs_and_removes_them_on_shutdown(tmp_path, monkeypatch):
-    from a13n_service.runs import builtin_skills
+    from a13n_service.runs import platform_files
 
-    monkeypatch.setattr(builtin_skills, "TemporaryDirectory", partial(TemporaryDirectory, dir=tmp_path))
+    monkeypatch.setattr(platform_files, "TemporaryDirectory", partial(TemporaryDirectory, dir=tmp_path))
     settings = Settings()
     settings = settings.model_copy(
         update={"plugins": settings.plugins.model_copy(update={"keys": ("deployment-plugin",)})}
     )
-    async with startup(settings) as builtin:
+    async with startup(settings) as mounts:
         (directory,) = tuple(tmp_path.iterdir())
         assert {path.name for path in directory.iterdir()} == {"catalog.json"}
         catalog = directory / "catalog.json"
@@ -140,10 +140,10 @@ async def test_process_reuses_references_across_runs_and_removes_them_on_shutdow
         def unexpected_generation(*args, **kwargs):
             raise AssertionError("Run preparation must only read existing reference files")
 
-        monkeypatch.setattr(builtin_skills, "TemporaryDirectory", unexpected_generation)
+        monkeypatch.setattr(platform_files, "TemporaryDirectory", unexpected_generation)
         monkeypatch.setattr(AgentConfig, "model_json_schema", unexpected_generation)
         for number in range(2):
-            environment = create_environment_runtime(mounts=builtin.mounts)
+            environment = create_environment_runtime(mounts=mounts)
             async with environment.bind(
                 thread_id="thread-test", run_id=f"run-{number}", instance=RunBindings.embedded().instance, host_refs={}
             ) as bound:
@@ -161,8 +161,8 @@ async def test_process_reuses_references_across_runs_and_removes_them_on_shutdow
 @pytest.mark.parametrize("name", ["workspace", "user-files"])
 async def test_host_preserves_user_default_with_builtin_mounts(tmp_path, name):
     (tmp_path / "note.txt").write_text("user file")
-    async with startup() as builtin:
-        environment = _environment({name: _mount(tmp_path, "/user-files")}, builtin.mounts)
+    async with startup() as mounts:
+        environment = _environment({name: _mount(tmp_path, "/user-files")}, mounts)
         async with environment.bind(
             thread_id="thread-test", run_id="run-test", instance=RunBindings.embedded().instance, host_refs={}
         ) as bound:
@@ -183,7 +183,7 @@ async def test_composer_does_not_offer_mutations_with_writable_user_environment(
     user = replace(
         _mount(tmp_path, "/user"), permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
     )
-    async with startup() as builtin:
+    async with startup() as mounts:
         executable = HarnessBuilder(configured_plugins_enabled=False).build(
             AgentSpec(),
             output_type=str,
@@ -195,7 +195,7 @@ async def test_composer_does_not_offer_mutations_with_writable_user_environment(
         )
         result = await executable.run(
             "read",
-            environments={"workspace": user, **builtin.mounts},
+            environments={"workspace": user, **mounts},
             default_environment="workspace",
             bindings=RunBindings.embedded(),
         )

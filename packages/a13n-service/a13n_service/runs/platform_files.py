@@ -1,4 +1,4 @@
-"""Worker-local readonly mounts for packaged Skills and the deployment catalog."""
+"""Worker-local read-only mounts for platform documentation, schemas and the deployment catalog."""
 
 import asyncio
 import json
@@ -70,13 +70,8 @@ def _mount(root: Path, path: str) -> EnvironmentMount:
     return EnvironmentMount(_LocalSource(connector), permission_ceiling=_READ_TEXT, mount_path=path)
 
 
-@dataclass(frozen=True, slots=True)
-class BuiltinSkills:
-    mounts: dict[str, EnvironmentMount]
-
-
 @asynccontextmanager
-async def open_builtin_skills(registry: Registry, settings: Settings) -> AsyncIterator[BuiltinSkills]:
+async def open_platform_mounts(registry: Registry, settings: Settings) -> AsyncIterator[dict[str, EnvironmentMount]]:
     """Prepare deployment-specific references once for the process, outside individual attempts."""
     instance = {
         "providers": {
@@ -92,8 +87,6 @@ async def open_builtin_skills(registry: Registry, settings: Settings) -> AsyncIt
     try:
         root = Path(directory.name)
         await asyncio.to_thread((root / "catalog.json").write_text, json.dumps(instance, indent=2), encoding="utf-8")
-        yield BuiltinSkills(
-            {"builtin-skills": _mount(_PACKAGE, "/platform-skills"), "builtin-instance": _mount(root, INSTANCE_ROOT)},
-        )
+        yield {"builtin-skills": _mount(_PACKAGE, "/platform-skills"), "builtin-instance": _mount(root, INSTANCE_ROOT)}
     finally:
         await asyncio.to_thread(directory.cleanup)
