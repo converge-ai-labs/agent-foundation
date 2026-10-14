@@ -11,24 +11,32 @@
 }
 .paneStats {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
 }
+/* Each fact's separator sits in the gap before it; the one that would start
+   a wrapped line falls outside the box and is clipped. */
 .paneFacts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 17px;
   min-width: 0;
+  overflow: hidden;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
+  line-height: 1.6;
 }
-.paneFacts span + span::before {
+.paneFacts > span {
+  position: relative;
+}
+.paneFacts > span::before {
   content: "·";
-  margin-right: 8px;
+  position: absolute;
+  left: -11px;
   color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
 }
 .rawTrigger {

@@ -119,6 +119,21 @@ it("treats later user text as guidance and never the Run input", () => {
   ).toBe(false);
 });
 
+it("reads guidance before the request that read it", () => {
+  const { entries } = timeline(
+    text("input", "user", "Which colour is the banner?"),
+    lifecycle("model_request_started", "model-request-1"),
+    text("first", "assistant", "Cobalt"),
+    lifecycle("model_request_completed", "model-request-1"),
+    lifecycle("model_request_started", "model-request-2"),
+    text("steer", "user", "Use the new palette"),
+    text("second", "assistant", "Amber"),
+    lifecycle("model_request_completed", "model-request-2"),
+  );
+  expect(kinds(entries)).toEqual(["model", "guidance", "model"]);
+  expect(kinds(models(entries)[1]!.children)).toEqual(["reply"]);
+});
+
 it("presents an inline delegation on its call and keeps a dispatch a dispatch", () => {
   const inline = tool("delegate", "inline");
   const dispatch = tool("delegate", "async");

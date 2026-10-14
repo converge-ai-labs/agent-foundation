@@ -55,12 +55,15 @@ export function ThreadInbox({
   thread,
   canRunNext = false,
   quiet = false,
+  className,
 }: {
   thread: Schema["ThreadView"];
   /** The inbox waits for someone to start its next message. */
   canRunNext?: boolean;
   /** Chat says nothing about a queue that is empty. */
   quiet?: boolean;
+  /** Places the inbox on the surrounding level's grid. */
+  className?: string;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -166,7 +169,7 @@ export function ThreadInbox({
   };
   return (
     <DisclosureSection
-      className={styles.inbox}
+      className={className ? `${styles.inbox} ${className}` : styles.inbox}
       title={t("Queued messages")}
       summary={inboxSummary(items.length, state)}
     >

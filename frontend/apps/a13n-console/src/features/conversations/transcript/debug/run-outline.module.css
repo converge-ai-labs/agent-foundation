@@ -1,18 +1,16 @@
 /* The current Thread’s Run list, in either presentation: the outline panel in the stage's left
    gutter, and the list the pinned pill opens where there is no gutter. */
+/* The panel is a table of contents, not a floating card: flat rows in the
+   gutter, the name and time on one line and the request beneath. Its first
+   row starts level with the first run's heading. */
 .panel {
   position: absolute;
-  top: 8px;
-  right: calc(100% + 20px);
+  top: 33px;
+  right: calc(100% + 24px);
   display: none;
-  width: 212px;
+  width: 184px;
   max-height: calc(100vh - 140px);
-  padding: 8px;
   overflow-y: auto;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--a13n-elevated) 88%, transparent);
-  box-shadow: var(--a13n-shadow);
-  backdrop-filter: blur(10px);
   pointer-events: auto;
 }
 @media (min-width: 1440px) {
@@ -36,9 +34,12 @@
   background: var(--a13n-selected);
 }
 .panelRow {
+  grid-template-areas:
+    "dot name . meta"
+    ". excerpt excerpt excerpt";
+  row-gap: 1px;
   width: 100%;
-  height: 26px;
-  padding: 0 6px;
+  padding: 5px 8px;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -58,6 +59,18 @@
 .panelRow:focus-visible {
   outline: 2px solid var(--a13n-focus);
   outline-offset: -2px;
+}
+.panelRow > .dot {
+  grid-area: dot;
+}
+.panelRow > .name {
+  grid-area: name;
+}
+.panelRow > .excerpt {
+  grid-area: excerpt;
+}
+.panelRow > .meta {
+  grid-area: meta;
 }
 .dot {
   width: 6px;

@@ -30,6 +30,7 @@ import {
   useInterruptRun,
   useRunAcceptance,
 } from "./run-actions";
+import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
 export interface PendingMessage {
@@ -118,32 +119,40 @@ export function RunDock({
       <SquareIcon size={13} weight="fill" />
     </Button>
   );
+  const feedback =
+    waiting &&
+    waiting.pending &&
+    (interactive && can("run") ? (
+      <RunFeedback
+        key={waiting.id}
+        run={waiting}
+        pending={waiting.pending}
+        accepted={accepted}
+        continuation={
+          <ContinueWithoutFeedback
+            run={waiting}
+            thread={thread}
+            accepted={accepted}
+          />
+        }
+      />
+    ) : (
+      <PendingRequests pending={waiting.pending} />
+    ));
   return (
     <>
       <ErrorToast error={interrupt.error} />
-      {waiting &&
-        waiting.pending &&
-        (interactive && can("run") ? (
-          <RunFeedback
-            key={waiting.id}
-            run={waiting}
-            pending={waiting.pending}
-            accepted={accepted}
-            continuation={
-              <ContinueWithoutFeedback
-                run={waiting}
-                thread={thread}
-                accepted={accepted}
-              />
-            }
-          />
-        ) : (
-          <PendingRequests pending={waiting.pending} />
-        ))}
+      {/* Debug answers a wait on the runs' text edge. */}
+      {feedback && level === "debug" ? (
+        <div className={debug.feedback}>{feedback}</div>
+      ) : (
+        feedback
+      )}
       <ThreadInbox
         thread={thread}
         canRunNext={canRunNext}
         quiet={level === "chat"}
+        className={level === "debug" ? debug.inbox : undefined}
       />
       <div className={styles.dock}>
         {above}
