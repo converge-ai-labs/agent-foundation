@@ -101,7 +101,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 ## Common Definition Capabilities
 
-Video input support is built in, not an optional definition Capability. The model input capability `video_understanding` declares binary video input, which enables inline video and bounded direct URL downloads; `model_characteristics.url_input.video: [youtube]` declares native YouTube support. Permissions still control `media.read_video_url`. Local files use `view` and share the inline video budget.
+Video input support is built in, not an optional definition Capability. The model input capability `video_understanding` declares binary video input, which enables inline video and bounded direct URL downloads; `model_characteristics.url_input.video: [youtube]` declares native YouTube support. The unified `read_media_url` also accepts image/audio and configured understanding fallback. Permissions retain the stable `media.read_video_url` identity. Local files use `view` and share the inline video budget.
 
 | Capability                     | Adds                                                                                        | Needs collaborator                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -243,7 +243,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-Video URLs need no provider binding. The default `VideoUrlCapability` provides `read_video_url` for binary-video or native-video-URL models. Direct HTTP(S) resources become bounded raw-byte `BinaryContent`; the SDK encodes Base64, with a default 10 MiB encoded budget per video and in aggregate per request. YouTube uses only explicitly declared native URL support, with no download or conversion fallback. Request projection preserves saved history; there is no reader, compression, splitting, or helper Model. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path. Native support comes from the active `AgentSpec.model_characteristics.capabilities` value. Process environment variables can configure dedicated image, video, or audio Agents without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+The default `VideoUrlCapability` provides `read_media_url` for image, video, and audio URLs. It shares native-first dispatch and configured per-kind fallback with file `view`. Direct resources become bounded bytes before native attachment or auxiliary analysis. Native video uses the current Model's encoded budget; fallback does not inherit an unsupported primary Model's budget. YouTube requires explicit native URL support and has no download or auxiliary fallback. See [multimedia understanding](multimedia-understanding.md) for configuration, limits, and migration. Web additionally evaluates a live `WebPolicy` for each Host request.
 
 ### Restrict Web domains
 

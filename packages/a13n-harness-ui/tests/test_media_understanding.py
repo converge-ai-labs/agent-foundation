@@ -114,7 +114,9 @@ async def test_configured_media_is_lazy_and_takes_priority_over_environment(tmp_
     ambient = AsyncMock()
     monkeypatch.setattr(AgentMediaUnderstandingProvider, "from_environment", ambient)
     media = FileMediaUnderstanding(captured.media_understanding, resolver, thread_id="actual-harness-thread")
+    assert media.supports("image")
     resolve.assert_not_called()
+    ambient.assert_not_called()
     result = await media.understand(request())
     assert result.text == "label"
     resolve.assert_awaited_once_with(model_recipe_id(recipe), thread_id="actual-harness-thread")
@@ -217,7 +219,10 @@ async def test_auxiliary_settings_are_independent_and_cancellation_propagates(tm
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("delegated", [False, True])
-async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp_path, monkeypatch, native, delegated):
+@pytest.mark.parametrize("source_kind", ["file", "url"])
+async def test_media_native_first_with_configured_auxiliary_in_root_and_child(
+    tmp_path, monkeypatch, native, delegated, source_kind
+):
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.surfaces import RootOperationStatus
@@ -251,6 +256,19 @@ async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp
         image.save(buffer, format="PNG")
     image_bytes = buffer.getvalue()
     (tmp_path / "sample.png").write_bytes(image_bytes)
+    if source_kind == "url":
+        import httpx2
+
+        factory = httpx2.AsyncClient
+        monkeypatch.setattr(
+            "a13n_harness._media_urls.httpx2.AsyncClient",
+            lambda **kwargs: factory(
+                transport=httpx2.MockTransport(
+                    lambda request: httpx2.Response(200, content=image_bytes, headers={"content-type": "image/png"})
+                ),
+                **kwargs,
+            ),
+        )
     agent_path = tmp_path / "agents/main.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent["capabilities"] = [{"capability": "dynamic_environment", "configuration": {"files_enabled": True}}]
@@ -296,8 +314,17 @@ async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp
         if not returns:
             yield {
                 0: DeltaToolCall(
-                    name="view",
-                    json_args=json.dumps({"file_path": str(tmp_path / "sample.png"), "instructions": "Read label"}),
+                    name="view" if source_kind == "file" else "read_media_url",
+                    json_args=json.dumps(
+                        {
+                            **(
+                                {"file_path": str(tmp_path / "sample.png")}
+                                if source_kind == "file"
+                                else {"url": "https://cdn.example.com/image.png"}
+                            ),
+                            "instructions": "Read label",
+                        }
+                    ),
                     tool_call_id="call-view",
                 )
             }

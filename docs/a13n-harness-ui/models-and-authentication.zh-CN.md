@@ -180,7 +180,7 @@ model_characteristics:
     max_video_bytes: 10485760
 ```
 
-Agent 可调用默认 `read_video_url(url, instructions=None, media_type=None)`。直接 HTTP(S) 视频下载为原始字节 `BinaryContent`，SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
+Agent 可调用默认 `read_media_url(url, instructions=None, media_type=None)`。该工具读取直接图像、视频和音频资源，与 `view` 共用按类型配置的媒体理解模型。支持原生输入时返回 `BinaryContent`，否则由配置的辅助模型分析并返回文本。原生视频由 SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
 
 模型输入能力与 Agent Capability、Agent 工具和模型输出模态分开。尤其是文件 `view` 工具用这些声明直接向活动模型附加媒体。没有匹配的模型输入能力时，需要显式配置[媒体理解回退](../a13n-harness/multimedia-understanding.md)，否则报告不可用。
 

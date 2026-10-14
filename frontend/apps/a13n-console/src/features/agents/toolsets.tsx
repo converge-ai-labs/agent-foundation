@@ -1,4 +1,5 @@
 import {
+  Button,
   DisclosureSection,
   Collapsible,
   CollapsiblePanel,
@@ -24,6 +25,7 @@ import { ErrorNotice } from "../../shared/feedback";
 import { webProviderApi } from "../web/api";
 import { providersPath } from "../providers/navigation";
 import { Section } from "../../shared/page";
+import type { ReviewTarget } from "./reviewer";
 import type { AgentConfig } from "./configuration";
 import { toolState } from "./toolset-state";
 import { ToolPermissions } from "./tool-permissions";
@@ -41,7 +43,11 @@ export function AgentToolsets({
   agentId,
   readOnly = false,
   mark,
+  onReview,
+  onRequireReviewer,
 }: {
+  onReview?: (target: ReviewTarget) => void;
+  onRequireReviewer?: () => void;
   value: Toolsets;
   onChange: Dispatch<SetStateAction<Toolsets>>;
   /** The whole configuration a save would publish, once the draft builds. */
@@ -345,18 +351,31 @@ export function AgentToolsets({
                             value={selectedPermission}
                             supported={tool.supported_permissions}
                             readOnly={readOnly}
-                            onChange={(permission) =>
-                              updateTool(group.key, tool.key, {
-                                permission,
-                              })
-                            }
+                            onChange={(permission) => {
+                              updateTool(group.key, tool.key, { permission });
+                              if (permission === "review")
+                                onRequireReviewer?.();
+                            }}
                           />
                         </div>
                       </div>
                       {selectedPermission === "review" && (
                         <p className={styles.toolsetToolHint}>
-                          {t(
-                            "Review is configured for this tool. Choose another permission to replace it.",
+                          {t("This tool uses automatic review.")}
+                          {onReview && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                onReview({
+                                  selector: tool.execution_id,
+                                  label: tool.model_name,
+                                })
+                              }
+                            >
+                              {t("Tool review rule")}
+                            </Button>
                           )}
                         </p>
                       )}

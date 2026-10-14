@@ -23,6 +23,7 @@ import {
 } from "../connections";
 import agentStyles from "../agents.module.css";
 import styles from "./editor.module.css";
+import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
 
 /** Reusable knowledge and procedures the agent can load. */
@@ -172,7 +173,11 @@ export function ConnectionsSection({
   choices,
   readOnly,
   mark,
+  onReview,
+  onRequireReviewer,
 }: {
+  onReview?: (target?: ReviewTarget) => void;
+  onRequireReviewer?: () => void;
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
@@ -236,6 +241,8 @@ export function ConnectionsSection({
               )}
               selection={selection}
               readOnly={readOnly}
+              onReview={onReview}
+              onRequireReviewer={onRequireReviewer}
               onChange={(change) =>
                 draft.setConnections((previous) =>
                   previous.map((item) =>

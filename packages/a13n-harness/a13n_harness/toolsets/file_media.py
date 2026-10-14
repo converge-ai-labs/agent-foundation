@@ -1,4 +1,4 @@
-"""Agent-backed media understanding used by Environment file views."""
+"""Agent-backed understanding of detached file and URL media."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class MediaUnderstandingRequest(BaseModel):
     kind: NativeInputMediaKind
     media_type: str = Field(min_length=1, max_length=256)
     source: EnvironmentPath | None = None
-    source_name: str = Field(min_length=1, max_length=2_048)
+    source_name: str = Field(min_length=1, max_length=16 * 1024)
     source_bytes: bytes = Field(max_length=MAX_IMAGE_UNDERSTANDING_BYTES)
     instructions: str | None = Field(default=None, max_length=64 * 1024)
 
@@ -131,6 +131,18 @@ class MediaUnderstandingProvider(Protocol):
     ) -> MediaUnderstandingResult: ...
 
 
+@runtime_checkable
+class MediaUnderstandingAvailability(Protocol):
+    """Optional per-kind discovery without model or credential initialization."""
+
+    def supports(self, kind: NativeInputMediaKind) -> bool: ...
+
+
+def environment_media_kinds() -> tuple[NativeInputMediaKind, ...]:
+    """Return configured kinds without resolving models or parsing settings."""
+    return tuple(kind for kind, variable in _MODEL_ENV_BY_KIND.items() if os.environ.get(variable, "").strip())
+
+
 class AgentMediaUnderstandingProvider:
     """Default image, video, and audio understanding implementation using Pydantic AI Agents.
 
@@ -181,6 +193,9 @@ class AgentMediaUnderstandingProvider:
             agent.instrument = False
             agent.output_validator(_validate_agent_output)
             self._agents[kind] = agent
+
+    def supports(self, kind: NativeInputMediaKind) -> bool:
+        return kind in self._models
 
     @classmethod
     def from_environment(
@@ -336,6 +351,7 @@ __all__ = [
     "VIDEO_UNDERSTANDING_MODEL_ENV",
     "VIDEO_UNDERSTANDING_MODEL_SETTINGS_ENV",
     "AgentMediaUnderstandingProvider",
+    "MediaUnderstandingAvailability",
     "MediaUnderstandingError",
     "MediaUnderstandingProvider",
     "MediaUnderstandingRequest",

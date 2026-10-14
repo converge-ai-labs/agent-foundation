@@ -19,6 +19,8 @@ import { ConnectionsSection, SkillsSection } from "./capabilities";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 import { InstructionsSection } from "./instructions";
 import { MemorySection } from "./memory";
+import { ReviewerSection, ReviewerSettings } from "./reviewer";
+import type { ReviewTarget } from "../reviewer";
 import { ModelSection } from "./model";
 
 export interface AgentDraftSummary {
@@ -78,6 +80,10 @@ export function AgentEditor({
     [advancedExpanded, setAdvancedExpanded] = useState(false),
     [validation, setValidation] = useState<Error>(),
     [modelValidation, setModelValidation] = useState<Error>();
+  const [reviewPanel, setReviewPanel] = useState<{
+    target?: ReviewTarget;
+    validation?: Error;
+  }>();
   const choices = useAgentChoices();
   const definitions = useModelProviderDefinitions();
   const selectedModel = choices.data?.models.find(
@@ -123,6 +129,8 @@ export function AgentEditor({
       if (built.stage === "model") {
         setModelValidation(built.error);
         setModelExpanded(true);
+      } else if (built.stage === "reviewer") {
+        setReviewPanel({ validation: built.error });
       } else {
         setModelValidation(undefined);
         setValidation(built.error);
@@ -177,6 +185,10 @@ export function AgentEditor({
             choices={choices}
             readOnly={readonly}
             mark={mark("connections")}
+            onReview={(target) => setReviewPanel({ target })}
+            onRequireReviewer={() => {
+              if (!draft.reviewer?.model) setReviewPanel({});
+            }}
           />
           <MemorySection draft={draft} readOnly={readonly} />
           <AgentToolsets
@@ -186,6 +198,17 @@ export function AgentEditor({
             agentId={agentId}
             readOnly={readonly}
             mark={mark("toolsets")}
+            onReview={(target) => setReviewPanel({ target })}
+            onRequireReviewer={() => {
+              if (!draft.reviewer?.model) setReviewPanel({});
+            }}
+          />
+          <ReviewerSection
+            draft={draft}
+            choices={choices}
+            readOnly={readonly}
+            mark={mark("reviewer")}
+            onOpen={() => setReviewPanel({})}
           />
           <AgentEnvironment
             value={draft.environmentTemplateId}
@@ -225,6 +248,23 @@ export function AgentEditor({
           saveLabel={saveLabel ?? t("Save changes")}
           pending={pending}
           disabled={saveDisabled || !draft.model}
+        />
+      )}
+      {reviewPanel && (
+        <ReviewerSettings
+          initial={draft.reviewer}
+          target={reviewPanel.target}
+          validation={reviewPanel.validation}
+          models={choices.data?.models ?? []}
+          settingsSchemas={Object.assign(
+            {},
+            ...(definitions.data?.items.map(
+              (item) => item.settings_schemas ?? {},
+            ) ?? []),
+          )}
+          readOnly={readonly}
+          onApply={draft.setReviewer}
+          onClose={() => setReviewPanel(undefined)}
         />
       )}
       <ErrorToast error={error ?? choices.error} />

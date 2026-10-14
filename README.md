@@ -107,6 +107,10 @@ First-use setup connects a model and selects execution permissions. Full Control
 
 Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
 
+We evaluated A13N Harness on Terminal-Bench 4.0 against official Codex using the same model and reasoning effort. Click the chart for the full results and methodology.
+
+[![Terminal-Bench 4.0: A13N Harness 58.06% versus official Codex 58.77% scored pass rate across 62 tasks; inference cost across 61 matched tasks is $98.73 estimated versus $97.70 per round. Click for methodology and full results.](.github/assets/terminal-bench-4-comparison.png)](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
+
 Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/overview/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source

@@ -347,15 +347,15 @@ async def test_reporting_is_bounded_and_does_not_take_over_tool_internal_spans()
 
 @pytest.mark.parametrize("source", ["web", "documents", "file_media", "note_key", "note_value"])
 async def test_first_party_error_projectors_report_without_changing_results(source: str) -> None:
+    from a13n_harness.toolsets._media import media_understanding_error
     from a13n_harness.toolsets.documents import _document_error
-    from a13n_harness.toolsets.files import _media_understanding_error
     from a13n_harness.toolsets.web import _web_error
     from a13n_harness.toolsets.working_state import _validate_note, _validate_note_key
 
     projectors = {
         "web": lambda: _web_error("web_timeout"),
         "documents": lambda: _document_error("document_conversion_failed"),
-        "file_media": lambda: _media_understanding_error("media_understanding_failed"),
+        "file_media": lambda: media_understanding_error("media_understanding_failed"),
         "note_key": lambda: _validate_note_key(""),
         "note_value": lambda: _validate_note("key", "\x00"),
     }
@@ -397,7 +397,7 @@ async def test_video_url_failure_marks_tool_span_without_exposing_source() -> No
         if requests == 1:
             yield {
                 0: DeltaToolCall(
-                    name="read_video_url",
+                    name="read_media_url",
                     json_args=json.dumps({"url": "file:///private/video.mp4"}),
                     tool_call_id="video",
                 )
@@ -423,11 +423,11 @@ async def test_video_url_failure_marks_tool_span_without_exposing_source() -> No
     )
     assert (await executable.run("inspect")).output_or_raise() == "done"
     assert requests == 2
-    assert returned[0]["error"]["code"] == "video_url_invalid"
+    assert returned[0]["error"]["code"] == "media_url_invalid"
     span = next(
-        span for span in exporter.get_finished_spans() if span.attributes.get("gen_ai.tool.name") == "read_video_url"
+        span for span in exporter.get_finished_spans() if span.attributes.get("gen_ai.tool.name") == "read_media_url"
     )
-    assert span.attributes["a13n.tool.failure.code"] == "video_url_invalid"
+    assert span.attributes["a13n.tool.failure.code"] == "media_url_invalid"
     assert span.attributes["a13n.tool.result.status"] == "operation_failed"
     assert span.status.status_code is StatusCode.ERROR
     assert "private/video.mp4" not in json.dumps(dict(span.attributes))
