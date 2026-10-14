@@ -21,7 +21,6 @@ import {
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
 import { useRunDisplay } from "./run-display";
-import { useEarlierItems } from "./earlier-items";
 import {
   fixtureAttempt,
   fixtureRun,
@@ -178,7 +177,6 @@ function Live({ live }: { live: boolean }) {
       </output>
       <output data-testid="gap">{String(stream.gap)}</output>
       <output data-testid="incomplete">{String(stream.incomplete)}</output>
-      <button onClick={stream.earlier.load}>Earlier</button>
       <button onClick={stream.reconnect}>Reconnect</button>
     </>
   );
@@ -387,41 +385,41 @@ it("reports content the display omitted as incomplete", async () => {
   expect(screen.getByTestId("gap").textContent).toBe("true");
 });
 
-it("reads earlier Items on request until the first, completing the execution facts", async () => {
+it("automatically reads every Item of the selected Run before publishing complete history", async () => {
   display = {
     ...display,
     items: [message("Hello", "1-4", "1-5", "in_progress", 3)],
   };
-  // Each earlier page holds the one Item before `before`.
   read = async (request) => {
-    const before = Number(new URL(request.url).searchParams.get("before"));
-    if (!before) return response(request);
-    const first = `1-${before - 2}`;
+    const query = new URL(request.url).searchParams;
+    if (!query.has("after")) return response(request);
+    const ordinal = Number(query.get("after")) + 1;
     return Response.json({
       ...display,
+      baseline: false,
+      position: null,
       items: [
-        message(`Item ${before - 1}`, first, first, "completed", before - 1),
+        message(
+          `Item ${ordinal}`,
+          `1-${ordinal}`,
+          `1-${ordinal}`,
+          "completed",
+          ordinal,
+        ),
       ],
     });
   };
   render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  // Unread Items take their execution facts with them, though nothing is missing.
-  expect(screen.getByTestId("coverage").textContent).toBe("partial");
-  expect(screen.getByTestId("gap").textContent).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
-  await waitFor(() => expect(text()).toBe("Item 2|Hello"));
-  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
   await waitFor(() => expect(text()).toBe("Item 1|Item 2|Hello"));
   expect(screen.getByTestId("coverage").textContent).toBe("complete");
+  expect(screen.getByTestId("gap").textContent).toBe("false");
   expect(
-    pathRequests("/items").map((request) =>
-      new URL(request.url).searchParams.get("before"),
-    ),
-  ).toEqual([null, "3", "2"]);
+    pathRequests("/items").map((request) => new URL(request.url).search),
+  ).toEqual(["", "?after=0&limit=2", "?after=1&limit=1"]);
+  expect(resumeOptions()).toMatchObject({ run: "run_one", position: "1-1" });
 });
 
-it("keeps earlier Items as the newest window moves on and reads those it leaves behind", async () => {
+it("keeps visible Items while a moving window catches up and reuses immutable history", async () => {
   const item = (ordinal: number) =>
     message(
       `Item ${ordinal}`,
@@ -431,32 +429,32 @@ it("keeps earlier Items as the newest window moves on and reads those it leaves 
       ordinal,
     );
   display = { ...display, items: [item(3)] };
-  // A page before `before` holds one Item; a page after `after` holds `limit`.
+  let finishHistory!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    finishHistory = resolve;
+  });
   read = async (request) => {
     const query = new URL(request.url).searchParams;
-    const before = Number(query.get("before")),
-      after = Number(query.get("after"));
-    if (before) return Response.json({ ...display, items: [item(before - 1)] });
-    if (!after) return response(request);
-    const limit = Number(query.get("limit"));
+    if (!query.has("after")) return response(request);
+    const after = Number(query.get("after"));
+    if (after === 2) await waiting;
     return Response.json({
       ...display,
-      items: Array.from({ length: limit }, (_, index) =>
+      baseline: false,
+      items: Array.from({ length: Number(query.get("limit")) }, (_, index) =>
         item(after + 1 + index),
       ),
     });
   };
   const view = render(<View />);
-  await waitFor(() => expect(text()).toBe("Item 3"));
-  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
-  await waitFor(() => expect(text()).toBe("Item 2|Item 3"));
-  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
   await waitFor(() => expect(text()).toBe("Item 1|Item 2|Item 3"));
-
   display = { ...display, items: [item(6)] };
   await act(async () => {
     frames.push({ type: "reset", run_id: "run_one" });
   });
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(4));
+  expect(text()).toBe("Item 1|Item 2|Item 3");
+  await act(async () => finishHistory());
   const all = "Item 1|Item 2|Item 3|Item 4|Item 5|Item 6";
   await waitFor(() => expect(text()).toBe(all));
   expect(screen.getByTestId("coverage").textContent).toBe("complete");
@@ -464,13 +462,11 @@ it("keeps earlier Items as the newest window moves on and reads those it leaves 
     pathRequests("/items")
       .map((request) => new URL(request.url).search)
       .filter(Boolean);
-  expect(windows()).toEqual(["?before=3", "?before=2", "?after=2&limit=3"]);
-
-  // The Run keeps them for its next reader.
+  expect(windows()).toEqual(["?after=0&limit=2", "?after=2&limit=3"]);
   view.rerender(<View mounted={false} />);
   view.rerender(<View />);
   await waitFor(() => expect(text()).toBe(all));
-  expect(windows()).toHaveLength(3);
+  expect(windows()).toHaveLength(2);
 });
 
 it("learns a new attempt's identity once before folding its deltas", async () => {
@@ -880,70 +876,37 @@ it.each([false, true])(
   },
 );
 
-it("catches up a moving newest window after an older page resolves without advancing the latest ordinal", async () => {
-  const item = (ordinal: number) =>
-    message(
-      `Item ${ordinal}`,
-      `1-${ordinal}`,
-      `1-${ordinal}`,
-      "completed",
-      ordinal,
-    );
-  let finishOlder!: (response: Response) => void;
-  const older = new Promise<Response>((resolve) => {
-    finishOlder = resolve;
-  });
-  read = async (request) => {
-    const query = new URL(request.url).searchParams;
-    if (query.get("before") === "3")
-      return Response.json({ ...display, baseline: false, items: [item(2)] });
-    if (query.get("before") === "2") return older;
-    if (query.get("after") === "2")
-      return Response.json({
-        ...display,
-        baseline: false,
-        items: [item(3), item(4), item(5)],
-      });
-    return response(request);
+it("keeps the displayed history after a failed page read and completes it on reconnect", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  display = {
+    ...display,
+    items: [message("Latest", "1-3", "1-3", "completed", 2)],
+    position: "1-3",
   };
-  function Earlier({ first }: { first: number }) {
-    const history = useEarlierItems("run_one", first);
-    return (
-      <>
-        <output data-testid="history">
-          {history.items.map((entry) => entry.ordinal).join(",")}
-        </output>
-        <button onClick={history.load}>Load history</button>
-      </>
-    );
-  }
-  const view = render(
-    <QueryClientProvider client={cache}>
-      <Earlier first={3} />
-    </QueryClientProvider>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
-  await waitFor(() =>
-    expect(screen.getByTestId("history").textContent).toBe("2"),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
-  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
-  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
-  expect(pathRequests("/items")).toHaveLength(2);
-  view.rerender(
-    <QueryClientProvider client={cache}>
-      <Earlier first={6} />
-    </QueryClientProvider>,
-  );
+  read = async (request) =>
+    new URL(request.url).searchParams.has("after")
+      ? Response.json(
+          { error: { code: "unavailable", message: "History unavailable" } },
+          { status: 503 },
+        )
+      : response(request);
   await act(async () => {
-    finishOlder(
-      Response.json({ ...display, baseline: false, items: [item(1)] }),
-    );
+    frames.push({ type: "reset", run_id: "run_one" });
   });
   await waitFor(() =>
-    expect(screen.getByTestId("history").textContent).toBe("1,2,3,4,5"),
+    expect(screen.getByTestId("live").textContent).toBe("disconnected"),
   );
-  expect(
-    pathRequests("/items").map((request) => new URL(request.url).search),
-  ).toEqual(["?before=3", "?before=2", "?after=2&limit=3"]);
+  expect(text()).toBe("Hello");
+  read = async (request) =>
+    new URL(request.url).searchParams.has("after")
+      ? Response.json({
+          ...display,
+          baseline: false,
+          items: [message("Hello", "1-0", "1-2", "completed")],
+        })
+      : response(request);
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(text()).toBe("Hello|Latest"));
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
 });

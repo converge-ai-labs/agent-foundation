@@ -1623,7 +1623,6 @@
   "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.": "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.",
   "Resubmit": "Resubmit",
   "External cleanup was skipped. If your provider still holds the authorization, remove it there.": "External cleanup was skipped. If your provider still holds the authorization, remove it there.",
-  "Show earlier items": "Show earlier items",
   "A thread can mount at most {{limit}} environments. Remove one before adding another.": "A thread can mount at most {{limit}} environments. Remove one before adding another.",
   "This workspace has reached its limit of {{limit}} managed environments. Delete one it no longer needs, then try again.": "This workspace has reached its limit of {{limit}} managed environments. Delete one it no longer needs, then try again.",
   "This request was already sent with different content. Send it again as a new request.": "This request was already sent with different content. Send it again as a new request.",

@@ -26,7 +26,7 @@ import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
 import { isActiveRun, isConsoleSession } from "./api";
 import { useRun, useSession } from "./queries";
-import { useAnchoredLevel } from "./transcript/debug/view";
+import { useViewLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
@@ -53,7 +53,7 @@ export function SessionHeader({
     (entry) => entry.origin === "new" && entry.session_id === sessionId,
   );
   const session = useSession(sessionId);
-  const { level, switchLevel } = useAnchoredLevel(thread, session.data);
+  const { level, setLevel: switchLevel } = useViewLevel(thread, session.data);
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
   const agent = useAgent(valid ? run.data?.agent_id : undefined);

@@ -6,10 +6,12 @@ import type { Schema } from "../../../../shared/api";
 import { StatePill } from "../../../../shared/feedback";
 import { JsonView } from "../../../../shared/forms";
 import { isActiveRun } from "../../api";
-import { formatCost } from "../../../../shared/cost";
+import { exactCost, formatCost } from "../../../../shared/cost";
 import { formatDuration, tokenFigures } from "../../format";
 import { runOutcome } from "../../lifecycle";
 import { runRequest } from "../../request";
+import { useRunUsage } from "../../queries";
+import { usageTotals } from "../../usage-table";
 import { ForkRun } from "../../fork-run";
 import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
@@ -108,13 +110,7 @@ export function DebugRunSection({
           <span className={styles.headingDuration}>
             {formatDuration(duration)}
           </span>
-          <span>
-            {t("{{count}} model calls", { count: timeline.totals.modelCalls })}
-          </span>
-          <TokenFigures totals={timeline.totals} />
-          {timeline.totals.costUsd && (
-            <span>{formatCost(timeline.totals.costUsd)}</span>
-          )}
+          <RunUsage run={run} />
         </p>
       </header>
       <div className={styles.request} data-collapsed={!open || undefined}>
@@ -171,19 +167,40 @@ export function DebugRunSection({
   );
 }
 
-/** Tokens nobody reported are unknown, never zero, so they are not shown. */
-function TokenFigures({ totals }: { totals: RunTimeline["totals"] }) {
+/** Run totals use the same accounting snapshot as Details, not its visible steps. */
+function RunUsage({ run }: { run: Schema["RunView"] }) {
   const { t } = useTranslation();
-  if (!totals.reportedUsage) return null;
+  const usage = useRunUsage(run);
+  if (!usage.data) return null;
+  const totals = usageTotals(usage.data);
+  const reportedTokens =
+    totals.inputTokens > 0 ||
+    totals.outputTokens > 0 ||
+    totals.cachedTokens > 0;
   const figures = tokenFigures(t, {
     input: totals.inputTokens,
     output: totals.outputTokens,
-    cached: totals.cacheReadTokens,
+    cached: totals.cachedTokens,
   });
   return (
     <>
-      <span title={figures.pairTitle}>{figures.pair}</span>
-      {figures.cache && <span title={figures.cacheTitle}>{figures.cache}</span>}
+      <span>{t("{{count}} model calls", { count: totals.requests })}</span>
+      {reportedTokens && <span title={figures.pairTitle}>{figures.pair}</span>}
+      {reportedTokens && figures.cache && (
+        <span title={figures.cacheTitle}>{figures.cache}</span>
+      )}
+      {totals.cost !== null && (
+        <span
+          title={
+            totals.unpriced
+              ? t("Known subtotal; some requests were not priced.")
+              : exactCost(totals.cost)
+          }
+        >
+          {formatCost(totals.cost)}
+          {totals.unpriced && "*"}
+        </span>
+      )}
     </>
   );
 }

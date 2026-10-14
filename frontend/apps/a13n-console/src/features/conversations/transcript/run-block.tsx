@@ -27,7 +27,6 @@ export function RunBlock({
   agentName,
   agentImageUrl,
   action,
-  earlier,
   children,
 }: {
   run: Schema["RunView"];
@@ -39,8 +38,6 @@ export function RunBlock({
   agentImageUrl?: string | null;
   /** A quiet link for this turn, such as "View run" on an ancestor. */
   action?: ReactNode;
-  /** What the transcript cannot show of this run's own earlier Items. */
-  earlier?: ReactNode;
   children?: ReactNode;
 }) {
   const { basePath, can } = useWorkspace();
@@ -76,7 +73,6 @@ export function RunBlock({
         entryId={run.source_entry_id}
         principalId={run.principal_id}
       />
-      {earlier}
       <AgentTurn
         blocks={blocks}
         durationMs={

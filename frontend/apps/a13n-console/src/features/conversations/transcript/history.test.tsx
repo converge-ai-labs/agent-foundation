@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -11,7 +12,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { useRef } from "react";
 import type { DisplayItem } from "a13n-ui/display";
-import { presentItems } from "../projection";
 import { createClient, type Client } from "../../../service-client";
 import { fixtureRun, fixtureThread } from "./fixture";
 import { HistoryTranscript } from "./history";
@@ -35,22 +35,6 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
-vi.mock("../run-display", () => ({
-  useRunDisplay: () => ({
-    items: presentItems(displayItems),
-    displayItems,
-    earlier: { items: [], more: false, loading: false, error: null },
-    state: "connected",
-    execution: {
-      steps: [],
-      observations: [],
-      retries: [],
-      usage: { model: [], provider: [], recordIds: [] },
-      contextTokens: {},
-      coverage: "complete",
-    },
-  }),
-}));
 vi.mock("./user-message", () => ({
   RequestContent: () => null,
   UserMessage: () => null,
@@ -98,6 +82,10 @@ class StageObserver {
       stage.scrollTop = 0;
       fireEvent.scroll(stage);
     }
+    this.intersect();
+  }
+  /** Layout alone must not request history. */
+  intersect() {
     this.callback(
       this.targets.map(
         (target) =>
@@ -142,9 +130,9 @@ function stage(
     defaultOptions: { queries: { retry: false } },
   });
   prepare?.(cache);
-  function Transcript() {
+  function Transcript({ level }: { level: "chat" | "debug" }) {
     const content = useRef<HTMLDivElement>(null);
-    const scroll = useTranscriptScroll(content);
+    const scroll = useTranscriptScroll(content, level);
     return (
       <div
         data-session-stage
@@ -183,12 +171,21 @@ function stage(
   const view = render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <Transcript />
+        <Transcript level={level} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return {
     cache,
+    switchLevel(next: "chat" | "debug") {
+      view.rerender(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>
+            <Transcript level={next} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    },
     viewport: view.container.querySelector<HTMLElement>(
       "[data-session-stage]",
     )!,
@@ -212,6 +209,7 @@ function ancestorService(
   beforeRead?: (url: URL) => Promise<void>,
 ) {
   return createClient({
+    maxReadRetries: 0,
     baseUrl: "https://test.invalid",
     auth: { type: "session" },
     fetch: async (input) => {
@@ -227,15 +225,21 @@ function ancestorService(
       }
       if (url.pathname.endsWith("/threads/thread/runs"))
         return Response.json({ items: [], next_cursor: null });
+      if (url.pathname.endsWith("/attempts"))
+        return Response.json({ items: [] });
+      if (url.pathname.endsWith("/usage"))
+        return Response.json({ models: [], runs: [] });
       if (url.pathname.endsWith("/items")) {
         const run = url.pathname.split("/").at(-2)!;
         return Response.json({
           run: ancestor(run),
           position: "2-0",
           complete: true,
+          baseline: true,
           items: [
             {
               id: run,
+              ordinal: 1,
               kind: "text_message",
               state: "completed",
               first_stream_id: "2-0",
@@ -254,24 +258,33 @@ function ancestorService(
 
 const recent = ["recent-1", "recent-2", "recent-3", "recent-4", "recent-5"];
 
-it("opens Chat with bounded recent history without requiring any scroll", async () => {
+async function readEarlier() {
+  await waitFor(() =>
+    expect(StageObserver.created.at(-1)?.targets.length).toBe(1),
+  );
+  act(() => StageObserver.created.at(-1)!.reach());
+}
+
+it("opens Chat with the selected Run and loads only a bounded batch on upward scrolling", async () => {
   const requests: URL[] = [];
   client = ancestorService(requests, [["current", ...recent, "parent"]]);
   const { cache, viewport } = stage("chat");
+  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
+  expect(
+    requests.filter((url) => url.pathname.endsWith("/items")),
+  ).toHaveLength(0);
+  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(1);
+  await readEarlier();
   await screen.findByText("Latest recent-5 message");
   expect(
     [...viewport.querySelectorAll("[data-run]")].map((run) =>
       run.getAttribute("data-run"),
     ),
   ).toEqual([...recent].reverse().concat("current"));
-  expect(viewport.scrollTop).toBe(
-    viewport.scrollHeight - viewport.clientHeight,
-  );
   expect(requests.some((url) => url.pathname.includes("/parent"))).toBe(false);
   expect(
     screen.getByRole("button", { name: "Load earlier messages" }),
   ).not.toHaveProperty("disabled", true);
-  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
   expect(StageObserver.created[0]!.options.rootMargin).toBe("500px 0px 0px");
   cache.clear();
 });
@@ -282,9 +295,9 @@ it("prepares another batch near the top and preserves the visible message", asyn
     ["current", ...recent, "parent", "grandparent"],
   ]);
   const { cache, viewport } = stage("chat");
+  await readEarlier();
   await screen.findByText("Latest recent-5 message");
-  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
-  StageObserver.created[0]!.reach();
+  await readEarlier();
   const anchor = viewport.querySelector('[data-run="recent-5"]')!;
   const top = anchor.getBoundingClientRect().top;
   expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
@@ -303,6 +316,7 @@ it("reads the next lineage page only when more than the initial batch is request
   const { cache } = stage("chat");
   const lineage = () =>
     requests.filter((url) => url.pathname.endsWith("/lineage"));
+  await readEarlier();
   await screen.findByText("Latest recent-5 message");
   expect(lineage()).toHaveLength(1);
   // The visible control also works without an intersection callback.
@@ -328,15 +342,14 @@ it("waits for delayed lineage before mounting prepared history", async () => {
   });
   const { viewport, cache } = stage("chat");
   expect(
-    screen.getByRole("button", { name: "Load earlier messages" }),
-  ).toHaveProperty("disabled", true);
+    screen.queryByRole("button", { name: "Load earlier messages" }),
+  ).toBeNull();
   expect(viewport.querySelectorAll("[data-run]")).toHaveLength(1);
   release();
+  await readEarlier();
   await screen.findByText("Latest grandparent message");
   expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
-  expect(viewport.scrollTop).toBe(
-    viewport.scrollHeight - viewport.clientHeight,
-  );
+  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(3);
   cache.clear();
 });
 
@@ -354,9 +367,9 @@ it("restores the reader's current position after a slow history read, without in
     },
   );
   const { viewport, cache } = stage("chat");
+  await readEarlier();
   await screen.findByText("Latest recent-5 message");
-  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
-  StageObserver.created[0]!.reach();
+  await readEarlier();
   await waitFor(() =>
     expect(requests.some((url) => url.pathname.endsWith("/parent/items"))).toBe(
       true,
@@ -392,9 +405,9 @@ it("preserves the same anchor when older history is already cached", async () =>
       position: "1-0",
     });
   });
+  await readEarlier();
   await screen.findByText("Latest recent-5 message");
-  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
-  StageObserver.created[0]!.reach();
+  await readEarlier();
   await waitFor(() =>
     expect(viewport.querySelector('[data-run="parent"]')).not.toBeNull(),
   );
@@ -424,6 +437,18 @@ it("reveals an ancestor as a debug section that reads its own display", async ()
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
+      if (url.pathname.endsWith("/items"))
+        return Response.json({
+          run: ancestor("parent"),
+          baseline: true,
+          complete: true,
+          position: "2-1",
+          items: displayItems,
+        });
+      if (url.pathname.endsWith("/attempts"))
+        return Response.json({ items: [] });
+      if (url.pathname.endsWith("/usage"))
+        return Response.json({ models: [], runs: [] });
       return Response.json({ ...ancestor("parent"), lineage: "root" });
     },
   });
@@ -433,8 +458,9 @@ it("reveals an ancestor as a debug section that reads its own display", async ()
   );
   expect(await screen.findByText("Run")).toBeTruthy();
   expect(screen.getByText("state.completed")).toBeTruthy();
-  // The section reads the ancestor's display itself; the list never fetches it.
-  expect(requests.some((url) => url.pathname.endsWith("/items"))).toBe(false);
+  expect(
+    requests.filter((url) => url.pathname.endsWith("/parent/items")),
+  ).toHaveLength(1);
   cache.clear();
 });
 
@@ -495,6 +521,18 @@ it.each(["reply", "reasoning", "tool"] as const)(
           });
         if (url.pathname.endsWith("/runs") || url.pathname.endsWith("/threads"))
           return Response.json({ items: [], next_cursor: null });
+        if (url.pathname.endsWith("/items"))
+          return Response.json({
+            run: ancestor("parent"),
+            baseline: true,
+            complete: true,
+            position: "2-1",
+            items: displayItems,
+          });
+        if (url.pathname.endsWith("/attempts"))
+          return Response.json({ items: [] });
+        if (url.pathname.endsWith("/usage"))
+          return Response.json({ models: [], runs: [] });
         return Response.json({ ...ancestor("parent"), lineage: "root" });
       },
     });
@@ -526,3 +564,151 @@ it.each(["reply", "reasoning", "tool"] as const)(
     cache.clear();
   },
 );
+
+it("loads one Debug ancestor per click and preserves that range across repeated Chat switches", async () => {
+  const requests: URL[] = [];
+  client = ancestorService(requests, [["current", "parent", "grandparent"]]);
+  const view = stage("debug");
+  const earlier = await screen.findByRole("button", {
+    name: "Load earlier runs",
+  });
+  await waitFor(() => expect(earlier).not.toHaveProperty("disabled", true));
+  const itemReads = () =>
+    requests.filter((url) => url.pathname.endsWith("/items"));
+  expect(itemReads()).toHaveLength(0);
+  fireEvent.click(earlier);
+  fireEvent.click(earlier);
+  await screen.findByText("Latest parent message");
+  expect(itemReads().map((url) => url.pathname)).toEqual([
+    "/api/v1/runs/parent/items",
+  ]);
+  expect(screen.queryByText("Latest grandparent message")).toBeNull();
+  view.switchLevel("chat");
+  expect(screen.getByText("Latest parent message")).toBeTruthy();
+  await waitFor(() =>
+    expect(StageObserver.created.at(-1)?.targets.length).toBe(1),
+  );
+  act(() => StageObserver.created.at(-1)!.intersect());
+  expect(itemReads()).toHaveLength(1);
+  view.switchLevel("debug");
+  expect(screen.getByText("Latest parent message")).toBeTruthy();
+  view.switchLevel("chat");
+  expect(screen.getByText("Latest parent message")).toBeTruthy();
+  expect(itemReads()).toHaveLength(1);
+  await readEarlier();
+  await screen.findByText("Latest grandparent message");
+  expect(itemReads()).toHaveLength(2);
+  expect(view.viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
+  view.cache.clear();
+});
+
+it("prepares all of an earlier Debug Run before insertion and preserves position during a slow page", async () => {
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const requests: URL[] = [];
+  const item = (ordinal: number) => ({
+    id: `itm_${ordinal}`,
+    ordinal,
+    kind: "text_message",
+    state: "completed",
+    first_stream_id: `1-${ordinal}`,
+    last_stream_id: `1-${ordinal}`,
+    content: { role: "assistant", text: `Saved reply ${ordinal}` },
+  });
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (input) => {
+      const url = new URL((input as Request).url);
+      requests.push(url);
+      if (url.pathname.endsWith("/lineage"))
+        return Response.json({
+          items: ["current", "parent", "grandparent"].map(ancestor),
+          next_cursor: null,
+        });
+      if (url.pathname.endsWith("/items")) {
+        const historical = url.searchParams.has("after");
+        if (historical) await waiting;
+        return Response.json({
+          run: ancestor("parent"),
+          baseline: !historical,
+          position: historical ? null : "1-3",
+          complete: true,
+          items: historical ? [item(1), item(2)] : [item(3)],
+        });
+      }
+      if (url.pathname.endsWith("/usage"))
+        return Response.json({ models: [], runs: [] });
+      if (
+        ["/attempts", "/runs", "/threads"].some((path) =>
+          url.pathname.endsWith(path),
+        )
+      )
+        return Response.json({ items: [], next_cursor: null });
+      return Response.json(ancestor("parent"));
+    },
+  });
+  const { viewport, cache } = stage("debug");
+  const button = await screen.findByRole("button", {
+    name: "Load earlier runs",
+  });
+  await waitFor(() => expect(button).not.toHaveProperty("disabled", true));
+  fireEvent.wheel(viewport, { deltaY: -200 });
+  viewport.scrollTop = 100;
+  fireEvent.scroll(viewport);
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(requests.some((url) => url.searchParams.has("after"))).toBe(true),
+  );
+  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(1);
+  expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
+  expect(screen.queryByText(/Execution history is incomplete/)).toBeNull();
+  viewport.scrollTop = 150;
+  fireEvent.scroll(viewport);
+  const anchor = viewport.querySelector('[data-run="current"]')!;
+  const top = anchor.getBoundingClientRect().top;
+  await act(async () => finish());
+  await screen.findByText("Saved reply 1");
+  expect(screen.getByText("Saved reply 3")).toBeTruthy();
+  expect(anchor.getBoundingClientRect().top).toBe(top);
+  expect(requests.some((url) => url.pathname.includes("/grandparent"))).toBe(
+    false,
+  );
+  expect(
+    requests.filter((url) => url.pathname.endsWith("/items")),
+  ).toHaveLength(2);
+  expect(screen.queryByText(/Execution history is incomplete/)).toBeNull();
+  cache.clear();
+});
+
+it("leaves loaded Runs in place when an earlier Run fails and retries without automatic request loops", async () => {
+  let fail = true;
+  const requests: URL[] = [];
+  client = ancestorService(requests, [["current", "parent"]], async (url) => {
+    if (url.pathname.endsWith("/parent/items") && fail)
+      throw new Error("History unavailable");
+  });
+  const { viewport, cache } = stage("debug");
+  const button = await screen.findByRole("button", {
+    name: "Load earlier runs",
+  });
+  await waitFor(() => expect(button).not.toHaveProperty("disabled", true));
+  fireEvent.click(button);
+  await screen.findByRole("alert");
+  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(1);
+  expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
+  expect(
+    requests.filter((url) => url.pathname.endsWith("/items")),
+  ).toHaveLength(1);
+  expect(button).toHaveProperty("disabled", true);
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByText("Latest parent message");
+  expect(
+    requests.filter((url) => url.pathname.endsWith("/items")),
+  ).toHaveLength(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+  cache.clear();
+});

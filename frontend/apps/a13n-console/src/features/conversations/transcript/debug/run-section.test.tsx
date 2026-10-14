@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { createClient, type Client } from "../../../../service-client";
+import type { Schema } from "../../../../shared/api";
+import { invalidateConversation } from "../../api";
 import { DebugRunSection } from "./run-section";
 import {
   fixtureAttempt,
@@ -17,6 +19,8 @@ import {
 let client: Client;
 let cache: QueryClient;
 const requests: string[] = [];
+let recorded: Schema["ModelUsage"][];
+let usageStatus: number;
 vi.mock("../../../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -37,6 +41,20 @@ vi.mock("react-i18next", () => ({
 
 beforeEach(() => {
   requests.length = 0;
+  usageStatus = 200;
+  recorded = [
+    {
+      model: "large",
+      requests: 3,
+      input_tokens: 24000,
+      output_tokens: 900,
+      cache_read_tokens: 18000,
+      cache_write_tokens: 0,
+      cost: "0.42",
+      average_time_to_first_chunk_seconds: 0.84,
+      output_tokens_per_second: 62.4,
+    },
+  ];
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = createClient({
     baseUrl: "https://service.example",
@@ -73,20 +91,16 @@ beforeEach(() => {
       if (url.pathname.endsWith("/environments"))
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/usage")) {
-        const usage = {
-          model: "large",
-          requests: 3,
-          input_tokens: 24000,
-          output_tokens: 900,
-          cache_read_tokens: 18000,
-          cache_write_tokens: 0,
-          cost: "0.42",
-          average_time_to_first_chunk_seconds: 0.84,
-          output_tokens_per_second: 62.4,
-        };
+        expect(url.searchParams.get("session_id")).toBe("ses_1");
+        if (usageStatus !== 200)
+          return Response.json({}, { status: usageStatus });
         return Response.json({
-          models: [usage],
-          runs: [{ run_id: "run_2", thread_id: "thr_1", models: [usage] }],
+          // Another Run in this Session must never inflate this Run's totals.
+          models: [...recorded, ...recorded],
+          runs: [
+            { run_id: "run_2", thread_id: "thr_1", models: recorded },
+            { run_id: "run_other", thread_id: "thr_1", models: recorded },
+          ],
         });
       }
       if (url.pathname.includes("/runs/")) return Response.json(fixtureRun());
@@ -102,31 +116,35 @@ afterEach(() => {
 
 function show(props: Partial<Parameters<typeof DebugRunSection>[0]> = {}) {
   return render(
-    <QueryClientProvider client={cache}>
-      <MemoryRouter>
-        <DebugRunSection
-          run={fixtureRun()}
-          thread={fixtureThread()}
-          timeline={fixtureTimeline()}
-          index={2}
-          {...props}
-        />
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <DebugRunSection
+      run={fixtureRun()}
+      thread={fixtureThread()}
+      timeline={fixtureTimeline()}
+      index={2}
+      {...props}
+    />,
+    {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>{children}</MemoryRouter>
+        </QueryClientProvider>
+      ),
+    },
   );
 }
 
-it("reads one run as a heading, its request and one timeline", () => {
+it("reads one run as a heading, its request and one timeline", async () => {
   show();
   expect(screen.getByText("Run 2")).toBeTruthy();
   expect(screen.getByText("state.completed")).toBeTruthy();
   expect(screen.getByText("Run the checks")).toBeTruthy();
   expect(screen.getByText("User")).toBeTruthy();
-  // Totals come from reported usage; the duration is the run's own span.
+  // The heading uses recorded Run usage; individual calls retain their own usage.
   expect(screen.getByText("12s")).toBeTruthy();
-  expect(screen.getByText("1 model calls")).toBeTruthy();
-  expect(screen.getAllByText("3.1k → 210").length).toBe(2);
-  expect(screen.getByText("$0.0041")).toBeTruthy();
+  expect(await screen.findByText("3 model calls")).toBeTruthy();
+  expect(screen.getByText("24k → 900")).toBeTruthy();
+  expect(screen.getByText("$0.42")).toBeTruthy();
+  expect(screen.getByText("3.1k → 210")).toBeTruthy();
   // Model requests are the skeleton, the edit nests beneath, the reply is prose.
   expect(screen.getByText("Model call 1")).toBeTruthy();
   expect(screen.getByText("gpt-5 · called 1 tools")).toBeTruthy();
@@ -138,7 +156,7 @@ it("reads one run as a heading, its request and one timeline", () => {
   // starting its first attempt say nothing a reader can act on.
   expect(screen.queryByText(/Attempt 1/)).toBeNull();
   expect(screen.queryByText(/Run accepted/)).toBeNull();
-  // Nothing was requested to render the section itself.
+  // Attempts are still loaded only when Details opens.
   expect(requests.filter((path) => path.includes("/attempts"))).toEqual([]);
 });
 
@@ -188,9 +206,7 @@ it("names the failure of a failed run and leaves continuing to the dock", () => 
 it("opens the run details in a dialog, on demand, starting with usage", async () => {
   show();
   const user = userEvent.setup();
-  expect(requests.filter((path) => /\/(attempts|usage)$/.test(path))).toEqual(
-    [],
-  );
+  expect(requests.filter((path) => path.endsWith("/attempts"))).toEqual([]);
   await user.click(screen.getByRole("button", { name: "Details" }));
   const dialog = await screen.findByRole("dialog", { name: /Run 2/ });
   const usage = await within(dialog).findByRole("table", {
@@ -235,14 +251,98 @@ it("summarizes a call wait without assuming who supplies the result", () => {
   expect(screen.getByText("Waiting for call results")).toBeTruthy();
 });
 
-it("leaves a model request without reported tokens unstated, never zeroed", () => {
+it("leaves a model request without reported tokens unstated, never zeroed", async () => {
+  recorded = recorded.map((usage) => ({
+    ...usage,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cost: null,
+  }));
   const execution = fixtureExecution();
   execution.steps = execution.steps.map((step) =>
     step.kind === "llm" ? { ...step, usage: undefined } : step,
   );
   execution.usage = { model: [], provider: [], recordIds: [] };
   show({ timeline: fixtureTimeline({ execution }) });
+  expect(await screen.findByText("3 model calls")).toBeTruthy();
   expect(screen.queryByText(/→/)).toBeNull();
+});
+
+it("keeps complete Run usage while earlier execution pages load", async () => {
+  recorded = [
+    {
+      ...recorded[0]!,
+      requests: 40,
+      input_tokens: 2493365,
+      output_tokens: 22276,
+      cache_read_tokens: 2405888,
+      cost: "0.033704814",
+    },
+  ];
+  const partial = fixtureTimeline({
+    execution: fixtureExecution({ coverage: "partial" }),
+  });
+  const view = show({ timeline: partial });
+  expect(await screen.findByText("40 model calls")).toBeTruthy();
+  const heading = () => within(view.container.querySelector("header")!);
+  expect(heading().getByText("2.49M → 22.3k")).toBeTruthy();
+  expect(heading().getByText("96.5% cached")).toBeTruthy();
+  expect(heading().getByText("$0.03")).toBeTruthy();
+
+  view.rerender(
+    <DebugRunSection
+      run={fixtureRun()}
+      thread={fixtureThread()}
+      timeline={fixtureTimeline()}
+      index={2}
+    />,
+  );
+  expect(heading().getByText("40 model calls")).toBeTruthy();
+  expect(heading().getByText("2.49M → 22.3k")).toBeTruthy();
+
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Details" }));
+  const dialog = await screen.findByRole("dialog", { name: /Run 2/ });
+  expect(await within(dialog).findByText("40 requests")).toBeTruthy();
+  expect(within(dialog).getByText("2.49M")).toBeTruthy();
+  expect(within(dialog).getByText("22.3k")).toBeTruthy();
+  expect(within(dialog).getByText("96.5%")).toBeTruthy();
+});
+
+it("refreshes the heading and open Details together after a Session change", async () => {
+  show();
+  expect(await screen.findByText("3 model calls")).toBeTruthy();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Details" }));
+  const dialog = await screen.findByRole("dialog", { name: /Run 2/ });
+  expect(await within(dialog).findByText("3 requests")).toBeTruthy();
+  recorded = recorded.map((usage) => ({
+    ...usage,
+    requests: 4,
+    input_tokens: 30000,
+  }));
+  await invalidateConversation(cache, "workspace", { sessionId: "ses_1" });
+  expect(await screen.findByText("4 model calls")).toBeTruthy();
+  expect(screen.getByText("30k → 900")).toBeTruthy();
+  expect(await within(dialog).findByText("4 requests")).toBeTruthy();
+  expect(within(dialog).getByText("30k")).toBeTruthy();
+});
+
+it("does not substitute loaded-page totals when accounting is unavailable", async () => {
+  usageStatus = 503;
+  const view = show();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Details" }));
+  const dialog = await screen.findByRole("dialog", { name: /Run 2/ });
+  expect(await within(dialog).findByRole("alert")).toBeTruthy();
+  const heading = within(view.container.querySelector("header")!);
+  expect(heading.queryByText(/model calls|→|cached|\$/)).toBeNull();
+  // A visible model call still shows its own received usage.
+  expect(screen.getByText("3.1k → 210")).toBeTruthy();
 });
 
 it("reads an asynchronous child's result as the child's own reply", () => {
