@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from copy import copy
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -203,6 +204,7 @@ class MeteredModel(WrapperModel):
         response: ModelResponse | None,
         call_id: str,
         started: datetime,
+        first_chunk: datetime | None,
         error: BaseException | None,
         seed: ModelUsageRecord | None,
     ) -> tuple[ModelUsageRecord, _PricingOutcome | None]:
@@ -231,6 +233,9 @@ class MeteredModel(WrapperModel):
             model_name=value.model_name or self.model_name,
             provider_name=value.provider_name or self.system,
             response_timestamp=value.timestamp,
+            # A continuation keeps the generation's first chunk.
+            first_chunk_at=(previous.first_chunk_at if previous is not None else None) or first_chunk,
+            request_ended_at=datetime.now(UTC),
             request_usage=usage,
             usage_status="unavailable" if not known else "complete" if value.state == "complete" else "partial",
             outcome="completed" if error is None else "failed" if isinstance(error, Exception) else "cancelled",
@@ -273,6 +278,7 @@ class MeteredModel(WrapperModel):
         response: ModelResponse | None,
         call_id: str,
         started: datetime,
+        first_chunk: datetime | None,
         error: BaseException | None,
         seed: ModelUsageRecord | None,
         host_budget: RequestBudget | None,
@@ -284,7 +290,7 @@ class MeteredModel(WrapperModel):
             record, pricing = (
                 (seed, None)
                 if response is None and seed is not None
-                else self._snapshot(response, call_id, started, error, seed)
+                else self._snapshot(response, call_id, started, first_chunk, error, seed)
             )
             refusal = ledger.finish(call_id, record, host_budget)
             self.records[record.record_id] = record
@@ -338,7 +344,7 @@ class MeteredModel(WrapperModel):
             error = exc
             raise
         finally:
-            await self._capture(response, call_id, started, error, seed, host_budget)
+            await self._capture(response, call_id, started, None, error, seed, host_budget)
 
     @asynccontextmanager
     async def request_stream(
@@ -349,7 +355,7 @@ class MeteredModel(WrapperModel):
         run_context: RunContext[object] | None = None,
     ) -> AsyncGenerator[StreamedResponse]:
         call_id, seed, host_budget = await self._admit(messages)
-        started, stream, error = datetime.now(UTC), None, None
+        started, clock, stream, error = datetime.now(UTC), time.perf_counter(), None, None
         try:
             async with super().request_stream(
                 messages, model_settings, model_request_parameters, run_context
@@ -361,6 +367,13 @@ class MeteredModel(WrapperModel):
         finally:
             if stream is not None and stream.metadata is None:
                 stream.metadata = {}
+            seconds = stream.time_to_first_chunk(clock) if stream is not None else None
             await self._capture(
-                stream.get() if stream is not None else None, call_id, started, error, seed, host_budget
+                stream.get() if stream is not None else None,
+                call_id,
+                started,
+                None if seconds is None else started + timedelta(seconds=seconds),
+                error,
+                seed,
+                host_budget,
             )

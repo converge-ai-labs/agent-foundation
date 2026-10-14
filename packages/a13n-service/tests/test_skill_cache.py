@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
@@ -40,6 +41,10 @@ async def prove() -> None:
     pass
 
 
+async def published(files: Any, skill: PinnedSkill) -> bool:
+    return (await skills._published(files, [skill]))[0]
+
+
 async def evict(files: Any, digest: str) -> bool:
     await files.mkdir(f"{skills._ROOT}/.cache/evict", parents=True, exist_ok=True)
     return await Cache()._evict(files, digest)
@@ -51,8 +56,8 @@ def materializer(monkeypatch: pytest.MonkeyPatch, content: bytes = b"first") -> 
     digest = hashlib.sha256(pack(package.files)).hexdigest()
     pinned = PinnedSkill(f"skr_{digest}", digest, package.name, package.description)
 
-    async def load(*args: Any) -> tuple[Package, ...]:
-        return (package,)
+    async def load(*args: Any) -> tuple[FileArchive, ...]:
+        return (FileArchive(pack(package.files), tuple((name, len(data)) for name, data in package.files.items())),)
 
     monkeypatch.setattr(skills, "load_packages", load)
     runtime: Any = SimpleNamespace(storage=None, objects=None)
@@ -105,24 +110,26 @@ async def test_same_name_versions_coexist_with_separate_catalogs(files, monkeypa
 
 async def test_partial_write_is_not_published_and_retry_starts_clean(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     source, pinned = materializer(monkeypatch)
-    write = skills.placement.write
+    write = files.write_bytes_stream
     written = 0
 
-    async def fail(operator: Any, target: str, content: bytes) -> None:
+    async def fail(target: str, stream: Any, *, mode: Any) -> Any:
         nonlocal written
-        await write(operator, target, content)
+        result = await write(target, stream, mode=mode)
+        if "/.staging/" not in target:
+            return result
         written += 1
         if written == 1:
             raise EnvironmentError("Disconnected", code="environment_unavailable")
 
-    monkeypatch.setattr(skills.placement, "write", fail)
+    monkeypatch.setattr(files, "write_bytes_stream", fail)
     with pytest.raises(ServiceError) as error:
         await source.materialize(files=files)
     assert error.value.code == "unavailable"
     with pytest.raises(EnvironmentError):
         await files.stat(pinned.package_directory)
     assert not (await files.list("/workspace/.agents/skill-cache/.staging", max_results=10)).entries
-    monkeypatch.setattr(skills.placement, "write", write)
+    monkeypatch.setattr(files, "write_bytes_stream", write)
     await source.materialize(files=files)
     assert await files.read_bytes(f"{pinned.cached_directory}/scripts/check.py") == b"first"
 
@@ -151,15 +158,17 @@ async def test_lease_loss_before_publish_cleans_only_own_candidate(files, monkey
 
 async def test_cancelled_publisher_leaves_no_partial_package(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     source, pinned = materializer(monkeypatch)
-    write = skills.placement.write
+    write = files.write_bytes_stream
     started = asyncio.Event()
 
-    async def pause(operator: Any, target: str, content: bytes) -> None:
-        await write(operator, target, content)
+    async def pause(target: str, stream: Any, *, mode: Any) -> Any:
+        result = await write(target, stream, mode=mode)
+        if "/.staging/" not in target:
+            return result
         started.set()
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(skills.placement, "write", pause)
+    monkeypatch.setattr(files, "write_bytes_stream", pause)
     task = asyncio.create_task(source.materialize(files=files))
     await asyncio.wait_for(started.wait(), 10)
     task.cancel()
@@ -212,7 +221,7 @@ async def test_cancelled_move_does_not_remove_candidate_still_being_published(fi
     assert len((await files.list("/workspace/.agents/skill-cache/.staging", max_results=10)).entries) == 1
     finish.set()
     await asyncio.wait_for(asyncio.gather(*pending), 10)
-    assert await skills._published(files, pinned)
+    assert await published(files, pinned)
     assert await files.read_bytes(f"{pinned.cached_directory}/scripts/check.py") == b"first"
     await source.materialize(files=files)
 
@@ -223,14 +232,14 @@ async def test_hidden_skill_names_need_no_completion_marker(files, monkeypatch, 
     digest = hashlib.sha256(pack(package.files)).hexdigest()
     pinned = PinnedSkill("skr_hidden", digest, name, "Test")
 
-    async def load(*args: Any) -> tuple[Package, ...]:
-        return (package,)
+    async def load(*args: Any) -> tuple[FileArchive, ...]:
+        return (FileArchive(pack(package.files), tuple((name, len(data)) for name, data in package.files.items())),)
 
     monkeypatch.setattr(skills, "load_packages", load)
     runtime: Any = SimpleNamespace(storage=None, objects=None)
     source = _PinnedSkills((pinned,), runtime, "ws_test", prove, cache=Cache(), sync=IsolatedSkillSync())
     await source.materialize(files=files)
-    assert await skills._published(files, pinned)
+    assert await published(files, pinned)
     assert await files.read_bytes(f"{pinned.cached_directory}/SKILL.md") == package.files["SKILL.md"]
 
 
@@ -247,9 +256,9 @@ async def test_soft_budget_evicts_least_recent_inactive_package(files, monkeypat
     third, three = materializer(monkeypatch, b"new")
     third.sync = IsolatedSkillSync(cache_count=2)
     await third.materialize(files=files)
-    assert await skills._published(files, one)
-    assert not await skills._published(files, two)
-    assert await skills._published(files, three)
+    assert await published(files, one)
+    assert not await published(files, two)
+    assert await published(files, three)
     assert not (await files.list(f"{skills._ROOT}/.cache/evict", max_results=10)).entries
 
 
@@ -260,18 +269,18 @@ async def test_active_packages_can_exceed_capacity(files, monkeypatch) -> None: 
     second, two = materializer(monkeypatch, b"two")
     second.sync = IsolatedSkillSync(cache_count=1)
     await second.materialize(files=files)
-    assert await skills._published(files, one)
-    assert await skills._published(files, two)
+    assert await published(files, one)
+    assert await published(files, two)
     await first.cache.release(files)
     await second.cache.trim(files, capacity=1)
-    assert not await skills._published(files, one)
-    assert await skills._published(files, two)
+    assert not await published(files, one)
+    assert await published(files, two)
     # Reacquiring an evicted pinned revision restores the exact same package path.
     restored, again = materializer(monkeypatch, b"one")
     restored.sync = IsolatedSkillSync(cache_count=1)
     await restored.materialize(files=files)
     assert again.cached_directory == one.cached_directory
-    assert await skills._published(files, again)
+    assert await published(files, again)
 
 
 async def test_reader_arriving_after_eviction_check_waits_for_completion(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -297,7 +306,7 @@ async def test_reader_arriving_after_eviction_check_waits_for_completion(files, 
     assert not reader.done()
     finish.set()
     await asyncio.wait_for(asyncio.gather(eviction, reader), 10)
-    assert await skills._published(files, pinned)
+    assert await published(files, pinned)
     assert await files.read_bytes(f"{pinned.cached_directory}/scripts/check.py") == b"first"
 
 
@@ -323,7 +332,7 @@ async def test_pin_published_before_collector_check_prevents_eviction(files, mon
         await asyncio.sleep(0)
     proceed.set()
     await asyncio.wait_for(asyncio.gather(eviction, reader), 10)
-    assert await skills._published(files, pinned)
+    assert await published(files, pinned)
 
 
 async def test_unknown_eviction_keeps_gate_but_other_packages_still_load(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -352,7 +361,7 @@ async def test_unknown_eviction_keeps_gate_but_other_packages_still_load(files, 
     other, new = materializer(monkeypatch, b"new")
     other.sync = IsolatedSkillSync(cache_count=1)
     await other.materialize(files=files)
-    assert await skills._published(files, new)
+    assert await published(files, new)
 
 
 async def test_uncertain_publication_pin_survives_execution_release(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -379,10 +388,10 @@ async def test_independent_clients_share_pins_and_collectors_do_not_redelete(fil
     )
     try:
         assert not await evict(other, pinned.digest)
-        assert await skills._published(files, pinned)
+        assert await published(files, pinned)
         await source.cache.release(files)
         await asyncio.gather(evict(other, pinned.digest), evict(files, pinned.digest))
-        assert not await skills._published(files, pinned)
+        assert not await published(files, pinned)
         # A collector using an earlier scan must not strand a new gate on an already removed package.
         assert not await evict(other, pinned.digest)
         assert not (await files.list(f"{skills._ROOT}/.cache/evict", max_results=10)).entries
@@ -417,7 +426,7 @@ async def test_zero_capacity_disables_automatic_eviction(files, monkeypatch) -> 
     await source.materialize(files=files)
     await source.cache.release(files)
     await source.cache.trim(files, capacity=0)
-    assert await skills._published(files, pinned)
+    assert await published(files, pinned)
 
 
 async def test_large_cache_counts_and_considers_entries_beyond_first_4096(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -452,28 +461,42 @@ async def test_large_cache_counts_and_considers_entries_beyond_first_4096(monkey
     assert len(evicted) == 32
 
 
-async def test_large_healthy_release_drains_every_pin_with_bounded_concurrency() -> None:
+async def test_large_healthy_release_drains_every_pin_in_bounded_batches() -> None:
     from a13n_service.runs.skill_cache import ROOT, Use
 
     cache = Cache()
     cache.uses = [Use(f"{ROOT}/.cache/pins/{i}/unique") for i in range(512)]
     removed: set[str] = set()
-    active = peak = 0
+    sizes = []
 
-    async def remove(path: str) -> None:
-        nonlocal active, peak
-        active += 1
-        peak = max(peak, active)
-        try:
-            await asyncio.sleep(0.02)
-            removed.add(path)
-        finally:
-            active -= 1
+    async def batch(operations):
+        sizes.append(len(operations))
+        removed.update(item.path for item in operations)
+        return (None,) * len(operations)
 
-    files: Any = SimpleNamespace(remove=remove)
+    files: Any = SimpleNamespace(batch=batch)
     await cache.release(files)
     assert len(removed) == 512
-    assert 1 < peak <= 32
+    assert sizes == [32] * 16
+
+
+async def test_uncertain_pin_batch_retains_all_dispatched_pins(files, monkeypatch):
+    cache = Cache()
+    original = files.batch
+
+    async def fail(operations):
+        await original(operations[:2])
+        raise EnvironmentError("Unconfirmed batch", code="environment_unknown_outcome")
+
+    monkeypatch.setattr(files, "batch", fail)
+    with pytest.raises(EnvironmentError):
+        await cache.acquire_many(files, ["a" * 64, "b" * 64])
+    assert cache.uses == []
+    pins = f"{skills._ROOT}/.cache/pins/{'a' * 64}"
+    created = (await files.list(pins, include_hidden=True, max_results=10)).entries
+    monkeypatch.setattr(files, "batch", original)
+    await cache.release(files)
+    assert (await files.list(pins, include_hidden=True, max_results=10)).entries == created
 
 
 async def test_within_capacity_never_reads_entry_metadata(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -487,7 +510,7 @@ async def test_within_capacity_never_reads_entry_metadata(files, monkeypatch) ->
     monkeypatch.setattr(files, "read_bytes", forbidden)
     await source.cache.trim(files, capacity=1)
     await source.materialize(files=files)
-    assert await skills._published(files, pinned)
+    assert await published(files, pinned)
 
 
 async def test_published_package_contains_only_the_named_skill(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -495,3 +518,54 @@ async def test_published_package_contains_only_the_named_skill(files, monkeypatc
     await source.materialize(files=files)
     entries = (await files.list(pinned.package_directory, include_hidden=True, max_results=10)).entries
     assert [Path(entry.path).name for entry in entries] == [pinned.name]
+
+
+async def test_parallel_packages_settle_before_failure_and_retry_only_missing(files, monkeypatch):
+    archives = {}
+    for name in ("one", "two"):
+        content = f"---\nname: {name}\ndescription: Test\n---\n".encode()
+        archives[f"skr_{name}"] = FileArchive(pack({"SKILL.md": content}), (("SKILL.md", len(content)),))
+    pins = tuple(
+        PinnedSkill(revision, hashlib.sha256(archive.content).hexdigest(), revision.removeprefix("skr_"), "Test")
+        for revision, archive in archives.items()
+    )
+    loads = []
+
+    async def load(storage, objects, workspace, revisions):
+        loads.append(list(revisions))
+        return [archives[revision] for revision in revisions]
+
+    monkeypatch.setattr(skills, "load_packages", load)
+    source = _PinnedSkills(
+        pins, SimpleNamespace(storage=None, objects=None), "ws", prove, cache=Cache(), sync=IsolatedSkillSync()
+    )
+    write = files.write_archive
+    both_started, release = asyncio.Event(), asyncio.Event()
+    started = 0
+
+    async def overlap(path, archive):
+        nonlocal started
+        started += 1
+        if started == 2:
+            both_started.set()
+        await both_started.wait()
+        if path.endswith("/one"):
+            raise EnvironmentError("Disconnected", code="environment_unavailable")
+        await release.wait()
+        return await write(path, archive)
+
+    monkeypatch.setattr(files, "write_archive", overlap)
+    preparing = asyncio.create_task(source.materialize(files=files))
+    await asyncio.wait_for(both_started.wait(), 2)
+    await asyncio.sleep(0)
+    assert not preparing.done()
+    release.set()
+    with pytest.raises(ServiceError):
+        await preparing
+    assert not await published(files, pins[0])
+    assert await published(files, pins[1])
+    monkeypatch.setattr(files, "write_archive", write)
+    await source.materialize(files=files)
+    assert await published(files, pins[0])
+    assert loads == [["skr_one", "skr_two"], ["skr_one"]]
+    assert not (await files.list(f"{skills._ROOT}/.staging", max_results=10)).entries

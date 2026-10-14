@@ -108,6 +108,8 @@ interface RunTotals {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
+  /** The part of the input the provider served from its cache. */
+  cacheReadTokens: number;
   /** A model usage record was observed; without one, tokens are unknown. */
   reportedUsage: boolean;
   costUsd: string | null;
@@ -454,17 +456,18 @@ function runTotals(
 ): RunTotals {
   const records = [...execution.usage.model, ...execution.usage.provider];
   const { total, reported } = sumCosts(records.map((usage) => usage.costUsd));
+  const sum = (field: "inputTokens" | "outputTokens" | "cacheReadTokens") =>
+    execution.usage.model.reduce((value, usage) => value + usage[field], 0);
   return {
-    modelCalls: execution.steps.filter((step) => step.kind === "llm").length,
+    // Retained history without lifecycle steps still has one usage record
+    // per model request.
+    modelCalls:
+      execution.steps.filter((step) => step.kind === "llm").length ||
+      execution.usage.model.length,
     toolCalls: execution.steps.filter((step) => step.kind !== "llm").length,
-    inputTokens: execution.usage.model.reduce(
-      (sum, usage) => sum + usage.inputTokens,
-      0,
-    ),
-    outputTokens: execution.usage.model.reduce(
-      (sum, usage) => sum + usage.outputTokens,
-      0,
-    ),
+    inputTokens: sum("inputTokens"),
+    outputTokens: sum("outputTokens"),
+    cacheReadTokens: sum("cacheReadTokens"),
     reportedUsage: execution.usage.model.some(reportsTokens),
     costUsd: total,
     costComplete:

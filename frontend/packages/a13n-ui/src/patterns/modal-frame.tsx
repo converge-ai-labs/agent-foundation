@@ -38,7 +38,7 @@ export function ModalFrame({
   title: ReactNode;
   description?: ReactNode;
   closeLabel: string;
-  size?: "md" | "lg";
+  size?: "md" | "lg" | "xl";
   placement?: "center" | "top";
   children?: ReactNode;
   footer?: ReactNode;
@@ -89,7 +89,7 @@ const ModalSurface = memo(
     description?: ReactNode;
     closeLabel: string;
     finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
-    size: "md" | "lg";
+    size: "md" | "lg" | "xl";
     placement: "center" | "top";
     children?: ReactNode;
     footer?: ReactNode;
@@ -98,7 +98,10 @@ const ModalSurface = memo(
       <DialogPopup
         data-a13n-modal
         data-size={size}
-        className={cn(size === "lg" && "sm:max-w-[40rem]")}
+        className={cn(
+          size === "lg" && "sm:max-w-[40rem]",
+          size === "xl" && "sm:max-w-[55rem]",
+        )}
         finalFocus={finalFocus}
         placement={placement}
         closeProps={{ "aria-label": closeLabel }}

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, AsyncIterable, Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncGenerator, AsyncIterable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 
+from a13n_harness.environment._streams import closing_stream
+from a13n_harness.environment.archives import FileArchive
+from a13n_harness.environment.batches import file_operation_action, validate_file_batch
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FilePatchResult,
     FileQueryRequest,
     FileTextResult,
@@ -45,6 +50,54 @@ class VirtualFileOperator:
         self._resolve = resolve
         self._prepare = prepare
 
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        validate_file_batch(operations)
+        if not operations:
+            return ()
+        selections = [self._resolve(item.path) for item in operations]
+        first_selection = selections[0]
+        if any(
+            item.resolved_path.mount_id != first_selection.resolved_path.mount_id
+            or item.resolved_path.execution_id != first_selection.resolved_path.execution_id
+            or item.observed_generation != first_selection.observed_generation
+            for item in selections
+        ):
+            raise EnvironmentError("File batch crosses a file scope.", code="environment_selection_invalid")
+        async with AsyncExitStack() as stack:
+            prepared = [
+                await stack.enter_async_context(self._prepare(selected, file_operation_action(item)))
+                for selected, item in zip(selections, operations, strict=True)
+            ]
+            routed = [
+                item.model_copy(update={"path": route.selected.path})
+                for item, route in zip(operations, prepared, strict=True)
+            ]
+            results = await prepared[0].backend.batch(routed)
+            if len(results) != len(operations):
+                raise EnvironmentError("Invalid file batch response.", code="environment_provider_failure")
+            values: list[FileBatchValue] = []
+            for item, route, result in zip(operations, prepared, results, strict=True):
+                if result is not None:
+                    route.validate_result(result)
+                    result = result.model_copy(update={"path": item.path})
+                values.append(result)
+            return tuple(values)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        selected = self._resolve(path)
+        for name, _ in archive.entries:
+            child = self._resolve(f"{path.rstrip('/')}/{name}")
+            expected = selected.resolved_path.model_copy(
+                update={"path": f"{selected.resolved_path.path.rstrip('/')}/{name}"}
+            )
+            if child.resolved_path != expected or child.observed_generation != selected.observed_generation:
+                raise EnvironmentError("Archive crosses a file scope.", code="environment_selection_invalid")
+        async with self._prepare(selected, EnvironmentAction.FILE_MKDIR):
+            async with self._prepare(selected, EnvironmentAction.FILE_WRITE_BYTES) as prepared:
+                result = await prepared.backend.write_archive(prepared.selected.path, archive)
+                prepared.validate_result(result)
+                return result.model_copy(update={"path": path})
+
     async def read_text(self, path: str, **kwargs: Any) -> FileTextResult:
         async with self._prepare(self._resolve(path), EnvironmentAction.FILE_READ_TEXT) as prepared:
             result = await prepared.backend.read_text(prepared.selected.path, **kwargs)
@@ -72,11 +125,11 @@ class VirtualFileOperator:
         chunk_size: int = 65_536,
     ) -> AsyncGenerator[bytes]:
         async with self._prepare(self._resolve(path), EnvironmentAction.FILE_READ_BYTES) as prepared:
-            async for chunk in prepared.backend.read_bytes_stream(
-                prepared.selected.path,
-                chunk_size=chunk_size,
-            ):
-                yield chunk
+            async with closing_stream(
+                prepared.backend.read_bytes_stream(prepared.selected.path, chunk_size=chunk_size)
+            ) as stream:
+                async for chunk in stream:
+                    yield chunk
 
     async def write_bytes_stream(
         self,

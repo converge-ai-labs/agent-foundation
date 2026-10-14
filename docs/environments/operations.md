@@ -41,6 +41,8 @@ After opening an execution, use its optional `execution.operations.files` facet.
 | `read_bytes_stream(path, chunk_size=65536)`                            | Async iterator for binary transfer; do not `await` the iterator itself          |
 | `write_bytes_stream(path, stream, mode=...)`                           | Async iterable of bytes, explicit write mode, and `FileWriteResult`             |
 | `write_text(path, text, mode=...)`                                     | Explicit write mode, bytes written, and mutation receipt                        |
+| `write_archive(path, FileArchive(...))`                                | Extract a ZIP manifest into an absent directory; returns a mutation receipt     |
+| `batch(operations)`                                                    | Execute bounded ordered file operations; returns results in the same order      |
 | `patch_text(path, patch)`                                              | Text patch and applied-hunk receipt                                             |
 | `stat(path)`                                                           | Kind, optional size, and writability                                            |
 | `list(path, max_results=..., offset=0, include_hidden=False)`          | Bounded shallow entries and `has_more`                                          |
@@ -52,6 +54,10 @@ After opening an execution, use its optional `execution.operations.files` facet.
 | `remove(path, recursive=False)`                                        | Explicit recursive deletion policy                                              |
 
 Write modes are `create` (new file), `replace` (existing file), `upsert` (create or replace), and `append`. There is no implicit default. A receipt reports the owning operation's outcome, not a general transaction across several file operations. Cross-mount copy is a Host/aggregate responsibility, not an invented second alias argument to `FileOperator.copy()`.
+
+`batch` accepts `FileStatOperation`, `FileMkdirOperation`, `FileWriteTextOperation`, and `FileRemoveOperation`, with at most 128 operations and a 64 KiB JSON request. Every path must belong to the same file scope. Batch text writes use `create`, `replace`, or `upsert`; append remains an individual `write_text` call. Stat and remove support `missing_ok=True`. Operations run in order and stop at the first error. Failure or cancellation does not roll back completed operations or replay the batch. Native remote Providers execute the batch in one guest command.
+
+`FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` specifies the ZIP bytes, relative file paths and expanded sizes, and an optional archive directory prefix. `write_archive` creates a new directory; publish the complete candidate with a separate `move`. It does not restore archive links or permissions. Custom `FileOperator` implementations must implement `batch` and `write_archive`; there is no compatibility dispatch to individual file methods.
 
 `FileQueryRequest` requires `root`, `pattern`, and positive `max_results`; defaults are recursive true, hidden false, ignore mode `none`, no kind restriction, and offset zero. Choose `ignore_mode="git"` explicitly when repository ignores should apply.
 

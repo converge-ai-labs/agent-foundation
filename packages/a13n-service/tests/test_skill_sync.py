@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
 from a13n_service.resources.agents.schemas import (
@@ -14,7 +15,7 @@ from a13n_service.resources.agents.schemas import (
     apply_override,
     freeze_override,
 )
-from a13n_service.resources.skills.package import Package
+from a13n_service.resources.skills.package import pack
 from a13n_service.runs import skills
 from a13n_service.runs.skill_cache import Cache
 from pydantic import ValidationError
@@ -39,7 +40,10 @@ def sync_root(tmp_path):
 def materializer(monkeypatch, version="new", *, overwrite=True, cleanup=False, empty=False):
     async def load(storage, objects, workspace, revisions):
         return [
-            Package("review", version, "", {"SKILL.md": revision.encode(), revision: b"content"})
+            FileArchive(
+                pack({"SKILL.md": revision.encode(), revision: b"content"}),
+                (("SKILL.md", len(revision.encode())), (revision, 7)),
+            )
             for revision in revisions
         ]
 
@@ -208,13 +212,16 @@ async def test_failed_overwrite_preserves_old_directory(sync_root, monkeypatch, 
         raise EnvironmentError("Publication failed", code="environment_unsupported" if failure == "stage" else failure)
 
     if failure == "stage":
-        monkeypatch.setattr(skills.placement, "write", fail)
+        monkeypatch.setattr(files, "write_archive", fail)
     else:
         monkeypatch.setattr(files, "move", fail)
     with pytest.raises(ServiceError):
         await source.materialize(files=files)
     assert (root / "review" / "SKILL.md").read_text() == "old"
     assert {item.name for item in (root / "review").iterdir()} == {"SKILL.md", "old"}
+    # Only an unconfirmed move keeps its stage; it must never race the provider's rename.
+    stages = [item for item in root.parent.iterdir() if item.name.startswith(".skill-stage-")]
+    assert len(stages) == (failure == "environment_unsupported")
 
 
 async def test_overwrite_keeps_old_directory_until_publication(sync_root, monkeypatch):
@@ -239,3 +246,24 @@ async def test_overwrite_keeps_old_directory_until_publication(sync_root, monkey
     release.set()
     await task
     assert (root / "review" / "SKILL.md").read_text() == "new"
+
+
+async def test_failed_preparation_leaves_no_shared_candidates(sync_root, monkeypatch):
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_service.infra.errors import ServiceError
+
+    files, root = sync_root
+    source = materializer(monkeypatch)
+    source.skills = tuple(skills.PinnedSkill(name, name, name, name) for name in ("one", "two", "three"))
+    write = files.write_archive
+
+    async def fail_one(path, archive):
+        await write(path, archive)
+        if path.endswith("/two"):
+            raise EnvironmentError("Disconnected", code="environment_unavailable")
+
+    monkeypatch.setattr(files, "write_archive", fail_one)
+    with pytest.raises(ServiceError):
+        await source.materialize(files=files)
+    assert [item.name for item in root.parent.iterdir()] == ["skills"]
+    assert not list(root.iterdir())

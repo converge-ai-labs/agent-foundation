@@ -1,6 +1,7 @@
 """Skills: package validation, revisioned heads and their lists, content browsing, GitHub import, pins and
 execution loading."""
 
+import hashlib
 import io
 import os
 import stat
@@ -167,8 +168,12 @@ async def test_skill_revisions_and_package_content(service) -> None:  # type: ig
     packages = await content.load_packages(
         service.runtime.storage, service.runtime.objects, service.tenant.workspace_id, [first_revision["id"]]
     )
-    assert packages[0].name == "code-review" and packages[0].digest == first_revision["digest"]
-    assert dict(packages[0].files) == {"SKILL.md": DOCUMENT, "scripts/check.py": b"print('ok')\n"}
+    loaded = packages[0]
+    assert hashlib.sha256(loaded.content).hexdigest() == manifest["package_digest"]
+    assert package.extract(loaded.content, loaded.root, [name for name, _ in loaded.entries]) == {
+        "SKILL.md": DOCUMENT,
+        "scripts/check.py": b"print('ok')\n",
+    }
     with pytest.raises(ServiceError) as missing:
         await content.load_packages(
             service.runtime.storage, service.runtime.objects, service.tenant.workspace_id, ["skr_" + "0" * 24]

@@ -318,9 +318,9 @@ function HistoricalRun({
           agentName={agent.data?.name}
           agentImageUrl={agent.data?.image_url}
           earlier={<EarlierItems earlier={earlier} />}
-          separatorAction={
+          action={
             <Link
-              className={styles.separatorLink}
+              className={styles.turnLink}
               to={runPath(basePath, { ...run, run_id: run.id })}
             >
               {t("View run")}

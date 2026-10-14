@@ -64,7 +64,6 @@ it("names the agent once and reads its work in one line before the answer", () =
   const markup = renderToStaticMarkup(
     <AgentTurn
       agentName="Release reviewer"
-      runState="completed"
       blocks={blocks(
         [
           item("input", "text_message", {
@@ -102,7 +101,6 @@ it("names the agent once and reads its work in one line before the answer", () =
 it("shows the reasoning excerpt the Debug timeline shows", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
-      runState="running"
       blocks={blocks(
         [
           item("thought", "reasoning_message", {
@@ -126,7 +124,6 @@ it("shows the reasoning excerpt the Debug timeline shows", () => {
 it("says what it is waiting for instead of opening the rows", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
-      runState="waiting"
       blocks={blocks(
         [
           tool(
@@ -140,16 +137,14 @@ it("says what it is waiting for instead of opening the rows", () => {
       )}
     />,
   );
-  expect(markup).toContain("shell_exec");
-  expect(markup).toContain("waiting for your approval");
+  // The approval card below names the call; the line says whose turn it is.
+  expect(markup).toContain("Waiting for your approval");
   expect(markup).toContain('aria-expanded="false"');
-  expect(markup).toContain("waiting for you");
 });
 
 it("opens itself while a tool is still running", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
-      runState="running"
       blocks={blocks(
         [
           tool(
@@ -165,13 +160,11 @@ it("opens itself while a tool is still running", () => {
   );
   expect(markup).toContain('aria-expanded="true"');
   expect(markup).toContain('aria-label="Working"');
-  expect(markup).toContain("working");
 });
 
 it("does not keep interrupted work spinning, and shows guidance sent mid-run", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
-      runState="cancelled"
       blocks={blocks(
         [
           tool(
@@ -194,7 +187,6 @@ it("does not keep interrupted work spinning, and shows guidance sent mid-run", (
   expect(markup).toContain('data-state="interrupted"');
   expect(markup).toContain("Guidance");
   expect(markup).toContain("Use the smaller scope");
-  expect(markup).toContain("stopped");
 });
 
 it("keeps fallback output and error details inside the same agent response", () => {
@@ -243,7 +235,6 @@ it("carries the same edits and delegations Debug reports", () => {
   const markup = renderToStaticMarkup(
     <MemoryRouter>
       <AgentTurn
-        runState="running"
         blocks={transcriptBlocks(
           fixtureTimeline({ execution }).entries,
           "running",

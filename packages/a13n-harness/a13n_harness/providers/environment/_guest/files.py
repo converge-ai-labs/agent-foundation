@@ -13,9 +13,12 @@ import signal
 import stat
 import subprocess
 import sys
+import zipfile
+import zlib
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
+from a13n_harness.environment._zip import extract_zip
 from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_harness.providers.environment._file_search import search_text_file
 
@@ -34,6 +37,10 @@ class FileRequestError(ValueError):
     def __init__(self, field: str, reason: str, hint: str) -> None:
         self.details = {"field": field, "reason": reason, "hint": hint}
         super().__init__(reason)
+
+
+class UnsupportedTextError(ValueError):
+    pass
 
 
 def require_regular_file(path: Path) -> None:
@@ -219,17 +226,33 @@ def search(root: Path, path: Path, request: dict, config: dict) -> dict:
 
 def execute(request: dict) -> dict:
     config, action = request["configuration"], request["action"]
+    if action == "batch":
+        operations = request["arguments"]["operations"]
+        if any(item["action"] not in {"stat", "mkdir", "write_text", "remove"} for item in operations):
+            raise ValueError("invalid batch operation")
+        results = []
+        for item in operations:
+            try:
+                result = execute({"configuration": config, "action": item["action"], "arguments": item})
+            except FileNotFoundError:
+                if item["action"] not in {"stat", "remove"} or not item.get("missing_ok"):
+                    raise
+                result = None
+            results.append(result)
+        return {"results": results}
     root = Path(config["root"]).resolve(strict=True)
     if not root.is_dir():
         raise NotADirectoryError()
     arguments = request["arguments"]
-    path = resolve(root, arguments.get("path", "/"), follow=action not in {"stat", "remove", "move"})
+    path = resolve(root, arguments.get("path", "/"), follow=action not in {"stat", "remove", "move", "archive"})
     mutations = {
         "stage",
         "publish",
         "mkdir",
         "remove",
         "move",
+        "archive",
+        "write_text",
     }
     if action in mutations and path == root:
         raise PermissionError()
@@ -242,6 +265,8 @@ def execute(request: dict) -> dict:
         return {"path": str(path)}
     if action == "stage":
         # Authorize creation as the configured guest user before SDK upload.
+        if arguments.get("parents"):
+            path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("xb"):
             pass
         return {"path": str(path)}
@@ -270,6 +295,51 @@ def execute(request: dict) -> dict:
                     # Apply access/executable bits to the candidate before atomic publication, never set-ID bits.
                     staged.chmod(original_mode & 0o777)
             os.replace(staged, path)
+        return {}
+    if action == "write_text":
+        text, mode = arguments["text"], arguments["mode"]
+        if "\x00" in text:
+            raise UnsupportedTextError("text contains NUL")
+        if mode not in {"create", "replace", "upsert"}:
+            raise ValueError("invalid write mode")
+        content = text.encode("utf-8")
+        if len(content) > config["max_file_bytes"]:
+            raise OverflowError("file exceeds configured limit")
+        with NamedTemporaryFile(dir=path.parent, prefix=".a13n-write-", delete=False) as file:
+            staged = Path(file.name)
+            # Match ordinary newly created files, subject to the guest's umask.
+            mask = os.umask(0)
+            os.umask(mask)
+            os.fchmod(file.fileno(), 0o666 & ~mask)
+            file.write(content)
+        try:
+            execute(
+                {
+                    "configuration": config,
+                    "action": "publish",
+                    "arguments": {
+                        "path": arguments["path"],
+                        "staged": "/" + staged.relative_to(root).as_posix(),
+                        "mode": mode,
+                    },
+                }
+            )
+        finally:
+            staged.unlink(missing_ok=True)
+        return {"bytes_written": len(content)}
+    if action == "archive":
+        staged = resolve(root, arguments["staged"])
+        require_regular_file(staged)
+        try:
+            extract_zip(
+                staged,
+                path,
+                digest=arguments["digest"],
+                root=arguments["root"],
+                entries=arguments["entries"],
+            )
+        finally:
+            staged.unlink()
         return {}
     if action == "mkdir":
         path.mkdir(parents=arguments["parents"], exist_ok=arguments["exist_ok"])
@@ -343,9 +413,20 @@ def main() -> None:
         result = {"error": "environment_conflict"}
     except OverflowError:
         result = {"error": "environment_too_large"}
+    except UnsupportedTextError:
+        result = {"error": "environment_unsupported"}
     except (PatternError, FileRequestError) as exc:
         result = {"error": "environment_request_invalid", "details": exc.details}
-    except (ValueError, NotADirectoryError, IsADirectoryError, re.error):
+    except (
+        ValueError,
+        NotADirectoryError,
+        IsADirectoryError,
+        re.error,
+        zipfile.BadZipFile,
+        zlib.error,
+        EOFError,
+        NotImplementedError,
+    ):
         result = {"error": "environment_request_invalid"}
     except OSError as exc:
         unsupported = exc.errno in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}

@@ -160,6 +160,8 @@ The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; 
 
 ### Skill materialization
 
+Service loads each missing revision as its verified original ZIP and manifest and passes it to the Environment archive operation. Native sandbox providers receive one archive per skill and extract it inside the sandbox. Independent archive reads and package preparation use bounded concurrency. Cache pin creation, existence checks, recency writes, and release use bounded file batches across skills. Shared publication retains selection order; isolated packages publish independently. Preparation stops admitting new work after a failure and waits for already admitted work to settle before returning the error. An uncertain pin-creation batch retains all of its dispatched pins, preventing cleanup from racing late creation. Service publishes only a completely extracted candidate; a failed transfer or extraction cannot publish a partial skill. Shared publication stages all candidates in one directory and removes it after a failure, except after a move whose outcome is unknown. Archive transfer uses the same pinned file scope and directory-publication rules as other materialization operations.
+
 Each Agent chooses one `skill_sync` block, independently of its skill selections and its parent Agent's policy:
 
 - `{"mode": "shared", "overwrite": true, "cleanup": false}` is the default. Selected packages publish under `/workspace/.agents/skills/<name>`. Overwrite replaces the complete selected directory, removing files absent from the selected revision; `overwrite: false` preserves an existing name. `cleanup: true` removes unselected entries from this shared root, including when the selection is empty. Shared mode performs no cache operations.

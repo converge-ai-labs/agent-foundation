@@ -20,7 +20,7 @@ from a13n_service.usage.schemas import (
 router = APIRouter(prefix="/api/v1/usage", tags=["usage"])
 
 
-@router.get("")
+@router.get("", openapi_extra={"x-a13n-mcp": True})
 async def summarize_usage(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, where: Annotated[UsageFilter, Query()]
 ) -> UsageSummary:

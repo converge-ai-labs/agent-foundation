@@ -12,7 +12,7 @@ import shutil
 import stat as stat_module
 import sys
 import tempfile
-from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -22,12 +22,16 @@ from pathspec.gitignore import GitIgnoreSpec
 from pathspec.patterns.gitignore import GitIgnorePatternError
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
+from a13n_harness.environment.archives import FileArchive, extract_archive_files
+from a13n_harness.environment.batches import apply_file_batch
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileKind,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FilePatchResult,
     FileQueryRequest,
     FileTextMatch,
@@ -195,6 +199,12 @@ class _LocalWriter:
 
 class LocalFileOperator:
     """Root-confined Direct Local file operations with staged publication."""
+
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        return await apply_file_batch(self, operations)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        return await extract_archive_files(self, path, archive)
 
     def __init__(
         self,

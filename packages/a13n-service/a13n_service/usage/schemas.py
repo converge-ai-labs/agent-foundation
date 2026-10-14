@@ -115,7 +115,19 @@ class ModelUsage(BaseModel):
     cache_write_tokens: int
     # The sum of the costs priced at dispatch; None when no record of the model was priced.
     cost: Decimal | None
+    # Over completed streamed requests: the mean wait for the first chunk, and output tokens per
+    # second of generation after it. None when no such request was recorded.
+    average_time_to_first_chunk_seconds: float | None
+    output_tokens_per_second: float | None
+
+
+class RunUsage(BaseModel):
+    run_id: str
+    thread_id: str
+    models: list[ModelUsage]
 
 
 class UsageSummary(BaseModel):
     models: list[ModelUsage]
+    # The same per-model sums for each Run, in creation order.
+    runs: list[RunUsage]

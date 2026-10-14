@@ -5988,6 +5988,8 @@ export interface components {
     };
     /** ModelUsage */
     ModelUsage: {
+      /** Average Time To First Chunk Seconds */
+      average_time_to_first_chunk_seconds: number | null;
       /** Cache Read Tokens */
       cache_read_tokens: number;
       /** Cache Write Tokens */
@@ -6000,6 +6002,8 @@ export interface components {
       model: string | null;
       /** Output Tokens */
       output_tokens: number;
+      /** Output Tokens Per Second */
+      output_tokens_per_second: number | null;
       /** Requests */
       requests: number;
     };
@@ -6793,6 +6797,15 @@ export interface components {
     /** @enum {string} */
     RunStatus:
       "accepted" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+    /** RunUsage */
+    RunUsage: {
+      /** Models */
+      models: components["schemas"]["ModelUsage"][];
+      /** Run Id */
+      run_id: string;
+      /** Thread Id */
+      thread_id: string;
+    };
     /** RunView */
     RunView: {
       /** Agent Id */
@@ -8017,6 +8030,8 @@ export interface components {
     UsageSummary: {
       /** Models */
       models: components["schemas"]["ModelUsage"][];
+      /** Runs */
+      runs: components["schemas"]["RunUsage"][];
     };
     /** UserKeyCreate */
     UserKeyCreate: {

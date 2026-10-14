@@ -16,8 +16,10 @@ export function CodeBlock({ children }: { children: ReactNode }) {
     <div className={styles.codeBlock}>
       <div className={styles.codeToolbar}>
         <span>{language ?? t("Text")}</span>
+        {/* The toolbar names the language; copying is a quiet control beside it. */}
         <CopyButton
           value={() => content.current?.textContent ?? ""}
+          iconOnly
           copyLabel={t("Copy code")}
         />
       </div>

@@ -157,6 +157,9 @@ class ModelUsageObservation(BaseModel):
     model_name: str | None = Field(default=None, max_length=1024)
     provider_name: str | None = Field(default=None, max_length=512)
     response_timestamp: datetime
+    # When a streamed generation surfaced its first chunk, and when the Model invocation returned.
+    first_chunk_at: datetime | None = None
+    request_ended_at: datetime | None = None
     request_usage: BoundedRequestUsage
     pricing_revision: str | None = Field(default=None, max_length=256)
     pricing_rule_id: str | None = Field(default=None, max_length=128)

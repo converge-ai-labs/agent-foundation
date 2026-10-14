@@ -185,7 +185,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 ### 复用实例并选择项目目录
 
-在新会话的 **Options（选项）** 中选择 **Reuse existing（复用现有实例）**，可填写 **Working directory（工作目录）**。已有会话的 **Add environment（添加环境）** 表单也提供该字段。留空使用 Provider 默认目录。切换实例会清空上一次选择；会话的环境详情会显示已保存的目录。
+在新会话的 **Options（选项）** 中选择 **Reuse existing（复用现有实例）**，可填写 **Working directory（工作目录）**。已有会话在会话操作 → **环境与记忆**中的 **Add environment（添加环境）** 表单也提供该字段。留空使用 Provider 默认目录。切换实例会清空上一次选择；会话的环境详情会显示已保存的目录。
 
 目录必须已存在于所选环境内。Local 的 `/projects/app` 映射到 `{模板根目录}/{环境 ID}/projects/app`，不是浏览器所在电脑上的路径。其他 Provider 使用其环境内部的文件路径空间。Service 在首次激活时检查显式选择的目录；目录不存在或不可访问时会报错，不会自动创建目录，也不会将共享实例标记为故障。
 
