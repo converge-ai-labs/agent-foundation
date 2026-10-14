@@ -267,4 +267,4 @@ Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON`
 
 Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), and [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html).
 
-Docker templates can opt into `desktop: true` with a desktop sandbox image. Local and remote Engines retain the same `docker_host` connection. See [the desktop setup](../a13n-envd/sandbox.md#managed-docker-desktop-in-service) for startup, permissions and restart behavior.
+Docker templates can select `execution: envd_http` and require a desktop with `desktop: true`. Docker lifecycle still uses `docker_host`; HTTP EIP requires a separately configured reachable host and port-publication policy. See [the desktop setup](../a13n-envd/sandbox.md#managed-docker-desktop-in-service) for startup, permissions and restart behavior.

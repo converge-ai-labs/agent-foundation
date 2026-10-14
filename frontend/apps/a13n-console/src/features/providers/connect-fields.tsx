@@ -1,11 +1,18 @@
-import { DisclosureSection, FormField, Input } from "a13n-ui";
-import type { ReactNode } from "react";
+import {
+  DisclosureSection,
+  FormField,
+  Input,
+  SettingsRow,
+  Switch,
+} from "a13n-ui";
+import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ProviderKeyLink, SchemaFields } from "../../shared/forms";
 import {
   advancedConfigured,
   hasFields,
   splitConfigurationSchema,
+  schemaProperties,
 } from "./schemas";
 
 /**
@@ -45,7 +52,19 @@ export function ProviderConnectFields({
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const { primary, advanced } = splitConfigurationSchema(configurationSchema);
+  const httpId = useId();
+  const properties = schemaProperties(configurationSchema);
+  const hasDockerHttp =
+    "docker_host" in properties && "envd_http" in properties;
+  const baseSchema = hasDockerHttp
+    ? {
+        ...configurationSchema,
+        properties: Object.fromEntries(
+          Object.entries(properties).filter(([key]) => key !== "envd_http"),
+        ),
+      }
+    : configurationSchema;
+  const { primary, advanced } = splitConfigurationSchema(baseSchema);
   return (
     <>
       {hasFields(credentialSchema) && (
@@ -78,7 +97,7 @@ export function ProviderConnectFields({
       </FormField>
       {hasFields(advanced) && (
         <DisclosureSection
-          title={t("Advanced settings")}
+          title={hasDockerHttp ? t("Docker Engine") : t("Advanced settings")}
           summary={
             advancedConfigured(advanced, configuration)
               ? t("Configured")
@@ -93,6 +112,38 @@ export function ProviderConnectFields({
             onChange={onConfigurationChange}
           />
         </DisclosureSection>
+      )}
+      {hasDockerHttp && (
+        <>
+          <SettingsRow
+            label={t("Envd HTTP connection")}
+            description={t(
+              "Configure a separate reachable address for EIP execution. Docker Engine access alone does not provide this route.",
+            )}
+            controlId={httpId}
+          >
+            <Switch
+              id={httpId}
+              checked={configuration.envd_http != null}
+              onCheckedChange={(enabled) =>
+                onConfigurationChange({
+                  ...configuration,
+                  envd_http: enabled ? { host: "" } : null,
+                })
+              }
+            />
+          </SettingsRow>
+          {configuration.envd_http != null && (
+            <SchemaFields
+              schema={{
+                ...configurationSchema,
+                properties: { envd_http: properties.envd_http },
+              }}
+              value={configuration}
+              onChange={onConfigurationChange}
+            />
+          )}
+        </>
       )}
       {children}
     </>

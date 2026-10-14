@@ -100,11 +100,7 @@ export function EnvironmentRuntimeCatalog({
       className={styles.runtimeGroups}
     >
       {!!available.length && (
-        <TabsList
-          aria-label={t("Hosting mode")}
-          className={styles.hostingTabs}
-          size="lg"
-        >
+        <TabsList aria-label={t("Hosting mode")} className={styles.hostingTabs}>
           {available.map((group) => (
             <TabsTab key={group.key} value={group.key}>
               <group.icon aria-hidden="true" />

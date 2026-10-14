@@ -180,8 +180,13 @@
   margin: 0;
   min-width: 0;
 }
+.desktopSettings {
+  padding-inline: 16px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
 .creationForm {
-  max-width: 880px;
+  max-width: 680px;
 }
 .creationForm .templateFields > section {
   padding-block: 26px;
@@ -191,7 +196,7 @@
 }
 .runtimeGroups {
   display: grid;
-  gap: 24px;
+  gap: 16px;
 }
 .runtimeGroup {
   display: grid;
@@ -199,7 +204,7 @@
   min-width: 0;
 }
 .hostingTabs {
-  width: 100%;
+  width: fit-content;
 }
 .hostingTabs > [data-slot="tabs-tab"] {
   flex: 1 1 0;
@@ -212,7 +217,7 @@
 }
 .runtimeGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   gap: 10px;
 }
 .runtimeChoice {
@@ -220,8 +225,8 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
-  min-height: 64px;
-  padding: 14px;
+  min-height: 56px;
+  padding: 12px;
   text-align: left;
   background: var(--a13n-surface);
   border: 1px solid transparent;
@@ -264,10 +269,7 @@
 .connectionBlock {
   display: grid;
   gap: 10px;
-  margin-top: 8px;
-  padding: 18px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-surface);
+  margin-top: 4px;
 }
 .connectionRow {
   display: flex;

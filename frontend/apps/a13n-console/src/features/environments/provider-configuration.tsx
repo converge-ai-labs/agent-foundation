@@ -1,6 +1,13 @@
-import { Button, DisclosureSection, SegmentedControl } from "a13n-ui";
-import { Fragment, useState } from "react";
+import {
+  Button,
+  DisclosureSection,
+  SegmentedControl,
+  SettingsRow,
+  Switch,
+} from "a13n-ui";
+import { Fragment, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import styles from "./environments.module.css";
 import {
   FormSection,
   jsonObject,
@@ -32,6 +39,7 @@ export function ProviderConfiguration({
   variant?: "default" | "docker";
 }) {
   const { t } = useTranslation();
+  const desktopId = useId();
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
   let value: Record<string, unknown> | undefined;
@@ -45,12 +53,31 @@ export function ProviderConfiguration({
       ? Object.entries(schema.properties)
       : [];
   const primary = schema?.["x-primary-fields"];
+  const image: typeof properties = [];
+  const desktop = properties.find(([key]) => key === "desktop")?.[1];
+  const execution: typeof properties = [];
   const mounts: typeof properties = [];
   const common: typeof properties = [];
   const advanced: typeof properties = [];
   for (const property of properties) {
     const key = property[0];
-    if (variant === "docker" && key === "mounts") mounts.push(property);
+    if (variant === "docker" && key === "image") {
+      image.push([
+        key,
+        {
+          ...(property[1] as Record<string, unknown>),
+          title: "Container image",
+        },
+      ]);
+    } else if (variant === "docker" && key === "execution")
+      execution.push(property);
+    else if (variant === "docker" && key === "desktop") continue;
+    else if (variant === "docker" && key === "mounts") mounts.push(property);
+    else if (
+      variant === "docker" &&
+      ["environment", "init_script", "disable_network"].includes(key)
+    )
+      advanced.push(property);
     else if (!Array.isArray(primary) || primary.includes(key))
       common.push(property);
     else advanced.push(property);
@@ -106,7 +133,57 @@ export function ProviderConfiguration({
         />
       ) : (
         <Fragment key={reset}>
-          <fieldset disabled={readOnly}>
+          <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
+            {image.length > 0 && (
+              <SchemaFields
+                schema={{ ...schema, properties: Object.fromEntries(image) }}
+                value={value}
+                onChange={change}
+              />
+            )}
+            {execution.length > 0 && (
+              <SchemaFields
+                schema={{
+                  ...schema,
+                  properties: Object.fromEntries(execution),
+                }}
+                value={value}
+                onChange={(next) =>
+                  change({
+                    ...next,
+                    ...(next.execution === "native" ? { desktop: false } : {}),
+                  })
+                }
+              />
+            )}
+            {variant === "docker" && desktop && (
+              <div className={styles.desktopSettings}>
+                <SettingsRow
+                  label={t("Desktop capability")}
+                  description={t(
+                    "Requires a desktop image and the Docker connection’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.",
+                  )}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={
+                      (value.desktop ??
+                        (desktop as Record<string, unknown>).default) === true
+                    }
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        ...(enabled ? { execution: "envd_http" } : {}),
+                      })
+                    }
+                    disabled={readOnly}
+                  />
+                </SettingsRow>
+              </div>
+            )}
             <SchemaFields
               schema={{ ...schema, properties: Object.fromEntries(common) }}
               value={value}

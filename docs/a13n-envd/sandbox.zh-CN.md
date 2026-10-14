@@ -40,18 +40,34 @@ make image-check-sandbox-desktop
 
 RC 和开发版发布都不会推进 `latest`、`slim` 或 `desktop`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
 
-## 在 Service 中创建 Docker 桌面
+## Service 中的托管 Docker 桌面
 
-1. 在所选 Docker Engine 上构建 `a13n-sandbox:local-desktop`，或选择包含该功能的桌面版发布镜像。
-2. Console 中选择现有 Docker Provider，沿用它的 `docker_host` 连接。创建模板，镜像填 `a13n-sandbox:local-desktop`，开启 **X11 desktop**（`desktop: true`）；本地构建可设 `pull_policy: never`。
-3. 从模板创建环境。镜像自动启动 Xvfb、Openbox 和 envd；Service 确认桌面可观察、可输入后才标记就绪，无需每次编写启动脚本。
-4. 在 Agent 中开启 Computer 工具，在环境挂载中允许相应电脑操作。权限与桌面就绪是独立条件，授权不会让普通镜像自动拥有桌面。
+1. 在所选 Docker Engine 构建 `a13n-sandbox:local-desktop`，或选择包含该功能的桌面版发布镜像。
+2. Console 中添加 Docker 连接。**Docker 主机**继续用于管理容器；单独开启 **Envd HTTP 连接**，填写所有 Service / Worker 均可访问的主机名或 IP。本机进程连接 Docker Desktop 时，可达主机和绑定地址均可填 `127.0.0.1`；远端 Engine 需明确配置可达私网地址、端口绑定接口，并允许可信私网明文连接。
+3. 创建模板，镜像填 `a13n-sandbox:local-desktop`，执行连接选择 `envd_http`，开启 **桌面能力**（`desktop: true`）；本地构建设 `pull_policy: never`。不能禁用网络。镜像负责启动桌面和 envd，无需额外初始化脚本。
+4. 创建环境。Service 发布 envd 端口，读取 Docker 分配的主机端口，通过认证 EIP 校验设备身份，并检查实际桌面就绪状态。
+5. 给 Agent 开启 Computer 工具，并授予挂载环境相应电脑操作权限。权限不会让没有桌面的镜像获得桌面。
 
-本机和远端均沿用 Docker Engine 连接，通过 Docker exec 隧道传输 EIP。不发布容器端口，不需要额外桌面地址；`disable_network: true` 也可使用。就绪检查失败会保留已创建的容器供排查。Run 结束不会停止桌面；停止后启动保留文件，但重新创建图形会话，不保留未保存的 GUI 状态和旧观察句柄。
+可信私网的 Docker 连接配置示例：
 
-桌面版复用标准版工具链、Chromium 和字体，增加 Xvfb、Openbox 及启动管理。启动器和 envd 使用 root，桌面与 Session 使用 `sandbox`；标准版允许 sudo 的行为仍然适用。X11 使用认证 cookie 并禁用 TCP 监听。任一必需进程退出会终止容器，避免桌面已失效却仍显示运行中。
+```json
+{
+  "docker_host": "tcp://10.0.0.8:2376",
+  "envd_http": {
+    "host": "10.0.0.8",
+    "bind_host": "10.0.0.8",
+    "allow_plaintext_private_link": true
+  }
+}
+```
 
-桌面版标签为 `X.Y.Z-desktop`（稳定选择器 `desktop`）、`X.Y.Z-rc.N-desktop`、`dev-desktop`；RC 和开发镜像不推进稳定选择器。这里描述的是本次源码能力，不表示旧镜像已经包含。当前支持 Agent 截图与输入，不包含实时远程桌面 viewer 或人工接管；X11 的 Unicode `type_text` 仍不支持，可使用已支持的按键操作。
+Docker API 和 envd HTTP 是两条独立连接，Docker API 的传输保护需单独配置。HTTP 路线将容器 8888 端口发布到主机随机端口，网络和防火墙必须允许相关 Service / Worker 访问。此版本不提供 TLS 终止，不应把携带凭据的明文 HTTP 暴露到公网；部署的出站策略仍会检查最终地址。云端 Worker 无法仅靠此功能访问没有入站通路的本地 Mac；Service 反向 WebSocket 接入属于后续工作。
+
+每次连接都会查询同一个已保存容器的当前端口映射，并校验预期的 envd 设备身份，重启后也如此。镜像公共入口为每个容器独立生成随机凭据，默认保存在权限为 0600 的 `/var/lib/a13n-envd/http-token`，也可配置 `credential_file`。Provider 通过已授权的 Docker Engine 读取凭据，不把它写入模板、实例公开状态或 API 响应。Agent 操作直接复用 HTTP EIP，不经过 Docker exec 代理。自定义镜像只需遵守相同启动约定，无需官方镜像标签；`execution: envd_http` 也支持无桌面的 envd。
+
+就绪失败会保留已分配容器以便排查。Run 结束不停止环境；停止再启动保留文件和凭据，但重建图形会话。停止或销毁可撤销访问；轮换凭据需停止容器、替换私有凭据文件、关闭已有会话后重新启动。此前实验性代理版本的桌面模板需用新的执行与连接配置重建实例；原生 Docker 的默认值及指纹保持兼容。
+
+桌面启动器以 root 运行，Xvfb/Openbox 和 Session 操作使用 `sandbox` 账户。它创建 Xauthority cookie、关闭 X11 TCP 监听并监督必需进程；桌面进程退出会让容器失败。标准镜像的免密 sudo 行为仍然适用。本功能提供 Agent 截图和输入，不包含实时远程桌面 viewer 或人工接管。X11 尚不支持字面 Unicode `type_text`，可以使用已支持的按键事件。
 
 ## 配合 Host 运行
 

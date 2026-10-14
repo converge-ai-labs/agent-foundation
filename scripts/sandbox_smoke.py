@@ -20,7 +20,7 @@ def check_desktop(image: str) -> None:
     probe = textwrap.dedent("""\
         import json, pathlib, subprocess, time, urllib.error, urllib.request
         endpoint = 'http://127.0.0.1:8888/eip/control'
-        credential = pathlib.Path('/var/lib/a13n-envd/desktop-token')
+        credential = pathlib.Path('/var/lib/a13n-envd/http-token')
         deadline = time.monotonic() + 30
         while True:
             try:

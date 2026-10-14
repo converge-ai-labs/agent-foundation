@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.docker.connection import DockerHttpConfiguration
 
 if TYPE_CHECKING:
     from docker import DockerClient
@@ -27,6 +30,8 @@ class DockerSDKEngine:
 @dataclass(frozen=True)
 class DockerProviderRuntime:
     engine: DockerSDKEngine
+    envd_http: DockerHttpConfiguration | None = None
+    endpoint_policy: EndpointPolicy = field(default_factory=EndpointPolicy)
 
     async def close(self) -> None:
         await self.engine.close()

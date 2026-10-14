@@ -42,14 +42,32 @@ RC and development publication never advance `latest`, `slim` or `desktop`. Thes
 
 ## Managed Docker desktop in Service
 
-1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or choose a published desktop tag that includes this feature.
-2. In Console, select a Docker Provider with the existing `docker_host` connection. Create a template with image `a13n-sandbox:local-desktop`, **X11 desktop** enabled (`desktop: true`), and `pull_policy: never` for a local build.
-3. Create an Environment from the template. The image starts its desktop and envd automatically; Service checks actual desktop readiness before marking it ready. No custom initialization script is needed.
-4. Enable Computer tools on the Agent and allow the required Computer operations on the environment mount. These permissions do not start a desktop on a standard/slim image.
+1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or select a published desktop tag containing this feature.
+2. In Console, add a Docker connection. Configure the existing **Docker host** for Engine management, then enable **Envd HTTP connection** and enter the hostname or IP reachable by every Service/Worker. For a local process connecting to Docker Desktop, use `127.0.0.1` for both the reachable host and bind address. For a remote Engine, explicitly configure its reachable private address and port-binding interface, and opt into the trusted plaintext private link.
+3. Create a template with image `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** enabled (`desktop: true`), and `pull_policy: never` for a local build. Do not disable networking. The image supplies desktop/envd startup; no custom initialization script is needed.
+4. Create an Environment. Service publishes envd's port, discovers its Docker-assigned host port, verifies its device identity through authenticated EIP, and checks actual desktop readiness.
+5. Enable Computer tools on the Agent and allow the required Computer operations on its environment mount. These permissions do not supply a missing desktop.
 
-Local and remote Engines use the same connection. Service tunnels EIP through Docker exec; no container ports or additional desktop address are required, including when `disable_network` is enabled. Failed readiness retains the allocated container for inspection. Closing a Run leaves it running; stop/start retains files and starts a fresh graphical session. This is Agent screenshot/input support, not a live remote-desktop viewer or human takeover. X11 supports key events; literal Unicode `type_text` remains unsupported.
+Example Docker connection configuration for a trusted private network:
 
-The desktop launcher runs as root, with Xvfb/Openbox and Session operations under `sandbox`. It creates an Xauthority cookie, disables X11 TCP listening, supervises all required processes, and fails the container if the desktop dies. The standard image's passwordless sudo behavior also applies. Desktop smoke checks cover authenticated daemon startup, non-root X11 access, stop/start file retention and failure propagation.
+```json
+{
+  "docker_host": "tcp://10.0.0.8:2376",
+  "envd_http": {
+    "host": "10.0.0.8",
+    "bind_host": "10.0.0.8",
+    "allow_plaintext_private_link": true
+  }
+}
+```
+
+The Docker API and envd HTTP are separate connections. Configure Docker API transport protection independently. The HTTP path publishes an ephemeral host port for container port 8888; routing/firewalls must allow it from all relevant Service/Worker roles. It provides no TLS termination and must not expose bearer-authenticated plaintext traffic on the public Internet. Deployment outbound policy still applies to the resolved endpoint. A cloud Worker cannot reach a local Mac behind NAT through this path without an existing inbound route; Service reverse WebSocket integration is separate work.
+
+Each attachment inspects the exact retained container's current port mapping, including after restart, and verifies its expected envd device ID. The common image entrypoint creates a random credential in `/var/lib/a13n-envd/http-token` with mode 0600, or the configured `credential_file`. The provider reads it through the authorized Docker Engine connection; it never publishes the token in template JSON, instance state or API responses. Agent operations go directly over existing HTTP EIP, with no Docker exec proxy. Custom images can use the same bootstrap contract without an official image label; `execution: envd_http` also supports headless envd.
+
+Failed readiness retains the allocated container for inspection. Closing a Run leaves it running; stop/start retains files and credentials but starts a fresh graphical session. Stop/destroy revokes access; credential rotation requires stopping the container, replacing its private token file, closing existing sessions, and restarting. Experimental relay-based desktop templates from before this change need new instances with the explicit execution and connection settings; native Docker recipes retain their defaults and fingerprints.
+
+The desktop launcher runs as root, with Xvfb/Openbox and Session operations under `sandbox`. It creates an Xauthority cookie, disables X11 TCP listening, supervises required processes, and fails the container if the desktop dies. The standard image's passwordless sudo behavior also applies. This feature provides Agent screenshots/input, not a live remote-desktop viewer or human takeover. X11 literal Unicode `type_text` remains unsupported; supported key events are available.
 
 ## Run with a Host
 

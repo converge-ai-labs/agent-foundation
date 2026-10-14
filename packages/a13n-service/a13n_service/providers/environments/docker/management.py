@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import PurePosixPath
 from typing import Literal
 
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.configuration import DockerProviderStateData
-from a13n_harness.providers.environment.docker.desktop import desktop_execution
 from a13n_harness.providers.environment.docker.errors import engine_errors
+from a13n_harness.providers.environment.docker.http import http_execution
 from a13n_harness.providers.environment.docker.shared import _KEY, DockerReference, _missing
 
 from a13n_service.providers.environment._backend import ManagementBackend
@@ -97,8 +98,8 @@ class DockerManagement(DockerReference, ManagementBackend):
                     await self._check_initialized(commands)
             finally:
                 commands.closed = True
-            if self.config.desktop:
-                await self._wait_desktop()
+            if self.config.execution == "envd_http":
+                await self._wait_envd()
 
     async def start(self) -> None:
         with engine_errors(mutation=True):
@@ -113,16 +114,18 @@ class DockerManagement(DockerReference, ManagementBackend):
                 await self._check_initialized(commands)
             finally:
                 commands.closed = True
-            if self.config.desktop:
-                await self._wait_desktop()
+            if self.config.execution == "envd_http":
+                await self._wait_envd()
 
-    async def _wait_desktop(self) -> None:
+    async def _wait_envd(self) -> None:
         try:
             async with asyncio.timeout(self.config.request_timeout_seconds):
                 while True:
-                    execution = desktop_execution(self)
+                    execution = http_execution(self)
                     try:
                         await execution.open(execution_id="desktop-readiness")
+                        if not self.config.desktop:
+                            return
                         await execution.check_ready(frozenset({"computer"}))
                         computer = execution.operations.computer
                         if computer is not None:
@@ -148,37 +151,56 @@ class DockerManagement(DockerReference, ManagementBackend):
         except TimeoutError:
             raise provider_error(
                 _KEY,
-                "desktop_not_ready",
+                "envd_not_ready",
                 EnvironmentProviderErrorCategory.UNAVAILABLE,
-                description="Desktop did not become ready; the allocated container is retained for inspection",
+                description="Envd or its required desktop did not become ready; the allocated container is retained for inspection",
             ) from None
 
     def _create(self):
         from docker.types import Mount
 
+        connection = self.runtime.envd_http
+        if self.config.execution == "envd_http":
+            if connection is None:
+                raise provider_error(
+                    _KEY,
+                    "envd_http_configuration_required",
+                    EnvironmentProviderErrorCategory.INVALID,
+                    description="Configure the Docker connection's separate envd HTTP route before using EIP execution",
+                )
+            if any(
+                PurePosixPath(connection.credential_file).is_relative_to(mount.target) for mount in self.config.mounts
+            ):
+                raise provider_error(
+                    _KEY,
+                    "envd_credential_not_private",
+                    EnvironmentProviderErrorCategory.INVALID,
+                    description="The per-instance envd credential must not reside in an external host mount",
+                )
         client = self.runtime.engine.client
         image, _ = resolve_image(client, self.config.image, pull_policy=self.config.pull_policy)
         image_id = image.id
         if not isinstance(image_id, str) or not image_id:
             raise EnvironmentError("Docker did not return an image identity", code="environment_provider_failure")
-        entrypoint = None if self.config.desktop else [self.config.python, "-I", "-c"]
-        command = None if self.config.desktop else ["import signal; signal.pause()"]
-        user = "root" if self.config.desktop else self.config.user or image.labels.get("ai.a13n.environment.user")
+        entrypoint = None if self.config.execution == "envd_http" else [self.config.python, "-I", "-c"]
+        command = None if self.config.execution == "envd_http" else ["import signal; signal.pause()"]
+        user = (
+            "root"
+            if self.config.execution == "envd_http"
+            else self.config.user or image.labels.get("ai.a13n.environment.user")
+        )
         environment = dict(self.config.environment)
-        if self.config.desktop:
-            if image.labels.get("ai.a13n.sandbox.variant") != "desktop":
-                raise provider_error(
-                    _KEY,
-                    "desktop_image_required",
-                    EnvironmentProviderErrorCategory.INVALID,
-                    description="Select an a13n-sandbox desktop image for desktop mode",
-                )
+        ports = None
+        if self.config.execution == "envd_http":
+            assert connection is not None
+            ports = {"8888/tcp": (connection.bind_host, 0)}
             environment.update(
                 {
                     "A13N_ENVD_DEVICE_ID": self.allocation_id,
                     "A13N_ENVD_TRANSPORT": "http",
-                    "A13N_ENVD_HTTP_BIND": "127.0.0.1:8888",
-                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "loopback",
+                    "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                    "A13N_ENVD_HTTP_CREDENTIAL_FILE": connection.credential_file,
                     "A13N_ENVD_CONFIG_JSON": json.dumps(
                         {
                             "limits": {
@@ -195,10 +217,11 @@ class DockerManagement(DockerReference, ManagementBackend):
         return client.containers.create(
             image_id,
             name="a13n-" + self.allocation_id,
-            init=not self.config.desktop,
+            init=self.config.execution == "native",
             detach=True,
             working_dir="/workspace",
             environment=environment,
+            ports=ports,
             network_mode="none" if self.config.disable_network else "bridge",
             mounts=[Mount(str(m.target), m.source, type="bind", read_only=m.read_only) for m in self.config.mounts],
             labels=self.labels,

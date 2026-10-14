@@ -267,4 +267,4 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
 
 原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/) 和 [Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html)。
 
-Docker 模板可选择桌面版 sandbox 镜像并设置 `desktop: true`。本机与远端继续沿用同一个 `docker_host` 配置。启动、权限和重启行为见[桌面配置说明](../a13n-envd/sandbox.md)。
+Docker 模板可选择 `execution: envd_http`，并用 `desktop: true` 要求桌面就绪。容器生命周期仍使用 `docker_host`，HTTP EIP 则需单独配置可达主机和端口发布策略。启动、权限和重启行为见[桌面配置说明](../a13n-envd/sandbox.md)。

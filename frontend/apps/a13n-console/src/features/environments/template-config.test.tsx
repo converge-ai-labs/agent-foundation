@@ -87,6 +87,7 @@ const dockerSchema = {
       title: "Image",
       default: "a13n-sandbox:dev",
     },
+    desktop: { type: "boolean", default: false },
     memory_gb: { type: "number", title: "Memory (GB)" },
     mounts: { type: "array", title: "Mounts", items: { type: "object" } },
     shell: { type: "string", title: "Shell", default: "/bin/sh" },
@@ -651,4 +652,34 @@ it("keeps a late connection result without replacing a newly selected runtime", 
     ).toContain("Another E2B"),
   );
   expect(state.POST).toHaveBeenCalledOnce();
+});
+
+it("preserves advanced Docker settings when switching desktop capability and JSON mode", async () => {
+  const user = userEvent.setup();
+  await selectProvider(user, "Docker");
+  await user.click(screen.getByRole("button", { name: "JSON" }));
+  const json = screen.getByRole("textbox", {
+    name: "Template configuration (JSON)",
+  });
+  await user.clear(json);
+  await user.paste(
+    '{"image":"sandbox:desktop","shell":"/bin/bash","desktop":false}',
+  );
+  await user.click(screen.getByRole("button", { name: "Fields" }));
+  await user.click(screen.getByRole("switch", { name: "Desktop capability" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
+  expect(
+    JSON.parse(
+      (
+        screen.getByRole("textbox", {
+          name: "Template configuration (JSON)",
+        }) as HTMLTextAreaElement
+      ).value,
+    ),
+  ).toEqual({
+    image: "sandbox:desktop",
+    shell: "/bin/bash",
+    desktop: true,
+    execution: "envd_http",
+  });
 });

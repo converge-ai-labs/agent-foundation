@@ -204,6 +204,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field                         | Required | Type / choices                    | Constraints and default                                                          |
 | ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
 | `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
 | `desktop`                     | false    | boolean                           | default=false                                                                    |
 | `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
 | `environment`                 | false    | object                            | —; default from model factory                                                    |
@@ -339,9 +340,19 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `DockerConnectionConfiguration`
 
-| Field         | Required | Type / choices | Constraints and default                 |
-| ------------- | -------- | -------------- | --------------------------------------- |
-| `docker_host` | false    | string         | minLength=1; default from model factory |
+| Field         | Required | Type / choices                  | Constraints and default                 |
+| ------------- | -------- | ------------------------------- | --------------------------------------- |
+| `envd_http`   | false    | DockerHttpConfiguration or null | default=null                            |
+| `docker_host` | false    | string                          | minLength=1; default from model factory |
+
+## `DockerHttpConfiguration`
+
+| Field                          | Required | Type / choices | Constraints and default                                 |
+| ------------------------------ | -------- | -------------- | ------------------------------------------------------- |
+| `host`                         | true     | string         | minLength=1; maxLength=253                              |
+| `bind_host`                    | false    | string         | default="127.0.0.1"                                     |
+| `allow_plaintext_private_link` | false    | boolean        | default=false                                           |
+| `credential_file`              | false    | string         | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
 
 ## `E2BConnectionConfiguration`
 

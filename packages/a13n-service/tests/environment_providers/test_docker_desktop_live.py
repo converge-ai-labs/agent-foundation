@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 from io import BytesIO
 
 import pytest
@@ -73,7 +74,10 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
         json={
             "type": "docker",
             "name": "Desktop",
-            "config": {} if docker_endpoint.startswith("unix://") else {"docker_host": docker_endpoint},
+            "config": {
+                **({} if docker_endpoint.startswith("unix://") else {"docker_host": docker_endpoint}),
+                "envd_http": {"host": "127.0.0.1"},
+            },
         },
     )
     assert provider.status_code == 201, provider.text
@@ -82,7 +86,7 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
         json={
             "name": "Linux desktop",
             "provider_id": provider.json()["id"],
-            "config": {"recipe": {"image": IMAGE, "desktop": True, "disable_network": True, "pull_policy": "never"}},
+            "config": {"recipe": {"image": IMAGE, "desktop": True, "execution": "envd_http", "pull_policy": "never"}},
         },
     )
     assert template.status_code == 201, template.text
@@ -96,12 +100,12 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
         state = await environment(service, env_id)
         assert state["status"] == "ready", state
         row = await stored(service, env_id)
-        # The public API never needs an externally reachable envd endpoint or token.
+        # Endpoint ports are inspected on the exact container; tokens never enter public state.
         container = await asyncio.to_thread(engine.containers.get, "a13n-" + env_id)
         container_id = container.id
-        assert not container.attrs["HostConfig"]["PortBindings"]
-        assert container.attrs["HostConfig"]["NetworkMode"] == "none"
-        assert "desktop-token" not in str(row.handle)
+        assert container.attrs["NetworkSettings"]["Ports"]["8888/tcp"][0]["HostIp"] == "127.0.0.1"
+        assert container.attrs["HostConfig"]["NetworkMode"] == "bridge"
+        assert "http-token" not in str(row.handle)
         checked = await client.post(f"{service.api}/environments/{env_id}/computer/check")
         assert checked.status_code == 200, checked.text
         assert checked.json()["observe_ready"] and checked.json()["input_ready"]
@@ -140,7 +144,37 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
                     ["env", "DISPLAY=:99", "XAUTHORITY=/run/a13n-desktop/Xauthority", "xwininfo", "-root", "-tree"],
                 )
                 if b"Desktop validation" in windows.output:
-                    break
+                    geometry = await asyncio.to_thread(
+                        container.exec_run,
+                        [
+                            "env",
+                            "DISPLAY=:99",
+                            "XAUTHORITY=/run/a13n-desktop/Xauthority",
+                            "xwininfo",
+                            "-name",
+                            "Desktop validation",
+                        ],
+                    )
+                    description = geometry.output.decode()
+                    identifier = re.search(r"Window id: (0x[0-9a-f]+)", description)
+                    managed = await asyncio.to_thread(
+                        container.exec_run,
+                        [
+                            "env",
+                            "DISPLAY=:99",
+                            "XAUTHORITY=/run/a13n-desktop/Xauthority",
+                            "xprop",
+                            "-root",
+                            "_NET_CLIENT_LIST",
+                        ],
+                    )
+                    if identifier and identifier[1].encode() in managed.output and "IsViewable" in description:
+                        x = int(re.search(r"Absolute upper-left X:\s+(-?\d+)", description)[1])
+                        y = int(re.search(r"Absolute upper-left Y:\s+(-?\d+)", description)[1])
+                        width = int(re.search(r"Width:\s+(\d+)", description)[1])
+                        height = int(re.search(r"Height:\s+(\d+)", description)[1])
+                        point = {"x": x + width // 2, "y": y + height // 2}
+                        break
                 await asyncio.sleep(0.05)
         agent = await runs_kit.create_agent(service, scripted_model, toolsets={"computer": {"enabled": True}})
         submitted = await runs_kit.start_thread(
@@ -162,7 +196,7 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
         assert observed["ok"], observed
         scripted_model.call(
             "computer_click",
-            {"observation_id": observed["observation_id"], "point": {"x": 200, "y": 120}},
+            {"observation_id": observed["observation_id"], "point": point},
             call_id="focus",
         )
         assert returned(await scripted_model.request(), "focus")["effect"] == "executed"
@@ -200,7 +234,9 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
         from a13n_harness.environment.models import EnvironmentState
 
         target_state = EnvironmentState.model_validate(row.handle["state"])
-        async with await DOCKER.open_provider(configuration={"docker_host": docker_endpoint}) as management:
+        async with await DOCKER.open_provider(
+            configuration={"docker_host": docker_endpoint, "envd_http": {"host": "127.0.0.1"}}
+        ) as management:
             for _ in range(3):
                 await management.stop(recipe, environment_id=env_id, state=target_state, operation_id="stop")
                 await management.start(recipe, environment_id=env_id, state=target_state, operation_id="start")
@@ -224,3 +260,66 @@ async def test_template_creates_desktop_run_input_reconnect_and_restart(
         if container is not None:
             await asyncio.to_thread(container.remove, force=True)
         await asyncio.to_thread(engine.close)
+
+
+async def test_http_authentication_identity_and_unreachable_endpoint(docker_endpoint):
+    """Two actual daemons must not accept one another's token or device binding."""
+    from uuid import uuid4
+
+    import docker
+    from a13n_harness.environment.errors import EnvironmentProviderError
+    from a13n_harness.providers.environment.remote_envd.configuration import (
+        HttpEnvdConnectionConfiguration,
+        HttpEnvdCredential,
+    )
+    from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+    from a13n_service.providers.environments.docker.definition import DOCKER
+    from pydantic import SecretStr
+
+    engine = await asyncio.to_thread(docker.DockerClient, base_url=docker_endpoint)
+    containers = []
+    recipe = {"image": IMAGE, "execution": "envd_http", "desktop": False, "pull_policy": "never"}
+    async with await DOCKER.open_provider(
+        configuration={"docker_host": docker_endpoint, "envd_http": {"host": "127.0.0.1"}}
+    ) as management:
+        try:
+            credentials = []
+            endpoints = []
+            identities = []
+            for _ in range(2):
+                identity = "env_" + uuid4().hex
+                identities.append(identity)
+                # Create through the real Service management adapter, including EIP readiness.
+                await management.create(recipe, environment_id=identity, operation_id="create")
+                container = await asyncio.to_thread(engine.containers.get, "a13n-" + identity)
+                containers.append(container)
+                port = container.attrs["NetworkSettings"]["Ports"]["8888/tcp"][0]["HostPort"]
+                endpoints.append(f"http://127.0.0.1:{port}")
+                result = await asyncio.to_thread(container.exec_run, ["cat", "/var/lib/a13n-envd/http-token"])
+                credentials.append(HttpEnvdCredential(token=SecretStr(result.output.decode())))
+            assert endpoints[0] != endpoints[1]
+            assert credentials[0].token != credentials[1].token
+            async with HttpEnvdProviderRuntime(
+                HttpEnvdConnectionConfiguration(endpoint=endpoints[0]), credentials[1]
+            ) as runtime:
+                with pytest.raises(EnvironmentProviderError) as rejected:
+                    await runtime.describe(expected_device_id=identities[0])
+                assert rejected.value.code == "provider_connection_failed"
+            async with HttpEnvdProviderRuntime(
+                HttpEnvdConnectionConfiguration(endpoint=endpoints[0]), credentials[0]
+            ) as runtime:
+                with pytest.raises(EnvironmentProviderError) as rejected:
+                    await runtime.describe(expected_device_id=identities[1])
+                assert rejected.value.code == "provider_device_mismatch"
+            await asyncio.to_thread(containers[0].stop, timeout=2)
+            async with HttpEnvdProviderRuntime(
+                HttpEnvdConnectionConfiguration(endpoint=endpoints[0], initialization_timeout=1, request_timeout=1),
+                credentials[0],
+            ) as runtime:
+                with pytest.raises(EnvironmentProviderError) as rejected:
+                    await runtime.describe(expected_device_id=identities[0])
+                assert rejected.value.code in {"provider_connection_failed", "provider_connection_timeout"}
+        finally:
+            for container in containers:
+                await asyncio.to_thread(container.remove, force=True)
+            await asyncio.to_thread(engine.close)

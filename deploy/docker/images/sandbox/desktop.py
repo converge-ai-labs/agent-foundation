@@ -46,18 +46,6 @@ def main() -> int:
         timeout=5,
         stdout=sys.stderr,
     )
-    # The managed Docker provider retrieves this through its authorized Engine connection.
-    # It never stores the token in a template or portable target state.
-    credential = Path("/var/lib/a13n-envd/desktop-token")
-    try:
-        fd = os.open(credential, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        pass
-    else:
-        with os.fdopen(fd, "w") as stream:
-            stream.write(secrets.token_urlsafe(32))
-    if environment.get("A13N_ENVD_TRANSPORT") == "http":
-        environment.setdefault("A13N_ENVD_HTTP_CREDENTIAL_FILE", str(credential))
     children: list[subprocess.Popen] = []
 
     def interrupted(_signum, _frame):

@@ -58,7 +58,7 @@ ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint"]
 
 FROM standard-runtime AS desktop-runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb openbox xauth x11-utils x11-xkb-utils socat \
+    && apt-get install -y --no-install-recommends xvfb openbox xauth x11-utils x11-xkb-utils \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 deploy/docker/images/sandbox/desktop.py /usr/local/bin/a13n-sandbox-desktop
 ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint", "a13n-sandbox-desktop"]
