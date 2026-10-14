@@ -194,7 +194,8 @@ it("publishes session memory defaults independently of shared mounts", () => {
     enabled: true,
     spaces: [{ name: "team", space_id: "msp_00000000000000000001" }],
   };
-  const draft = draftFor({ memory });
+  const reviewer = { model: "review-model" };
+  const draft = draftFor({ memory, reviewer });
   expect(draft.current.memory).toEqual(memory);
   expect(JSON.parse(draft.current.advanced)).not.toHaveProperty("memory");
   expect(draft.current.dirty).toBe(false);
@@ -206,6 +207,7 @@ it("publishes session memory defaults independently of shared mounts", () => {
     enabled: false,
   });
   expect(built.ok && built.config.memory_mounts).toEqual([]);
+  expect(built.ok && built.config.reviewer).toEqual(reviewer);
   act(() =>
     draft.current.setMemory({
       enabled: true,
@@ -214,7 +216,77 @@ it("publishes session memory defaults independently of shared mounts", () => {
   );
   const invalid = buildDraftConfig(draft.current, undefined, asIs);
   expect(invalid.ok).toBe(false);
+  expect(!invalid.ok && invalid.stage).toBe("advanced");
   expect(!invalid.ok && invalid.error.message).toBe(
     "Use unique mount names: lowercase letters, digits and hyphens, starting with a letter.",
   );
+});
+
+it("requires a reviewer for declared builtin and connection review permissions", () => {
+  for (const config of [
+    {
+      toolsets: {
+        shell: {
+          enabled: true,
+          tools: { exec: { permission: "review" as const } },
+        },
+      },
+    },
+    {
+      connection_tools: [
+        {
+          connection_id: "con_0123456789abcdef0123",
+          permission: "review" as const,
+        },
+      ],
+    },
+    {
+      connection_tools: [
+        {
+          connection_id: "con_0123456789abcdef0123",
+          permissions: { send: "review" as const },
+        },
+      ],
+    },
+  ]) {
+    const draft = draftFor(config);
+    const refused = buildDraftConfig(draft.current, undefined, asIs);
+    expect(refused.ok).toBe(false);
+    expect(!refused.ok && refused.stage).toBe("reviewer");
+    act(() => draft.current.setReviewer({ model: "review-model" }));
+    const built = buildDraftConfig(draft.current, undefined, asIs);
+    expect(built.ok && built.config.reviewer).toEqual({
+      model: "review-model",
+    });
+    expect(draft.current.dirty).toBe(true);
+  }
+});
+
+it("preserves reviewer fields and rules, and includes only intentional edits", () => {
+  const reviewer = {
+    model: "review-model",
+    instruction: "Inspect data access",
+    shell_instruction: "Inspect shell operations",
+    on_error: "allow" as const,
+    timeout_seconds: 45.5,
+    model_settings: { extra_body: { policy: "strict" } },
+    rules: {
+      "mcp/source/*": { risk_threshold: "low" as const },
+      "*": { on_flagged: "approval_required" as const },
+    },
+  };
+  const draft = draftFor({ reviewer });
+  expect(draft.current.dirty).toBe(false);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { reviewer },
+  });
+  act(() => draft.current.setReviewer({ ...reviewer, risk_threshold: "high" }));
+  expect(draft.current.dirty).toBe(true);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { reviewer: { ...reviewer, risk_threshold: "high" } },
+  });
+  act(() => draft.current.setReviewer(reviewer));
+  expect(draft.current.dirty).toBe(false);
 });

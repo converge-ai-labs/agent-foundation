@@ -25,10 +25,12 @@ from genai_prices.types import (
     Tier,
     TieredPrices,
     TimeOfDateConstraint,
+    Usage,
 )
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 from pydantic_ai.capabilities import AbstractCapability
 
+from a13n_harness._pricing_units import request_prices
 from a13n_harness.context import AgentContext
 
 if TYPE_CHECKING:
@@ -207,10 +209,14 @@ class ModelPricingEntry(BaseModel):
                 )
             else:
                 prices[component.price_key] = component.price
+        usage = Usage.from_raw(value.usage)
+        request = request_prices(prices, usage)
+        if request is None:
+            return None
         with localcontext() as context:
             context.prec = 80
             context.rounding = ROUND_HALF_EVEN
-            calculation = ModelPrice(**prices).calc_price(value.usage)
+            calculation = ModelPrice(**request).calc_price(usage)
         return ModelCostQuote(
             cost_usd=calculation["total_price"],
             source=source,

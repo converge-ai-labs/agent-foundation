@@ -49,7 +49,9 @@ The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents wi
 
 ### Agent configuration
 
-In the manual editor, expand a toolset under **Tools** to select individual tools and choose **Allow**, **Ask**, or **Deny** for each action. The permission controls use a check mark, a hand, and a blocked symbol, respectively.
+In the manual editor, expand a toolset under **Tools** to select individual tools and choose **Allow**, **Ask**, **Automatic review**, or **Deny** for each action. Connection tools offer the same permissions. The automatic review button uses a shield symbol.
+
+Under **Automatic review**, choose **Configure review** to select a review model, risk threshold and action at or above that threshold. **Tool review rule** sets a separate threshold or action for one tool. Advanced settings include shell instructions, failure handling, timeout, model parameters and selector rules. **Apply to draft** keeps the changes local; **Save changes** publishes a new agent revision. Cancelling the panel discards its edits. Review requires a model before saving. New review configurations keep the backend defaults: extra-high risk is denied, review failures ask a person, and review timeouts always deny execution.
 
 A revision's `config` holds:
 

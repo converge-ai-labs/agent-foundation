@@ -1,10 +1,15 @@
-import { CheckIcon, HandIcon, ProhibitIcon } from "@phosphor-icons/react";
+import {
+  CheckIcon,
+  HandIcon,
+  ProhibitIcon,
+  ShieldCheckIcon,
+} from "@phosphor-icons/react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import styles from "./agents.module.css";
 
-export type PermissionChoice = "allow" | "ask" | "deny";
+export type PermissionChoice = "allow" | "ask" | "review" | "deny";
 
 const options = [
   {
@@ -16,6 +21,11 @@ const options = [
     value: "ask",
     icon: HandIcon,
     description: "Ask for approval before each tool call.",
+  },
+  {
+    value: "review",
+    icon: ShieldCheckIcon,
+    description: "Review risk automatically before running this tool.",
   },
   {
     value: "deny",
@@ -40,7 +50,12 @@ export function ToolPermissions({
   onChange: (permission: PermissionChoice) => void;
 }) {
   const { t } = useTranslation();
-  const labels = { allow: t("Allow"), ask: t("Ask"), deny: t("Deny") };
+  const labels = {
+    allow: t("Allow"),
+    ask: t("Ask"),
+    deny: t("Deny"),
+    review: t("Automatic review"),
+  };
   return (
     <div
       className={styles.toolsetPermissions}

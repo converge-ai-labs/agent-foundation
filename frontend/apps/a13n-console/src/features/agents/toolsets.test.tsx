@@ -64,7 +64,11 @@ const initial: NonNullable<AgentConfig["toolsets"]> = {
   },
 };
 
-function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
+function renderDraft(
+  starting: NonNullable<AgentConfig["toolsets"]>,
+  onRequireReviewer = vi.fn(),
+  onReview = vi.fn(),
+) {
   function Draft() {
     const [value, setValue] = useState(starting);
     return (
@@ -74,6 +78,8 @@ function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
           onChange={setValue}
           config={{ model: "model-test", toolsets: value }}
           agentId="ap_test"
+          onRequireReviewer={onRequireReviewer}
+          onReview={onReview}
         />
         <output data-testid="draft">{JSON.stringify(value)}</output>
       </>
@@ -214,13 +220,9 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
     within(fetchPermissions).queryByRole("button", { name: /inherit/i }),
   ).toBeNull();
   expect(
-    within(fetchPermissions).queryByRole("button", { name: /review/i }),
-  ).toBeNull();
-  expect(
-    screen.getByText(
-      "Review is configured for this tool. Choose another permission to replace it.",
-    ),
+    within(fetchPermissions).getByRole("button", { name: "Automatic review" }),
   ).toBeTruthy();
+  expect(screen.getByText("This tool uses automatic review.")).toBeTruthy();
   await user.hover(
     within(fetchPermissions).getByRole("button", { name: "Allow" }),
   );
@@ -639,4 +641,31 @@ it("keeps platform choices when opening and toggling the group, including defaul
   );
   expect(draft().configuration.tools.create_revision.enabled).toBe(false);
   expect(draft().configuration.tools.read.enabled).toBe(true);
+});
+
+it("selects automatic review and opens a rule for the catalogue execution identity", async () => {
+  const onRequireReviewer = vi.fn(),
+    onReview = vi.fn();
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? {
+          items: [
+            { ...web, tools: [{ ...web.tools[2], execution_id: "web.fetch" }] },
+          ],
+        }
+      : { items: [], next_cursor: null },
+  }));
+  http.POST.mockResolvedValue({
+    response: new Response(null, { status: 204 }),
+  });
+  const { user, draft } = renderDraft({}, onRequireReviewer, onReview);
+  await user.click((await screen.findByText("Web")).closest("button")!);
+  await user.click(screen.getByRole("button", { name: "Automatic review" }));
+  expect(draft().web.tools.fetch.permission).toBe("review");
+  expect(onRequireReviewer).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole("button", { name: "Tool review rule" }));
+  expect(onReview).toHaveBeenCalledWith({
+    selector: "web.fetch",
+    label: "fetch",
+  });
 });
