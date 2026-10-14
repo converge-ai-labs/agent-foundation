@@ -2094,7 +2094,7 @@
   "No environment runtimes are available in this deployment.": "No environment runtimes are available in this deployment.",
   "Select a connection": "Select a connection",
   "This connection is saved separately and remains available if you cancel template creation.": "This connection is saved separately and remains available if you cancel template creation.",
-  "No enabled connection for this runtime yet. Add one to continue; your template draft stays here.": "No enabled connection for this runtime yet. Add one to continue; your template draft stays here.",
+  "No enabled connection for this runtime yet. Open Manage connections to add one; your template draft stays here.": "No enabled connection for this runtime yet. Open Manage connections to add one; your template draft stays here.",
   "Choose a runtime, connect your infrastructure, and save settings for future environments.": "Choose a runtime, connect your infrastructure, and save settings for future environments.",
   "You need write access to create an environment template.": "You need write access to create an environment template.",
   "No results": "No results",

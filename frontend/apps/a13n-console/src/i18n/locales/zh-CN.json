@@ -2094,7 +2094,7 @@
   "No environment runtimes are available in this deployment.": "当前部署没有可用的环境运行方式。",
   "Select a connection": "选择连接",
   "This connection is saved separately and remains available if you cancel template creation.": "连接会单独保存。即使取消创建模板，已添加的连接仍可使用。",
-  "No enabled connection for this runtime yet. Add one to continue; your template draft stays here.": "还没有此运行方式的可用连接。添加连接后即可继续，模板草稿会保留。",
+  "No enabled connection for this runtime yet. Open Manage connections to add one; your template draft stays here.": "此运行方式暂无可用连接。请在“管理连接”中添加，当前模板草稿会保留。",
   "Choose a runtime, connect your infrastructure, and save settings for future environments.": "选择运行方式、连接基础设施，并保存新环境使用的配置。",
   "You need write access to create an environment template.": "需要写入权限才能创建环境模板。",
   "No results": "没有匹配结果",

@@ -298,7 +298,6 @@ export function ProviderForm({
   kind,
   initial,
   definition: chosen,
-  onCreated,
   createLabel,
   definitions,
   testDescription,
@@ -307,7 +306,6 @@ export function ProviderForm({
 }: {
   kind: ProviderKind;
   initial?: Resource;
-  onCreated?: (provider: Schema["Provider"]) => void;
   createLabel?: string;
   definition?: Definition;
   definitions: Definition[];
@@ -338,10 +336,9 @@ export function ProviderForm({
     kind === "environment" &&
     !!basis &&
     JSON.stringify(configuration) !== JSON.stringify(basis.value.config);
-  function done(provider: Schema["Provider"]) {
-    if (!basis) onCreated?.(provider);
+  function done() {
     void cache.invalidateQueries({ queryKey: [`${kind}-providers`] });
-    if (kind === "environment" && (basis || !onCreated))
+    if (kind === "environment")
       void cache.invalidateQueries({
         queryKey: ["environment-provider-options"],
       });

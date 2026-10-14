@@ -75,8 +75,6 @@ export function TemplateConfig({
     [runtimeType, setRuntimeType] = useState(""),
     [choosing, setChoosing] = useState(!saved?.provider_id);
   const [connections, setConnections] = useState<Record<string, string>>({});
-  const activeRuntime = useRef(runtimeType);
-  activeRuntime.current = runtimeType;
   const [configurations, setConfigurations] = useState<Record<string, string>>({
     [saved?.provider_id ?? ""]: JSON.stringify(
       saved?.config.recipe ?? {},
@@ -114,19 +112,6 @@ export function TemplateConfig({
       previous?.id ?? (available.length === 1 ? available[0]!.id : ""),
     );
     setConfigurationError(undefined);
-  }
-  function connectionCreated(created: Schema["Provider"]) {
-    cache.setQueryData<Schema["Provider"][]>(
-      ["environment-provider-options", workspace.id],
-      (current = []) => [
-        ...current.filter((item) => item.id !== created.id),
-        created,
-      ],
-    );
-    setConnections((current) => ({ ...current, [created.type]: created.id }));
-    // A connection can finish saving after its dialog was dismissed and the
-    // user picked another runtime. Keep that result without changing their choice.
-    if (activeRuntime.current === created.type) chooseProvider(created.id);
   }
   const configurationSchema = definition?.environment_schema ?? undefined;
   const report = useRef(onProviderChange);
@@ -302,7 +287,6 @@ export function TemplateConfig({
                   providers={providers.data ?? []}
                   value={providerId}
                   onChange={chooseProvider}
-                  onCreated={connectionCreated}
                 />
               )}
             </FormSection>

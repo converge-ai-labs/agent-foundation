@@ -535,10 +535,12 @@ it("keeps runtime drafts separate and saves using the matching connection", asyn
 });
 
 it("creates a connection in place, clears canceled credentials and retains the recipe through errors", async () => {
+  let saved = false;
   const get = state.GET.getMockImplementation()!;
   state.GET.mockImplementation(async (path: string) => {
     const result = await get(path);
-    if (path !== "/api/v1/provider-types/{kind}") result.data.items = [];
+    if (path !== "/api/v1/provider-types/{kind}")
+      result.data.items = saved ? [connection] : [];
     return result;
   });
   const connection = {
@@ -548,7 +550,10 @@ it("creates a connection in place, clears canceled credentials and retains the r
     enabled: true,
   };
   state.POST.mockRejectedValueOnce(new Error("Connection rejected"))
-    .mockResolvedValueOnce({ data: connection })
+    .mockImplementationOnce(async () => {
+      saved = true;
+      return { data: connection };
+    })
     .mockResolvedValueOnce({ data: { id: "envt_created" } });
   mountCreationPage();
   const user = userEvent.setup();
@@ -578,12 +583,17 @@ it("creates a connection in place, clears canceled credentials and retains the r
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  await user.click(screen.getByRole("button", { name: "Add connection" }));
+  await user.click(screen.getByRole("button", { name: "Manage connections" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Add connection" }),
+  );
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
   let dialog = within(screen.getByRole("dialog"));
   await user.type(dialog.getByLabelText("API key"), "discarded-test-key");
   await user.click(dialog.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await screen.findByRole("dialog", { name: "Manage connections" });
   await user.click(screen.getByRole("button", { name: "Add connection" }));
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
   dialog = within(screen.getByRole("dialog"));
   expect((dialog.getByLabelText("API key") as HTMLInputElement).value).toBe("");
   await user.type(dialog.getByLabelText("API key"), "test-key");
@@ -592,7 +602,12 @@ it("creates a connection in place, clears canceled credentials and retains the r
   expect(state.POST).toHaveBeenCalledTimes(1);
   expect(state.close).not.toHaveBeenCalled();
   await user.click(dialog.getByRole("button", { name: "Add connection" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const management = await screen.findByRole("dialog", {
+    name: "Manage connections",
+  });
+  await user.click(within(management).getByRole("button", { name: "Close" }));
+  await user.click(screen.getByRole("combobox", { name: "Connection" }));
+  await user.click(await screen.findByRole("option", { name: "E2B" }));
   expect(state.POST).toHaveBeenCalledTimes(2);
   expect(state.POST).toHaveBeenLastCalledWith("/api/v1/environment-providers", {
     body: {
@@ -644,19 +659,36 @@ it("keeps a late connection result without replacing a newly selected runtime", 
   const pending = new Promise<{ data: typeof created }>((done) => {
     resolve = done;
   });
+  let saved = false;
+  const get = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation(async (path: string) => {
+    const result = await get(path);
+    if (saved && path !== "/api/v1/provider-types/{kind}")
+      result.data.items = [...result.data.items, created];
+    return result;
+  });
   state.POST.mockReturnValueOnce(pending);
   mountCreationPage();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "E2B" }));
-  await user.click(screen.getByRole("button", { name: "Add connection" }));
+  await user.click(screen.getByRole("button", { name: "Manage connections" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Add connection" }),
+  );
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
   const dialog = within(screen.getByRole("dialog"));
   await user.type(dialog.getByLabelText("API key"), "test-key");
   await user.click(dialog.getByRole("button", { name: "Add connection" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
   await user.click(dialog.getByRole("button", { name: "Close" }));
+  const management = await screen.findByRole("dialog", {
+    name: "Manage connections",
+  });
+  await user.click(within(management).getByRole("button", { name: "Close" }));
   await user.click(screen.getByRole("tab", { name: "Own hosting" }));
   await user.click(screen.getByRole("button", { name: /Local directory/ }));
   await act(async () => {
+    saved = true;
     resolve({ data: created });
     await pending;
   });
@@ -665,11 +697,13 @@ it("keeps a late connection result without replacing a newly selected runtime", 
   ).toContain("Local");
   await user.click(screen.getByRole("tab", { name: "Cloud hosting" }));
   await user.click(screen.getByRole("button", { name: "E2B" }));
-  await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Connection" }).textContent,
-    ).toContain("Another E2B"),
-  );
+  expect(
+    screen.getByRole("combobox", { name: "Connection" }).textContent,
+  ).not.toContain("Another E2B");
+  await user.click(screen.getByRole("combobox", { name: "Connection" }));
+  expect(
+    await screen.findByRole("option", { name: "Another E2B" }),
+  ).toBeTruthy();
   expect(state.POST).toHaveBeenCalledOnce();
 });
 
@@ -768,6 +802,7 @@ it("manages connections in place without losing the template draft", async () =>
   });
   await user.clear(recipe);
   await user.type(recipe, "custom-recipe");
+  expect(screen.queryByRole("button", { name: "Add connection" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Manage connections" }));
   const management = await screen.findByRole("dialog", {
     name: "Manage connections",
