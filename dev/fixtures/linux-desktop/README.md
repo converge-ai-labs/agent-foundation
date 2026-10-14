@@ -33,6 +33,8 @@ Xvfb tests do not validate physical display drivers, compositor-specific behavio
 
 ## Service integration
 
+This opt-in test is excluded from the ordinary Service CI suite, which requires zero skipped cases. Run it explicitly with this disposable desktop; do not count an unconfigured or skipped run as native Computer Use validation.
+
 The same native desktop can serve the opt-in Service test on an explicitly published **host loopback** port. This mode runs Service and its test-owned PostgreSQL/Redis on the host; it does not mount host display sockets, credentials or application data. The credential below is public fixture data and must never be used outside this disposable loopback fixture.
 
 After building `a13n-x11-test` above:
