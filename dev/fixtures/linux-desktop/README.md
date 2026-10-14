@@ -50,7 +50,7 @@ docker run -d --name a13n-service-x11-test \
 docker port a13n-service-x11-test 8888
 # Use the loopback port printed above; wait for the fixture daemon to start.
 A13N_SERVICE_X11_ENDPOINT=http://127.0.0.1:PORT \
-  uv run --locked pytest packages/a13n-service/tests/test_computer_x11.py -v
+  uv run --locked pytest packages/a13n-service/tests/environment_providers/test_computer_x11.py -v
 docker stop a13n-service-x11-test
 docker rm a13n-service-x11-test
 ```

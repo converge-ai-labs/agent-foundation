@@ -127,7 +127,6 @@ jobs:
           -o faulthandler_timeout=120
           -o faulthandler_exit_on_timeout=true
           --ignore=packages/a13n-service/tests/test_environments_envd.py
-          --ignore=packages/a13n-service/tests/test_computer_x11.py
           --ignore=packages/a13n-service/tests/environment_providers
           packages/a13n-service/tests
 

@@ -12,7 +12,7 @@ from a13n_harness.environment.models import COMPUTER_ACTIONS, EnvironmentPermiss
 from a13n_service.runs.environments.adapters import execution_connector
 from PIL import Image
 
-from .environments_support import register, target
+from ..environments_support import register, target
 
 ENDPOINT = os.environ.get("A13N_SERVICE_X11_ENDPOINT")
 TOKEN = "service-x11-fixture-token-not-a-secret"
