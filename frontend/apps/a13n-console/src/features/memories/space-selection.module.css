@@ -47,14 +47,14 @@
   overflow-wrap: anywhere;
 }
 .controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: end;
   gap: 12px;
 }
 .alias {
   display: grid;
   gap: 6px;
-  flex: 1;
   min-width: 0;
 }
 .empty {
@@ -67,10 +67,10 @@
     align-items: start;
   }
   .controls {
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .alias {
-    flex-basis: 100%;
+    grid-column: 1 / -1;
   }
 }
 
