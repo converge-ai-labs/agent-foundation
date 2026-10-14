@@ -5,7 +5,8 @@ from sqlalchemy import ForeignKeyConstraint, String
 
 # Join tables are keyed by what they join, usage facts by the Harness's own record IDs, and a memory's store and
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
-# run's display pages by ordinal and pending answers by tool call; every other row has a Service object ID.
+# run's display pages by ordinal and pending answers by tool call. Memory organization state is keyed by session;
+# every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
     "memory_file_revisions",
     "memory_file_stores",
@@ -14,6 +15,7 @@ NOT_OBJECT_KEYED = {
     "passwords",
     "pending_answers",
     "run_item_pages",
+    "session_memories",
     "thread_environments",
     "thread_memories",
     "usage_records",
@@ -31,6 +33,7 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert [column.name for column in metadata.tables["session_memories"].primary_key.columns] == ["session_id"]
     assert [column.name for column in metadata.tables["memory_record_sources"].primary_key.columns] == [
         "memory_id",
         "record_id",
