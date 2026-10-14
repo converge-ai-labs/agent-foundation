@@ -4,7 +4,13 @@ import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
 import { formatCost } from "../../../../shared/cost";
 import { Patch } from "../../../../shared/diff";
-import { formatDuration, formatTokens, resultExcerpt } from "../../format";
+import {
+  formatDuration,
+  formatSpeed,
+  formatTokens,
+  resultExcerpt,
+  tokenFigures,
+} from "../../format";
 import type {
   ActionEntry,
   ContentEntry,
@@ -12,7 +18,6 @@ import type {
   OtherEntry,
   TimelineEntry,
 } from "../../timeline";
-import type { StepUsage } from "../../usage";
 import { readQuestions } from "../questions";
 import { workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
@@ -70,10 +75,21 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
           usage &&
             entry.reportedUsage &&
             t("{{tokens}} out", { tokens: formatTokens(usage.outputTokens) }),
-          cachedShare(usage) !== null &&
-            t("{{percent}}% cached", { percent: cachedShare(usage) }),
+          usage &&
+            tokenFigures(t, {
+              input: usage.inputTokens,
+              output: usage.outputTokens,
+              cached: usage.cacheReadTokens,
+            }).cache,
           usage?.costUsd ? formatCost(usage.costUsd) : null,
           entry.durationMs !== null ? formatDuration(entry.durationMs) : null,
+          usage?.firstChunkMs != null &&
+            t("{{duration}} to first token", {
+              duration: formatDuration(usage.firstChunkMs),
+            }),
+          usage?.generationMs && entry.reportedUsage
+            ? formatSpeed(t, usage.outputTokens / (usage.generationMs / 1000))
+            : null,
           entry.contextTokens
             ? t("{{tokens}} context", {
                 tokens: formatTokens(entry.contextTokens),
@@ -131,13 +147,6 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
       </DisclosureSection>
     </div>
   );
-}
-
-/** Cache reads as a share of everything the request read, or null when unreported. */
-function cachedShare(usage: StepUsage | null) {
-  if (!usage?.cacheReadTokens) return null;
-  const total = usage.inputTokens;
-  return total ? Math.round((usage.cacheReadTokens / total) * 100) : null;
 }
 
 function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {

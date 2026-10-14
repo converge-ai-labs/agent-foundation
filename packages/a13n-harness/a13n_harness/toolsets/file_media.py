@@ -35,6 +35,7 @@ type NativeInputMediaKind = Literal["image", "video", "audio"]
 _DEFAULT_IMAGE_INPUT = ImageInputPolicy()
 
 MAX_MEDIA_UNDERSTANDING_BYTES = 16 * 1024 * 1024
+MAX_IMAGE_UNDERSTANDING_BYTES = 100 * 1024 * 1024
 MAX_MEDIA_UNDERSTANDING_TEXT_CHARS = 4 * 1024 * 1024
 
 IMAGE_UNDERSTANDING_MODEL_ENV = "A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL"
@@ -61,6 +62,11 @@ _TIMEOUT_SECONDS_BY_KIND: dict[NativeInputMediaKind, float] = {
 }
 
 
+def media_source_byte_limit(kind: NativeInputMediaKind) -> int:
+    """Bound original file bytes independently of request-time image compression."""
+    return MAX_IMAGE_UNDERSTANDING_BYTES if kind == "image" else MAX_MEDIA_UNDERSTANDING_BYTES
+
+
 class MediaUnderstandingRequest(BaseModel):
     """Detached bounded input for a media-understanding model."""
 
@@ -70,11 +76,13 @@ class MediaUnderstandingRequest(BaseModel):
     media_type: str = Field(min_length=1, max_length=256)
     source: EnvironmentPath | None = None
     source_name: str = Field(min_length=1, max_length=2_048)
-    source_bytes: bytes = Field(max_length=MAX_MEDIA_UNDERSTANDING_BYTES)
+    source_bytes: bytes = Field(max_length=MAX_IMAGE_UNDERSTANDING_BYTES)
     instructions: str | None = Field(default=None, max_length=64 * 1024)
 
     @model_validator(mode="after")
     def _validate_request(self) -> MediaUnderstandingRequest:
+        if len(self.source_bytes) > media_source_byte_limit(self.kind):
+            raise ValueError("media source exceeds the byte limit for its kind")
         if not self.media_type.startswith(f"{self.kind}/"):
             raise ValueError("media type does not match media kind")
         if "\x00" in self.source_name or "\x00" in (self.instructions or ""):

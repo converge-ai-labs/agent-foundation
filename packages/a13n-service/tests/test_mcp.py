@@ -235,6 +235,7 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     } <= selected
     assert ("/api/v1/runs/{run_id}/interrupt", "post") not in selected
     assert ("/api/v1/runs/{run_id}/attempts/{attempt_id}/trace", "get") in selected
+    assert ("/api/v1/usage", "get") in selected
     assert ("/api/v1/skills", "post") in selected
     assert {
         ("/api/v1/findings", "get"),

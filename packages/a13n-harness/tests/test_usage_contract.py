@@ -1,7 +1,7 @@
 """Observable accounting, delivery and precision guarantees at the public Model boundary."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 
 import pytest
@@ -149,6 +149,28 @@ async def test_background_polls_replace_one_generation_and_survive_replay() -> N
     assert resumed.ledger.summary().input_tokens == 30
     assert resumed.ledger.records[0].record_id == fact.record_id
     assert reporter.records[0].record_id == fact.record_id
+
+
+async def test_streamed_generations_record_their_first_chunk() -> None:
+    async def stream(messages, info):
+        await asyncio.sleep(0.05)
+        yield "hello "
+        yield "world"
+
+    binding = ModelUsageBinding.standalone(source="media")
+    agent = Agent(FunctionModel(stream_function=stream), capabilities=[ModelUsageCapability(binding)])
+    async with agent.run_stream("go") as result:
+        await result.get_output()
+    await Agent(
+        FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
+        capabilities=[ModelUsageCapability(binding)],
+    ).run("go")
+    streamed, requested = binding.ledger.records
+    assert streamed.first_chunk_at is not None and streamed.request_ended_at is not None
+    assert streamed.first_chunk_at - streamed.request_started_at >= timedelta(seconds=0.05)
+    assert streamed.first_chunk_at <= streamed.request_ended_at
+    assert requested.first_chunk_at is None
+    assert requested.request_ended_at is not None and requested.request_ended_at >= requested.request_started_at
 
 
 async def test_auxiliary_concurrency_reserves_request_budget_before_dispatch() -> None:

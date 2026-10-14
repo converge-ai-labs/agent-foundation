@@ -22,11 +22,14 @@ from pydantic_ai.tools import ToolDefinition
 
 from a13n_harness.context import AgentContext, SkillPath
 from a13n_harness.environment._mount_path import parse_mount_path
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FileOperator,
     FilePatchResult,
     FileQueryRequest,
@@ -389,6 +392,20 @@ class _PinnedSkillFileOperator:
 
     async def write_text(self, path: str, text: str, *, mode: FileWriteMode) -> FileWriteResult:
         return await self._route(path).files.write_text(path, text, mode=mode)
+
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        if not operations:
+            return ()
+        route = self._route(operations[0].path)
+        for item in operations:
+            self._same_route(operations[0].path, item.path)
+        return await route.files.batch(operations)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        route = self._route(path)
+        for name, _ in archive.entries:
+            self._same_route(path, f"{path.rstrip('/')}/{name}")
+        return await route.files.write_archive(path, archive)
 
     async def patch_text(self, path: str, patch: str) -> FilePatchResult:
         return await self._route(path).files.patch_text(path, patch)

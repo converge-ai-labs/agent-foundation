@@ -420,7 +420,7 @@ On reconnect, keep the display and send its last continuously applied position a
 
 ## Usage
 
-Every model request is recorded with its token counts and a snapshot of the model's pricing. `GET …/usage` sums the records per model:
+Every model request is recorded with its token counts and a snapshot of the model's pricing. `GET …/usage` sums the records per model, and the same way for each run:
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -428,10 +428,12 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
-             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931"}]}
+             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
+ "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
 ```
 
-Each entry's `model` is a model key, or `null` for records attributed to no model. Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_before`. `cost` is `null` when no record of the model was priced. A run's `usage_at_seal` is its usage when it ended; reports that arrive later still count in `/usage`.
+Each entry's `model` is a model key, or `null` for records attributed to no model. `runs` lists the matching runs that recorded usage, oldest first; their entries add up to `models`. Cached input (`cache_read_tokens`) is part of `input_tokens`. Streamed requests that completed also report `average_time_to_first_chunk_seconds`, the mean wait for the first streamed chunk, and `output_tokens_per_second` while generating after it; both are `null` when no such request was recorded. Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_before`. `cost` is `null` when no record of the model was priced. A run's `usage_at_seal` is its usage when it ended; reports that arrive later still count in `/usage`.
 
 ## Traces
 

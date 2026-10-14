@@ -3,8 +3,17 @@
 import asyncio
 import stat
 import sys
+from io import BytesIO
+from zipfile import ZipFile, ZipInfo
 
 import pytest
+from a13n_harness.environment.archives import FileArchive
+from a13n_harness.environment.files import (
+    FileMkdirOperation,
+    FileRemoveOperation,
+    FileStatOperation,
+    FileWriteTextOperation,
+)
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment.native.commands import NativeCommands
@@ -107,3 +116,176 @@ async def test_guest_directory_no_replace_preserves_winner(tmp_path, guest_files
         await guest_files.move("/source", "/destination")
     assert error.value.code == "environment_conflict"
     assert (tmp_path / "destination" / "SKILL.md").read_text() == "destination"
+
+
+def archive(files, *, root=""):
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as package:
+        for name, content in files.items():
+            package.writestr(root + name, content)
+        package.writestr("__MACOSX/ignored", b"ignored")
+    return FileArchive(buffer.getvalue(), tuple((name, len(data)) for name, data in files.items()), root)
+
+
+async def test_guest_archive_uploads_once_and_extracts_only_manifest(tmp_path, guest_files, monkeypatch):
+    content = {"SKILL.md": b"skill", "references/nested/binary": b"\x00\xff" * 500, "empty": b""}
+    calls, uploads = [], []
+    command, upload = guest_files.commands.files, guest_files.commands.write_stream
+
+    async def record(action, arguments, **kwargs):
+        calls.append(action)
+        return await command(action, arguments, **kwargs)
+
+    async def transfer(path, source):
+        uploads.append(path)
+        await upload(path, source)
+
+    monkeypatch.setattr(guest_files.commands, "files", record)
+    monkeypatch.setattr(guest_files.commands, "write_stream", transfer)
+    result = await guest_files.write_archive("/staging/skill", archive(content, root="uploaded/"))
+    assert result.path == "/staging/skill"
+    assert calls == ["stage", "archive"]
+    assert len(uploads) == 1
+    assert {
+        str(p.relative_to(tmp_path / "staging/skill")): p.read_bytes()
+        for p in (tmp_path / "staging/skill").rglob("*")
+        if p.is_file()
+    } == content
+    assert not list(tmp_path.rglob(".a13n-archive-*"))
+    assert stat.S_IMODE((tmp_path / "staging/skill/SKILL.md").stat().st_mode) == 0o640
+
+
+@pytest.mark.parametrize("existing", ["directory", "file", "symlink"])
+async def test_guest_archive_never_overwrites_existing_destination(tmp_path, guest_files, existing):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "keep").write_bytes(b"keep")
+    destination = tmp_path / "candidate"
+    if existing == "directory":
+        destination.mkdir()
+    elif existing == "file":
+        destination.write_bytes(b"keep")
+    else:
+        destination.symlink_to(target, target_is_directory=True)
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.write_archive("/candidate", archive({"SKILL.md": b"new"}))
+    assert error.value.code == "environment_conflict"
+    assert (target / "keep").read_bytes() == b"keep"
+    assert not (target / "SKILL.md").exists()
+    assert not list(tmp_path.glob(".a13n-archive-*"))
+
+
+@pytest.mark.parametrize("invalid", ["zip", "missing", "size", "symlink", "duplicate"])
+async def test_guest_rejects_invalid_archive_before_creating_destination(tmp_path, guest_files, invalid):
+    value = archive({"SKILL.md": b"ok"})
+    if invalid == "zip":
+        value = FileArchive(b"invalid ZIP", value.entries)
+    elif invalid == "missing":
+        value = FileArchive(value.content, (("missing", 2),))
+    elif invalid == "size":
+        value = FileArchive(value.content, (("SKILL.md", 1),))
+    elif invalid == "duplicate":
+        value = FileArchive(value.content, (("SKILL.md", 2), ("skill.md", 2)))
+    else:
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as package:
+            member = ZipInfo("SKILL.md")
+            member.external_attr = (stat.S_IFLNK | 0o777) << 16
+            package.writestr(member, b"ok")
+        value = FileArchive(buffer.getvalue(), value.entries)
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.write_archive("/candidate", value)
+    assert error.value.code == "environment_request_invalid"
+    assert not (tmp_path / "candidate").exists()
+    assert not list(tmp_path.glob(".a13n-archive-*"))
+
+
+async def test_guest_detects_corrupt_upload_and_retry_succeeds(tmp_path, guest_files, monkeypatch):
+    upload = guest_files.commands.write_stream
+
+    async def corrupt(path, source):
+        await upload(path, BytesIO(b"corrupt transfer"))
+
+    monkeypatch.setattr(guest_files.commands, "write_stream", corrupt)
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.write_archive("/candidate", archive({"SKILL.md": b"ok"}))
+    assert error.value.code == "environment_request_invalid"
+    assert not (tmp_path / "candidate").exists()
+    monkeypatch.setattr(guest_files.commands, "write_stream", upload)
+    await guest_files.write_archive("/candidate", archive({"SKILL.md": b"ok"}))
+    assert (tmp_path / "candidate/SKILL.md").read_bytes() == b"ok"
+
+
+@pytest.mark.parametrize("path", ["../escape", "/absolute", "a/../escape", "a\\escape", "C:/escape", "a//b"])
+def test_archive_manifest_rejects_unsafe_paths(path):
+    with pytest.raises(ValueError):
+        FileArchive(b"", ((path, 0),))
+
+
+@pytest.mark.parametrize("value", [FileArchive(b"x" * 129, ()), FileArchive(b"x", (("large", 129),))])
+async def test_guest_archive_enforces_transfer_and_member_limits_before_dispatch(tmp_path, guest_files, value):
+    guest_files.commands.configuration = guest_files.commands.configuration.model_copy(update={"max_file_bytes": 128})
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.write_archive("/candidate", value)
+    assert error.value.code == "environment_too_large"
+    assert not list(tmp_path.iterdir())
+
+
+async def test_guest_batch_runs_ordered_operations_with_one_command(tmp_path, guest_files, monkeypatch):
+    calls = []
+    original = guest_files.commands.files
+
+    async def record(action, arguments, **kwargs):
+        calls.append(action)
+        return await original(action, arguments, **kwargs)
+
+    monkeypatch.setattr(guest_files.commands, "files", record)
+    results = await guest_files.batch(
+        [
+            FileMkdirOperation(path="/cache"),
+            FileWriteTextOperation(path="/cache/pin", text="first", mode="create"),
+            FileWriteTextOperation(path="/cache/pin", text="first second", mode="upsert"),
+            FileStatOperation(path="/cache/pin"),
+            FileStatOperation(path="/cache/absent", missing_ok=True),
+            FileRemoveOperation(path="/cache/absent", missing_ok=True),
+        ]
+    )
+    assert calls == ["batch"]
+    assert results[1].bytes_written == 5
+    assert results[2].bytes_written == 12
+    assert results[3].size == 12
+    assert results[4:] == (None, None)
+    assert (tmp_path / "cache/pin").read_text() == "first second"
+    assert stat.S_IMODE((tmp_path / "cache/pin").stat().st_mode) == 0o640
+
+
+async def test_guest_batch_stops_on_failure_without_replaying_prefix(tmp_path, guest_files):
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.batch(
+            [
+                FileWriteTextOperation(path="/pin", text="once", mode="create"),
+                FileWriteTextOperation(path="/pin", text="conflict", mode="create"),
+                FileWriteTextOperation(path="/later", text="never", mode="create"),
+            ]
+        )
+    assert error.value.code == "environment_conflict"
+    assert (tmp_path / "pin").read_text() == "once"
+    assert not (tmp_path / "later").exists()
+    assert not list(tmp_path.glob(".a13n-write-*"))
+
+
+async def test_guest_batch_rejects_oversize_before_dispatch(guest_files, monkeypatch):
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Oversized batch must not dispatch")
+
+    monkeypatch.setattr(guest_files.commands, "files", forbidden)
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.batch([FileWriteTextOperation(path="/large", text="x" * 65536, mode="create")])
+    assert error.value.code == "environment_too_large"
+
+
+async def test_guest_batch_rejects_nul_text_without_writing(tmp_path, guest_files):
+    with pytest.raises(EnvironmentError) as error:
+        await guest_files.batch([FileWriteTextOperation(path="/target", text="new\x00", mode="create")])
+    assert error.value.code == "environment_unsupported"
+    assert not list(tmp_path.iterdir())

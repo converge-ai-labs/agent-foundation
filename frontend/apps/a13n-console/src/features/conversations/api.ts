@@ -13,6 +13,8 @@ export type SessionFilters = Omit<
   "limit" | "cursor"
 >;
 
+export type UsageScope = { session_id: string } | { run_id: string };
+
 export function conversationKeys(workspaceId: string) {
   const root = ["conversations", workspaceId] as const;
   return {
@@ -30,6 +32,13 @@ export function conversationKeys(workspaceId: string) {
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
+    /** Recorded model usage of one Session or one Run. */
+    usage: (scope: UsageScope) =>
+      [
+        ...root,
+        "usage",
+        "session_id" in scope ? scope.session_id : scope.run_id,
+      ] as const,
   };
 }
 
@@ -124,6 +133,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
             })
             .then(data),
         getNextPageParam: (page) => page.next_cursor ?? undefined,
+      }),
+    usage: (scope: UsageScope) =>
+      queryOptions({
+        queryKey: keys.usage(scope),
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/usage", { params: { query: scope }, signal })
+            .then(data),
       }),
     threads: (session_id: string) =>
       queryOptions({
@@ -229,6 +247,9 @@ export function invalidateConversation(
           case "session":
           case "threads":
             return !!change.sessionId && id === change.sessionId;
+          // Usage is keyed by the Session or the Run it sums.
+          case "usage":
+            return id === change.sessionId || id === change.runId;
           case "thread":
           case "runs":
           case "inbox":

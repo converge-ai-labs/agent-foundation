@@ -62,6 +62,8 @@ Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine
 
 ## Templates
 
+In Console, choose **Environments → Templates → Create template** to open the creation page. Name the template, choose a runtime, then select an enabled provider connection or add one in place. Use the **Cloud / Own infrastructure** tabs to show one category at a time. Switching back restores the previous runtime selection. These groups do not change provider behavior. Configure the environment and its idle policy, then save. Switching runtimes preserves each runtime's draft configuration. A connection added here is saved independently, even if you cancel template creation. Saving the template does not start an environment.
+
 A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`. This example uses a Docker provider; replace `eprov_...` with its ID.
 
 ```sh
@@ -183,7 +185,7 @@ Async [subagents](agents-and-runs.md#subagents) get environments from their edge
 
 ### Reuse an instance with a project directory
 
-In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. The **Add environment** form on an existing conversation offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
+In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. On an existing conversation, the **Add environment** form under session actions → **Environments and memory** offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
 
 The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories on first activation and reports missing or inaccessible paths without creating them or marking the shared instance broken.
 

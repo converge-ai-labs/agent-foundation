@@ -11,6 +11,7 @@ import { Button } from "a13n-ui";
 import { ArrowsOut, Copy, Code } from "@phosphor-icons/react";
 import { ImagePreview } from "../shell/image-preview";
 import { renderDiagram } from "./mermaid-render";
+import { SyntaxCode } from "./syntax-code";
 import styles from "./markdown.module.css";
 
 export const MarkdownSource = createContext("");
@@ -195,7 +196,9 @@ export function MarkdownPre({
               Waiting for the complete diagram…
             </p>
           )}
-          <pre>{children}</pre>
+          <pre>
+            <SyntaxCode source={source} language={language} />
+          </pre>
         </>
       )}
     </div>

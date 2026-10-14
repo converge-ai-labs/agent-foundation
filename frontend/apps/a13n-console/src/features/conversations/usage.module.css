@@ -1,0 +1,214 @@
+/* Usage figures read as a compact instrument table: hairlines only between
+   groups, numbers right-aligned in tabular figures. */
+.scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: var(--a13n-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.table th,
+.table td {
+  padding: 7px 0 7px 14px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.table :is(th, td):first-child {
+  padding-left: 0;
+}
+/* A model row under its Run's label starts after that label's column. */
+.table tr[data-continued] > :first-child {
+  padding-left: 14px;
+}
+.table [data-number] {
+  text-align: right;
+}
+.table thead th {
+  padding-top: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 500;
+}
+.table tbody tr[data-first] > * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.table thead + tbody tr[data-first]:first-child > * {
+  border-top: 0;
+}
+/* A conversation heading opens its Runs; the first one needs no hairline. */
+.sectionRow th {
+  padding-top: 18px;
+  padding-bottom: 6px;
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-xs);
+  font-weight: 500;
+}
+.table thead + tbody .sectionRow th {
+  padding-top: 12px;
+}
+.sectionRow + tr > * {
+  border-top: 0 !important;
+}
+.label {
+  font-weight: 500;
+}
+.model {
+  max-width: 220px;
+}
+.modelName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 500;
+}
+.modelName > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The request count sits under the name, past the logo. */
+.model small {
+  display: block;
+  margin-top: 2px;
+  padding-left: 24px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  vertical-align: top;
+}
+.meter {
+  position: relative;
+  width: 28px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--a13n-text) 8%, transparent);
+}
+.meter::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--rate);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--a13n-signal) 72%, transparent);
+}
+.partial {
+  margin-left: 1px;
+  color: var(--a13n-secondary);
+}
+.table tfoot th,
+.table tfoot td {
+  border-top: 1px solid var(--a13n-border-soft);
+  font-weight: 500;
+}
+
+/* Session usage --------------------------------------------------------- */
+.trigger {
+  color: var(--a13n-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.trigger:hover {
+  color: var(--a13n-text);
+}
+.report {
+  display: grid;
+  gap: 28px;
+  padding-bottom: 8px;
+}
+.section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.section h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 600;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 14px 0;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.stats > div {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+  padding: 0 16px;
+}
+.stats > div + div {
+  border-left: 1px solid var(--a13n-border-soft);
+}
+.stats dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 500;
+}
+.stats dd {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  min-width: 0;
+}
+.stats strong {
+  font-size: var(--a13n-text-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--a13n-tracking-heading);
+  line-height: 1.2;
+}
+.stats small {
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.label small {
+  display: block;
+  margin-top: 2px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.runLink {
+  color: var(--a13n-text);
+  font-weight: 500;
+  text-decoration: none;
+}
+.runLink:hover {
+  text-decoration: underline;
+}
+.runLink:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+  .stats > div:nth-child(3) {
+    border-left: 0;
+  }
+}
+.meter[data-wide] {
+  width: 100%;
+  margin-top: 6px;
+}

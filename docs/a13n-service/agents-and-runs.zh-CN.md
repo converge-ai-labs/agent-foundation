@@ -420,7 +420,7 @@ curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13
 
 ## 用量
 
-每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总：
+每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总，并对每个运行做同样的汇总：
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -428,10 +428,12 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
-             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931"}]}
+             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
+ "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
 ```
 
-每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。`runs` 按从早到晚列出记录了用量的匹配运行，各运行的条目相加等于 `models`。缓存输入（`cache_read_tokens`）包含在 `input_tokens` 中。已完成的流式请求还会给出 `average_time_to_first_chunk_seconds`（等待首个流式分片的平均时间）和 `output_tokens_per_second`（首个分片之后的生成速度）；没有这类请求时两者为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
 
 ## Trace
 

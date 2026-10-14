@@ -12,7 +12,11 @@ import styles from "./fork.module.css";
 type Thread = Schema["ThreadView"];
 
 /** Names are derived from creation order, independent of recent activity. */
-function threadName(thread: Thread, threads: readonly Thread[], t: TFunction) {
+export function threadName(
+  thread: Thread,
+  threads: readonly Thread[],
+  t: TFunction,
+) {
   if (thread.origin === "child") return thread.subagent ?? t("Child thread");
   const peers = chronological(
     threads.filter((entry) => entry.origin === thread.origin),

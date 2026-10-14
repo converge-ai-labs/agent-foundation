@@ -24,6 +24,8 @@ Console follows your browser's preferred language when it supports it; otherwise
 
 To return later, open **Sessions** and select **Continue conversation** for that session. This opens Chat on its main thread; if there is no unique main thread, choose the history to open. A thread ID search keeps that exact target. Select **Inspect execution** or click the row to open Debug. You can switch between Chat and Debug in the conversation. If a run fails, inspect its details or share its ID with your administrator; see [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
 
+In Debug, the header shows what the session has spent. Select it to see input, cached input, cache hit rate, output, time to first token (TTFT), output speed and cost per model and per run; cached input is part of input. Expand a model call to see its own TTFT and output speed. Each run's **Details** opens the same figures for that run, with its configuration, attempts and lineage.
+
 Messages show the sender’s current name and original submission time in Chat and Debug. Your own messages have a **You** label; service accounts have a **Service account** label. Select a sender’s name to view and copy their email or account ID. Queued messages, guidance and inherited branch history retain their own senders. Names and emails reflect the current profile.
 
 ## Create a conversation branch

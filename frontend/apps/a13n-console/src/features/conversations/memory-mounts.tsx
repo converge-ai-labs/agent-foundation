@@ -16,26 +16,26 @@ import {
 import { isInteractive } from "./transcript/run-actions";
 
 /**
- * The memories the Run's Thread mounts for its later Runs. A mount's access
- * and recall change in place; its memory changes by removing the name and
- * adding it again.
+ * The memories a Thread mounts for its later Runs. A mount's access and recall
+ * change in place; its memory changes by removing the name and adding it again.
  */
-export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
+export function ThreadMemoryMounts({
+  thread: { id: threadId, session_id: sessionId },
+}: {
+  thread: Schema["ThreadView"];
+}) {
   const { t } = useTranslation();
   const client = useClient();
   const { workspace, can } = useWorkspace();
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
   const thread = useQuery(
-    conversationQueries(client, workspace.id).thread(run.thread_id),
+    conversationQueries(client, workspace.id).thread(threadId),
   );
-  const path = { thread_id: run.thread_id };
+  const path = { thread_id: threadId };
   const mounts = useQuery({
     // Mount edits change the Thread, so they refresh with it.
-    queryKey: [
-      ...conversationKeys(workspace.id).thread(run.thread_id),
-      "memories",
-    ],
+    queryKey: [...conversationKeys(workspace.id).thread(threadId), "memories"],
     queryFn: ({ signal }) =>
       client
         .workspace(workspace.id)
@@ -48,8 +48,8 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
   });
   const changed = () =>
     invalidateConversation(cache, workspace.id, {
-      sessionId: run.session_id,
-      threadId: run.thread_id,
+      sessionId,
+      threadId,
     });
   // Every change names the Thread the reader saw.
   const add = useMutation({
@@ -141,7 +141,7 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
         mounts.data && (
           <MemoryMountRows
             mounts={mounts.data}
-            empty={t("No memories.")}
+            empty={t("No memories mounted.")}
             // Each change names the Thread version it read.
             disabled={update.isPending || remove.isPending || thread.isFetching}
             onAccessChange={

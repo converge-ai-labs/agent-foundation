@@ -8630,6 +8630,17 @@
       },
       "ModelUsage": {
         "properties": {
+          "average_time_to_first_chunk_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Time To First Chunk Seconds"
+          },
           "cache_read_tokens": {
             "title": "Cache Read Tokens",
             "type": "integer"
@@ -8669,6 +8680,17 @@
             "title": "Output Tokens",
             "type": "integer"
           },
+          "output_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens Per Second"
+          },
           "requests": {
             "title": "Requests",
             "type": "integer"
@@ -8681,7 +8703,9 @@
           "output_tokens",
           "cache_read_tokens",
           "cache_write_tokens",
-          "cost"
+          "cost",
+          "average_time_to_first_chunk_seconds",
+          "output_tokens_per_second"
         ],
         "title": "ModelUsage",
         "type": "object"
@@ -11051,6 +11075,32 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "RunUsage": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsage"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "thread_id",
+          "models"
+        ],
+        "title": "RunUsage",
+        "type": "object"
       },
       "RunView": {
         "properties": {
@@ -14614,10 +14664,18 @@
             },
             "title": "Models",
             "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunUsage"
+            },
+            "title": "Runs",
+            "type": "array"
           }
         },
         "required": [
-          "models"
+          "models",
+          "runs"
         ],
         "title": "UsageSummary",
         "type": "object"
@@ -31534,7 +31592,8 @@
         "summary": "Summarize Usage",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/agents": {

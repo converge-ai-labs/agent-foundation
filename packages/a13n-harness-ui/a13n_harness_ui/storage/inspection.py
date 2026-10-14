@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import delete, or_, select
+from anyio import to_thread
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.sqlite import insert
 
 from a13n_harness_ui.errors import ThreadError
@@ -38,6 +40,39 @@ class InspectionData:
     turns: tuple[InspectionTurn, ...]
 
 
+def _header_key(record: ThreadInspectionRecord | None) -> tuple[str, int] | None:
+    return (record.source_id, record.version) if record is not None else None
+
+
+def _changed_rows(
+    thread_id: str,
+    data: InspectionData,
+    entries: Sequence[tuple[int, str]],
+    turns: Sequence[tuple[int, str, int, int, str]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    old_entries = dict(entries)
+    old_turns = {position: InspectionTurn(turn_id, start, end, value) for position, turn_id, start, end, value in turns}
+    return (
+        [
+            {"thread_id": thread_id, "position": position, "value_json": value}
+            for position, value in enumerate(data.entries)
+            if old_entries.get(position) != value
+        ],
+        [
+            {
+                "thread_id": thread_id,
+                "position": position,
+                "turn_id": turn.turn_id,
+                "input_position": turn.input_position,
+                "end_position": turn.end_position,
+                "value_json": turn.value_json,
+            }
+            for position, turn in enumerate(data.turns)
+            if old_turns.get(position) != turn
+        ],
+    )
+
+
 class InspectionRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
@@ -50,96 +85,116 @@ class InspectionRepository:
             return InspectionHeader(record.source_id, record.message_count, record.turn_count, record.metadata_json)
 
     async def publish(self, thread_id: str, source_id: str, data: InspectionData) -> bool:
-        """Publish the selected source atomically, retaining unchanged indexed rows."""
-        async with transaction(self._sessions) as session:
-            thread = await session.get(ThreadRecord, thread_id)
-            if thread is None:
-                return False
-            selected = thread.continuation_digest or f"initial:{thread.initial_state_digest}"
-            if selected != source_id:
-                return False
-            previous = await session.get(ThreadInspectionRecord, thread_id)
-            if previous is not None and previous.source_id == source_id and previous.version == INSPECTION_VERSION:
-                return True
-            header = insert(ThreadInspectionRecord).values(
-                thread_id=thread_id,
-                source_id=source_id,
-                version=INSPECTION_VERSION,
-                message_count=len(data.entries),
-                turn_count=len(data.turns),
-                metadata_json=data.metadata_json,
-            )
-            await session.execute(
-                header.on_conflict_do_update(
-                    index_elements=[ThreadInspectionRecord.thread_id],
+        """Prepare a delta without the writer lock, then publish one atomic source."""
+        target = (source_id, INSPECTION_VERSION)
+        while True:
+            async with short_session(self._sessions) as session:
+                # SQLite's legacy transaction mode does not begin on SELECT.
+                # Read the header and its rows from one coherent snapshot.
+                await session.execute(text("BEGIN"))
+                thread = await session.get(ThreadRecord, thread_id)
+                if (
+                    thread is None
+                    or (thread.continuation_digest or f"initial:{thread.initial_state_digest}") != source_id
+                ):
+                    return False
+                previous = _header_key(await session.get(ThreadInspectionRecord, thread_id))
+                if previous == target:
+                    return True
+                entries = (
+                    (
+                        await session.execute(
+                            select(TranscriptEntryRecord.position, TranscriptEntryRecord.value_json).where(
+                                TranscriptEntryRecord.thread_id == thread_id
+                            )
+                        )
+                    )
+                    .tuples()
+                    .all()
+                )
+                turns = (
+                    (
+                        await session.execute(
+                            select(
+                                TranscriptTurnRecord.position,
+                                TranscriptTurnRecord.turn_id,
+                                TranscriptTurnRecord.input_position,
+                                TranscriptTurnRecord.end_position,
+                                TranscriptTurnRecord.value_json,
+                            ).where(TranscriptTurnRecord.thread_id == thread_id)
+                        )
+                    )
+                    .tuples()
+                    .all()
+                )
+            changed_entries, changed_turns = await to_thread.run_sync(_changed_rows, thread_id, data, entries, turns)
+            async with transaction(self._sessions) as session:
+                thread = await session.get(ThreadRecord, thread_id)
+                if (
+                    thread is None
+                    or (thread.continuation_digest or f"initial:{thread.initial_state_digest}") != source_id
+                ):
+                    return False
+                current = _header_key(await session.get(ThreadInspectionRecord, thread_id))
+                if current == target:
+                    return True
+                if current != previous:
+                    # Another process replaced the index while the delta was
+                    # prepared. Release the writer before reading that new base.
+                    continue
+                header = insert(ThreadInspectionRecord).values(
+                    thread_id=thread_id,
+                    source_id=source_id,
+                    version=INSPECTION_VERSION,
+                    message_count=len(data.entries),
+                    turn_count=len(data.turns),
+                    metadata_json=data.metadata_json,
+                )
+                await session.execute(
+                    header.on_conflict_do_update(
+                        index_elements=[ThreadInspectionRecord.thread_id],
+                        set_={
+                            "source_id": header.excluded.source_id,
+                            "version": header.excluded.version,
+                            "message_count": header.excluded.message_count,
+                            "turn_count": header.excluded.turn_count,
+                            "metadata_json": header.excluded.metadata_json,
+                        },
+                    )
+                )
+                await session.execute(
+                    delete(TranscriptEntryRecord).where(
+                        TranscriptEntryRecord.thread_id == thread_id,
+                        TranscriptEntryRecord.position >= len(data.entries),
+                    )
+                )
+                await session.execute(
+                    delete(TranscriptTurnRecord).where(
+                        TranscriptTurnRecord.thread_id == thread_id, TranscriptTurnRecord.position >= len(data.turns)
+                    )
+                )
+                entry = insert(TranscriptEntryRecord)
+                entry = entry.on_conflict_do_update(
+                    index_elements=[TranscriptEntryRecord.thread_id, TranscriptEntryRecord.position],
+                    set_={"value_json": entry.excluded.value_json},
+                )
+                turn = insert(TranscriptTurnRecord)
+                turn = turn.on_conflict_do_update(
+                    index_elements=[TranscriptTurnRecord.thread_id, TranscriptTurnRecord.position],
                     set_={
-                        "source_id": header.excluded.source_id,
-                        "version": header.excluded.version,
-                        "message_count": header.excluded.message_count,
-                        "turn_count": header.excluded.turn_count,
-                        "metadata_json": header.excluded.metadata_json,
+                        "turn_id": turn.excluded.turn_id,
+                        "input_position": turn.excluded.input_position,
+                        "end_position": turn.excluded.end_position,
+                        "value_json": turn.excluded.value_json,
                     },
                 )
-            )
-            # Checkpoints commonly append one message to a large stable prefix.
-            # Do not cascade-delete/rewrite that prefix under SQLite's writer lock.
-            await session.execute(
-                delete(TranscriptEntryRecord).where(
-                    TranscriptEntryRecord.thread_id == thread_id, TranscriptEntryRecord.position >= len(data.entries)
-                )
-            )
-            await session.execute(
-                delete(TranscriptTurnRecord).where(
-                    TranscriptTurnRecord.thread_id == thread_id, TranscriptTurnRecord.position >= len(data.turns)
-                )
-            )
-            entry = insert(TranscriptEntryRecord)
-            entry = entry.on_conflict_do_update(
-                index_elements=[TranscriptEntryRecord.thread_id, TranscriptEntryRecord.position],
-                set_={"value_json": entry.excluded.value_json},
-                where=TranscriptEntryRecord.value_json != entry.excluded.value_json,
-            )
-            turn = insert(TranscriptTurnRecord)
-            turn = turn.on_conflict_do_update(
-                index_elements=[TranscriptTurnRecord.thread_id, TranscriptTurnRecord.position],
-                set_={
-                    "turn_id": turn.excluded.turn_id,
-                    "input_position": turn.excluded.input_position,
-                    "end_position": turn.excluded.end_position,
-                    "value_json": turn.excluded.value_json,
-                },
-                where=or_(
-                    TranscriptTurnRecord.turn_id != turn.excluded.turn_id,
-                    TranscriptTurnRecord.input_position != turn.excluded.input_position,
-                    TranscriptTurnRecord.end_position != turn.excluded.end_position,
-                    TranscriptTurnRecord.value_json != turn.excluded.value_json,
-                ),
-            )
-            # Bound each driver submission, without exposing a partially published index.
-            for start in range(0, len(data.entries), 100):
-                await session.execute(
-                    entry,
-                    [
-                        {"thread_id": thread_id, "position": position, "value_json": value}
-                        for position, value in enumerate(data.entries[start : start + 100], start)
-                    ],
-                )
-            for start in range(0, len(data.turns), 100):
-                await session.execute(
-                    turn,
-                    [
-                        {
-                            "thread_id": thread_id,
-                            "position": position,
-                            "turn_id": turn.turn_id,
-                            "input_position": turn.input_position,
-                            "end_position": turn.end_position,
-                            "value_json": turn.value_json,
-                        }
-                        for position, turn in enumerate(data.turns[start : start + 100], start)
-                    ],
-                )
-        return True
+                # Submit only changed rows, not a long unchanged JSON prefix.
+                # Batches stay bounded and no partially published index is visible.
+                for start in range(0, len(changed_entries), 100):
+                    await session.execute(entry, changed_entries[start : start + 100])
+                for start in range(0, len(changed_turns), 100):
+                    await session.execute(turn, changed_turns[start : start + 100])
+            return True
 
     async def entries(self, thread_id: str, source_id: str, positions: tuple[int, ...]) -> tuple[str, ...]:
         if not positions:

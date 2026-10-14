@@ -240,7 +240,11 @@ it("sums reported usage and refuses to complete a total that lost a price", () =
           record_id: "record-2",
           response_ordinal: 1,
           model_name: "claude-sonnet",
-          request_usage: { input_tokens: 80, output_tokens: 10 },
+          request_usage: {
+            input_tokens: 80,
+            output_tokens: 10,
+            cache_read_tokens: 64,
+          },
         },
       ],
     }),
@@ -248,10 +252,29 @@ it("sums reported usage and refuses to complete a total that lost a price", () =
   expect(totals).toMatchObject({
     inputTokens: 200,
     outputTokens: 40,
+    // Cached input is the part of input the provider served from its cache.
+    cacheReadTokens: 64,
     costUsd: "0.01",
     costComplete: false,
     durationMs: 9000,
   });
+});
+
+it("counts model requests from usage when no lifecycle steps were retained", () => {
+  const { totals } = timeline(
+    custom("a13n.harness.usage", {
+      type: "usage_report",
+      reason: "model_request",
+      records: [0, 1].map((ordinal) => ({
+        kind: "model",
+        record_id: `record-${ordinal}`,
+        response_ordinal: ordinal,
+        model_name: "claude-sonnet",
+        request_usage: { input_tokens: 100, output_tokens: 5 },
+      })),
+    }),
+  );
+  expect(totals).toMatchObject({ modelCalls: 2, inputTokens: 200 });
 });
 
 it("computes a patch from the reported edit content", () => {

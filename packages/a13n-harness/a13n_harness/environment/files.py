@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.models import EnvironmentOperationReceipt
 
 type FileWriteMode = Literal["create", "replace", "upsert", "append"]
+MAX_FILE_BATCH_OPERATIONS = 128
+MAX_FILE_BATCH_BYTES = 64 * 1024
 type FileKind = Literal["file", "directory", "symlink", "other"]
 type FileIgnoreMode = Literal["none", "git"]
 
@@ -124,7 +127,54 @@ class FileMutationResult(BaseModel):
     receipt: EnvironmentOperationReceipt
 
 
+class _FileOperation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: str
+
+
+class FileStatOperation(_FileOperation):
+    action: Literal["stat"] = "stat"
+    missing_ok: bool = False
+
+
+class FileMkdirOperation(_FileOperation):
+    action: Literal["mkdir"] = "mkdir"
+    parents: bool = False
+    exist_ok: bool = False
+
+
+class FileWriteTextOperation(_FileOperation):
+    action: Literal["write_text"] = "write_text"
+    text: str
+    # Batches carry whole small texts; append remains an individual read/modify/write operation.
+    mode: Literal["create", "replace", "upsert"]
+
+
+class FileRemoveOperation(_FileOperation):
+    action: Literal["remove"] = "remove"
+    recursive: bool = False
+    missing_ok: bool = False
+
+
+type FileOperation = FileStatOperation | FileMkdirOperation | FileWriteTextOperation | FileRemoveOperation
+type FileBatchValue = FileMetadata | FileMutationResult | FileWriteResult | None
+
+
 class FileOperator(Protocol):
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        """Run bounded operations in order in one file scope, stopping on error.
+
+        `MAX_FILE_BATCH_OPERATIONS` and `MAX_FILE_BATCH_BYTES` (JSON) bound one batch.
+
+        A failed or cancelled batch may have completed a prefix; it is not a transaction and is never replayed.
+        """
+        ...
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        """Extract an exact ZIP manifest into an absent directory; the caller owns publication."""
+        ...
+
     async def read_text(
         self,
         path: str,

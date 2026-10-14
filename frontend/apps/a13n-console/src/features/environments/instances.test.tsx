@@ -14,6 +14,7 @@ vi.mock("../../auth/context", () => ({
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
+    basePath: "/workspace/ws_test",
     organization: { id: "org_test" },
     can: () => true,
   }),
@@ -91,7 +92,14 @@ it.each([
       </QueryClientProvider>,
     );
     await screen.findByText(empty);
-    const create = screen.getByRole("button", { name: action });
+    const create = screen.getByRole(
+      section === "templates" ? "link" : "button",
+      { name: action },
+    );
+    if (section === "templates")
+      expect(create.getAttribute("href")).toBe(
+        "/workspace/ws_test/environments/new",
+      );
     expect(create.closest("header")).toBeNull();
     const manage = screen.getByRole("link", { name: "Manage providers" });
     expect(manage.closest("header")).not.toBeNull();

@@ -4,9 +4,12 @@ import { relativeTime } from "../time";
 export function Timestamp({
   value,
   relative = false,
+  precise = false,
 }: {
   value?: string | null;
   relative?: boolean;
+  /** Seconds matter where durations are compared, as in a Run's record. */
+  precise?: boolean;
 }) {
   const { i18n, t } = useTranslation();
   const date = value ? new Date(value) : undefined;
@@ -14,7 +17,7 @@ export function Timestamp({
   const full = valid
     ? new Intl.DateTimeFormat(i18n.resolvedLanguage, {
         dateStyle: "medium",
-        timeStyle: "short",
+        timeStyle: precise ? "medium" : "short",
       }).format(date)
     : t("Unavailable");
   return (

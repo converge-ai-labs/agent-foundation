@@ -1465,10 +1465,10 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
             assert scope_open
             return FileMetadata(path=path, kind="file", size=4, writable=False)
 
-        async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
-            del path, offset, length
+        async def read_bytes_stream(self, path: str, *, chunk_size: int = 65_536) -> AsyncIterator[bytes]:
+            del path, chunk_size
             assert scope_open
-            return b"\x89PNG"
+            yield b"\x89PNG"
 
     files = BindingVersionFiles()
 

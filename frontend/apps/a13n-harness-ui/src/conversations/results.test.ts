@@ -318,3 +318,65 @@ it("looks up only dirty followed IDs instead of the complete interest set", asyn
   expect(lookups).toEqual([["two"]]);
   expect(item.isUnread("two")).toBe(true);
 });
+
+it("deduplicates interest registration across detail updates and fast Send", async () => {
+  const store = new ResultStore();
+  const item = tracker(store);
+  let release!: () => void;
+  const paused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = store.update.bind(store);
+  const update = vi
+    .spyOn(store, "update")
+    .mockImplementation(async (...args) => {
+      await paused;
+      return original(...args);
+    });
+  const invalidate = vi.spyOn(item, "invalidate");
+  const first = item.follow(thread("one", 1), 100);
+  const repeated = item.follow(thread("one", 2), 101);
+  let admitted = false;
+  const send = item.beforeRun("one").then(() => {
+    admitted = true;
+  });
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(globalThis.fetch).not.toHaveBeenCalled();
+  expect(admitted).toBe(false);
+  release();
+  await Promise.all([first, repeated, send]);
+  expect(item.getSnapshot().followed.get("one")).toBe(1);
+  expect(item.isUnread("one")).toBe(true);
+  for (let index = 0; index < 100; index++)
+    await item.follow(thread("one", 3), 102 + index);
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith("one");
+  expect(
+    item.getSnapshot().threads.get("one")?.thread.completion?.version,
+  ).toBe(3);
+});
+
+it("publishes lookup observations once per page and skips unchanged storage notifications", async () => {
+  const store = new ResultStore();
+  await Promise.all(
+    Array.from({ length: 260 }, (_, index) => {
+      const id = `thread-${index}`;
+      threads.set(id, thread(id, 1));
+      return store.update(id, 0, true);
+    }),
+  );
+  const item = tracker(store);
+  const changed = vi.fn();
+  item.subscribe(changed);
+  await item.refresh();
+  expect(changed).toHaveBeenCalledTimes(4); // Interest set and three lookup pages.
+  changed.mockClear();
+  await item.refresh();
+  expect(changed).toHaveBeenCalledTimes(3);
+  changed.mockClear();
+  await item.follow(thread("one", 0), Date.now() + 1000);
+  await item.refresh();
+  changed.mockClear();
+  item.observe(thread("one", 0), 0);
+  expect(changed).not.toHaveBeenCalled();
+});

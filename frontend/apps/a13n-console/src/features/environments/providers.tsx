@@ -1,3 +1,4 @@
+import { EnvironmentRuntimeCatalog } from "./runtime-catalog";
 import { useTranslation } from "react-i18next";
 import { KindProviders, providerStyles, useProviderTypes } from "../providers";
 
@@ -10,6 +11,13 @@ export function EnvironmentProviders() {
   return (
     <KindProviders
       kind="environment"
+      renderCatalog={(definitions, onChoose) => (
+        <EnvironmentRuntimeCatalog
+          searchable
+          definitions={definitions}
+          onChoose={onChoose}
+        />
+      )}
       addDescription="Choose where your environments run."
       testDescription="Reads from the provider without creating or starting anything."
       notice={

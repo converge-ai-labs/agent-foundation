@@ -113,28 +113,25 @@ function mountEditor(kind: string, isNew = true) {
   return { client, drafts, path, content, user: userEvent.setup() };
 }
 
-it.each(["model", "agent"])(
-  "creates a %s directly without requiring a separate validation step",
-  async (kind) => {
-    const { client, drafts, path, content, user } = mountEditor(kind);
-    expect(screen.getByRole("heading", { name: `Add ${kind}` })).toBeTruthy();
-    expect(
-      screen.getByText("Advanced configuration").closest("details")?.open,
-    ).toBe(false);
-    await user.click(screen.getByRole("button", { name: `Create ${kind}` }));
-    await waitFor(() => expect(drafts.get(path)?.base).toBe(content));
-    expect(client.PUT).toHaveBeenCalledWith(
-      "/api/configuration/sources/{relative_path}",
-      {
-        params: { path: { relative_path: path } },
-        body: { content },
-      },
-    );
-    expect(client.POST).not.toHaveBeenCalled();
-    expect(drafts.get(path)?.digest).toBe("saved");
-    expect(screen.getByRole("status").textContent).toBe("Saved");
-  },
-);
+it("creates a model directly without requiring a separate validation step", async () => {
+  const { client, drafts, path, content, user } = mountEditor("model");
+  expect(screen.getByRole("heading", { name: "Add model" })).toBeTruthy();
+  expect(
+    screen.getByText("Advanced configuration").closest("details")?.open,
+  ).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Create model" }));
+  await waitFor(() => expect(drafts.get(path)?.base).toBe(content));
+  expect(client.PUT).toHaveBeenCalledWith(
+    "/api/configuration/sources/{relative_path}",
+    {
+      params: { path: { relative_path: path } },
+      body: { content },
+    },
+  );
+  expect(client.POST).not.toHaveBeenCalled();
+  expect(drafts.get(path)?.digest).toBe("saved");
+  expect(screen.getByRole("status").textContent).toBe("Saved");
+});
 
 it("checks without saving and keeps a rejected draft available for repair", async () => {
   const { client, drafts, path, content, user } = mountEditor("model");

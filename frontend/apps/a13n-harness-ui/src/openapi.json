@@ -19426,6 +19426,30 @@
         "title": "ThreadMetadataMutation",
         "type": "object"
       },
+      "DraftCapture": {
+        "additionalProperties": false,
+        "description": "Exact synchronized input to consume only after submission is accepted.",
+        "properties": {
+          "draft_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "update_base64": {
+            "maxLength": 700000,
+            "minLength": 1,
+            "title": "Update Base64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft_id",
+          "update_base64"
+        ],
+        "title": "DraftCapture",
+        "type": "object"
+      },
       "FastSelection": {
         "anyOf": [
           {
@@ -19557,6 +19581,16 @@
             ],
             "title": "Source Id"
           },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftCapture"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "app_context": {
             "default": [],
             "items": {
@@ -19643,6 +19677,16 @@
               }
             ],
             "title": "Source Id"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftCapture"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

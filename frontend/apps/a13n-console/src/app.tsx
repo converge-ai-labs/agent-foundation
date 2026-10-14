@@ -68,6 +68,11 @@ const MemoryDetail = lazy(() =>
     default: module.MemoryDetail,
   })),
 );
+const CreateEnvironmentTemplate = lazy(() =>
+  import("./features/environments/template-create").then((module) => ({
+    default: module.CreateEnvironmentTemplate,
+  })),
+);
 const EnvironmentsPage = lazy(() =>
   import("./features/environments/page").then((module) => ({
     default: module.EnvironmentsPage,
@@ -240,6 +245,10 @@ function AppContent() {
                       <Route
                         path="environments"
                         element={<EnvironmentsPage />}
+                      />
+                      <Route
+                        path="environments/new"
+                        element={<CreateEnvironmentTemplate />}
                       />
                       <Route
                         path="environments/instances"

@@ -1,96 +1,80 @@
-/* The run's own record: identifiers, attempts, lineage, and the navigator. */
+/* A Run's record, read in its Details dialog: sections separated by space,
+   facts as label-over-value cells. */
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 .details {
   display: grid;
-  gap: 16px;
+  gap: 26px;
   min-width: 0;
-  margin: 0 0 16px 30px;
-  padding: 14px 16px;
-  border-radius: var(--a13n-radius-group);
-  background: var(--a13n-surface);
+  padding-bottom: 8px;
 }
-.detailColumns {
+.section {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 16px;
-  align-items: start;
-}
-.detailBlock {
-  display: grid;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
-  align-content: start;
 }
-.detailLabel {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-2xs);
-  font-weight: 500;
+.section h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 600;
 }
-.detailNote {
+.note {
   margin: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
-}
-.detailPath {
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-xs);
-  overflow-wrap: anywhere;
-}
-.detailDisclosure {
-  margin-top: 4px;
 }
 .facts {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
   margin: 0;
-  font-size: var(--a13n-text-xs);
+  font-size: var(--a13n-text-sm);
 }
 .facts > div {
-  display: grid;
-  grid-template-columns: minmax(0, 116px) minmax(0, 1fr);
-  gap: 10px;
-  align-items: baseline;
-  min-width: 0;
-}
-.facts dt {
-  color: var(--a13n-secondary);
-}
-.facts dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.attempts,
-.lineageList {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--a13n-text-xs);
-}
-.attempt {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
-.attemptHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.attemptHead strong {
-  font-weight: 500;
-}
-.attemptSpan {
+.facts dt {
   color: var(--a13n-secondary);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--a13n-text-xs);
 }
-.lineageList li {
+.facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--a13n-text-sm);
+}
+.attempt {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.item {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+.item strong {
+  font-weight: 500;
+}
+.meta {
+  margin-left: auto;
   color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Navigator -------------------------------------------------------------- */
@@ -133,8 +117,8 @@
     display: none;
   }
 }
-@media (max-width: 760px) {
-  .details {
-    margin-left: 0;
+@media (max-width: 560px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

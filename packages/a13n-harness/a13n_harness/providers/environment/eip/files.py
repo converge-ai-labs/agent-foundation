@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 from pydantic import ValidationError
 
+from a13n_harness.environment.archives import FileArchive, extract_archive_files
+from a13n_harness.environment.batches import apply_file_batch
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FilePatchResult,
     FileQueryRequest,
     FileTextMatch,
@@ -32,6 +36,12 @@ from a13n_harness.providers.environment.eip._common import (
 
 
 class EIPFileOperator:
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        return await apply_file_batch(self, operations)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        return await extract_archive_files(self, path, archive)
+
     def __init__(
         self,
         *,

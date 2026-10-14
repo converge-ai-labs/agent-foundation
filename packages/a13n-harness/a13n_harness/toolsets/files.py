@@ -19,6 +19,7 @@ from a13n_harness._json import redact_json
 from a13n_harness.context import AgentContext, ToolMetadataKey
 from a13n_harness.environment._mount_path import normalize_operation_path
 from a13n_harness.environment._resources import EnvironmentResources
+from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.files import (
     FileMetadata,
     FileOperator,
@@ -55,6 +56,7 @@ from .file_media import (
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
     NativeInputMediaKind,
+    media_source_byte_limit,
 )
 from .file_results import (
     FileCopyItem,
@@ -89,7 +91,7 @@ _MAX_MODEL_TEXT_BYTES = 256 * 1024
 _MAX_MODEL_TEXT_PAGE_BYTES = 4 * 1024 * 1024
 _MAX_MODEL_EDIT_BYTES = 16 * 1024 * 1024
 _MAX_MODEL_RESULTS = 1_000
-_MAX_MODEL_MEDIA_BYTES = MAX_MEDIA_UNDERSTANDING_BYTES
+_MAX_MODEL_VIEW_OUTPUT_BYTES = MAX_MEDIA_UNDERSTANDING_BYTES
 _MAX_MODEL_TEXT_RULE_PAGE_BYTES = 16 * 1024 * 1024
 _SKILL_MARKDOWN_LINE_LIMIT = 800
 _SKILL_MARKDOWN_MAX_LINE_LENGTH = 20_000
@@ -257,8 +259,11 @@ class FileToolset:
                 "read_only",
                 resources=self._path_resources(lambda arguments: (_string_argument(arguments, "file_path"),)),
                 name="view",
-                description="Read bounded text segments or attach common image, video, and audio files natively.",
-                max_output_bytes=_MAX_MODEL_MEDIA_BYTES,
+                description=(
+                    "Read bounded text or analyze common image, video, and audio files. "
+                    "Uses configured media understanding when the active model lacks native media support."
+                ),
+                max_output_bytes=_MAX_MODEL_VIEW_OUTPUT_BYTES,
             ),
             self._tool(
                 self.write,
@@ -456,6 +461,8 @@ class FileToolset:
         retention_metadata = {COLD_START_RETENTION_METADATA_KEY: "preserve"} if profile.preserve_on_cold_start else None
         media_type = _MEDIA_TYPES.get(extension)
         if media_type is not None:
+            kind = cast(NativeInputMediaKind, media_type.split("/", maxsplit=1)[0])
+            maximum = media_source_byte_limit(kind)
             try:
                 async with self._file_access.scope(file_path) as files:
                     self._guard_execution()
@@ -465,26 +472,26 @@ class FileToolset:
                             "Media view source is not a file.",
                             code="environment_request_invalid",
                         )
-                    if metadata.size is not None and metadata.size > _MAX_MODEL_MEDIA_BYTES:
+                    if metadata.size is not None and metadata.size > maximum:
                         raise EnvironmentError(
                             "Media file exceeds the model view limit.",
                             code="environment_too_large",
                         )
                     self._guard_unscoped_step()
-                    data = await files.read_bytes(
-                        file_path,
-                        length=_MAX_MODEL_MEDIA_BYTES + 1,
-                    )
-                    if len(data) > _MAX_MODEL_MEDIA_BYTES:
-                        raise EnvironmentError(
-                            "Media file exceeds the model view limit.",
-                            code="environment_too_large",
-                        )
+                    content = bytearray()
+                    async with closing_stream(files.read_bytes_stream(file_path)) as stream:
+                        async for chunk in stream:
+                            if len(content) + len(chunk) > maximum:
+                                raise EnvironmentError(
+                                    "Media file exceeds the model view limit.",
+                                    code="environment_too_large",
+                                )
+                            content.extend(chunk)
+                    data = bytes(content)
                     source = self._file_access.resolved_path(file_path)
             except EnvironmentError as exc:
                 return _environment_error_result(exc)
 
-            kind = cast(NativeInputMediaKind, media_type.split("/", maxsplit=1)[0])
             if _model_supports_native_media(ctx, kind):
                 message = f"The {media_type} file {file_path} is attached in this tool result."
                 return ToolReturn(

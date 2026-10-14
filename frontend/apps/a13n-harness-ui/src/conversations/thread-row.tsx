@@ -22,6 +22,8 @@ import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
 import { refreshThread } from "./refresh";
+import { refreshActivity } from "./activity-updates";
+import { applyThreadMutation } from "./thread-updates";
 import { ComposerDrafts } from "./composer";
 import { conversationTitle } from "./local-input";
 import { NewConversationDrafts, newConversationPath } from "./new-conversation";
@@ -120,14 +122,10 @@ export function ThreadRow({
           },
         }),
       ),
-    // Refetch, rather than replacing newer live activity with a mutation snapshot.
-    onSettled: async () => {
-      await Promise.all([
-        queries.invalidateQueries({
-          queryKey: ["thread", row.thread.thread_id],
-        }),
-        refreshThreadLists(queries),
-      ]);
+    onSuccess: (updated) => applyThreadMutation(queries, updated),
+    onSettled: () => {
+      refreshThread(queries, row.thread.thread_id, "metadata");
+      refreshActivity(queries, transport, row.thread.thread_id);
       if (document.activeElement === document.body)
         actionsButton.current?.focus();
     },

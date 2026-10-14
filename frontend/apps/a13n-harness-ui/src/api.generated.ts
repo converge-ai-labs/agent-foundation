@@ -7034,6 +7034,16 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
+        /**
+         * DraftCapture
+         * @description Exact synchronized input to consume only after submission is accepted.
+         */
+        DraftCapture: {
+            /** Draft Id */
+            draft_id: string;
+            /** Update Base64 */
+            update_base64: string;
+        };
         FastSelection: boolean | "ultrafast";
         /** InputAttachmentReference */
         InputAttachmentReference: {
@@ -7065,6 +7075,7 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            draft?: components["schemas"]["DraftCapture"] | null;
             /**
              * App Context
              * @default []
@@ -7091,6 +7102,7 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            draft?: components["schemas"]["DraftCapture"] | null;
         };
     };
     responses: never;

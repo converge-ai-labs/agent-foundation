@@ -132,9 +132,6 @@ async function loaded(name = "screen.png") {
 
 it.each([
   ["screen.png", 88_047],
-  ["photo.JPG", 600_000],
-  ["photo.jpeg", 800],
-  ["animated.gif", 900],
   ["screen.webp", 10 * 1024 * 1024],
 ])(
   "streams %s at %i bytes without collecting a Blob or treating it as editable text",

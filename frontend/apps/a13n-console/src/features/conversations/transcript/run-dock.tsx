@@ -140,7 +140,11 @@ export function RunDock({
         ) : (
           <PendingRequests pending={waiting.pending} />
         ))}
-      <ThreadInbox thread={thread} canRunNext={canRunNext} />
+      <ThreadInbox
+        thread={thread}
+        canRunNext={canRunNext}
+        quiet={level === "chat"}
+      />
       <div className={styles.dock}>
         {above}
         {!current ? (

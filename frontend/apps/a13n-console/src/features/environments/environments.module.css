@@ -168,3 +168,141 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Continuous template creation ------------------------------------------ */
+.creationPage {
+  max-width: 1080px;
+}
+.templateFields {
+  display: contents;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.creationForm {
+  max-width: 880px;
+}
+.creationForm .templateFields > section {
+  padding-block: 26px;
+}
+.creationForm .templateFields > section:first-child {
+  padding-top: 0;
+}
+.runtimeGroups {
+  display: grid;
+  gap: 24px;
+}
+.runtimeGroup {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.hostingTabs {
+  width: 100%;
+}
+.hostingTabs > [data-slot="tabs-tab"] {
+  flex: 1 1 0;
+}
+.runtimeHeading p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.runtimeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.runtimeChoice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 14px;
+  text-align: left;
+  background: var(--a13n-surface);
+  border: 1px solid transparent;
+  border-radius: var(--a13n-radius-row);
+  cursor: pointer;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+}
+.runtimeChoice:hover {
+  background: var(--a13n-hover);
+}
+.runtimeChoice:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+.runtimeChoice[aria-pressed="true"] {
+  border-color: var(--a13n-focus);
+}
+.runtimeChoice > svg,
+.runtimeChoice > img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.runtimeChoice span {
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.runtimeChoice small {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+}
+.runtimeChoice .runtimeCheck {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--a13n-focus);
+}
+.connectionBlock {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 18px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.connectionRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.connectionRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.connectionRow > button {
+  flex-shrink: 0;
+}
+.creationNote {
+  margin: 12px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.65;
+  max-width: 76ch;
+}
+.creationForm > [data-a13n-form-actions] {
+  position: sticky;
+  bottom: 0;
+  padding: 18px 0;
+  background: var(--a13n-canvas);
+  border-top: 1px solid var(--a13n-border-soft);
+  margin-top: 20px;
+  z-index: 1;
+}
+@media (max-width: 640px) {
+  .runtimeGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .connectionRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

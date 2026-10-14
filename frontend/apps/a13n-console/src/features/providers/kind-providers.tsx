@@ -79,8 +79,13 @@ export function KindProviders({
   notice,
   addDescription,
   testDescription,
+  renderCatalog,
 }: {
   kind: ProviderKind;
+  renderCatalog?: (
+    definitions: readonly Definition[],
+    onChoose: (type: string) => void,
+  ) => ReactNode;
   notice?: ReactNode;
   /** What the catalog step asks the reader to choose, as a translation key. */
   addDescription: string;
@@ -105,6 +110,7 @@ export function KindProviders({
         kind={kind}
         definitions={connectable}
         description={addDescription}
+        renderCatalog={renderCatalog}
       />
     ) : undefined;
   const definitionFor = (type: string) =>
@@ -154,7 +160,12 @@ function AddKindProvider({
   kind,
   definitions,
   description,
+  renderCatalog,
 }: {
+  renderCatalog?: (
+    definitions: readonly Definition[],
+    onChoose: (type: string) => void,
+  ) => ReactNode;
   kind: ProviderKind;
   definitions: Definition[];
   description: string;
@@ -171,6 +182,7 @@ function AddKindProvider({
     <AddProviderDialog<Definition>
       key={generation}
       definitions={definitions}
+      renderCatalog={renderCatalog}
       open={open}
       onOpenChange={change}
       description={t(description)}
@@ -251,10 +263,12 @@ function EditKindProvider({
   );
 }
 
-function ProviderForm({
+export function ProviderForm({
   kind,
   initial,
   definition: chosen,
+  onCreated,
+  createLabel,
   definitions,
   testDescription,
   close,
@@ -262,6 +276,8 @@ function ProviderForm({
 }: {
   kind: ProviderKind;
   initial?: Resource;
+  onCreated?: (provider: Schema["Provider"]) => void;
+  createLabel?: string;
   definition?: Definition;
   definitions: Definition[];
   /** What testing the saved provider does; creation offers no test. */
@@ -287,7 +303,8 @@ function ProviderForm({
     definition = definitions.find((item) => item.type === type) ?? chosen,
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);
-  function done() {
+  function done(provider: Schema["Provider"]) {
+    if (!basis) onCreated?.(provider);
     void cache.invalidateQueries({ queryKey: [`${kind}-providers`] });
     close();
   }
@@ -327,6 +344,7 @@ function ProviderForm({
         className={providerStyles.connectForm}
         onSubmit={(event) => {
           event.preventDefault();
+          event.stopPropagation();
           save.mutate();
         }}
       >
@@ -349,7 +367,7 @@ function ProviderForm({
         <FormActions
           pending={save.isPending}
           onCancel={close}
-          label={t("Add provider")}
+          label={createLabel ?? t("Add provider")}
         />
       </form>
     );
