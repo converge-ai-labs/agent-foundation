@@ -11,10 +11,13 @@ export function MessageAuthor({
   entryId,
   principalId,
   submittedAt,
+  plain = false,
 }: {
   entryId?: string | null;
   principalId?: string | null;
   submittedAt?: string;
+  /** Debug names the author as a fact: no face, and the Run says when. */
+  plain?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const { author, me, sameName, failed, retry } = useMessageAuthor(entryId);
@@ -22,7 +25,7 @@ export function MessageAuthor({
   const id = author?.principal_id ?? principalId;
   const name = principal?.name ?? t("User");
   const service = principal?.kind === "service_account";
-  const date = author?.submitted_at ?? submittedAt;
+  const date = plain ? undefined : (author?.submitted_at ?? submittedAt);
   const shortId = id ? id.slice(-8) : undefined;
   return (
     <div className={styles.line}>
@@ -32,7 +35,7 @@ export function MessageAuthor({
           className={styles.trigger}
           aria-label={t("Show author: {{name}}", { name })}
         >
-          {service ? (
+          {plain ? null : service ? (
             <RobotIcon className={styles.robot} aria-hidden="true" />
           ) : principal ? (
             <UserAvatar

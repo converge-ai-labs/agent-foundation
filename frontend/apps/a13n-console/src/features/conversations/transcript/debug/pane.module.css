@@ -1,13 +1,8 @@
-/* Expanded rows: what one entry held, on the soft surface under it. */
+/* An opened line: what one entry held. The log's detail band places it. */
 .pane {
   display: grid;
   gap: 12px;
   min-width: 0;
-  padding: 10px 12px 14px 30px;
-  border-radius: var(--a13n-radius-tile);
-  border-start-start-radius: 0;
-  border-start-end-radius: 0;
-  background: var(--a13n-surface);
 }
 .paneStats {
   display: flex;

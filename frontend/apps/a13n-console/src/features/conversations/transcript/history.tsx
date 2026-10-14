@@ -14,6 +14,7 @@ import { isOmitted } from "../display";
 import { presentItems } from "../projection";
 import { StoredContents } from "../stored-content";
 import { runTimeline } from "../timeline";
+import { FailureNotice } from "./failure-notice";
 import { DebugRunSection } from "./debug/run-section";
 import { useThreadRuns } from "./thread-runs";
 import { RunBlock } from "./run-block";
@@ -313,7 +314,16 @@ function HistoricalRun({
                 {t("View run")}
               </Link>
             }
-          />
+          >
+            {/* Only the latest Run offers to resubmit; ancestors retain their outcome. */}
+            {(run.failure != null ||
+              ["failed", "cancelled"].includes(run.status)) && (
+              <FailureNotice
+                failure={run.failure}
+                cancelled={run.status === "cancelled"}
+              />
+            )}
+          </RunBlock>
         </div>
       )}
     </StoredContents>

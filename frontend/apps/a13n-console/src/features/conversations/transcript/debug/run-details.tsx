@@ -63,9 +63,14 @@ export function RunDetailsDialog({
       })}
       closeLabel={t("Close")}
       trigger={
-        <Button variant="ghost" size="sm" type="button">
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          aria-label={t("Details")}
+        >
           <InfoIcon size={14} aria-hidden="true" />
-          {t("Details")}
+          <span data-action-label>{t("Details")}</span>
         </Button>
       }
     >

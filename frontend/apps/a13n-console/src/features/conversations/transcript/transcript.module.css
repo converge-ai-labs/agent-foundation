@@ -1,4 +1,8 @@
 /* Column ----------------------------------------------------------------- */
+/* Chat's page wrappers add no box: the run column is the stage's own child. */
+.page {
+  display: contents;
+}
 .run {
   display: flex;
   flex-direction: column;

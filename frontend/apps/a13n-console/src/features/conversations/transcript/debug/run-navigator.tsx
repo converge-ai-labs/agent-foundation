@@ -29,7 +29,7 @@ export function RunNavigator({
     if (next) tree.open(next);
   };
   return (
-    <div className={styles.navigator}>
+    <div className={styles.navigator} data-run-index>
       <RunOutline outline={tree} />
       <div className={styles.navigatorPill}>
         <Button
