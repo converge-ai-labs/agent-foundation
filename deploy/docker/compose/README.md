@@ -51,7 +51,24 @@ This allowance changes the HTTPS requirement, not network access. Service does n
 
 The stack explicitly enables Docker provisioning. When the mounted Engine answers, each new workspace automatically receives a **Docker** provider and **Linux Sandbox** template. Existing workspaces are initialized once at Service startup. Failures get two bounded retries and are logged; restart after fixing Engine access to try again. User edits, disabling and deletion of successfully initialized defaults survive restarts.
 
-The default template pins the published `ghcr.io/converge-ai-labs/a13n-sandbox` image at the independently reviewed sandbox release (`0.1.3` for published Service builds; `dev` for source builds), with `pull_policy: if_missing`. Workspace initialization does not pull it; the Engine pulls it when an instance is created if needed. The image includes Python 3.13, uv, Node.js 24, pnpm and common command-line and C/C++ build tools. `A13N_DOCKER_ENVIRONMENT_IMAGE` overrides the image for newly initialized workspaces. To use a local build, run `make image-sandbox` and start Compose with `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-sandbox:local`; set an existing template's pull policy to `never` if it must use only local images. Edit existing templates through Console or the API.
+The default template pins the published `ghcr.io/converge-ai-labs/a13n-sandbox` image at the independently reviewed sandbox release (`0.1.3` for published Service builds; `dev` for source builds), with `pull_policy: if_missing`. Workspace initialization does not pull it; the Engine pulls it when an instance is created if needed. The image includes Python 3.13, uv, Node.js 24, pnpm and common command-line and C/C++ build tools.
+
+The Compose file sets `A13N_PROVISIONING__DOCKER` to the fixed JSON value `'{"enabled":true}'`. Omit `image` to let Service choose its default. To use a local build for newly initialized workspaces, run `make image-sandbox` and edit that complete JSON value to `'{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'`. Alternatively, save this as `compose.local.yaml` in the repository root:
+
+```yaml
+services:
+  service:
+    environment:
+      A13N_PROVISIONING__DOCKER: '{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'
+```
+
+Start the stack with both files:
+
+```sh
+docker compose -f deploy/docker/compose/a13n-service.yaml -f compose.local.yaml up -d --wait
+```
+
+Use complete JSON values instead of Compose expressions that assemble JSON fragments. The former `A13N_DOCKER_ENVIRONMENT_IMAGE` shortcut is no longer read; replace it with this explicit configuration. Edit existing templates through Console or the API; provisioning preserves them after initialization.
 
 For a registry image, set `provisioning.docker.image` to its reference and `pull_policy` to `if_missing`, using the JSON `A13N_PROVISIONING__DOCKER` override. Manually created Docker templates retain the [release-matched image defaults](../../../docs/a13n-service/environments.md#docker-image-versions) and `if_missing` policy. Existing instances keep their resolved image. Local provisioning stays off in this stack.
 
