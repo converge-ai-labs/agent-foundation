@@ -4,7 +4,7 @@ sidebarTitle: 概览
 description: 独立的环境管理、连接和执行接口，支持本地、容器、云端与远程目标。
 ---
 
-`a13n-harness` 提供文件、命令、进程、输出和端口操作，无需创建 Agent 或调用模型。Service 负责目标创建、停止、续期和销毁。应用可以直接使用，也可以将 `EnvironmentConnector` 交给 Harness，由每个 Run 打开独立执行对象。可选 SDK 位于该包的 `docker`、`e2b` 和 `modal` extras 中。
+`a13n-harness` 提供文件、命令、进程、输出和端口操作，无需创建 Agent 或调用模型。Service 负责目标创建、停止、续期和销毁。独立操作直接使用 `EnvironmentConnector`。接入 Agent 时，提供 `EnvironmentSource`；Harness 在首次使用时打开其 connector，并在 Run 退出时关闭 execution。可选 SDK 位于该包的 `docker`、`e2b` 和 `modal` extras 中。
 
 ## 从这里开始
 
@@ -26,19 +26,19 @@ description: 独立的环境管理、连接和执行接口，支持本地、容�
 
 agent 只需要普通工具或远程 API 时，不使用环境。否则选择 Native 或 Envd 路线：
 
-| 路线   | Provider         | 适用场景                 | 操作与归属边界                                 |
-| ------ | ---------------- | ------------------------ | ---------------------------------------------- |
-| Native | `direct_local`   | 可信本地自动化           | 宿主 OS 操作；已有目录，不承诺沙箱隔离         |
-| Native | `e2b`            | 原生托管云沙箱           | E2B SDK；创建、暂停、恢复、续期和销毁沙箱      |
-| Native | `daytona`        | 云沙箱                   | 原生停止/启动并保留文件                        |
-| Native | `modal`          | 云沙箱                   | 基于快照停止/恢复；固定运行寿命                |
-| Native | `vercel`         | 云沙箱                   | 具有原生会话的命名持久沙箱                     |
-| Native | `sprites`        | 云沙箱                   | 持久磁盘与自动休眠/唤醒                        |
-| Native | `runloop`        | 云沙箱                   | Devbox 挂起/恢复和空闲保活                     |
-| Envd   | `local_envd`     | CLI 和本地 agent         | 私有 stdio 守护进程；关闭后保留文件            |
-| Native | `docker`         | 单机服务                 | Docker Engine 生命周期和 exec；关闭后保留容器  |
-| Envd   | `http_envd`      | 网络可达的外部守护进程   | HTTP(S) EIP；仅连接                            |
-| Envd   | `websocket_envd` | 主动连接 Host 的守护进程 | 反向 WebSocket EIP；与 Host 集成的 SDK，仅连接 |
+| 路线           | Provider         | 适用场景                 | 操作与归属边界                                      |
+| -------------- | ---------------- | ------------------------ | --------------------------------------------------- |
+| Native         | `direct_local`   | 可信本地自动化           | 宿主 OS 操作；已有目录，不承诺沙箱隔离              |
+| Native         | `e2b`            | 原生托管云沙箱           | E2B SDK；创建、暂停、恢复、续期和销毁沙箱           |
+| Native         | `daytona`        | 云沙箱                   | 原生停止/启动并保留文件                             |
+| Native         | `modal`          | 云沙箱                   | 基于快照停止/恢复；固定运行寿命                     |
+| Native         | `vercel`         | 云沙箱                   | 具有原生会话的命名持久沙箱                          |
+| Native         | `sprites`        | 云沙箱                   | 持久磁盘与自动休眠/唤醒                             |
+| Native         | `runloop`        | 云沙箱                   | Devbox 挂起/恢复和空闲保活                          |
+| Envd           | `local_envd`     | CLI 和本地 agent         | 私有 stdio 守护进程；关闭后保留文件                 |
+| Native 或 Envd | `docker`         | 单机服务                 | Docker exec 或 HTTP EIP，可支持桌面；关闭后保留容器 |
+| Envd           | `http_envd`      | 网络可达的外部守护进程   | HTTP(S) EIP；仅连接                                 |
+| Envd           | `websocket_envd` | 主动连接 Host 的守护进程 | 反向 WebSocket EIP；与 Host 集成的 SDK，仅连接      |
 
 [在本地试用远程示例](remote-envd.md)，无需模型、Docker 或云账号。
 
@@ -62,24 +62,9 @@ flowchart TB
 
 ## 与 Harness 一起使用
 
-工作目录必须已经存在：
+提供负责准备目标并返回 connector 的 `EnvironmentSource`。对于已有目录，[完整来源示例](../a13n-harness/environments.md#supply-a-source)使用 Host 自有的 `PreparedSource` 包装 Direct Local connector。
 
-此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
-
-```python
-from pathlib import Path
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
-
-connector = DIRECT_LOCAL.execution_connector(
-    {"root": {"path": str(Path("./workspace").resolve())}},
-    environment_id="env-workspace",
-)
-result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
-```
-
-Harness 验证并发布静态挂载集合，不打开 execution。首次使用只准备并打开所选挂载。每个实际使用的挂载拥有独立 execution；Run 结束时关闭这些 execution，不销毁目标。
-
-启用 `DynamicEnvironmentCapability` 后，模型才能看见允许的环境工具。使用 `EnvironmentMount` 设置挂载路径和权限上限；这些策略由 Harness 管理，不写入共享环境状态。
+Harness 先发布静态挂载，再打开 execution。首次使用激活所选挂载；Run 退出时关闭已打开的 execution，并保留目标。通过 `DynamicEnvironmentCapability` 向模型提供工具，通过 `EnvironmentMount` 设置挂载路径和权限上限。
 
 ## 使用 Local Envd
 

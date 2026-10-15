@@ -3,13 +3,18 @@ title: Live 实时对话
 description: 在双向文本和音频对话中使用 Harness 工具、状态与清理机制。
 ---
 
-输入和输出需要在同一对话中并行时，使用 `ExecutableAgent.live()`。Live Run 复用其他 Harness Run 的 Agent 定义、工具、新 Context、Environment 绑定、插件和可移植状态，但打开原生实时连接，而不是运行普通请求/响应循环。
+根据要构建的对话选择 API：
 
-Live 是嵌入式 SDK API，不包含麦克风 UI、浏览器传输、持久化连接恢复或跨 Thread 编排。
+| 任务                                          | API                        | 应用提供的部分                           |
+| --------------------------------------------- | -------------------------- | ---------------------------------------- |
+| 运行带原生实时工具和可移植状态的 Agent        | `ExecutableAgent.live()`   | 原生 `RealtimeModel`、输入和音频播放     |
+| 将订阅认证的语音接入 Host 管理的 Agent 工作流 | `CodexLiveModel.connect()` | WebRTC 媒体 peer、凭据来源和委派处理逻辑 |
+
+需要现成的麦克风界面时，参阅 [Harness UI Live 模式](../a13n-harness-ui/live-mode.md)。下文先介绍原生 Live Run；[Codex 语音集成](#connect-codex-voice)使用独立的传输 API。
 
 ## 打开 Live Run
 
-显式传入原生 `RealtimeModel` 实例。Provider 凭据与连接选项由该原生 Model 管理。为 `run()` 或 `stream()` 配置的普通 Model 不会决定 Live provider。
+Live Run 使用 Agent 的工具、新 Context、Environment 绑定、插件和可移植状态。显式传入原生 `RealtimeModel` 来打开实时连接。该 Model 管理 provider 凭据和连接选项；为 `run()` 或 `stream()` 配置的普通 Model 保持独立。
 
 ```python
 import asyncio
@@ -87,3 +92,23 @@ Live 在运行中报告响应贡献，并在关闭后再次结算，不会重复
 `live.native_usage` 是原生累计器的独立诊断副本。它包含原生 session-only 用量，但也可能包含调用方基线和共享累计器的嵌套工作。不要将其加到 `live.usage`，不要视为已归属回执，也不要假定它会从状态中恢复。需要完整计费的 Host 必须使用 provider 证据进行对账。
 
 Live 会在连接前以 `live_model_check_unsupported` 拒绝 `RunBindings.model_call_check`。原生实时执行没有与普通 Host 逐请求预算预留等价的边界。普通计量规则见[用量与限制](usage-and-limits.md)，Host 持久化职责见[状态与恢复](state-and-resume.md)。
+
+## 连接 Codex 语音
+
+从 `a13n_harness.models.codex_live` 导入 `CodexLiveModel`，将订阅语音接入应用的 Agent 工作流。工厂负责创建通话和控制连接；Host 负责 WebRTC 媒体 peer、Agent 执行、持久化和展示。
+
+1. 使用 `OpenAICodexCredentialSource` 创建 `CodexLiveModel(credential_source)`。默认音色为 `cove`；可选择其他 `CodexLiveVoice` V3 值。
+2. 在媒体 peer 中创建 WebRTC offer。以异步上下文管理器进入 `model.connect(offer_sdp, instructions=..., on_answer=..., initial_items=...)`。`initial_items` 是可选的 `ConversationItem` 序列。
+3. 在异步 `on_answer(answer_sdp)` 回调中，将 answer 应用到 peer 并等待连接建立。回调完成后才会接入控制连接。订阅凭据留在 Host，浏览器只接收 SDP answer。
+4. 消费 `session.events()`，处理下表中的类型化事件。应用决定接受哪些委派任务，并通过正常的 Agent 执行路径启动它们。
+5. 退出上下文管理器以关闭语音连接，并在 Host 清理时停止媒体 peer。
+
+| 事件                                 | 应用操作                               |
+| ------------------------------------ | -------------------------------------- |
+| `SessionReady`                       | 展示 provider 就绪状态                 |
+| `Transcript(role, text, final)`      | 显示语音文本，区分临时和最终文本       |
+| `Delegation(item_id, text, context)` | 将任务及有界对话上下文提交给执行工作流 |
+
+通过 `session.append_speech(text, delegation_id=...)` 发送选定的用户可见结果，通过 `session.append_status(...)` 发送进度。可选 ID 将文本与委派关联。发送文本是为语音提供上下文，不代表已经播放或持久送达。两个通道都不应发送私有推理。
+
+每次连接最多创建一个通话。创建通话或写入上下文的结果不确定时，不会自动重放；应用应处理错误，让用户重新开始语音会话。连接时需要账号具备使用资格，且 provider 可用。

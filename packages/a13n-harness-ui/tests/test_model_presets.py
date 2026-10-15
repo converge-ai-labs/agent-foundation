@@ -248,6 +248,7 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
         ("openai-responses", "gpt-5"),
         ("openai-responses", "gpt-4.1"),
         ("anthropic", "claude-sonnet-4-5"),
+        ("anthropic", "claude-haiku-4-5"),
         ("anthropic", "claude-sonnet-4-6"),
         ("anthropic", "claude-sonnet-5-5"),
         ("anthropic", "claude-haiku-5-5"),
@@ -329,8 +330,19 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
         monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", native_request)
         monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
         preset = settings_presets(provider, model_id)[0]
+        authored_settings = preset.settings
+        if provider == "anthropic":
+            from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
+
+            authored_settings = prepare_model(
+                ModelRecipeRequest(
+                    connection=provider,
+                    model_id=model_id,
+                    authentication=ApiKeyAuthentication(kind="api_key", env="TEST_PROVIDER_KEY"),
+                )
+            ).settings
         settings = {
-            **preset.settings,
+            **authored_settings,
             "extra_headers": {"X-Passthrough": "native"},
             "extra_body": {"fixture_payload": {"password": "  schema-value  ", "nullable": None}},
         }
@@ -374,13 +386,20 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
             assert payload["max_output_tokens"] == 65536
     else:
         assert payload["thinking"]["display"] == "summarized"
-        assert payload["max_tokens"] == (16384 if preset.key == "interleaved" else 32768)
-        if preset.key == "interleaved":
-            assert payload["thinking"]["budget_tokens"] == 8192
-            assert "interleaved-thinking-2025-05-14" in requests[0].headers["anthropic-beta"]
-        else:
+        assert payload["max_tokens"] == (32768 if preset.key == "adaptive" else 16384)
+        betas = requests[0].headers.get("anthropic-beta", "").split(",")
+        assert "context-1m-2025-08-07" not in betas
+        assert "context-management-2025-06-27" not in betas
+        assert ("interleaved-thinking-2025-05-14" in betas) is (preset.key == "interleaved")
+        if preset.key == "adaptive":
             assert payload["thinking"]["type"] == "adaptive"
             assert payload["output_config"]["effort"] == "high"
+        else:
+            assert payload["thinking"]["type"] == "enabled"
+            assert payload["thinking"]["budget_tokens"] == 8192
+            assert "output_config" not in payload
+        assert "cache_control" not in payload
+        assert payload["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
 
 
 @pytest.mark.anyio

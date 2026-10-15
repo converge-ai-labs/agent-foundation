@@ -18,7 +18,7 @@ capabilities:
 
 空列表仍启用自动来源；省略该 Capability 会关闭此次 Agent Run 的 Skill 发现。编辑时保留其他 Capability 条目。
 
-在 TUI 或 WebUI 输入框中输入 `$` 可发现 Skill 名称。例如，让 Agent 使用 `$harness-ui-configuration` 检查配置。识别出的名称仍作为提示文本可见，并携带 App 在发送或引导前验证的引用。旧引用按名称在当前目录解析；引导使用活动 Run 固定的目录。未知的美元符号前缀文本仍是普通文本。引用请求使用该 Skill，不会捕获内容或增加权限。不存在 `/skill-name` 命令。
+在 TUI 或 WebUI 输入框中输入 `$` 选择 Skill，或直接输入完整名称。例如，发送“使用 `$harness-ui-configuration` 检查我的配置”。Harness UI 会要求 Agent 阅读所选 Skill 的 `SKILL.md`，并遵循与任务相关的流程。引用保持为可编辑的 `$name` 文本。新提交按当前目录解析，引导使用活动 Run 的目录；未知名称保留为普通文本。选择 Skill 后，Agent 仍使用原有工具权限。
 
 ## 自动来源与优先级
 

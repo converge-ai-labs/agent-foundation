@@ -18,7 +18,7 @@ capabilities:
 
 An empty list keeps automatic sources enabled; omitting the Capability disables Skill discovery for that Agent Run. Preserve other Capability entries when editing.
 
-Type `$` in the TUI or WebUI composer to discover Skill names. For example, ask the Agent to use `$harness-ui-configuration` to inspect its configuration. Recognized names remain visible prompt text and carry references that the App validates before Send or steering. Older references resolve by name against the current catalog; steering uses the active Run's pinned catalog. Unknown dollar-prefixed text stays ordinary text. A reference requests that Skill without capturing its contents or granting extra authority. There is no `/skill-name` command.
+Type `$` in the TUI or WebUI composer and choose a Skill, or type its complete name. For example, send `Use $harness-ui-configuration to inspect my configuration.` Harness UI asks the Agent to read the selected Skill's `SKILL.md` and follow its relevant workflow. The reference stays editable as `$name` text. New submissions resolve it against the current catalog; steering uses the active Run's catalog. Unknown names remain ordinary text. Selecting a Skill keeps the Agent's existing tool permissions.
 
 ## Automatic sources and precedence
 

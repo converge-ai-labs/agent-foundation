@@ -4,7 +4,7 @@ sidebarTitle: Built-in examples
 description: Runnable examples that use Direct Local, Local Envd, Docker, and remote Envd Providers directly.
 ---
 
-The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project uses `a13n-harness` directly, without an Agent or model credentials. See [Cloud Providers](providers.md#cloud-providers) for the cloud backends.
+The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project uses Harness for execution and Service for Docker target management, without an Agent or model credentials. See [Cloud Providers](providers.md#cloud-providers) for the cloud backends.
 
 ## Install
 
@@ -13,7 +13,7 @@ cd examples/environment-provider
 uv sync --locked
 ```
 
-External applications can install the released `a13n-harness` distribution.
+Standalone execution requires `a13n-harness`. This example project also installs `a13n-service` to demonstrate Docker target creation and destruction; keep both dependencies when copying the complete application.
 
 ## Direct Local
 

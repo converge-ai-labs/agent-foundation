@@ -19,7 +19,11 @@ Optional Bash/Zsh shortcut: `alias anui='a13n-harness-ui'` in your shell profile
 
 ## Upgrade
 
-For a uv-tool installation, run `a13n-harness-ui update` or `uv tool upgrade a13n-harness-ui`, then restart Harness UI. `a13n-harness-ui update` needs uv on PATH and runs the upgrade without another prompt. For other installations, use their original package manager.
+1. Stop every TUI and WebUI App sharing the data root.
+2. For a uv-tool installation, run `a13n-harness-ui update` or `uv tool upgrade a13n-harness-ui`. Use the original package manager for other installations.
+3. Upgrade all Apps sharing that data root before restarting any of them, then reload open WebUI pages.
+
+The upgraded App reads existing saved conversations and writes the current checkpoint format. Older Apps cannot read newly published checkpoints, so keep shared installations on the upgraded version. `a13n-harness-ui update` requires uv on PATH and runs without another prompt.
 
 Startup checks for updates in the background and displays a notice after entering conversation; it never installs an update automatically. Disable the check for a single invocation with `--no-update-check`, or permanently with `process.terminal_update_check: false` in `a13n-harness-ui.yaml`. See [update and failure behavior](automation-and-troubleshooting.md#logs-updates-and-exit).
 

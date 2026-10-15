@@ -49,17 +49,19 @@ Host 管理一个共享 `LocalEnvdProviderRuntime`、其二进制文件、启动
 
 ## Docker
 
-省略 `user` 时，provider 使用镜像标签 `ai.a13n.environment.user`；没有该标签的自定义镜像沿用镜像 USER。`a13n-sandbox` 选择 `sandbox`（UID/GID 1000）；recipe 显式设置的 `user` 优先。
+使用原生执行且省略 `user` 时，provider 使用镜像标签 `ai.a13n.environment.user`；没有该标签的自定义镜像沿用镜像 USER。`a13n-sandbox` 选择 `sandbox`（UID/GID 1000）；recipe 显式设置的 `user` 优先。
 
-Service 的 `DockerRecipe` 使用原生 Docker exec，不启动镜像内的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
+Service 的 `DockerRecipe` 默认采用 `execution="native"`，使用 Docker exec。选择 `execution="envd_http"` 可通过 HTTP EIP 使用镜像管理的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
 
 私有容器文件系统提供 `/workspace`。可选绑定挂载包含 Docker Engine 所在机器上已存在的绝对 `source`、容器 `target` 和 `read_only` 标志（默认 true）。不能替换 `/workspace` 或私有命令元数据。命名卷不是目标配置选项；销毁时保留外部数据。
 
 `cpus` 以 CPU 核数计；`memory_gb` 使用十进制 GB（1 GB = 1,000,000,000 字节），最低 6 MiB（0.006291456 GB）；`pids_limit` 限制进程数。`environment` 设置普通变量。`init_script` 只在新容器运行，初始化失败不隐式重放。不要在这些目标配置字段中保存秘密。`disable_network` 默认关闭，启用时选择 Docker 的 `none` 网络。
 
-高级选项包括用户、shell、Python 可执行文件、停止宽限（十秒）、逐 helper 请求超时（60 秒；包含初始化脚本，不限制 agent 执行或普通 shell 时长）、文件值（16 MiB）、输出预览（64 KiB）、每流捕获字节（16 MiB）、总观测/保留预算（各 64 MiB）和并发进程观测（128）。自定义镜像需要 Linux、Python 3.10+、配置的 shell、可写 `/workspace` 和 `/tmp/a13n`；只有 git-ignore 查询需要 Git。
+原生执行选项包括用户、shell、Python 可执行文件、停止宽限（十秒）、逐 helper 请求超时（60 秒；包含初始化脚本，不限制 agent 执行或普通 shell 时长）、文件值（16 MiB）、输出预览（64 KiB）、每流捕获字节（16 MiB）、总观测/保留预算（各 64 MiB）和并发进程观测（128）。自定义镜像需要 Linux、Python 3.10+、配置的 shell、可写 `/workspace` 和 `/tmp/a13n`；只有 git-ignore 查询需要 Git。
 
 `DockerConnectionConfiguration.docker_host` 选择 Engine socket。重启后，Host 进程必须连接同一 Engine 才能重新进入容器。Service 的 [Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)挂载 Engine socket，并授予非 root Service 进程访问权限。
+
+使用 HTTP EIP 时，在 Docker 连接的 `envd_http` 中配置 Worker 可达的主机和监听地址。Service 保留镜像入口，将容器 8888 端口发布到 Docker 分配的主机端口。使用兼容的 Envd 镜像；需要就绪检查包含可观察、可输入的桌面时，设置 `desktop: true`。镜像管理守护进程和 Session 身份，因此拒绝 recipe 的 `user` 覆盖。HTTP 执行需要网络；明文 HTTP 使用回环地址或显式信任的私有链路。Console 操作见[创建 Docker 桌面](../a13n-service/environments.md#create-a-docker-desktop)。
 
 ## 云 provider
 
@@ -69,7 +71,7 @@ E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 使用相同
 
 Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用户 `user` 和 Python `/usr/bin/python3`；路径必须为绝对路径且不能包含路径穿越。默认允许互联网访问。
 
-沙箱超时默认 3,600 秒（30–86,400）；请求超时默认 30 秒（最多 300）。两者都不是逐命令执行期限。文件值默认 16 MiB、观测字节 1 MiB、活跃观测 128、保留输出总量 128 MiB、查询条目 10,000。[运行时限制](providers.md#e2b-runtime)介绍基于文本的观测和支持的命令控制。
+沙箱超时默认 3,600 秒（30–86,400）；请求超时默认 30 秒（最多 300）。两者都不是逐命令执行期限。文件值默认 100 MiB（最多可配置为 1 GiB）、观测字节 1 MiB、活跃观测 128、保留输出总量 128 MiB、查询条目 10,000。[运行时限制](providers.md#e2b-runtime)介绍基于文本的观测和支持的命令控制。
 
 `E2BConnectionConfiguration.domain` 默认为 `e2b.dev`；`E2BCredential.api_key` 是单独保护的值。Host 提供运行时凭据，在保留策略需要时维护保活，并在生命周期操作后持久保存沙箱状态。新适配器可重连精确保留的沙箱，但不会重建丢失输出或扩大访问。
 

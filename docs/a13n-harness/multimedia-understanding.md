@@ -3,82 +3,15 @@ title: Multimedia understanding
 description: Understand image, video, and audio files and URLs through native model input or a dedicated media-understanding Agent.
 ---
 
-Harness understands image, video, and audio from Environment files with `view` and direct HTTP(S) resources with `read_media_url`. Both tools select one of two paths automatically:
+Use `view` for media files in an Environment and `read_media_url` for direct HTTP(S) media resources. Ask for a specific result: OCR, a transcript, timestamps, or a UI review.
 
-1. attach the file as native `BinaryContent` when the active Agent's `model_characteristics` declare the matching model input capability;
-2. run a dedicated media-understanding Agent and return its textual analysis otherwise.
+| Media configuration                                                    | Tool result                                              |
+| ---------------------------------------------------------------------- | -------------------------------------------------------- |
+| Current Model declares the matching native input capability            | Media attached as native `BinaryContent`                 |
+| No native declaration; a matching understanding provider is configured | Text analysis from a dedicated media-understanding Agent |
+| Neither is configured                                                  | `media_understanding_unavailable`                        |
 
-The calling model does not choose the path, and the Harness never guesses support from a model name or Pydantic AI `Model.profile`.
-
-## Declare model input capabilities
-
-Native media support is Harness-owned `AgentSpec` configuration. Callers use the `model_characteristics` construction key; Python reads the resolved value through `spec.model_characteristics`:
-
-```python
-from a13n_harness import (
-    AgentSpec,
-    ModelCapability,
-    HarnessModelCharacteristics,
-)
-
-agent_spec = AgentSpec(
-    model_characteristics=HarnessModelCharacteristics(
-        capabilities=frozenset(
-            {
-                ModelCapability.IMAGE_UNDERSTANDING,
-                ModelCapability.VIDEO_UNDERSTANDING,
-                ModelCapability.AUDIO_UNDERSTANDING,
-            }
-        )
-    )
-)
-```
-
-Declare only model input capabilities that the active model and provider path can actually accept. The three values are independent. An absent value is conservative: both tools use a dedicated media-understanding Agent rather than attaching unsupported content.
-
-## Configure the default media-understanding Agents
-
-Set a provider-qualified Pydantic AI model string for each media kind that needs fallback:
-
-```bash
-export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-```
-
-Harness reads these process environment variables lazily when either tool needs fallback. It does not load `.env`; an executable, shell, container runtime, or process manager can provide the variables by any ordinary mechanism. Provider credentials continue to use the selected Pydantic AI provider's standard environment variables.
-
-Each media-understanding Agent starts with `temperature=0.1`. Override or extend its native `ModelSettings` with a bounded JSON object:
-
-```bash
-export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.2}'
-export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1,"max_tokens":8192}'
-export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1}'
-```
-
-The exact variables are:
-
-| Media | Model string                             | Optional settings JSON                            |
-| ----- | ---------------------------------------- | ------------------------------------------------- |
-| Image | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL` | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS` |
-| Video | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL` | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS` |
-| Audio | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL` | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS` |
-
-You can configure one, two, or all three kinds. A missing model string affects only its matching media kind. Repository contributors can copy these entries from the root `.env.harness.example` template into `.env`; the Harness itself still reads only the resulting process environment.
-
-## Default analysis behavior
-
-The dedicated media-understanding Agents use packaged, kind-specific production prompts:
-
-- image analysis covers all visible elements, exact OCR, layout, visual style, and actionable UI/CSS details;
-- video analysis follows the complete chronology, captures speech and on-screen content, distinguishes speakers conservatively, and extracts user intent only when present;
-- audio analysis follows the recording chronologically and separates speech, music, sound effects, ambience, and audio-quality observations.
-
-All three prompts prioritize accuracy over speculation, preserve original-language transcription, mark unreadable or inaudible content explicitly, and avoid assigning identities that are not stated. A focused `instructions` value on either tool narrows the analysis while those anti-hallucination rules remain in force. Without focused instructions, the media-understanding Agent uses a comprehensive kind-specific default and reports unclear or omitted content.
-
-`view` accepts source images up to 100 MiB and source audio/video up to 16 MiB, subject to any smaller Environment provider limit. E2B defaults to a 100 MiB file limit; other providers retain their own defaults. Default image preparation runs after reading and limits each image or segment to 5 MiB of base64-encoded data and static source processing to 80 million pixels. It changes the model request, not the original bytes retained in native image history. Audio and video do not use this image compression.
-
-The runtime bounds each file read, media-understanding Agent timeout, output, output-validation retries, and transient HTTP retries. Video receives a longer timeout than image or audio. The Environment file scope is released after the bounded read, before the media-understanding Agent or custom provider performs external model work.
+Harness selects the path from the configuration for each media kind. [Declare native capabilities](#declare-model-input-capabilities) or [configure an understanding Agent](#configure-the-default-media-understanding-agents), then use the tools below.
 
 ## Use from `view`
 
@@ -105,7 +38,69 @@ Downloads enforce Run hostname policy on the source and each redirect, a 120-sec
 
 YouTube requires explicit native `url_input.video: [youtube]` support and unrestricted Run hostname policy. It stays a native URL, with no auxiliary-model or download fallback. Use `view` for local files; URL reads need no Environment mount or temporary file.
 
-The new tool replaces `read_video_url` and uses `MediaUrlToolset` in Python. Keep permission rules under the stable ID `media.read_video_url`; they now govern all three media kinds. Finish or close pending old-name tool calls before upgrading, because they cannot resume on the renamed surface.
+## Declare model input capabilities
+
+Declare the media kinds accepted by your Model and provider path in `AgentSpec.model_characteristics`:
+
+```python
+from a13n_harness import (
+    AgentSpec,
+    ModelCapability,
+    HarnessModelCharacteristics,
+)
+
+agent_spec = AgentSpec(
+    model_characteristics=HarnessModelCharacteristics(
+        capabilities=frozenset(
+            {
+                ModelCapability.IMAGE_UNDERSTANDING,
+                ModelCapability.VIDEO_UNDERSTANDING,
+                ModelCapability.AUDIO_UNDERSTANDING,
+            }
+        )
+    )
+)
+```
+
+The three values are independent. An undeclared kind uses its configured understanding provider.
+
+## Configure the default media-understanding Agents
+
+Set a provider-qualified Pydantic AI model string for each media kind that needs fallback:
+
+```bash
+export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL=google:gemini-3.7-flash
+export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
+export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
+```
+
+Supply these process environment variables through your shell, container runtime, or application. Harness reads them when fallback is needed; your application loads `.env` if you use one. Supply credentials through the selected provider's standard environment variables.
+
+Each media-understanding Agent starts with `temperature=0.1`. Override or extend its native `ModelSettings` with a bounded JSON object:
+
+```bash
+export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.2}'
+export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1,"max_tokens":8192}'
+export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1}'
+```
+
+The exact variables are:
+
+| Media | Model string                             | Optional settings JSON                            |
+| ----- | ---------------------------------------- | ------------------------------------------------- |
+| Image | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL` | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS` |
+| Video | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL` | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS` |
+| Audio | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL` | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS` |
+
+Configure the kinds your application needs. A missing model string affects only that kind. Repository contributors can use `.env.harness.example` as a template.
+
+## Default analysis behavior
+
+Default image analysis covers visible content, OCR, layout, and style. Video and audio analysis follow the recording chronologically, including speech and on-screen or non-speech content. Transcriptions retain the original language and mark unclear content. Use `instructions` to focus either tool on the details you need.
+
+`view` accepts source images up to 100 MiB and source audio/video up to 16 MiB, subject to any smaller Environment provider limit. E2B defaults to a 100 MiB file limit; other providers retain their own defaults. Default image preparation runs after reading and limits each image or segment to 5 MiB of base64-encoded data and static source processing to 80 million pixels. It changes the model request, not the original bytes retained in native image history. Audio and video do not use this image compression.
+
+The runtime bounds each file read, media-understanding Agent timeout, output, output-validation retries, and transient HTTP retries. Video receives a longer timeout than image or audio. The Environment file scope is released after the bounded read, before the media-understanding Agent or custom provider performs external model work.
 
 ## Override one Run
 
@@ -167,3 +162,7 @@ Both tools return stable bounded failures instead of attaching unsupported media
 | `media_understanding_failed`                | The custom media-understanding provider or the understanding model failed without a more specific safe code. |
 
 See [Environments](environments.md) for file routing, authorization, and byte limits.
+
+## Migrate from `read_video_url`
+
+The new tool replaces `read_video_url` and uses `MediaUrlToolset` in Python. Keep permission rules under the stable ID `media.read_video_url`; they now govern all three media kinds. Finish or close pending old-name tool calls before upgrading, because they cannot resume on the renamed surface.

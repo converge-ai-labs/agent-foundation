@@ -4,7 +4,7 @@ sidebarTitle: Overview
 description: Independent target management and portable execution across local, container, cloud, and remote backends.
 ---
 
-`a13n-harness` provides files, commands, processes, output, and ports without requiring an Agent or a model. Service owns managed target creation, stop, renewal, and destruction. Applications can use it directly or pass an `EnvironmentConnector` to Harness, which opens an independent execution for each Run. Optional SDKs belong to this package's `docker`, `e2b`, and `modal` extras.
+`a13n-harness` provides files, commands, processes, output, and ports without requiring an Agent or a model. Service owns managed target creation, stop, renewal, and destruction. Use an `EnvironmentConnector` directly for standalone operations. For an Agent, supply an `EnvironmentSource`; Harness opens its connector on first use and closes the execution at Run exit. Optional SDKs belong to this package's `docker`, `e2b`, and `modal` extras.
 
 ## Start here
 
@@ -26,19 +26,19 @@ description: Independent target management and portable execution across local, 
 
 Use no Environment when the Agent needs only ordinary tools or remote APIs. Otherwise select a Native or Envd route:
 
-| Route  | Provider         | Use it for                          | Operation and ownership boundary                            |
-| ------ | ---------------- | ----------------------------------- | ----------------------------------------------------------- |
-| Native | `direct_local`   | Trusted local automation            | Host OS operations; existing directory, no sandbox claim    |
-| Native | `e2b`            | Native managed cloud sandbox        | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Native | `daytona`        | Cloud sandbox                       | Native stop/start and preserved files                       |
-| Native | `modal`          | Cloud sandbox                       | Snapshot-backed stop/resume; fixed running lifetime         |
-| Native | `vercel`         | Cloud sandbox                       | Named persistent sandbox with native sessions               |
-| Native | `sprites`        | Cloud sandbox                       | Persistent disk and automatic sleep/wake                    |
-| Native | `runloop`        | Cloud sandbox                       | Devbox suspend/resume and idle keepalive                    |
-| Envd   | `local_envd`     | CLI and local Agents                | Private stdio daemon; close preserves files                 |
-| Native | `docker`         | Single-host services                | Docker Engine lifecycle and exec; close preserves container |
-| Envd   | `http_envd`      | Network-reachable external daemons  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `websocket_envd` | Daemons that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Route          | Provider         | Use it for                          | Operation and ownership boundary                                       |
+| -------------- | ---------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| Native         | `direct_local`   | Trusted local automation            | Host OS operations; existing directory, no sandbox claim               |
+| Native         | `e2b`            | Native managed cloud sandbox        | E2B SDK; sandbox create/pause/resume/renew/destroy                     |
+| Native         | `daytona`        | Cloud sandbox                       | Native stop/start and preserved files                                  |
+| Native         | `modal`          | Cloud sandbox                       | Snapshot-backed stop/resume; fixed running lifetime                    |
+| Native         | `vercel`         | Cloud sandbox                       | Named persistent sandbox with native sessions                          |
+| Native         | `sprites`        | Cloud sandbox                       | Persistent disk and automatic sleep/wake                               |
+| Native         | `runloop`        | Cloud sandbox                       | Devbox suspend/resume and idle keepalive                               |
+| Envd           | `local_envd`     | CLI and local Agents                | Private stdio daemon; close preserves files                            |
+| Native or Envd | `docker`         | Single-host services                | Docker exec or HTTP EIP, including desktops; close preserves container |
+| Envd           | `http_envd`      | Network-reachable external daemons  | HTTP(S) EIP; connect-only                                              |
+| Envd           | `websocket_envd` | Daemons that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only               |
 
 [Try the remote examples locally](remote-envd.md) without a model, Docker or cloud account.
 
@@ -62,24 +62,9 @@ flowchart TB
 
 ## Use with Harness
 
-The working directory must already exist:
+Supply an `EnvironmentSource` that prepares the target and returns its connector. For an existing directory, the [complete source example](../a13n-harness/environments.md#supply-a-source) wraps a Direct Local connector in a Host-owned `PreparedSource`.
 
-Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
-
-```python
-from pathlib import Path
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
-
-connector = DIRECT_LOCAL.execution_connector(
-    {"root": {"path": str(Path("./workspace").resolve())}},
-    environment_id="env-workspace",
-)
-result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
-```
-
-Harness validates and publishes the static mount set without opening executions. First use prepares and opens only the selected mount. Each used mount has its own execution; Run exit closes these executions without destroying targets.
-
-Enable `DynamicEnvironmentCapability` to expose permitted tools to the model. Use `EnvironmentMount` for mount paths and permission ceilings; Harness owns these policies, and they do not enter shared Environment state.
+Harness publishes the static mounts before opening executions. First use activates the selected mount; Run exit closes opened executions while preserving their targets. Enable `DynamicEnvironmentCapability` for model-visible tools, and use `EnvironmentMount` for mount paths and permission ceilings.
 
 ## Use Local Envd
 

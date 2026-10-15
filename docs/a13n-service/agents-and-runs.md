@@ -49,9 +49,18 @@ The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents wi
 
 ### Agent configuration
 
-In the manual editor, expand a toolset under **Tools** to select individual tools and choose **Allow**, **Ask**, **Automatic review**, or **Deny** for each action. Connection tools offer the same permissions. The automatic review button uses a shield symbol.
+Use the manual editor to choose the model, instructions and capabilities. For conversational setup, use [Agent Composer](agent-composer.md).
 
-Under **Automatic review**, choose **Configure review** to select a review model, risk threshold and action at or above that threshold. **Tool review rule** sets a separate threshold or action for one tool. Advanced settings include shell instructions, failure handling, timeout, model parameters and selector rules. **Apply to draft** keeps the changes local; **Save changes** publishes a new agent revision. Cancelling the panel discards its edits. Review requires a model before saving. New review configurations keep the backend defaults: extra-high risk is denied, review failures ask a person, and review timeouts always deny execution.
+#### Set approvals and automatic review
+
+1. Expand a toolset under **Tools**, select the tools, and choose **Allow**, **Ask**, **Automatic review**, or **Deny**. Connection tools offer the same permissions.
+2. For automatic review, select **Configure review**, choose a review model, and set the risk threshold and action at or above it: deny or ask for approval. Calls below the threshold proceed.
+3. Use **Tool review rule** when one tool needs a different threshold or action. Advanced settings include shell instructions, failure handling, timeout, model parameters and selector rules.
+4. Select **Apply to draft**, then **Save changes** to publish the new revision. Cancelling the panel discards its edits.
+
+Review requires a model before saving. Defaults deny extra-high risk and ask a person when review fails. Review timeouts always deny execution.
+
+#### Configuration fields
 
 A revision's `config` holds:
 
@@ -83,22 +92,22 @@ Saving validates the whole configuration against the workspace: every referenced
 
 Every built-in tool, connection tool and client tool has a permission:
 
-| Permission | Effect                                                                                                                                                                              |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow`    | The tool runs when the model calls it.                                                                                                                                              |
-| `ask`      | The run [waits](#waits-approvals-and-questions) for a person to approve or deny the call.                                                                                           |
-| `review`   | The `reviewer` model approves or denies the call; with its default `on_error: approval_required`, a failed review asks a person. A revision that uses `review` must set `reviewer`. |
-| `deny`     | The call is refused.                                                                                                                                                                |
-| `inherit`  | The default: the tool's own default permission, which is `allow` except where a tool declares another, such as `ask` for the configuration toolset's write tools.                   |
+| Permission | Effect                                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow`    | The tool runs when the model calls it.                                                                                                                            |
+| `ask`      | The run [waits](#waits-approvals-and-questions) for a person to approve or deny the call.                                                                         |
+| `review`   | The `reviewer` assesses risk; its policy allows, denies or asks a person. Review failures default to asking a person; timeouts deny. Requires `reviewer`.         |
+| `deny`     | The call is refused.                                                                                                                                              |
+| `inherit`  | The default: the tool's own default permission, which is `allow` except where a tool declares another, such as `ask` for the configuration toolset's write tools. |
 
 ```mermaid
 flowchart TB
     Call["The model calls a tool"] --> Permission(["Effective permission"])
     Permission -->|"allow"| Run["The tool runs"]
-    Permission -->|"review"| Reviewer["The reviewer model decides"]
+    Permission -->|"review"| Reviewer["Risk assessment and policy"]
     Permission -->|"ask"| Person["The run waits for a person"]
     Permission -->|"deny"| Refuse["The call is refused"]
-    Reviewer -->|"review fails"| Person
+    Reviewer -->|"Policy asks a person"| Person
     Reviewer --> Decision(["Approved?"])
     Person --> Decision
     Decision -->|"yes"| Run

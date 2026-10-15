@@ -17,6 +17,10 @@ from a13n_harness_ui.model_thinking import apply_thinking, describe_thinking, su
         ("openai-chat:gpt-6.1-sol", [None, "low", "medium", "high", "xhigh", "max"]),
         ("anthropic:claude-sonnet-4-6", [None, False, "low", "medium", "high"]),
         ("anthropic:claude-opus-4-6", [None, False, "low", "medium", "high", "max"]),
+        ("anthropic:claude-haiku-5-5", [None, False, "low", "medium", "high", "xhigh"]),
+        ("anthropic:claude-sonnet-5-5", [None, "low", "medium", "high", "xhigh"]),
+        ("anthropic:claude-opus-5-5", [None, "low", "medium", "high", "xhigh", "max"]),
+        ("anthropic:claude-fable-5-1", [None, "low", "medium", "high", "xhigh"]),
         ("google:gemini-3-pro-preview", [None, "low", "high"]),
         ("google:gemini-3.1-pro-preview", [None, "low", "medium", "high"]),
         ("google:gemini-2.5-flash", [None, False, "low", "medium", "high"]),
@@ -106,6 +110,9 @@ def test_budget_option_is_disabled_and_rejected_without_changing_output_cap():
         ("google:gemini-3-pro-preview", "medium"),
         ("google:gemini-3.1-pro-preview", False),
         ("anthropic:custom", "low"),
+        ("anthropic:claude-opus-5-5", False),
+        ("anthropic:claude-sonnet-5-5", False),
+        ("anthropic:claude-fable-5-1", False),
     ],
 )
 def test_invalid_selections_never_fall_back(route, selection):

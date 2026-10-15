@@ -3,82 +3,15 @@ title: 多媒体理解
 description: 通过模型原生输入或专用媒体理解 Agent，理解图像、视频和音频文件及 URL。
 ---
 
-Harness 通过 `view` 理解 Environment 中的图像、视频和音频文件，通过 `read_media_url` 理解直接 HTTP(S) 媒体资源。两个工具都会自动选择以下路径之一：
+用 `view` 读取 Environment 中的媒体文件，用 `read_media_url` 读取直接 HTTP(S) 媒体资源。在请求中说明需要 OCR、转写、时间戳或 UI 审查等具体结果。
 
-1. 当前 Agent 的 `model_characteristics` 声明了对应的模型输入能力时，将文件作为原生 `BinaryContent` 附加到输入中；
-2. 否则，运行专用的媒体理解 Agent，返回文字分析。
+| 媒体能力配置                                     | 工具返回内容                      |
+| ------------------------------------------------ | --------------------------------- |
+| 当前 Model 声明了对应原生输入能力                | 将媒体附加为原生 `BinaryContent`  |
+| 当前 Model 未声明该能力，已配置对应理解 provider | 专用媒体理解 Agent 的文字分析     |
+| 两者均未配置                                     | `media_understanding_unavailable` |
 
-调用模型不会自行选择路径，Harness 也不会根据模型名称或 Pydantic AI 的 `Model.profile` 猜测是否支持某种媒体。
-
-## 声明模型输入能力
-
-原生媒体支持由 Harness 的 `AgentSpec` 配置管理。调用方使用 `model_characteristics` 构建参数，Python 代码通过 `spec.model_characteristics` 读取解析后的值：
-
-```python
-from a13n_harness import (
-    AgentSpec,
-    ModelCapability,
-    HarnessModelCharacteristics,
-)
-
-agent_spec = AgentSpec(
-    model_characteristics=HarnessModelCharacteristics(
-        capabilities=frozenset(
-            {
-                ModelCapability.IMAGE_UNDERSTANDING,
-                ModelCapability.VIDEO_UNDERSTANDING,
-                ModelCapability.AUDIO_UNDERSTANDING,
-            }
-        )
-    )
-)
-```
-
-只声明当前模型和 provider 调用路径实际支持的模型输入能力。三种能力相互独立。未声明某个值时，两个工具都会采用保守策略，使用专用媒体理解 Agent，而不是附加模型不支持的内容。
-
-## 配置默认的媒体理解 Agent
-
-为需要回退处理的每种媒体，设置一个带 provider 前缀的 Pydantic AI 模型字符串：
-
-```bash
-export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-```
-
-只有当任一工具需要回退时，Harness 才读取这些进程环境变量。它不会加载 `.env`；可执行程序、shell、容器运行时或进程管理器可以通过常规方式提供变量。Provider 凭据仍使用选定 Pydantic AI provider 的标准环境变量。
-
-每个媒体理解 Agent 的初始配置为 `temperature=0.1`。可以通过大小受限的 JSON 对象覆盖或扩展原生 `ModelSettings`：
-
-```bash
-export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.2}'
-export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1,"max_tokens":8192}'
-export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1}'
-```
-
-完整变量名如下：
-
-| 媒体 | 模型字符串                               | 可选的设置 JSON                                   |
-| ---- | ---------------------------------------- | ------------------------------------------------- |
-| 图像 | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL` | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS` |
-| 视频 | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL` | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS` |
-| 音频 | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL` | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS` |
-
-可以配置其中一种、两种或全部三种媒体。缺少模型字符串只影响对应媒体类型。仓库贡献者可以将根目录 `.env.harness.example` 模板中的这些条目复制到 `.env`；Harness 本身仍只读取最终传入进程的环境变量。
-
-## 默认分析行为
-
-专用媒体理解 Agent 使用随包提供、按媒体类型设计的生产提示词：
-
-- 图像分析覆盖所有可见元素、准确的 OCR、布局、视觉风格，以及可用于实现的 UI/CSS 细节；
-- 视频分析按完整时间顺序进行，捕捉语音和屏幕内容，谨慎区分说话者，并且只在内容确实表达了用户意图时提取它；
-- 音频分析按录音时间顺序进行，分别描述语音、音乐、音效、环境声和音质。
-
-这三种提示词都优先保证准确性，避免猜测；转写保留原语言，明确标注无法辨认或听清的内容，不擅自推断未说明的身份。两个工具的 `instructions` 参数都可以缩小分析范围，但这些防止幻觉的规则仍然有效。如果没有明确的分析指令，媒体理解 Agent 会使用对应媒体的全面分析默认值，并说明不清楚或未覆盖的内容。
-
-`view` 接受最大 100 MiB 的图像源文件，以及最大 16 MiB 的音频或视频源文件；Environment provider 设置的更小限制仍然有效。E2B 的默认文件限制为 100 MiB，其他 provider 保留各自的默认值。默认图像预处理在读取后执行，将每张图像或切片限制在 5 MiB 的 base64 编码数据内，并将静态源图像处理限制在 8000 万像素以内。它修改模型请求，原生图像历史仍保留原始字节。音频和视频不使用这套图像压缩。
-
-运行时会限制每次文件读取、媒体理解 Agent 的超时、输出大小、输出校验重试次数，以及临时 HTTP 错误的重试次数。视频的超时时间比图像或音频更长。受限读取完成后，Environment 的文件作用域就会释放，随后媒体理解 Agent 或自定义 provider 才进行外部模型调用。
+Harness 按每种媒体的配置自动选择路径。先[声明原生能力](#declare-model-input-capabilities)或[配置理解 Agent](#configure-the-default-media-understanding-agents)，再使用下面的工具。
 
 ## 通过 `view` 使用
 
@@ -105,7 +38,69 @@ capabilities = (
 
 YouTube 需要显式声明原生 `url_input.video: [youtube]` 支持，且 Run 主机名策略不受限。它保留为原生 URL，不回退到辅助模型或下载。本地文件使用 `view`；URL 读取不需要 Environment 挂载或临时文件。
 
-新工具替代 `read_video_url`，Python 接口为 `MediaUrlToolset`。权限规则继续使用稳定 ID `media.read_video_url`，现在控制全部三种媒体类型。升级前应完成或关闭旧名称的待处理工具调用，因为这些调用无法在重命名后的工具面上恢复。
+## 声明模型输入能力
+
+在 `AgentSpec.model_characteristics` 中声明 Model 和 provider 调用路径支持的媒体类型：
+
+```python
+from a13n_harness import (
+    AgentSpec,
+    ModelCapability,
+    HarnessModelCharacteristics,
+)
+
+agent_spec = AgentSpec(
+    model_characteristics=HarnessModelCharacteristics(
+        capabilities=frozenset(
+            {
+                ModelCapability.IMAGE_UNDERSTANDING,
+                ModelCapability.VIDEO_UNDERSTANDING,
+                ModelCapability.AUDIO_UNDERSTANDING,
+            }
+        )
+    )
+)
+```
+
+三种能力相互独立。未声明的媒体类型使用对应的理解 provider。
+
+## 配置默认的媒体理解 Agent
+
+为需要回退处理的每种媒体，设置一个带 provider 前缀的 Pydantic AI 模型字符串：
+
+```bash
+export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL=google:gemini-3.7-flash
+export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
+export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
+```
+
+通过 shell、容器运行时或应用提供这些进程环境变量。Harness 在需要回退时读取它们；如使用 `.env`，由应用负责加载。凭据通过所选 provider 的标准环境变量提供。
+
+每个媒体理解 Agent 的初始配置为 `temperature=0.1`。可以通过大小受限的 JSON 对象覆盖或扩展原生 `ModelSettings`：
+
+```bash
+export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.2}'
+export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1,"max_tokens":8192}'
+export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1}'
+```
+
+完整变量名如下：
+
+| 媒体 | 模型字符串                               | 可选的设置 JSON                                   |
+| ---- | ---------------------------------------- | ------------------------------------------------- |
+| 图像 | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL` | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS` |
+| 视频 | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL` | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS` |
+| 音频 | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL` | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS` |
+
+按应用需要配置媒体类型。缺少模型字符串只影响对应类型。仓库贡献者可使用 `.env.harness.example` 作为模板。
+
+## 默认分析行为
+
+默认图像分析覆盖可见内容、OCR、布局和风格。视频与音频分析按录制时间顺序展开，包括语音、屏幕内容或非语音声音。转写保留原语言，并标明不清楚的内容。使用 `instructions` 让任一工具聚焦所需细节。
+
+`view` 接受最大 100 MiB 的图像源文件，以及最大 16 MiB 的音频或视频源文件；Environment provider 设置的更小限制仍然有效。E2B 的默认文件限制为 100 MiB，其他 provider 保留各自的默认值。默认图像预处理在读取后执行，将每张图像或切片限制在 5 MiB 的 base64 编码数据内，并将静态源图像处理限制在 8000 万像素以内。它修改模型请求，原生图像历史仍保留原始字节。音频和视频不使用这套图像压缩。
+
+运行时会限制每次文件读取、媒体理解 Agent 的超时、输出大小、输出校验重试次数，以及临时 HTTP 错误的重试次数。视频的超时时间比图像或音频更长。受限读取完成后，Environment 的文件作用域就会释放，随后媒体理解 Agent 或自定义 provider 才进行外部模型调用。
 
 ## 覆盖单次执行的配置
 
@@ -167,3 +162,7 @@ bindings = RunBindings.embedded(
 | `media_understanding_failed`                | 自定义媒体理解 provider 或理解模型失败，且没有更具体、可安全返回的错误码。   |
 
 有关文件路由、授权和字节数限制，参阅[环境](environments.md)。
+
+## 从 `read_video_url` 迁移
+
+新工具替代 `read_video_url`，Python 接口为 `MediaUrlToolset`。权限规则继续使用稳定 ID `media.read_video_url`，现在控制全部三种媒体类型。升级前应完成或关闭旧名称的待处理工具调用，因为这些调用无法在重命名后的工具面上恢复。

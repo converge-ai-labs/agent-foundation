@@ -61,7 +61,16 @@ An agent revision selects skills in `skills` as `{"skill_id": "sk_…", "revisio
 
 ## Runtime synchronization
 
-Configure all selected skills with one `skill_sync` block in the agent configuration (Console's advanced JSON). The default is shared, last-publication-wins:
+Choose how concurrent agents use their skill packages, then set `skill_sync` in the agent's advanced JSON. Selecting skills or requesting shared cleanup requires a [primary environment](environments.md).
+
+| Need                                              | Mode                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------- |
+| Agents use the same published skill directories   | `shared` (default): the last publication of each name wins |
+| Agents need different versions in one environment | `isolated`: catalogs use package-digest paths              |
+
+### Shared directories
+
+The default configuration is:
 
 ```json
 {
@@ -72,9 +81,9 @@ Configure all selected skills with one `skill_sync` block in the agent configura
 
 Shared mode publishes each selected package at `/workspace/.agents/skills/<name>` before the agent's first model request. Overwriting replaces the whole directory, including removal of obsolete files. Set `overwrite: false` to preserve existing names. Set `cleanup: true` to remove unselected entries from that shared directory; an empty selection then clears it. Shared mode does not use the package cache.
 
-Each skill directory is published from a complete staged package. Linux and macOS use atomic replacement on supported filesystems, preserving the old directory if publication fails. Windows uses ordinary remove/rename for an existing directory. This keeps Windows usable while accepting a visibility gap and a missing or partially removed destination if replacement fails. Other unsupported atomic replacement operations fail without changing the old directory. Cancellation or an uncertain provider outcome can leave the replacement published or the candidate staged.
-
 Shared paths can change while another run or child agent reads them. The last publication wins, regardless of run completion order. Separate reads can span versions, and the complete selection is not one atomic update. Cleanup can delete skills another active agent still needs. Leave the default `cleanup: false` when independent writers select different skills, or coordinate ownership of the shared directory.
+
+### Isolated packages
 
 When agents need conflicting versions in the same environment, choose isolated mode:
 
@@ -86,17 +95,7 @@ Its catalog paths are `/workspace/.agents/skill-cache/<package-digest>/<name>`. 
 
 Isolated mode shares immutable package content, rather than allocating a copy per agent. Immutability is a Service publication guarantee; authorized file and shell operations can still modify the files. Cache publication failure leaves existing packages intact. Cancellation or uncertain mutation outcomes retain protection against eviction, and can leave staging directories or pins for later operator cleanup.
 
-| Scenario                                  | Result                                                                                                          |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Shared, different names, cleanup disabled | Both names remain available.                                                                                    |
-| Shared, same name and identical package   | Overwrite republishes equivalent content.                                                                       |
-| Shared, same name and different packages  | The last publication wins, including for readers already running; Windows accepts the remove/rename gap.        |
-| Shared, `overwrite: false`                | The existing name or concurrent winner stays, even if it differs from the selected revision.                    |
-| Shared, `cleanup: true`                   | Unselected names are removed, including those used by another agent; an empty selection clears the shared root. |
-| Isolated, identical package bytes         | Agents and revisions reuse the same directory.                                                                  |
-| Isolated, different versions of one name  | Each catalog uses its own digest path; both versions coexist.                                                   |
-| Isolated, cache over budget               | Active packages remain pinned; bounded trimming evicts idle packages in least-recently-used order.              |
-| Shared and isolated in one environment    | Separate roots keep shared overwrite and cleanup away from the isolated cache.                                  |
+### Override one run
 
 Use `options.overrides.skill_sync` to select a policy for one run:
 
@@ -104,6 +103,10 @@ Use `options.overrides.skill_sync` to select a policy for one run:
 {"options": {"overrides": {"skill_sync": {"mode": "isolated"}}}}
 ```
 
-The override replaces the entire block; omitted members use the chosen mode's defaults. Children use their own agent policies. `overwrite` and `cleanup` belong only to shared mode; `cache_count` belongs only to isolated mode. Selecting skills or requesting shared cleanup requires a primary environment.
+The override replaces the entire block; omitted members use the chosen mode's defaults. Children use their own agent policies. `overwrite` and `cleanup` belong only to shared mode; `cache_count` belongs only to isolated mode.
+
+### Publication and cleanup
+
+Each skill directory is published from a complete staged package. Linux and macOS use atomic replacement on supported filesystems, preserving the old directory if publication fails. Windows uses ordinary remove/rename for an existing directory. This keeps Windows usable while accepting a visibility gap and a missing or partially removed destination if replacement fails. Other unsupported atomic replacement operations fail without changing the old directory. Cancellation or an uncertain provider outcome can leave the replacement published or the candidate staged.
 
 The new layouts replace the former `.a13n/skills` layout without reading or migrating it. Cache coordination requires coherent shared-filesystem operations across environment clients. A crash or uncertain provider operation can leave staging directories, pins or eviction gates. Quiesce all clients before manually reclaiming abandoned state; protection has no timed expiry.

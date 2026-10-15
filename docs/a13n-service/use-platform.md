@@ -22,13 +22,7 @@ Console follows your browser's preferred language when it supports it; otherwise
 3. Watch the response stream. The conversation can also show reasoning and tool calls.
 4. Send a follow-up, such as “Make the first step more specific.” The same thread retains the discussion history.
 
-To return later, open **Sessions** and select **Continue conversation** for that session. This opens Chat on its main thread; if there is no unique main thread, choose the history to open. A thread ID search keeps that exact target. Select **Inspect execution** or click the row to open Debug. You can switch between Chat and Debug in the conversation. If a run fails, inspect its details or share its ID with your administrator; see [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
-
-In Debug, the header shows what the session has spent. Select it to see input, cached input, cache hit rate, output, time to first token (TTFT), output speed and cost per model and per run; cached input is part of input. Expand a model call to see its own TTFT and output speed. Each run's **Details** opens the same figures for that run, with its configuration, attempts and lineage.
-
-Each response names the model its run used, and the count of the run's overrides. Select the model in Chat, or the **Agent** line or **Configuration** in Debug, to see the agent configuration that run executed: its agent version with the run's overrides applied. The view is read-only, and each section an override changed is marked **Overridden**. Later versions of the agent do not change it.
-
-Messages show the sender’s current name and original submission time in Chat and Debug. Your own messages have a **You** label; service accounts have a **Service account** label. Select a sender’s name to view and copy their email or account ID. Queued messages, guidance and inherited branch history retain their own senders. Names and emails reflect the current profile.
+To return later, open **Sessions** and select **Continue conversation**. Choose a thread when the session has no unique main thread; a thread ID search keeps that exact target. Use Chat for the conversation and Debug to inspect execution.
 
 ## Create a conversation branch
 
@@ -40,7 +34,7 @@ File environments and memory are shared by default, so changes may be visible in
 
 ## Create your own agent
 
-With the builder or admin role in this workspace:
+Use [Agent Composer](agent-composer.md) to describe the agent you want and review its proposed changes. To configure it yourself, use the manual path below. Both paths require builder or admin access in the workspace:
 
 1. Confirm a model is available under **Models**, or [add one](get-started.md#add-a-model).
 2. Open **Agents → Create manually**, choose the model, and add instructions such as “Turn project notes into short, concrete next steps.”
@@ -54,6 +48,16 @@ Use **Save changes** after editing the configuration. New work uses the saved ve
 - **Questions and approvals:** answer questions and choose **Approve once** or **Deny** for approvals, then select **Submit responses** after completing every pending item. The agent continues after the complete batch is accepted. An ordinary message does not resolve the wait.
 - **Steer or stop:** send another message while a run is active, or stop the active run.
 - **Files and commands:** select an environment under **Run options**, or configure an [environment template](environments.md#templates) as the agent's default.
-- **Shared knowledge:** mount [memory](memory.md) on the thread or set it as an agent default. Memory can supply context automatically; enabled memory tools let the agent search and update it.
+- **Shared knowledge:** select [Memory Spaces](memory.md#memory-spaces) in the agent defaults or session **Memory** control. Use [standalone mounts](memory.md#mount-a-memory-on-a-thread) for existing file stores or record memories.
+
+## Inspect a reply
+
+Select **Inspect execution** in Sessions or switch to Debug in the conversation. If a run fails, inspect its details or share its ID with your administrator; see [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
+
+In Debug, the header shows what the session has spent. Select it to see input, cached input, cache hit rate, output, time to first token (TTFT), output speed and cost per model and per run; cached input is part of input. Expand a model call to see its own TTFT and output speed. Each run's **Details** opens the same figures for that run, with its configuration, attempts and lineage.
+
+Each response names the model its run used, and the count of the run's overrides. Select the model in Chat, or the **Agent** line or **Configuration** in Debug, to see the agent configuration that run executed: its agent version with the run's overrides applied. The view is read-only, and each section an override changed is marked **Overridden**. Later versions of the agent do not change it.
+
+Messages show the sender’s current name and original submission time in Chat and Debug. Your own messages have a **You** label; service accounts have a **Service account** label. Select a sender’s name to view and copy their email or account ID. Queued messages, guidance and inherited branch history retain their own senders. Names and emails reflect the current profile.
 
 Read [Core concepts](../overview/core-concepts.md) for the conversation model, try [Agent Composer](agent-composer.md) for configuration help, or [connect your application](connect-application.md) to the same Service.

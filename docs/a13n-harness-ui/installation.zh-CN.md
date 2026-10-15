@@ -19,7 +19,11 @@ a13n-harness-ui
 
 ## 升级
 
-通过 uv tool 安装时，运行 `a13n-harness-ui update` 或 `uv tool upgrade a13n-harness-ui`，然后重启 Harness UI。`a13n-harness-ui update` 要求 PATH 中有 uv，且不会再次询问。其他安装方式请使用原来的包管理器。
+1. 停止共享数据根目录的所有 TUI 和 WebUI App。
+2. 通过 uv tool 安装时，运行 `a13n-harness-ui update` 或 `uv tool upgrade a13n-harness-ui`。其他安装方式使用原来的包管理器。
+3. 共享该数据根目录的所有 App 都升级完成后，再重新启动，并刷新已打开的 WebUI 页面。
+
+升级后的 App 可以读取已有对话，并使用当前检查点格式写入。旧版 App 无法读取新发布的检查点，因此共享安装应保持在升级后的版本。`a13n-harness-ui update` 要求 PATH 中有 uv，执行时不会再次询问。
 
 启动时会在后台检查更新，进入对话后显示提示；不会自动安装更新。使用 `--no-update-check` 可在本次启动时关闭检查，在 `a13n-harness-ui.yaml` 中设置 `process.terminal_update_check: false` 可永久关闭。见[更新与故障行为](automation-and-troubleshooting.md#logs-updates-and-exit)。
 

@@ -197,7 +197,20 @@ Two conversations can use different project directories on one instance, or deli
 
 ## Computer Use
 
-An Agent can operate a compatible desktop without a person taking control first. This requires an environment whose provider exposes Computer operations and a working graphical session; enabling permissions does not add a desktop to a headless environment.
+Give an agent a graphical desktop to inspect screens, click controls and type. Set up the desktop first, then grant its tools and mount permissions.
+
+### Create a Docker desktop
+
+1. Open **Workspace settings → Providers → Environment** and configure a Docker connection. Enable **Environment operation channel** and set **Host access address** to an address the Workers can reach. Docker Engine access and this HTTP route are separate connections.
+2. Open **Environments → Templates → Create template**. Choose Docker, select the connection, and choose **Desktop environment**. The preset selects the desktop image, HTTP EIP execution and desktop readiness requirement. Save the template.
+3. Select that template as the agent's default environment, or create an instance from it and add it to the conversation.
+4. Once the environment is running, use **Check desktop** in **Environments and memory** to inspect readiness. Then enable the permissions below.
+
+Use loopback or an explicitly trusted private link for the plain-HTTP operation channel, with the deployment's outbound policy configured accordingly. Workers need access to the host address and Docker-assigned port. For a custom image, select **Custom image** and provide an image compatible with Envd HTTP and a graphical session; set `execution: "envd_http"` and `desktop: true`.
+
+### Enable observation and interaction
+
+For an existing compatible desktop, start here. Computer permissions default off and are independent of desktop readiness.
 
 1. Enable **Computer** in the Agent's tools and save its configuration. Per-tool approval settings still apply.
 2. Open the conversation's **Environments and memory** settings. Add the environment if needed, then open its **Computer permissions**. Choose **Observe** for screenshots and display information, or **Interact** to also allow mouse and keyboard actions. The primary `workspace` mount uses the same settings.

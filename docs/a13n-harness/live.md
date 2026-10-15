@@ -3,13 +3,18 @@ title: Live conversations
 description: Run duplex text and audio conversations with Harness tools, state, and cleanup.
 ---
 
-Use `ExecutableAgent.live()` when input and output overlap in one conversation. A Live Run uses the same Agent definition, tools, fresh Context, Environment bindings, plugins, and portable state as other Harness Runs. It opens a native realtime connection instead of the ordinary request/response loop.
+Choose the API for the conversation you are building:
 
-Live is an embedded SDK API. It does not add a microphone UI, browser transport, durable socket recovery, or cross-Thread orchestration.
+| Task                                                                | API                        | Your application supplies                                      |
+| ------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------- |
+| Run an Agent with native realtime tools and portable state          | `ExecutableAgent.live()`   | A native `RealtimeModel`, input, and audio playback            |
+| Connect subscription-authenticated voice to Host-managed Agent work | `CodexLiveModel.connect()` | A WebRTC media peer, credential source, and delegation handler |
+
+For a ready-to-use microphone interface, see [Harness UI Live mode](../a13n-harness-ui/live-mode.md). The native Live Run workflow comes first below; [Codex voice integration](#connect-codex-voice) uses a separate transport API.
 
 ## Open a Live Run
 
-Pass a native `RealtimeModel` instance explicitly. Provider credentials and connection options belong to that native Model. The ordinary Model configured for `run()` or `stream()` does not select the Live provider.
+A Live Run uses the Agent's tools, fresh Context, Environment bindings, plugins, and portable state. Pass a native `RealtimeModel` explicitly to open the realtime connection. That Model owns provider credentials and connection options; the ordinary Model configured for `run()` or `stream()` remains independent.
 
 ```python
 import asyncio
@@ -87,3 +92,23 @@ Live reports response contributions while active and settles them again after cl
 `live.native_usage` is a detached diagnostic copy of the native accumulator. It includes native session-only usage but may also include a caller baseline and nested work sharing that accumulator. Do not add it to `live.usage`, treat it as an attributed receipt, or assume it is restored from state. Hosts needing complete billing must reconcile against provider evidence.
 
 Live rejects `RunBindings.model_call_check` before connecting with `live_model_check_unsupported`. Native realtime has no equivalent of the ordinary Host per-request reservation boundary. See [usage and limits](usage-and-limits.md) for ordinary accounting and [state and resume](state-and-resume.md) for Host persistence ownership.
+
+## Connect Codex voice
+
+Import `CodexLiveModel` from `a13n_harness.models.codex_live` to connect subscription voice with your application's Agent workflow. The factory owns call bootstrap and the control connection. Your Host owns the WebRTC media peer, Agent execution, persistence, and presentation.
+
+1. Create `CodexLiveModel(credential_source)` with an `OpenAICodexCredentialSource`. The default voice is `cove`; select a `CodexLiveVoice` V3 value to change it.
+2. Create a WebRTC offer in your media peer. Enter `model.connect(offer_sdp, instructions=..., on_answer=..., initial_items=...)` as an async context manager. `initial_items` is an optional sequence of `ConversationItem` values.
+3. In the asynchronous `on_answer(answer_sdp)` callback, apply the answer to the peer and await its connection. This callback completes before the control connection attaches. Keep subscription credentials in the Host; send the browser only the SDP answer.
+4. Consume `session.events()` and handle the typed events below. Your application decides which delegated work to admit and starts it through its normal Agent execution path.
+5. Exit the context manager to close the voice connection, and stop your media peer as part of Host cleanup.
+
+| Event                                | Application action                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| `SessionReady`                       | Show provider readiness                                                         |
+| `Transcript(role, text, final)`      | Display speech text and distinguish interim from final text                     |
+| `Delegation(item_id, text, context)` | Submit the task and its bounded conversation context to your execution workflow |
+
+Send selected user-facing results with `session.append_speech(text, delegation_id=...)`, or progress with `session.append_status(...)`. The optional ID correlates text with a delegation. Sending text provides context for speech; it is not a playback or durable-delivery receipt. Keep private reasoning out of both channels.
+
+Each connection creates at most one call. Ambiguous bootstrap and context-write failures are not replayed automatically; handle the error and let the user start a new voice session. Account entitlement and provider availability are required at connection time.
