@@ -2395,12 +2395,12 @@
   "Configure Agent Computer tools and mount permissions separately.": "使用前，还需配置 Agent 的 Computer 工具和挂载权限。",
   "Allow the sandbox to connect to external services.": "允许沙箱连接外部服务。",
   "Context window: {{usage}}": "上下文窗口：{{usage}}",
-  "{{used}}% used · {{remaining}}% remaining": "已使用 {{used}}% · 剩余 {{remaining}}%",
   "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} token",
-  "Input + output, including cached input. Window size uses the agent override or current model configuration.": "输入加输出，已包含缓存输入。窗口大小采用 Agent 覆盖值或模型当前配置。",
-  "Based on this model call; not a live prompt count.": "基于这次模型调用，并非实时提示词计数。",
-  "Based on the last main model call; excludes your unsent message.": "基于上一次主模型调用，不含尚未发送的消息。",
   "No context usage reported yet.": "暂无已报告的上下文用量。",
   "Context window size is unknown.": "上下文窗口大小未知。",
-  "Based on the last main model call in this run.": "基于本次运行的最后一次主模型调用。"
+  "This call": "本次调用",
+  "Last call": "上次调用",
+  "used": "已使用",
+  "{{percent}}% remaining": "剩余 {{percent}}%",
+  "Configured limit": "配置上限"
 }

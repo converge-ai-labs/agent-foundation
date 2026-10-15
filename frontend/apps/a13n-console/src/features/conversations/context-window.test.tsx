@@ -66,13 +66,10 @@ it("shows last-call occupancy and opens details by keyboard without submitting",
   expect(scopes).toEqual(["?thread_id=thread"]);
   trigger.focus();
   await userEvent.keyboard("{Enter}");
-  expect(await screen.findByText("21% used · 79% remaining")).toBeTruthy();
+  expect(await screen.findByText("79% remaining")).toBeTruthy();
   expect(screen.getByText("42k / 200k tokens")).toBeTruthy();
-  expect(
-    screen.getByText(
-      "Based on the last main model call; excludes your unsent message.",
-    ),
-  ).toBeTruthy();
+  expect(screen.getByText("Last call")).toBeTruthy();
+  expect(screen.getByText("Configured limit")).toBeTruthy();
   await userEvent.keyboard("{Escape}");
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 });

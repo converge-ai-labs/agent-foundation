@@ -2395,12 +2395,12 @@
   "Configure Agent Computer tools and mount permissions separately.": "Configure Agent Computer tools and mount permissions separately.",
   "Allow the sandbox to connect to external services.": "Allow the sandbox to connect to external services.",
   "Context window: {{usage}}": "Context window: {{usage}}",
-  "{{used}}% used · {{remaining}}% remaining": "{{used}}% used · {{remaining}}% remaining",
   "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} tokens",
-  "Input + output, including cached input. Window size uses the agent override or current model configuration.": "Input + output, including cached input. Window size uses the agent override or current model configuration.",
-  "Based on this model call; not a live prompt count.": "Based on this model call; not a live prompt count.",
-  "Based on the last main model call; excludes your unsent message.": "Based on the last main model call; excludes your unsent message.",
   "No context usage reported yet.": "No context usage reported yet.",
   "Context window size is unknown.": "Context window size is unknown.",
-  "Based on the last main model call in this run.": "Based on the last main model call in this run."
+  "This call": "This call",
+  "Last call": "Last call",
+  "used": "used",
+  "{{percent}}% remaining": "{{percent}}% remaining",
+  "Configured limit": "Configured limit"
 }

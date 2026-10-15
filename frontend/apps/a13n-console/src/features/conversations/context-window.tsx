@@ -50,42 +50,38 @@ export function ContextWindow({
     <div className={styles.details}>
       <div className={styles.heading}>
         <strong>{t("Context window")}</strong>
-        <span>{label}</span>
+        <span className={styles.source}>
+          {"record_id" in scope ? t("This call") : t("Last call")}
+        </span>
+      </div>
+      <div className={styles.balance}>
+        <span className={styles.used}>
+          <strong>{label}</strong>
+          <span>{t("used")}</span>
+        </span>
+        {percent !== null && (
+          <span className={styles.remaining}>
+            {t("{{percent}}% remaining", {
+              percent: Math.max(0, 100 - percent),
+            })}
+          </span>
+        )}
       </div>
       <div className={styles.track} aria-hidden="true">
         <span style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
       </div>
-      {percent !== null && (
-        <p className={styles.balance}>
-          {t("{{used}}% used · {{remaining}}% remaining", {
-            used: percent,
-            remaining: Math.max(0, 100 - percent),
+      <div className={styles.footer}>
+        <span
+          className={styles.tokens}
+          title={`${exact(used)} / ${exact(capacity)}`}
+        >
+          {t("{{used}} / {{capacity}} tokens", {
+            used: formatTokens(used),
+            capacity: formatTokens(capacity),
           })}
-        </p>
-      )}
-      <p
-        className={styles.tokens}
-        title={`${exact(used)} / ${exact(capacity)}`}
-      >
-        {t("{{used}} / {{capacity}} tokens", {
-          used: formatTokens(used),
-          capacity: formatTokens(capacity),
-        })}
-      </p>
-      <p className={styles.note}>
-        {t(
-          "Input + output, including cached input. Window size uses the agent override or current model configuration.",
-        )}
-      </p>
-      <p className={styles.note}>
-        {"record_id" in scope
-          ? t("Based on this model call; not a live prompt count.")
-          : "run_id" in scope
-            ? t("Based on the last main model call in this run.")
-            : t(
-                "Based on the last main model call; excludes your unsent message.",
-              )}
-      </p>
+        </span>
+        <span className={styles.source}>{t("Configured limit")}</span>
+      </div>
       {query.isPending && <p className={styles.note}>{t("Loading…")}</p>}
       {!query.isPending && !query.error && used === null && (
         <p className={styles.note}>{t("No context usage reported yet.")}</p>

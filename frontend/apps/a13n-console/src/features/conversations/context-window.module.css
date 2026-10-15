@@ -34,26 +34,28 @@
   stroke-linecap: round;
 }
 .popup {
-  width: min(300px, calc(100vw - 32px));
+  width: min(280px, calc(100vw - 32px));
 }
 .details {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   font-size: var(--a13n-text-xs);
 }
-.heading {
+.heading,
+.footer {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  font-size: var(--a13n-text-sm);
+  align-items: baseline;
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
 }
 .heading strong {
   font-weight: 500;
 }
 .track {
-  height: 4px;
+  height: 5px;
   border-radius: 99px;
   background: var(--a13n-surface);
   overflow: hidden;
@@ -61,21 +63,41 @@
 .track span {
   display: block;
   height: 100%;
-  background: var(--a13n-secondary);
+  background: var(--a13n-text);
   border-radius: inherit;
 }
-.balance,
-.tokens,
-.note {
-  margin: 0;
-}
 .balance {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.used {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.used strong {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.used > span,
+.remaining {
   color: var(--a13n-secondary);
+}
+.source {
+  color: var(--a13n-muted);
+  font-size: var(--a13n-text-2xs);
+  white-space: nowrap;
 }
 .tokens {
   font-variant-numeric: tabular-nums;
 }
 .note {
+  margin: 0;
   color: var(--a13n-muted);
   line-height: 1.5;
 }
