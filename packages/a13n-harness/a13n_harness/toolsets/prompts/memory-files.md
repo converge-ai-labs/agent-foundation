@@ -7,7 +7,8 @@ Memories persist across conversations and may be shared with other conversations
 </context>
 <writes>
 - Each write checks its condition against the current file at the moment of the call: `create` needs a new path, `edit` needs `old_string` to occur exactly once, `append` and `move` need the file to exist, `move` needs a free destination, and `delete` needs the version you viewed. There is no whole-file overwrite.
-- A failed write changes nothing and returns the current content. Read it and decide again; do not repeat the same call.
+- Writes also check the file versions this conversation observed in the same memory. If a source or target changed, `read_conflict` rejects the write even when `old_string` still matches. Reread the changed paths with `memory_file_view`, then reconsider or recompute the write in a later model step; a reread in the same tool batch does not refresh that batch's decisions.
+- A failed write changes nothing and returns the conflicting file's current content when available. Error diagnostics do not refresh your observed versions; do not repeat the same call.
 - When a write's outcome is unknown after an interruption, view the file before writing again.
 </writes>
 <best-practices>

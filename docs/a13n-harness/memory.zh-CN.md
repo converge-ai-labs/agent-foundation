@@ -70,7 +70,9 @@ asyncio.run(main())
 | `memory_file_move`   | 重命名文件                                       | 源文件不存在，或目标已存在         |
 | `memory_file_delete` | 删除模型此前查看的版本                           | 文件已变化或已不存在               |
 
-调用因前提条件或版本检查失败时，不会修改任何内容，并返回当前文件，让模型重新读取并判断。例如，两个 Thread 都查看了包含“喜欢茶”和“用英语回答”的文件。一个 Thread 将“用英语回答”改为“用中文回答”。另一个 Thread 随后将“喜欢茶”改为“喜欢咖啡”。两次修改都会保留。之后任一 Thread 再尝试修改“用英语回答”都会失败，并返回文件当前内容。
+每次写入还会检查该对话在同一份记忆中观察过的文件版本。如果另一个 Thread 修改、删除或移动了已观察的源文件，派生写入会在修改任何文件之前返回 `read_conflict`。已观察的目标文件也受保护，即使 `old_string` 仍然匹配。例如，另一个 Thread 将“用英语回答”改为“用中文回答”后，基于旧文件修改“喜欢茶”也会被拒绝。模型必须重新读取变化的文件、重新判断，再发出新的写入。同一批工具调用中的重读不能刷新已经做出的写入决定。
+
+这些保护随 `HarnessState` 续接保存。文件读取、grep 命中、单独列出的索引条目和自动加载的文件都会形成观察记录；折叠目录的文件计数不会。未观察的无关文件可以自由变化。每次修改的保护范围是一份记忆；后续调用冲突时，先前成功的写入仍然保留。
 
 `read` 挂载只提供 `memory_file_view` 和 `memory_file_grep`。`tools=("view", "grep")` 会缩小所有挂载的工具范围。工具权限规则可以指定从 `memory.file.view` 到 `memory.file.delete` 的工具 ID。
 
@@ -111,7 +113,7 @@ memory = FileMemoryCapability([FileMount("user", store, "write")], limits=limits
 
 ### 使用自己的文件存储
 
-存储实现 `a13n_harness.providers.memory` 的 `FileStore` 协议：`list`、`read`、采用 compare-and-swap 的 `write`、`move`、`delete`、供上下文游标使用的 `changes`，以及 `purge`。增加 `search` 可实现 `SearchableFileStore`；否则 `memory_file_grep` 会直接读取文件。`validate_path()` 和 `describe()` 应用通用文件规则。对于保留历史的存储，`Origin` 会说明每次变更来自哪个 Run、principal 和工具调用。
+存储实现 `a13n_harness.providers.memory` 的 `FileStore` 协议：`list`、`read`、采用 compare-and-swap 的 `write`、`move`、`delete`、供上下文游标使用的 `changes`，以及 `purge`。修改方法必须接受 `dependencies` 路径到版本的映射（`None` 表示不存在），并将依赖验证与目标修改作为一个原子操作执行。不匹配时返回 `read_conflict`，不产生存储变更。增加 `search` 可实现 `SearchableFileStore`，每条命中须返回与正文来自同一次读取的文件版本；否则 `memory_file_grep` 会直接读取文件。`validate_path()` 和 `describe()` 应用通用文件规则。对于保留历史的存储，`Origin` 会说明每次变更来自哪个 Run、principal 和工具调用。
 
 [文件记忆规范](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/21-file-memory.md)定义了完整存储约定、上下文预算和失败码。
 

@@ -44,7 +44,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     user_prompt_content,
 )
-from a13n_harness.providers.memory import FileEntry, MemoryStoreError
+from a13n_harness.providers.memory import FileEntry, FileText, MemoryStoreError
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -358,7 +358,7 @@ def test_file_context_budget_includes_omissions_indexes_and_wrappers(budget: int
             "1",
             entries,
             paths if incremental else None,
-            dict.fromkeys(paths, text),
+            {path: FileText(path, text, "1") for path in paths},
         )
         for index in range(4)
     ]
@@ -802,6 +802,25 @@ async def test_an_unavailable_memory_is_skipped_and_keeps_its_cursor() -> None:
     ]
 
 
+async def test_full_read_tracking_omits_new_context_without_advancing_cursor(monkeypatch) -> None:
+    from a13n_harness import _memory_reads
+
+    monkeypatch.setattr(_memory_reads, "_MAX_FILES", 1)
+    store = FakeFileStore({"source.md": "source"})
+    cursors = MemoryCursors()
+    model = _Model()
+    executable = _build(model, FileMemoryCapability([FileMount("user", store, "write")], cursors=cursors))
+    first = await executable.run("first", bindings=RunBindings.embedded())
+    before = cursors.snapshot()
+    store.put("new.md", "new information")
+    second = await executable.run("second", bindings=RunBindings.embedded(), previous_state=first.state)
+    assert second.output_or_raise() == "done"
+    assert cursors.snapshot() == before
+    assert "new information" not in str(model.calls[-1])
+    state = second.state.agent_context_state.get(FILE_MEMORY_CAPABILITY_ID)
+    assert state is not None and state.data["observed"] == {"user": {"source.md": "v1"}}
+
+
 def test_instructions_list_each_memory_with_its_guide() -> None:
     capability = FileMemoryCapability(
         [
@@ -864,3 +883,103 @@ async def test_source_evidence_reports_only_delivered_file_prefixes() -> None:
         "truncated": True,
     }
     assert "content" not in source
+
+
+async def test_autoload_tracks_the_content_version_not_the_earlier_listing() -> None:
+    store = FakeFileStore({"source.md": "old content"})
+
+    def race(operation: str) -> None:
+        if operation == "read" and store.files["source.md"].version == "v1":
+            store.put("source.md", "loaded content")
+
+    store.before = race
+    model = _Model()
+    result = await _build(
+        model,
+        FileMemoryCapability(
+            [
+                FileMount("user", store, "write", always_load=("source.md",)),
+            ]
+        ),
+    ).run("read", bindings=RunBindings.embedded())
+    entry = result.state.agent_context_state.get(FILE_MEMORY_CAPABILITY_ID)
+    assert entry is not None
+    assert entry.data["observed"] == {"user": {"source.md": "v2"}}
+    assert "loaded content" in _blocks(model.calls[0])[0]
+
+
+async def test_autoloaded_source_conflict_returns_to_the_model_then_reread_allows_recomputation() -> None:
+    store = FakeFileStore({"source.md": "v1"})
+
+    def reply(messages: list[ModelMessage]) -> str | DeltaToolCalls:
+        match len(model.calls):
+            case 1:
+                store.put("source.md", "v2")
+                return _tool_call("memory_file_create", {"memory": "user", "path": "derived.md", "content": "from v1"})
+            case 2:
+                assert "derived.md" not in store.files
+                return _tool_call("memory_file_view", {"memory": "user", "path": "source.md"}, "reread")
+            case 3:
+                return _tool_call(
+                    "memory_file_create", {"memory": "user", "path": "derived.md", "content": "from v2"}, "recomputed"
+                )
+            case _:
+                return "done"
+
+    model = _Model(reply)
+    await _build(
+        model,
+        FileMemoryCapability(
+            [
+                FileMount("user", store, "write", always_load=("source.md",)),
+            ]
+        ),
+    ).run("derive", bindings=RunBindings.embedded())
+    assert store.files["derived.md"].text == "from v2"
+    assert len(model.calls) == 4
+
+
+async def test_restored_tool_result_continuation_preserves_read_conflicts() -> None:
+    store = FakeFileStore({"source.md": "v1"})
+    cursors = MemoryCursors()
+
+    def first_reply(messages: list[ModelMessage]) -> str | DeltaToolCalls:
+        return (
+            _tool_call("memory_file_view", {"memory": "user", "path": "source.md"})
+            if len(first_model.calls) == 1
+            else "done"
+        )
+
+    first_model = _Model(first_reply)
+    first = await _build(
+        first_model,
+        FileMemoryCapability(
+            [FileMount("user", store, "write")],
+            cursors=cursors,
+        ),
+    ).run("read", bindings=RunBindings.embedded())
+    checkpoint = HarnessState.model_validate_json(
+        HarnessState.model_validate(
+            first.state.model_dump() | {"message_history": first.state.message_history[:-1]}
+        ).model_dump_json()
+    )
+    store.put("source.md", "v2")
+
+    def resumed_reply(messages: list[ModelMessage]) -> str | DeltaToolCalls:
+        return (
+            _tool_call("memory_file_create", {"memory": "user", "path": "derived.md", "content": "stale"})
+            if len(resumed.calls) == 1
+            else "done"
+        )
+
+    resumed = _Model(resumed_reply)
+    await _build(
+        resumed,
+        FileMemoryCapability(
+            [FileMount("user", store, "write")],
+            cursors=MemoryCursors(cursors.snapshot()),
+        ),
+    ).run(previous_state=checkpoint, bindings=RunBindings.embedded())
+    assert "derived.md" not in store.files
+    assert len(resumed.calls) == 2
+    assert "read_conflict" in str(resumed.calls[-1])
