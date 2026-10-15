@@ -362,7 +362,9 @@ jobs:
             packages/a13n-envd-client/tests/eip/test_device_sessions.py \
             -k monitoring -q --junitxml=test-results/monitoring-eip.xml
 
-      - name: Exercise managed monitoring against real cgroup limits
+      # A plain Python runtime supplies the test driver, not an Envd release.
+      # Mount the binary built above; namespace permissions allow managed bootstrap.
+      - name: Test current Envd binary against real cgroup limits
         if: matrix.runner == 'ubuntu-24.04'
         shell: bash
         run: |
@@ -372,7 +374,7 @@ jobs:
             --cgroupns=private --cpus=0.5 --memory=512m --user 0 \
             --mount "type=bind,src=$PWD/target/debug/a13n-envd,dst=/test-bin/a13n-envd,readonly" \
             --mount "type=bind,src=$PWD/crates/a13n-envd/tests,dst=/tests,readonly" \
-            --entrypoint python3 ghcr.io/converge-ai-labs/a13n-sandbox:0.1.6 \
+            --entrypoint python3 python:3.13-slim-trixie \
             /tests/monitoring_linux.py /test-bin/a13n-envd 2>&1 | tee test-results/monitoring-managed.log
 
       - name: Exercise native Windows EIP process ownership and fail-closed isolation

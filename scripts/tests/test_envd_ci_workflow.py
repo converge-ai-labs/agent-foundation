@@ -17,6 +17,9 @@ def test_monitoring_runs_native_carriers_and_real_managed_cgroup() -> None:
     assert managed["if"] == "matrix.runner == 'ubuntu-24.04'"
     assert "--cgroupns=private --cpus=0.5 --memory=512m" in managed["run"]
     assert "--network=none" in managed["run"]
+    assert "--entrypoint python3 python:3.13-slim-trixie" in managed["run"]
+    assert "src=$PWD/target/debug/a13n-envd,dst=/test-bin/a13n-envd,readonly" in managed["run"]
+    assert "/tests/monitoring_linux.py /test-bin/a13n-envd" in managed["run"]
     assert "set -o pipefail" in managed["run"]
 
 

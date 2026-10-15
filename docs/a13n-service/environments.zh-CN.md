@@ -91,7 +91,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 | Service 构建                            | 镜像标签 |
 | --------------------------------------- | -------- |
-| 稳定版或 RC                             | `0.1.3`  |
+| 稳定版或 RC                             | `0.2.0`  |
 | 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
 发布镜像支持 `linux/amd64` 和 `linux/arm64`。显式设置 `recipe.image` 可在 Service 升级后保留指定标签，也可用 digest 固定精确内容。Docker recipe 默认 `pull_policy: if_missing`：Engine 优先使用本地镜像，缺失时拉取。设置 `never` 可要求镜像必须在本地。自动配置的模板显式保存审定的 sandbox 镜像，因此后续 Service 升级不会悄悄修改它。

@@ -351,7 +351,7 @@ def test_service_release_requires_its_reviewed_sandbox(available, tmp_path, monk
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     result = subprocess.run(["bash", "-eu", "-c", gate["run"]], cwd=ROOT, capture_output=True, text=True)
     assert (result.returncode == 0) is available, result.stderr
-    assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.1.3"
+    assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.2.0"
 
 
 def test_sandbox_image_changes_trigger_native_docker_e2e() -> None:

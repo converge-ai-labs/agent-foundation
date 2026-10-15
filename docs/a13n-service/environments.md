@@ -91,7 +91,7 @@ Leave `recipe.image` unset to use the Service-reviewed `ghcr.io/converge-ai-labs
 
 | Service build                                         | Image tag |
 | ----------------------------------------------------- | --------- |
-| Stable or RC                                          | `0.1.3`   |
+| Stable or RC                                          | `0.2.0`   |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`     |
 
 Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. A Docker recipe defaults to `pull_policy: if_missing`: the Engine uses local images and pulls missing ones. Set `never` to require a local image. The automatically provisioned template stores the reviewed sandbox image explicitly, so later Service upgrades do not silently change it.

@@ -6,6 +6,7 @@ container's actual cgroup controllers; it never changes host cgroups.
 
 import os
 import platform
+import pwd
 import shlex
 import sys
 import tempfile
@@ -39,9 +40,12 @@ def verify(binary, root):
     memory_limit = int((cgroup / "memory.max").read_text())
     assert int(quota) / int(period) == 0.5
     assert memory_limit == 512 * 1024 * 1024
+    # Use the runtime's existing unprivileged account, with no sandbox-image dependency.
+    execution_user = pwd.getpwnam("nobody")
     device = Device(
         binary,
         root,
+        execution={"uid": execution_user.pw_uid, "gid": execution_user.pw_gid},
         egress="deny",
         sandbox={"mode": "disabled"},
         monitoring={
