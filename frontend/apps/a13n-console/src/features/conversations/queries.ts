@@ -41,3 +41,16 @@ export function useRunUsage(run: Pick<Schema["RunView"], "id" | "session_id">) {
       summary.runs.find((usage) => usage.run_id === run.id)?.models ?? [],
   });
 }
+
+/** Fetch timing only when a model request's Debug details are opened. */
+export function useRequestMetrics(runId: string, recordId?: string | null) {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  return useQuery({
+    ...conversationQueries(client, workspace.id).requestMetrics(
+      runId,
+      recordId ?? "",
+    ),
+    enabled: !!recordId,
+  });
+}

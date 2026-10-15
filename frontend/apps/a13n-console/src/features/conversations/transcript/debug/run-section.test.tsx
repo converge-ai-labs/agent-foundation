@@ -22,6 +22,8 @@ let cache: QueryClient;
 const requests: string[] = [];
 let recorded: Schema["ModelUsage"][];
 let usageStatus: number;
+let metricsStatus: number;
+let requestSpeed: number | null;
 vi.mock("../../../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -43,6 +45,8 @@ vi.mock("react-i18next", () => ({
 beforeEach(() => {
   requests.length = 0;
   usageStatus = 200;
+  metricsStatus = 200;
+  requestSpeed = 88.5;
   recorded = [
     {
       model: "large",
@@ -65,6 +69,18 @@ beforeEach(() => {
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
       requests.push(url.pathname);
+      if (url.pathname.endsWith("/usage/records/usage_fixture/metrics"))
+        return Response.json(
+          metricsStatus === 200
+            ? {
+                time_to_first_chunk_seconds: 11.027,
+                request_duration_seconds: 11.346,
+                output_tokens_per_second: requestSpeed,
+              }
+            : { error: { code: "internal", message: "Metrics unavailable" } },
+          { status: metricsStatus },
+        );
+
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/threads/thr_1"))
@@ -465,4 +481,28 @@ it("shows a later attempt, and nothing for the first", () => {
   expect(screen.getByText("Attempt 2 started · recovery")).toBeTruthy();
   expect(screen.queryByText(/Attempt 1/)).toBeNull();
   expect(screen.getByText("2 attempts")).toBeTruthy();
+});
+
+it("loads Debug speed from the backend on expansion, including zero and refresh", async () => {
+  show();
+  const user = userEvent.setup();
+  expect(requests.some((path) => path.endsWith("/metrics"))).toBe(false);
+  await user.click(screen.getByRole("button", { name: /Model call 1/ }));
+  expect(await screen.findByText("89 tok/s")).toBeTruthy();
+  requestSpeed = 0;
+  await invalidateConversation(cache, "workspace", { runId: "run_2" });
+  expect(await screen.findByText("0.0 tok/s")).toBeTruthy();
+});
+
+it("shows request metric failures with retry and leaves unavailable speed absent", async () => {
+  metricsStatus = 500;
+  show();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Model call 1/ }));
+  expect(await screen.findByText("Metrics unavailable")).toBeTruthy();
+  metricsStatus = 200;
+  requestSpeed = null;
+  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByText("11s to first token");
+  expect(screen.queryByText(/tok\/s/)).toBeNull();
 });

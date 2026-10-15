@@ -2,6 +2,8 @@ import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
+import { useRequestMetrics } from "../../queries";
+import { ErrorNotice } from "../../../../shared/feedback";
 import { formatCost } from "../../../../shared/cost";
 import { Patch } from "../../../../shared/diff";
 import {
@@ -38,7 +40,8 @@ export function EntryPane({
   entry: TimelineEntry;
   scope: RunScope;
 }) {
-  if (entry.kind === "model") return <ModelPane entry={entry} />;
+  if (entry.kind === "model")
+    return <ModelPane entry={entry} runId={scope.run.id} />;
   if (
     entry.kind === "reasoning" ||
     entry.kind === "guidance" ||
@@ -55,9 +58,10 @@ function isAction(entry: TimelineEntry): entry is ActionEntry {
   return "arguments" in entry;
 }
 
-function ModelPane({ entry }: { entry: ModelEntry }) {
+function ModelPane({ entry, runId }: { entry: ModelEntry; runId: string }) {
   const { t } = useTranslation();
   const usage = entry.usage;
+  const metrics = useRequestMetrics(runId, usage?.recordId);
   const reasoning = entry.children.filter(
     (child): child is ContentEntry => child.kind === "reasoning",
   );
@@ -84,12 +88,14 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
             }).cache,
           usage?.costUsd ? formatCost(usage.costUsd) : null,
           entry.durationMs !== null ? formatDuration(entry.durationMs) : null,
-          usage?.firstChunkMs != null &&
+          metrics.data?.time_to_first_chunk_seconds != null &&
             t("{{duration}} to first token", {
-              duration: formatDuration(usage.firstChunkMs),
+              duration: formatDuration(
+                metrics.data.time_to_first_chunk_seconds * 1000,
+              ),
             }),
-          usage?.generationMs && entry.reportedUsage
-            ? formatSpeed(t, usage.outputTokens / (usage.generationMs / 1000))
+          metrics.data?.output_tokens_per_second != null
+            ? formatSpeed(t, metrics.data.output_tokens_per_second)
             : null,
           entry.contextTokens
             ? t("{{tokens}} context", {
@@ -102,6 +108,7 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
         ]}
         action={<RawDialog title={t("Model request")} value={entry} />}
       />
+      <ErrorNotice error={metrics.error} retry={() => void metrics.refetch()} />
       <PaneSection label={t("Response")}>
         {reasoning.length || calls.length || replies.length ? (
           <div className={styles.responseBody}>

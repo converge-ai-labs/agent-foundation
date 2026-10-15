@@ -14,12 +14,8 @@ export interface StepUsage {
   cacheWriteTokens: number;
   costUsd: string | null;
   pricingStatus: string | null;
-  /**
-   * A completed streamed request: the wait for its first chunk and the time
-   * spent generating after it. Null when the request was not timed.
-   */
-  firstChunkMs: number | null;
-  generationMs: number | null;
+  /** Stable backend contribution identity; timing metrics come from the usage API. */
+  recordId: string | null;
 }
 /**
  * A usage record proves a response was committed; it does not prove the
@@ -71,29 +67,6 @@ function decimal(value: unknown): string | null {
 function text(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
-function time(value: unknown): number | null {
-  const parsed = Date.parse(text(value) ?? "");
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/** Only a completed stream separates waiting for the model from generating. */
-function timing(record: Record<string, unknown>) {
-  const started = time(record.request_started_at);
-  const firstChunk = time(record.first_chunk_at);
-  const ended = time(record.request_ended_at);
-  if (
-    record.outcome !== "completed" ||
-    firstChunk === null ||
-    ended === null ||
-    firstChunk >= ended
-  )
-    return { firstChunkMs: null, generationMs: null };
-  return {
-    firstChunkMs: started === null ? null : firstChunk - started,
-    generationMs: ended - firstChunk,
-  };
-}
-
 function modelRecord(record: Record<string, unknown>): ModelUsageRecord | null {
   const recordId = text(record.record_id);
   if (!recordId) return null;
@@ -112,7 +85,7 @@ function modelRecord(record: Record<string, unknown>): ModelUsageRecord | null {
       cacheWriteTokens: count(usage.cache_write_tokens),
       costUsd: decimal(usage.cost),
       pricingStatus: text(record.pricing_status),
-      ...timing(record),
+      recordId,
     },
   };
 }
@@ -147,8 +120,7 @@ function providerRecord(
       cacheWriteTokens: 0,
       costUsd: decimal(usage.cost),
       pricingStatus: null,
-      firstChunkMs: null,
-      generationMs: null,
+      recordId: null,
     },
   };
 }

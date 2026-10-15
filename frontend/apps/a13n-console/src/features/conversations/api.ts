@@ -33,6 +33,8 @@ export function conversationKeys(workspaceId: string) {
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
+    requestMetrics: (runId: string, recordId: string) =>
+      [...root, "usage", runId, "record", recordId] as const,
     /** Recorded model usage of one Session or one Run. */
     usage: (scope: UsageScope) =>
       [
@@ -47,6 +49,18 @@ export function conversationKeys(workspaceId: string) {
 export function conversationQueries(client: Client, workspaceId: string) {
   const keys = conversationKeys(workspaceId);
   return {
+    requestMetrics: (runId: string, record_id: string) =>
+      queryOptions({
+        queryKey: keys.requestMetrics(runId, record_id),
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/usage/records/{record_id}/metrics", {
+              params: { path: { record_id } },
+              signal,
+            })
+            .then(data),
+      }),
     sessions: (cursor?: string, filters: SessionFilters = {}) =>
       queryOptions({
         queryKey: [...keys.sessions(), filters, cursor],

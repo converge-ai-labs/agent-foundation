@@ -10,6 +10,7 @@ from a13n_service.usage import service
 from a13n_service.usage.schemas import (
     AgentUsagePage,
     BreakdownQuery,
+    ModelRequestMetrics,
     ModelUsagePage,
     OverviewQuery,
     UsageFilter,
@@ -46,3 +47,10 @@ async def usage_models(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[BreakdownQuery, Query()]
 ) -> ModelUsagePage:
     return await service.models(runtime.storage, actor, workspace_id, query)
+
+
+@router.get("/records/{record_id}/metrics", openapi_extra={"x-a13n-mcp": True})
+async def model_request_metrics(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, record_id: str
+) -> ModelRequestMetrics:
+    return await service.request_metrics(runtime.storage, actor, workspace_id, record_id)

@@ -165,6 +165,7 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
         ("completed", 10, None, 10),
         ("completed", 10, 10, 10),
         ("completed", 0, None, None),
+        ("completed", -1, None, None),
         ("completed", None, None, None),
         ("failed", 10, 8, None),
         ("cancelled", 10, 8, None),
@@ -194,6 +195,30 @@ async def test_speed_uses_full_request_duration_and_inclusive_output(
     summary = response.json()
     assert summary["models"][0]["output_tokens_per_second"] == expected
     assert summary["runs"][0]["models"] == summary["models"]
+    async with transaction(service.runtime.storage) as session:
+        record_id = await session.scalar(select(UsageRecordRow.id).where(UsageRecordRow.run_id == run_id))
+    response = await service.client.get(f"{service.api}/usage/records/{record_id}/metrics")
+    assert response.status_code == 200, response.text
+    metrics = response.json()
+    assert metrics["output_tokens_per_second"] == expected
+    assert metrics["request_duration_seconds"] == (duration if expected is not None else None)
+    assert metrics["time_to_first_chunk_seconds"] == summary["models"][0]["average_time_to_first_chunk_seconds"]
+
+
+async def test_request_metrics_hide_other_workspaces_and_missing_records(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id, _ = await observed_run(service, runs_kit, agent, records=[("scripted", 20, 0, 0, None, START, (1, 2))])
+    async with transaction(service.runtime.storage) as session:
+        record_id = await session.scalar(select(UsageRecordRow.id).where(UsageRecordRow.run_id == run_id))
+    path = f"{service.api}/usage/records/{record_id}/metrics"
+    response = await service.client.get(path)
+    assert response.status_code == 200
+    assert response.json()["output_tokens_per_second"] == 0
+    other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other"})).json()
+    response = await service.client.get(path, headers={"X-Workspace-ID": other["id"]})
+    assert response.status_code == 404
+    assert (await service.client.get(f"{service.api}/usage/records/missing/metrics")).status_code == 404
 
 
 async def test_calendar_buckets_empty_state_and_invalid_windows(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
@@ -297,11 +322,11 @@ async def test_usage_requires_workspace_read_permission(service):  # type: ignor
             json={"token": url.split("#token=", 1)[1], "password": "usage-viewer-password", "name": "Usage viewer"},
         )
         assert accepted.status_code == 200, accepted.text
-        for endpoint in ("overview", "agents", "models"):
+        for endpoint in ("overview", "agents", "models", "records/missing/metrics"):
             path = f"{service.api}/usage/{endpoint}"
             allowed = await viewer.get(path, params=WINDOW, headers={"X-Workspace-ID": service.tenant.workspace_id})
             denied = await viewer.get(path, params=WINDOW, headers={"X-Workspace-ID": other["id"]})
-            assert allowed.status_code == 200
+            assert allowed.status_code == (404 if endpoint.startswith("records/") else 200)
             assert denied.status_code == 403
 
 

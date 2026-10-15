@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, not_found
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.tables import RunRow, UsageRecordRow
@@ -38,6 +38,7 @@ from a13n_service.usage.schemas import (
     BreakdownQuery,
     DailyUsage,
     ModelMetrics,
+    ModelRequestMetrics,
     ModelUsage,
     ModelUsageGroup,
     ModelUsagePage,
@@ -239,13 +240,8 @@ async def models(storage: Storage, actor: Principal, workspace_id: str, query: B
     )
 
 
-async def summarize(storage: Storage, actor: Principal, workspace_id: str, where: UsageFilter) -> UsageSummary:
-    """Model usage recorded in the workspace, per model and per Run, including reports that arrived after a seal.
-
-    Cost sums each record's own priced cost; records the Harness could not price count tokens only. One
-    statement groups both ways, so the per-Run rows always add up to the per-model totals.
-    """
-    by_run = (RunRow.created_at, RunRow.id, RunRow.thread_id)
+def _timing_metrics() -> dict[str, ColumnElement]:
+    """One timing policy for a single contribution and weighted model aggregates."""
     record = UsageRecordRow.record
     started, first_chunk, ended = (
         record[name].astext.cast(DateTime(timezone=True))
@@ -255,15 +251,51 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
     streamed = and_(completed, first_chunk < ended)
     timed = and_(completed, started < ended)
     elapsed = func.sum(func.extract("epoch", ended - started)).filter(timed)
+    return {
+        "time_to_first_chunk_seconds": func.avg(func.extract("epoch", first_chunk - started)).filter(streamed),
+        "request_duration_seconds": elapsed,
+        "output_tokens_per_second": (
+            func.sum(record["request_usage"]["output_tokens"].astext.cast(BigInteger)).filter(timed) / elapsed
+        ),
+    }
+
+
+async def request_metrics(storage: Storage, actor: Principal, workspace_id: str, record_id: str) -> ModelRequestMetrics:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        row = (
+            (
+                await session.execute(
+                    select(*(value.label(name) for name, value in _timing_metrics().items()))
+                    .where(
+                        UsageRecordRow.workspace_id == scope.workspace_id,
+                        UsageRecordRow.id == record_id,
+                        UsageRecordRow.record["kind"].astext == "model",
+                    )
+                    .group_by(UsageRecordRow.id)
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        raise not_found("usage_record", record_id)
+    return ModelRequestMetrics.model_validate(row)
+
+
+async def summarize(storage: Storage, actor: Principal, workspace_id: str, where: UsageFilter) -> UsageSummary:
+    """Model usage recorded in the workspace, per model and per Run, including reports that arrived after a seal.
+
+    Cost sums each record's own priced cost; records the Harness could not price count tokens only. One
+    statement groups both ways, so the per-Run rows always add up to the per-model totals.
+    """
+    by_run = (RunRow.created_at, RunRow.id, RunRow.thread_id)
+    timing = _timing_metrics()
     query = (
         _model_totals()
         .add_columns(
-            func.avg(func.extract("epoch", first_chunk - started))
-            .filter(streamed)
-            .label("average_time_to_first_chunk_seconds"),
-            (func.sum(record["request_usage"]["output_tokens"].astext.cast(BigInteger)).filter(timed) / elapsed).label(
-                "output_tokens_per_second"
-            ),
+            timing["time_to_first_chunk_seconds"].label("average_time_to_first_chunk_seconds"),
+            timing["output_tokens_per_second"].label("output_tokens_per_second"),
             ModelRow.key.label("model"),
             RunRow.id.label("run_id"),
             RunRow.thread_id,

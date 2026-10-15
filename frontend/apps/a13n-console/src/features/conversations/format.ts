@@ -36,7 +36,7 @@ export function formatTokens(value: number | null | undefined): string {
   return String(value);
 }
 
-/** Output tokens per second of generation; unknown when it was not timed. */
+/** Format backend output speed; unknown when the request was not timed. */
 export function formatSpeed(t: TFunction, rate: number | null | undefined) {
   if (rate === null || rate === undefined || !Number.isFinite(rate))
     return UNKNOWN;

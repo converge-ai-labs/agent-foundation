@@ -171,31 +171,18 @@ it("attaches a usage report to the request that just completed and skips a faile
   expect(state.usage.model).toHaveLength(1);
 });
 
-it("times only a completed streamed request", () => {
-  const timing = {
-    request_started_at: "2026-10-13T10:00:00.000Z",
-    first_chunk_at: "2026-10-13T10:00:00.400Z",
-    request_ended_at: "2026-10-13T10:00:02.400Z",
-  };
+it("retains the backend record identity for request metrics", () => {
   const state = fold(
     lifecycle("model_request_started"),
     lifecycle("model_request_completed"),
-    lifecycle("model_request_started", "model-request-2"),
-    lifecycle("model_request_completed", "model-request-2"),
     usageReport([
-      { ...modelRecord("record-1", 0), ...timing, outcome: "completed" },
-      { ...modelRecord("record-2", 1), ...timing, outcome: "failed" },
+      {
+        ...modelRecord("record-1", 0),
+        outcome: "completed",
+      },
     ]),
   );
-  expect(
-    state.usage.model.map(({ firstChunkMs, generationMs }) => [
-      firstChunkMs,
-      generationMs,
-    ]),
-  ).toEqual([
-    [400, 2000],
-    [null, null],
-  ]);
+  expect(state.steps[0]?.usage?.recordId).toBe("record-1");
 });
 
 it("keeps an unpriced record unavailable rather than zero and deduplicates repeats", () => {

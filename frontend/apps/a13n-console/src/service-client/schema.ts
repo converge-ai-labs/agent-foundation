@@ -2733,6 +2733,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/usage/records/{record_id}/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Model Request Metrics */
+    get: operations["model_request_metrics_api_v1_usage_records__record_id__metrics_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/users/me": {
     parameters: {
       query?: never;
@@ -6457,6 +6474,18 @@ export interface components {
       source_revision: string;
       /** Source Url */
       source_url?: string | null;
+    };
+    /**
+     * ModelRequestMetrics
+     * @description Derived from the current model contribution.
+     */
+    ModelRequestMetrics: {
+      /** Output Tokens Per Second */
+      output_tokens_per_second: number | null;
+      /** Request Duration Seconds */
+      request_duration_seconds: number | null;
+      /** Time To First Chunk Seconds */
+      time_to_first_chunk_seconds: number | null;
     };
     /** ModelUpdate */
     ModelUpdate: {
@@ -15170,6 +15199,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["UsageOverview"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  model_request_metrics_api_v1_usage_records__record_id__metrics_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        record_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelRequestMetrics"];
         };
       };
       400: components["responses"]["Error"];
