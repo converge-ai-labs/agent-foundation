@@ -217,6 +217,20 @@ The example explicitly destroys its sandbox in `finally`. Live integration tests
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
 
+### Native E2B desktop
+
+Use the existing E2B connection and enable **Desktop environment** when creating a template. The built-in desktop choice uses E2B's `desktop` template. Compatible custom templates can be selected explicitly. The equivalent recipe is:
+
+```json
+{"desktop": true, "template": "desktop", "desktop_width": 1280, "desktop_height": 800}
+```
+
+Service uses the official `e2b-desktop` SDK to create the desktop and perform screenshots, clicks, typing and mouse gestures. Ordinary commands and files continue to use the base asynchronous E2B SDK. Configure Agent Computer tools and the mount's exact Computer permissions separately; no a13n-envd installation or public desktop endpoint is needed. Desktop initialization failure follows the official SDK's cleanup behavior: it attempts to destroy the new sandbox. Start/resume checks the existing desktop without replacing it.
+
+Desktop scrolling supports vertical steps only (up to 100 per action); horizontal and pixel scrolling are rejected before input. Drag button and duration are preserved through the SDK's mouse methods. Input failures are not replayed automatically. Existing ordinary E2B templates are unchanged.
+
+Screenshots, clicks, moves, drag gestures, step scrolling, literal text and key chords are supported. Key chords accept the Desktop SDK's named keys and lowercase ASCII letters/digits; text delivery depends on the target application and keyboard environment. Observe before acting, and do not repeat an input after an uncertain result. This integration does not start VNC streaming or implement human takeover.
+
 ### Daytona
 
 Default file root: `/home/daytona`. The standard sandbox supplies Python; commands select `python3` on the guest PATH. Custom snapshots must supply the selected root and executables. Stop requires confirmed disabled auto-delete; delete waits for terminal destruction rather than accepting the initial acknowledgement. See [Daytona's sandbox example](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/) and [delete semantics](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/).

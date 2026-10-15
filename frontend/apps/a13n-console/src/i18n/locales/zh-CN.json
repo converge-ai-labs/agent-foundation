@@ -2380,5 +2380,19 @@
   "Check the required credential fields and proposed configuration before saving.": "保存前请检查必填凭据和拟保存的配置。",
   "Configure provider": "配置服务商",
   "Save outcome unknown. Check Providers before requesting another write. Submit responses to inform the agent.": "保存结果未知。再次请求写入前请检查服务商页面。提交回复以告知 agent。",
-  "Saving this configuration removes the saved credentials because authentication is disabled.": "此配置已禁用身份认证，保存会删除已有凭据。"
+  "Saving this configuration removes the saved credentials because authentication is disabled.": "此配置已禁用身份认证，保存会删除已有凭据。",
+  "E2B template": "E2B 模板",
+  "Official default": "官方默认",
+  "Custom template": "自定义模板",
+  "Enter an E2B template name or ID with desktop components preinstalled. Enabling desktop does not install them.": "填写已预装桌面组件的 E2B 模板名称或 ID。开启桌面能力不会自动安装这些组件。",
+  "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.": "填写已有的 E2B 模板名称或 ID。不会启动桌面进程或开放 Computer 能力。",
+  "Desktop width": "桌面宽度（像素）",
+  "Desktop height": "桌面高度（像素）",
+  "Desktop DPI": "桌面 DPI",
+  "X11 display": "X11 显示编号",
+  "Screenshots, mouse and keyboard input for this environment.": "为环境启用截图、鼠标和键盘操作。",
+  "Linux desktop with preinstalled desktop components.": "预装桌面组件的 Linux 环境",
+  "A standard sandbox for commands and files.": "用于命令执行和文件操作的标准环境",
+  "Configure Agent Computer tools and mount permissions separately.": "使用前，还需配置 Agent 的 Computer 工具和挂载权限。",
+  "Allow the sandbox to connect to external services.": "允许沙箱连接外部服务。"
 }

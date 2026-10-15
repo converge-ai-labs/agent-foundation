@@ -42,13 +42,16 @@ export function ProviderConfiguration({
   error?: string;
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
-  variant?: "default" | "docker";
+  variant?: "default" | "docker" | "e2b";
 }) {
   const { t } = useTranslation();
   const desktopId = useId();
+  const internetId = useId();
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
   const [custom, setCustom] = useState(false);
+  const [e2bCustom, setE2bCustom] = useState(false);
+  const e2bCustomDraft = useRef<string | undefined>(undefined);
   const customDraft = useRef<Record<string, unknown> | undefined>(undefined);
   let value: Record<string, unknown> | undefined;
   try {
@@ -56,6 +59,11 @@ export function ProviderConfiguration({
   } catch {
     // An unfinished JSON draft remains editable without losing its text.
   }
+  const e2bDefaultTemplate = value?.desktop === true ? "desktop" : "base";
+  const e2bUsesCustomTemplate =
+    e2bCustom ||
+    (typeof value?.template === "string" &&
+      value.template !== e2bDefaultTemplate);
   const presets = variant === "docker" ? dockerPresets(schema) : undefined;
   const selected: DockerMode =
     presets && value && schema && !custom
@@ -79,6 +87,10 @@ export function ProviderConfiguration({
       : [];
   const primary = schema?.["x-primary-fields"];
   const image: typeof properties = [];
+  const e2bTemplate = properties.find(([key]) => key === "template")?.[1];
+  const internet = properties.find(
+    ([key]) => key === "allow_internet_access",
+  )?.[1];
   const desktop = properties.find(([key]) => key === "desktop")?.[1];
   const execution: typeof properties = [];
   const mounts: typeof properties = [];
@@ -86,6 +98,17 @@ export function ProviderConfiguration({
   const advanced: typeof properties = [];
   for (const property of properties) {
     const key = property[0];
+    if (
+      variant === "e2b" &&
+      ["template", "allow_internet_access"].includes(key)
+    )
+      continue;
+    if (
+      variant === "e2b" &&
+      key.startsWith("desktop_") &&
+      value?.desktop !== true
+    )
+      continue;
     if (variant === "docker" && key === "image") {
       image.push([
         key,
@@ -96,7 +119,8 @@ export function ProviderConfiguration({
       ]);
     } else if (variant === "docker" && key === "execution")
       execution.push(property);
-    else if (variant === "docker" && key === "desktop") continue;
+    else if ((variant === "docker" || variant === "e2b") && key === "desktop")
+      continue;
     else if (variant === "docker" && key === "mounts") mounts.push(property);
     else if (
       variant === "docker" &&
@@ -140,6 +164,8 @@ export function ProviderConfiguration({
               onClick={() => {
                 onChange("{}");
                 setCustom(false);
+                setE2bCustom(false);
+                e2bCustomDraft.current = undefined;
                 customDraft.current = undefined;
                 setMode("fields");
                 setReset((value) => value + 1);
@@ -249,11 +275,145 @@ export function ProviderConfiguration({
                 </SettingsRow>
               </div>
             )}
-            <SchemaFields
-              schema={{ ...schema, properties: Object.fromEntries(common) }}
-              value={value}
-              onChange={change}
-            />
+            <div
+              className={variant === "e2b" ? styles.e2bSettings : "contents"}
+            >
+              {variant === "e2b" && desktop && (
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  description={t(
+                    "Screenshots, mouse and keyboard input for this environment.",
+                  )}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        ...(!e2bUsesCustomTemplate
+                          ? { template: enabled ? "desktop" : "base" }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+              )}
+              {variant === "e2b" && e2bTemplate && (
+                <div className={styles.e2bTemplate}>
+                  <div className={styles.e2bTemplateHeading}>
+                    <span>{t("E2B template")}</span>
+                    <SegmentedControl
+                      label={t("E2B template")}
+                      value={e2bUsesCustomTemplate ? "custom" : "official"}
+                      options={[
+                        {
+                          value: "official",
+                          label: t("Official default"),
+                          disabled: readOnly,
+                        },
+                        {
+                          value: "custom",
+                          label: t("Custom template"),
+                          disabled: readOnly,
+                        },
+                      ]}
+                      onValueChange={(next) => {
+                        if (
+                          next ===
+                          (e2bUsesCustomTemplate ? "custom" : "official")
+                        )
+                          return;
+                        if (next === "custom") {
+                          setE2bCustom(true);
+                          change({
+                            ...value,
+                            template: e2bCustomDraft.current ?? "",
+                          });
+                        } else {
+                          if (typeof value.template === "string")
+                            e2bCustomDraft.current = value.template;
+                          setE2bCustom(false);
+                          change({ ...value, template: e2bDefaultTemplate });
+                        }
+                      }}
+                    />
+                  </div>
+                  {e2bUsesCustomTemplate ? (
+                    <SchemaFields
+                      schema={{
+                        ...schema,
+                        properties: {
+                          template: {
+                            ...(e2bTemplate as Record<string, unknown>),
+                            description:
+                              value.desktop === true
+                                ? "Enter an E2B template name or ID with desktop components preinstalled. Enabling desktop does not install them."
+                                : "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.",
+                          },
+                        },
+                      }}
+                      value={value}
+                      onChange={change}
+                    />
+                  ) : (
+                    <div className={styles.e2bTemplateSummary}>
+                      <strong>{e2bDefaultTemplate}</strong>
+                      <span>
+                        {t(
+                          value.desktop === true
+                            ? "Linux desktop with preinstalled desktop components."
+                            : "A standard sandbox for commands and files.",
+                        )}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {variant === "e2b" && value.desktop === true && (
+              <p className={styles.e2bHelp}>
+                {t(
+                  "Configure Agent Computer tools and mount permissions separately.",
+                )}
+              </p>
+            )}
+            <div className={variant === "e2b" ? styles.e2bRuntime : "contents"}>
+              <SchemaFields
+                schema={{ ...schema, properties: Object.fromEntries(common) }}
+                value={value}
+                onChange={change}
+              />
+              {variant === "e2b" && internet && (
+                <div className={styles.e2bInternet}>
+                  <SettingsRow
+                    label={t("Allow internet access")}
+                    description={t(
+                      "Allow the sandbox to connect to external services.",
+                    )}
+                    controlId={internetId}
+                    stackOnNarrow={false}
+                  >
+                    <Switch
+                      id={internetId}
+                      checked={
+                        (value.allow_internet_access ??
+                          (internet as Record<string, unknown>).default) ===
+                        true
+                      }
+                      disabled={readOnly}
+                      onCheckedChange={(enabled) =>
+                        change({ ...value, allow_internet_access: enabled })
+                      }
+                    />
+                  </SettingsRow>
+                </div>
+              )}
+            </div>
           </fieldset>
           {mounts.length > 0 && (
             <DisclosureSection title={t("Mounts")}>

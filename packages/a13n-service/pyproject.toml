@@ -11,7 +11,7 @@ dependencies = [
     "e2b>=2.46.4,<3",
     "modal>=1.5.5,<2",
     "a13n-logging",
-    "a13n-harness",
+    "a13n-harness[e2b]",
     "a13n-stream-protocol",
     "ag-ui-protocol>=1.0.0,<2",
     "aiobotocore[httpx2]>=3.9,<4",

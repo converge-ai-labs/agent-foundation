@@ -234,8 +234,8 @@ class ComputerToolset:
         """Type 1-16384 UTF-8 bytes into the selected mount's foreground focus, without focusing a window.
 
         Pass alias explicitly to keep typing on the intended desktop; a preceding click does not select this mount.
-        Availability is mount-specific: native X11 does not support literal text entry. Physical key chords
-        are not a literal-text substitute.
+        Availability is mount-specific: Envd Linux X11 omits literal text entry; native E2B desktops support it.
+        Key chords are not a literal-text substitute.
         """
         return await self._execute(ComputerTypeText(text=text), alias=alias)
 

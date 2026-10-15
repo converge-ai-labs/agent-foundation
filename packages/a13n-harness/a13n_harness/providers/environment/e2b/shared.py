@@ -83,6 +83,8 @@ def descriptor(
 ) -> EnvironmentDescriptor:
     actions = {action for action in FILE_EXECUTION_ACTIONS if not action.value.startswith("environment.state.")}
     actions -= {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE}
+    if configuration.desktop:
+        actions.update(action for action in EnvironmentAction if action.value.startswith("environment.computer."))
     return EnvironmentDescriptor(
         generation=generation,
         backing_identity=identity,

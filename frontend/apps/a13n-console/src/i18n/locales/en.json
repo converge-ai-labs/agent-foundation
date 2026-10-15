@@ -2380,5 +2380,19 @@
   "Check the required credential fields and proposed configuration before saving.": "Check the required credential fields and proposed configuration before saving.",
   "Configure provider": "Configure provider",
   "Save outcome unknown. Check Providers before requesting another write. Submit responses to inform the agent.": "Save outcome unknown. Check Providers before requesting another write. Submit responses to inform the agent.",
-  "Saving this configuration removes the saved credentials because authentication is disabled.": "Saving this configuration removes the saved credentials because authentication is disabled."
+  "Saving this configuration removes the saved credentials because authentication is disabled.": "Saving this configuration removes the saved credentials because authentication is disabled.",
+  "E2B template": "E2B template",
+  "Official default": "Official default",
+  "Custom template": "Custom template",
+  "Enter an E2B template name or ID with desktop components preinstalled. Enabling desktop does not install them.": "Enter an E2B template name or ID with desktop components preinstalled. Enabling desktop does not install them.",
+  "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.": "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.",
+  "Desktop width": "Desktop width",
+  "Desktop height": "Desktop height",
+  "Desktop DPI": "Desktop DPI",
+  "X11 display": "X11 display",
+  "Screenshots, mouse and keyboard input for this environment.": "Screenshots, mouse and keyboard input for this environment.",
+  "Linux desktop with preinstalled desktop components.": "Linux desktop with preinstalled desktop components.",
+  "A standard sandbox for commands and files.": "A standard sandbox for commands and files.",
+  "Configure Agent Computer tools and mount permissions separately.": "Configure Agent Computer tools and mount permissions separately.",
+  "Allow the sandbox to connect to external services.": "Allow the sandbox to connect to external services."
 }

@@ -217,6 +217,20 @@ uv run python -m a13n_environment_example.e2b
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
 
+### E2B 原生桌面 {#native-e2b-desktop}
+
+使用已有 E2B 连接，在创建模板时启用**桌面环境**。内置桌面选项使用 E2B 的 `desktop` 模板，也可明确选择兼容的自定义模板。对应配置为：
+
+```json
+{"desktop": true, "template": "desktop", "desktop_width": 1280, "desktop_height": 800}
+```
+
+Service 使用官方 `e2b-desktop` SDK 创建桌面并执行截图、点击、文字输入和鼠标手势。普通命令与文件操作继续使用基础异步 E2B SDK。Agent 的 Computer 工具与挂载的具体 Computer 权限需单独配置，无需安装 a13n-envd 或公开桌面端口。桌面初始化失败时遵循官方 SDK 的清理行为：尝试销毁新建沙箱。启动或恢复时检查已有桌面，不会替换它。
+
+桌面滚动仅支持垂直步进，每次最多 100 步；水平滚动和像素滚动会在输入前被拒绝。拖拽的按钮和持续时间通过 SDK 鼠标方法保留。输入失败不会自动重放。现有普通 E2B 模板行为不变。
+
+支持截图、点击、移动、拖拽、按步滚动、文本和组合键。组合键接受 Desktop SDK 定义的按键名称和小写 ASCII 字母、数字；文本是否正确进入应用取决于目标应用和键盘环境。操作前先观察，结果不确定时不要重复输入。本次接入不启动 VNC，也不包含人工接管。
+
 ### Daytona
 
 默认文件根目录：`/home/daytona`。标准沙箱提供 Python；命令选择客体 PATH 上的 `python3`。自定义快照必须提供所选根目录和可执行文件。停止要求确认已禁用自动删除；删除等待最终销毁，不只接受初始确认。参见 [Daytona 沙箱示例](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/)和[删除语义](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)。

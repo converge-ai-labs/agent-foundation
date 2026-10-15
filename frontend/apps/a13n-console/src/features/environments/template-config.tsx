@@ -317,10 +317,16 @@ export function TemplateConfig({
                     )
                   : undefined
               }
-              variant={definition?.type === "docker" ? "docker" : "default"}
+              variant={
+                definition?.type === "docker"
+                  ? "docker"
+                  : definition?.type === "e2b"
+                    ? "e2b"
+                    : "default"
+              }
             />
           )}
-          <FormSection divider={false}>
+          <div className={editorStyles.lifecycleSection}>
             <DisclosureSection
               className={editorStyles.advanced}
               title={t("Lifecycle")}
@@ -364,7 +370,7 @@ export function TemplateConfig({
                 </div>
               </div>
             </DisclosureSection>
-          </FormSection>
+          </div>
         </fieldset>
         {standalone && (
           <p className={editorStyles.creationNote}>

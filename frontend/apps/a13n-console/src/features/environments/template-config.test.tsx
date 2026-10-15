@@ -205,10 +205,11 @@ async function selectProvider(
 it("creates an E2B template configuration from ordinary fields without a schema-version input", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "E2B");
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
   const template = await screen.findByRole("textbox", {
     name: "E2B template name or ID",
   });
-  expect((template as HTMLInputElement).value).toBe("base");
+  expect((template as HTMLInputElement).value).toBe("");
   await user.clear(template);
   await user.type(template, "my-template");
   await user.type(
@@ -416,7 +417,7 @@ it("saves an existing template's recipe and idle policy against its ETag", async
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await screen.findByRole("textbox", { name: "E2B template name or ID" });
+  await screen.findByRole("button", { name: "Official default" });
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
     expect(state.PATCH).toHaveBeenCalledWith(
@@ -473,6 +474,7 @@ it("keeps runtime drafts separate and saves using the matching connection", asyn
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.queryByRole("button", { name: /Local directory/ })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
   const template = screen.getByRole("textbox", {
     name: "E2B template name or ID",
   });
@@ -562,6 +564,7 @@ it("creates a connection in place, clears canceled credentials and retains the r
     "Cloud template",
   );
   await user.click(await screen.findByRole("button", { name: "E2B" }));
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
   const recipe = screen.getByRole("textbox", {
     name: "E2B template name or ID",
   });
@@ -797,6 +800,7 @@ it("manages connections in place without losing the template draft", async () =>
     screen.getByRole("textbox", { name: "Name" }),
     "Unsaved template",
   );
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
   const recipe = screen.getByRole("textbox", {
     name: "E2B template name or ID",
   });

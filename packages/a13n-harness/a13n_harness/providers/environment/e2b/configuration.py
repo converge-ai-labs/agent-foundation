@@ -6,7 +6,7 @@ import hashlib
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
 
@@ -58,7 +58,7 @@ class E2BEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        json_schema_extra={"x-primary-fields": ["template", "allow_internet_access"]},
+        json_schema_extra={"x-primary-fields": ["desktop", "template", "allow_internet_access"]},
     )
 
     template: str = Field(
@@ -68,6 +68,23 @@ class E2BEnvironmentConfiguration(BaseModel):
         title="E2B template name or ID",
         description="Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.",
     )
+    desktop: bool = Field(
+        default=False,
+        title="Desktop environment",
+        description="Enable native E2B Computer operations. When template is omitted, use desktop instead of base.",
+    )
+    desktop_width: int = Field(default=1280, ge=256, le=4096, title="Desktop width")
+    desktop_height: int = Field(default=800, ge=256, le=4096, title="Desktop height")
+    desktop_dpi: int = Field(default=96, ge=48, le=192, title="Desktop DPI")
+    desktop_display: str = Field(default=":0", pattern=r"^:[0-9]{1,3}$", title="X11 display")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _desktop_template(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("desktop") is True and "template" not in value:
+            return {**value, "template": "desktop"}
+        return value
+
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
@@ -89,7 +106,11 @@ class E2BEnvironmentConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        target = self.model_dump_json(include={"template", "root", "user", "allow_internet_access"})
+        fields = {"template", "root", "user", "allow_internet_access"}
+        # Preserve the historical digest byte-for-byte for non-desktop instances.
+        if self.desktop:
+            fields.update({"desktop", "desktop_width", "desktop_height", "desktop_dpi", "desktop_display"})
+        target = self.model_dump_json(include=fields)
         return hashlib.sha256(target.encode()).hexdigest()
 
 
