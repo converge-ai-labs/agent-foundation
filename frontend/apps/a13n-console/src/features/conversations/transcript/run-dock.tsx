@@ -19,7 +19,6 @@ import {
   type ViewLevel,
 } from "../api";
 import { ForkRun } from "../fork-run";
-import { ContextWindow } from "../context-window";
 import { Composer } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
@@ -186,13 +185,6 @@ export function RunDock({
                 key={resubmit ? "resubmit" : "message"}
                 initial={resubmit?.payload}
                 agentName={agentName}
-                contextUsage={
-                  <ContextWindow
-                    scope={{ thread_id: thread.id }}
-                    live={active}
-                    compact
-                  />
-                }
                 label={t(
                   active
                     ? "Add guidance"

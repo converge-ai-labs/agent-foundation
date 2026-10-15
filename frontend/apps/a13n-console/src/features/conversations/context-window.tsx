@@ -103,7 +103,7 @@ export function ContextWindow({
         </svg>
       </PopoverTrigger>
       <PopoverPopup
-        side="top"
+        side="bottom"
         align="end"
         sideOffset={10}
         className={styles.popup}
