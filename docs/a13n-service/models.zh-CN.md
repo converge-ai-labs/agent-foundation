@@ -78,8 +78,13 @@ HTTPS 回调必须与 `server.public_url` 同源，并由用户登录会话发�
 API 的 `GET /api/v1/model-catalog` 返回目录的 `items` 和 `status`：`ready`、`stale`（无法访问 models.dev 时使用上次目录）或 `unavailable`。各条目的 `ref`、`characteristics` 和 `pricing` 可复制到新模型：
 
 ```sh
-curl "$A13N_URL/api/v1/model-catalog" -H "Authorization: Bearer $A13N_API_KEY"
+curl --get "$A13N_URL/api/v1/model-catalog" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode "provider=openai" \
+  --data-urlencode "model=gpt-5.5"
 ```
+
+使用可选的 `provider` 和 `model` 查询参数，只返回所需渠道和模型。两个参数均区分大小写并精确匹配；同时提供时必须都满足。省略 `model` 可列出该渠道的模型，两个参数都省略则返回完整目录。没有匹配项时返回空 `items`，并保留目录状态。筛选共用完整目录缓存；刷新时仍下载 models.dev 的完整目录。保存时将所选价格填入模型；读取目录不会更新已保存的模型。
 
 在 `/api/v1/models` 中使用 `config` 创建模型：
 

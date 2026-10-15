@@ -24982,8 +24982,49 @@
     },
     "/api/v1/model-catalog": {
       "get": {
-        "description": "The models.dev models the registered model provider types serve, for any signed-in principal.",
+        "description": "Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.\n\nBoth filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.\nNo match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.\nCopy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.",
         "operationId": "get_model_catalog_api_v1_model_catalog_get",
+        "parameters": [
+          {
+            "description": "Exact catalog channel ID, such as openrouter.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact catalog channel ID, such as openrouter.",
+              "title": "Provider"
+            }
+          },
+          {
+            "description": "Exact, case-sensitive model ID within the catalog channel.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact, case-sensitive model ID within the catalog channel.",
+              "title": "Model"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -24994,6 +25035,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"

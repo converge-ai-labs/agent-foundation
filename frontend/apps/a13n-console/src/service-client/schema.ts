@@ -1345,7 +1345,11 @@ export interface paths {
     };
     /**
      * Get Model Catalog
-     * @description The models.dev models the registered model provider types serve, for any signed-in principal.
+     * @description Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.
+     *
+     *     Both filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.
+     *     No match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.
+     *     Copy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.
      */
     get: operations["get_model_catalog_api_v1_model_catalog_get"];
     put?: never;
@@ -12054,7 +12058,12 @@ export interface operations {
   };
   get_model_catalog_api_v1_model_catalog_get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Exact catalog channel ID, such as openrouter. */
+        provider?: string | null;
+        /** @description Exact, case-sensitive model ID within the catalog channel. */
+        model?: string | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -12070,6 +12079,7 @@ export interface operations {
           "application/json": components["schemas"]["ModelCatalog"];
         };
       };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };

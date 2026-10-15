@@ -31,11 +31,8 @@ export function WorkLine({
 }) {
   const { t } = useTranslation();
   const summary = workSummary(entries);
-  const [toggled, setToggled] = useState<boolean | null>(null);
+  const [open, setOpen] = useState(false);
   if (!entries.length) return null;
-  // Running work opens itself. Waiting on a person does not: that question is
-  // answered in the card below, not in these rows.
-  const open = toggled ?? (summary.running && !summary.waiting);
   const delegated = entries.some((work) => work.entry.kind === "subagent");
   return (
     <div className={styles.work}>
@@ -44,7 +41,7 @@ export function WorkLine({
           type="button"
           className={styles.workTrigger}
           aria-expanded={open}
-          onClick={() => setToggled(!open)}
+          onClick={() => setOpen((value) => !value)}
         >
           <StateMark state={lineState(summary)} size={13} decorative />
           <span className={styles.workText}>

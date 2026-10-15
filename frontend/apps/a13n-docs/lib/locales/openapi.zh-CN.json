@@ -1,4 +1,6 @@
 {
+  "Exact catalog channel ID, such as openrouter.": "精确匹配的目录渠道 ID，例如 openrouter。",
+  "Exact, case-sensitive model ID within the catalog channel.": "目录渠道中的模型 ID，区分大小写并精确匹配。",
   "A named Space selected by the App or inherited from Agent defaults.": "由应用选择或从 Agent 默认值继承的命名空间绑定。",
   "Create Space": "创建记忆空间",
   "Delete Space": "删除记忆空间",
@@ -241,7 +243,7 @@
   "Get memory provider": "获取记忆 provider",
   "Update memory provider": "更新记忆 provider",
   "Test memory provider": "测试记忆 provider",
-  "The models.dev models the registered model provider types serve, for any signed-in principal.": "已注册模型 provider 类型支持的 models.dev 模型，供所有已登录主体使用。",
+  "Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.\n\nBoth filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.\nNo match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.\nCopy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.": "读取公开模型资料和价格。按 provider 和 model 筛选，避免返回过大的完整目录。\n\n两个筛选条件均为精确匹配，同时提供时必须都满足；省略的条件不作限制。\n没有匹配项时返回空 items，并保留目录状态。到期刷新始终拉取完整目录。\n保存模型时，将所选条目的 characteristics、pricing 和 ref 分别填入模型的 config.characteristics、pricing 和 catalog_ref。",
   "Get Model Catalog": "获取模型目录",
   "List model providers": "列出模型 provider",
   "Create model provider": "创建模型 provider",

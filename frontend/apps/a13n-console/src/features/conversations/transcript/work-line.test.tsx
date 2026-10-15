@@ -1,10 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { PresentedItem } from "../projection";
 import { AgentTurn } from "./assistant-message";
 import { fixtureExecution, fixtureTimeline, retainedTimeline } from "./fixture";
 import { transcriptBlocks } from "./items";
+
+afterEach(cleanup);
 
 // The same translator the Debug rows are tested with, so the two levels can be
 // compared on the words they actually produce.
@@ -98,27 +101,41 @@ it("names the agent once and reads its work in one line before the answer", () =
   expect(markup).toContain('data-state="done"');
 });
 
-it("shows the reasoning excerpt the Debug timeline shows", () => {
-  const markup = renderToStaticMarkup(
+it("shows reasoning on request and preserves the reader's choice as tools update", () => {
+  const turn = (state: string) => (
     <AgentTurn
       blocks={blocks(
         [
           item("thought", "reasoning_message", {
             text: "Checking the fold before editing",
           }),
-          tool(
-            "open",
-            "shell_exec",
-            { command: "npm test" },
-            { state: "in_progress" },
-          ),
+          tool("open", "shell_exec", { command: "npm test" }, { state }),
         ],
         "running",
       )}
-    />,
+    />
   );
-  expect(markup).toContain("Reasoning");
-  expect(markup).toContain("Checking the fold before editing");
+  const { rerender } = render(turn("in_progress"));
+  const trigger = screen.getByRole("button", { name: /shell_exec/ });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("list")).toBeNull();
+
+  rerender(turn("completed"));
+  rerender(turn("in_progress"));
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("list")).toBeNull();
+
+  fireEvent.click(trigger);
+  expect(screen.getByText("Reasoning")).toBeTruthy();
+  expect(screen.getByText("Checking the fold before editing")).toBeTruthy();
+  rerender(turn("completed"));
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("list")).toBeTruthy();
+
+  fireEvent.click(trigger);
+  rerender(turn("in_progress"));
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("list")).toBeNull();
 });
 
 it("says what it is waiting for instead of opening the rows", () => {
@@ -142,7 +159,7 @@ it("says what it is waiting for instead of opening the rows", () => {
   expect(markup).toContain('aria-expanded="false"');
 });
 
-it("opens itself while a tool is still running", () => {
+it("keeps running work collapsed while showing its status", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
       blocks={blocks(
@@ -158,8 +175,8 @@ it("opens itself while a tool is still running", () => {
       )}
     />,
   );
-  expect(markup).toContain('aria-expanded="true"');
-  expect(markup).toContain('aria-label="Working"');
+  expect(markup).toContain('aria-expanded="false"');
+  expect(markup).toContain('data-state="working"');
 });
 
 it("does not keep interrupted work spinning, and shows guidance sent mid-run", () => {
@@ -202,7 +219,6 @@ it("keeps fallback output and error details inside the same agent response", () 
 });
 
 it("carries the same edits and delegations Debug reports", () => {
-  // Working rows open themselves, which is where the compact steps read.
   const execution = fixtureExecution();
   execution.steps = [
     ...execution.steps,
@@ -232,7 +248,7 @@ it("carries the same edits and delegations Debug reports", () => {
       parentId: "step_model",
     },
   ];
-  const markup = renderToStaticMarkup(
+  const { container } = render(
     <MemoryRouter>
       <AgentTurn
         blocks={transcriptBlocks(
@@ -243,6 +259,10 @@ it("carries the same edits and delegations Debug reports", () => {
       />
     </MemoryRouter>,
   );
+  for (const trigger of screen.getAllByRole("button", { expanded: false })) {
+    fireEvent.click(trigger);
+  }
+  const markup = container.innerHTML;
   expect(markup).toContain("Delegated to Researcher");
   // The edit badges are the ones the Debug timeline computed.
   expect(markup).toContain("+2");

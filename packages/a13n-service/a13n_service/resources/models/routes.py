@@ -1,6 +1,8 @@
 """Workspace models by key, the model catalog they start from and the workspace's media-understanding defaults."""
 
-from fastapi import APIRouter, Request, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Request, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, key_tagged, tagged
 from a13n_service.infra.platform import platform_operation
@@ -62,10 +64,26 @@ async def update_model(
 
 
 @router.get("/model-catalog", response_model=ModelCatalog, openapi_extra=platform_operation("models", "read"))
-async def get_model_catalog(request: Request, actor: Actor) -> ModelCatalog:
-    """The models.dev models the registered model provider types serve, for any signed-in principal."""
+async def get_model_catalog(
+    request: Request,
+    actor: Actor,
+    provider: Annotated[
+        str | None,
+        Query(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$", description="Exact catalog channel ID, such as openrouter."),
+    ] = None,
+    model: Annotated[
+        str | None,
+        Query(min_length=1, max_length=256, description="Exact, case-sensitive model ID within the catalog channel."),
+    ] = None,
+) -> ModelCatalog:
+    """Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.
+
+    Both filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.
+    No match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.
+    Copy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.
+    """
     catalog: ModelsDevCatalog = request.app.state.model_catalog
-    return await catalog.read()
+    return await catalog.read(provider=provider, model=model)
 
 
 @router.get(
