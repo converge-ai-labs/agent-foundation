@@ -100,6 +100,7 @@ docker = [
 ]
 e2b = [
     { name = "e2b" },
+    { name = "e2b-desktop" },
 ]
 
 [package.metadata]
@@ -111,6 +112,7 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
     { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },
+    { name = "e2b-desktop", marker = "extra == 'e2b'", specifier = ">=2.7.0,<2.8" },
     { name = "filelock", specifier = ">=3.18,<4" },
     { name = "genai-prices", specifier = ">=0.1.9,<1" },
     { name = "google-auth", specifier = ">=2.40,<3" },
@@ -159,7 +161,7 @@ name = "a13n-service"
 version = "0.0.0"
 source = { editable = "../../packages/a13n-service" }
 dependencies = [
-    { name = "a13n-harness" },
+    { name = "a13n-harness", extra = ["e2b"] },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "ag-ui-protocol" },
@@ -201,7 +203,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-harness", editable = "../../packages/a13n-harness" },
+    { name = "a13n-harness", extras = ["e2b"], editable = "../../packages/a13n-harness" },
     { name = "a13n-logging", editable = "../../packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "../../packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
@@ -1149,6 +1151,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7d/04/3e7d3ca8abaeffcfc41d36b9d6fe3aa055cecf3b56234e051991de848b2d/e2b-2.46.4.tar.gz", hash = "sha256:777d35beb00194b401a6c4ac2498aa836628839649f17aae86e85920382c8f6c", size = 228801, upload-time = "2026-09-02T20:48:36.725Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/b5/585a30223d9ee95bc94f32f8d5358b147bf93832e37b809545a3ab7892a0/e2b-2.46.4-py3-none-any.whl", hash = "sha256:5d77e9fee8571a0d24a179f14244984127d18bd93a99a5e90226c876087035b5", size = 403067, upload-time = "2026-09-02T20:48:35.082Z" },
+]
+
+[[package]]
+name = "e2b-desktop"
+version = "2.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "e2b" },
+    { name = "pillow" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/67/96601488f735b2c71bf48a38896f7895a7e043402fa5e2354255645c6a05/e2b_desktop-2.7.0.tar.gz", hash = "sha256:5e3cae3db4b2b066a588e0691f33f9d485a69d2ebaf55078c50bb8dd39afb5d6", size = 9355, upload-time = "2026-10-13T15:01:50.263Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/fe/f58e26b2ebb2aba9cae823d139d65888a53f933b1c99cd2cb6cfb6360650/e2b_desktop-2.7.0-py3-none-any.whl", hash = "sha256:40101d17a9e956d4ec65a5ba023e579e7d02211d858c951774ef77d761feed87", size = 10341, upload-time = "2026-10-13T15:01:51.524Z" },
 ]
 
 [[package]]
@@ -4123,11 +4140,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.7.0"
+version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
+    { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
 ]
 
 [[package]]
