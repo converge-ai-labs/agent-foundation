@@ -410,7 +410,7 @@ impl Config {
         }
         #[cfg(windows)]
         if file.sandbox.restricted() {
-            crate::execution::windows::probe()
+            crate::execution::windows::probe(file.egress)
                 .map_err(|error| ConfigError::new(error.to_string()))?;
         }
         let grant_sources = file

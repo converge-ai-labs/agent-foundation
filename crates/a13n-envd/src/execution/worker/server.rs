@@ -216,7 +216,7 @@ mod tests {
             .join(crate::operation::random_selector("worker-expiry-test").unwrap());
         std::fs::create_dir(&workspace).unwrap();
         let mut config = Config::for_test("device-framing");
-        config.default_working_directory = workspace.to_str().unwrap().to_owned();
+        config.default_working_directory = crate::device_path::from_native(&workspace).unwrap();
         let (client, server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(server);
         let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
@@ -233,7 +233,7 @@ mod tests {
                 "file.open_writer",
                 json!({
                     "context":{"operation_id":"op-writer"},
-                    "path":{"path":workspace.join("target")},
+                    "path":{"path":crate::device_path::from_native(&workspace.join("target")).unwrap()},
                     "mode":"create", "transfer_timeout_ms":100,
                 }),
             ),

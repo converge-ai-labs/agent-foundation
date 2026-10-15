@@ -1,6 +1,18 @@
 //! Native MXC/PSEC only: no AppContainer fallback, accounts, ACL edits or elevation.
 use super::boundary::{Access, Egress, GrantSource, Sandbox};
-use appcontainer_common::base_container_runner::BaseContainerRunner;
+use mxc_sdk::mxc_common::{
+    cmdline::{CommandLineContext, cmdline_from_argv_for_context},
+    logger::{Logger, Mode},
+    models::{
+        BaseProcessUiConfig, ContainerPolicy, ExecutionRequest, FallbackPolicy, NetworkPolicy,
+        UiPolicy,
+    },
+    sandbox_process::{SandboxBackend, StdioMode},
+};
+use mxc_sdk::process_container_common::{
+    PROCESS_SECURITY_ENVIRONMENT_FLAG_NONE, ProcessSecurityEnvironmentApi,
+    SecurityEnvironmentStartupInfo, base_container_runner::BaseContainerRunner,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
@@ -15,40 +27,108 @@ use std::{
 use tokio::io::AsyncWriteExt;
 use windows_sys::Win32::{
     Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle,
+        BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
+        FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle,
     },
     System::Console::{GetStdHandle, STD_INPUT_HANDLE},
-};
-use wxc_common::{
-    cmdline::{CommandLineContext, cmdline_from_argv_for_context},
-    logger::{Logger, Mode},
-    models::{
-        BaseProcessUiConfig, ContainerPolicy, ExecutionRequest, FallbackPolicy, NetworkAction,
-        NetworkEgressPolicy, NetworkIngressPolicy, NetworkPolicy, UiPolicy,
-    },
-    sandbox_process::{SandboxBackend, StdioMode},
 };
 
 // tracelogging 1.2.3 uses these documented exports on MSVC and GNU.
 #[link(name = "advapi32")]
 unsafe extern "system" {}
 
-pub(crate) fn probe() -> io::Result<()> {
-    if BaseContainerRunner::is_process_security_environment_usable() {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "native Windows MXC process isolation is unavailable; update Windows and retry (no fallback)",
-        ))
+/// Use PSEC 1.0's capability/peer network policy, also used by Codex's pinned
+/// MXC runner. SDK 1.0's directional ingress API requires PSEC 1.1 and strips
+/// these explicit capabilities. Keep both directional fields unset.
+fn base_policy(egress: Egress) -> io::Result<ContainerPolicy> {
+    let inherit = match egress {
+        Egress::Inherit {} => true,
+        Egress::Deny {} => false,
+        Egress::Controlled {} => {
+            return Err(io::Error::other("MXC controlled egress is unavailable"));
+        }
+    };
+    let mut capabilities = vec!["registryRead".into()];
+    if inherit {
+        capabilities.extend(
+            [
+                "internetClient",
+                "privateNetworkClientServer",
+                "networkLoopback",
+            ]
+            .map(str::to_owned),
+        );
     }
+    Ok(ContainerPolicy {
+        capabilities,
+        fallback: FallbackPolicy {
+            allow_dacl_mutation: false,
+        },
+        default_network_policy: if inherit {
+            NetworkPolicy::Allow
+        } else {
+            NetworkPolicy::Block
+        },
+        allow_local_network: inherit,
+        allowed_proxy_peer: inherit.then(|| "MXC-Loopback".into()),
+        network_specified: true,
+        network_mode_specified: true,
+        // PowerShell DLL initialization needs Win32k and desktop handles.
+        // Keep clipboard, input-injection and system-control restrictions.
+        ui: UiPolicy {
+            disable: false,
+            ..Default::default()
+        },
+        base_process_ui: BaseProcessUiConfig {
+            isolation: "desktop".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+}
+
+pub(crate) fn probe(egress: Egress) -> io::Result<()> {
+    use mxc_sdk::process_security_environment_spec::process_security_environment_layout::{
+        EndpointPolicyT, FilterAction, NetworkPolicyT, ProcessSecurityEnvironmentT, SchemaVersionT,
+        finish_process_security_environment_buffer,
+    };
+    let policy = base_policy(egress)?;
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let mut endpoint = EndpointPolicyT::default();
+    endpoint.default_action = if policy.default_network_policy == NetworkPolicy::Allow {
+        FilterAction::allow
+    } else {
+        FilterAction::deny
+    };
+    let mut network = NetworkPolicyT::default();
+    network.egress = Some(Box::new(endpoint));
+    network.allowed_appcontainer_peer = policy.allowed_proxy_peer;
+    let mut spec = ProcessSecurityEnvironmentT::default();
+    spec.version = SchemaVersionT { major: 1, minor: 0 };
+    spec.capabilities = Some(policy.capabilities.join(","));
+    spec.network_policy = Some(Box::new(network));
+    let spec = spec.pack(&mut builder);
+    finish_process_security_environment_buffer(&mut builder, spec);
+    let environment = ProcessSecurityEnvironmentApi::load()
+        .and_then(|api| {
+            api.create(
+                builder.finished_data(),
+                PROCESS_SECURITY_ENVIRONMENT_FLAG_NONE,
+            )
+        })
+        .map_err(io::Error::other)?;
+    let startup = SecurityEnvironmentStartupInfo::new(Default::default(), environment.raw(), &[])
+        .map_err(io::Error::other)?;
+    drop(startup);
+    environment.close();
+    Ok(())
 }
 
 pub(crate) fn open_directory(path: &Path) -> io::Result<File> {
-    // Keep the granted directory alive without sharing delete/rename authority.
+    // Attribute-only handles do not participate in Windows sharing checks.
+    // Request directory read access so withholding delete sharing pins the grant.
     OpenOptions::new()
-        .access_mode(FILE_READ_ATTRIBUTES)
+        .access_mode(FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)
@@ -182,7 +262,7 @@ pub(crate) async fn spawn(
     target: Target,
     mut reservation: Option<crate::daemon::execution::Reservation>,
 ) -> io::Result<Worker> {
-    probe()?;
+    probe(egress)?;
     let launch = Launch {
         sandbox: sandbox.clone(),
         sources: sources.to_vec(),
@@ -232,13 +312,13 @@ pub(crate) async fn spawn(
 /// Called before the Tokio runtime. Read exactly the header: buffered stdin
 /// would steal bytes that belong to the child inheriting the same pipe.
 pub(crate) fn run_launcher() -> io::Result<i32> {
-    probe()?;
     let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
         return Err(io::Error::other("missing MXC launcher pipe"));
     }
     let handle = unsafe { BorrowedHandle::borrow_raw(handle) }.try_clone_to_owned()?;
     let launch: Launch = super::worker::read_bootstrap(&mut File::from(handle))?;
+    probe(launch.egress)?;
     let Sandbox::Restricted { grants } = &launch.sandbox else {
         return Err(io::Error::other("MXC requires a restricted Sandbox"));
     };
@@ -266,13 +346,6 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
         Target::Session => "--internal-session-worker",
         Target::Directory => "--internal-directory-worker",
     };
-    let network = match launch.egress {
-        Egress::Inherit {} => NetworkAction::Allow,
-        Egress::Deny {} => NetworkAction::Deny,
-        Egress::Controlled {} => {
-            return Err(io::Error::other("MXC controlled egress is unavailable"));
-        }
-    };
     let request = ExecutionRequest {
         script_code: cmdline_from_argv_for_context(
             &[unicode(&executable)?, target.to_owned()],
@@ -280,53 +353,24 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
         )
         .map_err(io::Error::other)?,
         working_directory: unicode(&launch.state)?,
-        // An empty MXC env requests synthesized host defaults, not an empty block.
-        // Supply a nonempty private environment for the worker and its supervisors.
-        env: vec![
+        // Explicit private environment; never synthesize or inherit Host defaults.
+        inherit_default_env: false,
+        env: Some(vec![
             format!("SystemRoot={system_root}"),
             format!("WINDIR={system_root}"),
             format!("HOME={}", unicode(&launch.state.join("home"))?),
             format!("USERPROFILE={}", unicode(&launch.state.join("home"))?),
+            format!("LOCALAPPDATA={}", unicode(&launch.state.join("home"))?),
             format!("TEMP={}", unicode(&launch.state.join("tmp"))?),
             format!("TMP={}", unicode(&launch.state.join("tmp"))?),
-        ],
+        ]),
         policy: ContainerPolicy {
-            capabilities: vec!["registryRead".into()],
             readonly_paths: read.iter().map(|p| unicode(p)).collect::<io::Result<_>>()?,
             readwrite_paths: write
                 .iter()
                 .map(|p| unicode(p))
                 .collect::<io::Result<_>>()?,
-            fallback: FallbackPolicy {
-                allow_dacl_mutation: false,
-            },
-            default_network_policy: if network == NetworkAction::Allow {
-                NetworkPolicy::Allow
-            } else {
-                NetworkPolicy::Block
-            },
-            allow_local_network: network == NetworkAction::Allow,
-            network_egress: Some(NetworkEgressPolicy {
-                default: network,
-                ..Default::default()
-            }),
-            network_ingress: Some(NetworkIngressPolicy {
-                default: network,
-                host_loopback: network,
-            }),
-            network_specified: true,
-            network_mode_specified: true,
-            // PowerShell DLL initialization needs Win32k and desktop handles.
-            // Keep clipboard, input-injection and system-control restrictions.
-            ui: UiPolicy {
-                disable: false,
-                ..Default::default()
-            },
-            base_process_ui: BaseProcessUiConfig {
-                isolation: "desktop".into(),
-                ..Default::default()
-            },
-            ..Default::default()
+            ..base_policy(launch.egress)?
         },
         ..Default::default()
     };
@@ -354,7 +398,143 @@ mod tests {
     #[test]
     #[ignore = "requires native MXC/PSEC support on the Windows host"]
     fn native_mxc_probe() {
-        probe().expect("native MXC create/startup-info/close probe must succeed");
+        probe(Egress::Deny {}).expect("native MXC create/startup-info/close probe must succeed");
+    }
+
+    #[test]
+    #[ignore = "requires native MXC/PSEC loopback capability and peer support"]
+    fn native_mxc_probe_inherit() {
+        probe(Egress::Inherit {}).expect("native MXC inherit probe must succeed");
+    }
+
+    #[test]
+    fn network_policy_uses_native_v1_capabilities_without_directional_overrides() {
+        for egress in [Egress::Inherit {}, Egress::Deny {}] {
+            let policy = base_policy(egress).unwrap();
+            let inherit = egress == (Egress::Inherit {});
+            assert!(policy.network_egress.is_none());
+            assert!(policy.network_ingress.is_none());
+            assert_eq!(
+                policy.default_network_policy == NetworkPolicy::Allow,
+                inherit
+            );
+            assert_eq!(
+                policy.allowed_proxy_peer.as_deref(),
+                inherit.then_some("MXC-Loopback")
+            );
+            for capability in [
+                "internetClient",
+                "privateNetworkClientServer",
+                "networkLoopback",
+            ] {
+                assert_eq!(
+                    policy.capabilities.iter().any(|value| value == capability),
+                    inherit
+                );
+            }
+            assert!(!policy.fallback.allow_dacl_mutation);
+        }
+        assert!(base_policy(Egress::Controlled {}).is_err());
+    }
+
+    // Subprocess fixture for the native policy test. The ordinary unit suite
+    // does not enter MXC or perform networking through this entry point.
+    #[test]
+    fn mxc_network_child() {
+        let Ok(payload) = std::env::var("A13N_ENVD_MXC_NETWORK_TEST") else {
+            return;
+        };
+        let (inherit, addresses, outside): (bool, Vec<std::net::SocketAddr>, PathBuf) =
+            serde_json::from_str(&payload).unwrap();
+        std::fs::write("allowed.txt", b"allowed").unwrap();
+        assert_eq!(std::fs::read("allowed.txt").unwrap(), b"allowed");
+        assert_eq!(
+            std::fs::read(outside).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        for address in addresses {
+            let result =
+                std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(2));
+            assert_eq!(result.is_ok(), inherit, "loopback {address}: {result:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires native MXC/PSEC execution on the Windows host"]
+    fn native_mxc_probe_network() {
+        use std::net::{TcpListener, TcpStream};
+        let mut listeners = vec![TcpListener::bind("127.0.0.1:0").unwrap()];
+        if let Ok(listener) = TcpListener::bind("[::1]:0") {
+            listeners.push(listener);
+        }
+        let addresses: Vec<_> = listeners
+            .iter()
+            .map(|listener| listener.local_addr().unwrap())
+            .collect();
+        for address in &addresses {
+            TcpStream::connect_timeout(address, std::time::Duration::from_secs(2)).unwrap();
+            listeners
+                .iter()
+                .find(|listener| listener.local_addr().unwrap() == *address)
+                .unwrap()
+                .accept()
+                .unwrap();
+        }
+        let state = super::super::StateDirectory::new(None).unwrap();
+        let work = state.0.join("work");
+        std::fs::create_dir(&work).unwrap();
+        let outside = state.0.join("outside.txt");
+        std::fs::write(&outside, b"host-only sentinel").unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let mut read = platform_roots().unwrap();
+        let system_root = unicode(&read[0]).unwrap();
+        read.push(executable.clone());
+        for egress in [Egress::Inherit {}, Egress::Deny {}] {
+            probe(egress).unwrap();
+            let request = ExecutionRequest {
+                script_code: cmdline_from_argv_for_context(
+                    &[
+                        unicode(&executable).unwrap(),
+                        "--exact".into(),
+                        "execution::windows::tests::mxc_network_child".into(),
+                        "--nocapture".into(),
+                    ],
+                    CommandLineContext::WindowsCreateProcess,
+                )
+                .unwrap(),
+                working_directory: unicode(&work).unwrap(),
+                inherit_default_env: false,
+                env: Some(vec![
+                    format!("SystemRoot={system_root}"),
+                    format!("LOCALAPPDATA={}", unicode(&work).unwrap()),
+                    format!("TEMP={}", unicode(&work).unwrap()),
+                    format!("TMP={}", unicode(&work).unwrap()),
+                    format!(
+                        "A13N_ENVD_MXC_NETWORK_TEST={}",
+                        serde_json::to_string(&(
+                            egress == (Egress::Inherit {}),
+                            &addresses,
+                            &outside
+                        ))
+                        .unwrap()
+                    ),
+                ]),
+                policy: ContainerPolicy {
+                    readonly_paths: read.iter().map(|path| unicode(path).unwrap()).collect(),
+                    readwrite_paths: vec![unicode(&work).unwrap()],
+                    ..base_policy(egress).unwrap()
+                },
+                ..Default::default()
+            };
+            let mut logger = Logger::new(Mode::Buffer);
+            let mut child = BaseContainerRunner::new()
+                .spawn(&request, &mut logger, StdioMode::Inherit)
+                .unwrap_or_else(|error| panic!("native MXC launch: {}", error.error_message));
+            assert_eq!(child.wait().unwrap(), 0, "native network policy {egress:?}");
+            // A mistyped test filter must not turn a zero-test child into a pass.
+            assert_eq!(std::fs::read(work.join("allowed.txt")).unwrap(), b"allowed");
+            std::fs::remove_file(work.join("allowed.txt")).unwrap();
+        }
     }
 
     #[test]
