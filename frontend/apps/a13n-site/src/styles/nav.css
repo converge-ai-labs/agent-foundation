@@ -70,10 +70,55 @@
   gap: 28px;
 }
 .nav-links a {
+  display: flex;
+  align-items: center;
   font: 500 14px/1 var(--text);
   color: var(--muted);
   transition: color 0.2s;
 }
 .nav-links a:hover {
   color: var(--ink);
+}
+
+/* the GitHub link carries the star count; it clips while it makes room */
+.stars {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s;
+}
+.stars > * {
+  flex: none;
+}
+/* a hover turns the star one point on, as the mark turns beside the brand */
+.star {
+  width: 10px;
+  height: 10px;
+  margin: 0 3px 0 8px;
+  fill: currentColor;
+  rotate: var(--r, 0deg);
+  transition:
+    rotate 0.96s cubic-bezier(0.65, 0, 0.35, 1),
+    fill 0.3s;
+}
+/* a turning digit holds the old glyph and the new one on top of each other */
+.digits > span {
+  display: inline-grid;
+}
+.digits > span > span {
+  grid-area: 1 / 1;
+}
+.nav-links a:hover .stars {
+  color: var(--muted);
+}
+.nav-links a:hover .star {
+  fill: #e3b341;
+}
+.nav.dark .stars {
+  color: var(--night-dim);
+}
+.nav.dark .nav-links a:hover .stars {
+  color: #8d8d97;
 }

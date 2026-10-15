@@ -13,7 +13,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { mediaDefaultsQuery, modelApi } from "./api";
+import { mediaDefaultsQuery, modelApi, workspaceModelsQuery } from "./api";
 import { ModelIcon } from "./model-icon";
 import styles from "./models.module.css";
 
@@ -155,10 +155,7 @@ export function useMediaUnderstandingChoices() {
   const { workspace } = useWorkspace(),
     client = useClient();
   const api = modelApi(client, workspace.id);
-  const models = useQuery({
-    queryKey: ["models", "media-understanding", workspace.id],
-    queryFn: ({ signal }) => allPages((cursor) => api.models(signal, cursor)),
-  });
+  const models = useQuery(workspaceModelsQuery(client, workspace.id));
   const providers = useQuery({
     queryKey: ["model-providers", "media-understanding", workspace.id],
     queryFn: ({ signal }) =>

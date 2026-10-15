@@ -1,14 +1,14 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FormField, Input, ModalFrame } from "a13n-ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, FormField, Input, ModalFrame } from "a13n-ui";
 import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, ifMatch, type Schema } from "../../../shared/api";
-import { ErrorNotice } from "../../../shared/feedback";
+import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { FormActions, TextAreaField } from "../../../shared/forms";
 import shared from "../../../shared/shared.module.css";
-import { invalidateMemories, isStale } from "../api";
+import { invalidateMemories, isStale, memoryQueries } from "../api";
 
 type Memory = Schema["Memory"];
 
@@ -142,42 +142,126 @@ function NewFileForm({
   );
 }
 
-export function RenameFile({
+export function FileActionDialog({
   memory,
   path,
-  etag,
-  trigger,
+  kind,
+  onClose,
   onMoved,
+  onDeleted,
 }: {
   memory: Memory;
   path: string;
-  /** The file as the reader saw it; a file changed since is not moved. */
-  etag?: string;
-  trigger: ReactElement;
+  kind: "rename" | "delete";
+  onClose: () => void;
   onMoved: (path: string) => void;
+  onDeleted: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(),
+    client = useClient(),
+    { workspace } = useWorkspace();
+  const file = useQuery(
+    memoryQueries(client, workspace.id).file(memory.id, path),
+  );
   return (
-    <FileDialog
-      trigger={trigger}
-      title={t("Rename file")}
+    <ModalFrame
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={t(kind === "rename" ? "Rename file" : "Delete file")}
       description={t(
-        "The file keeps its history. Always-loaded paths are not updated.",
+        kind === "rename"
+          ? "The file keeps its history. Always-loaded paths are not updated."
+          : "The file's history stays, so it can be restored from History.",
       )}
+      closeLabel={t("Close")}
     >
-      {(close) => (
-        <RenameForm
-          memory={memory}
-          path={path}
-          etag={etag}
-          onCancel={close}
-          onMoved={(destination) => {
-            close();
-            onMoved(destination);
-          }}
-        />
+      {file.data ? (
+        kind === "rename" ? (
+          <RenameForm
+            memory={memory}
+            path={path}
+            etag={file.data.etag}
+            onCancel={onClose}
+            onMoved={(destination) => {
+              onClose();
+              onMoved(destination);
+            }}
+          />
+        ) : (
+          <DeleteFileForm
+            memory={memory}
+            path={path}
+            etag={file.data.etag}
+            onCancel={onClose}
+            onDeleted={() => {
+              onClose();
+              onDeleted();
+            }}
+          />
+        )
+      ) : file.isPending ? (
+        <Loading variant="code" />
+      ) : (
+        <ErrorNotice error={file.error} retry={() => void file.refetch()} />
       )}
-    </FileDialog>
+    </ModalFrame>
+  );
+}
+
+function DeleteFileForm({
+  memory,
+  path,
+  etag,
+  onCancel,
+  onDeleted,
+}: {
+  memory: Memory;
+  path: string;
+  etag?: string;
+  onCancel: () => void;
+  onDeleted: () => void;
+}) {
+  const client = useClient(),
+    { workspace } = useWorkspace(),
+    cache = useQueryClient(),
+    { t } = useTranslation();
+  const [version] = useState(etag);
+  const remove = useMutation({
+    mutationFn: () =>
+      client
+        .workspace(workspace.id)
+        .DELETE("/api/v1/memories/{memory_id}/files/{path}", {
+          params: { path: { memory_id: memory.id, path } },
+          headers: ifMatch(version),
+        }),
+    onSuccess: () => {
+      void invalidateMemories(cache, workspace.id);
+      onDeleted();
+    },
+  });
+  return (
+    <div className={shared.form}>
+      <p className="break-all font-medium">{path}</p>
+      <ErrorNotice error={remove.error} />
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          disabled={remove.isPending}
+          onClick={onCancel}
+        >
+          {t("Cancel")}
+        </Button>
+        <Button
+          variant="destructive"
+          loading={remove.isPending}
+          onClick={() => remove.mutate()}
+        >
+          {t("Delete file")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -199,6 +283,7 @@ function RenameForm({
     cache = useQueryClient(),
     { t } = useTranslation();
   const [destination, setDestination] = useState(path);
+  const [version] = useState(etag);
   const move = useMutation({
     mutationFn: () =>
       client
@@ -207,7 +292,7 @@ function RenameForm({
           params: {
             path: { memory_id: memory.id },
           },
-          headers: ifMatch(etag),
+          headers: ifMatch(version),
           body: { source: path, destination: destination.trim() },
         })
         .then(data),

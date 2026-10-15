@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +12,25 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.resources.agents.schemas import AgentRevision, apply_override
+from a13n_service.resources.agents.tables import AgentRevisionRow
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, TailPointer
-from a13n_service.runs.contents import ContentObject, decode
+from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunView
+from a13n_service.runs.schemas import (
+    Attempts,
+    AttemptView,
+    RunAgent,
+    RunContent,
+    RunItems,
+    RunLabels,
+    RunOptions,
+    RunPage,
+    RunQuery,
+    RunView,
+)
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -67,6 +81,18 @@ async def get(storage: Storage, actor: Principal, workspace_id: str, run_id: str
         return await run_view(session, await get_run(session, scope.workspace_id, run_id))
 
 
+async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: str) -> RunAgent:
+    """The revision the run froze at acceptance and the configuration it executes with the run's override."""
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        run = await get_run(session, scope.workspace_id, run_id)
+        # The run's foreign key keeps its revision, and revisions are never deleted.
+        revision = AgentRevision.model_validate(await session.get(AgentRevisionRow, run.agent_revision_id))
+    override = RunOptions.model_validate(run.options).overrides
+    config = revision.config if override is None else apply_override(revision.config, override)
+    return RunAgent(revision=revision, config=config)
+
+
 async def list_thread_runs(
     storage: Storage, actor: Principal, workspace_id: str, thread_id: str, *, limit: int, cursor: str | None
 ) -> RunPage:
@@ -85,6 +111,42 @@ async def list_thread_runs(
             newest_first=True,
         )
         return RunPage(items=await run_views(session, rows), next_cursor=next_cursor)
+
+
+async def list_runs(storage: Storage, actor: Principal, workspace_id: str, filters: RunQuery) -> RunPage:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        query = select(RunRow).where(RunRow.workspace_id == scope.workspace_id)
+        for name in ("agent_id", "session_id", "thread_id", "principal_id", "status"):
+            if (value := getattr(filters, name)) is not None:
+                query = query.where(getattr(RunRow, name) == value)
+        if filters.created_after is not None:
+            query = query.where(RunRow.created_at >= filters.created_after)
+        if filters.created_before is not None:
+            query = query.where(RunRow.created_at < filters.created_before)
+        rows, cursor = await cursors.keyset_page(
+            session,
+            query,
+            (RunRow.created_at, RunRow.id),
+            kind="runs",
+            owner=cursors.query_owner(scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor"})),
+            cursor=filters.cursor,
+            limit=filters.limit,
+            newest_first=True,
+        )
+        return RunPage(items=await run_views(session, rows), next_cursor=cursor)
+
+
+async def get_attempt(
+    storage: Storage, actor: Principal, workspace_id: str, run_id: str, attempt_id: str
+) -> AttemptView:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        run = await get_run(session, scope.workspace_id, run_id)
+        attempt = await session.get(AttemptRow, attempt_id)
+        if attempt is None or attempt.run_id != run.id:
+            raise not_found("attempt", attempt_id)
+        return AttemptView.model_validate(attempt)
 
 
 async def lineage(storage: Storage, actor: Principal, workspace_id: str, run_id: str, *, cursor: str | None) -> RunPage:
@@ -201,19 +263,27 @@ async def _load(runtime: Runtime, window: _Window) -> tuple[Tail, list[Page]]:
     )
 
 
-async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, content_id: str) -> RunContent:
+async def _content_ref(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    content_id: str,
+    *,
+    purpose: Literal["value", "image"],
+) -> ContentObject:
     """Read only values reachable from this run's committed tail or immutable pages; no object I/O in the session."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
         refs = TailPointer.model_validate(run.tail).refs if run.tail is not None else ()
-        ref = next((value for value in refs if value.id == content_id and value.purpose == "value"), None)
+        ref = next((value for value in refs if value.id == content_id and value.purpose == purpose), None)
         if ref is None:
             page_refs = await session.scalar(
                 select(RunItemPageRow.refs)
                 .where(
                     RunItemPageRow.run_id == run.id,
-                    RunItemPageRow.refs.contains([{"id": content_id, "purpose": "value"}]),
+                    RunItemPageRow.refs.contains([{"id": content_id, "purpose": purpose}]),
                 )
                 .limit(1)
             )
@@ -222,6 +292,22 @@ async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id:
             )
         if ref is None:
             raise not_found("run_content", content_id)
+    return ref
+
+
+async def image(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, image_id: str) -> tuple[bytes, str]:
+    ref = await _content_ref(runtime, actor, workspace_id, run_id, image_id, purpose="image")
+    if ref.media_type not in {"image/png", "image/jpeg"} or ref.size_bytes > MAX_IMAGE_BYTES:
+        raise not_found("run_image", image_id)
+    value = await checkpoints.load(runtime.objects, ref)
+    if len(value) != ref.size_bytes:
+        raise ServiceError("unavailable", "Image length does not match its reference", {"dependency": "objects"})
+    return value, ref.media_type
+
+
+async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, content_id: str) -> RunContent:
+    ref = await _content_ref(runtime, actor, workspace_id, run_id, content_id, purpose="value")
+    assert ref.media_type == "text/plain" or ref.media_type == "application/json"
     value = decode(await checkpoints.load(runtime.objects, ref), ref)
     return RunContent(id=ref.id, media_type=ref.media_type, value=value, truncated=ref.truncated)
 

@@ -194,6 +194,10 @@ class EnvironmentPermissionSet(BaseModel):
 
     operations: frozenset[EnvironmentAction] = frozenset()
 
+    @field_serializer("operations", when_used="json")
+    def serialize_operations(self, operations: frozenset[EnvironmentAction]) -> list[EnvironmentAction]:
+        return sorted(operations)
+
 
 class EnvironmentMountDescriptor(BaseModel):
     model_config = ConfigDict(frozen=True)

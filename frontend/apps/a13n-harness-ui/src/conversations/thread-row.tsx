@@ -11,6 +11,7 @@ import {
   Archive,
   ArrowCounterClockwise,
   DotsThree,
+  GitFork,
   PencilSimple,
   ShareNetwork,
   SlidersHorizontal,
@@ -21,6 +22,8 @@ import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
 import { refreshThread } from "./refresh";
+import { refreshActivity } from "./activity-updates";
+import { applyThreadMutation } from "./thread-updates";
 import { ComposerDrafts } from "./composer";
 import { conversationTitle } from "./local-input";
 import { NewConversationDrafts, newConversationPath } from "./new-conversation";
@@ -119,14 +122,10 @@ export function ThreadRow({
           },
         }),
       ),
-    // Refetch, rather than replacing newer live activity with a mutation snapshot.
-    onSettled: async () => {
-      await Promise.all([
-        queries.invalidateQueries({
-          queryKey: ["thread", row.thread.thread_id],
-        }),
-        refreshThreadLists(queries),
-      ]);
+    onSuccess: (updated) => applyThreadMutation(queries, updated),
+    onSettled: () => {
+      refreshThread(queries, row.thread.thread_id, "metadata");
+      refreshActivity(queries, transport, row.thread.thread_id);
       if (document.activeElement === document.body)
         actionsButton.current?.focus();
     },
@@ -135,6 +134,18 @@ export function ThreadRow({
     if (star.isPending) return;
     star.mutate();
   };
+  const fork = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.POST("/api/threads/{thread_id}/fork", {
+          params: { path: { thread_id: row.thread.thread_id } },
+        }),
+      ),
+    onSuccess: (copied) => {
+      void refreshThreadLists(queries);
+      navigate(`/threads/${encodeURIComponent(copied.thread_id)}`);
+    },
+  });
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -253,7 +264,7 @@ export function ThreadRow({
               <Button ref={actionsButton} variant="ghost" size="icon-sm" />
             }
             className={styles.threadActions}
-            aria-busy={star.isPending}
+            aria-busy={star.isPending || fork.isPending}
             aria-label={`Actions for ${title}`}
           >
             <DotsThree />
@@ -300,6 +311,17 @@ export function ThreadRow({
               </MenuItem>
             ))}
             {row.thread.role === "ordinary" &&
+              !row.thread.parent_thread_id &&
+              !row.thread.memory_scope &&
+              row.thread.configuration.agent_source.kind === "agent" && (
+                <MenuItem
+                  disabled={fork.isPending}
+                  onClick={() => fork.mutate()}
+                >
+                  <GitFork /> Fork conversation
+                </MenuItem>
+              )}
+            {row.thread.role === "ordinary" &&
               row.thread.configuration.project_id && (
                 <MenuItem
                   disabled={
@@ -321,18 +343,20 @@ export function ThreadRow({
                   : "Enable automatic follow-up"}
               </MenuItem>
             )}
-            <MenuItem
-              disabled={
-                archive.isPending ||
-                row.thread.root_activity.state !== "inactive"
-              }
-              onClick={() => archive.mutate()}
-            >
-              <Archive />
-              {row.thread.archived
-                ? "Restore conversation"
-                : "Archive conversation"}
-            </MenuItem>
+            {row.thread.configuration.agent_source.kind !== "live" && (
+              <MenuItem
+                disabled={
+                  archive.isPending ||
+                  row.thread.root_activity.state !== "inactive"
+                }
+                onClick={() => archive.mutate()}
+              >
+                <Archive />
+                {row.thread.archived
+                  ? "Restore conversation"
+                  : "Archive conversation"}
+              </MenuItem>
+            )}
           </MenuPopup>
         </Menu>
         {disclosure && (
@@ -352,7 +376,9 @@ export function ThreadRow({
           </button>
         )}
       </div>
-      <ErrorNotice error={star.error || archive.error || coordinator.error} />
+      <ErrorNotice
+        error={star.error || archive.error || fork.error || coordinator.error}
+      />
       <CoordinatorPromotion
         open={promoting}
         close={() => setPromoting(false)}

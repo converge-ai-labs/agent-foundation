@@ -12,15 +12,11 @@ import {
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, TextField } from "../shell/ui";
-import {
-  DraftContext,
-  DraftLinks,
-  NewResourceButton,
-  SourceDocument,
-} from "./sources";
+import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
-import { template, updateDocument } from "./documents";
+import { updateDocument } from "./documents";
+import { LiveOptIn } from "../setup/live-opt-in";
 import styles from "../shell/workbench.module.css";
 
 export function ModelsPage() {
@@ -113,7 +109,12 @@ export function ModelsPage() {
   });
   return (
     <>
-      <PageHeader title="Models" actions={<NewResourceButton kind="model" />} />
+      <PageHeader
+        title="Models"
+        actions={
+          <AddModelButton onSaved={() => void queries.invalidateQueries()} />
+        }
+      />
       <ErrorNotice
         error={
           selectors.error || sources.error || clone.error || setDefault.error
@@ -266,18 +267,26 @@ function AddModelDialog({
   const [name, setName] = useState("");
   const [recipe, setRecipe] = useState<Schema<"ModelRecipe"> | null>(null);
   const [recipeReady, setRecipeReady] = useState(false);
+  const [enableLive, setEnableLive] = useState(true);
   const save = useMutation({
     mutationFn: async () => {
-      let content = template("model", id);
-      content = updateDocument(content, ["name"], name.trim() || recipe!.route);
-      for (const [key, value] of Object.entries(recipe!))
-        content = updateDocument(content, [key], value);
-      await result(
-        client.PUT("/api/configuration/sources/{relative_path}", {
-          params: { path: { relative_path: `models/${id}.yaml` } },
-          body: { content },
+      const publication = await result(
+        client.POST("/api/setup/apply", {
+          body: {
+            selection: {
+              model: recipe!,
+              new_model_id: id,
+              new_model_name: name.trim() || recipe!.route,
+              environment_profile: "environment-native",
+              enable_live: enableLive,
+            },
+          },
         }),
       );
+      if (!publication.completed)
+        throw new Error(
+          publication.error_message || "Model publication did not complete.",
+        );
     },
     onSuccess: async () => {
       await queries.invalidateQueries();
@@ -311,6 +320,11 @@ function AddModelDialog({
           value={recipe}
           onChange={setRecipe}
           onRecipeReady={setRecipeReady}
+        />
+        <LiveOptIn
+          model={recipe}
+          enabled={enableLive}
+          onChange={setEnableLive}
         />
       </div>
     </ModalFrame>

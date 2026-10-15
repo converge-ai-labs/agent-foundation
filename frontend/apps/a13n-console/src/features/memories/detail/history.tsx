@@ -9,10 +9,10 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, ifMatch, rowTag, type Schema } from "../../../shared/api";
@@ -27,8 +27,7 @@ import {
 import { Confirm } from "../../../shared/dialogs";
 import { Patch } from "../../../shared/diff";
 import { ErrorNotice, Loading, Timestamp } from "../../../shared/feedback";
-import { runPath } from "../../conversations/api";
-import { useRun } from "../../conversations/queries";
+import { MemoryRunLink as RunLink } from "../run-link";
 import { invalidateMemories, memoryQueries } from "../api";
 import styles from "../memories.module.css";
 
@@ -103,7 +102,7 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
   const current = (filePath: string) =>
     files.data?.find((file) => file.path === filePath);
   return (
-    <>
+    <div className={styles.history}>
       <div className={styles.historyFilters}>
         <ChoiceField
           label={t("File")}
@@ -182,8 +181,9 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
               const open = expanded === revision.seq;
               const file = current(revision.path);
               return (
-                <Fragment key={revision.seq}>
+                <div className={styles.revisionGroup} key={revision.seq}>
                   <ListRow
+                    className={styles.revisionRow}
                     icon={<Icon size={15} />}
                     name={
                       <>
@@ -267,20 +267,16 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                     }
                   />
                   {open && <RevisionDiff memory={memory} seq={revision.seq} />}
-                </Fragment>
+                </div>
               );
             })}
           </ListRows>
-          <CollectionFooter
-            count={t("{{count}} changes on this page", {
-              count: revisions.data.items.length,
-            })}
-          >
+          <CollectionFooter>
             <Pagination page={page} next={revisions.data.next_cursor} />
           </CollectionFooter>
         </>
       )}
-    </>
+    </div>
   );
 }
 
@@ -300,18 +296,5 @@ function RevisionDiff({ memory, seq }: { memory: Memory; seq: number }) {
         <Patch hunks={detail.data.hunks} />
       )}
     </div>
-  );
-}
-
-/** A run by its ID, linked to its debug view once its conversation is known. */
-function RunLink({ runId }: { runId: string }) {
-  const { basePath } = useWorkspace();
-  const run = useRun(runId).data;
-  return run ? (
-    <Link to={runPath(basePath, { ...run, run_id: run.id }, "debug")}>
-      {runId}
-    </Link>
-  ) : (
-    <>{runId}</>
   );
 }

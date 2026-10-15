@@ -17,6 +17,10 @@ export function RunOutline({ outline }: { outline: Outline }) {
   }, [outline.inView]);
   return (
     <nav className={styles.panel} aria-label={t("Runs")} ref={panel}>
+      <div className={styles.panelHead} aria-hidden="true">
+        <span>{t("Runs")}</span>
+        <span>{outline.nodes.length}</span>
+      </div>
       {outline.nodes.map((node) => (
         <button
           key={node.run.id}

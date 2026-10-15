@@ -26,6 +26,8 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 环境 provider 是运行环境所用的账号。像其他 [provider](resources.md#providers) 一样，在 `/api/v1/environment-providers` 中创建。`GET /api/v1/provider-types/environment` 返回各类型的配置、凭据和 recipe schema。
 
+在 Console 中，模板的**连接**选择框旁提供**管理连接**，打开连接列表后不会丢失当前模板草稿。也可从 **Workspace settings → Providers → Environment** 进入同一列表。打开连接可查看配置；拥有工作空间写权限的用户可修改名称、启用状态、配置和凭据，或选择**删除连接**。修改配置时，已有凭据必须重新填写或移除。删除前会列出引用它的模板和环境实例；已停用模板、保留的历史实例也会阻止删除。只有没有引用的连接才能永久删除，删除范围仅为已保存的连接配置和凭据，不会删除 Docker 引擎或原生资源。
+
 ![Console 中的 Sandbox 与环境 provider 目录](../../.github/assets/console-sandbox-providers.webp)
 
 *图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*
@@ -42,6 +44,8 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 | `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                         | 无需停止                   |
 
 Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
+
+使用 Docker HTTP 执行时，开启**环境操作通道**并填写**主机访问地址**。监听地址自动使用该 IP（`localhost` 使用 `127.0.0.1`），端口由 Docker 分配。**高级配置**中可覆盖监听 IP、明确允许可信私网 HTTP，或修改凭据文件路径。其他域名需要明确填写监听 IP，因为域名解析结果不一定属于 Docker 宿主机的网络接口。已有明确配置的监听地址会保留。
 
 云托管类型访问厂商持有的 API。E2B 可选择官方云或其他兼容 E2B 协议的服务；其他云托管账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
 
@@ -61,6 +65,8 @@ Service 从配置的沙箱域名推导 HTTPS 控制 API `https://api.<domain>`�
 只有 Docker provider 可以测试（`POST …/{provider_id}/test`）：Engine 响应一次 ping。远程 Engine 无法解析时，失败消息为 `provider_unavailable`；只有策略拒绝时才返回 `provider_endpoint_denied`。
 
 ## 模板
+
+在 Console 中，选择 **环境 → 模板 → 创建模板**，进入独立的创建页面。为模板命名，选择运行方式，再选择已启用的供应商连接或打开**管理连接**添加连接。通过 **云端 / 自有** 标签互选，只展示当前类别。切换回来会恢复之前选择的运行方式，分类不改变供应商的运行行为。设置环境参数和空闲策略后保存。切换运行方式会保留各自的配置草稿。在此添加的连接单独保存，即使取消创建模板，连接仍然存在。保存模板不会启动环境。
 
 模板描述如何构建托管环境，以及何时停止和删除空闲环境。模板属于工作空间，创建和修改需要 `write`。此示例使用 Docker provider；将 `eprov_...` 替换为其 ID。
 
@@ -183,8 +189,25 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 ### 复用实例并选择项目目录
 
-在新会话的 **Options（选项）** 中选择 **Reuse existing（复用现有实例）**，可填写 **Working directory（工作目录）**。已有会话的 **Add environment（添加环境）** 表单也提供该字段。留空使用 Provider 默认目录。切换实例会清空上一次选择；会话的环境详情会显示已保存的目录。
+在新会话的 **Options（选项）** 中选择 **Reuse existing（复用现有实例）**，可填写 **Working directory（工作目录）**。已有会话在会话操作 → **环境与记忆**中的 **Add environment（添加环境）** 表单也提供该字段。留空使用 Provider 默认目录。切换实例会清空上一次选择；会话的环境详情会显示已保存的目录。
 
 目录必须已存在于所选环境内。Local 的 `/projects/app` 映射到 `{模板根目录}/{环境 ID}/projects/app`，不是浏览器所在电脑上的路径。其他 Provider 使用其环境内部的文件路径空间。Service 在首次激活时检查显式选择的目录；目录不存在或不可访问时会报错，不会自动创建目录，也不会将共享实例标记为故障。
 
 两个会话可以在同一实例中使用不同项目目录，也可以主动选择同一目录共享文件。相对文件路径、`/workspace` 路由和命令默认工作目录均使用所选目录。进程、端口、已安装软件及系统权限仍然共享：这用于组织文件，不提供安全隔离。移除挂载不会删除目录；已接受的 Run 保留其捕获的目录选择。
+
+## Computer Use
+
+Agent 可以直接操作兼容的桌面，不需要先由人接管。环境的 provider 必须支持 Computer 操作，并且已运行图形桌面；开启权限不会给无桌面的环境自动安装桌面。
+
+1. 在 Agent 的工具配置中开启 **电脑** 工具集并保存。每个工具的审批设置仍然生效。
+2. 打开会话的 **环境与记忆** 设置。需要时先添加环境，再打开对应挂载的 **电脑操作权限**。选择 **可观察** 可获取截图与显示器信息；选择 **可操作** 还可使用鼠标和键盘。主挂载 `workspace` 使用同样的设置。
+3. 发送新消息。Run 接收时会冻结权限；修改不会撤销已接收运行的权限。
+4. 展开 Agent 的工作步骤，在观察步骤点击 **查看截图**。显示的是该步骤保存的画面。运行期间可能要到下一个检查点才能读取截图，尚未保存时可以稍后重试。
+
+API 在初始挂载及新增挂载时接受精确的 `permission_ceiling.operations`。修改已有挂载使用 `PATCH /api/v1/threads/{thread_id}/environments/{name}`，携带线程的 `If-Match`。仅允许电脑观察的请求体为 `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe"]}}`。此操作会替换整个动作集合，需要保留的文件与执行权限也必须包含在内。Console 的预设会自动保留其他权限。
+
+电脑权限默认关闭，不限制终端命令和其他独立工具。截图预览是只读的历史画面，此视图尚不提供交互式远程桌面或人工接管。
+
+升级到此功能时，请在接收新 Run 前统一升级 Service 的 control 和 worker。旧 worker 无法读取新的挂载快照及截图依赖格式。已有挂载及历史 Run 快照保留原有文件和执行权限，电脑操作仍默认关闭。
+
+从会话操作菜单打开 **环境与记忆**，即可配置各个挂载的电脑权限。运行详情展示接收该次运行时确定的权限。挂载列表分开展示 **电脑权限** 和 **桌面状态**。桌面状态初始为 **未检查**；点击 **检查桌面** 后，会明确区分不支持桌面、未就绪和已就绪。不支持桌面的环境会提示：允许电脑操作不会让环境自动具备桌面能力。检查不会截图、发送输入或启动已停止的环境，也不会授予 Agent 权限；结果仅反映上次检查时的状态。

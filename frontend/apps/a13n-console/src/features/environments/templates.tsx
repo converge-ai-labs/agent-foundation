@@ -1,6 +1,7 @@
-import { StackIcon } from "@phosphor-icons/react";
+import { PlusIcon, StackIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField } from "a13n-ui";
+import { Button, ChoiceField } from "a13n-ui";
+import { Link } from "react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -38,7 +39,7 @@ import { TemplateEditor } from "./template-editor";
 /** Reusable environment definitions: one row per template. */
 export function EnvironmentTemplates() {
   const client = useClient(),
-    { can, workspace } = useWorkspace(),
+    { can, workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
     api = environmentApi(client, workspace.id),
     rows = useResourceRows<Schema["Template"]>(),
@@ -78,6 +79,12 @@ export function EnvironmentTemplates() {
   );
   const resolving = providers.isPending;
   const manage = can("write");
+  const create = (
+    <Button render={<Link to={`${basePath}/environments/new`} />}>
+      <PlusIcon aria-hidden="true" />
+      {t("Create template")}
+    </Button>
+  );
   function providerOf(template: Schema["Template"]) {
     return providerById.get(template.provider_id);
   }
@@ -123,7 +130,7 @@ export function EnvironmentTemplates() {
       <PageActions secondary>
         <ManageProvidersLink category="environments" />
       </PageActions>
-      <PageActions>{manage && <TemplateEditor />}</PageActions>
+      <PageActions>{manage && create}</PageActions>
       {rows.selected && (
         <TemplateEditor
           key={rows.selected.id}
@@ -223,7 +230,7 @@ export function EnvironmentTemplates() {
                     "Create a template, then choose it when starting a conversation.",
                   )
             }
-            action={!filtered && manage ? <TemplateEditor /> : undefined}
+            action={!filtered && manage ? create : undefined}
           />
         )
       )}

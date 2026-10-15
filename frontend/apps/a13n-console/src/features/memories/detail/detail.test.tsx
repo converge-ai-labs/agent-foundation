@@ -373,9 +373,12 @@ it("creates, renames and deletes files", async () => {
   });
   await screen.findByRole("region", { name: "notes/topic.md" });
 
-  await user.click(screen.getByRole("button", { name: "glossary.md" }));
-  await screen.findByRole("heading", { name: "Glossary" });
-  await user.click(screen.getByRole("button", { name: "Rename" }));
+  // Right-click a different file without changing the open document first.
+  await user.pointer({
+    target: screen.getByRole("button", { name: "glossary.md" }),
+    keys: "[MouseRight]",
+  });
+  await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
   const rename = await screen.findByRole("dialog");
   const destination = within(rename).getByRole("textbox", { name: "New path" });
   await user.clear(destination);
@@ -388,7 +391,8 @@ it("creates, renames and deletes files", async () => {
   });
 
   await screen.findByRole("region", { name: "terms.md" });
-  await user.click(await screen.findByRole("button", { name: "Delete" }));
+  await user.click(screen.getByRole("button", { name: "File actions" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
   const confirm = await screen.findByRole("dialog");
   await user.click(
     within(confirm).getByRole("button", { name: "Delete file" }),
@@ -398,6 +402,11 @@ it("creates, renames and deletes files", async () => {
     path: "/api/v1/memories/mem_1/files/terms.md",
     ifMatch: '"memf_glossary:8"',
   });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "terms.md" })).toBeNull(),
+  );
+  expect(await screen.findByRole("heading", { name: "Handbook" })).toBeTruthy();
 });
 
 it("filters history by run from the URL, opens a diff and restores under the current file", async () => {
@@ -479,12 +488,12 @@ it("offers no purge to people who may only run agents", async () => {
 
 it("switches the guide between inherited, custom and none", async () => {
   const { user, sent } = setup("?tab=configuration");
-  expect((await screen.findByLabelText("Inherited guide")).textContent).toBe(
-    "Keep one topic per file.",
-  );
+  expect(
+    (await screen.findByLabelText("Default memory instructions")).textContent,
+  ).toBe("Keep one topic per file.");
   // Customizing starts from the guide the memory inherited.
   await user.click(screen.getByRole("button", { name: "Custom" }));
-  const guide = screen.getByRole("textbox", { name: "Guide" });
+  const guide = screen.getByRole("textbox", { name: "Memory instructions" });
   expect((guide as HTMLTextAreaElement).value).toBe("Keep one topic per file.");
   await user.type(guide, " Link related files.");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -501,7 +510,9 @@ it("switches the guide between inherited, custom and none", async () => {
 
   await user.click(screen.getByRole("button", { name: "None" }));
   expect(
-    screen.getByText("Runs receive no guide for this memory."),
+    screen.getByText(
+      "No usage instructions are added for this memory. Agents can still use it according to their permissions.",
+    ),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(2));
@@ -515,7 +526,7 @@ it("switches the guide between inherited, custom and none", async () => {
       screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull(),
   );
-  await user.click(screen.getByRole("button", { name: "Inherit" }));
+  await user.click(screen.getByRole("button", { name: "Use default" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(3));
   expect(sent("PATCH")[2]?.body).toEqual({ guide: null });
@@ -576,6 +587,14 @@ it("shows files and configuration read-only to readers", async () => {
   await screen.findByRole("heading", { name: "Handbook" });
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New file" })).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "Actions for glossary.md" }),
+  );
+  expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+  expect(await screen.findByRole("menuitem", { name: "History" })).toBeTruthy();
+  await user.keyboard("{Escape}");
   await user.click(screen.getByRole("tab", { name: "Configuration" }));
   await screen.findByRole("heading", { name: "Always loaded files" });
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();

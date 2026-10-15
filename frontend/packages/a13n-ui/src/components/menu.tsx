@@ -1,5 +1,6 @@
 "use client";
 
+import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type * as React from "react";
@@ -9,6 +10,12 @@ export const MenuCreateHandle: typeof MenuPrimitive.createHandle =
   MenuPrimitive.createHandle;
 
 export const Menu: typeof MenuPrimitive.Root = MenuPrimitive.Root;
+
+// Base UI shares the popup, items, and positioning implementation with Menu.
+export const ContextMenu: typeof ContextMenuPrimitive.Root =
+  ContextMenuPrimitive.Root;
+export const ContextMenuTrigger: typeof ContextMenuPrimitive.Trigger =
+  ContextMenuPrimitive.Trigger;
 
 export const MenuPortal: typeof MenuPrimitive.Portal = MenuPrimitive.Portal;
 

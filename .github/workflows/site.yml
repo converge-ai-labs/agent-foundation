@@ -101,7 +101,7 @@ jobs:
     # The environment predates the landing page; the Cloudflare secrets are scoped to it.
     environment:
       name: docs
-      url: https://a13n.converge.ai/
+      url: https://a13n.dev/
     steps:
       - name: Download site artifact
         uses: actions/download-artifact@v4

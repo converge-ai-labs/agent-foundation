@@ -2,8 +2,17 @@ import {
   CaretRightIcon,
   FileTextIcon,
   FolderIcon,
+  DotsThreeIcon,
 } from "@phosphor-icons/react";
-import { SegmentedControl } from "a13n-ui";
+import {
+  Button,
+  ContextMenu,
+  ContextMenuTrigger,
+  Menu,
+  MenuPopup,
+  MenuTrigger,
+  SegmentedControl,
+} from "a13n-ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownContent } from "../markdown";
@@ -15,16 +24,20 @@ export type FileView = "preview" | "source";
 /** A tree of files at the left and the chosen file at the right. */
 export function FileBrowser({
   label,
+  embedded = false,
   count,
   actions,
   nodes,
   selected,
   onSelect,
   marker,
+  fileMenu,
   children,
 }: {
   /** Names the tree for assistive technology, such as "Package files". */
   label: string;
+  /** Join the surrounding page when its tabs already name and count the files. */
+  embedded?: boolean;
   count: number;
   /** Controls beside the tree heading, such as New file. */
   actions?: ReactNode;
@@ -33,23 +46,32 @@ export function FileBrowser({
   onSelect: (path: string) => void;
   /** A mark after a file's name, such as one that says it is always loaded. */
   marker?: (path: string) => ReactNode;
+  /** The same actions appear on right-click and in a touch-accessible row menu. */
+  fileMenu?: (path: string) => ReactNode;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
-    <div className={styles.browser}>
+    <div className={styles.browser} data-embedded={embedded || undefined}>
       <nav className={`${styles.tree} a13n-scrollbar`} aria-label={label}>
         <div className={styles.treeHeading}>
-          <span>{t("Files")}</span>
-          <span className={styles.treeCount}>{count}</span>
+          {!embedded && (
+            <>
+              <span>{t("Files")}</span>
+              <span className={styles.treeCount}>{count}</span>
+            </>
+          )}
           {actions}
         </div>
-        <FileTree
-          nodes={nodes}
-          selected={selected}
-          select={onSelect}
-          marker={marker}
-        />
+        <div className={`${styles.treeBody} a13n-scrollbar`}>
+          <FileTree
+            nodes={nodes}
+            selected={selected}
+            select={onSelect}
+            marker={marker}
+            fileMenu={fileMenu}
+          />
+        </div>
       </nav>
       <section className={styles.document} aria-label={selected}>
         {children}
@@ -63,12 +85,15 @@ function FileTree({
   selected,
   select,
   marker,
+  fileMenu,
 }: {
   nodes: FileNode[];
   selected: string;
   select: (path: string) => void;
   marker?: (path: string) => ReactNode;
+  fileMenu?: (path: string) => ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <ul>
       {nodes.map((node) => (
@@ -85,20 +110,69 @@ function FileTree({
                 selected={selected}
                 select={select}
                 marker={marker}
+                fileMenu={fileMenu}
               />
             </details>
           ) : (
-            <button
-              type="button"
-              className={styles.fileButton}
-              aria-current={selected === node.path ? "true" : undefined}
-              title={node.path}
-              onClick={() => select(node.path)}
+            <div
+              className={styles.fileRow}
+              data-selected={selected === node.path || undefined}
             >
-              <FileTextIcon size={14} aria-hidden="true" />
-              <span>{node.name}</span>
-              {marker?.(node.path)}
-            </button>
+              {fileMenu ? (
+                <ContextMenu>
+                  <ContextMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        className={styles.fileButton}
+                        aria-current={
+                          selected === node.path ? "true" : undefined
+                        }
+                        title={node.path}
+                        onClick={() => select(node.path)}
+                      />
+                    }
+                  >
+                    <FileTextIcon size={14} aria-hidden="true" />
+                    <span>{node.name}</span>
+                    {marker?.(node.path)}
+                  </ContextMenuTrigger>
+                  <MenuPopup align="start">{fileMenu(node.path)}</MenuPopup>
+                </ContextMenu>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.fileButton}
+                  aria-current={selected === node.path ? "true" : undefined}
+                  title={node.path}
+                  onClick={() => select(node.path)}
+                >
+                  <FileTextIcon size={14} aria-hidden="true" />
+                  <span>{node.name}</span>
+                  {marker?.(node.path)}
+                </button>
+              )}
+              {fileMenu && (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className={styles.fileActions}
+                        aria-label={t("Actions for {{path}}", {
+                          path: node.path,
+                        })}
+                        title={t("Actions for {{path}}", { path: node.path })}
+                      />
+                    }
+                  >
+                    <DotsThreeIcon />
+                  </MenuTrigger>
+                  <MenuPopup align="start">{fileMenu(node.path)}</MenuPopup>
+                </Menu>
+              )}
+            </div>
           )}
         </li>
       ))}

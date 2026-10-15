@@ -207,7 +207,6 @@ function Display() {
       <output data-testid="error">
         {stream.error instanceof Error ? stream.error.message : ""}
       </output>
-      <button onClick={stream.earlier.load}>Earlier</button>
       <button onClick={stream.reconnect}>Reconnect</button>
     </>
   );
@@ -348,16 +347,28 @@ it("reads the committed display of a Run that ended while disconnected", async (
   expect(pathRequests("/items").length).toBeGreaterThan(reads);
 });
 
-it("reads earlier Items before the stream's first on request", async () => {
+it("reads every Item before the stream's first from the Run's committed history", async () => {
+  display = {
+    ...display,
+    run: run(),
+    items: [message("Hello", "1-4", "1-5", "in_progress", 3)],
+    complete: false,
+  };
   read = async (request) => {
-    const before = Number(new URL(request.url).searchParams.get("before"));
-    if (!before) return response(request);
-    const first = `1-${before - 2}`;
+    const query = new URL(request.url).searchParams;
+    if (!query.has("after")) return response(request);
+    const after = Number(query.get("after"));
     return Response.json({
       ...display,
-      items: [
-        message(`Item ${before - 1}`, first, first, "completed", before - 1),
-      ],
+      items: Array.from({ length: Number(query.get("limit")) }, (_, index) =>
+        message(
+          `Item ${after + 1 + index}`,
+          `1-${after + index}`,
+          `1-${after + index}`,
+          "completed",
+          after + 1 + index,
+        ),
+      ),
     });
   };
   render(<View />);
@@ -366,15 +377,12 @@ it("reads earlier Items before the stream's first on request", async () => {
     threadState(run()),
     items([message("Hello", "1-4", "1-5", "in_progress", 3)], { first: 3 }),
   );
-  await waitFor(() => expect(shown()).toBe("Hello"));
-  // Unread Items take their execution facts with them, though nothing is missing.
-  expect(flag("coverage")).toBe("partial");
-  expect(flag("gap")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
-  await waitFor(() => expect(shown()).toBe("Item 2|Hello"));
-  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
   await waitFor(() => expect(shown()).toBe("Item 1|Item 2|Hello"));
   expect(flag("coverage")).toBe("complete");
+  expect(flag("gap")).toBe("false");
+  expect(
+    pathRequests("/items").map((request) => new URL(request.url).search),
+  ).toEqual(["", "?after=0&limit=2"]);
 });
 
 it("reports content the display omitted as incomplete", async () => {

@@ -102,6 +102,8 @@ a13n-harness-ui webui --no-share-computer
 
 WebUI serves shared conversations, live output, approvals, setup, configuration, and native Files/Git/terminal panels. Native computer access is enabled by default and operates as the server account, independently of Agent permissions; disable it with `--no-share-computer`. Participants share instance authority rather than separate authenticated identities. Keep the server running for active work. For access-key options and browser workflows, see [Use WebUI](../../docs/a13n-harness-ui/webui.md); for integration, see the [HTTP API](../../docs/a13n-harness-ui/http-api.md).
 
+Use **Fork conversation** in an ordinary Thread's action menu to continue from a separate copy with the same title, saved history, configuration, tasks, notes and Thread files. Coordinators and their workers cannot be forked. Fork copies saved state, including pending decisions, without starting a Run; it does not clone project directories, sandboxes or async child Threads.
+
 ### Distribution
 
 Harness UI ships as a Python wheel and sdist with the bundled WebUI, not an official container image. Operators who need a containerized server can install a pinned Python distribution in their own image and configure listeners, authentication and persistent mounts explicitly. `a13n-sandbox` supplies Agent execution, not a WebUI server. See the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md).

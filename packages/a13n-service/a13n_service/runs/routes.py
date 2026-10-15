@@ -1,15 +1,20 @@
-"""The runs HTTP surface: sessions and their stream, threads and their inbox, and runs."""
+"""The runs HTTP surface: sessions and their stream, threads, their inbox and stream, and runs."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
+from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.runs import archive, authors, entries, resume, runs, sessions, stream, submit, threads
+from a13n_service.runs import thread_stream as thread_streams
+from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,
+    AttemptView,
     EntryPage,
     EntryStatus,
     EntryUpdate,
@@ -21,10 +26,12 @@ from a13n_service.runs.schemas import (
     MessageAuthors,
     NewThread,
     Resume,
+    RunAgent,
     RunContent,
     RunItems,
     RunLabels,
     RunPage,
+    RunQuery,
     RunView,
     SessionCreate,
     SessionPage,
@@ -52,7 +59,7 @@ def _created(response: Response, result: tuple[Submitted, bool]) -> Submitted:
 # Sessions
 
 
-@router.get("/sessions", response_model=SessionPage)
+@router.get("/sessions", response_model=SessionPage, openapi_extra=platform_operation("execution", "read"))
 async def list_sessions(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -69,7 +76,7 @@ async def create_session(
     return tagged(response, await sessions.create_session(runtime.storage, actor, workspace_id, body))
 
 
-@router.get("/sessions/{session_id}", response_model=SessionView)
+@router.get("/sessions/{session_id}", response_model=SessionView, openapi_extra=platform_operation("execution", "read"))
 async def get_session(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, session_id: str, actor: Actor
 ) -> SessionView:
@@ -108,7 +115,11 @@ async def session_stream(
     )
 
 
-@router.get("/sessions/{session_id}/message-authors", response_model=MessageAuthors)
+@router.get(
+    "/sessions/{session_id}/message-authors",
+    response_model=MessageAuthors,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def get_message_authors(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -122,7 +133,7 @@ async def get_message_authors(
 # Threads
 
 
-@router.get("/threads", response_model=ThreadPage)
+@router.get("/threads", response_model=ThreadPage, openapi_extra=platform_operation("execution", "read"))
 async def list_threads(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -161,7 +172,7 @@ async def create_thread(
     return _created(response, await submit.create_thread(runtime, actor, workspace_id, body, request_key=key))
 
 
-@router.get("/threads/{thread_id}", response_model=ThreadView)
+@router.get("/threads/{thread_id}", response_model=ThreadView, openapi_extra=platform_operation("execution", "read"))
 async def get_thread(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, thread_id: str, actor: Actor
 ) -> ThreadView:
@@ -195,7 +206,7 @@ async def archive_thread(
     return tagged(response, result)
 
 
-@router.get("/threads/{thread_id}/runs", response_model=RunPage)
+@router.get("/threads/{thread_id}/runs", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
 async def list_thread_runs(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -208,10 +219,43 @@ async def list_thread_runs(
     return await runs.list_thread_runs(runtime.storage, actor, workspace_id, thread_id, limit=limit, cursor=cursor)
 
 
+@router.get(
+    "/threads/{thread_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def thread_stream(
+    request: Request,
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    credential: Credential,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", pattern=thread_streams.EVENT_ID)] = None,
+    run: str | None = None,
+    position: Annotated[str | None, Query(pattern=thread_streams.POSITION)] = None,
+) -> StreamingResponse:
+    """Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
+    Resumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them."""
+    if (run is None) != (position is None):
+        raise invalid("position", "run and position must be provided together")
+    resume = None
+    if run is not None and position is not None:
+        attempt, sequence = map(int, position.split("-"))
+        resume = thread_streams.Resume(run, StreamPosition(attempt=attempt, sequence=sequence))
+    reader = await thread_streams.open_stream(runtime, credential, workspace_id, thread_id, resume)
+    return StreamingResponse(
+        thread_streams.frames(request.app.state.thread_hub, reader, last_event_id, resume),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 # Inbox
 
 
-@router.get("/threads/{thread_id}/inbox", response_model=EntryPage)
+@router.get(
+    "/threads/{thread_id}/inbox", response_model=EntryPage, openapi_extra=platform_operation("execution", "read")
+)
 async def list_inbox(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -249,7 +293,11 @@ async def submit_message(
     )
 
 
-@router.get("/threads/{thread_id}/inbox/{entry_id}", response_model=EntryView)
+@router.get(
+    "/threads/{thread_id}/inbox/{entry_id}",
+    response_model=EntryView,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def get_entry(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, thread_id: str, entry_id: str, actor: Actor
 ) -> EntryView:
@@ -306,7 +354,14 @@ async def reorder_inbox(
 # Runs
 
 
-@router.get("/runs/{run_id}", response_model=RunView)
+@router.get("/runs", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
+async def list_runs(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[RunQuery, Query()]
+) -> RunPage:
+    return await runs.list_runs(runtime.storage, actor, workspace_id, query)
+
+
+@router.get("/runs/{run_id}", response_model=RunView, openapi_extra=platform_operation("execution", "read"))
 async def get_run(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, run_id: str, actor: Actor
 ) -> RunView:
@@ -375,7 +430,7 @@ async def resume_run(
     return tagged(response, successor)
 
 
-@router.get("/runs/{run_id}/items", response_model=RunItems)
+@router.get("/runs/{run_id}/items", response_model=RunItems, openapi_extra=platform_operation("execution", "read"))
 async def run_items(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -390,7 +445,13 @@ async def run_items(
     return await runs.items(runtime, actor, workspace_id, run_id, before=before, after=after, limit=limit)
 
 
-@router.get("/runs/{run_id}/lineage", response_model=RunPage)
+@router.get("/runs/{run_id}/agent", response_model=RunAgent, openapi_extra=platform_operation("execution", "read"))
+async def run_agent(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> RunAgent:
+    """The agent configuration the run executes: its revision with the run's override applied."""
+    return await runs.agent(runtime.storage, actor, workspace_id, run_id)
+
+
+@router.get("/runs/{run_id}/lineage", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
 async def run_lineage(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor, cursor: str | None = None
 ) -> RunPage:
@@ -398,7 +459,11 @@ async def run_lineage(
     return await runs.lineage(runtime.storage, actor, workspace_id, run_id, cursor=cursor)
 
 
-@router.get("/runs/{run_id}/contents/{content_id}", response_model=RunContent)
+@router.get(
+    "/runs/{run_id}/contents/{content_id}",
+    response_model=RunContent,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def run_content(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -412,6 +477,39 @@ async def run_content(
     return await runs.content(runtime, actor, workspace_id, run_id, content_id)
 
 
-@router.get("/runs/{run_id}/attempts", response_model=Attempts)
+@router.get("/runs/{run_id}/attempts", response_model=Attempts, openapi_extra=platform_operation("execution", "read"))
 async def run_attempts(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> Attempts:
     return await runs.list_attempts(runtime.storage, actor, workspace_id, run_id)
+
+
+@router.get(
+    "/runs/{run_id}/images/{image_id}",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+            }
+        }
+    },
+)
+async def run_image(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, image_id: str, actor: Actor
+) -> Response:
+    """Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint."""
+    data, media_type = await runs.image(runtime, actor, workspace_id, run_id, image_id)
+    return Response(
+        data, media_type=media_type, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+    )
+
+
+@router.get(
+    "/runs/{run_id}/attempts/{attempt_id}",
+    response_model=AttemptView,
+    openapi_extra=platform_operation("execution", "read"),
+)
+async def get_attempt(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, run_id: str, attempt_id: str
+) -> AttemptView:
+    return await runs.get_attempt(runtime.storage, actor, workspace_id, run_id, attempt_id)

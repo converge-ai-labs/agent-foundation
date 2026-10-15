@@ -101,7 +101,7 @@ executable = HarnessBuilder(
 
 ## 常用定义 Capabilities
 
-视频输入支持是内置行为，不是可选的定义 Capability。模型输入能力 `video_understanding` 声明二进制视频输入，从而支持内联视频和有界直接 URL 下载；`model_characteristics.url_input.video: [youtube]` 声明原生 YouTube 支持。工具权限仍控制 `media.read_video_url`。本地文件使用 `view`，同样受内联视频预算约束。
+视频输入支持是内置行为，不是可选的定义 Capability。模型输入能力 `video_understanding` 声明二进制视频输入，从而支持内联视频和有界直接 URL 下载；`model_characteristics.url_input.video: [youtube]` 声明原生 YouTube 支持。统一的 `read_media_url` 还支持图像、音频和已配置的理解回退。工具权限保留稳定的 `media.read_video_url` 身份。本地文件使用 `view`，同样受内联视频预算约束。
 
 | Capability                     | 添加内容                                                             | 需要的协作对象                                       |
 | ------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -243,7 +243,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-视频 URL 无需 provider 绑定。默认 `VideoUrlCapability` 为支持二进制视频或原生视频 URL 的模型提供 `read_video_url`。直接 HTTP(S) 视频下载为原始字节并附加为 `BinaryContent`；SDK 负责编码 Base64，默认编码后单个和整次请求视频总预算均为 10 MiB。YouTube 仅走明确声明的原生 URL 路径，不支持时拒绝，不下载或转换。预算和兼容性过滤只改变 provider 请求，不改变保存的历史；没有 reader、压缩、切分或辅助模型。环境文件[多媒体理解](multimedia-understanding.md)是独立第一方路径。原生支持来自活跃的 `AgentSpec.model_characteristics.capabilities` 值。进程环境变量可配置专用图像、视频或音频 Agent，无需 Host 协作对象。Web 还会逐次 Host 请求检查活跃 `WebPolicy`。
+默认 `VideoUrlCapability` 为图像、视频和音频 URL 提供 `read_media_url`。它与文件 `view` 共享原生优先和按类型配置的回退路径。直接资源先下载为有界字节，再附加原生输入或交给辅助模型分析。原生视频使用当前 Model 的编码预算；回退不继承不支持该媒体的主模型预算。YouTube 需要显式原生 URL 支持，不回退到下载或辅助模型。配置、限制和迁移参阅[多媒体理解](multimedia-understanding.md)。Web 还会逐次 Host 请求检查活跃 `WebPolicy`。
 
 ### 限制 Web 域名
 

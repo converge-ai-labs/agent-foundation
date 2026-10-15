@@ -3,11 +3,12 @@ title: 沙箱镜像
 description: 选择最小 Envd 运行镜像，或带浏览器自动化和可选工作目录 skill 的开发沙箱。
 ---
 
-`a13n-sandbox` 提供两个变体。两者都以 root 启动 Envd，并以预置的 `sandbox` 账号（`1000:1000`）执行会话命令和文件操作。标准版还授予该账号免密码 sudo。隔离由外层容器或虚拟机提供；标准版的默认 UID 无法阻止主动获取 root 权限。
+`a13n-sandbox` 提供三个变体。三者都以 root 启动 Envd，并以预置的 `sandbox` 账号（`1000:1000`）执行会话命令和文件操作。标准版和桌面版还授予该账号免密码 sudo。隔离由外层容器或虚拟机提供；这些变体的默认 UID 无法阻止主动获取 root 权限。
 
 | 变体           | 内容                                                        | 用途                                                                      |
 | -------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
 | 标准版（默认） | Envd、开发工具链、agent-browser、Chromium、字体和内置 skill | 通过 Envd 或原生 Docker Provider 进行 agent 开发                          |
+| 桌面版         | 标准工具链、Xvfb、Openbox 和启动管理                        | 通过镜像内的 Envd 使用 Computer Use                                       |
 | Slim           | Envd、Debian 基础 shell/工具、运行库、CA 证书和 tini        | 运行 Envd 或派生自定义镜像；不包含 Python、Node.js、编译器、sudo 或浏览器 |
 
 Slim 不满足原生 Docker Provider 对 Python 的要求，也不包含可选受控出站网络所需的网络工具；请使用标准版，或在派生镜像中安装这些工具。
@@ -23,11 +24,13 @@ make image-sandbox
 make image-check-sandbox
 make image-sandbox-slim
 make image-check-sandbox-slim
+make image-sandbox-desktop
+make image-check-sandbox-desktop
 ```
 
-本地标签为 `a13n-sandbox:local` 和 `a13n-sandbox:local-slim`。冒烟检查验证两个变体的守护进程启动、身份和目录权限。标准版还检查工具链、sudo、skill 初始化及离线浏览器快照与截图。容器 CI 在原生 AMD64 和 ARM64 runner 上执行这些检查。协议和执行隔离测试仍由 Envd 测试套件负责。
+本地标签为 `a13n-sandbox:local`、`a13n-sandbox:local-slim` 和 `a13n-sandbox:local-desktop`。冒烟检查验证三个变体的守护进程启动、身份和目录权限。标准版还检查工具链、sudo、skill 初始化及离线浏览器快照与截图。容器 CI 在原生 AMD64 和 ARM64 runner 上执行这些检查。协议和执行隔离测试仍由 Envd 测试套件负责。
 
-发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 Envd 发布标签。两个变体包含相同版本的守护进程。
+发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 Envd 发布标签。三个变体包含相同版本的守护进程。
 
 | 通道        | 标准版            | Slim                 |
 | ----------- | ----------------- | -------------------- |
@@ -35,7 +38,37 @@ make image-check-sandbox-slim
 | 候选版      | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    |
 | Main 开发版 | `dev`             | `dev-slim`           |
 
-RC 和开发版发布都不会推进 `latest` 或 `slim`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
+RC 和开发版发布都不会推进 `latest`、`slim` 或 `desktop`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
+
+## Service 中的托管 Docker 桌面
+
+1. 在所选 Docker Engine 构建 `a13n-sandbox:local-desktop`，或选择包含该功能的桌面版发布镜像。
+2. Console 中添加 Docker 连接。**Docker 主机**继续用于管理容器；单独开启 **Envd HTTP 连接**，填写所有 Service / Worker 均可访问的主机名或 IP。本机进程连接 Docker Desktop 时，可达主机和绑定地址均可填 `127.0.0.1`；远端 Engine 需明确配置可达私网地址、端口绑定接口，并允许可信私网明文连接。
+3. 在 Console 模板编辑器中选择 **桌面环境**，系统会自动配置桌面镜像和 HTTP EIP 执行方式，此模式下不能单独修改这些字段。选择 **标准环境** 则使用标准镜像和 Docker 原生执行。两者仍可配置 CPU、内存和挂载。
+4. 使用本地构建或自己的镜像时，选择 **自定义镜像**，再展开镜像、执行连接、桌面能力及高级/JSON 配置。镜像填 `a13n-sandbox:local-desktop`，执行连接选择 `envd_http`，开启 **桌面能力**（`desktop: true`），本地构建设 `pull_policy: never`。不能禁用网络。镜像负责启动桌面和 envd，无需额外初始化脚本。
+5. 创建环境。Service 发布 envd 端口，读取 Docker 分配的主机端口，通过认证 EIP 校验设备身份，并检查实际桌面就绪状态。
+6. 给 Agent 开启 Computer 工具，并授予挂载环境相应电脑操作权限。权限不会让没有桌面的镜像获得桌面。
+
+可信私网的 Docker 连接配置示例：
+
+```json
+{
+  "docker_host": "tcp://10.0.0.8:2376",
+  "envd_http": {
+    "host": "10.0.0.8",
+    "bind_host": "10.0.0.8",
+    "allow_plaintext_private_link": true
+  }
+}
+```
+
+Docker API 和 envd HTTP 是两条独立连接，Docker API 的传输保护需单独配置。HTTP 路线将容器 8888 端口发布到主机随机端口，网络和防火墙必须允许相关 Service / Worker 访问。此版本不提供 TLS 终止，不应把携带凭据的明文 HTTP 暴露到公网；部署的出站策略仍会检查最终地址。云端 Worker 无法仅靠此功能访问没有入站通路的本地 Mac；Service 反向 WebSocket 接入属于后续工作。
+
+每次连接都会查询同一个已保存容器的当前端口映射，并校验预期的 envd 设备身份，重启后也如此。镜像公共入口为每个容器独立生成随机凭据，默认保存在权限为 0600 的 `/var/lib/a13n-envd/http-token`，也可配置 `credential_file`。Provider 通过已授权的 Docker Engine 读取凭据，不把它写入模板、实例公开状态或 API 响应。Agent 操作直接复用 HTTP EIP，不经过 Docker exec 代理。自定义镜像只需遵守相同启动约定，无需官方镜像标签；`execution: envd_http` 也支持无桌面的 envd。
+
+就绪失败会保留已分配容器以便排查。Run 结束不停止环境；停止再启动保留文件和凭据，但重建图形会话。停止或销毁可撤销访问；轮换凭据需停止容器、替换私有凭据文件、关闭已有会话后重新启动。此前实验性代理版本的桌面模板需用新的执行与连接配置重建实例；原生 Docker 的默认值及指纹保持兼容。
+
+桌面启动器以 root 运行，Xvfb/Openbox 和 Session 操作使用 `sandbox` 账户。它创建 Xauthority cookie、关闭 X11 TCP 监听并监督必需进程；桌面进程退出会让容器失败。标准镜像的免密 sudo 行为仍然适用。本功能提供 Agent 截图和输入，不包含实时远程桌面 viewer 或人工接管。X11 尚不支持字面 Unicode `type_text`，可以使用已支持的按键事件。
 
 ## 配合 Host 运行
 

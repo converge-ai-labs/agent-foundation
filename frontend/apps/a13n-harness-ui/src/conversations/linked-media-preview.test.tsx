@@ -162,24 +162,17 @@ it("previews extensionless file links based on MIME without reading text", async
   expect(f.post).toHaveBeenCalledTimes(1);
 });
 
-it.each([
-  "application/octet-stream",
-  "image/svg+xml",
-  "text/html",
-  "application/pdf",
-])(
-  "keeps unrecognized %s files as original links without inline content requests",
-  async (media_type) => {
-    const f = fixture("/tmp/unknown", 1234, media_type);
-    const view = render(f.tree());
-    await waitFor(() =>
-      expect(view.container.querySelector("figure")).toBeNull(),
-    );
-    expect(screen.getByRole("link", { name: "Original" })).toBeTruthy();
-    expect(f.post).not.toHaveBeenCalled();
-    expect(f.fetch).not.toHaveBeenCalled();
-  },
-);
+it("keeps SVG files as original links without inline content requests", async () => {
+  // MIME classification is covered by linked-media.test.ts at the shared owner.
+  const f = fixture("/tmp/unknown", 1234, "image/svg+xml");
+  const view = render(f.tree());
+  await waitFor(() =>
+    expect(view.container.querySelector("figure")).toBeNull(),
+  );
+  expect(screen.getByRole("link", { name: "Original" })).toBeTruthy();
+  expect(f.post).not.toHaveBeenCalled();
+  expect(f.fetch).not.toHaveBeenCalled();
+});
 
 it.each(["voice.wav", "clip.mp4"])(
   "renders %s with playback controls and an explicit decode fallback",

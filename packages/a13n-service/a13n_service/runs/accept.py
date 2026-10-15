@@ -25,6 +25,7 @@ from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
 from a13n_service.runs.environments.mounts import freeze_mounts, has_primary, reserve_primary
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
+from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Failure, MessagePayload, Resume, RunOptions, Trigger
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
@@ -240,9 +241,6 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             session, principal, thread, template_id=template_id, limit=runtime.settings.environments.managed_count
         )
     mounts = await freeze_mounts(session, thread, principal_id=principal.id)
-    memories = await freeze_memories(
-        session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
-    )
     payload = source.resume.input if source.resume is not None else None
     if source.entry is not None and source.entry.kind == "message":
         payload = MessagePayload.model_validate(source.entry.payload)
@@ -274,6 +272,11 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
                 root_run_id=(await delegation(session, thread, run_id)).root_run_id,
             ),
         )
+    if thread.purpose == "conversation":
+        await inherit_defaults(session, thread.session_id, revision.config.memory)
+    memories = await freeze_memories(
+        session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
+    )
     current = await now(session)
     run = RunRow(
         id=run_id,
@@ -311,11 +314,12 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     if source.entry is not None:
         inbox.assign(source.entry, run)
     thread.current_run_id = run.id
-    await session.execute(
-        update(SessionRow)
-        .where(SessionRow.id == thread.session_id)
-        .values(last_run_id=run.id, updated_at=func.clock_timestamp())
-    )
+    if thread.purpose == "conversation":
+        await session.execute(
+            update(SessionRow)
+            .where(SessionRow.id == thread.session_id)
+            .values(last_run_id=run.id, updated_at=func.clock_timestamp())
+        )
     await session.flush()
     await notify_subscribers(session, runtime, run, ["run.accepted"], at=current)
     runtime.wake_workers(session)

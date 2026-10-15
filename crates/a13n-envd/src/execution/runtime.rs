@@ -409,6 +409,10 @@ fn bootstrap(
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .env_clear()
+        .envs(super::worker::desktop_environment(
+            config.computer_use,
+            config.command.as_ref(),
+        ))
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
     unsafe {
         command.pre_exec(move || {

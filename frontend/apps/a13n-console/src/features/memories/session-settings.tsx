@@ -1,0 +1,220 @@
+import { BrainIcon, XIcon } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Button,
+  ChoiceField,
+  Input,
+  Label,
+  Switch,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
+} from "a13n-ui";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
+import { useClient } from "../../auth/context";
+import { useWorkspace } from "../../layout/workspace";
+import type { Schema } from "../../shared/api";
+import { spaceQueries } from "./spaces-api";
+import { validSpaceSelection } from "./space-form";
+export { validSpaceSelection, defaultSessionMemory } from "./space-form";
+import { ResourcePicker } from "../../shared/collection";
+import { ErrorNotice, StatePill } from "../../shared/feedback";
+import styles from "./space-selection.module.css";
+
+type Settings = Schema["SessionMemorySettings"];
+
+export function SessionMemoryFields({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: Settings;
+  onChange: (value: Settings, field: keyof Settings) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const client = useClient();
+  const { workspace, basePath } = useWorkspace();
+  const query = useQuery(spaceQueries(client, workspace.id).all());
+  const bindings = value.spaces ?? [];
+  const selected = new Set(bindings.map((item) => item.space_id));
+  return (
+    <div className={styles.selection}>
+      <div className={styles.participation}>
+        <div>
+          <Label htmlFor="memory-participation">{t("Use Memory Spaces")}</Label>
+          <p>
+            {t(
+              "Applies to new runs. Turning off keeps selected Spaces and saved files.",
+            )}
+          </p>
+        </div>
+        <Switch
+          id="memory-participation"
+          checked={!!value.enabled}
+          disabled={disabled}
+          onCheckedChange={(enabled) =>
+            onChange({ ...value, enabled }, "enabled")
+          }
+        />
+      </div>
+      <div className={styles.heading}>
+        <div>
+          <h3>{t("Selected Spaces")}</h3>
+          <p>
+            {t("Shared knowledge and this session's notes, in each Space.")}
+          </p>
+        </div>
+        {!disabled && (
+          <ResourcePicker
+            label={t("Add Space")}
+            searchLabel={t("Search Spaces")}
+            emptyLabel={t("No Memory Spaces yet")}
+            loading={query.isPending}
+            manageHref={`${basePath}/memory-spaces`}
+            manageLabel={t("Manage Spaces")}
+            selected={selected}
+            items={(query.data ?? []).map((space) => ({
+              id: space.id,
+              name: space.name,
+              detail: space.description ?? undefined,
+              icon: !space.enabled ? <StatePill state="disabled" /> : undefined,
+            }))}
+            onToggle={(id, checked) => {
+              if (!checked) {
+                onChange(
+                  {
+                    ...value,
+                    spaces: bindings.filter((item) => item.space_id !== id),
+                  },
+                  "spaces",
+                );
+                return;
+              }
+              let index = bindings.length + 1;
+              while (bindings.some((item) => item.name === `space-${index}`))
+                index++;
+              onChange(
+                {
+                  ...value,
+                  spaces: [
+                    ...bindings,
+                    { name: `space-${index}`, space_id: id, access: "write" },
+                  ],
+                },
+                "spaces",
+              );
+            }}
+          />
+        )}
+      </div>
+      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      {bindings.length ? (
+        <div className={styles.rows}>
+          {bindings.map((binding, index) => {
+            const space = query.data?.find(
+              (item) => item.id === binding.space_id,
+            );
+            return (
+              <div className={styles.row} key={binding.space_id}>
+                <div className={styles.identity}>
+                  <BrainIcon size={18} />
+                  <Link to={`${basePath}/memory-spaces/${binding.space_id}`}>
+                    {space?.name ?? binding.space_id}
+                  </Link>
+                  {space && !space.enabled && <StatePill state="disabled" />}
+                </div>
+                <div className={styles.controls}>
+                  <Label className={styles.alias}>
+                    {t("Mount name")}
+                    <Input
+                      value={binding.name}
+                      disabled={disabled}
+                      required
+                      pattern="[a-z][a-z0-9-]{0,62}"
+                      onChange={(event) =>
+                        onChange(
+                          {
+                            ...value,
+                            spaces: bindings.map((item, i) =>
+                              i === index
+                                ? { ...item, name: event.target.value }
+                                : item,
+                            ),
+                          },
+                          "spaces",
+                        )
+                      }
+                    />
+                  </Label>
+                  <ChoiceField
+                    label={t("Access")}
+                    value={binding.access ?? "write"}
+                    disabled={disabled}
+                    options={[
+                      { value: "read", label: t("Read only") },
+                      { value: "write", label: t("Read and write") },
+                    ]}
+                    onValueChange={(access) =>
+                      onChange(
+                        {
+                          ...value,
+                          spaces: bindings.map((item, i) =>
+                            i === index
+                              ? { ...item, access: access as "read" | "write" }
+                              : item,
+                          ),
+                        },
+                        "spaces",
+                      )
+                    }
+                  />
+                  {!disabled && (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t("Remove Space")}
+                            onClick={() =>
+                              onChange(
+                                {
+                                  ...value,
+                                  spaces: bindings.filter(
+                                    (_, i) => i !== index,
+                                  ),
+                                },
+                                "spaces",
+                              )
+                            }
+                          />
+                        }
+                      >
+                        <XIcon size={14} />
+                      </TooltipTrigger>
+                      <TooltipPopup>{t("Remove Space")}</TooltipPopup>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className={styles.empty}>
+          {t("No Spaces selected. No memory will be created automatically.")}
+        </p>
+      )}
+      {!validSpaceSelection(value) && (
+        <p role="alert" className="text-destructive text-xs">
+          {t(
+            "Use unique mount names: lowercase letters, digits and hyphens, starting with a letter.",
+          )}
+        </p>
+      )}
+    </div>
+  );
+}

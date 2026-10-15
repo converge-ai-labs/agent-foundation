@@ -41,6 +41,8 @@ Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合
 | `read_bytes_stream(path, chunk_size=65536)`                            | 二进制传输异步迭代器；不要对迭代器本身调用 `await`          |
 | `write_bytes_stream(path, stream, mode=...)`                           | 异步字节迭代器、显式写入模式和 `FileWriteResult`            |
 | `write_text(path, text, mode=...)`                                     | 显式写入模式、写入字节数和修改回执                          |
+| `write_archive(path, FileArchive(...))`                                | 将 ZIP 清单中的文件解压到不存在的目录；返回修改凭证         |
+| `batch(operations)`                                                    | 按顺序执行有界的文件操作；返回顺序一致的结果元组            |
 | `patch_text(path, patch)`                                              | 文本补丁和已应用 hunk 回执                                  |
 | `stat(path)`                                                           | 类型、可选大小和是否可写                                    |
 | `list(path, max_results=..., offset=0, include_hidden=False)`          | 有界浅层条目和 `has_more`                                   |
@@ -52,6 +54,10 @@ Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合
 | `remove(path, recursive=False)`                                        | 显式递归删除策略                                            |
 
 写入模式为 `create`（新文件）、`replace`（已有文件）、`upsert`（创建或替换）和 `append`，没有隐式默认值。回执报告所属操作结果，不代表多个文件操作组成通用事务。跨挂载复制由 Host/聚合层负责，不能给 `FileOperator.copy()` 虚构第二个别名参数。
+
+`batch` 接受 `FileStatOperation`、`FileMkdirOperation`、`FileWriteTextOperation` 和 `FileRemoveOperation`，每批最多 128 项，JSON 请求最多 64 KiB。所有路径必须属于同一文件作用域。批量文本写入使用 `create`、`replace` 或 `upsert`；追加写入仍使用单独的 `write_text`。stat 和 remove 可设置 `missing_ok=True`。操作按顺序执行，遇到首个错误即停止；失败或取消不会回滚已经完成的操作，也不会自动重放。原生远程 provider 将整批操作合并为一次客体命令。
+
+`FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` 指定 ZIP 字节、相对文件路径及解压后大小，可选 `root` 选择压缩包内的目录。`write_archive` 只创建新目录；使用单独的 `move` 发布完整候选目录。它不恢复归档中的链接或权限。自定义 `FileOperator` 必须实现 `batch` 和 `write_archive`；无逐文件兼容分支。
 
 `FileQueryRequest` 要求 `root`、`pattern` 和正数 `max_results`；默认递归 true、隐藏 false、忽略模式 `none`、不限类型、偏移量零。需要遵循仓库忽略规则时，显式选择 `ignore_mode="git"`。
 

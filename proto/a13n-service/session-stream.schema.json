@@ -46,6 +46,23 @@
       "additionalProperties": false,
       "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
       "properties": {
+        "builtin_skills": {
+          "anyOf": [
+            {
+              "items": {
+                "const": "platform-operations",
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Builtin Skills"
+        },
         "client_tools": {
           "anyOf": [
             {
@@ -164,6 +181,17 @@
           ],
           "default": null
         },
+        "platform_tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlatformSelection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "plugins": {
           "anyOf": [
             {
@@ -201,6 +229,32 @@
             }
           ],
           "default": null
+        },
+        "skill_sync": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "isolated": "#/$defs/IsolatedSkillSync",
+                  "shared": "#/$defs/SharedSkillSync"
+                },
+                "propertyName": "mode"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SharedSkillSync"
+                },
+                {
+                  "$ref": "#/$defs/IsolatedSkillSync"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skill Sync"
         },
         "skills": {
           "anyOf": [
@@ -759,6 +813,16 @@
           "title": "Full Content",
           "type": "boolean"
         },
+        "memory_sources": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/MemorySource"
+            },
+            "type": "array"
+          },
+          "title": "Memory Sources",
+          "type": "object"
+        },
         "next_ordinal": {
           "minimum": 1,
           "title": "Next Ordinal",
@@ -959,6 +1023,52 @@
       "title": "EntryView",
       "type": "object"
     },
+    "EnvironmentAction": {
+      "description": "Exact authorization values in the locked first-party catalog.",
+      "enum": [
+        "environment.file.stat",
+        "environment.file.read_text",
+        "environment.file.read_bytes",
+        "environment.file.write_text",
+        "environment.file.patch_text",
+        "environment.file.list",
+        "environment.file.query",
+        "environment.file.search_text",
+        "environment.file.mkdir",
+        "environment.file.move",
+        "environment.file.remove",
+        "environment.file.write_bytes",
+        "environment.file.copy_source",
+        "environment.file.copy_destination",
+        "environment.shell.exec",
+        "environment.process.list",
+        "environment.process.start",
+        "environment.process.inspect",
+        "environment.process.read_output",
+        "environment.process.write_stdin",
+        "environment.process.close_stdin",
+        "environment.process.signal",
+        "environment.process.wait",
+        "environment.process.kill",
+        "environment.process.release",
+        "environment.output.read",
+        "environment.output.release",
+        "environment.port.inspect",
+        "environment.port.wait",
+        "environment.state.export",
+        "environment.state.restore",
+        "environment.computer.describe",
+        "environment.computer.observe",
+        "environment.computer.click",
+        "environment.computer.move",
+        "environment.computer.drag",
+        "environment.computer.scroll",
+        "environment.computer.type_text",
+        "environment.computer.press_keys"
+      ],
+      "title": "EnvironmentAction",
+      "type": "string"
+    },
     "EnvironmentMount": {
       "additionalProperties": false,
       "properties": {
@@ -969,6 +1079,44 @@
         "name": {
           "title": "Name",
           "type": "string"
+        },
+        "permission_ceiling": {
+          "$ref": "#/$defs/EnvironmentPermissionSet",
+          "default": {
+            "operations": [
+              "environment.file.copy_destination",
+              "environment.file.copy_source",
+              "environment.file.list",
+              "environment.file.mkdir",
+              "environment.file.move",
+              "environment.file.patch_text",
+              "environment.file.query",
+              "environment.file.read_bytes",
+              "environment.file.read_text",
+              "environment.file.remove",
+              "environment.file.search_text",
+              "environment.file.stat",
+              "environment.file.write_bytes",
+              "environment.file.write_text",
+              "environment.output.read",
+              "environment.output.release",
+              "environment.port.inspect",
+              "environment.port.wait",
+              "environment.process.close_stdin",
+              "environment.process.inspect",
+              "environment.process.kill",
+              "environment.process.list",
+              "environment.process.read_output",
+              "environment.process.release",
+              "environment.process.signal",
+              "environment.process.start",
+              "environment.process.wait",
+              "environment.process.write_stdin",
+              "environment.shell.exec",
+              "environment.state.export",
+              "environment.state.restore"
+            ]
+          }
         },
         "working_directory": {
           "anyOf": [
@@ -988,6 +1136,19 @@
         "environment_id"
       ],
       "title": "EnvironmentMount",
+      "type": "object"
+    },
+    "EnvironmentPermissionSet": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/EnvironmentAction"
+          },
+          "title": "Operations",
+          "type": "array"
+        }
+      },
+      "title": "EnvironmentPermissionSet",
       "type": "object"
     },
     "Failed": {
@@ -1036,6 +1197,36 @@
       "title": "Failure",
       "type": "object"
     },
+    "FileSource": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "title": "FileSource",
+      "type": "object"
+    },
     "FragmentState": {
       "additionalProperties": false,
       "description": "Incomplete custom payloads, not a journal of completed events.",
@@ -1068,6 +1259,58 @@
       "title": "FragmentState",
       "type": "object"
     },
+    "FrozenMemoryMount": {
+      "additionalProperties": false,
+      "description": "Host-resolved Space identity and roots, never accepted from a mount request.",
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/MemoryAccess"
+        },
+        "memory_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "recall": {
+          "default": true,
+          "title": "Recall",
+          "type": "boolean"
+        },
+        "roots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Roots",
+          "type": "array"
+        },
+        "space_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Space Id"
+        }
+      },
+      "required": [
+        "name",
+        "memory_id",
+        "access"
+      ],
+      "title": "FrozenMemoryMount",
+      "type": "object"
+    },
     "Gap": {
       "description": "Output of a followed run was lost: its deltas are held until an `items` frame repairs it.",
       "properties": {
@@ -1085,6 +1328,26 @@
         "run_id"
       ],
       "title": "Gap",
+      "type": "object"
+    },
+    "IsolatedSkillSync": {
+      "additionalProperties": false,
+      "description": "Reuse immutable package directories, with a soft count budget.",
+      "properties": {
+        "cache_count": {
+          "default": 128,
+          "minimum": 0,
+          "title": "Cache Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "isolated",
+          "default": "isolated",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "IsolatedSkillSync",
       "type": "object"
     },
     "Item": {
@@ -1192,6 +1455,21 @@
         },
         "kind": {
           "$ref": "#/$defs/ItemKind"
+        },
+        "memory_sources": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MemorySource"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Sources"
         },
         "ordinal": {
           "anyOf": [
@@ -1351,6 +1629,90 @@
         "access"
       ],
       "title": "MemoryMount",
+      "type": "object"
+    },
+    "MemorySource": {
+      "additionalProperties": false,
+      "description": "One automatic delivery in this Run; content remains in the memory or execution archive.",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "files": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileSource"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "record",
+            "file"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "memory": {
+          "title": "Memory",
+          "type": "string"
+        },
+        "memory_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Id"
+        },
+        "records": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RecordSource"
+          },
+          "title": "Records",
+          "type": "array"
+        },
+        "sources_truncated": {
+          "default": false,
+          "title": "Sources Truncated",
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "recalled",
+            "failed",
+            "timeout",
+            "full",
+            "changes",
+            "unchanged",
+            "omitted",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "memory",
+        "status"
+      ],
+      "title": "MemorySource",
       "type": "object"
     },
     "MessagePayload": {
@@ -1627,6 +1989,55 @@
       "title": "PendingCall",
       "type": "object"
     },
+    "PlatformGroup": {
+      "enum": [
+        "agents",
+        "models",
+        "connections",
+        "skills",
+        "environment_templates",
+        "providers",
+        "execution"
+      ],
+      "type": "string"
+    },
+    "PlatformSelection": {
+      "additionalProperties": false,
+      "description": "Platform MCP groups selected independently of local operating instructions.",
+      "properties": {
+        "groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlatformGroup"
+          },
+          "title": "Groups",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "read_permission": {
+          "default": "allow",
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ],
+          "title": "Read Permission",
+          "type": "string"
+        },
+        "write_permission": {
+          "default": "ask",
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ],
+          "title": "Write Permission",
+          "type": "string"
+        }
+      },
+      "title": "PlatformSelection",
+      "type": "object"
+    },
     "PluginSelection": {
       "additionalProperties": false,
       "description": "One instance of a Harness plugin factory the deployment installed.",
@@ -1654,6 +2065,25 @@
         "plugin_key"
       ],
       "title": "PluginSelection",
+      "type": "object"
+    },
+    "RecordSource": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sha256"
+      ],
+      "title": "RecordSource",
       "type": "object"
     },
     "Resume": {
@@ -1991,7 +2421,14 @@
         },
         "memory_mounts": {
           "items": {
-            "$ref": "#/$defs/MemoryMount"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MemoryMount"
+              },
+              {
+                "$ref": "#/$defs/FrozenMemoryMount"
+              }
+            ]
           },
           "title": "Memory Mounts",
           "type": "array"
@@ -2187,6 +2624,30 @@
         "updated_at"
       ],
       "title": "RunView",
+      "type": "object"
+    },
+    "SharedSkillSync": {
+      "additionalProperties": false,
+      "description": "Publish mutable conventional names; the last completed publication wins.",
+      "properties": {
+        "cleanup": {
+          "default": false,
+          "title": "Cleanup",
+          "type": "boolean"
+        },
+        "mode": {
+          "const": "shared",
+          "default": "shared",
+          "title": "Mode",
+          "type": "string"
+        },
+        "overwrite": {
+          "default": true,
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "title": "SharedSkillSync",
       "type": "object"
     },
     "SkillSelection": {
@@ -2491,6 +2952,15 @@
           ],
           "title": "Origin Tool Call Id"
         },
+        "purpose": {
+          "default": "conversation",
+          "enum": [
+            "conversation",
+            "memory_organization"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
         "session_id": {
           "title": "Session Id",
           "type": "string"
@@ -2639,6 +3109,7 @@
       "enum": [
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",

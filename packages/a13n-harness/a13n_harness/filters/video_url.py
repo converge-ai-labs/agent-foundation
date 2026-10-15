@@ -64,7 +64,7 @@ def project_video_urls(
                     replacements.append(item)
                 else:
                     reason = (
-                        "Use read_video_url to acquire this direct URL within the video byte budget."
+                        "Use read_media_url to acquire this direct URL within the video byte budget."
                         if error == "video_url_requires_materialization"
                         else "This video is invalid, unsupported, or exceeds the request's Base64 video byte budget."
                     )

@@ -132,6 +132,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
         <Routes>
           <Route path="/workspace/:workspaceId" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
+            <Route path="memory-spaces" element={<p>Space directory</p>} />
             <Route path="memories" element={<p>Memory directory</p>} />
             <Route path="environments" element={<p>Template directory</p>} />
             <Route
@@ -146,7 +147,9 @@ it("keeps resource categories in sidebar links and restores the selected categor
   expect(screen.queryByRole("link", { name: "Providers" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "Memories" }));
+  await user.click(screen.getByRole("link", { name: "Memory Spaces" }));
+  expect(screen.getByText("Space directory")).toBeTruthy();
+  await user.click(screen.getByRole("link", { name: "Standalone memories" }));
   expect(screen.getByText("Memory directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(screen.getByRole("link", { name: "Instances" }));

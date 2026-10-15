@@ -10,6 +10,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.configuration import DockerMountConfiguration
+from a13n_harness.providers.environment.docker.connection import DockerHttpConfiguration
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_service.providers.environments.docker.configuration import DockerRecipe
@@ -52,7 +53,7 @@ async def test_create_native_container_records_state_and_overrides_entrypoint(na
         engine.client.images.get.assert_called_once_with("python:3.13-slim")
         assert engine.client.containers.create.call_args.args[0] == "sha256:" + "f" * 64
         engine.client.images.pull.assert_not_called()
-        assert "ports" not in options and "volumes" not in options
+        assert options["ports"] is None and "volumes" not in options
         assert env.state.state["container_id"] == container.id
         assert env.target.container_id == container.id
     finally:
@@ -386,3 +387,111 @@ async def test_native_execution_user_prefers_recipe_then_image_label(native, con
         assert engine.client.containers.create.call_args.kwargs["user"] == expected
     finally:
         await env.close()
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "10.0.0.8"])
+async def test_desktop_creation_uses_image_startup_and_private_eip(native, monkeypatch, host):
+    _old, engine, container = native
+    config = DockerRecipe(image="sandbox:desktop", desktop=True, execution="envd_http")
+    env = DockerManagement(
+        config,
+        "env_desktop",
+        None,
+        DockerProviderRuntime(
+            engine, DockerHttpConfiguration(host=host, allow_plaintext_private_link=host != "127.0.0.1")
+        ),
+    )
+    container.labels = env.labels
+    engine.client.images.get.return_value.labels = {}
+    ready = AsyncMock()
+    monkeypatch.setattr(env, "_wait_envd", ready)
+    await env.create()
+    options = engine.client.containers.create.call_args.kwargs
+    assert options["entrypoint"] is None and options["command"] is None
+    assert options["user"] == "root"
+    assert options["ports"] == {"8888/tcp": (host, 0)}
+    assert options["environment"]["A13N_ENVD_HTTP_BIND"] == "0.0.0.0:8888"
+    assert options["environment"]["A13N_ENVD_DEVICE_ID"] == "env_desktop"
+    assert options["environment"]["A13N_ENVD_TRANSPORT"] == "http"
+    assert options["environment"]["A13N_ENVD_HTTP_CREDENTIAL_FILE"] == "/var/lib/a13n-envd/http-token"
+    assert not any("TOKEN" in key for key in options["environment"])
+    assert set(env.state.state) == {"environment_id", "container_id", "configuration_fingerprint"}
+    ready.assert_awaited_once()
+
+
+async def test_desktop_readiness_failure_retains_target_and_retry_does_not_initialize_again(native, monkeypatch):
+    _old, engine, container = native
+    config = DockerRecipe(image="sandbox:desktop", desktop=True, execution="envd_http", init_script="echo initialized")
+    env = DockerManagement(
+        config, "env_desktop", None, DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+    )
+    container.labels = env.labels
+    engine.client.images.get.return_value.labels = {}
+    ready = AsyncMock(side_effect=EnvironmentError("Not ready", code="environment_unavailable"))
+    monkeypatch.setattr(env, "_wait_envd", ready)
+    with pytest.raises(EnvironmentError, match="Not ready"):
+        await env.create()
+    assert env.state.state["container_id"] == container.id
+    engine.client.containers.get.side_effect = None
+    engine.client.containers.get.return_value = container
+    DockerCommands.execute.reset_mock()
+    ready.side_effect = None
+    await env.create()
+    engine.client.containers.create.assert_called_once()
+    assert all("echo initialized" not in str(call) for call in DockerCommands.execute.call_args_list)
+    container.status = "exited"
+    await env.start()
+    assert ready.await_count == 3
+    engine.client.containers.create.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"user": "root"},
+        {"disable_network": True},
+        {"environment": {"A13N_ENVD_DEVICE_ID": "another"}},
+        {"environment": {"DISPLAY": ":0"}},
+        {"max_spool_bytes": 1},
+    ],
+)
+def test_desktop_template_rejects_overrides_that_break_its_startup_contract(overrides):
+    with pytest.raises(ValueError):
+        DockerRecipe(desktop=True, execution="envd_http", **overrides)
+
+
+def test_existing_native_target_fingerprint_remains_compatible():
+    from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+    from a13n_harness.providers.environment.docker.shared import _fingerprint
+
+    assert (
+        _fingerprint(DockerEnvironmentConfiguration())
+        == "12409a53f006e75584be211cf262d53b0d15068603c9f6a95a3c11418d1df69c"
+    )
+    assert _fingerprint(DockerEnvironmentConfiguration(desktop=True, execution="envd_http")) != _fingerprint(
+        DockerEnvironmentConfiguration()
+    )
+
+
+def test_existing_native_account_identity_remains_compatible():
+    from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
+
+    account = DockerConnectionConfiguration(docker_host="unix:///var/run/docker.sock")
+    assert DOCKER.backend_identity(account) == {"docker_host": "unix:///var/run/docker.sock"}
+    http_account = account.model_copy(update={"envd_http": DockerHttpConfiguration(host="127.0.0.1")})
+    assert DOCKER.backend_identity(http_account) != DOCKER.backend_identity(account)
+
+
+async def test_envd_secret_cannot_be_shared_through_a_host_mount(native):
+    _old, engine, _container = native
+    config = DockerRecipe(
+        execution="envd_http", mounts=(DockerMountConfiguration(source="/data", target="/var/lib/a13n-envd"),)
+    )
+    env = DockerManagement(
+        config, "env_private", None, DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+    )
+    with pytest.raises(EnvironmentProviderError) as rejected:
+        await env.create()
+    assert rejected.value.code == "envd_credential_not_private"
+    engine.client.containers.create.assert_not_called()
+    engine.client.images.get.assert_not_called()

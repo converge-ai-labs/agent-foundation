@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 
 from anyio import move_on_after
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState, decode_target_state
@@ -43,12 +43,24 @@ async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) ->
     except asyncio.CancelledError:
         await _release_engine(acquisition)
         raise
-    return DockerProviderRuntime(engine)
+    return DockerProviderRuntime(engine, configuration.envd_http, configuration._endpoint_policy)
+
+
+def _backend_identity(configuration: DockerConnectionConfiguration) -> dict[str, JsonValue]:
+    # Adding optional HTTP routing must not invalidate saved native accounts.
+    values = configuration.model_dump(mode="json")
+    if configuration.envd_http is None:
+        values.pop("envd_http", None)
+    return values
 
 
 def _describe(configuration: DockerEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, DockerEnvironmentConfiguration):
         raise TypeError("Docker requires DockerEnvironmentConfiguration")
+    if configuration.execution == "envd_http":
+        from a13n_harness.providers.environment.eip.binding import configured_descriptor
+
+        return configured_descriptor(working_directory="/workspace")
     return descriptor("unprepared", configuration)
 
 
@@ -68,6 +80,10 @@ def _construct_execution(
 ) -> ExecutionBackend:
     if not isinstance(configuration, DockerEnvironmentConfiguration) or runtime is None:
         raise TypeError("Docker requires typed configuration and runtime")
+    if configuration.execution == "envd_http":
+        from a13n_harness.providers.environment.docker.http import HttpReference, http_execution
+
+        return http_execution(HttpReference(configuration, environment_id, state, runtime))
     return DockerExecution(configuration, environment_id, state, runtime)
 
 
@@ -87,5 +103,6 @@ DOCKER = EnvironmentProviderDefinition(
     environment_model=DockerEnvironmentConfiguration,
     connector_factory=_factory.connector,
     describe_environment=_describe,
+    backend_identity=_backend_identity,
     target_identity=_identity,
 )

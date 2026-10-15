@@ -225,6 +225,7 @@ def test_service_ci_owns_export_drift_and_tests() -> None:
         for path in (
             "proto/a13n-service/openapi.json",
             "proto/a13n-service/session-stream.schema.json",
+            "proto/a13n-service/thread-stream.schema.json",
             "scripts/export-a13n-service-openapi.py",
             "scripts/tests/test_service_contract.py",
             "packages/a13n-service/a13n_service/runs/routes.py",

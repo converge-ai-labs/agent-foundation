@@ -45,7 +45,10 @@ const row = (id: string, archived = true) => ({
     title: id,
     archived,
     metadata_version: 3,
-    configuration: { project_id: "project-one" },
+    configuration: {
+      project_id: "project-one",
+      agent_source: { kind: "configured", id: "assistant" },
+    },
     root_activity: { state: "inactive" },
   },
   project_name: "One",

@@ -475,3 +475,59 @@ it("cancels replacement turn pagination without publishing a late checkpoint", a
   hook.unmount();
   queryClient.clear();
 });
+
+it("reuses complete turn entries only with the same server content revision", async () => {
+  const GET = vi.fn().mockImplementation((_path, options) => ({
+    data: {
+      continuation_id: options.params.query.expected_continuation_id,
+      entries: [
+        { position: 0, message_kind: "request", parts: [] },
+        {
+          position: 1,
+          message_kind: "response",
+          parts: [{ kind: "text", text: "answer" }],
+        },
+      ],
+      next_cursor: null,
+    },
+  }));
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const turn = {
+    turn_id: "input",
+    input_position: 0,
+    end_position: 2,
+    preview: "input",
+    content_revision: "same",
+  } as Schema<"TranscriptTurn">;
+  const hook = renderHook(
+    ({ continuation, revision }) =>
+      useTurnHistory(
+        "one",
+        continuation,
+        { ...turn, content_revision: revision },
+        true,
+      ),
+    {
+      initialProps: { continuation: "C1", revision: "same" },
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>
+          <TransportContext value={{ client: { GET } } as unknown as Transport}>
+            {children}
+          </TransportContext>
+        </QueryClientProvider>
+      ),
+    },
+  );
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  expect(GET).toHaveBeenCalledTimes(1);
+  hook.rerender({ continuation: "C2", revision: "same" });
+  expect(hook.result.current.isSuccess).toBe(true);
+  expect(GET).toHaveBeenCalledTimes(1);
+  hook.rerender({ continuation: "C3", revision: "corrected" });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  hook.unmount();
+  client.clear();
+});

@@ -1162,6 +1162,19 @@
           "title": "Public Url",
           "type": "string"
         },
+        "control_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Url"
+        },
         "trusted_proxies": {
           "default": [],
           "items": {

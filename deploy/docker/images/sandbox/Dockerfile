@@ -56,7 +56,14 @@ COPY --chmod=0755 deploy/docker/images/sandbox/init-skills.sh /usr/local/bin/a13
 COPY --chmod=0755 deploy/docker/images/sandbox/entrypoint.sh /usr/local/bin/a13n-sandbox-entrypoint
 ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint"]
 
-# Both variants use identical daemon bytes, identity and working-directory defaults.
+FROM standard-runtime AS desktop-runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends xvfb openbox xauth x11-utils x11-xkb-utils \
+    && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 deploy/docker/images/sandbox/desktop.py /usr/local/bin/a13n-sandbox-desktop
+ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint", "a13n-sandbox-desktop"]
+
+# All variants use identical daemon bytes, identity and working-directory defaults.
 FROM ${SANDBOX_VARIANT}-runtime AS runtime
 RUN groupadd --gid 1000 sandbox \
     && useradd --uid 1000 --gid sandbox --create-home --shell /bin/bash sandbox \

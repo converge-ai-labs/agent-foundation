@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from a13n_harness.capabilities import HandoffCapability
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.storage import StoredContinuation
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import DecisionResponseBatch, ExternalToolResult, RootOperationStatus
 from pydantic_ai import Tool
 from pydantic_ai.capabilities import Capability
@@ -114,7 +114,7 @@ async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submi
         # against the request-only history produced by handoff.
         stored_thread = await app._store.threads.get(thread.thread_id)
         assert stored_thread is not None and stored_thread.continuation is not None
-        saved = await app._store.objects.read_model(stored_thread.continuation, StoredContinuation)
+        saved = await read_continuation(app._store.objects, stored_thread.continuation, include_display=True)
         assert saved.accepted_input is None
         assert not any(
             part.tool_call_id in {"external-1", "approval-1"}

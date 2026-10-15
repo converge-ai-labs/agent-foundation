@@ -59,7 +59,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory"]
+    kind: Literal["agent", "markdown", "memory", "live"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -316,6 +316,7 @@ class TranscriptTurn(SurfaceModel):
     """One ordinary input and its execution, including steering and resumes."""
 
     turn_id: str
+    content_revision: str | None = None
     input_position: int = Field(ge=0)
     end_position: int = Field(ge=0)
     final_position: int | None = Field(default=None, ge=0)

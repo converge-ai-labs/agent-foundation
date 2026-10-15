@@ -72,11 +72,11 @@ There are two operation routes: **Native** uses the Host OS or vendor APIs direc
 | Native | `sprites`        | Cloud sandbox                       | Persistent disk and automatic sleep/wake                    |
 | Native | `runloop`        | Cloud sandbox                       | Devbox suspend/resume and idle keepalive                    |
 | Envd   | `local_envd`     | CLI and local Agents                | Shared Host Device; adapter close ends its Session          |
-| Native | `docker`         | Single-host services                | Docker Engine lifecycle and exec; close preserves container |
+| Native | `docker`         | Local or remote Engines             | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `http_envd`      | Network-reachable external daemons  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `websocket_envd` | Daemons that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
-Direct Local shares the Host account. Docker uses native Engine operations; all six cloud Providers use native vendor transports. None requires Envd. Local and remote Envd Providers use EIP for Agent operations.
+Direct Local shares the Host account. Docker uses native Engine operations; all six cloud Providers use native vendor transports. Native Docker mode and the six cloud Providers require no Envd; Docker desktop mode uses the image-managed daemon. Local and remote Envd Providers use EIP for Agent operations.
 
 For separately deployed Envd, see the [sandbox validation record](../a13n-envd/egress.md#cloud-platform-validation-record) for E2B, Runloop, Vercel, Daytona and both Modal runtimes. It records the tested binary, launch identities, egress coverage and platform limits; it does not imply that these native Providers bootstrap Envd or configure its egress policy.
 
@@ -121,7 +121,7 @@ runtime = DockerProviderRuntime(engine=engine)
 
 The native Provider overrides the image entrypoint, enables Docker init support and keeps the container alive between Runs. Its private working directory is `/workspace`. Optional bind mounts expose existing directories on the Docker Engine's machine at explicit container targets; deletion preserves external data. Named-volume configuration is not supported. Registry authentication, credential helpers, mirrors and proxies remain Docker client configuration.
 
-`close()` disconnects local observations without stopping the container or its background processes. A fresh managed adapter reuses the saved container; confirmed absence creates a replacement with an empty private `/workspace`. Transport failures do not prove absence. Docker file paths are native container paths, while Harness adds its aggregate mount prefix; relative tool paths start in `/workspace`.
+`close()` disconnects local observations without stopping the container or its background processes. A fresh managed adapter reuses the saved container; confirmed absence fails without silently creating a replacement. Transport failures do not prove absence. Docker file paths are native container paths, while Harness adds its aggregate mount prefix; relative tool paths start in `/workspace`.
 
 Docker recipes accept `pull_policy="if_missing"` (the default) or `"never"`. `never` refuses missing images with `environment_image_missing` and never contacts a registry. Use `make image-sandbox` to build the image, and follow the [Docker lifecycle example](examples.md#docker) for direct Provider use. The Service manages Docker environments from templates; see [Service environments](../a13n-service/environments.md).
 
@@ -266,3 +266,5 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
 Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` through your private test environment; the corresponding uppercase Provider prefixes work for the other four. Optional `A13N_TEST_<PROVIDER>_RECIPE_JSON` overrides the recipe. The fixture allocates billable targets and attempts deletion in cleanup, including after failures. Never commit credential JSON. Missing opt-in or credentials produces a skip, not live validation.
 
 Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), and [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html).
+
+Docker templates can select `execution: envd_http` and require a desktop with `desktop: true`. Docker lifecycle still uses `docker_host`; HTTP EIP requires a separately configured reachable host and port-publication policy. See [the desktop setup](../a13n-envd/sandbox.md#managed-docker-desktop-in-service) for startup, permissions and restart behavior.

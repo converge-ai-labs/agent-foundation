@@ -83,6 +83,7 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     assert [toolset.key for toolset in catalogue.items] == [
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
@@ -109,6 +110,7 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     assert set(selected.toolsets) == {
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
@@ -356,6 +358,34 @@ def test_build_composes_the_definition_without_io() -> None:
     (subagent,) = composed.subagents
     assert (subagent.name, subagent.description, subagent.agent.definition_id) == ("helper", "Helps", HELPER_REVISION)
     assert composed.model is None and composed.agent.model == subagent.agent.agent.model == MODEL
+
+
+@pytest.mark.parametrize("mode", ["allow", "ask", "deny", "inherit"])
+async def test_service_connection_permission_overrides_native_approval(mode: str) -> None:
+    from a13n_harness import AgentContext, RunBindings
+    from pydantic_ai import RunContext, Tool
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.toolsets import FunctionToolset
+
+    executed = []
+
+    def execute(ctx: RunContext[AgentContext]) -> str:
+        executed.append(ctx.deps.tool_approval.approved)
+        return "ok"
+
+    source = Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id=GITHUB)])
+    selected = config(toolsets={}, connection_tools=[{"connection_id": GITHUB, "permission": mode}])
+    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={GITHUB: "github"})
+    executable = build(root, capabilities=lambda _: [source], plugins=PLUGINS, instrumentation=None)
+
+    async def model_resolver(context, model_id):
+        assert model_id == MODEL
+        return TestModel(call_tools=["execute"])
+
+    result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
+    assert result.status == ("suspended" if mode in {"ask", "inherit"} else "completed")
+    assert executed == ([False] if mode == "allow" else [])
 
 
 async def create_model(service, **config: object) -> str:  # type: ignore[no-untyped-def]
@@ -787,9 +817,20 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
 
     catalogue = await service.client.get(f"{service.api}/toolsets")
     assert catalogue.status_code == 200, catalogue.text
+    for group in catalogue.json()["items"]:
+        assert group["display_name"].strip()
+        assert group["description"].strip()
+        for tool in group["tools"]:
+            assert tool["display_name"].strip()
+            assert tool["description"].strip()
+    findings = next(group for group in catalogue.json()["items"] if group["key"] == "findings")
+    read_finding = next(tool for tool in findings["tools"] if tool["key"] == "read")
+    assert read_finding["description"] == "Read finding"
+    assert read_finding["model_name"] == "read_finding"
     assert [toolset["key"] for toolset in catalogue.json()["items"]] == [
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
@@ -954,3 +995,21 @@ async def test_workspace_media_defaults_fill_what_an_agent_leaves_unselected(ser
     assert disabled.status_code == 200, disabled.text
     # A default that stopped working leaves the kind unavailable instead of failing the agent's runs.
     assert await media() == {}
+
+
+def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choices() -> None:
+    legacy = config().toolsets
+    assert not legacy["computer"].enabled
+    assert not toolsets.environment_configuration(legacy).computer_enabled
+    legacy.pop("computer")
+    assert not toolsets.environment_configuration(legacy).computer_enabled
+    selected = config(
+        toolsets={
+            "computer": {"enabled": True, "tools": {"click": {"enabled": False}, "type_text": {"permission": "ask"}}}
+        }
+    )
+    projected = toolsets.environment_configuration(selected.toolsets)
+    assert projected.computer_enabled
+    assert "computer_observe" in projected.computer_tools
+    assert "computer_click" not in projected.computer_tools
+    assert selected.toolsets["computer"].tools["type_text"].permission == "ask"

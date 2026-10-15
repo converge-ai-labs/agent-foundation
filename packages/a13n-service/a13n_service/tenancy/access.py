@@ -22,8 +22,10 @@ from starlette.responses import Response
 from a13n_service.infra.audit import Scoped, record
 from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError, invalid, not_found
+from a13n_service.infra.platform import PlatformAccess
 from a13n_service.tenancy.authorize import (
     VERBS,
+    ExecutionAuthority,
     Grant,
     Principal,
     Scope,
@@ -62,6 +64,17 @@ class Authenticated:
     credential_id: str
     # The authenticator's own name for the credential; the local authenticator issues `session` and `key`.
     kind: str
+    authority: ExecutionAuthority | None = None
+    platform: PlatformAccess | None = None
+
+    def constrain(self, principal: Principal) -> Principal:
+        """Keep the acceptance ceiling when current grants are loaded or refreshed."""
+        if self.authority is None:
+            return principal
+        scope = WorkspaceScope(self.authority.organization_id, self.authority.workspace_id)
+        authorize(principal, scope, "run", authority=self.authority)
+        verbs = allowed_verbs(principal, scope) & self.authority.verbs
+        return replace(principal, confinement=scope, grants=(Grant(scope.organization_id, scope.workspace_id, verbs),))
 
 
 class Authenticator(Protocol):
@@ -228,7 +241,8 @@ async def reauthenticate(session: AsyncSession, access: Access, credential: Auth
     """Read-only re-check for long-lived requests: the credential is still live; status and grants are current."""
     await access.authenticator.recheck(session, credential)
     principal = credential.principal
-    return await principal_for(session, access, principal.id, confinement=principal.confinement)
+    current = await principal_for(session, access, principal.id, confinement=principal.confinement)
+    return credential.constrain(current)
 
 
 def _member(principal: Principal, organization_id: str) -> bool:

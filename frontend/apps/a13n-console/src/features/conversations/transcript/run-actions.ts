@@ -10,7 +10,7 @@ import { conversationKeys, invalidateConversation, runPath } from "../api";
  * Thread takes messages, answers and interrupts from here.
  */
 export function isInteractive(thread: Schema["ThreadView"]) {
-  return thread.origin !== "child";
+  return thread.origin !== "child" && thread.purpose !== "memory_organization";
 }
 
 /** Where an accepted command lands: the Run it started, when it started one. */

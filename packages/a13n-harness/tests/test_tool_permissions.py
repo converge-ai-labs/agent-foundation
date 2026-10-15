@@ -254,7 +254,9 @@ async def test_inline_native_handler_does_not_need_to_echo_approval_metadata() -
     assert seen == [True]
 
 
-async def test_native_approval_satisfies_review_and_managed_policy() -> None:
+@pytest.mark.parametrize("native_approval", [False, True])
+@pytest.mark.parametrize("risk", ["low", "extra_high"])
+async def test_native_approval_satisfies_review_and_managed_policy(native_approval: bool, risk: str) -> None:
     from a13n_harness.tools import (
         HarnessTool,
         HarnessToolMetadata,
@@ -265,7 +267,7 @@ async def test_native_approval_satisfies_review_and_managed_policy() -> None:
 
     seen = []
     policy_calls = []
-    reviewer = _Reviewer(risk="extra_high")
+    reviewer = _Reviewer(risk=risk)
 
     def execute(ctx: RunContext[AgentContext]) -> str:
         seen.append(ctx.deps.tool_approval.approved)
@@ -286,6 +288,7 @@ async def test_native_approval_satisfies_review_and_managed_policy() -> None:
                         [
                             HarnessTool(
                                 execute,
+                                requires_approval=native_approval,
                                 harness_metadata=HarnessToolMetadata(
                                     tool_id="business.execute",
                                     effects=frozenset({"write"}),
@@ -312,7 +315,7 @@ async def test_native_approval_satisfies_review_and_managed_policy() -> None:
 
     result = await executable.run("go", bindings=bindings())
     assert result.status == "suspended"
-    assert not policy_calls
+    assert policy_calls == (["business.execute"] if risk == "low" else [])
     requests = result.deferred
     assert requests is not None
     assert "a13n.harness.tool-approval" not in requests.metadata["call-1"]
@@ -553,3 +556,181 @@ async def test_declarative_permissions_gate_native_tools_without_host_type_regis
     )
     result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "completed" and not effects
+
+
+@pytest.mark.parametrize("mode", [None, "inherit", "allow", "ask", "deny", "review"])
+@pytest.mark.parametrize("permissions_first", [False, True])
+@pytest.mark.parametrize("dynamic", [False, True])
+async def test_capability_overrides_native_approval_declarations(mode, permissions_first, dynamic) -> None:
+    from dataclasses import replace
+
+    executed = []
+    prepared = []
+    reviewer = _Reviewer()
+
+    async def prepare(ctx, definition):
+        declaration = replace(definition, kind="unapproved")
+        prepared.append(declaration)
+        return declaration
+
+    def execute(ctx: RunContext[AgentContext]) -> str:
+        executed.append(ctx.deps.tool_approval.approved)
+        return "ok"
+
+    tool = Tool(execute, requires_approval=not dynamic, prepare=prepare if dynamic else None)
+    tools = Capability(toolsets=[FunctionToolset([tool], id="business")])
+    capabilities = [tools]
+    if mode is not None:
+        permissions = ToolPermissionsCapability(ToolPermissions(default=mode), reviewer=reviewer)
+        capabilities = [permissions, tools] if permissions_first else [tools, permissions]
+    executable = HarnessBuilder().build(AgentSpec(), model=_model(), output_type=str, capabilities=capabilities)
+    first = await executable.run("go", bindings=RunBindings.embedded())
+    if mode in {"allow", "review"}:
+        assert first.status == "completed"
+        assert executed == [False]
+    elif mode == "deny":
+        assert first.status == "completed"
+        assert executed == []
+    else:
+        assert first.status == "suspended"
+        assert executed == []
+        assert len(first.deferred.approvals) == 1
+        resumed = await executable.run(
+            previous_state=first.state,
+            deferred_resume=DeferredToolResume(
+                first.deferred, DeferredToolResults(approvals={"call-1": ToolApproved()})
+            ),
+            bindings=RunBindings.embedded(),
+        )
+        assert resumed.status == "completed"
+        assert executed == [True]
+    assert len(reviewer.requests) == (1 if mode == "review" else 0)
+    assert tool.requires_approval is (not dynamic)
+    assert all(definition.kind == "unapproved" for definition in prepared)
+
+
+@pytest.mark.parametrize(
+    ("permissions", "suspended"),
+    [
+        (ToolPermissions(default="allow", rules={"tool/business/execute": "inherit"}), True),
+        (ToolPermissions(default="inherit", rules={"tool/business/*": "allow"}), False),
+        (ToolPermissions(default="deny", rules={"*": "allow", "tool/business/*": "inherit"}), True),
+        (ToolPermissions(default="ask", rules={"tool/business/*": "inherit", "tool/business/execute": "allow"}), False),
+    ],
+)
+async def test_approval_override_uses_stable_identity_and_selector_precedence(permissions, suspended) -> None:
+    executed = []
+
+    def execute() -> str:
+        executed.append(True)
+        return "ok"
+
+    source = FunctionToolset([Tool(execute, requires_approval=True)], id="business")
+    tools = Capability(toolsets=[source.renamed({"renamed": "execute"}).prefixed("visible")])
+
+    def build(*capabilities):
+        return HarnessBuilder().build(
+            AgentSpec(), model=_model("visible_renamed"), output_type=str, capabilities=(tools, *capabilities)
+        )
+
+    result = await build(ToolPermissionsCapability(permissions)).run("go", bindings=RunBindings.embedded())
+    assert result.status == ("suspended" if suspended else "completed")
+    assert executed == ([] if suspended else [True])
+    # Reuse the same native source without overrides; another Host still gets its declaration.
+    executed.clear()
+    native = await build().run("go", bindings=RunBindings.embedded())
+    assert native.status == "suspended"
+    assert executed == []
+
+
+@pytest.mark.parametrize("mode", ["allow", "ask", "deny", "inherit"])
+async def test_pending_native_approval_resumes_under_current_capability_policy(mode) -> None:
+    executed = []
+
+    def execute(ctx: RunContext[AgentContext]) -> str:
+        executed.append(ctx.deps.tool_approval.approved)
+        return "ok"
+
+    tools = Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id="business")])
+
+    def build(permission):
+        return HarnessBuilder().build(
+            AgentSpec(),
+            model=_model(),
+            output_type=str,
+            capabilities=(tools, ToolPermissionsCapability(ToolPermissions(default=permission))),
+        )
+
+    first = await build("inherit").run("go", bindings=RunBindings.embedded())
+    assert first.status == "suspended"
+    result = await build(mode).run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(first.deferred, DeferredToolResults(approvals={"call-1": ToolApproved()})),
+        bindings=RunBindings.embedded(),
+    )
+    assert result.status == "completed"
+    assert executed == ([] if mode == "deny" else [True])
+
+
+@pytest.mark.parametrize("source", ["body", "validator", "wrapper"])
+async def test_declaration_override_preserves_runtime_business_confirmation(source) -> None:
+    executed = []
+
+    def confirm(ctx: RunContext[AgentContext]) -> None:
+        if not ctx.tool_call_approved:
+            raise ApprovalRequired(metadata={"reason": "Business confirmation"})
+
+    def execute(ctx: RunContext[AgentContext]) -> str:
+        if source == "body":
+            confirm(ctx)
+        executed.append(ctx.deps.tool_approval.approved)
+        return "ok"
+
+    tool = Tool(execute, requires_approval=True, args_validator=confirm if source == "validator" else None)
+    toolset = FunctionToolset([tool], id="business")
+    if source == "wrapper":
+        toolset = toolset.approval_required()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=_model(),
+        output_type=str,
+        capabilities=(
+            Capability(toolsets=[toolset]),
+            ToolPermissionsCapability(ToolPermissions(default="allow")),
+        ),
+    )
+    first = await executable.run("go", bindings=RunBindings.embedded())
+    assert first.status == "suspended"
+    assert executed == []
+    result = await executable.run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(first.deferred, DeferredToolResults(approvals={"call-1": ToolApproved()})),
+        bindings=RunBindings.embedded(),
+    )
+    assert result.status == "completed"
+    assert executed == [True]
+
+
+@pytest.mark.parametrize("mode", ["allow", "inherit"])
+async def test_approval_override_precedes_deferred_support_surface_filtering(mode) -> None:
+    from pydantic_ai.models.test import TestModel
+
+    def execute() -> str:
+        return "ok"
+
+    model = TestModel()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=model,
+        output_type=str,
+        capabilities=(
+            Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id="business")]),
+            ToolPermissionsCapability(ToolPermissions(default=mode)),
+        ),
+    )
+    result = await executable.run("go", bindings=RunBindings.embedded(deferred_tools_supported=False))
+    assert result.status == "completed"
+    assert model.last_model_request_parameters is not None
+    assert [tool.name for tool in model.last_model_request_parameters.function_tools] == (
+        ["execute"] if mode == "allow" else []
+    )

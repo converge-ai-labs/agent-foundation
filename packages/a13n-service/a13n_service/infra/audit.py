@@ -1,6 +1,9 @@
 """Append-only, bounded audit evidence, written with the owning mutation."""
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Literal, Protocol
 
@@ -15,6 +18,18 @@ from a13n_service.infra.ids import new_object_id
 
 # User accounts and their login sessions are global; every other target belongs to an organization.
 _ACCOUNT_TARGETS = frozenset({"user", "login_session"})
+
+
+_origin: ContextVar[dict[str, JsonValue] | None] = ContextVar("platform_operation_origin", default=None)
+
+
+@contextmanager
+def operation_origin(run_id: str, attempt_id: str, request_id: str | None) -> Iterator[None]:
+    marker = _origin.set({"run_id": run_id, "attempt_id": attempt_id, "request_id": request_id})
+    try:
+        yield
+    finally:
+        _origin.reset(marker)
 
 
 class Scoped(Protocol):
@@ -67,6 +82,8 @@ def record(
     if (scope is None) != (target_kind in _ACCOUNT_TARGETS):
         raise ValueError("Exactly the account-wide audit targets omit tenant scope")
     payload = dict(details or {})
+    if origin := _origin.get():
+        payload["execution_origin"] = origin
     if len(json.dumps(payload, allow_nan=False).encode()) > 8192:
         raise ValueError("Audit details exceed their byte limit")
     session.add(

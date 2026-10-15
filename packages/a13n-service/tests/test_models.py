@@ -467,6 +467,37 @@ async def test_a_model_price_applies_to_its_own_calls_whatever_the_entry_names(
         assert (used["model"], Decimal(str(used["cost"]))) == (key, Decimal("0.00021"))
 
 
+async def test_unused_media_and_cache_prices_reach_saved_run_spend(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    source = price("gemini-test", provider="google-vertex")
+    source["rules"][0]["prices"].extend(
+        {"price_key": key, "price": "1"}
+        for key in ("cache_read_mtok", "input_audio_mtok", "input_image_mtok", "input_video_mtok")
+    )
+    account = await provider(executing, config={"base_url": scripted_model.url}, credential={"api_key": "sk-scripted"})
+    await post(executing, "/models", {**manual(account["id"], "multimodal"), "pricing": source})
+    agent = await runs_kit.add_agent(executing, "priced", "multimodal")
+    scripted_model.say("Done")
+    run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "hi"))["run"]["id"])
+    assert run["status"] == "completed", run
+    response = await executing.client.get(f"{executing.api}/usage", params={"run_id": run["id"]})
+    assert response.status_code == 200
+    [used] = response.json()["models"]
+    assert (used["model"], Decimal(used["cost"])) == ("multimodal", Decimal("0.00021"))
+    async with short_session(executing.runtime.storage) as session:
+        [record] = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run["id"], UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).all()
+        assert record.record["pricing_status"] == "applied"
+        assert record.record["cost_source"] == "custom"
+        assert {item["price_key"] for item in record.price_snapshot["rules"][0]["prices"]} == {
+            item["price_key"] for item in source["rules"][0]["prices"]
+        }
+
+
 async def test_open_model_builds_the_native_model_with_the_revealed_secrets(service) -> None:  # type: ignore[no-untyped-def]
     runtime = service.runtime
     # Building makes no request; a loopback endpoint keeps the endpoint policy independent of local DNS.

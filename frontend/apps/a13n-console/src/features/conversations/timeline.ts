@@ -108,6 +108,8 @@ interface RunTotals {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
+  /** The part of the input the provider served from its cache. */
+  cacheReadTokens: number;
   /** A model usage record was observed; without one, tokens are unknown. */
   reportedUsage: boolean;
   costUsd: string | null;
@@ -236,19 +238,46 @@ export function runTimeline({
   for (const retry of execution.retries)
     place(null, { position: retry.position, entry: retryEvent(retry) });
 
+  // A request records the input it read just after it starts, so guidance
+  // found before the request's first output was read by that request.
+  function readBy(guidance: Positioned, siblings: readonly Positioned[]) {
+    const request = siblings.findLast(
+      (candidate) =>
+        candidate.entry.kind === "model" &&
+        comparePositions(candidate.position, guidance.position) < 0,
+    );
+    const output = request
+      ? children
+          .get(request.entry.id)
+          ?.map((child) => child.position)
+          .sort(comparePositions)[0]
+      : undefined;
+    return output && comparePositions(guidance.position, output) < 0
+      ? request
+      : undefined;
+  }
   function assemble(positioned: Positioned[]): TimelineEntry[] {
-    return [...positioned]
-      .sort((a, b) => comparePositions(a.position, b.position))
-      .map(({ entry }) => {
-        const nested = children.get(entry.id);
-        if (entry.kind === "model") {
-          const model = { ...entry, children: assemble(nested ?? []) };
-          return { ...model, stopReason: stopReason(model) };
-        }
-        return nested && isAction(entry)
-          ? { ...entry, children: assemble(nested) }
-          : entry;
-      });
+    const sorted = [...positioned].sort((a, b) =>
+      comparePositions(a.position, b.position),
+    );
+    // Guidance reads before the request that read it, in arrival order.
+    const ordered = [...sorted];
+    for (const item of sorted) {
+      const request = item.entry.kind === "guidance" && readBy(item, sorted);
+      if (!request) continue;
+      ordered.splice(ordered.indexOf(item), 1);
+      ordered.splice(ordered.indexOf(request), 0, item);
+    }
+    return ordered.map(({ entry }) => {
+      const nested = children.get(entry.id);
+      if (entry.kind === "model") {
+        const model = { ...entry, children: assemble(nested ?? []) };
+        return { ...model, stopReason: stopReason(model) };
+      }
+      return nested && isAction(entry)
+        ? { ...entry, children: assemble(nested) }
+        : entry;
+    });
   }
   const entries = assemble(roots);
   if (execution.observations.length)
@@ -454,17 +483,18 @@ function runTotals(
 ): RunTotals {
   const records = [...execution.usage.model, ...execution.usage.provider];
   const { total, reported } = sumCosts(records.map((usage) => usage.costUsd));
+  const sum = (field: "inputTokens" | "outputTokens" | "cacheReadTokens") =>
+    execution.usage.model.reduce((value, usage) => value + usage[field], 0);
   return {
-    modelCalls: execution.steps.filter((step) => step.kind === "llm").length,
+    // Retained history without lifecycle steps still has one usage record
+    // per model request.
+    modelCalls:
+      execution.steps.filter((step) => step.kind === "llm").length ||
+      execution.usage.model.length,
     toolCalls: execution.steps.filter((step) => step.kind !== "llm").length,
-    inputTokens: execution.usage.model.reduce(
-      (sum, usage) => sum + usage.inputTokens,
-      0,
-    ),
-    outputTokens: execution.usage.model.reduce(
-      (sum, usage) => sum + usage.outputTokens,
-      0,
-    ),
+    inputTokens: sum("inputTokens"),
+    outputTokens: sum("outputTokens"),
+    cacheReadTokens: sum("cacheReadTokens"),
     reportedUsage: execution.usage.model.some(reportsTokens),
     costUsd: total,
     costComplete:

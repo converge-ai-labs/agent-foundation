@@ -7,6 +7,7 @@ import anyio
 from a13n_harness import RunConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -59,8 +60,12 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
     if isinstance(account, ExternalAccount):
         raise ValueError("External targets have no Service management authority")
     await runtime.registry.check_environment_endpoint(account.type, account.config, runtime.endpoint_policy)
-    return await runtime.registry.get("environment", account.type).open_provider(
-        configuration=account.config,
+    definition = runtime.registry.get("environment", account.type)
+    connection = definition.configuration_model.model_validate(account.config)
+    if isinstance(connection, DockerConnectionConfiguration):
+        connection._endpoint_policy = runtime.endpoint_policy
+    return await definition.open_provider(
+        configuration=connection,
         credential=account.reveal_credential(runtime.keys),
     )
 
@@ -81,9 +86,12 @@ async def execution_connector(
         )
     await runtime.registry.check_environment_endpoint(account.type, account.config, policy)
     definition = runtime.registry.get("environment", account.type)
+    connection = definition.configuration_model.model_validate(account.config)
+    if isinstance(connection, DockerConnectionConfiguration):
+        connection._endpoint_policy = policy
     return definition.execution.execution_connector(
         definition.execution_environment(dict(target.recipe)),
-        configuration=account.config,
+        configuration=connection,
         credential=account.reveal_credential(runtime.keys),
         environment_id=target.environment_id,
         state=target.state,

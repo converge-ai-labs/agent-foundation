@@ -41,6 +41,8 @@ async def get_run(session: AsyncSession, workspace_id: str, run_id: str, *, lock
 
 
 def require_open(thread: ThreadRow) -> None:
+    if thread.purpose == "memory_organization":
+        raise conflict("thread", thread.id, "managed_organization")
     if thread.archived_at is not None:
         raise conflict("thread", thread.id, "archived")
 
@@ -93,7 +95,9 @@ async def list_threads(
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(ThreadRow).where(
-            ThreadRow.workspace_id == scope.workspace_id, label_filter(ThreadRow.labels, list(label))
+            ThreadRow.workspace_id == scope.workspace_id,
+            ThreadRow.purpose == "conversation",
+            label_filter(ThreadRow.labels, list(label)),
         )
         if session_id is not None:
             query = query.where(ThreadRow.session_id == session_id)

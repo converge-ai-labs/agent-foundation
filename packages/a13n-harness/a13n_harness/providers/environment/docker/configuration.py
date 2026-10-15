@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -44,6 +44,8 @@ class DockerEnvironmentConfiguration(BaseModel):
         json_schema_extra={
             "x-primary-fields": [
                 "image",
+                "execution",
+                "desktop",
                 "environment",
                 "init_script",
                 "disable_network",
@@ -55,6 +57,22 @@ class DockerEnvironmentConfiguration(BaseModel):
     )
 
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
+    execution: Literal["native", "envd_http"] = Field(
+        default="native",
+        title="Execution connection",
+        json_schema_extra={
+            "oneOf": [{"const": "native", "title": "Native Docker"}, {"const": "envd_http", "title": "Envd HTTP (EIP)"}]
+        },
+        description="Native Docker exec, or the image-managed envd over HTTP EIP. Configure HTTP routing on the Docker connection.",
+    )
+    desktop: bool = Field(
+        default=False,
+        title="X11 desktop",
+        description=(
+            "Require an observable, input-ready desktop from the image-managed envd. "
+            "Requires envd_http execution and a desktop image. Computer permissions remain separate."
+        ),
+    )
     mounts: tuple[DockerMountConfiguration, ...] = Field(
         default=(),
         title="Host directory mounts",
@@ -112,6 +130,17 @@ class DockerEnvironmentConfiguration(BaseModel):
             raise ValueError("Invalid container environment variables")
         if self.max_output_preview_bytes > self.max_output_bytes_per_stream:
             raise ValueError("Output preview exceeds the per-stream capture limit")
+        if self.desktop and self.execution != "envd_http":
+            raise ValueError("Desktop capability requires envd_http execution")
+        if self.execution == "envd_http":
+            if self.disable_network:
+                raise ValueError("HTTP EIP port publication requires networking")
+            if self.max_spool_bytes < 2 * self.max_output_bytes_per_stream:
+                raise ValueError("Envd spool capacity must hold both output streams")
+            if self.user is not None:
+                raise ValueError("Envd images own daemon and Session identities; do not override user")
+            if any(key.startswith("A13N_ENVD_") or key in {"DISPLAY", "XAUTHORITY"} for key in self.environment):
+                raise ValueError("Envd execution owns daemon configuration and display variables")
         return self
 
 

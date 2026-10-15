@@ -15,11 +15,12 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.infra.platform import PlatformGroup
 from a13n_service.providers.model_settings import JsonSettings
-from a13n_service.resources.agents.tables import AgentSource
+from a13n_service.resources.agents.tables import AgentSource, PresetKind
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.connections.schemas import ConnectionSelection
-from a13n_service.resources.memories.schemas import MemoryMounts
+from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
 
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
@@ -56,6 +57,24 @@ class AgentModelCharacteristics(_Frozen):
 class SkillSelection(_Frozen):
     skill_id: ObjectId
     revision_id: ObjectId | None = None
+
+
+class SharedSkillSync(_Frozen):
+    """Publish mutable conventional names; the last completed publication wins."""
+
+    mode: Literal["shared"] = "shared"
+    overwrite: bool = True
+    cleanup: bool = False
+
+
+class IsolatedSkillSync(_Frozen):
+    """Reuse immutable package directories, with a soft count budget."""
+
+    mode: Literal["isolated"] = "isolated"
+    cache_count: int = Field(default=128, ge=0)
+
+
+SkillSync = Annotated[SharedSkillSync | IsolatedSkillSync, Field(discriminator="mode")]
 
 
 class DelegationContextPolicy(_Frozen):
@@ -138,6 +157,14 @@ class PluginSelection(_Frozen):
     config: JsonObject = Field(default_factory=dict)
 
 
+class PlatformSelection(_Frozen):
+    """Platform MCP groups selected independently of local operating instructions."""
+
+    groups: frozenset[PlatformGroup] = frozenset()
+    read_permission: Literal["allow", "ask", "deny"] = "allow"
+    write_permission: Literal["allow", "ask", "deny"] = "ask"
+
+
 class AgentConfig(_Frozen):
     model: Key
     # Native settings layered over the model's own defaults.
@@ -146,7 +173,10 @@ class AgentConfig(_Frozen):
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
+    skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
+    platform_tools: PlatformSelection = Field(default_factory=PlatformSelection)
+    builtin_skills: frozenset[Literal["platform-operations"]] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
     user_questions: bool = False
@@ -164,6 +194,8 @@ class AgentConfig(_Frozen):
     lazy_environment: bool = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
     memory_mounts: MemoryMounts = ()
+    # Snapshotted by a new Session at its first business acceptance unless explicitly configured.
+    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
 
     @model_validator(mode="after")
     def unique_selections(self) -> Self:
@@ -211,7 +243,10 @@ class AgentOverride(_Frozen):
     lazy_environment: bool | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
+    skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
+    platform_tools: PlatformSelection | None = None
+    builtin_skills: frozenset[Literal["platform-operations"]] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
@@ -228,7 +263,10 @@ _REPLACED = (
     "lazy_environment",
     "plugins",
     "skills",
+    "skill_sync",
     "connection_tools",
+    "platform_tools",
+    "builtin_skills",
     "client_tools",
     "output_spec",
 )
@@ -333,7 +371,7 @@ class Agent(BaseModel):
     labels: dict[str, str]
     default_revision_id: str | None
     source: AgentSource
-    preset_kind: Literal["composer", "finding"] | None = None
+    preset_kind: PresetKind | None = None
     image_url: str | None
     archived_at: datetime | None
     version: int

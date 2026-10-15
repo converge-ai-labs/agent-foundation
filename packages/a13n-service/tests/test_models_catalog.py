@@ -567,3 +567,140 @@ def test_discovery_checks_all_live_channels_before_official_fallback(status, fir
     assert facts.context_window_tokens == (654321 if first_channel_live else 123456)
     assert not facts.capabilities
     assert "capabilities" in facts.model_fields_set
+
+
+@pytest.fixture
+async def catalog_api():
+    """Exercise the production routes without stores; authentication has separate Service coverage."""
+    from a13n_service.infra.http import install_error_envelope
+    from a13n_service.resources.models.routes import router
+    from a13n_service.tenancy.requests import current_principal
+
+    app = FastAPI()
+    app.include_router(router)
+    install_error_envelope(app)
+    app.dependency_overrides[current_principal] = lambda: object()
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://service.local") as http:
+        yield app, http
+
+
+@pytest.mark.anyio
+async def test_filtered_reads_share_full_refreshes_and_preserve_status(catalog_api, models_dev):
+    app, http = catalog_api
+    clock = Clock()
+    models_dev.answer = Response(
+        document(
+            {
+                "openai": {"models": {"lab/Future": model(cost={"input": 1, "output": 2})}},
+                "openrouter": {
+                    "models": {
+                        "lab/Future": model(cost={"input": 3, "output": 4}),
+                        "lab/Future-plus": model(),
+                    }
+                },
+            }
+        )
+    )
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK, url=models_dev.url, clock=clock)
+    app.state.model_catalog = catalog
+    expected = [("openai", "lab/Future"), ("openrouter", "lab/Future"), ("openrouter", "lab/Future-plus")]
+    cases = [
+        ({"provider": "openrouter", "model": "lab/Future"}, expected[1:2]),
+        ({"provider": "openrouter"}, expected[1:]),
+        ({"model": "lab/Future"}, expected[:2]),
+        ({"model": "lab/future"}, []),
+        ({"model": "Future"}, []),
+        ({"provider": "missing"}, []),
+        ({"provider": "openai", "model": "lab/Future-plus"}, []),
+        ({}, expected),
+    ]
+    async with running(catalog):
+        for params, refs in cases:
+            response = await http.get("/api/v1/model-catalog", params=params)
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["status"] == "ready"
+            assert [(item["ref"]["provider"], item["ref"]["model"]) for item in body["items"]] == refs
+            for item in body["items"]:
+                source = next(entry for entry in catalog.catalog.items if entry.ref.model_dump() == item["ref"])
+                assert item["pricing"] == source.pricing.model_dump(mode="json")
+        assert models_dev.requests == 1
+        assert len(catalog.catalog.items) == 3
+
+        clock.now = REFRESH_SECONDS
+        models_dev.answer = Response(status_code=503)
+        ended = catalog.refreshed
+        assert (await http.get("/api/v1/model-catalog", params=cases[0][0])).json()["status"] == "ready"
+        await asyncio.wait_for(ended.wait(), 5)
+        stale = (await http.get("/api/v1/model-catalog", params=cases[0][0])).json()
+        assert stale["status"] == "stale" and len(stale["items"]) == 1
+        assert len(catalog.catalog.items) == 3 and models_dev.requests == 2
+        missing = (await http.get("/api/v1/model-catalog", params={"provider": "missing"})).json()
+        assert missing == {"items": [], "status": "stale"}
+
+    cold = ModelsDevCatalog(CHANNELS, LOOPBACK, url=models_dev.url)
+    app.state.model_catalog = cold
+    async with running(cold):
+        unavailable = (await http.get("/api/v1/model-catalog", params=cases[0][0])).json()
+        assert unavailable == {"items": [], "status": "unavailable"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"provider": ""},
+        {"provider": "OpenRouter"},
+        {"provider": "a/b"},
+        {"provider": "a" * 129},
+        {"model": ""},
+        {"model": "a" * 257},
+    ],
+)
+async def test_catalog_filters_reject_invalid_input_before_fetching(catalog_api, models_dev, params):
+    app, http = catalog_api
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK, url=models_dev.url)
+    app.state.model_catalog = catalog
+    response = await http.get("/api/v1/model-catalog", params=params)
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "invalid_argument"
+    assert not catalog.due.is_set() and models_dev.requests == 0
+
+
+@pytest.mark.anyio
+async def test_mcp_can_discover_and_invoke_catalog_filters(catalog_api, models_dev):
+    from a13n_service.api_tools import api_tools, tool_name
+    from a13n_service.resources.models.routes import router
+    from fastapi.routing import APIRoute
+    from fastmcp.server.http import set_http_request
+    from starlette.requests import Request
+
+    app, _ = catalog_api
+    models_dev.answer = Response(
+        document(
+            {
+                "openai": {"models": {"lab/Future": model(cost={"input": 1, "output": 2})}},
+                "openrouter": {"models": {"lab/Future": model(cost={"input": 3, "output": 4})}},
+            }
+        )
+    )
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK, url=models_dev.url)
+    app.state.model_catalog = catalog
+    operation = app.openapi()["paths"]["/api/v1/model-catalog"]["get"]
+    tools = api_tools(
+        app, app.openapi(), "http://service.local", [route for route in router.routes if isinstance(route, APIRoute)]
+    )
+    tool = next(item for item in tools if item.name == tool_name(operation["operationId"]))
+    assert {"provider", "model"} <= tool.parameters["properties"].keys()
+    assert not {"provider", "model"} & set(tool.parameters.get("required", []))
+    async with running(catalog):
+        with set_http_request(Request({"type": "http", "headers": [(b"authorization", b"Bearer test-key")]})):
+            result = await tool.run({"provider": "openrouter", "model": "lab/Future"})
+        value = result.structured_content
+        assert value["status"] == 200 and value["body"]["status"] == "ready"
+        [item] = value["body"]["items"]
+        assert item["ref"] == {"provider": "openrouter", "model": "lab/Future"}
+        assert item["pricing"]["provider"] == "openrouter"
+        prices = {price["price_key"]: Decimal(str(price["price"])) for price in item["pricing"]["rules"][0]["prices"]}
+        assert prices == {"input_mtok": Decimal(3), "output_mtok": Decimal(4)}
+        assert len(catalog.catalog.items) == 2 and models_dev.requests == 1

@@ -1,4 +1,5 @@
 import { ModelsPage } from "../configuration/models";
+import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -22,6 +23,7 @@ import {
 } from "a13n-ui";
 import {
   Archive,
+  Waveform,
   Brain,
   House,
   SidebarSimple,
@@ -109,6 +111,7 @@ function WorkbenchContent({
 }) {
   const results = useResults();
   const setup = useSetup();
+  const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
   const [theme, setTheme] = useState(() => readPreference("theme", "light"));
@@ -183,6 +186,9 @@ function WorkbenchContent({
     ...(memoryMode && memoryEnabled
       ? [{ to: "/", label: "Home", icon: House }]
       : []),
+    ...(voiceSettings.data?.enabled
+      ? [{ to: "/live", label: "Live", icon: Waveform }]
+      : []),
     { to: "/archived", label: "Archived", icon: Archive },
     ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Gear },
@@ -248,6 +254,7 @@ function WorkbenchContent({
       </div>
     </>
   );
+  if (location.pathname === "/live") return <VoicePage />;
   const content = (
     <div className={styles.shell}>
       <SharedPointers
@@ -345,6 +352,7 @@ function WorkbenchContent({
           <NativeWorkspace
             profile={
               <>
+                <VoiceIndicator />
                 <ParticipantAvatars
                   participants={(live.presence?.participants ?? []).filter(
                     (participant) =>

@@ -26,6 +26,69 @@ flowchart TB
 
 All API paths below are under `/api/v1`.
 
+## Memory Spaces
+
+A **Memory Space** holds shared knowledge and session notes in one versioned file store. Create Spaces for your application's users or projects, then select them in sessions.
+
+1. Open **Memory Spaces → Spaces** and create a named Space. In **Configuration**, set its instructions, always-loaded files and optional organizer model.
+2. In an agent's **Memory** section, enable memory participation and select the Spaces new sessions should use. Give each selection a tool-visible name and read or write access.
+3. When starting a session, inherit the agent defaults or choose an explicit selection. The session header's **Memory** control changes participation and selection for future runs.
+4. Open a Space to browse **Files**, inspect **File history**, review **Organization** rounds and see associated **Sessions**.
+
+Each ordinary run sees `global/` and its own `sessions/{session_id}/` folder, with the binding's read or write access. Context includes `global/MEMORY.md` by default and the session's `MEMORY.md` when present. Workspace permissions govern management of all Space files through the Console and API.
+
+### Select Spaces
+
+Create a Space with `POST /memory-spaces` (`write`):
+
+```json
+{
+  "name": "Product knowledge",
+  "organization": {"enabled": true, "model": "your-model-key"}
+}
+```
+
+Use its returned `id` in the agent's `config.memory`, `POST /sessions`, or `PATCH /sessions/{session_id}`:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "spaces": [{"name": "product", "space_id": "mspace_…", "access": "write"}]
+  }
+}
+```
+
+Session selection needs `run`; PATCH also needs the session's `If-Match`. Names and Space IDs must be unique in the selection. Omitted fields inherit agent defaults at the first accepted business run. An explicit `spaces` list replaces the selection; `[]` supplies no Space context or tools. The session keeps its choices across later agent changes and branches. Changing agent defaults or Space configuration needs `write`.
+
+Turning participation off keeps the selection. Disabling a Space excludes it from new runs and preserves its files, history and bindings. Accepted runs retain their frozen mounts. Space mount names must be distinct from standalone thread mount names.
+
+### Organize saved knowledge
+
+Configure an organizer model, then choose **Organize now** or enable **Automatic organization**. Automatic rounds process saved changes, including API edits, while the store contains files. The organizer reads shared knowledge and all session folders to maintain `global/MEMORY.md`. Each round uses a fresh thread in a dedicated organizer session, with only that Space's memory tools and a 200-model-request ceiling.
+
+In **Configuration → Organization**, choose **Any saved change** or **After a number of changes**. Count mode accumulates saved file changes from agents, Console and API. A rename counts once. Unchanged saves, rejected writes, history cleanup and organizer edits do not count. Each admitted round consumes the changes present when it starts; changes saved during the round remain for later, even if the round fails or is cancelled. Counts survive restarts and history cleanup. Existing Spaces start counting new changes when this capability is installed.
+
+Set the **Check interval** (10–86400 seconds, default 10) to control how often the Space checks for eligible changes. Set the **Cooldown** (0–604800 seconds, default 300) to control the wait after a round ends or cannot start. Automatic organization requires both its trigger and cooldown, at the next eligible check. Checks share a 10-second service sweep, so these values are minimum delays. Saved deadlines keep their original timing; edited intervals apply to later checks and rounds. **Organize now** bypasses the interval, threshold and cooldown.
+
+For example, include this policy when creating or updating a Space:
+
+```json
+{
+  "organization": {
+    "enabled": true,
+    "model": "your-model-key",
+    "check_interval_seconds": 60,
+    "cooldown_seconds": 900,
+    "trigger": {"type": "change_count", "count": 10}
+  }
+}
+```
+
+The **Organization** tab shows status and run history, with costs, traces and file revisions. These runs stay separate from business conversations. Failed or cancelled rounds retain saved edits. If retained history is insufficient to confirm progress, status reports a history gap; **Organize now** requests another round.
+
+Read status at `GET /memory-spaces/{id}/organization`, request a round with `POST /memory-spaces/{id}/organizations`, and list rounds with `GET` on that same path. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists paginate with `limit` and `cursor`. File and revision APIs use the Space's returned `memory_id` under `/memories/{memory_id}`. The backing store is managed through the Space and stays out of standalone Memory lists.
+
 ## Create a file memory
 
 Creating and changing memories needs `write`:
@@ -101,6 +164,10 @@ People can read and correct what agents recorded. Reading needs `read`; adding, 
 
 A record holds 1 to `memory.record_chars` characters (8000 by default). Records have no ETag, so the last write wins. A write the backend does not confirm answers `409 conflict` with reason `write_unconfirmed`: it may or may not have happened, so list or search before trying again. A backend that cannot answer is `503 unavailable` with dependency `memory:{type}`, and a disabled provider is `422 disabled`. Record changes are audited with the record ID, never the text.
 
+Record responses also include optional `provenance`. In the Console, choose **View source** in a record's menu to see its known creation and last platform-confirmed write, the acting identity, and a link to an accessible run. Technical details include the run, attempt and tool-call IDs. Existing or imported records may have no source. An update to one of these records records only the latest write, not an invented creation source.
+
+Sources are saved separately from provider content. Failed source indexing does not retry or fail a confirmed memory write. Direct provider edits may be missing; if the current text differs from the last recorded write, the Console warns that its sources may be stale. Matching text does not prove that no external edits occurred. This is write attribution, not a full version history or a citation of the user's original message.
+
 ### Recall
 
 When a run starts, each mounted record memory with `recall` on searches for the `memory.recall_limit` records (5 by default) closest to the run's input, and the run receives them before its input as untrusted data, at most `memory.recall_bytes` (8 KiB) per memory. Recall waits at most `memory.recall_seconds` (2 seconds); a memory whose search fails or is too slow is skipped, and the run continues without it. Only the first input of a run recalls, so a run's history does not fill with repeated records.
@@ -161,3 +228,13 @@ People can read and correct what agents wrote. Reading needs `read`, editing and
 Each revision records who made the change: `principal_id` always (for an agent's change, the run's principal), plus `run_id` and `tool_call_id` for an agent's tool call. A file's ETag changes with every change, so an edit based on an old read answers `412 precondition_failed`.
 
 A file holds at most `memory.max_file_bytes` (64 KiB by default). Each file keeps its latest `memory.revisions_per_file` changes (10 by default), and one memory's content and history together fit `memory.max_total_bytes` (32 MiB by default): the oldest history is pruned first, and only content alone over the limit refuses a change, with `409 conflict` and reason `memory_full`. See the [settings reference](configuration-reference.md#memory) for every `memory.*` setting.
+
+## Inspect memories loaded for a reply
+
+An assistant reply can include `memory_sources`. The thread SSE stream sends it in `delta.item.memory_sources` alongside `TEXT_MESSAGE_END`. The run items API returns the same array in the reply's `content.memory_sources`. Save or render the array with the reply. A stream boundary, not message end alone, confirms checkpoint durability.
+
+Each source names the mount (`memory`) and the Service resource (`memory_id`). Record sources contain the IDs and SHA-256 text digests of records that fit the recall budget. File sources distinguish context status from actual loaded files: `files` lists paths, digests, byte counts and whether the delivered prefix was truncated. A file index alone does not mean that all listed files were read. `sources_truncated` means the reference list is partial.
+
+This evidence describes automatic memory delivery during that run. It does not prove the model cited a memory, inventory inherited conversation history, or include explicit memory tool reads. A missing field means no source evidence was captured; an empty `records` or `files` list must be interpreted with its source's `status`. Old replies are not backfilled.
+
+History reads use saved evidence without searching the memory provider again. Editing or deleting a memory does not rewrite earlier source evidence. Digests cannot reconstruct the old text. Current memory content remains subject to the memory API's authorization and availability. Applications decide how to display sources and offer editing controls.

@@ -39,6 +39,8 @@ export function UserMessage({
 /** The words a resolved request is worth; the decision itself is `request.ts`. */
 export function requestLabel(request: RunRequest, t: TFunction): string {
   switch (request.kind) {
+    case "memory_organization":
+      return t("Memory organization");
     case "feedback":
       return t("Feedback");
     case "subagent_result":

@@ -18,6 +18,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `server.host`              | `A13N_SERVER__HOST`              | 字符串        | default="127.0.0.1"                             |
 | `server.port`              | `A13N_SERVER__PORT`              | 整数          | minimum=1; maximum=65535; default=8000          |
 | `server.public_url`        | `A13N_SERVER__PUBLIC_URL`        | 字符串        | maxLength=2048; default="http://127.0.0.1:8000" |
+| `server.control_url`       | `A13N_SERVER__CONTROL_URL`       | 字符串或 null | maxLength=2048; default=null                    |
 | `server.trusted_proxies`   | `A13N_SERVER__TRUSTED_PROXIES`   | 字符串数组    | default=[]                                      |
 | `server.request_bytes`     | `A13N_SERVER__REQUEST_BYTES`     | 整数          | minimum=1024; maximum=33554432; default=2097152 |
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | 数值          | maximum=60; exclusiveMinimum=0; default=10      |

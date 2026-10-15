@@ -34,6 +34,19 @@ Choose native tools on the **Agent**, after selecting its saved Model. Changing 
 
 The CLI commands `setup`, `add model`, and the new-Model branch of `add agent` use the same backend choices and preparation rules. API connections can reuse saved-key metadata or an environment-variable reference without exposing key bytes. Subscription setup offers inline device/browser login or an explicit configure-later choice when an account is unavailable.
 
+### Anthropic cache defaults
+
+Creating a Model through the Anthropic connection saves these explicit block-cache settings, including for custom model IDs and compatible endpoints:
+
+```yaml
+settings:
+  anthropic_cache_instructions: true
+  anthropic_cache_tool_definitions: true
+  anthropic_cache_messages: true
+```
+
+Every offered Anthropic preset includes these flags. Harness UI uses them instead of unified `cache` or top-level `anthropic_cache` for endpoint compatibility. Advanced settings remain editable: explicit mappings, including `false` flags, cache durations, or an empty mapping, are preserved. Other protocols such as OpenRouter do not receive these flags merely because the model is Claude. Existing Model files are not migrated; add the flags manually or explicitly apply a preset to enable them.
+
 ## Gateway session affinity
 
 In **Add Model** or initial setup, choose a **Gateway session affinity** preset or type a replacement in **Session affinity header**. CLI `add model` offers the same presets and custom entry. The saved result is an ordinary header name, not a preset reference:
@@ -167,7 +180,7 @@ model_characteristics:
     max_video_bytes: 10485760
 ```
 
-The Agent can call default `read_video_url(url, instructions=None, media_type=None)`. Direct HTTP(S) videos become raw-byte `BinaryContent`, Base64-encoded by the SDK. Local `view` and directly supplied video share the default 10 MiB single/aggregate encoded budget. No compression, splitting, frame extraction, or upload occurs. YouTube stays a native URL and is rejected when unsupported, with no download fallback. Pasted links remain text. Provider 413 or exact payload-size errors use existing self-healing to remove inline images/videos and replay once; ordinary authentication, permission, MIME, and rate-limit errors do not trigger repair. Download errors remain tool failures. Filtering and healing preserve original history.
+The Agent can call default `read_media_url(url, instructions=None, media_type=None)`. The tool reads direct image, video, and audio resources and shares configured per-kind media-understanding Models with `view`. Native support returns `BinaryContent`; otherwise the configured auxiliary Model returns text. The SDK Base64-encodes native video. Local `view` and directly supplied video share the default 10 MiB single/aggregate encoded budget. No compression, splitting, frame extraction, or upload occurs. YouTube stays a native URL and is rejected when unsupported, with no download fallback. Pasted links remain text. Provider 413 or exact payload-size errors use existing self-healing to remove inline images/videos and replay once; ordinary authentication, permission, MIME, and rate-limit errors do not trigger repair. Download errors remain tool failures. Filtering and healing preserve original history.
 
 Model input capabilities are separate from Agent Capabilities, an Agent's tools, and model output modalities. In particular, the file `view` tool uses these declarations to attach media directly to the active model. Without a matching model input capability, it requires an explicitly configured [media-understanding fallback](../a13n-harness/multimedia-understanding.md) or reports unavailability.
 

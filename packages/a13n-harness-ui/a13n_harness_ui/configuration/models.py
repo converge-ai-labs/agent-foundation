@@ -13,6 +13,7 @@ from urllib.parse import unquote_plus, urlsplit
 
 from a13n_harness import RunConfiguration
 from a13n_harness.capabilities import ToolProxyConfig
+from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     RemoteEnvdStateData,
@@ -263,6 +264,26 @@ class MediaUnderstandingConfiguration(ConfigurationModel):
         return {kind: value for kind, value in values.items() if value is not None}
 
 
+class LiveConfiguration(ConfigurationModel):
+    """Built-in voice executor using an existing Codex subscription Model."""
+
+    enabled: bool = False
+    model: ResourceId | None = None
+    # Retain legacy values so immutable configuration generations remain readable.
+    # Voice admission rejects them before any provider access.
+    voice: CodexLiveVoice | Literal["marin", "cedar"] = "cove"
+    files_enabled: bool = True
+    instructions: str = Field(default="", max_length=64 * 1024)
+
+    @model_validator(mode="after")
+    def _selected_model(self) -> Self:
+        if self.model is not None:
+            _require_id_prefix(self.model, "model-")
+        if self.enabled and self.model is None:
+            raise ValueError("Enabled Live requires an existing Codex subscription Model")
+        return self
+
+
 class MemoryOrganizationConfiguration(ConfigurationModel):
     """WebUI-only maintenance with an optional Model override."""
 
@@ -322,6 +343,7 @@ class HarnessUiDocument(ConfigurationModel):
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
     )
     memory: MemoryConfiguration = Field(default_factory=MemoryConfiguration)
+    live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
 
 
@@ -855,6 +877,11 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
+        live = self.document.live
+        if live is not None and live.model is not None:
+            _require_reference(live.model, self.models, "live.model")
+            if not isinstance(self.models[live.model].authentication, CodexSubscriptionAuthentication):
+                raise ValueError("live.model requires codex_subscription authentication")
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
         for kind, model_id in self.document.media_understanding.selections().items():

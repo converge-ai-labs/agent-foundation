@@ -76,6 +76,7 @@ function mount({
   running = false,
   selected = true,
   coordinator = false,
+  live = false,
   starred = false,
   worker = false,
   waiting = false,
@@ -98,7 +99,13 @@ function mount({
       archived,
       starred,
       metadata_version: 3,
-      configuration: { project_id: "project-one" },
+      configuration: {
+        project_id: live ? null : "project-one",
+        agent_source: {
+          kind: live ? "live" : "configured",
+          id: live ? "live" : "assistant",
+        },
+      },
       root_activity: { state: running ? "running" : "inactive" },
     },
   } as Schema<"ThreadActivityView">;
@@ -141,6 +148,17 @@ it("archives directly from the menu with its observed version and opens the New 
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe("/new"),
   );
+});
+it("keeps the persistent Live destination out of archive actions", async () => {
+  mount({ live: true });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await screen.findByRole("menu");
+  expect(
+    screen.queryByRole("menuitem", { name: "Archive conversation" }),
+  ).toBeNull();
+  expect(requests).toHaveLength(0);
 });
 it("does not change the current page when archiving another conversation", async () => {
   mount({ selected: false });
@@ -365,4 +383,52 @@ it("keeps Coordinator identity through compact activity and explicit attention s
   expect(link.querySelector("small")).toBeNull();
   expect(link.querySelector("svg")).toBe(identity);
   expect(screen.getByRole("link", { name: /Example/ })).toBe(link);
+});
+
+it("finishes Star on confirmation without waiting for list refresh or invalidating history", async () => {
+  const { row } = mount({ running: true });
+  const detailKey = ["thread", "thread-one", "detail"];
+  const historyKey = ["thread", "thread-one", "history", "saved-source"];
+  queries.setQueryData(detailKey, { thread: row.thread });
+  queries.setQueryData(historyKey, { pages: [{ messages: ["retained"] }] });
+  // An unrelated Project's pending pagination must not keep Star busy.
+  const invalidate = vi
+    .spyOn(queries, "invalidateQueries")
+    .mockReturnValue(new Promise(() => {}));
+  let confirm!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    confirm = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      await pending;
+      return Response.json({
+        ...row.thread,
+        starred: true,
+        metadata_version: 4,
+        root_activity: { state: "inactive" },
+      });
+    }),
+  );
+  const actions = screen.getByRole("button", { name: "Actions for Example" });
+  await userEvent.click(actions);
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Star conversation" }),
+  );
+  await waitFor(() => expect(actions.getAttribute("aria-busy")).toBe("true"));
+  expect(
+    queries.getQueryData<Schema<"ThreadDetail">>(detailKey)?.thread.starred,
+  ).toBe(false);
+  confirm();
+  await waitFor(() => expect(actions.getAttribute("aria-busy")).toBe("false"));
+  const saved = queries.getQueryData<Schema<"ThreadDetail">>(detailKey)!.thread;
+  expect(saved.starred).toBe(true);
+  expect(saved.metadata_version).toBe(4);
+  expect(saved.root_activity.state).toBe("running");
+  await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+  expect(invalidate.mock.calls[0][0]?.queryKey).toEqual(detailKey);
+  expect(queries.getQueryState(historyKey)?.isInvalidated).toBe(false);
+  expect(document.activeElement).toBe(actions);
+  invalidate.mockRestore();
 });

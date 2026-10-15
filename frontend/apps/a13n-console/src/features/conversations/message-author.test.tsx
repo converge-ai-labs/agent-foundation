@@ -13,6 +13,7 @@ import { GuidanceMessage, UserMessage } from "./transcript/user-message";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
   fixtureRun,
+  fixtureRunAgent,
   fixtureThread,
   fixtureTimeline,
 } from "./transcript/fixture";
@@ -67,6 +68,8 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/agent"))
+        return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/message-authors")) {
         requests.push(url);
         if (failed)
@@ -140,7 +143,7 @@ it("attributes Chat input and steer separately, and exposes a keyboard-accessibl
   await waitFor(() => expect(document.activeElement).toBe(peer));
 });
 
-it("uses a queued entry's submission time when Debug renders its later Run", async () => {
+it("names a queued entry's author in Debug as a fact, under the Run's own start", async () => {
   record("inb_queue", "usr_peer", "Alex");
   show(
     <DebugRunSection
@@ -157,10 +160,13 @@ it("uses a queued entry's submission time when Debug renders its later Run", asy
   const author = await screen.findByRole("button", {
     name: "Show author: Alex",
   });
-  expect(author.parentElement!.querySelector("time")?.dateTime).toBe(
-    "2026-10-09T08:05:00Z",
+  // Debug is an executor's record: the author has no face, and the Run's
+  // header says when it started.
+  expect(author.textContent).toBe("Alex");
+  expect(author.parentElement!.querySelector("time")).toBeNull();
+  expect(document.querySelector("header time")?.getAttribute("datetime")).toBe(
+    fixtureRun().started_at,
   );
-  expect(author.textContent).not.toContain("You");
 });
 
 it("disambiguates equal names, identifies service accounts, and never calls an unknown sender You", async () => {

@@ -32,6 +32,7 @@ from a13n_harness.environment.advanced import (
     create_empty_environment_runtime,
     create_environment_runtime,
 )
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -43,6 +44,7 @@ from a13n_harness.environment.commands import (
     ProcessStatus,
 )
 from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.files import FileMkdirOperation, FileMutationResult, FileStatOperation
 from a13n_harness.environment.models import EnvironmentOperationReceipt, EnvironmentState
 from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy, OpaqueProcessHandle
@@ -2075,3 +2077,96 @@ async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: 
         else:
             assert (await copying).bytes_copied == 7
             assert writes == [b"payload"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("missing", [None, EnvironmentAction.FILE_MKDIR, EnvironmentAction.FILE_WRITE_BYTES])
+async def test_archive_requires_both_file_permissions_without_shell_authority(missing):
+    writes = []
+
+    class ArchiveFiles(_Files):
+        async def mkdir(self, *args, **kwargs):
+            raise AssertionError("Archive dispatch must stay one operation")
+
+        async def write_bytes_stream(self, *args, **kwargs):
+            raise AssertionError("Archive dispatch must stay one operation")
+
+        async def write_archive(self, path, archive):
+            writes.append((path, archive))
+            return FileMutationResult(
+                path=path,
+                receipt=EnvironmentOperationReceipt(
+                    execution_id=provider.bound.execution_id,
+                    observed_generation=provider.bound.descriptor.generation,
+                    operation_id="archive-1",
+                    stage="completed",
+                    outcome="succeeded",
+                ),
+            )
+
+    actions = frozenset({EnvironmentAction.FILE_MKDIR, EnvironmentAction.FILE_WRITE_BYTES} - {missing})
+    provider = _Binding("archive", operations=EnvironmentProviderOperations(files=ArchiveFiles()), permissions=actions)
+    runtime = create_environment_runtime(
+        mounts={"workspace": _runtime_mount(provider, permissions=actions)}, default_mount="workspace"
+    )
+    archive = FileArchive(b"provider validates ZIP", (("nested/SKILL.md", 1),))
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        if missing is None:
+            result = await environment.files.write_archive("/workspace/candidate", archive)
+            assert result.path == "/workspace/candidate"
+            assert writes == [("/candidate", archive)]
+        else:
+            with pytest.raises(EnvironmentError) as error:
+                await environment.files.write_archive("/workspace/candidate", archive)
+            assert error.value.code == "environment_denied"
+            assert not writes
+
+
+@pytest.mark.anyio
+async def test_archive_rejects_nested_mount_before_any_write():
+    actions = frozenset({EnvironmentAction.FILE_MKDIR, EnvironmentAction.FILE_WRITE_BYTES})
+    parent, nested = _Binding("parent", permissions=actions), _Binding("nested", permissions=actions)
+    runtime = create_environment_runtime(
+        mounts={
+            "workspace": _runtime_mount(parent, permissions=actions),
+            "nested": _runtime_mount(nested, permissions=actions, mount_path="/workspace/candidate/nested"),
+        },
+        default_mount="workspace",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        with pytest.raises(EnvironmentError) as error:
+            await environment.files.write_archive("/workspace/candidate", FileArchive(b"", (("nested/file", 1),)))
+        assert error.value.code == "environment_selection_invalid"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cross_mount", [False, True])
+async def test_batch_authorizes_every_operation_before_dispatch(cross_mount):
+    calls = []
+
+    class BatchFiles(_Files):
+        async def batch(self, operations):
+            calls.append(operations)
+            return ()
+
+    all_actions = frozenset({EnvironmentAction.FILE_STAT, EnvironmentAction.FILE_MKDIR})
+    permitted = all_actions if cross_mount else frozenset({EnvironmentAction.FILE_STAT})
+    parent = _Binding("parent", operations=EnvironmentProviderOperations(files=BatchFiles()), permissions=permitted)
+    nested = _Binding("nested", permissions=all_actions)
+    runtime = create_environment_runtime(
+        mounts={
+            "workspace": _runtime_mount(parent, permissions=permitted),
+            "nested": _runtime_mount(nested, permissions=all_actions, mount_path="/workspace/nested"),
+        },
+        default_mount="workspace",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        with pytest.raises(EnvironmentError) as error:
+            await environment.files.batch(
+                [
+                    FileStatOperation(path="/workspace/cache"),
+                    FileMkdirOperation(path="/workspace/nested/new" if cross_mount else "/workspace/new"),
+                ]
+            )
+        assert error.value.code == ("environment_selection_invalid" if cross_mount else "environment_denied")
+        assert calls == []

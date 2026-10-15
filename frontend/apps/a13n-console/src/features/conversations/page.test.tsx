@@ -223,122 +223,155 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
   cache.clear();
 });
 
-it("starts a Console session that mounts the chosen template, reusing both on a retry", async () => {
-  allowed = ["run"];
-  const posts: { path: string; body: unknown; key: string | null }[] = [];
-  let failures = 1;
-  client = createClient({
-    baseUrl: "https://service.example",
-    auth: { type: "session", csrfToken: "csrf" },
-    fetch: async (input, init) => {
-      const request = new Request(input, init);
-      const path = new URL(request.url).pathname;
-      if (request.method === "POST") {
-        const body: unknown = await request.json();
-        posts.push({ path, body, key: request.headers.get("Idempotency-Key") });
-        if (path.endsWith("/sessions"))
+it.each(["inherit", "off", "on"])(
+  "starts a Console session with memory %s, reusing preparation on retry",
+  async (memoryChoice) => {
+    allowed = ["run"];
+    const posts: { path: string; body: unknown; key: string | null }[] = [];
+    let failures = 1;
+    client = createClient({
+      baseUrl: "https://service.example",
+      auth: { type: "session", csrfToken: "csrf" },
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (request.method === "POST") {
+          const body: unknown = await request.json();
+          posts.push({
+            path,
+            body,
+            key: request.headers.get("Idempotency-Key"),
+          });
+          if (path.endsWith("/sessions"))
+            return Response.json(
+              {
+                id: "ses_1",
+                workspace_id: "workspace",
+                labels: { "a13n.console": "debug" },
+                created_by_id: "usr_1",
+                last_run_id: null,
+                version: 1,
+                created_at: "2026-09-20T10:00:00.000Z",
+                updated_at: "2026-09-20T10:00:00.000Z",
+              },
+              { status: 201 },
+            );
+          if (path.endsWith("/environments"))
+            return Response.json(
+              {
+                id: "env_new",
+                template_id: "envt_research",
+                status: "creating",
+              },
+              { status: 201 },
+            );
+          if (failures-- > 0)
+            return Response.json(
+              { error: { code: "unavailable", message: "Try again." } },
+              { status: 503 },
+            );
           return Response.json(
             {
-              id: "ses_1",
-              workspace_id: "workspace",
-              labels: { "a13n.console": "debug" },
-              created_by_id: "usr_1",
-              last_run_id: null,
-              version: 1,
-              created_at: "2026-09-20T10:00:00.000Z",
-              updated_at: "2026-09-20T10:00:00.000Z",
+              thread: fixtureThread(),
+              entry: {},
+              run: fixtureRun({ id: "run_1", status: "accepted" }),
             },
             { status: 201 },
           );
-        if (path.endsWith("/environments"))
-          return Response.json(
-            { id: "env_new", template_id: "envt_research", status: "creating" },
-            { status: 201 },
-          );
-        if (failures-- > 0)
-          return Response.json(
-            { error: { code: "unavailable", message: "Try again." } },
-            { status: 503 },
-          );
-        return Response.json(
-          {
-            thread: fixtureThread(),
-            entry: {},
-            run: fixtureRun({ id: "run_1", status: "accepted" }),
-          },
-          { status: 201 },
-        );
-      }
-      if (path.endsWith("/media-understanding-defaults"))
+        }
+        if (path.endsWith("/media-understanding-defaults"))
+          return Response.json({
+            id: "workspace",
+            version: 0,
+            image: null,
+            video: null,
+            audio: null,
+          });
         return Response.json({
-          id: "workspace",
-          version: 0,
-          image: null,
-          video: null,
-          audio: null,
+          items: path.endsWith("/agents")
+            ? [{ id: "agt_1", name: "Release Bot", image_url: null }]
+            : path.endsWith("/environment-templates")
+              ? [{ id: "envt_research", name: "Research" }]
+              : [],
+          next_cursor: null,
         });
-      return Response.json({
-        items: path.endsWith("/agents")
-          ? [{ id: "agt_1", name: "Release Bot", image_url: null }]
-          : path.endsWith("/environment-templates")
-            ? [{ id: "envt_research", name: "Research" }]
-            : [],
-        next_cursor: null,
-      });
-    },
-  });
-  const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  render(
-    <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/sessions/new?agent=agt_1"]}>
-        <Routes>
-          <Route path="/sessions/new" element={<NewConversation />} />
-          <Route path="*" element={<SelectedDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Options" }));
-  await user.click(screen.getByRole("combobox", { name: "Environment" }));
-  await user.click(
-    await screen.findByRole("option", {
-      name: "Create from template: Research",
-    }),
-  );
-  await user.click(screen.getByRole("button", { name: "Apply" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Message" }),
-    "Run the checks",
-  );
-  await user.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText("Try again.");
-  await user.click(screen.getByRole("button", { name: "Send" }));
-  expect(
-    await screen.findByText(
-      "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
-    ),
-  ).toBeTruthy();
-  expect(posts.map(({ path }) => path)).toEqual([
-    "/api/v1/sessions",
-    "/api/v1/environments",
-    "/api/v1/threads",
-    "/api/v1/threads",
-  ]);
-  expect(posts[0]?.body).toEqual({ labels: { "a13n.console": "debug" } });
-  expect(posts[1]?.body).toEqual({ template_id: "envt_research" });
-  expect(posts[2]?.body).toEqual({
-    agent_id: "agt_1",
-    payload: { content: [{ type: "text", text: "Run the checks" }] },
-    session_id: "ses_1",
-    environments: [{ name: "workspace", environment_id: "env_new" }],
-  });
-  // The retry replays the same submission.
-  expect(posts[3]).toEqual(posts[2]);
-  cache.clear();
-});
+      },
+    });
+    const cache = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={["/sessions/new?agent=agt_1"]}>
+          <Routes>
+            <Route path="/sessions/new" element={<NewConversation />} />
+            <Route path="*" element={<SelectedDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Options" }));
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(
+      await screen.findByRole("option", {
+        name: "Create from template: Research",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    if (memoryChoice !== "inherit") {
+      await user.click(
+        screen.getByRole("switch", { name: "Use agent memory defaults" }),
+      );
+      if (memoryChoice === "on")
+        await user.click(
+          screen.getByRole("switch", { name: "Use Memory Spaces" }),
+        );
+    }
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Run the checks",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Try again.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(
+      await screen.findByText(
+        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
+      ),
+    ).toBeTruthy();
+    expect(posts.map(({ path }) => path)).toEqual([
+      "/api/v1/sessions",
+      "/api/v1/environments",
+      "/api/v1/threads",
+      "/api/v1/threads",
+    ]);
+    expect(posts[0]?.body).toEqual({
+      labels: { "a13n.console": "debug" },
+      ...(memoryChoice === "inherit"
+        ? {}
+        : {
+            memory: {
+              enabled: memoryChoice === "on",
+              spaces: [],
+            },
+          }),
+    });
+    expect(posts[1]?.body).toEqual({ template_id: "envt_research" });
+    expect(posts[2]?.body).toEqual({
+      agent_id: "agt_1",
+      payload: { content: [{ type: "text", text: "Run the checks" }] },
+      session_id: "ses_1",
+      environments: [{ name: "workspace", environment_id: "env_new" }],
+    });
+    // The retry replays the same submission.
+    expect(posts[3]).toEqual(posts[2]);
+    cache.clear();
+  },
+);
 
 it("prefills the first message from the link, leaving sending to the user", async () => {
   allowed = ["run"];

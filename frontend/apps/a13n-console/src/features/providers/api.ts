@@ -3,12 +3,13 @@ import { data, ifMatch, representation, type Schema } from "../../shared/api";
 
 /** The provider kinds whose collections this client reads and writes. */
 export type ProviderKind = "environment" | "memory";
+export type ProviderApiKind = ProviderKind | "model" | "connector" | "web";
 
 /** A workspace's providers of one kind. */
 export function providerApi(
   client: Client,
   workspaceId: string,
-  kind: ProviderKind,
+  kind: ProviderApiKind,
 ) {
   const http = client.workspace(workspaceId);
   const collection = `/api/v1/${kind}-providers` as const;

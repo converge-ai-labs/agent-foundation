@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         VIDEO_UNDERSTANDING_MODEL_ENV,
         VIDEO_UNDERSTANDING_MODEL_SETTINGS_ENV,
         AgentMediaUnderstandingProvider,
+        MediaUnderstandingAvailability,
         MediaUnderstandingError,
         MediaUnderstandingProvider,
         MediaUnderstandingRequest,
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     )
     from .files import FILE_VIEW_RULES, FileToolset, FileViewRule
     from .interaction import UserInteractionToolset
+    from .media_url import MediaUrlToolset
     from .output import (
         DEFAULT_TOOL_OUTPUT_CHARS,
         FINAL_TOOL_OUTPUT_HARD_CHARS,
@@ -46,7 +48,6 @@ if TYPE_CHECKING:
     )
     from .shell import ShellToolset
     from .subagents import AsyncSubagentToolset
-    from .video_url import VideoUrlToolset
     from .web import WebToolset
     from .working_state import WorkingStateToolset
 
@@ -68,6 +69,7 @@ _EXPORTS = {
         "AgentMediaUnderstandingProvider",
         "IMAGE_UNDERSTANDING_MODEL_ENV",
         "IMAGE_UNDERSTANDING_MODEL_SETTINGS_ENV",
+        "MediaUnderstandingAvailability",
         "MediaUnderstandingError",
         "MediaUnderstandingProvider",
         "MediaUnderstandingRequest",
@@ -82,7 +84,7 @@ _EXPORTS = {
         "FileViewRule",
     ),
     "a13n_harness.toolsets.interaction": ("UserInteractionToolset",),
-    "a13n_harness.toolsets.video_url": ("VideoUrlToolset",),
+    "a13n_harness.toolsets.media_url": ("MediaUrlToolset",),
     "a13n_harness.toolsets.output": (
         "DEFAULT_TOOL_OUTPUT_CHARS",
         "FINAL_TOOL_OUTPUT_HARD_CHARS",

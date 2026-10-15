@@ -1,4 +1,55 @@
 export interface paths {
+    "/api/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_voice_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_voice_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_voice_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/configuration": {
         parameters: {
             query?: never;
@@ -1409,6 +1460,23 @@ export interface paths {
         patch: operations["set_auto_followup_api_threads__thread_id__coordinator_patch"];
         trace?: never;
     };
+    "/api/threads/{thread_id}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fork Thread */
+        post: operations["fork_thread_api_threads__thread_id__fork_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/decisions": {
         parameters: {
             query?: never;
@@ -1899,14 +1967,14 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory";
+            kind: "agent" | "markdown" | "memory" | "live";
             /** Id */
             id: string;
         };
@@ -2289,7 +2357,7 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory";
+            source_kind: "agent" | "markdown" | "memory" | "live";
             /** Source Id */
             source_id: string;
             /** Model Id */
@@ -3147,7 +3215,7 @@ export interface components {
             instructions?: string[];
             /**
              * Documentation Url
-             * @default https://a13n.converge.ai/docs/a13n-envd/
+             * @default https://a13n.dev/docs/a13n-envd/
              */
             documentation_url?: string;
         };
@@ -3634,6 +3702,24 @@ export interface components {
              */
             access: "api_key" | "dangerous_bypass";
         };
+        /**
+         * LiveAgentSource
+         * @description Application-owned voice executor; not a selectable Agent resource.
+         */
+        LiveAgentSource: {
+            /**
+             * Kind
+             * @default live
+             * @constant
+             */
+            kind?: "live";
+            /**
+             * Id
+             * @default live
+             * @constant
+             */
+            id?: "live";
+        };
         LocalRoots: string[];
         /** LoginStatus */
         LoginStatus: {
@@ -4075,7 +4161,7 @@ export interface components {
          * @description Immutable payload families owned by the Harness UI store.
          * @enum {string}
          */
-        ObjectKind: "configuration-generation" | "run-composition" | "thread-initial-state" | "continuation" | "child-checkpoint" | "environment-state" | "mcp-app-resource" | "mcp-app-snapshot";
+        ObjectKind: "configuration-generation" | "run-composition" | "thread-initial-state" | "continuation" | "continuation-state" | "continuation-display" | "display-segment" | "live-transcript" | "child-checkpoint" | "environment-state" | "mcp-app-resource" | "mcp-app-snapshot";
         /**
          * ObjectRef
          * @description Authority-neutral identity for one verified immutable object.
@@ -4685,6 +4771,11 @@ export interface components {
              * @default true
              */
             shell_review?: boolean;
+            /**
+             * Enable Live
+             * @default true
+             */
+            enable_live?: boolean;
             /** Shell Review Model */
             shell_review_model?: string | null;
             /** Include Default Subagents */
@@ -4736,7 +4827,7 @@ export interface components {
              *
              *     <project_info>
              *     GitHub: https://github.com/converge-ai-labs/agent-foundation
-             *     Documentation: https://a13n.converge.ai/docs/a13n-harness-ui/
+             *     Documentation: https://a13n.dev/docs/a13n-harness-ui/
              *     CLI command: a13n-harness-ui
              *     Python distribution: a13n-harness-ui
              *     </project_info>
@@ -5700,6 +5791,8 @@ export interface components {
         TranscriptTurn: {
             /** Turn Id */
             turn_id: string;
+            /** Content Revision */
+            content_revision?: string | null;
             /** Input Position */
             input_position: number;
             /** End Position */
@@ -5788,6 +5881,76 @@ export interface components {
              */
             max_video_bytes?: number;
         };
+        /** VoiceSnapshot */
+        VoiceSnapshot: {
+            /**
+             * Status
+             * @default idle
+             * @enum {string}
+             */
+            status?: "idle" | "starting" | "connecting" | "active" | "failed";
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled?: boolean;
+            /** Thread Id */
+            thread_id?: string | null;
+            /** Start Id */
+            start_id?: string | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Answer Sdp */
+            answer_sdp?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Transcript
+             * @default []
+             */
+            transcript?: components["schemas"]["VoiceTurn"][];
+            /**
+             * User Text
+             * @default
+             */
+            user_text?: string;
+            /**
+             * Assistant Text
+             * @default
+             */
+            assistant_text?: string;
+        };
+        /** VoiceStart */
+        VoiceStart: {
+            /** Owner Id */
+            owner_id: string;
+            /** Start Id */
+            start_id: string;
+            /** Offer Sdp */
+            offer_sdp: string;
+        };
+        /** VoiceStop */
+        VoiceStop: {
+            /** Owner Id */
+            owner_id: string;
+            /** Start Id */
+            start_id: string;
+        };
+        /** VoiceTurn */
+        VoiceTurn: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Text */
+            text: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
         /** WorkbenchPage */
         WorkbenchPage: {
             /**
@@ -5844,6 +6007,20 @@ export interface components {
              * @default null
              */
             after?: string | null;
+        };
+        /** FileSource */
+        FileSource: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+            /** Bytes */
+            bytes: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated?: boolean;
         };
         /** FocusEventFrame */
         FocusEventFrame: {
@@ -5917,6 +6094,11 @@ export interface components {
             failure?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
+            /**
+             * Memory Sources
+             * @default null
+             */
+            memory_sources?: components["schemas"]["MemorySource"][] | null;
         };
         /** @enum {string} */
         ItemState: "in_progress" | "completed" | "interrupted" | "failed";
@@ -5962,6 +6144,56 @@ export interface components {
             display_position?: components["schemas"]["StreamPosition"] | null;
             /** @default null */
             item?: components["schemas"]["ItemRef"] | null;
+        };
+        /**
+         * MemorySource
+         * @description One automatic delivery in this Run; content remains in the memory or execution archive.
+         */
+        MemorySource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "record" | "file";
+            /** Memory */
+            memory: string;
+            /**
+             * Memory Id
+             * @default null
+             */
+            memory_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "recalled" | "failed" | "timeout" | "full" | "changes" | "unchanged" | "omitted" | "unavailable";
+            /**
+             * Records
+             * @default []
+             */
+            records?: components["schemas"]["RecordSource"][];
+            /**
+             * Files
+             * @default []
+             */
+            files?: components["schemas"]["FileSource"][];
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor?: string | null;
+            /**
+             * Sources Truncated
+             * @default false
+             */
+            sources_truncated?: boolean;
+        };
+        /** RecordSource */
+        RecordSource: {
+            /** Id */
+            id: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** ResetFrame */
         ResetFrame: {
@@ -6140,6 +6372,33 @@ export interface components {
              * @constant
              */
             version?: 1;
+            /**
+             * Kind
+             * @default ping
+             * @constant
+             */
+            kind?: "ping";
+        };
+        /** VoiceCommand */
+        VoiceCommand: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "media_connected" | "stop" | "pong";
+            /**
+             * Start Id
+             * @default
+             */
+            start_id?: string;
+        };
+        /** VoiceOwner */
+        VoiceOwner: {
+            /** Owner Id */
+            owner_id: string;
+        };
+        /** VoicePing */
+        VoicePing: {
             /**
              * Kind
              * @default ping
@@ -6777,6 +7036,16 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
+        /**
+         * DraftCapture
+         * @description Exact synchronized input to consume only after submission is accepted.
+         */
+        DraftCapture: {
+            /** Draft Id */
+            draft_id: string;
+            /** Update Base64 */
+            update_base64: string;
+        };
         FastSelection: boolean | "ultrafast";
         /** InputAttachmentReference */
         InputAttachmentReference: {
@@ -6808,6 +7077,7 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            draft?: components["schemas"]["DraftCapture"] | null;
             /**
              * App Context
              * @default []
@@ -6834,6 +7104,7 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            draft?: components["schemas"]["DraftCapture"] | null;
         };
     };
     responses: never;
@@ -6844,6 +7115,92 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    status_api_voice_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceSnapshot"];
+                };
+            };
+        };
+    };
+    start_api_voice_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_voice_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceStop"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     push_configuration_api_push_configuration_get: {
         parameters: {
             query?: never;
@@ -9715,6 +10072,37 @@ export interface operations {
                 "application/json": components["schemas"]["CoordinatorUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fork_thread_api_threads__thread_id__fork_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -98,10 +98,11 @@ it("keeps builtin configuration read-only, including the model", async () => {
     (screen.getByRole("button", { name: "Change tools" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  expect(
-    (screen.getByRole("combobox", { name: "Model" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+  // The model reads as text, as the other fields do, not as a disabled picker.
+  expect(screen.queryByRole("combobox", { name: "Model" })).toBeNull();
+  expect(screen.getByRole("group", { name: "Model" }).textContent).toContain(
+    initial.model,
+  );
   expect(
     screen.queryByRole("spinbutton", { name: "Max output tokens" }),
   ).toBeNull();

@@ -3,11 +3,12 @@ title: Sandbox image
 description: Choose a minimal Envd runtime or a development sandbox with browser automation and optional workspace skills.
 ---
 
-The `a13n-sandbox` image has two variants. Both start Envd as root and run Session commands and file operations as the provisioned `sandbox` account (`1000:1000`). The standard variant also grants that account passwordless sudo. The outer container or VM supplies isolation; the standard variant's default UID is not a barrier against intentional root access.
+The `a13n-sandbox` image has three variants. All start Envd as root and run Session commands and file operations as the provisioned `sandbox` account (`1000:1000`). The standard and desktop variants also grant that account passwordless sudo. The outer container or VM supplies isolation; these variants' default UID is not a barrier against intentional root access.
 
 | Variant            | Contents                                                                           | Intended use                                                                               |
 | ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Standard (default) | Envd, the development toolchain, agent-browser, Chromium, fonts and bundled skills | Agent development through Envd or the native Docker Provider                               |
+| Desktop            | Standard toolchain plus Xvfb, Openbox and supervised desktop startup               | Computer Use through an image-managed Envd                                                 |
 | Slim               | Envd, Debian's basic shell/utilities, runtime libraries, CA certificates and tini  | Envd operation or a base for a custom image; no Python, Node.js, compiler, sudo or browser |
 
 Slim does not meet the native Docker Provider's Python prerequisite. It does not include the optional controlled-egress network tools; use the standard variant or provision those tools in a derived image.
@@ -23,19 +24,51 @@ make image-sandbox
 make image-check-sandbox
 make image-sandbox-slim
 make image-check-sandbox-slim
+make image-sandbox-desktop
+make image-check-sandbox-desktop
 ```
 
-The local tags are `a13n-sandbox:local` and `a13n-sandbox:local-slim`. Smoke checks verify daemon startup, identity and directory permissions for both variants. Standard checks also cover the toolchain, sudo, skill initialization and offline browser snapshots/screenshots. Container CI runs these checks on native AMD64 and ARM64 runners. Protocol and execution-isolation tests remain in the Envd test suite.
+The local tags are `a13n-sandbox:local`, `a13n-sandbox:local-slim` and `a13n-sandbox:local-desktop`. Smoke checks verify daemon startup, identity and directory permissions for all variants. Standard checks also cover the toolchain, sudo, skill initialization and offline browser snapshots/screenshots. Container CI runs these checks on native AMD64 and ARM64 runners. Protocol and execution-isolation tests remain in the Envd test suite.
 
-Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd release tag matching your EIP client. Both variants contain the same daemon version.
+Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd release tag matching your EIP client. All variants contain the same daemon version.
 
-| Channel           | Standard          | Slim                 |
-| ----------------- | ----------------- | -------------------- |
-| Stable release    | `X.Y.Z`, `latest` | `X.Y.Z-slim`, `slim` |
-| Release candidate | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    |
-| Main development  | `dev`             | `dev-slim`           |
+| Channel           | Standard          | Slim                 | Desktop                    |
+| ----------------- | ----------------- | -------------------- | -------------------------- |
+| Stable release    | `X.Y.Z`, `latest` | `X.Y.Z-slim`, `slim` | `X.Y.Z-desktop`, `desktop` |
+| Release candidate | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    | `X.Y.Z-rc.N-desktop`       |
+| Main development  | `dev`             | `dev-slim`           | `dev-desktop`              |
 
-RC and development publication never advance `latest` or `slim`. These instructions describe the source images in this checkout, not a promise that an older published tag already has these defaults.
+RC and development publication never advance `latest`, `slim` or `desktop`. These instructions describe the source images in this checkout, not a promise that an older published tag already has these defaults.
+
+## Managed Docker desktop in Service
+
+1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or select a published desktop tag containing this feature.
+2. In Console, add a Docker connection. Configure the existing **Docker host** for Engine management, then enable **Envd HTTP connection** and enter the hostname or IP reachable by every Service/Worker. For a local process connecting to Docker Desktop, use `127.0.0.1` for both the reachable host and bind address. For a remote Engine, explicitly configure its reachable private address and port-binding interface, and opt into the trusted plaintext private link.
+3. In the Console template editor, select **Desktop environment**. Service selects the desktop image and HTTP EIP execution together; these fields cannot be edited in this mode. **Standard environment** selects the standard image and native Docker execution. CPU, memory and mounts remain configurable.
+4. For a local build or your own image, select **Custom image** to expose image, execution, desktop and advanced/JSON settings. Use `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** enabled (`desktop: true`), and `pull_policy: never`. Do not disable networking. The image supplies desktop/envd startup; no custom initialization script is needed.
+5. Create an Environment. Service publishes envd's port, discovers its Docker-assigned host port, verifies its device identity through authenticated EIP, and checks actual desktop readiness.
+6. Enable Computer tools on the Agent and allow the required Computer operations on its environment mount. These permissions do not supply a missing desktop.
+
+Example Docker connection configuration for a trusted private network:
+
+```json
+{
+  "docker_host": "tcp://10.0.0.8:2376",
+  "envd_http": {
+    "host": "10.0.0.8",
+    "bind_host": "10.0.0.8",
+    "allow_plaintext_private_link": true
+  }
+}
+```
+
+The Docker API and envd HTTP are separate connections. Configure Docker API transport protection independently. The HTTP path publishes an ephemeral host port for container port 8888; routing/firewalls must allow it from all relevant Service/Worker roles. It provides no TLS termination and must not expose bearer-authenticated plaintext traffic on the public Internet. Deployment outbound policy still applies to the resolved endpoint. A cloud Worker cannot reach a local Mac behind NAT through this path without an existing inbound route; Service reverse WebSocket integration is separate work.
+
+Each attachment inspects the exact retained container's current port mapping, including after restart, and verifies its expected envd device ID. The common image entrypoint creates a random credential in `/var/lib/a13n-envd/http-token` with mode 0600, or the configured `credential_file`. The provider reads it through the authorized Docker Engine connection; it never publishes the token in template JSON, instance state or API responses. Agent operations go directly over existing HTTP EIP, with no Docker exec proxy. Custom images can use the same bootstrap contract without an official image label; `execution: envd_http` also supports headless envd.
+
+Failed readiness retains the allocated container for inspection. Closing a Run leaves it running; stop/start retains files and credentials but starts a fresh graphical session. Stop/destroy revokes access; credential rotation requires stopping the container, replacing its private token file, closing existing sessions, and restarting. Experimental relay-based desktop templates from before this change need new instances with the explicit execution and connection settings; native Docker recipes retain their defaults and fingerprints.
+
+The desktop launcher runs as root, with Xvfb/Openbox and Session operations under `sandbox`. It creates an Xauthority cookie, disables X11 TCP listening, supervises required processes, and fails the container if the desktop dies. The standard image's passwordless sudo behavior also applies. This feature provides Agent screenshots/input, not a live remote-desktop viewer or human takeover. X11 literal Unicode `type_text` remains unsupported; supported key events are available.
 
 ## Run with a Host
 

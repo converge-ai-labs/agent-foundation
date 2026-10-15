@@ -8,11 +8,13 @@ Resource routes are served by the `all` and `control` roles; the `worker` role s
 
 ## MCP management surface
 
-`/api/v1/mcp/` serves Streamable HTTP MCP on API-serving roles. It is an alternate transport for workspace resource management and read-only trace queries, not an execution engine or an arbitrary HTTP proxy. The original HTTP operations retain ownership of authentication, authorization, validation, audit, preconditions, pagination and trace redaction.
+`/api/v1/mcp/` serves Streamable HTTP MCP on API-serving roles. It is an alternate transport for workspace resource management and read-only execution queries, not an execution engine or an arbitrary HTTP proxy. The original HTTP operations retain ownership of authentication, authorization, validation, audit, preconditions, pagination and trace redaction.
 
-The assembled application's OpenAPI admits operations individually through `x-a13n-mcp: true`. Admission covers JSON workspace resource operations, including resources that reference existing upload IDs, environment management and read-only Run/Attempt trace lookup. Agent execution/submission/resume/cancellation/waiting, live output/SSE, file transfers and binary content, organization/member/permission administration, and browser login/OAuth authorization flows remain outside this surface. Findings list/detail and Analysis history are admitted read-only JSON queries. Finding submission/review and analysis start/preset preparation remain direct HTTP operations. Distribution routes follow the same explicit admission and JSON constraints. Unmarked operations stay absent; invalid admitted operations and tool-name collisions fail assembly. Generated tool names are deterministic for their operation IDs, independent of route traversal order. Arguments cannot redirect dispatch to a different operation.
+The assembled application's OpenAPI admits operations individually through `x-a13n-mcp: true`. Admission covers JSON workspace resource operations, including resources that reference existing upload IDs, environment management, read-only Session, Thread, inbox, Run, Attempt, display-content and trace lookup, the scoped usage summary (`GET /usage`), and per-record model request metrics (`GET /usage/records/{record_id}/metrics`). Agent execution/submission/resume/cancellation/waiting, live output/SSE, file transfers and binary content, organization/member/permission administration, and browser login/OAuth authorization flows remain outside this surface. Findings list/detail and Analysis history are admitted read-only JSON queries. Finding submission/review and analysis start/preset preparation remain direct HTTP operations. Distribution routes follow the same explicit admission and JSON constraints. Unmarked operations stay absent; invalid admitted operations and tool-name collisions fail assembly. Generated tool names are deterministic for their operation IDs, independent of route traversal order. Arguments cannot redirect dispatch to a different operation.
 
-Discovery and invocation require a Bearer credential authenticated by the selected Distribution authenticator with a workspace-confined principal. Browser cookies are not used. An explicit `X-Workspace-ID` must agree with confinement. Credentials and workspace selection are connection context, not tool arguments. Each generated call forwards the caller's credential to the original HTTP application, which authorizes again; neither identities nor cookies are shared across invocations. The transport supplies no additional approval authority.
+Discovery and invocation require a Bearer credential: the selected Distribution authenticator supplies external workspace credentials; the application validates [Run platform credentials](03-tenancy.md#run-platform-credentials) for internal Agents. Both yield a workspace-confined principal. Browser cookies are not used. An explicit `X-Workspace-ID` must agree with confinement. Credentials and workspace selection are connection context, not tool arguments. Each generated call forwards the caller's credential to the original HTTP application, which authorizes again; neither identities nor cookies are shared across invocations. The transport supplies no additional approval authority.
+
+Internal platform admission additionally requires `x-a13n-platform: {group, effect}`, where `effect` is `read` or `write`. The owning route declares it alongside MCP admission; the same metadata controls direct HTTP admission, MCP discovery/invocation, grouping and Harness review defaults. A GET default is not sufficient to classify every operation: validation POSTs read, connection tests have external effects. Internal groups exclude environment instances, Memory, credentials and administration, even where external MCP admits them. `search_documents` remains available externally and is excluded from internal platform selection.
 
 Path, query and declared operation-header parameters retain their schemas. The original JSON body is nested under `request_body`, preserving unions, requiredness, explicit nulls, omitted fields and empty objects. API tool results expose `{status, headers, body}` in ordinary and structured tool content. `headers` contains ETag, request ID and retry-after metadata when present, under lowercase names, never response cookies. `body` is the unchanged JSON response, or null for an empty response. Non-success HTTP responses are tool errors with the original Service error body and request ID. Protocol argument failures are MCP errors, not fabricated HTTP responses. Output schemas describe this envelope rather than advertising the bare API body.
 
@@ -30,8 +32,11 @@ Every route requires a credential except the health routes, the OpenAPI document
 
 - **Login session.** `POST /auth/login` sets the `__Host-a13n_session` cookie, or `a13n_session` when `server.public_url` is plain HTTP ([03](03-tenancy.md#authentication)). A cookie request with a method other than GET, HEAD or OPTIONS must send `X-CSRF-Token`, and a present `Origin` must be a public origin of `server.public_url`; either failure is 403 `forbidden`. Login and the other public account `POST`s check `Origin` the same way.
 - **API key.** `Authorization: Bearer a13n_…`. A key is confined to exactly one workspace and holds only its principal's current verbs there, and at most `read` on its organization; account operations, issuing API keys or invitations and browser authorizations need a login session (403 `forbidden`, [03](03-tenancy.md#authorization)). When an `Authorization` header is present the cookie is ignored.
+- **Run platform credential.** The Host privately supplies a short-lived bearer credential to its platform MCP client. Its selected operations, workspace, current authority and accepted authority ceiling apply equally to MCP and direct HTTP; [03](03-tenancy.md#run-platform-credentials) owns issuance and invalidation. Models cannot supply or retrieve this credential.
 
 A missing or dead credential is 401 `unauthenticated`. Every authenticated response, a route's own response and an error after authentication included, carries `Cache-Control: no-store` (stored content keeps its own `private, no-store`, [representations](#representations)) and any renewed login cookie.
+
+On API-serving roles, an explicitly supplied `Authorization` header is authenticated before HTTP route admission, including public paths. Public paths remain accessible without a credential; supplying an invalid credential yields 401. A Run credential also requires explicit operation admission even on a public path.
 
 While the distribution keeps the local authenticator, the OpenAPI document declares these credentials as the security schemes `apiKey` (bearer), `loginSession` (the cookie) and `csrf` (the `X-CSRF-Token` header). Every authenticated operation accepts `apiKey` or `loginSession`, the latter together with `csrf` on methods other than GET, HEAD and OPTIONS; the public operations declare no scheme.
 
@@ -54,6 +59,7 @@ Request and response bodies are JSON objects without an envelope, except these r
 | `GET …/skills/{skill}/revisions/{revision}/content`             | the package as `application/zip`                                                                        |
 | `GET …/skills/{skill}/revisions/{revision}/files/{path}`        | one file of the package as `application/octet-stream`                                                   |
 | `GET …/sessions/{session}/stream`                               | `text/event-stream` ([07](07-facts-and-delivery.md#the-session-stream))                                 |
+| `GET …/threads/{thread}/stream`                                 | `text/event-stream` ([07](07-facts-and-delivery.md#the-thread-stream))                                  |
 | `GET /connections/callback`                                     | a 303 redirect to the authorization's return URL, or a JSON outcome ([04](04-resources.md#connections)) |
 
 Failures on these routes still use the JSON [error envelope](#errors). Stored tenant bytes are served with `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` and `Cache-Control: private, no-store`; asset and skill content adds `Content-Disposition: attachment` with the stored name, and images are served inline. Timestamps are RFC 3339 in UTC. IDs are kind-prefixed ([02](02-layout.md#object-ids)); clients never parse them.
@@ -290,17 +296,22 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/threads/{thread}`                   | GET, PATCH         | [05](05-runs.md#reads)                            |
 | `/threads/{thread}/archive`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
 | `/threads/{thread}/runs`              | GET                | [05](05-runs.md#reads)                            |
+| `/threads/{thread}/stream`            | GET                | [07](07-facts-and-delivery.md#the-thread-stream)  |
 | `/threads/{thread}/inbox`             | GET, POST          | [05](05-runs.md#submit-and-accept)                |
 | `/threads/{thread}/inbox/order`       | PUT                | [05](05-runs.md#editing-queued-input)             |
 | `/threads/{thread}/inbox/{entry}`     | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)             |
 | `/runs/{run}`                         | GET, PATCH         | [05](05-runs.md#reads)                            |
+| `/runs`                               | GET                | [05](05-runs.md#reads)                            |
 | `/runs/{run}/interrupt`               | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
 | `/runs/{run}/fork`                    | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
 | `/runs/{run}/resume`                  | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
 | `/runs/{run}/items`                   | GET                | [05](05-runs.md#reads)                            |
 | `/runs/{run}/contents/{content}`      | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/images/{image}`          | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/agent`                   | GET                | [05](05-runs.md#reads)                            |
 | `/runs/{run}/lineage`                 | GET                | [05](05-runs.md#reads)                            |
 | `/runs/{run}/attempts`                | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/attempts/{attempt}`      | GET                | [05](05-runs.md#reads)                            |
 
 ### Environments
 
@@ -312,9 +323,17 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/environments/{environment}`           | GET, PATCH, DELETE | [06](06-environments.md#stop-start-and-delete), [external targets](06-environments.md#external-targets) |
 | `/environments/{environment}/stop`      | POST               | [06](06-environments.md#stop-start-and-delete)                                                          |
 | `/threads/{thread}/environments`        | GET, POST          | [06](06-environments.md#mounts)                                                                         |
-| `/threads/{thread}/environments/{name}` | DELETE             | [06](06-environments.md#mounts)                                                                         |
+| `/threads/{thread}/environments/{name}` | PATCH, DELETE      | [06](06-environments.md#mounts)                                                                         |
 
 ### Memories
+
+| Path                                   | Methods            | Owner                                     |
+| -------------------------------------- | ------------------ | ----------------------------------------- |
+| `/memory-spaces`                       | GET, POST          | [11](11-memory.md#memory-spaces)          |
+| `/memory-spaces/{space}`               | GET, PATCH, DELETE | [11](11-memory.md#memory-spaces)          |
+| `/memory-spaces/{space}/organization`  | GET                | [11](11-memory.md#organization-lifecycle) |
+| `/memory-spaces/{space}/organizations` | GET, POST          | [11](11-memory.md#organization-lifecycle) |
+| `/memory-spaces/{space}/sessions`      | GET                | [11](11-memory.md#organization-lifecycle) |
 
 | Path                                         | Methods            | Owner                                                |
 | -------------------------------------------- | ------------------ | ---------------------------------------------------- |
@@ -342,6 +361,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 | `/usage/agents`                        | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
 | `/usage/models`                        | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
 | `/usage`                               | GET     | [07](07-facts-and-delivery.md#usage-records)            |
+| `/usage/records/{record_id}/metrics`   | GET     | [07](07-facts-and-delivery.md#usage-records)            |
 | `/runs/{run}/attempts/{attempt}/trace` | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)              |
@@ -354,5 +374,6 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 
 - `openapi.json`, the OpenAPI document the application serves at `/api/v1/openapi.json`;
 - `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`).
+- `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.

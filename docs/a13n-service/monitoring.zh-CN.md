@@ -100,6 +100,8 @@ Worker 也提供 Harness 指标，例如 `a13n_harness_run_duration_seconds`，�
 
 4. Webhook 或邮件未收到时，搜索对应 `kind` 的 `Outbox` 日志；dead 投递会给出 `reason`。
 
+运行失败消息包含端点策略拒绝的具体原因（例如必须使用 HTTPS），以及模型请求的 HTTP 状态码（例如认证失败时的 `HTTP 401`）。端点策略拒绝后，运行直接失败，不会使用相同配置重复尝试。上游原始响应体不会返回。
+
 ## 用量
 
 工作空间用量作为事实记录保存在 PostgreSQL，绝不写入指标。工作空间通过[用量 API](agents-and-runs.md#usage)读取自身用量。运维人员可导入监控套件的用量看板，通过只读数据库角色读取按组织、工作空间和模型统计的运行及模型用量。

@@ -309,3 +309,33 @@ def test_fork_moves_inline_children_to_new_threads_without_reading_their_states(
     assert len(threads) == 2 and threads.isdisjoint({inline.thread_id, "thr_saved", "thr_fork"})
     assert children["worker-abcd"].state == inline
     assert children["worker-beef"].state == saved and children["worker-beef"].refs == (screenshot,)
+
+
+async def test_namespace_snapshots_reuse_immutable_encoding_without_decoding_unchanged_values(monkeypatch):
+    original = AgentContextStateSnapshot(
+        entries={
+            "opaque": CapabilityState(version="future", data={"large": ["unchanged"] * 1000}),
+        }
+    )
+    state = AgentContextState(original)
+    assert await state.snapshot() is original
+    payload = CapabilityState.data.fget
+    reads = []
+
+    def counted(entry):
+        reads.append(entry.version)
+        return payload(entry)
+
+    monkeypatch.setattr(CapabilityState, "data", property(counted))
+    await state.write("counter", CounterState(value=1), version="1")
+    updated = await state.snapshot()
+    assert reads == []
+    assert updated is await state.snapshot()
+    await state.write("counter", CounterState(value=1), version="1")
+    assert updated is await state.snapshot()
+    assert updated.entries["opaque"].data == original.entries["opaque"].data
+    assert AgentContextStateSnapshot.model_validate_json(updated.model_dump_json()) == updated
+    detached = updated.entries
+    detached.pop("opaque")
+    assert updated.get("opaque") is not None
+    assert original.get("counter") is None

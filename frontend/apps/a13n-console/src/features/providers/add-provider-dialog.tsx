@@ -32,6 +32,7 @@ export function AddProviderDialog<D extends ProviderDefinition>({
   connectDescription,
   onChoose,
   children,
+  renderCatalog,
 }: {
   definitions?: readonly D[];
   error?: unknown;
@@ -53,6 +54,10 @@ export function AddProviderDialog<D extends ProviderDefinition>({
   /** Called whenever the chosen service changes; "" when stepping back. */
   onChoose?: (type: string) => void;
   children: (definition: D, back: () => void) => ReactNode;
+  renderCatalog?: (
+    definitions: readonly D[],
+    onChoose: (type: string) => void,
+  ) => ReactNode;
 }) {
   const { t } = useTranslation();
   const [type, setType] = useState("");
@@ -100,6 +105,8 @@ export function AddProviderDialog<D extends ProviderDefinition>({
           <Loading variant="form" rows={3} />
         ) : chosen ? (
           children(chosen, () => choose(""))
+        ) : renderCatalog ? (
+          renderCatalog(definitions, choose)
         ) : (
           <ProviderCatalog
             definitions={definitions}

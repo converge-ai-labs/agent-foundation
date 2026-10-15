@@ -10,20 +10,23 @@ audited by record ID, never by text.
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx2
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, RecordStore, validate_record_text
+from a13n_harness.providers.memory import MemoryStoreError, RecordStore, validate_record_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, disabled, invalid, not_found
 from a13n_service.infra.outbound import open_http
+from a13n_service.resources.memories import provenance
 from a13n_service.resources.memories.schemas import (
     MemoryRecordPage,
     MemoryRecordSearch,
+    MemoryRecordSource,
     MemoryRecordText,
     MemoryRecordView,
 )
@@ -120,10 +123,6 @@ def refusals(memory: RecordMemory, record_id: str | None = None, *, write: bool 
                 raise ServiceError("unavailable", message, {"dependency": dependency}) from None
 
 
-def _view(item: MemoryRecord) -> MemoryRecordView:
-    return MemoryRecordView.model_validate(item)
-
-
 def _text(body: MemoryRecordText, settings: MemorySettings) -> str:
     try:
         return validate_record_text(body.text, max_chars=settings.record_chars)
@@ -158,7 +157,9 @@ async def list_records(
     async with open_record_store(runtime, memory.provider, memory.namespace) as store:
         with refusals(memory):
             page = await store.list(limit=limit, cursor=cursor)
-    return MemoryRecordPage(items=[_view(item) for item in page.records], next_cursor=page.next_cursor)
+    return MemoryRecordPage(
+        items=await provenance.views(runtime.storage, memory.id, page.records), next_cursor=page.next_cursor
+    )
 
 
 async def search_records(
@@ -169,7 +170,7 @@ async def search_records(
     async with open_record_store(runtime, memory.provider, memory.namespace) as store:
         with refusals(memory):
             found = await store.search(body.query, limit=body.limit)
-    return MemoryRecordPage(items=[_view(item) for item in found], next_cursor=None)
+    return MemoryRecordPage(items=await provenance.views(runtime.storage, memory.id, found), next_cursor=None)
 
 
 async def add_record(
@@ -180,8 +181,12 @@ async def add_record(
     async with open_record_store(runtime, memory.provider, memory.namespace) as store:
         with refusals(memory, write=True):
             added = await store.add(text)
+    source = MemoryRecordSource(
+        principal_id=actor.id, run_id=None, attempt_id=None, tool_call_id=None, confirmed_at=datetime.now(UTC)
+    )
+    await provenance.remember(runtime.storage, memory.id, added, source, created=True)
     await _audit(runtime.storage, actor, memory, "create", added.id)
-    return _view(added)
+    return (await provenance.views(runtime.storage, memory.id, [added]))[0]
 
 
 async def update_record(
@@ -193,8 +198,12 @@ async def update_record(
     async with open_record_store(runtime, memory.provider, memory.namespace) as store:
         with refusals(memory, record_id, write=True):
             updated = await store.update(record_id, text)
+    source = MemoryRecordSource(
+        principal_id=actor.id, run_id=None, attempt_id=None, tool_call_id=None, confirmed_at=datetime.now(UTC)
+    )
+    await provenance.remember(runtime.storage, memory.id, updated, source, created=False)
     await _audit(runtime.storage, actor, memory, "update", updated.id)
-    return _view(updated)
+    return (await provenance.views(runtime.storage, memory.id, [updated]))[0]
 
 
 async def delete_record(runtime: Runtime, actor: Principal, workspace_id: str, memory_id: str, record_id: str) -> None:
@@ -202,4 +211,5 @@ async def delete_record(runtime: Runtime, actor: Principal, workspace_id: str, m
     async with open_record_store(runtime, memory.provider, memory.namespace) as store:
         with refusals(memory, record_id, write=True):
             await store.delete(record_id)
+    await provenance.forget(runtime.storage, memory.id, record_id)
     await _audit(runtime.storage, actor, memory, "delete", record_id)

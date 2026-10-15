@@ -27,7 +27,7 @@ from a13n_service.runs.memories.mounts import mount_memories, shared_memory_moun
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EntryView, Fork, Message, NewThread, RunOptions, Submitted, ThreadView
-from a13n_service.runs.sessions import find_session, new_session
+from a13n_service.runs.sessions import find_session, new_session, require_conversation
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread, new_thread, refresh_version, require_open
 from a13n_service.tenancy.access import workspace_scope
@@ -175,6 +175,7 @@ async def create_thread(
         await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
         if body.session_id is not None:
             owner = await find_session(session, scope.workspace_id, body.session_id)
+            require_conversation(owner)
         else:
             owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
             session.add(owner)
@@ -204,6 +205,7 @@ async def fork(
         checkpoints.require_compatible(origin)
         owner = await session.get(SessionRow, origin.session_id)
         assert owner is not None
+        require_conversation(owner)
         thread = new_thread(
             owner,
             mcp_headers=origin_thread.mcp_headers,

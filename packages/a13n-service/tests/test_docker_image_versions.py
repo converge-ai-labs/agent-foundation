@@ -58,7 +58,14 @@ def test_service_version_selects_a_reviewed_sandbox_independent_of_its_version(
     model = definition.environment_model
     expected = f"{IMAGE}:dev" if tag == "dev" else DEFAULT_SANDBOX_IMAGE
     assert model.model_validate({}).image == expected
-    assert model.model_json_schema()["properties"]["image"]["default"] == expected
+    schema = model.model_json_schema()
+    assert schema["properties"]["image"]["default"] == expected
+    presets = schema["x-environment-presets"]
+    assert presets["standard"] == {"image": expected, "execution": "native", "desktop": False}
+    assert presets["desktop"] == {"image": f"{expected}-desktop", "execution": "envd_http", "desktop": True}
+    for recipe in presets.values():
+        model.model_validate(recipe)
+    assert "cpus" in schema["x-primary-fields"]
     assert model.model_validate({"image": "custom@sha256:" + "a" * 64}).image == "custom@sha256:" + "a" * 64
     # Service policy does not change the independently released Harness provider.
     assert DockerRecipe().image == f"{IMAGE}:dev"

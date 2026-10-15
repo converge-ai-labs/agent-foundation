@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import textwrap
 import uuid
 
 
@@ -12,6 +13,69 @@ def docker(*args: str) -> str:
     if result.returncode:
         raise RuntimeError(f"docker {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}")
     return result.stdout.strip()
+
+
+def check_desktop(image: str) -> None:
+    name = f"a13n-desktop-smoke-{uuid.uuid4().hex}"
+    probe = textwrap.dedent("""\
+        import json, pathlib, subprocess, time, urllib.error, urllib.request
+        endpoint = 'http://127.0.0.1:8888/eip/control'
+        credential = pathlib.Path('/var/lib/a13n-envd/http-token')
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                request = urllib.request.Request(endpoint, data=b'{}', method='POST')
+                urllib.request.urlopen(request, timeout=2)
+                raise AssertionError('Unauthenticated access was accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == 401, error.code
+                break
+            except urllib.error.URLError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.1)
+        assert credential.stat().st_mode & 0o777 == 0o600
+        request = urllib.request.Request(endpoint,
+            data=b'{"jsonrpc":"2.0","id":1,"method":"device.describe","params":{}}',
+            headers={'Authorization': 'Bearer ' + credential.read_text(),
+                     'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(request, timeout=2) as response:
+            assert json.load(response)['id'] == 1
+        result = subprocess.run(['runuser', '-u', 'sandbox', '--', 'env',
+            'DISPLAY=:99', 'XAUTHORITY=/run/a13n-desktop/Xauthority',
+            'xprop', '-root', '_NET_SUPPORTING_WM_CHECK'],
+            check=True, capture_output=True, text=True, timeout=2)
+        assert 'window id' in result.stdout
+        assert pathlib.Path('/workspace/.agents/skills/agent-browser/SKILL.md').is_file()
+        """)
+    try:
+        docker(
+            "run",
+            "-d",
+            "--name",
+            name,
+            "--network",
+            "none",
+            "-e",
+            "A13N_ENVD_TRANSPORT=http",
+            "-e",
+            "A13N_ENVD_HTTP_BIND=127.0.0.1:8888",
+            "-e",
+            "A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback",
+            image,
+        )
+        docker("exec", name, "python3", "-c", probe)
+        docker("exec", "--user", "sandbox", name, "touch", "/workspace/preserved")
+        docker("stop", name)
+        assert docker("inspect", "--format", "{{.State.ExitCode}}", name) == "0"
+        docker("start", name)
+        docker("exec", name, "python3", "-c", probe)
+        docker("exec", name, "test", "-f", "/workspace/preserved")
+        # Losing the desktop must fail the container instead of leaving a healthy-looking daemon.
+        docker("exec", name, "pkill", "-x", "openbox")
+        assert docker("wait", name) == "1"
+    finally:
+        docker("rm", "-f", name)
 
 
 def check_image(image: str, variant: str) -> None:
@@ -46,6 +110,10 @@ def check_image(image: str, variant: str) -> None:
             "for tool in python3 node npm uv pnpm cc sudo agent-browser chromium a13n-sandbox-init; do "
             '! command -v "$tool"; done; test ! -e /workspace/.agents',
         )
+        return
+
+    if variant == "desktop":
+        check_desktop(image)
         return
 
     skill = ".agents/skills/agent-browser/SKILL.md"
@@ -135,7 +203,7 @@ def check_image(image: str, variant: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
-    parser.add_argument("--variant", choices=("standard", "slim"), required=True)
+    parser.add_argument("--variant", choices=("standard", "slim", "desktop"), required=True)
     args = parser.parse_args()
     check_image(args.image, args.variant)
     print(f"Sandbox {args.variant} smoke checks passed: {args.image}")

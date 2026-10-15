@@ -12,6 +12,22 @@ import { MessageText } from "./message-text";
 import { renderDiagram } from "./mermaid-render";
 import { closedFence } from "./markdown-block";
 import { OpenHostFile } from "./tool-call";
+const highlights = vi.hoisted(() => vi.fn());
+vi.mock("lowlight", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("lowlight")>();
+  return {
+    ...actual,
+    createLowlight: (...args: Parameters<typeof actual.createLowlight>) => {
+      const highlighter = actual.createLowlight(...args);
+      const highlight = highlighter.highlight;
+      highlighter.highlight = (...args) => {
+        highlights(...args);
+        return highlight(...args);
+      };
+      return highlighter;
+    },
+  };
+});
 vi.mock("./mermaid-render", () => ({ renderDiagram: vi.fn() }));
 // Preview HTTP and decoding have their own integration tests; these cases own
 // Markdown rendering and workbench navigation independently of native access.
@@ -130,4 +146,28 @@ it("highlights declared code without changing its source bytes and leaves unknow
   );
   expect(view.container.querySelector("pre code")?.textContent).toBe(source);
   expect(view.container.querySelector(".hljs-keyword")).toBeNull();
+});
+
+it("retains highlighted code and copy state while later prose streams", async () => {
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  const prefix = "```typescript\nconst value = 1;\n```\n\n";
+  const view = render(<MessageText text={prefix} />);
+  const keyword = view.container.querySelector(".hljs-keyword");
+  fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+  await screen.findByText("Copied");
+  for (let index = 1; index <= 30; index++)
+    view.rerender(<MessageText text={prefix + "streaming ".repeat(index)} />);
+  expect(highlights).toHaveBeenCalledTimes(1);
+  expect(view.container.querySelector(".hljs-keyword")).toBe(keyword);
+  expect(screen.getByText("Copied")).toBeTruthy();
+  view.rerender(
+    <MessageText text={prefix.replace("value = 1", "value = 2")} />,
+  );
+  expect(highlights).toHaveBeenCalledTimes(2);
+  expect(view.container.querySelector("pre code")?.textContent).toBe(
+    "const value = 2;\n",
+  );
 });

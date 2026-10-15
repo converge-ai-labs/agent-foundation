@@ -1,24 +1,39 @@
-/* The current Thread’s Run list, in either presentation: the outline panel in the stage's left
-   gutter, and the list the pinned pill opens where there is no gutter. */
+/* The current Thread's Run list, in either presentation: the index beside
+   the Runs, and the list the pinned pill opens where there is no room for it. */
+/* The index scrolls on its own below its sticky head, and its scrollbar shows
+   only while the pointer is over it. */
 .panel {
-  position: absolute;
-  top: 8px;
-  right: calc(100% + 20px);
   display: none;
-  width: 212px;
-  max-height: calc(100vh - 140px);
-  padding: 8px;
+  max-height: calc(100dvh - 76px);
   overflow-y: auto;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--a13n-elevated) 88%, transparent);
-  box-shadow: var(--a13n-shadow);
-  backdrop-filter: blur(10px);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
   pointer-events: auto;
 }
-@media (min-width: 1440px) {
+.panel:hover,
+.panel:focus-within {
+  scrollbar-color: var(--a13n-border) transparent;
+}
+@container (min-width: 1000px) {
   .panel {
     display: block;
   }
+}
+.panelHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--a13n-canvas);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 /* One Run ---------------------------------------------------------------- */
@@ -37,16 +52,18 @@
 }
 .panelRow {
   width: 100%;
-  height: 26px;
-  padding: 0 6px;
+  height: 30px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   color: inherit;
   font: inherit;
   font-size: var(--a13n-text-xs);
   text-align: left;
   cursor: pointer;
+  /* Scrolled into view, the current row clears the sticky head. */
+  scroll-margin-block: 32px 4px;
 }
 .panelRow:hover {
   background: var(--a13n-hover);
@@ -68,9 +85,11 @@
 .dot[data-state="completed"] {
   background: var(--a13n-success);
 }
-.dot[data-state="failed"],
-.dot[data-state="cancelled"] {
+.dot[data-state="failed"] {
   background: var(--a13n-danger);
+}
+.dot[data-state="cancelled"] {
+  background: var(--a13n-secondary);
 }
 .dot[data-state="waiting"] {
   background: var(--a13n-warning);
@@ -81,6 +100,7 @@
 }
 .name {
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .excerpt {
@@ -91,8 +111,9 @@
   white-space: nowrap;
 }
 .meta {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
+  color: var(--a13n-tertiary);
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

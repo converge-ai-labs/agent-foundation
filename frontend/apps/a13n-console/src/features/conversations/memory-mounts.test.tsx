@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { MemoryMountRows } from "../memories/mounts";
 import { ThreadMemoryMounts } from "./memory-mounts";
-import { fixtureRun, fixtureThread } from "./transcript/fixture";
+import { fixtureThread } from "./transcript/fixture";
 
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -36,7 +36,6 @@ vi.mock("react-i18next", () => ({
       ),
   }),
 }));
-const run = fixtureRun({ status: "completed" });
 
 beforeEach(() => {
   mocks.canRun = true;
@@ -75,7 +74,7 @@ beforeEach(() => {
   }));
 });
 
-function show(children = <ThreadMemoryMounts run={run} />) {
+function show(children = <ThreadMemoryMounts thread={fixtureThread()} />) {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

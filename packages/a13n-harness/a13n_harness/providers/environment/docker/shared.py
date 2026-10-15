@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
 from a13n_harness.environment.errors import (
     EnvironmentProviderError,
@@ -24,6 +24,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
     decode_target_state,
 )
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment._backend import BackendReference
 from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
 from a13n_harness.providers.environment.docker.commands import DockerCommands
@@ -31,6 +32,7 @@ from a13n_harness.providers.environment.docker.configuration import (
     DockerEnvironmentConfiguration,
     DockerProviderStateData,
 )
+from a13n_harness.providers.environment.docker.connection import DockerHttpConfiguration
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime
 
 _KEY = "docker"
@@ -125,15 +127,24 @@ def _missing() -> EnvironmentProviderError:
 
 
 class DockerConnectionConfiguration(EnvironmentProviderConfiguration):
+    envd_http: DockerHttpConfiguration | None = Field(default=None, title="Envd HTTP connection")
+    _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
+
     docker_host: str = Field(
         default_factory=lambda: os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"), min_length=1
     )
 
 
 def _fingerprint(configuration: DockerEnvironmentConfiguration) -> str:
+    values = configuration.model_dump(mode="json", include=set(DockerEnvironmentConfiguration.model_fields))
+    # Existing native targets must keep the fingerprint computed before desktop mode existed.
+    if not configuration.desktop:
+        values.pop("desktop")
+    if configuration.execution == "native":
+        values.pop("execution")
     return hashlib.sha256(
         json.dumps(
-            configuration.model_dump(mode="json", include=set(DockerEnvironmentConfiguration.model_fields)),
+            values,
             sort_keys=True,
         ).encode()
     ).hexdigest()

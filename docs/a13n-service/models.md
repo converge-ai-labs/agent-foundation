@@ -41,6 +41,8 @@ Cerebras, SambaNova, Vercel AI Gateway, and xAI / Grok also accept API-key crede
 
 For Vercel, use the gateway's full model ID, such as `anthropic/claude-sonnet-4.6`. Verify its credentials by testing a saved model: its public model list is not an authentication check. The other three offer a connection test without inference. The xAI / Grok provider uses HTTP Chat Completions. These provider choices do not expose Responses API or xAI's native server-side search tools.
 
+For **Google Vertex AI**, choose **API key** to connect an API-key gateway or Vertex Express Mode. Leave Project ID and Location empty and set the gateway origin as **Base URL**, without `/v1beta1` or a model path. The SDK sends `x-goog-api-key` and uses `/v1beta1/publishers/google/models/...`. Choose **Service account** for existing Google Cloud IAM access, with the service-account fields and the required Project ID and Location. The API accepts either `credential: {"api_key": "..."}` or the existing flat service-account object; switching credentials clears the previous form draft.
+
 ## ChatGPT subscription provider
 
 Create an `openai_chatgpt` provider; the default flow registers an OAuth client dynamically and needs no static credential. In **Workspace settings → Providers**, choose **ChatGPT subscription**, add it, then use **Sign in with ChatGPT**. This authorization belongs to the provider and is shared by the workspace; it is not a personal connection.
@@ -76,8 +78,13 @@ In Console, open **Models → Add model**, choose the provider, then pick a mode
 Through the API, `GET /api/v1/model-catalog` returns the catalog's `items` and its `status`: `ready`, `stale` (the last catalog, while models.dev cannot be reached) or `unavailable`. Each item's `ref`, `characteristics` and `pricing` are values to copy into a new model:
 
 ```sh
-curl "$A13N_URL/api/v1/model-catalog" -H "Authorization: Bearer $A13N_API_KEY"
+curl --get "$A13N_URL/api/v1/model-catalog" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode "provider=openai" \
+  --data-urlencode "model=gpt-5.5"
 ```
+
+Use optional `provider` and `model` query parameters to return only the needed channel and model. Both are exact, case-sensitive matches; when supplied together, both must match. Omit `model` to list a channel, or omit both to return the full catalog. No match returns empty `items` with the catalog status. Filtering shares the full catalog cache; a refresh still downloads the complete models.dev document. Copy the selected prices into the model when saving; reading the catalog does not update saved models.
 
 Create the model in `/api/v1/models` with its `config`:
 

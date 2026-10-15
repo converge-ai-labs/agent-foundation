@@ -113,6 +113,7 @@ export function ForkRun({
       navigate(`${path}?${params}`);
     },
   });
+  if (thread.purpose === "memory_organization") return null;
   return (
     <ModalFrame
       open={open}
@@ -127,9 +128,13 @@ export function ForkRun({
           variant="ghost"
           disabled={!!reason}
           title={reason}
+          aria-label={t(compact ? "Create branch" : "Create branch from here")}
         >
           <GitBranchIcon size={14} aria-hidden="true" />
-          {t(compact ? "Create branch" : "Create branch from here")}
+          {/* A narrow run header keeps the glyph and drops the words. */}
+          <span data-action-label>
+            {t(compact ? "Create branch" : "Create branch from here")}
+          </span>
         </Button>
       }
       title={t("Create branch from here")}

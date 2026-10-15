@@ -26,6 +26,8 @@ Local and Docker provisioning default off; enable them in [Service settings](con
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
+In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Changing configuration requires replacing or removing any saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
+
 ![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.webp)
 
 *Provider selection in a seeded workspace. Local directory appears only when `provisioning.local.enabled` is set, which is meant for development.*
@@ -42,6 +44,8 @@ An environment provider is the account environments run on. Create it like any o
 | `local`   | Directories on the worker host, for development | Offered only with `provisioning.local.enabled`. Commands run directly on the worker host, which is no isolation boundary.                                      | Nothing to stop                        |
 
 A Docker provider uses the operator's `environments.docker_host` by default; a provider-specific `docker_host` must be a remote TCP or HTTPS engine allowed by the [outbound policy](configuration.md#outbound-requests). Docker Engine access grants host-level authority. Templates may bind host directories only under `environments.docker_mount_roots` (none by default); privileged containers and host namespaces are not available. Bound CPU, memory and process use on the Engine. The [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) connects the host Engine; the Kubernetes chart does not include one.
+
+For Docker HTTP execution, enable **Environment operation channel** and enter **Host access address**. The listen address follows that IP automatically (`localhost` uses `127.0.0.1`); Docker assigns the port. **Advanced settings** contains a listen IP override, explicit permission for trusted private HTTP, and the credential file path. Other hostnames require an explicit listen IP because their DNS address may not belong to an interface on the Docker host. Existing explicit listen addresses are preserved.
 
 Hosted types reach vendor-owned APIs. E2B selects its cloud or another E2B-compatible service; other hosted accounts name an organization, team, workspace or app, never a host. Their sandboxes are billed to that account. The Service keeps a ready E2B, Modal, Vercel or Runloop sandbox alive by renewing it before the vendor would end it, so set the template's idle policy to bound what these sandboxes cost. A provider's credential can change to an account that cannot see a sandbox. The environment then shows the failure `provider_credential_changed`. It becomes usable again when a credential of the sandbox's account is restored. Renewal cannot pass a vendor's hard limit: Modal ends a sandbox at its recipe's `timeout_seconds` (at most 24 hours), after which the environment shows as lost, and Vercel ends a sandbox session at its recipe's `timeout_seconds`, after which the environment is stopped and the next run resumes it. A template's idle stop that comes first keeps the files. See [provider configuration](../environments/configuration-reference.md) for every recipe field.
 
@@ -61,6 +65,8 @@ The Service derives the HTTPS control API `https://api.<domain>` from the config
 Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine answers one ping. A remote engine that does not resolve fails with message `provider_unavailable`; only a policy refusal answers `provider_endpoint_denied`.
 
 ## Templates
+
+In Console, choose **Environments → Templates → Create template** to open the creation page. Name the template, choose a runtime, then select an enabled provider connection or open **Manage connections** to add one. Use the **Cloud / Own infrastructure** tabs to show one category at a time. Switching back restores the previous runtime selection. These groups do not change provider behavior. Configure the environment and its idle policy, then save. Switching runtimes preserves each runtime's draft configuration. A connection added here is saved independently, even if you cancel template creation. Saving the template does not start an environment.
 
 A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`. This example uses a Docker provider; replace `eprov_...` with its ID.
 
@@ -183,8 +189,25 @@ Async [subagents](agents-and-runs.md#subagents) get environments from their edge
 
 ### Reuse an instance with a project directory
 
-In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. The **Add environment** form on an existing conversation offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
+In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. On an existing conversation, the **Add environment** form under session actions → **Environments and memory** offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
 
 The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories on first activation and reports missing or inaccessible paths without creating them or marking the shared instance broken.
 
 Two conversations can use different project directories on one instance, or deliberately use the same directory to share files. Relative file paths, the `/workspace` route and the default command cwd use the chosen directory. Processes, ports, installed software and native permissions remain shared: this is file organization, not security isolation. Removing a mount does not delete the directory; accepted runs keep their captured selection.
+
+## Computer Use
+
+An Agent can operate a compatible desktop without a person taking control first. This requires an environment whose provider exposes Computer operations and a working graphical session; enabling permissions does not add a desktop to a headless environment.
+
+1. Enable **Computer** in the Agent's tools and save its configuration. Per-tool approval settings still apply.
+2. Open the conversation's **Environments and memory** settings. Add the environment if needed, then open its **Computer permissions**. Choose **Observe** for screenshots and display information, or **Interact** to also allow mouse and keyboard actions. The primary `workspace` mount uses the same settings.
+3. Send a new message. Permissions are frozen when a Run is accepted; changing them does not revoke permissions from an existing Run.
+4. Expand the Agent's work and choose **View screenshot** on an observation step. It shows the saved screen at that step. During execution, a screenshot may become readable only at the next checkpoint; retry if it is not saved yet.
+
+The API accepts exact `permission_ceiling.operations` on initial mounts and mount creation. Update an existing mount with `PATCH /api/v1/threads/{thread_id}/environments/{name}`, using the Thread's `If-Match`. The request body is `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe"]}}` for Computer-only observation. This replaces the entire action set: include any file or execution permissions you want to preserve. Console presets preserve those other permissions automatically.
+
+Computer permissions default off. They do not constrain terminal commands or other independent tools. Screenshot preview is read-only and historical; interactive remote desktop and human takeover are not available in this view.
+
+When upgrading to this capability, upgrade Service control and worker roles together before accepting new Runs. Older workers cannot consume the new mount snapshots and screenshot dependency metadata. Existing mounts and old Run snapshots retain their original file/execution permissions with Computer operations disabled.
+
+Open **Environments and memory** from the session actions menu to configure Computer permissions for each mount. Run Details shows the permissions captured for that Run. The mount list separates **Computer permissions** from **Desktop status**. Status starts as **Not checked**; **Check desktop** probes a running environment without taking a screenshot or sending input. Unsupported environments explicitly explain that granting permissions does not add desktop support. Results describe the last check, not continuous monitoring. The result distinguishes absent desktop support, an unready desktop and supported operations; it does not grant Agent permissions or start stopped environments.

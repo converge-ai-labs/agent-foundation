@@ -175,6 +175,7 @@ jobs:
           uv build --package a13n-service --out-dir dist/a13n-service
           # uv builds the wheel from the sdist. Search that artifact, not the editable checkout.
           uv run --locked python - <<'PY'
+          import json
           import sys
           from pathlib import Path
           from importlib.metadata import distribution
@@ -183,7 +184,11 @@ jobs:
           wheel = next(Path("dist/a13n-service").glob("a13n_service-*.whl")).resolve()
           sys.path.insert(0, str(wheel))
           from a13n_service.documentation import Documents
+          from a13n_service.resources.agents.schemas import AgentConfig
 
+          skills = files("a13n_service").joinpath("builtin_skills/platform-operations")
+          assert skills.joinpath("SKILL.md").is_file()
+          assert json.loads(skills.joinpath("schemas/agent-config.json").read_text()) == AgentConfig.model_json_schema()
           assert str(files("a13n_service")).startswith(str(wheel))
           assert str(distribution("a13n-service").locate_file("a13n_service/documentation.json")).startswith(str(wheel))
           docs = Documents()

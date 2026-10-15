@@ -181,7 +181,16 @@ export function ConversationConfiguration({
               </p>
             )}
           </section>
-          {readOnly ? (
+          {data.next_run.configuration.agent_source.kind === "live" ? (
+            <section>
+              <h3>Live executor</h3>
+              <p>
+                Live uses its own workspace and lightweight tools. Change its
+                Model, voice and file access in General settings.
+              </p>
+              <p>Next model: {data.next_model_id || "Not configured"}</p>
+            </section>
+          ) : readOnly ? (
             <section>
               <h3>Automatic organization</h3>
               <p>
@@ -335,7 +344,16 @@ export function ThreadSelections({
       ),
     onSuccess: (updated) => {
       applyThreadMutation(queries, updated);
-      setSaved(updated.configuration);
+      setSaved({
+        ...updated.configuration,
+        agent_source:
+          updated.configuration.agent_source.kind === "live"
+            ? { kind: "live", id: "live" }
+            : {
+                ...updated.configuration.agent_source,
+                kind: updated.configuration.agent_source.kind,
+              },
+      });
       updatePatch({});
       setBase(null);
     },

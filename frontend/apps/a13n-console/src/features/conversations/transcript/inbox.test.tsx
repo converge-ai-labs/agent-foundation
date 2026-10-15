@@ -56,6 +56,7 @@ function mount(
   requests: Request[],
   respond: (request: Request) => Response,
   canRunNext = false,
+  quiet = false,
 ) {
   client = createClient({
     baseUrl: "https://service.example",
@@ -78,7 +79,11 @@ function mount(
       }
     >
       <MemoryRouter>
-        <ThreadInbox thread={fixtureThread()} canRunNext={canRunNext} />
+        <ThreadInbox
+          thread={fixtureThread()}
+          canRunNext={canRunNext}
+          quiet={quiet}
+        />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -242,4 +247,20 @@ it("says when queued messages run while the Thread advances on its own", async (
       .getByRole("button", { name: "Run next message" })
       .hasAttribute("disabled"),
   ).toBe(true);
+});
+
+it("says nothing in a quiet queue that is known to be empty", async () => {
+  const requests: Request[] = [];
+  mount(
+    requests,
+    () => Response.json({ items: [], next_cursor: null }),
+    false,
+    true,
+  );
+  expect(screen.getByRole("button", { name: /Queued messages/ })).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: /Queued messages/ }),
+    ).toBeNull(),
+  );
 });

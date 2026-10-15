@@ -27,7 +27,15 @@ export const navigationGroups: {
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
-      ["memories", "Memories", BrainIcon],
+      [
+        "memory-spaces",
+        "Memory Spaces",
+        BrainIcon,
+        [
+          ["memory-spaces", "Spaces"],
+          ["memories", "Standalone memories"],
+        ],
+      ],
       [
         "environments",
         "Environments",
@@ -70,13 +78,18 @@ export function routeSkeleton(
     "/models": 4,
     "/skills": 3,
     "/memories": 5,
+    "/memory-spaces": 5,
     "/environments": 4,
     "/connections": 3,
     "/traces": 5,
     "/findings": 5,
   };
   if (tail in lists) return { variant: "page", columns: lists[tail] };
-  if (/^\/(agents|traces|environments|memories|findings)\/[^/]+$/.test(tail))
+  if (
+    /^\/(agents|traces|environments|memories|memory-spaces|findings)\/[^/]+$/.test(
+      tail,
+    )
+  )
     return { variant: "detail", columns: 4 };
   return undefined;
 }

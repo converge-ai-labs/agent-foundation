@@ -41,6 +41,8 @@ Cerebras、SambaNova、Vercel AI Gateway 和 xAI / Grok 同样使用 API key，�
 
 Vercel 需要填写完整的网关模型 ID，例如 `anthropic/claude-sonnet-4.6`。请通过测试已保存的模型来验证凭据：它的公开模型列表不能用于验证身份。其余三家提供无需推理的连接测试。xAI / Grok 使用 HTTP Chat Completions。这些 provider 选项不提供 Responses API 或 xAI 原生服务端搜索工具。
 
+连接使用 API key 的网关或 Vertex Express Mode 时，选择 **Google Vertex AI → API key**。Project ID 和 Location 留空，**Base URL** 填网关 origin，不添加 `/v1beta1` 或模型路径。SDK 发送 `x-goog-api-key`，请求路径为 `/v1beta1/publishers/google/models/...`。使用现有 Google Cloud IAM 配置时，选择 **Service account**，填写服务账号凭证及必填的 Project ID、Location。API 的 `credential` 接受 `{"api_key": "..."}` 或现有的扁平服务账号对象；在表单中切换凭证类型会清空上一种类型的凭证草稿。
+
 ## ChatGPT 订阅 provider
 
 创建 `openai_chatgpt` provider；默认流程动态注册 OAuth client，不需要静态凭据。在 **Workspace settings → Providers** 选择 **ChatGPT subscription**，添加后点击 **Sign in with ChatGPT**。授权属于 provider，由整个工作空间共享，不是个人连接。
@@ -76,8 +78,13 @@ HTTPS 回调必须与 `server.public_url` 同源，并由用户登录会话发�
 API 的 `GET /api/v1/model-catalog` 返回目录的 `items` 和 `status`：`ready`、`stale`（无法访问 models.dev 时使用上次目录）或 `unavailable`。各条目的 `ref`、`characteristics` 和 `pricing` 可复制到新模型：
 
 ```sh
-curl "$A13N_URL/api/v1/model-catalog" -H "Authorization: Bearer $A13N_API_KEY"
+curl --get "$A13N_URL/api/v1/model-catalog" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode "provider=openai" \
+  --data-urlencode "model=gpt-5.5"
 ```
+
+使用可选的 `provider` 和 `model` 查询参数，只返回所需渠道和模型。两个参数均区分大小写并精确匹配；同时提供时必须都满足。省略 `model` 可列出该渠道的模型，两个参数都省略则返回完整目录。没有匹配项时返回空 `items`，并保留目录状态。筛选共用完整目录缓存；刷新时仍下载 models.dev 的完整目录。保存时将所选价格填入模型；读取目录不会更新已保存的模型。
 
 在 `/api/v1/models` 中使用 `config` 创建模型：
 

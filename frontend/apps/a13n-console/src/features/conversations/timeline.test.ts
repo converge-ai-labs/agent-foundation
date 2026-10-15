@@ -119,6 +119,21 @@ it("treats later user text as guidance and never the Run input", () => {
   ).toBe(false);
 });
 
+it("reads guidance before the request that read it", () => {
+  const { entries } = timeline(
+    text("input", "user", "Which colour is the banner?"),
+    lifecycle("model_request_started", "model-request-1"),
+    text("first", "assistant", "Cobalt"),
+    lifecycle("model_request_completed", "model-request-1"),
+    lifecycle("model_request_started", "model-request-2"),
+    text("steer", "user", "Use the new palette"),
+    text("second", "assistant", "Amber"),
+    lifecycle("model_request_completed", "model-request-2"),
+  );
+  expect(kinds(entries)).toEqual(["model", "guidance", "model"]);
+  expect(kinds(models(entries)[1]!.children)).toEqual(["reply"]);
+});
+
 it("presents an inline delegation on its call and keeps a dispatch a dispatch", () => {
   const inline = tool("delegate", "inline");
   const dispatch = tool("delegate", "async");
@@ -240,7 +255,11 @@ it("sums reported usage and refuses to complete a total that lost a price", () =
           record_id: "record-2",
           response_ordinal: 1,
           model_name: "claude-sonnet",
-          request_usage: { input_tokens: 80, output_tokens: 10 },
+          request_usage: {
+            input_tokens: 80,
+            output_tokens: 10,
+            cache_read_tokens: 64,
+          },
         },
       ],
     }),
@@ -248,10 +267,29 @@ it("sums reported usage and refuses to complete a total that lost a price", () =
   expect(totals).toMatchObject({
     inputTokens: 200,
     outputTokens: 40,
+    // Cached input is the part of input the provider served from its cache.
+    cacheReadTokens: 64,
     costUsd: "0.01",
     costComplete: false,
     durationMs: 9000,
   });
+});
+
+it("counts model requests from usage when no lifecycle steps were retained", () => {
+  const { totals } = timeline(
+    custom("a13n.harness.usage", {
+      type: "usage_report",
+      reason: "model_request",
+      records: [0, 1].map((ordinal) => ({
+        kind: "model",
+        record_id: `record-${ordinal}`,
+        response_ordinal: ordinal,
+        model_name: "claude-sonnet",
+        request_usage: { input_tokens: 100, output_tokens: 5 },
+      })),
+    }),
+  );
+  expect(totals).toMatchObject({ modelCalls: 2, inputTokens: 200 });
 });
 
 it("computes a patch from the reported edit content", () => {

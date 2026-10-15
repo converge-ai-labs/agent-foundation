@@ -25,7 +25,7 @@ from a13n_service.infra.labels import label_filter
 from a13n_service.infra.outbox import OutboxKind, OutboxRow, enqueue
 from a13n_service.resources.memories.schemas import POSTGRES, Memory, MemoryCreate, MemoryPage, MemoryUpdate
 from a13n_service.resources.memories.store import file_format
-from a13n_service.resources.memories.tables import MemoryFileStoreRow, MemoryKind, MemoryRow
+from a13n_service.resources.memories.tables import MemoryFileStoreRow, MemoryKind, MemoryRow, MemorySpaceRow
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import MemoryProviderRow
 from a13n_service.resources.rows import audit_row, find_row, given, record_update
@@ -168,35 +168,42 @@ async def create_memory(
     provider must be enabled and usable in the workspace."""
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        memory_id = new_object_id("mem")
-        kind, provider_id, namespace = await _backend(session, actor, scope, memory_id, body)
-        row = MemoryRow(
-            id=memory_id,
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            name=body.name,
-            description=body.description,
-            kind=kind,
-            type=body.type,
-            provider_id=provider_id,
-            namespace=namespace,
-            guide=_guide(body.guide, settings),
-            always_load=_always_load(kind, body.always_load, settings),
-            labels=body.labels,
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
+        return await insert_memory(session, actor, scope, body, settings=settings)
+
+
+async def insert_memory(
+    session: AsyncSession, actor: Principal, scope: WorkspaceScope, body: MemoryCreate, *, settings: MemorySettings
+) -> Memory:
+    """Create a memory and its store inside the caller's authorized transaction."""
+    memory_id = new_object_id("mem")
+    kind, provider_id, namespace = await _backend(session, actor, scope, memory_id, body)
+    row = MemoryRow(
+        id=memory_id,
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        name=body.name,
+        description=body.description,
+        kind=kind,
+        type=body.type,
+        provider_id=provider_id,
+        namespace=namespace,
+        guide=_guide(body.guide, settings),
+        always_load=_always_load(kind, body.always_load, settings),
+        labels=body.labels,
+        created_by_id=actor.id,
+        updated_by_id=actor.id,
+    )
+    session.add(row)
+    await session.flush()
+    store = None
+    if kind == "file":
+        store = MemoryFileStoreRow(
+            memory_id=row.id, seq=0, pruned_through_seq=0, content_bytes=0, history_bytes=0, file_count=0
         )
-        session.add(row)
+        session.add(store)
         await session.flush()
-        store = None
-        if kind == "file":
-            store = MemoryFileStoreRow(
-                memory_id=row.id, seq=0, pruned_through_seq=0, content_bytes=0, history_bytes=0, file_count=0
-            )
-            session.add(store)
-            await session.flush()
-        audit_row(session, actor, row, "create")
-        return memory_view(row, store, settings)
+    audit_row(session, actor, row, "create")
+    return memory_view(row, store, settings)
 
 
 async def list_memories(
@@ -216,6 +223,7 @@ async def list_memories(
         query = select(MemoryRow).where(
             MemoryRow.workspace_id == scope.workspace_id, label_filter(MemoryRow.labels, labels)
         )
+        query = query.where(~select(MemorySpaceRow.id).where(MemorySpaceRow.memory_id == MemoryRow.id).exists())
         if kind is not None:
             query = query.where(MemoryRow.kind == kind)
         if type_ is not None:
@@ -256,6 +264,7 @@ async def update_memory(
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await find_row(session, actor, MemoryRow, scope, memory_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        await require_standalone(session, row.id)
         values = given(body, "name", "labels")
         if "description" in body.model_fields_set:
             values["description"] = body.description
@@ -279,6 +288,7 @@ async def delete_memory(
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await find_row(session, actor, MemoryRow, scope, memory_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        await require_standalone(session, row.id)
         if row.provider_id is not None and row.namespace is not None:
             await _lock_namespace(session, row.provider_id, row.namespace)
             enqueue(
@@ -305,4 +315,12 @@ async def resolve_memory(
 ) -> MemoryRow:
     """A memory of the workspace the actor may `verb`, read in the caller's session."""
     authorize(actor, scope, verb, authority=authority)
-    return await find_row(session, actor, MemoryRow, scope, memory_id, "read")
+    row = await find_row(session, actor, MemoryRow, scope, memory_id, "read")
+    await require_standalone(session, memory_id)
+    return row
+
+
+async def require_standalone(session: AsyncSession, memory_id: str) -> None:
+    space_id = await session.scalar(select(MemorySpaceRow.id).where(MemorySpaceRow.memory_id == memory_id))
+    if space_id is not None:
+        raise conflict(MemoryRow.KIND, memory_id, "managed_memory", space_id=space_id)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, cast
 
@@ -10,14 +9,14 @@ from a13n_harness import ImageInputPolicy
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.toolsets.file_media import (
-    AUDIO_UNDERSTANDING_MODEL_ENV,
-    IMAGE_UNDERSTANDING_MODEL_ENV,
-    VIDEO_UNDERSTANDING_MODEL_ENV,
     AgentMediaUnderstandingProvider,
     MediaUnderstandingError,
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
     NativeInputMediaKind,
+)
+from a13n_harness.toolsets.file_media import (
+    environment_media_kinds as environment_media_kinds,
 )
 from pydantic_ai.settings import ModelSettings
 
@@ -25,16 +24,6 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver, model_recipe_i
 
 if TYPE_CHECKING:
     from a13n_harness_ui.composition.models import ResolvedModelRecipe
-
-
-def environment_media_kinds() -> tuple[NativeInputMediaKind, ...]:
-    """Expose only configured kinds, not ambient model settings or credentials."""
-    variables: dict[NativeInputMediaKind, str] = {
-        "image": IMAGE_UNDERSTANDING_MODEL_ENV,
-        "video": VIDEO_UNDERSTANDING_MODEL_ENV,
-        "audio": AUDIO_UNDERSTANDING_MODEL_ENV,
-    }
-    return tuple(kind for kind, variable in variables.items() if os.environ.get(variable, "").strip())
 
 
 class FileMediaUnderstanding:
@@ -50,6 +39,9 @@ class FileMediaUnderstanding:
         self._models = {kind: recipe.model_copy(deep=True) for kind, recipe in models.items()}
         self._resolver = resolver
         self._thread_id = thread_id
+
+    def supports(self, kind: NativeInputMediaKind) -> bool:
+        return kind in self._models or kind in environment_media_kinds()
 
     async def understand(
         self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None

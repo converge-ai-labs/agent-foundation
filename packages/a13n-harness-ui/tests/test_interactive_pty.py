@@ -165,44 +165,43 @@ def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
 
 
 @pytest.mark.xdist_group("harness-ui-pty-update")
-@pytest.mark.parametrize("install", [False, True])
-def test_update_screen_precedes_setup_and_releases_terminal_for_installer(tmp_path: Path, install: bool) -> None:
+@pytest.mark.parametrize("available", [False, True])
+def test_setup_never_waits_for_or_displays_background_updates(tmp_path: Path, available: bool) -> None:
     script = r"""
+import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 from a13n_harness_ui.cli import main
 from a13n_harness_ui.interactive import updates
 from a13n_harness_ui import updater
 async def check(root):
-    return updates.AvailableUpdate("1.0", "2.0")
+    Path("update-check-started").touch()
+    if CHECK_AVAILABLE:
+        return updates.AvailableUpdate("1.0", "2.0")
+    try:
+        await asyncio.Event().wait()
+    finally:
+        Path("update-check-cancelled").touch()
 updates.check_update = check
-updates.update_command = lambda: updates.UpdateCommand("fixture-uv", Path.cwd())
+updates.update_command = lambda: updater.UpdateCommand("fixture-uv", Path.cwd())
 def install(*args, **kwargs):
-    print("INSTALLER STARTED", flush=True)
-    return SimpleNamespace(returncode=0)
-updater.subprocess.run = install
+    raise AssertionError("Setup must not start an installer")
+updater.run_update = install
 main(["setup"])
-"""
+""".replace("CHECK_AVAILABLE", repr(available))
     process, master = _spawn(script, tmp_path)
     try:
-        output = _read_until(master, b"Install this update?", timeout=30)
-        assert b"Connect a model" not in output
+        output = _read_until(master, b"Connect a model", timeout=30)
+        assert (tmp_path / "update-check-started").exists()
         assert output.count(b"\x1b[?1049h") == 1
-        if install:
-            os.write(master, b"\x1b[A\r")
-            output += _read_until(master, b"Restart a13n-harness-ui")
-            assert output.index(b"\x1b[?1049l") < output.index(b"INSTALLER STARTED")
-            assert b"Connect a model" not in output
-        else:
-            os.write(master, b"\r")
-            output += _read_until(master, b"Connect a model")
-            assert output.count(b"\x1b[?1049h") == 1
-            assert b"\x1b[?1049l" not in output
-            os.write(master, b"\x03")
-            output += _read_until(master, b"Setup cancelled")
-            assert b"INSTALLER STARTED" not in output
+        assert b"\x1b[?1049l" not in output
+        os.write(master, b"\x03")
+        output += _read_until(master, b"Setup cancelled")
         process.wait(timeout=5)
         assert process.returncode == 0
+        assert b"Update available" not in output
+        assert b"Install this update?" not in output
+        if not available:
+            assert (tmp_path / "update-check-cancelled").exists()
     finally:
         _stop(process, master)
 
@@ -215,12 +214,27 @@ import asyncio, json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from a13n_harness_ui.cli import CliRequest
+from a13n_harness_ui import updater
+from a13n_harness_ui.interactive import updates
 from a13n_harness_ui.interactive.startup import run_terminal
 from a13n_harness_ui.live import HarnessUiSummaryHub
 from types import SimpleNamespace
 
+update_release = asyncio.Event()
+async def check(root):
+    await update_release.wait()
+    return updates.AvailableUpdate("1.0", "2.0")
+updates.check_update = check
+updates.update_command = lambda: updater.UpdateCommand("fixture-uv", Path.cwd())
+
+async def current_configuration():
+    return None
+
 class Backend:
-    app = SimpleNamespace(summary_events=HarnessUiSummaryHub(epoch="pty-test").subscribe)
+    app = SimpleNamespace(
+        summary_events=HarnessUiSummaryHub(epoch="pty-test").subscribe,
+        current_configuration=current_configuration,
+    )
     thread_id = None
     resumed_transcript = None
 
@@ -254,6 +268,7 @@ class Backend:
     async def steer(self, text, *, receipt_id, skill_references=()):
         Path("steering.json").write_text(json.dumps([text.text, receipt_id]))
         self.steered.set()
+        update_release.set()
         return "Guidance sent"
     async def interaction(self):
         return None
@@ -264,7 +279,7 @@ class Backend:
 async def factory(request, directory, status, emit):
     yield Backend(status)
 
-asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda: factory))
+assert asyncio.run(run_terminal(CliRequest(), runtime_loader=lambda: factory)) is None
 """
     process, master = _spawn(script, tmp_path)
     try:
@@ -278,14 +293,18 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda
         # Wait for the bracketed paste to render, not a guessed input delay.
         output += _read_until(master, b"[Pasted text #1: 1700 chars]")
         assert not (tmp_path / "submitted.json").exists()
+        assert b"Update available" not in output
         os.write(master, b"\r")
         output += _read_until(master, b"fixture-stream")
         assert json.loads((tmp_path / "submitted.json").read_text()) == "draft\nsecond\nthird" + pasted
         os.write(master, b"/mode detailed\r")
         output += _read_until(master, b"Display \xc2\xb7 detailed")
         os.write(master, b"change direction\r")
-        # The backend emits the tool only after steering has been handled.
-        output += _read_until(master, b"fixture.py")
+        # Steering releases the update check and the backend's tool output.
+        output += _read_until(master, b"a13n-harness-ui update")
+        assert b"fixture.py" in output
+        assert b"Update available" in output
+        assert b"Install this update?" not in output
         # Detailed mode retains formatted arguments; terminal diffing may split headings.
         assert json.loads((tmp_path / "steering.json").read_text()) == ["change direction", "receipt-fixture"]
         os.write(master, b"\x03")

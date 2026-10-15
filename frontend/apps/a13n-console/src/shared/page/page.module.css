@@ -127,6 +127,8 @@
 }
 .tabs {
   margin-top: 24px;
+  overflow-x: auto;
+  padding-block: 2px;
 }
 .tabs [data-slot="tabs-tab"] > [data-slot="tab-count"] {
   margin-left: 6px;

@@ -204,6 +204,8 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field                         | Required | Type / choices                    | Constraints and default                                                          |
 | ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
 | `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
+| `desktop`                     | false    | boolean                           | default=false                                                                    |
 | `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
 | `environment`                 | false    | object                            | —; default from model factory                                                    |
 | `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
@@ -242,7 +244,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `python`                    | false    | string         | default="/usr/bin/python3"                                |
 | `request_timeout_seconds`   | false    | number         | maximum=300; exclusiveMinimum=0; default=30               |
 | `allow_internet_access`     | false    | boolean        | default=true                                              |
-| `max_file_bytes`            | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=16777216  |
+| `max_file_bytes`            | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
 | `max_observation_bytes`     | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576     |
 | `max_active_observations`   | false    | integer        | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
@@ -338,9 +340,19 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `DockerConnectionConfiguration`
 
-| Field         | Required | Type / choices | Constraints and default                 |
-| ------------- | -------- | -------------- | --------------------------------------- |
-| `docker_host` | false    | string         | minLength=1; default from model factory |
+| Field         | Required | Type / choices                  | Constraints and default                 |
+| ------------- | -------- | ------------------------------- | --------------------------------------- |
+| `envd_http`   | false    | DockerHttpConfiguration or null | default=null                            |
+| `docker_host` | false    | string                          | minLength=1; default from model factory |
+
+## `DockerHttpConfiguration`
+
+| Field                          | Required | Type / choices | Constraints and default                                 |
+| ------------------------------ | -------- | -------------- | ------------------------------------------------------- |
+| `host`                         | true     | string         | minLength=1; maxLength=253                              |
+| `bind_host`                    | false    | string or null | default=null                                            |
+| `allow_plaintext_private_link` | false    | boolean        | default=false                                           |
+| `credential_file`              | false    | string         | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
 
 ## `E2BConnectionConfiguration`
 

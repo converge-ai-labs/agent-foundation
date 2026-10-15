@@ -119,7 +119,7 @@ class ResolvedEnvironmentBinding(CompositionModel):
 
 
 class ResolvedAgentNode(CompositionModel):
-    source_kind: Literal["agent", "markdown", "memory"]
+    source_kind: Literal["agent", "markdown", "memory", "live"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
     system_prompt: tuple[str, ...] = Field(default=(), max_length=16)

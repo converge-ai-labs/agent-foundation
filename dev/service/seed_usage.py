@@ -55,12 +55,14 @@ class Profile:
     duration: int
     input_price: str | None
     output_price: str | None
+    # Each request's wait for its first streamed chunk.
+    first_chunk_seconds: float = 0.6
 
 
 PROFILES = (
-    Profile("usage-economy", "Support assistant", 8000, 600, 85, 2, 8, "1", "4"),
-    Profile("usage-reasoning", "Research analyst", 24000, 4000, 25, 5, 95, "4", "20"),
-    Profile("usage-unpriced", "Experimental assistant", 5000, 1100, 0, 1, 18, None, None),
+    Profile("usage-economy", "Support assistant", 8000, 600, 85, 2, 8, "1", "4", 0.4),
+    Profile("usage-reasoning", "Research analyst", 24000, 4000, 25, 5, 95, "4", "20", 3.2),
+    Profile("usage-unpriced", "Experimental assistant", 5000, 1100, 0, 1, 18, None, None, 0.9),
 )
 
 
@@ -342,6 +344,8 @@ def _snapshot(
     pricing = ModelPricingEntry.model_validate(price) if price else None
     records = []
     for request in range(profile.requests):
+        # Requests follow one another across the Run.
+        request_started = started + (ended - started) * (request / profile.requests)
         timestamp = started + (ended - started) * ((request + 1) / profile.requests)
         native = RequestUsage(
             input_tokens=profile.input_tokens + ordinal * 1000,
@@ -354,7 +358,7 @@ def _snapshot(
                     model_name=profile.key,
                     provider_name="local",
                     provider_url=None,
-                    request_started_at=started,
+                    request_started_at=request_started,
                     response_timestamp=timestamp,
                     usage=native,
                 ),
@@ -373,7 +377,9 @@ def _snapshot(
                 response_ordinal=request,
                 response_state="complete",
                 response_timestamp=timestamp,
-                request_started_at=started,
+                request_started_at=request_started,
+                first_chunk_at=request_started + timedelta(seconds=profile.first_chunk_seconds),
+                request_ended_at=timestamp,
                 model_id=profile.key,
                 model_name=profile.key,
                 provider_name="local",

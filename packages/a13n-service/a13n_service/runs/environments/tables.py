@@ -5,8 +5,10 @@ completions, and the `lease_*` columns are the claim of whoever is dispatching t
 `renew_at` and `expires_at` schedule the renewal of a ready sandbox whose type ends it unless renewed.
 """
 
+import json
 from datetime import datetime
 
+from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -158,4 +160,7 @@ class ThreadEnvironmentRow(Base):
     workspace_id: Mapped[str]
     name: Mapped[str]
     working_directory: Mapped[str | None]
+    permission_ceiling: Mapped[dict] = mapped_column(
+        JSONB, server_default=text("'" + json.dumps({"operations": sorted(FILE_EXECUTION_ACTIONS)}) + "'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

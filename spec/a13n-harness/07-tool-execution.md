@@ -117,14 +117,15 @@ Wrapper ordering is part of the contract:
 
 ```mermaid
 flowchart LR
-    Candidates[Ordinary prepared Toolsets] --> Surface[Mandatory tool-surface resolution]
+    Candidates[Ordinary prepared Toolsets] --> Permissions[Optional Capability approval override]
+    Permissions --> Surface[Mandatory tool-surface resolution]
     Surface --> Proxy[Optional ToolProxy discovery wrapper]
     Proxy --> CodeAct[Optional CodeAct wrapper]
     CodeAct --> Boundary[Mandatory tool-execution boundary]
     Boundary --> Manager[Final Tool Manager and model request]
 ```
 
-Mandatory surface resolution wraps upstream tool search and deferred capability loading, so the `load_capability` tool and newly loaded definitions receive the same surface and execution checks. Optional ToolProxy composition follows surface resolution and precedes CodeAct. When either is absent, the next outer wrapper directly wraps the remaining inner surface. CodeAct builds and validates its catalog only from the effective surface, then adds its runner tools. The execution boundary normalizes, authorizes, bounds, and records only that final effective surface. `AgentContext` may retain the resulting managed surface snapshot for resume validation and diagnostics, but that snapshot is an output of resolution and never an input used by sibling Toolsets.
+When installed, permission declaration overrides consume the complete candidate surface after upstream tool search and deferred capability loading, before mandatory surface resolution. Deferred-support filtering therefore sees the effective approval declaration. Mandatory surface resolution wraps upstream tool search and deferred capability loading, so the `load_capability` tool and newly loaded definitions receive the same surface and execution checks. Optional ToolProxy composition follows surface resolution and precedes CodeAct. When either is absent, the next outer wrapper directly wraps the remaining inner surface. CodeAct builds and validates its catalog only from the effective surface, then adds its runner tools. The execution boundary normalizes, authorizes, bounds, and records only that final effective surface. `AgentContext` may retain the resulting managed surface snapshot for resume validation and diagnostics, but that snapshot is an output of resolution and never an input used by sibling Toolsets.
 
 ### Grouped ToolProxy Discovery
 
@@ -196,7 +197,11 @@ Managed tools retain `HarnessToolMetadata.tool_id`. Other tools use `tool/<sourc
 | `ask`    | Require a native structured approval for the current call.                               |
 | `review` | Invoke the selected reviewer; if none matches, continue without an added restriction.    |
 
-The order is native structural validation and conversion, permission/review, tool-owned argument validation, managed resource resolution and current invocation policy where present, credentials/grants, then dispatch. A front permission denial incurs no review cost. An invocation-policy denial may occur after review because that policy needs resolved resources. No mode or reviewer outcome bypasses current tool, Host, Environment, or Provider authority.
+Runtime Capability configuration takes precedence over native declarative approval. A selected non-`inherit` setting in `ToolPermissionsCapability`, whether from a rule or `default`, replaces a tool's prepared `requires_approval=True` (`unapproved`) declaration with the selected permission strategy. `allow` proceeds without declaration-driven approval; `ask` uses the permission gate; `review` follows the configured reviewer and risk policy without an additional native declaration requirement; `deny` prevents execution. A winning `inherit` setting preserves both the tool's permission default and its native approval declaration, even when a broader rule or Capability default is explicit. Omitting the Capability also preserves the declaration. Overrides apply to each prepared surface, including dynamically prepared and plugin tools, without mutating shared source tools or definitions. All Hosts use the same Capability semantics.
+
+This precedence changes declarations only. Tool-owned validators, tool bodies, and approval wrappers may still raise `ApprovalRequired` at runtime. An automatic permission or review allow is not a human approval and does not set the call's approved flag. External and output tool kinds are not converted.
+
+The order is native structural validation and conversion, permission/review, tool-owned argument validation, managed resource resolution and current invocation policy where present, credentials/grants, then dispatch. A front permission denial incurs no review cost. An invocation-policy denial may occur after review because that policy needs resolved resources. No mode or reviewer outcome bypasses runtime business confirmation, managed invocation authorization, or Host, Environment, or Provider authority.
 
 `ToolPermissionsCapability` owns permission selection and optional review for all local tools in one definition-selected Capability. There is no independent reviewer Capability registration or lookup. Its `review` configuration accepts `ToolReviewConfig`; code-first construction also supports a default `ToolReviewer`, selector-specific reviewer implementations with the same specificity rules, and `ToolReviewPolicy` for custom reviewers. The same Capability binds reviewers to each Run, resolves the auxiliary Model, and executes bounded review. Shell commands share the risk model, policy, history, and execution gate; only input rendering and relevant review criteria specialize shell behavior. The conceptual review values are:
 

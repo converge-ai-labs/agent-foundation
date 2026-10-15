@@ -6,6 +6,7 @@ These functions are CPU-bound; callers run them in a worker thread.
 """
 
 import io
+import ntpath
 import re
 import stat
 import zipfile
@@ -171,7 +172,21 @@ def _frontmatter(document: bytes) -> tuple[str, str]:
         )
     except ValidationError:
         raise invalid("package", "SKILL.md frontmatter needs a valid name and description") from None
+    validate_name(item.name)
     return item.name, item.description
+
+
+def validate_name(name: str) -> None:
+    """A skill name is a portable directory component, including on Windows."""
+    if (
+        not name
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or ntpath.isreserved(name)
+        or len(name.encode()) > 255
+    ):
+        raise invalid("package", "skill name must be a portable directory name")
 
 
 def _too_large(limit: str, value: int) -> ServiceError:

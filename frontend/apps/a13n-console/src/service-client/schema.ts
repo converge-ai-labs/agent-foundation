@@ -588,7 +588,7 @@ export interface paths {
     head?: never;
     /**
      * Update connector provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_connector_providers__provider_id__patch"];
     trace?: never;
@@ -690,14 +690,32 @@ export interface paths {
     get: operations["get_provider_api_v1_environment_providers__provider_id__get"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete Environment Provider */
+    delete: operations["delete_environment_provider_api_v1_environment_providers__provider_id__delete"];
     options?: never;
     head?: never;
     /**
      * Update environment provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_environment_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Environment Provider References */
+    get: operations["environment_provider_references_api_v1_environment_providers__provider_id__references_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/api/v1/environment-providers/{provider_id}/test": {
@@ -791,6 +809,26 @@ export interface paths {
     head?: never;
     /** Update Environment */
     patch: operations["update_environment_api_v1_environments__environment_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/computer/check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check Computer
+     * @description Probe desktop readiness without capturing the screen, sending input or starting the instance.
+     */
+    post: operations["check_computer_api_v1_environments__environment_id__computer_check_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/api/v1/environments/{environment_id}/stop": {
@@ -1187,7 +1225,7 @@ export interface paths {
     head?: never;
     /**
      * Update memory provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_memory_providers__provider_id__patch"];
     trace?: never;
@@ -1209,6 +1247,95 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/memory-spaces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Spaces */
+    get: operations["list_spaces_api_v1_memory_spaces_get"];
+    put?: never;
+    /** Create Space */
+    post: operations["create_space_api_v1_memory_spaces_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-spaces/{space_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Space */
+    get: operations["get_space_api_v1_memory_spaces__space_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Space */
+    delete: operations["delete_space_api_v1_memory_spaces__space_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Space */
+    patch: operations["update_space_api_v1_memory_spaces__space_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/memory-spaces/{space_id}/organization": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Space Organization */
+    get: operations["get_space_organization_api_v1_memory_spaces__space_id__organization_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-spaces/{space_id}/organizations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Space Organizations */
+    get: operations["list_space_organizations_api_v1_memory_spaces__space_id__organizations_get"];
+    put?: never;
+    /** Organize Space */
+    post: operations["organize_space_api_v1_memory_spaces__space_id__organizations_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-spaces/{space_id}/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Space Sessions */
+    get: operations["list_space_sessions_api_v1_memory_spaces__space_id__sessions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-catalog": {
     parameters: {
       query?: never;
@@ -1218,7 +1345,11 @@ export interface paths {
     };
     /**
      * Get Model Catalog
-     * @description The models.dev models the registered model provider types serve, for any signed-in principal.
+     * @description Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.
+     *
+     *     Both filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.
+     *     No match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.
+     *     Copy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.
      */
     get: operations["get_model_catalog_api_v1_model_catalog_get"];
     put?: never;
@@ -1263,7 +1394,7 @@ export interface paths {
     head?: never;
     /**
      * Update model provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
     trace?: never;
@@ -1610,6 +1741,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Runs */
+    get: operations["list_runs_api_v1_runs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}": {
     parameters: {
       query?: never;
@@ -1631,6 +1779,26 @@ export interface paths {
     patch: operations["update_run_api_v1_runs__run_id__patch"];
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/agent": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Run Agent
+     * @description The agent configuration the run executes: its revision with the run's override applied.
+     */
+    get: operations["run_agent_api_v1_runs__run_id__agent_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/attempts": {
     parameters: {
       query?: never;
@@ -1640,6 +1808,23 @@ export interface paths {
     };
     /** Run Attempts */
     get: operations["run_attempts_api_v1_runs__run_id__attempts_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/attempts/{attempt_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Attempt */
+    get: operations["get_attempt_api_v1_runs__run_id__attempts__attempt_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1702,6 +1887,26 @@ export interface paths {
      * @description A new thread in the run's session that continues from this run's committed history.
      */
     post: operations["fork_run_api_v1_runs__run_id__fork_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/images/{image_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Run Image
+     * @description Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.
+     */
+    get: operations["run_image_api_v1_runs__run_id__images__image_id__get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2218,7 +2423,8 @@ export interface paths {
     delete: operations["remove_mount_api_v1_threads__thread_id__environments__name__delete"];
     options?: never;
     head?: never;
-    patch?: never;
+    /** Update Mount */
+    patch: operations["update_mount_api_v1_threads__thread_id__environments__name__patch"];
     trace?: never;
   };
   "/api/v1/threads/{thread_id}/inbox": {
@@ -2335,6 +2541,27 @@ export interface paths {
      * @description Newest first.
      */
     get: operations["list_thread_runs_api_v1_threads__thread_id__runs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/stream": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Thread Stream
+     * @description Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
+     *     Resumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.
+     */
+    get: operations["thread_stream_api_v1_threads__thread_id__stream_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2520,6 +2747,23 @@ export interface paths {
     };
     /** Usage Overview */
     get: operations["usage_overview_api_v1_usage_overview_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage/records/{record_id}/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Model Request Metrics */
+    get: operations["model_request_metrics_api_v1_usage_records__record_id__metrics_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2744,7 +2988,7 @@ export interface paths {
     head?: never;
     /**
      * Update web provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
     patch: operations["update_provider_api_v1_web_providers__provider_id__patch"];
     trace?: never;
@@ -3114,8 +3358,7 @@ export interface components {
       name: string;
       /** Organization Id */
       organization_id: string;
-      /** Preset Kind */
-      preset_kind?: ("composer" | "finding") | null;
+      preset_kind?: components["schemas"]["PresetKind"] | null;
       source: components["schemas"]["AgentSource"];
       /**
        * Updated At
@@ -3131,6 +3374,11 @@ export interface components {
     };
     /** AgentConfig */
     "AgentConfig-Input": {
+      /**
+       * Builtin Skills
+       * @default []
+       */
+      builtin_skills?: "platform-operations"[];
       /**
        * Client Tools
        * @default []
@@ -3154,6 +3402,7 @@ export interface components {
        */
       lazy_environment?: boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
+      memory?: components["schemas"]["SessionMemorySettings"];
       /**
        * Memory Mounts
        * @default []
@@ -3167,6 +3416,7 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"];
       /**
        * Plugins
        * @default []
@@ -3174,6 +3424,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | components["schemas"]["SharedSkillSync"]
+        | components["schemas"]["IsolatedSkillSync"];
       /**
        * Skills
        * @default []
@@ -3202,6 +3456,11 @@ export interface components {
     /** AgentConfig */
     "AgentConfig-Output": {
       /**
+       * Builtin Skills
+       * @default []
+       */
+      builtin_skills?: "platform-operations"[];
+      /**
        * Client Tools
        * @default []
        */
@@ -3224,6 +3483,7 @@ export interface components {
        */
       lazy_environment?: boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
+      memory?: components["schemas"]["SessionMemorySettings"];
       /**
        * Memory Mounts
        * @default []
@@ -3237,6 +3497,7 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"];
       /**
        * Plugins
        * @default []
@@ -3244,6 +3505,10 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | components["schemas"]["SharedSkillSync"]
+        | components["schemas"]["IsolatedSkillSync"];
       /**
        * Skills
        * @default []
@@ -3329,6 +3594,8 @@ export interface components {
      *     edge removes it; every other field replaces the revision's value.
      */
     "AgentOverride-Input": {
+      /** Builtin Skills */
+      builtin_skills?: "platform-operations"[] | null;
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
       /** Connection Tools */
@@ -3348,10 +3615,18 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | (
+            | components["schemas"]["SharedSkillSync"]
+            | components["schemas"]["IsolatedSkillSync"]
+          )
+        | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -3371,6 +3646,8 @@ export interface components {
      *     edge removes it; every other field replaces the revision's value.
      */
     "AgentOverride-Output": {
+      /** Builtin Skills */
+      builtin_skills?: "platform-operations"[] | null;
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
       /** Connection Tools */
@@ -3390,10 +3667,18 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      platform_tools?: components["schemas"]["PlatformSelection"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Skill Sync */
+      skill_sync?:
+        | (
+            | components["schemas"]["SharedSkillSync"]
+            | components["schemas"]["IsolatedSkillSync"]
+          )
+        | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
@@ -3586,6 +3871,14 @@ export interface components {
       items: components["schemas"]["Analysis"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** AnyChangeTrigger */
+    AnyChangeTrigger: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "any_change";
     };
     /** ApiKey */
     ApiKey: {
@@ -3962,6 +4255,16 @@ export interface components {
       | "boundary_violation";
     /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
+    /** ChangeCountTrigger */
+    ChangeCountTrigger: {
+      /** Count */
+      count: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "change_count";
+    };
     /**
      * ChildEnvironmentPolicy
      * @description What a child run mounts: no environment, the parent's, or a new one from `template_id`.
@@ -4003,6 +4306,34 @@ export interface components {
        * @enum {string}
        */
       permission?: "inherit" | "allow" | "deny";
+    };
+    /**
+     * ComputerCheck
+     * @description A point-in-time capability probe, not an Agent or mount permission grant.
+     */
+    ComputerCheck: {
+      /**
+       * Display Count
+       * @default 0
+       */
+      display_count?: number;
+      /**
+       * Input Ready
+       * @default false
+       */
+      input_ready?: boolean;
+      /**
+       * Observe Ready
+       * @default false
+       */
+      observe_ready?: boolean;
+      /** Operations */
+      operations?: components["schemas"]["EnvironmentAction"][];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "checked" | "unsupported" | "not_ready";
     };
     /** Connection */
     Connection: {
@@ -4395,6 +4726,51 @@ export interface components {
       thread_id: string;
     };
     /**
+     * EnvironmentAction
+     * @description Exact authorization values in the locked first-party catalog.
+     * @enum {string}
+     */
+    EnvironmentAction:
+      | "environment.file.stat"
+      | "environment.file.read_text"
+      | "environment.file.read_bytes"
+      | "environment.file.write_text"
+      | "environment.file.patch_text"
+      | "environment.file.list"
+      | "environment.file.query"
+      | "environment.file.search_text"
+      | "environment.file.mkdir"
+      | "environment.file.move"
+      | "environment.file.remove"
+      | "environment.file.write_bytes"
+      | "environment.file.copy_source"
+      | "environment.file.copy_destination"
+      | "environment.shell.exec"
+      | "environment.process.list"
+      | "environment.process.start"
+      | "environment.process.inspect"
+      | "environment.process.read_output"
+      | "environment.process.write_stdin"
+      | "environment.process.close_stdin"
+      | "environment.process.signal"
+      | "environment.process.wait"
+      | "environment.process.kill"
+      | "environment.process.release"
+      | "environment.output.read"
+      | "environment.output.release"
+      | "environment.port.inspect"
+      | "environment.port.wait"
+      | "environment.state.export"
+      | "environment.state.restore"
+      | "environment.computer.describe"
+      | "environment.computer.observe"
+      | "environment.computer.click"
+      | "environment.computer.move"
+      | "environment.computer.drag"
+      | "environment.computer.scroll"
+      | "environment.computer.type_text"
+      | "environment.computer.press_keys";
+    /**
      * EnvironmentFailure
      * @description The last error of the outstanding operation or, on a ready instance, of its last renewal.
      *
@@ -4424,6 +4800,44 @@ export interface components {
       environment_id: string;
       /** Name */
       name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -4433,6 +4847,30 @@ export interface components {
       items: components["schemas"]["EnvironmentView"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** EnvironmentPermissionSet */
+    "EnvironmentPermissionSet-Input": {
+      /**
+       * Operations
+       * @default []
+       */
+      operations?: components["schemas"]["EnvironmentAction"][];
+    };
+    /** EnvironmentPermissionSet */
+    "EnvironmentPermissionSet-Output": {
+      /** Operations */
+      operations?: components["schemas"]["EnvironmentAction"][];
+    };
+    /** EnvironmentProviderReferences */
+    EnvironmentProviderReferences: {
+      /** Environment Count */
+      environment_count: number;
+      /** Environments */
+      environments: components["schemas"]["ProviderReference"][];
+      /** Template Count */
+      template_count: number;
+      /** Templates */
+      templates: components["schemas"]["ProviderReference"][];
     };
     /**
      * EnvironmentUpdate
@@ -4695,6 +5133,29 @@ export interface components {
       payload: components["schemas"]["MessagePayload"];
     };
     /**
+     * FrozenMemoryMount
+     * @description Host-resolved Space identity and roots, never accepted from a mount request.
+     */
+    FrozenMemoryMount: {
+      access: components["schemas"]["MemoryAccess"];
+      /** Memory Id */
+      memory_id: string;
+      /** Name */
+      name: string;
+      /**
+       * Recall
+       * @default true
+       */
+      recall?: boolean;
+      /**
+       * Roots
+       * @default []
+       */
+      roots?: string[];
+      /** Space Id */
+      space_id?: string | null;
+    };
+    /**
      * GitHubSource
      * @description A directory of a public GitHub repository.
      *
@@ -4954,6 +5415,22 @@ export interface components {
       invitation: components["schemas"]["Invitation"];
       /** Invitation Url */
       invitation_url: string | null;
+    };
+    /**
+     * IsolatedSkillSync
+     * @description Reuse immutable package directories, with a soft count budget.
+     */
+    IsolatedSkillSync: {
+      /**
+       * Cache Count
+       * @default 128
+       */
+      cache_count?: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "isolated";
     };
     /** IssuedKey */
     IssuedKey: {
@@ -5397,6 +5874,13 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** MemoryRecordProvenance */
+    MemoryRecordProvenance: {
+      /** Content Matches */
+      content_matches: boolean;
+      created: components["schemas"]["MemoryRecordSource"] | null;
+      last_write: components["schemas"]["MemoryRecordSource"];
+    };
     /** MemoryRecordSearch */
     MemoryRecordSearch: {
       /**
@@ -5406,6 +5890,27 @@ export interface components {
       limit?: number;
       /** Query */
       query: string;
+    };
+    /**
+     * MemoryRecordSource
+     * @description A platform-confirmed write, not an asserted source message or complete provider history.
+     */
+    MemoryRecordSource: {
+      /** Attempt Id */
+      attempt_id: string | null;
+      /**
+       * Confirmed At
+       * Format: date-time
+       */
+      confirmed_at: string;
+      /** Principal Id */
+      principal_id: string | null;
+      /** Principal Name */
+      principal_name?: string | null;
+      /** Run Id */
+      run_id: string | null;
+      /** Tool Call Id */
+      tool_call_id: string | null;
     };
     /** MemoryRecordText */
     MemoryRecordText: {
@@ -5419,6 +5924,7 @@ export interface components {
     MemoryRecordView: {
       /** Id */
       id: string;
+      provenance?: components["schemas"]["MemoryRecordProvenance"] | null;
       /** Score */
       score?: number | null;
       /** Text */
@@ -5491,6 +5997,105 @@ export interface components {
       items: components["schemas"]["MemoryRevision"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** MemorySpace */
+    MemorySpace: {
+      /** Always Load */
+      always_load: string[];
+      /** Content Bytes */
+      content_bytes: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Description */
+      description: string | null;
+      /** Enabled */
+      enabled: boolean;
+      /** File Count */
+      file_count: number;
+      /** Guide */
+      guide: string | null;
+      /** History Bytes */
+      history_bytes: number;
+      /** Id */
+      id: string;
+      /** Labels */
+      labels: {
+        [key: string]: string;
+      };
+      /** Memory Id */
+      memory_id: string;
+      /** Name */
+      name: string;
+      organization: components["schemas"]["OrganizationPolicy"];
+      /** Organization Id */
+      organization_id: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Id */
+      updated_by_id: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** MemorySpaceCreate */
+    MemorySpaceCreate: {
+      /**
+       * Always Load
+       * @default [
+       *       "global/MEMORY.md"
+       *     ]
+       */
+      always_load?: string[];
+      /** Description */
+      description?: string | null;
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** Guide */
+      guide?: string | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      };
+      /** Name */
+      name: string;
+      organization?: components["schemas"]["OrganizationPolicy"];
+    };
+    /** MemorySpacePage */
+    MemorySpacePage: {
+      /** Items */
+      items: components["schemas"]["MemorySpace"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** MemorySpaceUpdate */
+    MemorySpaceUpdate: {
+      /** Always Load */
+      always_load?: string[] | null;
+      /** Description */
+      description?: string | null;
+      /** Enabled */
+      enabled?: boolean | null;
+      /** Guide */
+      guide?: string | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      } | null;
+      /** Name */
+      name?: string | null;
+      organization?: components["schemas"]["OrganizationPolicy"] | null;
     };
     /**
      * MemoryUpdate
@@ -5781,6 +6386,18 @@ export interface components {
       /** Source Url */
       source_url?: string | null;
     };
+    /**
+     * ModelRequestMetrics
+     * @description Derived from the current model contribution.
+     */
+    ModelRequestMetrics: {
+      /** Output Tokens Per Second */
+      output_tokens_per_second: number | null;
+      /** Request Duration Seconds */
+      request_duration_seconds: number | null;
+      /** Time To First Chunk Seconds */
+      time_to_first_chunk_seconds: number | null;
+    };
     /** ModelUpdate */
     ModelUpdate: {
       catalog_ref?: components["schemas"]["CatalogRef"] | null;
@@ -5795,6 +6412,8 @@ export interface components {
     };
     /** ModelUsage */
     ModelUsage: {
+      /** Average Time To First Chunk Seconds */
+      average_time_to_first_chunk_seconds: number | null;
       /** Cache Read Tokens */
       cache_read_tokens: number;
       /** Cache Write Tokens */
@@ -5807,6 +6426,8 @@ export interface components {
       model: string | null;
       /** Output Tokens */
       output_tokens: number;
+      /** Output Tokens Per Second */
+      output_tokens_per_second: number | null;
       /** Requests */
       requests: number;
     };
@@ -5831,6 +6452,44 @@ export interface components {
       environment_id: string;
       /** Name */
       name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -5841,12 +6500,54 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
+    /** MountUpdate */
+    MountUpdate: {
+      permission_ceiling: components["schemas"]["EnvironmentPermissionSet-Input"];
+    };
     /** MountView */
     MountView: {
       /** Environment Id */
       environment_id: string;
       /** Name */
       name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
       /** Working Directory */
       working_directory: string | null;
     };
@@ -5930,6 +6631,30 @@ export interface components {
       items: components["schemas"]["Organization"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** OrganizationPolicy */
+    OrganizationPolicy: {
+      /**
+       * Check Interval Seconds
+       * @default 10
+       */
+      check_interval_seconds?: number;
+      /**
+       * Cooldown Seconds
+       * @default 300
+       */
+      cooldown_seconds?: number;
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled?: boolean;
+      /** Model */
+      model?: string | null;
+      /** Trigger */
+      trigger?:
+        | components["schemas"]["AnyChangeTrigger"]
+        | components["schemas"]["ChangeCountTrigger"];
     };
     /** OrganizationUpdate */
     OrganizationUpdate: {
@@ -6037,6 +6762,38 @@ export interface components {
       /** Tool Name */
       tool_name: string;
     };
+    /** @enum {string} */
+    PlatformGroup:
+      | "agents"
+      | "models"
+      | "connections"
+      | "skills"
+      | "environment_templates"
+      | "providers"
+      | "execution";
+    /**
+     * PlatformSelection
+     * @description Platform MCP groups selected independently of local operating instructions.
+     */
+    PlatformSelection: {
+      /**
+       * Groups
+       * @default []
+       */
+      groups?: components["schemas"]["PlatformGroup"][];
+      /**
+       * Read Permission
+       * @default allow
+       * @enum {string}
+       */
+      read_permission?: "allow" | "ask" | "deny";
+      /**
+       * Write Permission
+       * @default ask
+       * @enum {string}
+       */
+      write_permission?: "allow" | "ask" | "deny";
+    };
     /**
      * PluginSelection
      * @description One instance of a Harness plugin factory the deployment installed.
@@ -6053,6 +6810,8 @@ export interface components {
     };
     /** @enum {string} */
     Preset: "execution" | "recovery" | "answer";
+    /** @enum {string} */
+    PresetKind: "composer" | "finding" | "memory_organizer";
     /**
      * PriceComponent
      * @description One genai-prices usage dimension and its USD unit price.
@@ -6265,6 +7024,15 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** ProviderReference */
+    ProviderReference: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+    };
     /** ProviderTest */
     ProviderTest: {
       /** Message */
@@ -6457,6 +7225,15 @@ export interface components {
       workspace_id: string;
     };
     /**
+     * RunAgent
+     * @description The agent a run executes: its frozen revision, and that revision's configuration with the run's override
+     *     applied. Models, connections and templates the configuration names stay live.
+     */
+    RunAgent: {
+      config: components["schemas"]["AgentConfig-Output"];
+      revision: components["schemas"]["AgentRevision"];
+    };
+    /**
      * RunConfiguration
      * @description An accepted snapshot, independent of Agent definitions and Capability configuration.
      *
@@ -6573,6 +7350,15 @@ export interface components {
     /** @enum {string} */
     RunStatus:
       "accepted" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+    /** RunUsage */
+    RunUsage: {
+      /** Models */
+      models: components["schemas"]["ModelUsage"][];
+      /** Run Id */
+      run_id: string;
+      /** Thread Id */
+      thread_id: string;
+    };
     /** RunView */
     RunView: {
       /** Agent Id */
@@ -6607,7 +7393,10 @@ export interface components {
       /** Max Attempts */
       max_attempts: number;
       /** Memory Mounts */
-      memory_mounts: components["schemas"]["MemoryMount"][];
+      memory_mounts: (
+        | components["schemas"]["MemoryMount"]
+        | components["schemas"]["FrozenMemoryMount"]
+      )[];
       options: components["schemas"]["RunOptions-Output"];
       output: components["schemas"]["JsonValue"] | null;
       /** Parent Run Id */
@@ -6728,6 +7517,23 @@ export interface components {
       labels?: {
         [key: string]: string;
       };
+      memory?: components["schemas"]["SessionMemorySettings"] | null;
+    };
+    /**
+     * SessionMemorySettings
+     * @description Participation and complete Space selection; policy belongs to each Space.
+     */
+    SessionMemorySettings: {
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled?: boolean;
+      /**
+       * Spaces
+       * @default []
+       */
+      spaces?: components["schemas"]["SpaceBinding"][];
     };
     /** SessionPage */
     SessionPage: {
@@ -6768,9 +7574,10 @@ export interface components {
     /** SessionUpdate */
     SessionUpdate: {
       /** Labels */
-      labels: {
+      labels?: {
         [key: string]: string;
-      };
+      } | null;
+      memory?: components["schemas"]["SessionMemorySettings"] | null;
     };
     /** SessionView */
     SessionView: {
@@ -6789,7 +7596,14 @@ export interface components {
       };
       /** Last Run Id */
       last_run_id: string | null;
+      memory?: components["schemas"]["SessionMemorySettings"];
       preview?: components["schemas"]["SessionPreview"] | null;
+      /**
+       * Purpose
+       * @default conversation
+       * @enum {string}
+       */
+      purpose?: "conversation" | "memory_organization";
       /**
        * Run Count
        * @default 0
@@ -6807,6 +7621,27 @@ export interface components {
     };
     /** @enum {string} */
     Severity: "critical" | "warning" | "suggestion";
+    /**
+     * SharedSkillSync
+     * @description Publish mutable conventional names; the last completed publication wins.
+     */
+    SharedSkillSync: {
+      /**
+       * Cleanup
+       * @default false
+       */
+      cleanup?: boolean;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "shared";
+      /**
+       * Overwrite
+       * @default true
+       */
+      overwrite?: boolean;
+    };
     /** Skill */
     Skill: {
       /** Archived At */
@@ -6992,6 +7827,45 @@ export interface components {
       source:
         | components["schemas"]["UploadSource"]
         | components["schemas"]["GitHubSource"];
+    };
+    /**
+     * SpaceBinding
+     * @description A named Space selected by the App or inherited from Agent defaults.
+     */
+    SpaceBinding: {
+      /** @default write */
+      access?: components["schemas"]["MemoryAccess"];
+      /** Name */
+      name: string;
+      /** Space Id */
+      space_id: string;
+    };
+    /** SpaceOrganizationStatus */
+    SpaceOrganizationStatus: {
+      /** Active Run Id */
+      active_run_id?: string | null;
+      /** Due At */
+      due_at?: string | null;
+      failure?: components["schemas"]["Failure"] | null;
+      /**
+       * History Gap
+       * @default false
+       */
+      history_gap?: boolean;
+      /** Last Run Id */
+      last_run_id?: string | null;
+      /**
+       * Pending
+       * @default false
+       */
+      pending?: boolean;
+      /**
+       * Processed Seq
+       * @default 0
+       */
+      processed_seq?: number;
+      /** Session Id */
+      session_id?: string | null;
     };
     /**
      * Span
@@ -7398,6 +8272,12 @@ export interface components {
       origin_thread_id: string | null;
       /** Origin Tool Call Id */
       origin_tool_call_id: string | null;
+      /**
+       * Purpose
+       * @default conversation
+       * @enum {string}
+       */
+      purpose?: "conversation" | "memory_organization";
       /** Session Id */
       session_id: string;
       /** Subagent */
@@ -7424,6 +8304,11 @@ export interface components {
       default_permission: components["schemas"]["ToolPermissionMode"];
       /** Deployment Supported */
       deployment_supported: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
       /** Display Name */
       display_name: string;
       /** Execution Id */
@@ -7523,6 +8408,11 @@ export interface components {
       };
       /** Default Enabled */
       default_enabled: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
       /** Display Name */
       display_name: string;
       key: components["schemas"]["ToolsetKey"];
@@ -7533,6 +8423,7 @@ export interface components {
     ToolsetKey:
       | "files"
       | "shell"
+      | "computer"
       | "web"
       | "memory"
       | "assets"
@@ -7709,6 +8600,8 @@ export interface components {
     UsageSummary: {
       /** Models */
       models: components["schemas"]["ModelUsage"][];
+      /** Runs */
+      runs: components["schemas"]["RunUsage"][];
     };
     /** UserKeyCreate */
     UserKeyCreate: {
@@ -7879,7 +8772,7 @@ export interface operations {
         q?: string | null;
         archived?: boolean | null;
         source?: components["schemas"]["AgentSource"] | null;
-        preset_kind?: ("composer" | "finding") | null;
+        preset_kind?: components["schemas"]["PresetKind"] | null;
         skill_id?: string | null;
         skill_revision_id?: string | null;
         limit?: number;
@@ -9265,6 +10158,33 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  delete_environment_provider_api_v1_environment_providers__provider_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   update_provider_api_v1_environment_providers__provider_id__patch: {
     parameters: {
       query?: never;
@@ -9292,6 +10212,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  environment_provider_references_api_v1_environment_providers__provider_id__references_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentProviderReferences"];
         };
       };
       400: components["responses"]["Error"];
@@ -9586,6 +10533,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  check_computer_api_v1_environments__environment_id__computer_check_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ComputerCheck"];
         };
       };
       400: components["responses"]["Error"];
@@ -10683,9 +11657,274 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_model_catalog_api_v1_model_catalog_get: {
+  list_spaces_api_v1_memory_spaces_get: {
+    parameters: {
+      query?: {
+        label?: string[] | null;
+        enabled?: boolean | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemorySpacePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_space_api_v1_memory_spaces_post: {
     parameters: {
       query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemorySpaceCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemorySpace"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_space_api_v1_memory_spaces__space_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemorySpace"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_space_api_v1_memory_spaces__space_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_space_api_v1_memory_spaces__space_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemorySpaceUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemorySpace"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_space_organization_api_v1_memory_spaces__space_id__organization_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SpaceOrganizationStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_space_organizations_api_v1_memory_spaces__space_id__organizations_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  organize_space_api_v1_memory_spaces__space_id__organizations_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SpaceOrganizationStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_space_sessions_api_v1_memory_spaces__space_id__sessions_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        space_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_model_catalog_api_v1_model_catalog_get: {
+    parameters: {
+      query?: {
+        /** @description Exact catalog channel ID, such as openrouter. */
+        provider?: string | null;
+        /** @description Exact, case-sensitive model ID within the catalog channel. */
+        model?: string | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -10701,6 +11940,7 @@ export interface operations {
           "application/json": components["schemas"]["ModelCatalog"];
         };
       };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };
@@ -11626,6 +12866,50 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_runs_api_v1_runs_get: {
+    parameters: {
+      query?: {
+        agent_id?: string | null;
+        session_id?: string | null;
+        thread_id?: string | null;
+        principal_id?: string | null;
+        status?:
+          | (
+              | "accepted"
+              | "running"
+              | "waiting"
+              | "completed"
+              | "failed"
+              | "cancelled"
+            )
+          | null;
+        created_after?: string | null;
+        created_before?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_run_api_v1_runs__run_id__get: {
     parameters: {
       query?: never;
@@ -11686,6 +12970,33 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  run_agent_api_v1_runs__run_id__agent_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunAgent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   run_attempts_api_v1_runs__run_id__attempts_get: {
     parameters: {
       query?: never;
@@ -11707,6 +13018,34 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Attempts"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_attempt_api_v1_runs__run_id__attempts__attempt_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttemptView"];
         };
       };
       400: components["responses"]["Error"];
@@ -11807,6 +13146,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  run_image_api_v1_runs__run_id__images__image_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        image_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "image/jpeg": Binary;
+          "image/png": Binary;
         };
       };
       400: components["responses"]["Error"];
@@ -12958,6 +14326,40 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  update_mount_api_v1_threads__thread_id__environments__name__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MountUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MountView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_inbox_api_v1_threads__thread_id__inbox_get: {
     parameters: {
       query?: {
@@ -13307,6 +14709,37 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  thread_stream_api_v1_threads__thread_id__stream_get: {
+    parameters: {
+      query?: {
+        run?: string | null;
+        position?: string | null;
+      };
+      header?: {
+        "Last-Event-ID"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/event-stream": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_toolsets_api_v1_toolsets_get: {
     parameters: {
       query?: never;
@@ -13593,6 +15026,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["UsageOverview"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  model_request_metrics_api_v1_usage_records__record_id__metrics_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        record_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelRequestMetrics"];
         };
       };
       400: components["responses"]["Error"];

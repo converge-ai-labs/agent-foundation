@@ -14,6 +14,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
+from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -40,6 +41,7 @@ from a13n_harness.capabilities.steering import steering_input_ids
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -86,6 +88,7 @@ from a13n_service.runs.schemas import (
     canonical_json,
 )
 from a13n_service.runs.seal import release_attempt, seal, seal_attempt
+from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -173,7 +176,11 @@ def _own(error: Exception) -> Exception:
     current: BaseException = error
     while isinstance(current, HarnessError) and current.__cause__ is not None:
         current = current.__cause__
-    return current if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable) else error
+    return (
+        current
+        if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable | EndpointPolicyError)
+        else error
+    )
 
 
 def _deterministic(error: Exception) -> Outcome | None:
@@ -181,13 +188,23 @@ def _deterministic(error: Exception) -> Outcome | None:
         return error.outcome
     if isinstance(error, ServiceError):
         return None if error.code == "unavailable" else Outcome.refused(error)
+    if isinstance(error, EndpointPolicyError):
+        return Outcome.failed("provider_endpoint_denied", str(error))
     if isinstance(error, HarnessError):
-        return Outcome.failed(error.code, str(error))
+        return Outcome.failed(error.code, _harness_failure_message(str(error), error.details))
     if isinstance(error, EnvironmentUnavailable):
         return Outcome.failed("environment_unavailable", str(error))
     if isinstance(error, EnvironmentProviderError) and error.category not in _TRANSIENT_ENVIRONMENT:
         return Outcome.failed("environment_unavailable", error.safe_projection().message)
     return None
+
+
+def _harness_failure_message(message: str, details: Mapping[str, JsonValue]) -> str:
+    """Keep the Harness's safe HTTP status without exposing an upstream body or exception message."""
+    status = details.get("status_code")
+    if details.get("exception_type") == "ModelHTTPError" and type(status) is int and 400 <= status <= 599:
+        return f"{message} Model provider returned HTTP {status}."
+    return message
 
 
 async def _release(runtime: Runtime, lease: Lease, error: Exception) -> None:
@@ -338,7 +355,12 @@ class _Attempt:
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
-            lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
+            lease.run_id,
+            plan.tail,
+            attempt=lease.number,
+            page_items=worker.page_items,
+            page_bytes=worker.page_bytes,
+            memory_ids={memory.mount.name: memory.mount.memory_id for memory in plan.host.memories},
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
@@ -389,6 +411,7 @@ class _Attempt:
         root = self.plan.agent
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
+        skill_cache = Cache()
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
                 open_mounts(
@@ -398,6 +421,7 @@ class _Attempt:
                     self.plan.authority,
                     self.plan.mounts,
                     configuration=self.plan.configuration,
+                    skill_cache=skill_cache,
                 )
             )
             models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
@@ -412,6 +436,8 @@ class _Attempt:
                     authority=self.plan.authority,
                     cursors=self.cursors,
                     configuration=self.plan.configuration,
+                    skill_cache=skill_cache,
+                    environments=environments,
                 )
             )
             executable = agent.build(
@@ -437,7 +463,9 @@ class _Attempt:
             )
             self.live = live
             output = await stack.enter_async_context(
-                Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
+                Coalescer(
+                    self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds, contents=self.contents
+                )
             )
 
             def freeze_display(_open_calls: frozenset[str]) -> Snapshot:
@@ -448,6 +476,7 @@ class _Attempt:
             bindings = replace(
                 host.bindings(root, self._bindings(agent.model_resolver(root, models))),
                 producer_observer=output.observe,
+                environment=host.environment,
             )
             start = partial(
                 executable.stream,
@@ -461,12 +490,7 @@ class _Attempt:
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
             )
-            # The Harness takes no empty environment set; a run without mounts runs without one.
-            stream = (
-                start(environments=environments, default_environment=PRIMARY if PRIMARY in environments else None)
-                if environments
-                else start()
-            )
+            stream = start()
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
             async with stream:
                 interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
@@ -695,7 +719,9 @@ class _Attempt:
         if result.status == "failed":
             assert result.failure is not None
             await self._record_usage()
-            failed = Outcome.failed(result.failure.code, result.failure.message)
+            failed = Outcome.failed(
+                result.failure.code, _harness_failure_message(result.failure.message, result.failure.details)
+            )
             await self._seal_interrupted(self._refusal() or failed)
             return
         if result.status == "cancelled":

@@ -327,6 +327,7 @@ class EnvironmentRunService:
         self._devices = devices
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
+        live = composition.root.source_kind == "live"
         profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
         roots = await normalize_project_roots(composition.project_roots) if composition.project_roots else ()
@@ -382,7 +383,9 @@ class EnvironmentRunService:
                 _PreparedMount(
                     alias="workspace" if index == 1 else f"workspace-{index}",
                     environment=environment,
-                    permission_ceiling=EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS),
+                    permission_ceiling=EnvironmentPermissionSet(
+                        operations=FILE_ACTIONS if live else FILE_EXECUTION_ACTIONS
+                    ),
                     mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                     provider_root=root.as_posix()
                     if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
@@ -426,7 +429,7 @@ class EnvironmentRunService:
                         mount_path=(path_layout.user_skills if canonical_host_paths else None)
                     )
                 )
-        if self._configuration_root is not None:
+        if self._configuration_root is not None and not live:
             root = self._configuration_root.expanduser().resolve()
             if not (canonical_host_paths and any(mount.mount_path == root.as_posix() for mount in mounts)):
                 mounts.append(
@@ -437,6 +440,8 @@ class EnvironmentRunService:
                     )
                 )
         thread_mount = await self._prepare_thread_files_mount(reconstructed, thread_root, local_runtime=local_runtime)
+        if live:
+            thread_mount.permission_ceiling = EnvironmentPermissionSet(operations=FILE_ACTIONS)
         if roots:
             mounts.append(thread_mount)
         else:

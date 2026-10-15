@@ -58,6 +58,16 @@ const SkillDetail = lazy(() =>
     default: module.SkillDetail,
   })),
 );
+const MemorySpacesPage = lazy(() =>
+  import("./features/memories/spaces").then((module) => ({
+    default: module.MemorySpacesPage,
+  })),
+);
+const MemorySpaceDetail = lazy(() =>
+  import("./features/memories/space-detail").then((module) => ({
+    default: module.MemorySpaceDetail,
+  })),
+);
 const MemoriesPage = lazy(() =>
   import("./features/memories/page").then((module) => ({
     default: module.MemoriesPage,
@@ -66,6 +76,11 @@ const MemoriesPage = lazy(() =>
 const MemoryDetail = lazy(() =>
   import("./features/memories/page").then((module) => ({
     default: module.MemoryDetail,
+  })),
+);
+const CreateEnvironmentTemplate = lazy(() =>
+  import("./features/environments/template-create").then((module) => ({
+    default: module.CreateEnvironmentTemplate,
   })),
 );
 const EnvironmentsPage = lazy(() =>
@@ -242,11 +257,23 @@ function AppContent() {
                         element={<EnvironmentsPage />}
                       />
                       <Route
+                        path="environments/new"
+                        element={<CreateEnvironmentTemplate />}
+                      />
+                      <Route
                         path="environments/instances"
                         element={<EnvironmentsPage section="instances" />}
                       />
                       <Route path="skills" element={<SkillsPage />} />
                       <Route path="skills/:skillId" element={<SkillDetail />} />
+                      <Route
+                        path="memory-spaces"
+                        element={<MemorySpacesPage />}
+                      />
+                      <Route
+                        path="memory-spaces/:spaceId"
+                        element={<MemorySpaceDetail />}
+                      />
                       <Route path="memories" element={<MemoriesPage />} />
                       <Route
                         path="memories/:memoryId"

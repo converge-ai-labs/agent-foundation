@@ -36,11 +36,13 @@ vi.mock("react-i18next", () => ({
 const web = {
   key: "web",
   display_name: "Web",
+  description: "Web tools from the service catalogue.",
   default_enabled: false,
   config_schema: {},
   tools: ["search", "scrape", "fetch", "download"].map((key) => ({
     key,
     display_name: `Display ${key}`,
+    description: `Catalogue description for ${key}`,
     execution_id: key,
     model_name: key,
     default_enabled: false,
@@ -62,7 +64,11 @@ const initial: NonNullable<AgentConfig["toolsets"]> = {
   },
 };
 
-function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
+function renderDraft(
+  starting: NonNullable<AgentConfig["toolsets"]>,
+  onRequireReviewer = vi.fn(),
+  onReview = vi.fn(),
+) {
   function Draft() {
     const [value, setValue] = useState(starting);
     return (
@@ -72,6 +78,8 @@ function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
           onChange={setValue}
           config={{ model: "model-test", toolsets: value }}
           agentId="ap_test"
+          onRequireReviewer={onRequireReviewer}
+          onReview={onReview}
         />
         <output data-testid="draft">{JSON.stringify(value)}</output>
       </>
@@ -98,6 +106,59 @@ function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+});
+
+it("renders catalogue labels and descriptions while keeping model-facing tool names", async () => {
+  const group = {
+    ...web,
+    key: "catalog_extension",
+    display_name: "Catalogue extension",
+    tools: [
+      { ...web.tools[0], resource_selector: null },
+      { ...web.tools[1], resource_selector: null, description: "" },
+    ],
+  };
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? { items: [group] }
+      : { items: [], next_cursor: null },
+  }));
+  const { user } = renderDraft({});
+  const title = await screen.findByText("Catalogue extension");
+  expect(
+    screen.getByRole("checkbox", { name: "Enable Catalogue extension tools" }),
+  ).toBeTruthy();
+  expect(screen.getByText(group.description)).toBeTruthy();
+  await user.click(title.closest("button")!);
+  expect(screen.getByRole("checkbox", { name: "search" })).toBeTruthy();
+  expect(screen.getByText("Catalogue description for search")).toBeTruthy();
+  expect(screen.queryByText("Display search")).toBeNull();
+  expect(screen.getByRole("checkbox", { name: "scrape" })).toBeTruthy();
+  expect(screen.getByText("Display scrape")).toBeTruthy();
+});
+
+it("renders catalogue labels when descriptions are omitted", async () => {
+  const { description: _description, ...group } = web;
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? {
+          items: [
+            {
+              ...group,
+              tools: group.tools.map(
+                ({ description: _description, ...tool }) => tool,
+              ),
+            },
+          ],
+        }
+      : { items: [], next_cursor: null },
+  }));
+  const { user } = renderDraft({});
+  const title = await screen.findByText("Web");
+  await user.click(title.closest("button")!);
+  expect(screen.getByRole("checkbox", { name: "search" })).toBeTruthy();
+  expect(screen.getByText("Display search")).toBeTruthy();
+  expect(screen.queryByText(web.description)).toBeNull();
 });
 
 it("keeps disabled child settings, edits permissions, and validates the candidate without saving", async () => {
@@ -159,13 +220,9 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
     within(fetchPermissions).queryByRole("button", { name: /inherit/i }),
   ).toBeNull();
   expect(
-    within(fetchPermissions).queryByRole("button", { name: /review/i }),
-  ).toBeNull();
-  expect(
-    screen.getByText(
-      "Review is configured for this tool. Choose another permission to replace it.",
-    ),
+    within(fetchPermissions).getByRole("button", { name: "Automatic review" }),
   ).toBeTruthy();
+  expect(screen.getByText("This tool uses automatic review.")).toBeTruthy();
   await user.hover(
     within(fetchPermissions).getByRole("button", { name: "Allow" }),
   );
@@ -584,4 +641,31 @@ it("keeps platform choices when opening and toggling the group, including defaul
   );
   expect(draft().configuration.tools.create_revision.enabled).toBe(false);
   expect(draft().configuration.tools.read.enabled).toBe(true);
+});
+
+it("selects automatic review and opens a rule for the catalogue execution identity", async () => {
+  const onRequireReviewer = vi.fn(),
+    onReview = vi.fn();
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? {
+          items: [
+            { ...web, tools: [{ ...web.tools[2], execution_id: "web.fetch" }] },
+          ],
+        }
+      : { items: [], next_cursor: null },
+  }));
+  http.POST.mockResolvedValue({
+    response: new Response(null, { status: 204 }),
+  });
+  const { user, draft } = renderDraft({}, onRequireReviewer, onReview);
+  await user.click((await screen.findByText("Web")).closest("button")!);
+  await user.click(screen.getByRole("button", { name: "Automatic review" }));
+  expect(draft().web.tools.fetch.permission).toBe("review");
+  expect(onRequireReviewer).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole("button", { name: "Tool review rule" }));
+  expect(onReview).toHaveBeenCalledWith({
+    selector: "web.fetch",
+    label: "fetch",
+  });
 });

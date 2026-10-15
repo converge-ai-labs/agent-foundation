@@ -49,7 +49,9 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 
 ### Agent 配置
 
-在手动配置页面展开 **工具** 下的工具集，可选择具体工具，并为每个操作设置 **允许**、**询问** 或 **拒绝**。三个权限按钮分别用勾号、手掌和禁止符号表示。
+在手动配置页面展开 **工具** 下的工具集，可选择具体工具，并为每个操作设置 **允许**、**询问**、**自动审查** 或 **拒绝**。Connection 工具提供相同的权限选项。自动审查按钮使用盾牌符号。
+
+在 **自动审查** 区域点击 **配置审查**，选择审查模型、风险阈值和达到阈值后的处理方式。**单独设置审查规则** 可为一个工具设置不同的阈值或处理方式。高级设置包括 Shell 审查标准、失败处理、超时、模型参数和选择器规则。**应用到草稿** 只修改本地草稿；**保存更改** 才会发布新的 agent 修订版本。取消面板会丢弃面板中的修改。保存自动审查权限前必须选择审查模型。新建审查配置保留后端默认值：极高风险拒绝执行，审查失败转人工批准，审查超时始终拒绝执行。
 
 修订版本的 `config` 包含：
 
@@ -72,6 +74,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `retries`                         | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                                                     |
 | `default_environment_template_id` | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                                                       |
 | `lazy_environment`                | 默认 `true`：首次使用时创建或启动实例。设为 `false` 可在进入 Harness 前准备全部实例；执行连接仍在首次使用时打开，参见[环境](environments.md#mount-environments-on-a-thread)。 |
+| `memory`                          | [记忆空间默认设置](memory.md#select-spaces)：`enabled` 和 `spaces[{name, space_id, access}]`。新会话在首次接收运行时保存省略字段的默认值；显式选择覆盖默认值。                |
 | `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
 
 保存时按工作空间验证完整配置：每个引用的模型、skill、连接、provider 和 agent 必须存在且可由你使用，否则对应字段以 `invalid_argument` 拒绝；没有 `revision_id` 的 skill 和子 agent 引用会固定到当前默认修订版本。因此修订版本保留其配置以及 skill 和子 agent 的固定修订版本；它引用的模型、连接、provider 和模板是实时资源，每次使用时重新解析。
@@ -384,6 +387,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 - `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`last_run_id` 是最后结束的运行，下一个运行从它的历史继续；`current_run_id` 是活跃运行。
 - `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
 - 超过 32 KiB 的展示字段单独保存，每个字段最多保留压缩前 16 MiB 的 UTF-8 内容。超限时只保留文本前缀并标记 `truncated=true`，超限 JSON 也会转为文本前缀。Item 的 `content_refs` 按字段名提供正文引用，包含 `id`、已保存字节数 `size_bytes`、`media_type`、`truncated` 和短预览 `preview`。通过 `GET …/runs/{run_id}/contents/{content_id}` 读取已保存内容，需要相同的工作区读取权限。Console 提供“展开全文”入口；超限时改为“展开已保存内容”，并提示内容已截断。被丢弃的后续内容和旧版已截断记录无法据此恢复。此上限不改变 Agent 执行状态，实时 delta 仍保留原有大小限制。
+- `GET …/runs/{run_id}/agent` 返回运行执行的 Agent 版本，以及应用该运行覆盖项后的配置。
 - `GET …/runs/{run_id}/lineage` 返回运行及其祖先，可跨分叉，按最近到最远排列。
 - `GET …/runs/{run_id}/attempts` 列出执行尝试及其 `start_reason`（`initial`、worker 丢失后的 `recovery`、worker 关闭时的 `handoff`）和结果。非 handoff 尝试达到 `max_attempts` 后运行失败。
 
@@ -419,7 +423,7 @@ curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A
 
 ## 用量
 
-每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总：
+每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总，并对每个运行做同样的汇总：
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -427,10 +431,12 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
-             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931"}]}
+             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
+ "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
 ```
 
-每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。`runs` 按从早到晚列出记录了用量的匹配运行，各运行的条目相加等于 `models`。缓存输入（`cache_read_tokens`）包含在 `input_tokens` 中。已完成的流式请求还会给出 `average_time_to_first_chunk_seconds`（等待首个流式分片的平均时间）和 `output_tokens_per_second`（首个分片之后的生成速度）；没有这类请求时两者为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
 
 ## Trace
 
@@ -469,6 +475,6 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 选择过程最多扫描 100 个根节点，最多选取 20 条匹配 trace。执行与恢复规则在扫描范围内优先选取失败的 run，以及标记为错误或致命级别的根节点，同等优先级保留后端顺序。仅出现在子 span 中的错误不影响选择优先级。只选择回答质量规则时保留后端顺序。优先级信号提示值得调查，不代表已证实有问题。**分析历史**标签页用表格列出分析范围、运行状态和创建时间。点击记录，在详情弹窗中查看选中 trace 数、发现数、证据引用的不同 trace 数、选择上限和 trace 链接。这些数量不代表完整分析的 trace 数。打开分析运行，在最终回复中查看结果摘要和局限。没有发现项不代表所有 trace 都已审阅，也不代表 Agent 没有问题。
 
-对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读工具读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
+对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读平台查询读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
 
 自定义 Agent 可以在 **高级 / 平台功能**下启用配置、trace 查询和发现项提交工具。配置写入默认需要询问用户；Finding Agent 的内置配置仅提供配置读取工具，不提供 Agent 写入工具。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。

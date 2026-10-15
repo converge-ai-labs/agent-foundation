@@ -50,7 +50,7 @@ def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_t
     assert all(image["platforms"] == "linux/amd64,linux/arm64" for image in images)
     sandbox = [image for image in images if image["name"] == "a13n-sandbox"]
     assert {(image["variant"], image["tag"]) for image in sandbox} == (
-        {("standard", "dev"), ("slim", "dev-slim")} if "a13n-sandbox" in expected else set()
+        {("standard", "dev"), ("slim", "dev-slim"), ("desktop", "dev-desktop")} if "a13n-sandbox" in expected else set()
     )
     assert all(image["tag"] == "dev" for image in images if image["name"] == "a13n-service")
     assert "SANDBOX_VARIANT={0}" in build["with"]["build-args"]
@@ -118,7 +118,8 @@ def test_development_sandbox_publication_requires_both_binary_builds(result, mon
 
 
 @pytest.mark.parametrize(
-    "component,variant", [("a13n-service", "standard"), ("a13n-envd", "standard"), ("a13n-envd", "slim")]
+    "component,variant",
+    [("a13n-service", "standard"), ("a13n-envd", "standard"), ("a13n-envd", "slim"), ("a13n-envd", "desktop")],
 )
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.2"])
 def test_all_release_image_tags_follow_one_channel_policy(component, variant, version, tmp_path, monkeypatch) -> None:
@@ -133,8 +134,8 @@ def test_all_release_image_tags_follow_one_channel_policy(component, variant, ve
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     subprocess.run(["bash", "-eu", "-c", script], check=True)
     tags = [line for line in output.read_text().splitlines() if line.startswith(image)]
-    suffix = "-slim" if variant == "slim" else ""
-    stable = "slim" if variant == "slim" else "latest"
+    suffix = f"-{variant}" if variant != "standard" else ""
+    stable = variant if variant != "standard" else "latest"
     expected = [f"{image}:{version}{suffix}"]
     if "-rc." not in version:
         expected.append(f"{image}:{stable}")
@@ -267,6 +268,7 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
         ("deploy/docker/images/a13n-service/entrypoint.sh", {"service"}),
         ("deploy/docker/images/sandbox/Dockerfile", {"sandbox"}),
         ("deploy/docker/images/sandbox/entrypoint.sh", {"sandbox"}),
+        ("deploy/docker/images/sandbox/desktop.py", {"sandbox"}),
         ("deploy/docker/images/sandbox/init-skills.sh", {"sandbox"}),
         ("crates/a13n-envd/src/main.rs", {"sandbox"}),
         ("uv.lock", {"service"}),
@@ -418,11 +420,11 @@ def test_quickstart_initializer_propagates_failures(
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
-@pytest.mark.parametrize("variant", ["standard", "slim"])
+@pytest.mark.parametrize("variant", ["standard", "slim", "desktop"])
 def test_sandbox_release_checks_each_variant_digest(version, variant, tmp_path, monkeypatch):
     jobs = yaml.safe_load((ROOT / ".github/workflows/release-a13n-envd.yml").read_text())["jobs"]
     publish = jobs["publish-image"]
-    assert publish["strategy"]["matrix"] == {"variant": ["standard", "slim"]}
+    assert publish["strategy"]["matrix"] == {"variant": ["standard", "slim", "desktop"]}
     steps = publish["steps"]
     build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
     assert "SANDBOX_VARIANT=${{ matrix.variant }}" in build["with"]["build-args"]
@@ -436,14 +438,14 @@ def test_sandbox_release_checks_each_variant_digest(version, variant, tmp_path, 
     monkeypatch.setenv("VERSION", version)
     monkeypatch.setenv("VARIANT", variant)
     subprocess.run(["bash", "-eu", "-c", step["run"]], cwd=tmp_path, check=True)
-    suffix = "-slim" if variant == "slim" else ""
+    suffix = f"-{variant}" if variant != "standard" else ""
     expected = [f"example/sandbox:{version}{suffix}"]
     if "-rc." not in version:
-        expected.append(f"example/sandbox:{'slim' if variant == 'slim' else 'latest'}")
+        expected.append(f"example/sandbox:{variant if variant != 'standard' else 'latest'}")
     assert (tmp_path / "images").read_text().splitlines() == expected
 
 
-def test_container_ci_checks_both_variants_on_both_native_architectures(tmp_path, monkeypatch):
+def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path, monkeypatch):
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-containers.yml").read_text())
     steps = workflow["jobs"]["changes"]["steps"]
     matrix = next(step for step in steps if step.get("id") == "matrix")
@@ -456,12 +458,13 @@ def test_container_ci_checks_both_variants_on_both_native_architectures(tmp_path
     images = json.loads(output.read_text().removeprefix("images="))
     assert {image["runner"] for image in images} == {"ubuntu-24.04", "ubuntu-24.04-arm"}
     for image in images:
-        assert image["build_target"] == "image-sandbox image-sandbox-slim"
-        assert image["check_target"] == "image-check-sandbox image-check-sandbox-slim"
+        assert image["build_target"] == "image-sandbox image-sandbox-slim image-sandbox-desktop"
+        assert image["check_target"] == "image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop"
     filters = yaml.safe_load(next(step for step in steps if step.get("id") == "filter")["with"]["filters"])
     for name in (
         "deploy/docker/images/sandbox/init-skills.sh",
         "deploy/docker/images/sandbox/entrypoint.sh",
+        "deploy/docker/images/sandbox/desktop.py",
         "scripts/sandbox_smoke.py",
     ):
         assert any(Path(name).full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])
@@ -469,3 +472,5 @@ def test_container_ci_checks_both_variants_on_both_native_architectures(tmp_path
     makefile = (ROOT / "Makefile").read_text()
     assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_IMAGE)" --variant standard' in makefile
     assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_SLIM_IMAGE)" --variant slim' in makefile
+
+    assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_DESKTOP_IMAGE)" --variant desktop' in makefile

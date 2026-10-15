@@ -4,7 +4,7 @@
 
 <h1 align="center">Agent Foundation (a13n)</h1>
 
-[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.converge.ai/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.dev/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 **The open-source, self-hosted foundation for AI agents.**
 
@@ -107,6 +107,10 @@ First-use setup connects a model and selects execution permissions. Full Control
 
 Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
 
+We evaluated A13N Harness on Terminal-Bench 4.0 against official Codex using the same model and reasoning effort. Click the chart for the full results and methodology.
+
+[![Terminal-Bench 4.0: A13N Harness 58.06% versus official Codex 58.77% scored pass rate across 62 tasks; inference cost across 61 matched tasks is $98.73 estimated versus $97.70 per round. Click for methodology and full results.](.github/assets/terminal-bench-4-comparison.png)](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
+
 Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/overview/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source
@@ -130,7 +134,7 @@ Source development uses Python 3.13, uv, and Make. Browser builds also need Node
 
 Bug reports, documentation fixes, examples, and focused improvements are welcome. Search [GitHub Issues](https://github.com/converge-ai-labs/agent-foundation/issues) and read the [contribution guide](CONTRIBUTING.md) before starting. Discuss unresolved product or architecture decisions before implementing them.
 
-- [User documentation](https://a13n.converge.ai/docs/)
+- [User documentation](https://a13n.dev/docs/)
 - [Development standards](DEVELOPMENT.md)
 - [Accepted specifications](spec/README.md)
 - [Maintainers](MAINTAINERS.md)

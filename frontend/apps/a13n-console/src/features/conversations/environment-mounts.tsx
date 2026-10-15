@@ -1,56 +1,41 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
-import { PlusIcon } from "@phosphor-icons/react";
+import { MonitorIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, ifMatch, rowTag, type Schema } from "../../shared/api";
+import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { WorkingDirectory } from "../environments/working-directory";
+import { ComputerCheck } from "./computer-check";
+import { MountComputerPermissions } from "./mount-computer-permissions";
 import { EnvironmentReference } from "../environments/reference";
-import {
-  conversationKeys,
-  conversationQueries,
-  invalidateConversation,
-} from "./api";
+import { conversationQueries, invalidateConversation } from "./api";
 import { isInteractive } from "./transcript/run-actions";
 
-/** The environments the Run's Thread mounts for its later Runs. */
-export function RunEnvironmentMounts({ run }: { run: Schema["RunView"] }) {
+/** The environments a Thread mounts for its later Runs. */
+export function ThreadEnvironmentMounts({
+  thread: { id: threadId },
+}: {
+  thread: Schema["ThreadView"];
+}) {
   const { t } = useTranslation();
   const client = useClient();
   const { workspace, can } = useWorkspace();
   const [open, setOpen] = useState(false);
   const thread = useQuery(
-    conversationQueries(client, workspace.id).thread(run.thread_id),
+    conversationQueries(client, workspace.id).thread(threadId),
   );
-  const mounts = useQuery({
-    // Mount edits change the Thread, so they refresh with it.
-    queryKey: [
-      ...conversationKeys(workspace.id).thread(run.thread_id),
-      "environments",
-    ],
-    queryFn: ({ signal }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/threads/{thread_id}/environments", {
-          params: {
-            path: { thread_id: run.thread_id },
-          },
-          signal,
-        })
-        .then(data)
-        .then((page) => page.items),
-  });
+  const mounts = useQuery(
+    conversationQueries(client, workspace.id).environments(threadId),
+  );
   return (
-    <section
-      className="flex flex-col gap-3"
-      aria-label={t("Additional environments")}
-    >
+    <section className="flex flex-col gap-3" aria-label={t("Environments")}>
       <div className="flex items-center justify-between gap-2">
-        <h3>{t("Additional environments")}</h3>
+        <h3>{t("Environments")}</h3>
         {can("run") && thread.data && isInteractive(thread.data) && (
           <ModalFrame
             open={open}
@@ -77,22 +62,36 @@ export function RunEnvironmentMounts({ run }: { run: Schema["RunView"] }) {
       {mounts.isPending ? (
         <Loading variant="list" rows={1} />
       ) : mounts.data?.length ? (
-        <ul className="flex flex-col gap-3">
+        <ListRows>
           {mounts.data.map((mount) => (
-            <li key={mount.name} className="flex flex-col gap-1 text-sm">
-              <strong>{mount.name}</strong>
-              <EnvironmentReference id={mount.environment_id} />
-              {mount.working_directory && (
-                <span className="break-all">{mount.working_directory}</span>
-              )}
-            </li>
+            <ListRow
+              key={mount.name}
+              icon={<MonitorIcon size={16} />}
+              name={mount.name}
+              secondary={mount.working_directory ?? undefined}
+              className="flex-wrap"
+              control={<EnvironmentReference id={mount.environment_id} />}
+            >
+              <div className="order-last flex w-full flex-col items-start gap-3 pt-2">
+                {thread.data && (
+                  <MountComputerPermissions
+                    thread={thread.data}
+                    mount={mount}
+                    editable={can("run") && isInteractive(thread.data)}
+                  />
+                )}
+                <ComputerCheck
+                  key={mount.environment_id}
+                  environmentId={mount.environment_id}
+                  canCheck={can("run")}
+                />
+              </div>
+            </ListRow>
           ))}
-        </ul>
+        </ListRows>
       ) : (
         !mounts.error && (
-          <p className="text-sm text-muted-foreground">
-            {t("No additional environments.")}
-          </p>
+          <ListRowsEmpty>{t("No environments mounted.")}</ListRowsEmpty>
         )
       )}
     </section>

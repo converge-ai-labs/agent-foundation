@@ -190,6 +190,8 @@ Other `providers` settings bound provider work: `model_timeout` (each read of on
 
 `provisioning.local.enabled = true` offers the `local` environment provider, which runs commands directly on the worker host with no isolation. Use it only for development.
 
+Set `server.control_url` (or `A13N_SERVER__CONTROL_URL`) to a control API address reachable from Workers when they cannot use `server.public_url`. Internal platform MCP calls use that address and retain the configured public HTTP host. The address is deployment configuration, never an agent-selected URL.
+
 `plugins.keys` lists installed Harness plugin factories, by entry-point key, that agents may select. `composer.models` lists preferred upstream model names for the [Agent Composer](agent-composer.md).
 
 ## Logs, metrics and traces

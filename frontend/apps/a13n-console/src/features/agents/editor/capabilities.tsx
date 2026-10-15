@@ -1,6 +1,7 @@
 import { Button } from "a13n-ui";
 import { PuzzlePieceIcon, XIcon } from "@phosphor-icons/react";
 import { useQueries } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../../auth/context";
@@ -22,6 +23,7 @@ import {
 } from "../connections";
 import agentStyles from "../agents.module.css";
 import styles from "./editor.module.css";
+import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
 
 /** Reusable knowledge and procedures the agent can load. */
@@ -29,10 +31,13 @@ export function SkillsSection({
   draft,
   choices,
   readOnly,
+  mark,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -49,7 +54,9 @@ export function SkillsSection({
       title={t("Skills")}
       description={t("Reusable knowledge and procedures the agent can load.")}
       actions={
-        !readOnly && (
+        readOnly ? (
+          mark
+        ) : (
           <ResourcePicker
             label={t("Add skill")}
             searchLabel={t("Search skills")}
@@ -165,10 +172,17 @@ export function ConnectionsSection({
   draft,
   choices,
   readOnly,
+  mark,
+  onReview,
+  onRequireReviewer,
 }: {
+  onReview?: (target?: ReviewTarget) => void;
+  onRequireReviewer?: () => void;
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { basePath } = useWorkspace();
@@ -181,7 +195,9 @@ export function ConnectionsSection({
         "External services and MCP servers whose tools the agent may call.",
       )}
       actions={
-        !readOnly && (
+        readOnly ? (
+          mark
+        ) : (
           <ResourcePicker
             label={t("Add connection")}
             searchLabel={t("Search connections")}
@@ -225,6 +241,8 @@ export function ConnectionsSection({
               )}
               selection={selection}
               readOnly={readOnly}
+              onReview={onReview}
+              onRequireReviewer={onRequireReviewer}
               onChange={(change) =>
                 draft.setConnections((previous) =>
                   previous.map((item) =>

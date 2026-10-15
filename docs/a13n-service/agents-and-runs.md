@@ -49,7 +49,9 @@ The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents wi
 
 ### Agent configuration
 
-In the manual editor, expand a toolset under **Tools** to select individual tools and choose **Allow**, **Ask**, or **Deny** for each action. The permission controls use a check mark, a hand, and a blocked symbol, respectively.
+In the manual editor, expand a toolset under **Tools** to select individual tools and choose **Allow**, **Ask**, **Automatic review**, or **Deny** for each action. Connection tools offer the same permissions. The automatic review button uses a shield symbol.
+
+Under **Automatic review**, choose **Configure review** to select a review model, risk threshold and action at or above that threshold. **Tool review rule** sets a separate threshold or action for one tool. Advanced settings include shell instructions, failure handling, timeout, model parameters and selector rules. **Apply to draft** keeps the changes local; **Save changes** publishes a new agent revision. Cancelling the panel discards its edits. Review requires a model before saving. New review configurations keep the backend defaults: extra-high risk is denied, review failures ask a person, and review timeouts always deny execution.
 
 A revision's `config` holds:
 
@@ -72,6 +74,7 @@ A revision's `config` holds:
 | `retries`                         | How many times the model may retry failed tool calls (`tools`) and invalid output (`output`), 0–100 each.                                                                                                                             |
 | `default_environment_template_id` | An [environment template](environments.md#templates) from which each new thread gets its own primary environment.                                                                                                                     |
 | `lazy_environment`                | Defaults to `true`: create/start instances on first use. Set `false` to prepare instances before entering Harness; execution connections still open on first use; see [environments](environments.md#mount-environments-on-a-thread). |
+| `memory`                          | [Memory Space defaults](memory.md#select-spaces): `enabled` and `spaces[{name, space_id, access}]`. New sessions snapshot omitted fields at first acceptance; explicit choices override them.                                         |
 | `memory_mounts`                   | [Memories](memory.md#mount-a-memory-on-a-thread) each new thread mounts when its first run is accepted, `[{name, memory_id, access}]`.                                                                                                |
 
 Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, or saving fails with `invalid_argument` on that field, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore keeps its configuration and its skill and subagent pins; the models, connections, providers and templates it names are live and are resolved again at each use.
@@ -384,6 +387,7 @@ Read `GET …/runs/{run_id}` and branch on `status`. A completed run has `output
 - `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `last_run_id` is the run that ended last, whose history the next run continues, and `current_run_id` its active run.
 - `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) in order, each with its `ordinal`, and `complete`. By default it returns the newest `limit` items (200 by default, at most 500); pass the first item's ordinal as `before` to read the items before it, or `after` to read on from an ordinal. Items of a run that ended while they were in progress read `interrupted`.
 - Display fields larger than 32 KiB use separate objects, capped at 16 MiB of uncompressed UTF-8 per field. Larger values retain only a text prefix and set `truncated=true`; oversized JSON also becomes a text prefix. An Item’s `content_refs` maps field names to immutable references with `id`, saved `size_bytes`, `media_type`, `truncated` and a short `preview`. Read the saved value with `GET …/runs/{run_id}/contents/{content_id}` under the same workspace read permission. Console offers **Expand full content**, or **Expand saved content** with a truncation notice when capped. Discarded suffixes and legacy truncated records cannot be recovered this way. The cap does not alter agent execution state, and live deltas retain their existing size limits.
+- `GET …/runs/{run_id}/agent` returns the agent revision the run executes and its configuration with the run's overrides applied.
 - `GET …/runs/{run_id}/lineage` returns the run and its ancestors, nearest first, across forks.
 - `GET …/runs/{run_id}/attempts` lists attempts with their `start_reason` (`initial`, `recovery` after a lost worker, `handoff` when a worker shuts down) and outcome. A run fails after `max_attempts` attempts that were not handoffs.
 
@@ -419,7 +423,7 @@ The stream is provisional; the items of a run are the durable record. The Servic
 
 ## Usage
 
-Every model request is recorded with its token counts and a snapshot of the model's pricing. `GET …/usage` sums the records per model:
+Every model request is recorded with its token counts and a snapshot of the model's pricing. `GET …/usage` sums the records per model, and the same way for each run:
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -427,10 +431,12 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
-             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931"}]}
+             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
+ "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
 ```
 
-Each entry's `model` is a model key, or `null` for records attributed to no model. Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_before`. `cost` is `null` when no record of the model was priced. A run's `usage_at_seal` is its usage when it ended; reports that arrive later still count in `/usage`.
+Each entry's `model` is a model key, or `null` for records attributed to no model. `runs` lists the matching runs that recorded usage, oldest first; their entries add up to `models`. Cached input (`cache_read_tokens`) is part of `input_tokens`. Streamed requests that completed also report `average_time_to_first_chunk_seconds`, the mean wait for the first streamed chunk, and `output_tokens_per_second` while generating after it; both are `null` when no such request was recorded. Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_before`. `cost` is `null` when no record of the model was priced. A run's `usage_at_seal` is its usage when it ended; reports that arrive later still count in `/usage`.
 
 ## Traces
 
@@ -469,6 +475,6 @@ Choose **Analyze traces**, select built-in rules and a time range/count. No Agen
 
 Selection scans at most 100 roots and selects at most 20 matching traces. Execution and recovery rules prioritize failed runs and roots marked error/fatal within this scan, preserving backend order among equally prioritized candidates. Errors visible only in child spans do not affect selection priority. Answer-only analysis keeps backend order. A priority signal is a reason to investigate, not proof of a problem. The **Analysis history** tab lists analysis scopes, Run status and creation time in a table. Open a row to see selected trace count, finding count, distinct evidence-cited trace count, selection limits and trace links. These counts do not establish how many traces were fully analyzed. Open the analysis Run from the dialog to read its final summary and limitations. No findings does not mean that all traces were reviewed or that the Agent is healthy.
 
-For findings other than expected or false positive, **Review with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only finding tool. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
+For findings other than expected or false positive, **Review with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only platform queries. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
 
 Custom Agents can enable configuration, trace-query and finding-submission tools under **Advanced / Platform Features**. Configuration writes default to asking; Finding Agent's managed preset has read access to configuration and no Agent write tools. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.

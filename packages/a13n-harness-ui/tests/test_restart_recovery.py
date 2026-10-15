@@ -8,6 +8,7 @@ from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage import StoredContinuation, open_local_store
+from a13n_harness_ui.storage.continuations import read_continuation
 from anyio import CancelScope, Event, create_task_group, fail_after, sleep
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -151,7 +152,7 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
         batch = await store.restarts.get()
         assert batch is not None and batch.state == "ready", batch
         assert len(batch.items) == 1
-        saved = await store.objects.read_model(batch.items[0].checkpoint, StoredContinuation)
+        saved = await read_continuation(store.objects, batch.items[0].checkpoint, include_display=True)
         from a13n_harness.usage import UsageSnapshot
 
         original_usage = UsageSnapshot.from_state(saved.harness_state)
@@ -167,7 +168,13 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
                 update={"agent_context_state": AgentContextStateSnapshot(entries=entries)}
             )
             legacy = await store.objects.publish_model(
-                object_kind=ObjectKind.continuation, value=saved.model_copy(update={"harness_state": legacy_state})
+                object_kind=ObjectKind.continuation,
+                value=StoredContinuation(
+                    harness_release=saved.harness_release,
+                    run_composition=saved.run_composition,
+                    harness_state=legacy_state,
+                    created_at=saved.created_at,
+                ),
             )
             current = await store.threads.get(thread.thread_id)
             assert current is not None
@@ -232,7 +239,7 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
     async with open_local_store(settings.storage) as store:
         current = await store.threads.get(thread.thread_id)
         assert current is not None and current.continuation is not None
-        continuation = await store.objects.read_model(current.continuation, StoredContinuation)
+        continuation = await read_continuation(store.objects, current.continuation, include_display=True)
         resumed_usage = UsageSnapshot.from_state(continuation.harness_state)
         assert resumed_usage is not None
         if mode == "legacy":

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import { jsonObject, validateSettings } from "../../../shared/forms";
@@ -6,6 +7,7 @@ import {
   mediaKinds,
   mediaSelected,
 } from "../../models/media-understanding-fields";
+import { requiresReviewer, validateReviewer } from "../reviewer";
 import {
   advancedConfig,
   buildConfig,
@@ -62,10 +64,13 @@ export function useAgentDraft(initial: AgentConfig) {
       initial.default_environment_template_id ?? null,
     ),
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
+    [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
-    [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []);
+    [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
+    [memory, setMemory] = useState(initial.memory ?? {});
   const dirty =
+    JSON.stringify(reviewer) !== JSON.stringify(initial.reviewer) ||
     mediaKinds.some(
       ({ kind }) =>
         (mediaUnderstanding[kind] ?? null) !==
@@ -83,6 +88,7 @@ export function useAgentDraft(initial: AgentConfig) {
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
     JSON.stringify(connections) !==
       JSON.stringify(initial.connection_tools ?? []) ||
+    JSON.stringify(memory) !== JSON.stringify(initial.memory ?? {}) ||
     JSON.stringify(memoryMounts) !==
       JSON.stringify(initial.memory_mounts ?? []);
   return {
@@ -106,19 +112,23 @@ export function useAgentDraft(initial: AgentConfig) {
     setEnvironmentTemplateId,
     toolsets,
     setToolsets,
+    reviewer,
+    setReviewer,
     skills,
     setSkills,
     connections,
     setConnections,
     memoryMounts,
     setMemoryMounts,
+    memory,
+    setMemory,
     dirty,
   };
 }
 
 export type DraftBuild =
   | { ok: true; config: AgentConfig }
-  | { ok: false; stage: "model" | "advanced"; error: Error };
+  | { ok: false; stage: "model" | "reviewer" | "advanced"; error: Error };
 
 /** Validates the draft and produces the configuration a save would publish. */
 export function buildDraftConfig(
@@ -158,6 +168,29 @@ export function buildDraftConfig(
     };
   }
   try {
+    if (
+      requiresReviewer(draft.toolsets, draft.connections) &&
+      !draft.reviewer?.model
+    )
+      throw new Error(
+        t("Choose a review model before saving automatic review permissions."),
+      );
+    if (draft.reviewer) validateReviewer(draft.reviewer);
+  } catch (error) {
+    return {
+      ok: false,
+      stage: "reviewer",
+      error:
+        error instanceof Error ? error : new Error(t("Invalid configuration")),
+    };
+  }
+  try {
+    if (!validSpaceSelection(draft.memory))
+      throw new Error(
+        t(
+          "Use unique mount names: lowercase letters, digits and hyphens, starting with a letter.",
+        ),
+      );
     return {
       ok: true,
       config: buildConfig(
@@ -165,7 +198,7 @@ export function buildDraftConfig(
         {
           instructions: draft.instructions,
           toolsets: draft.toolsets,
-          reviewer: initial.reviewer,
+          reviewer: draft.reviewer,
           model: draft.model,
           model_settings: modelSettings,
           skills: draft.skills,
@@ -175,6 +208,7 @@ export function buildDraftConfig(
             : {}),
           connection_tools: draft.connections,
           memory_mounts: draft.memoryMounts,
+          memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,
         },
         draft.advanced,

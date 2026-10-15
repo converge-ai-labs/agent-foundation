@@ -153,12 +153,18 @@ class SavedOutputs:
     async def _text(self, target: SavedOutputTarget, source: ObjectRef) -> str:
         location = target.location
         if isinstance(location, RootOutputLocation):
-            continuation = await self._store.read_continuation(target.producing_thread_id, source)
+            continuation = await self._store.read_continuation(target.producing_thread_id, source, include_display=True)
             from a13n_harness_ui.display_projection import original_text
 
             if continuation.harness_state.thread_id != target.producing_thread_id:
                 raise ThreadError("Root output belongs to another Thread.", code="saved_output_target_invalid")
-            display = continuation.display_history
+            from a13n_harness_ui.storage.display import read_display
+
+            display = (
+                await read_display(self._store.objects, continuation.display)
+                if continuation.display is not None
+                else continuation.display_history
+            )
             if display is not None:
                 text = original_text(display, location.message, location.part)
                 if text is not None:

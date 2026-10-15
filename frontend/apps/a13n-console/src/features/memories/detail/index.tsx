@@ -9,6 +9,7 @@ import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { IconTile } from "../../../shared/identity";
 import { DetailHeader, DetailPage, useTabParam } from "../../../shared/page";
 import { memoryQueries } from "../api";
+import styles from "../memories.module.css";
 import { MemoryConfiguration } from "./configuration";
 import { MemoryFiles } from "./files";
 import { MemoryHistory } from "./history";
@@ -56,6 +57,7 @@ function MemoryTabs({ resource }: { resource: Resource }) {
       }))}
       tab={tab}
       onTabChange={setTab}
+      contentClassName={tab === "files" ? styles.filesContent : undefined}
       header={
         <DetailHeader
           avatar={

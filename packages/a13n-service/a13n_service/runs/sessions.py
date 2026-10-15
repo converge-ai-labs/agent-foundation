@@ -8,11 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
-from a13n_service.infra.errors import not_found
+from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
+from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.schemas import (
     SessionCreate,
     SessionPage,
@@ -83,15 +84,23 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
     )
     return [
         SessionView.model_validate(row).model_copy(
-            update={"preview": previews.get(row.id), "run_count": counts.get(row.id, 0)}
+            update={
+                "preview": previews.get(row.id),
+                "run_count": counts.get(row.id, 0),
+            }
         )
         for row in rows
     ]
 
 
+def require_conversation(row: SessionRow) -> None:
+    if row.purpose != "conversation":
+        raise conflict("session", row.id, "managed_organization")
+
+
 async def find_session(session: AsyncSession, workspace_id: str, session_id: str, *, lock: bool = False) -> SessionRow:
     query = select(SessionRow).where(SessionRow.workspace_id == workspace_id, SessionRow.id == session_id)
-    found = await session.scalar(query.with_for_update() if lock else query)
+    found = await session.scalar(query.with_for_update(key_share=True) if lock else query)
     if found is None:
         raise not_found("session", session_id)
     return found
@@ -102,7 +111,9 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(SessionRow).where(
-            SessionRow.workspace_id == scope.workspace_id, label_filter(SessionRow.labels, list(filters.label))
+            SessionRow.workspace_id == scope.workspace_id,
+            SessionRow.purpose == "conversation",
+            label_filter(SessionRow.labels, list(filters.label)),
         )
         if filters.q:
             by_thread = select(ThreadRow.session_id).where(
@@ -148,7 +159,10 @@ async def create_session(storage: Storage, actor: Principal, workspace_id: str, 
         row.labels = dict(body.labels)
         session.add(row)
         await session.flush()
-        return SessionView.model_validate(row)
+        if body.memory is not None:
+            await configure(session, row, body.memory)
+            await session.flush()
+        return (await _views(session, [row]))[0]
 
 
 async def update_session(
@@ -158,6 +172,10 @@ async def update_session(
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find_session(session, scope.workspace_id, session_id, lock=True)
         require_match(if_match, row.id, row.version)
-        row.labels = dict(body.labels)
+        if body.labels is not None:
+            row.labels = dict(body.labels)
+        if body.memory is not None:
+            require_conversation(row)
+            await configure(session, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

@@ -54,6 +54,8 @@ def ready():
     if not root.winfo_viewable() or canvas.winfo_width() != 1024 or canvas.winfo_height() != 768:
         root.after(20, ready)
         return
+    # The fixture owns the disposable desktop; wait for native keyboard focus before testing input.
+    root.focus_force()
     canvas.focus_set()
     state["ready"] = True
     save()

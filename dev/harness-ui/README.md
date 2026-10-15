@@ -80,3 +80,46 @@ The private `.env` template contains a commented working OTLP configuration for 
 For an embedded Logfire SDK Host, configure Logfire once and pass its existing providers through `HarnessInstrumentation` to `open_harness_ui_app()`. Do not also enable Pydantic auto-instrumentation. The UI neither replaces nor closes those providers.
 
 Exported shell values take precedence over `.env` according to `uv`; clear conflicting `OTEL_*` values when switching backends. In particular, a signal-specific endpoint or header can override the common OTLP setting. Keep remote credentials only in the ignored `.env`, not its committed example. Before exporting real conversations, review `A13N_HARNESS_TRACE_CONTENT`.
+
+## Long-history performance benchmark
+
+Run the synthetic comparison from the repository root:
+
+```bash
+uv run --locked python dev/harness-ui/benchmark_history.py --items 5000 50000 --repeats 3
+uv run --locked python dev/harness-ui/benchmark_history.py --items 10000 --single-turn --repeats 3
+```
+
+The script uses a disposable SQLite/object store, a fixed approximately 14 KB native context, and synthetic input/answer history. The baseline embeds the entire display namespace and uses the original full fold export; the referenced path seals previous turns and captures changed items. Its version-2 manifest references physically separate native-state and display-archive objects; read and publication timings include all three objects. Both paths use the same verified object-store implementation. It asserts native-history equality and complete display reconstruction. Reported times are medians of three iterations; migration is a separate one-time measurement. These are storage/fold primitives, not end-to-end HTTP submission or model latency.
+
+Representative Linux/Python 3.13 measurements:
+
+| History shape                      | Operation           | Whole display | Referenced display |
+| ---------------------------------- | ------------------- | ------------: | -----------------: |
+| 5,000 items, two-item active tail  | Read checkpoint     |        626 ms |            1.59 ms |
+|                                    | Warm capture        |        309 ms |            0.15 ms |
+|                                    | Encode and publish  |      2,032 ms |            4.14 ms |
+|                                    | Hot checkpoint JSON |       6.61 MB |            20.0 KB |
+| 50,000 items, two-item active tail | Read checkpoint     |      8,955 ms |            2.31 ms |
+|                                    | Warm capture        |      3,422 ms |            0.13 ms |
+|                                    | Encode and publish  |     24,994 ms |            4.46 ms |
+|                                    | Hot checkpoint JSON |      66.21 MB |            20.0 KB |
+| 5,001 items in one active turn     | Read checkpoint     |        448 ms |             272 ms |
+|                                    | Warm capture        |        226 ms |            1.73 ms |
+|                                    | Encode and publish  |      1,306 ms |             826 ms |
+|                                    | Hot checkpoint JSON |       5.98 MB |            5.98 MB |
+
+Sealing cost was 1.27 seconds for 5,000 items and 12.08 seconds for 50,000 items. Historical segments remain retained on disk. Hot checkpoint JSON is the sum of the full uncompressed manifest, native-state and display-archive envelopes, not total retained storage. At 50,000 items these are 1,018 + 15,071 + 3,911 = 20,000 bytes. At each successful same-Run replacement, the superseded manifest and its exclusive state/archive payloads are removed; shared historical segments remain. The single-turn command removes every ordinary input except the first, leaving 5,001 items from its 10,000-item seed.
+
+The active suffix retains the complete last turn and its input-free resumes. Its initialization, indexing, serialization, and tuple scans still grow with that turn. Warm capture avoids copying unchanged item payloads but does not make all checkpoint work constant-time. Measured collector initialization for the single-turn case increased from 434 ms to 801 ms because the collector also prepares detached reusable values. The diagnostic heartbeat excludes seed publication but includes initialization and Python garbage collection; it is not a responsiveness guarantee. The observed maximum remained about 1.04 seconds for the long single turn.
+
+Two private, read-only copied checkpoints were also replayed offline into disposable stores. Only aggregates are reported; original content and replay files stay outside the repository. Complete items, completion-ID sets, transcript entries, and native histories were verified equal:
+
+| Sample | Display / active items | Read, before → after | Publish, before → after | JSON, before → after | Seal once |
+| ------ | ---------------------- | -------------------- | ----------------------- | -------------------- | --------- |
+| A      | 21,645 / 3,319         | 3,263 → 201 ms       | 4,927 → 494 ms          | 54.44 → 7.43 MB      | 3.30 s    |
+| B      | 39,774 / 690           | 5,527 → 66.0 ms      | 7,813 → 154 ms          | 72.83 → 2.34 MB      | 5.42 s    |
+
+The referenced totals include every hot object. Sample A consists of a 5,337-byte manifest, 2,089,861-byte native state, and 5,331,276-byte display archive; sample B consists of 2,230 + 1,363,913 + 973,949 bytes. Full native state remains a snapshot rather than a message delta.
+
+WebUI regression tests check that 100 typing-and-acknowledgement cycles cause no history-subscriber renders, while local-input and submission transitions still render. Input navigation requests one page until Load more is activated. Complete turn caches survive checkpoint changes only when the server's full-entry content revision is identical; changed revisions are fetched again.

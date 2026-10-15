@@ -319,13 +319,12 @@ export function useHistory(
             position >= turn.input_position && position < turn.end_position,
         ).length;
         if (loaded === turn.end_position - turn.input_position) continue;
-        for (const entry of await readTurnHistory(
-          client,
-          threadId,
-          continuation,
-          turn,
-          signal,
-        ))
+        for (const entry of await queries.fetchQuery({
+          queryKey: turnHistoryKey(threadId, continuation, turn),
+          staleTime: Infinity,
+          queryFn: () =>
+            readTurnHistory(client, threadId, continuation, turn, signal),
+        }))
           entries.set(entry.position, entry);
       }
       return {
@@ -374,6 +373,24 @@ export function useHistory(
   };
 }
 
+function turnHistoryKey(
+  threadId: string,
+  continuation: string | null | undefined,
+  turn: Schema<"TranscriptTurn"> | undefined,
+) {
+  // Only the server's complete-entry digest proves cross-checkpoint equality.
+  // Old servers/indexes without it keep continuation-scoped caching.
+  return [
+    "thread",
+    threadId,
+    "turn-history",
+    turn?.turn_id,
+    turn?.content_revision
+      ? ["content", turn.content_revision]
+      : ["continuation", continuation],
+  ];
+}
+
 // Complete each visible turn in one load. Transport pages stay bounded, but
 // intermediate pages never become user-facing pagination or partial segments.
 export function useTurnHistory(
@@ -384,7 +401,7 @@ export function useTurnHistory(
 ) {
   const { client } = useTransport();
   return useQuery({
-    queryKey: ["thread", threadId, "turn-history", continuation, turn?.turn_id],
+    queryKey: turnHistoryKey(threadId, continuation, turn),
     enabled: enabled && !!turn,
     staleTime: Infinity,
     retry: false,

@@ -6,6 +6,17 @@ from pydantic import BaseModel, ConfigDict
 from a13n_service.resources.memories.schemas import MemoryMount
 
 
+class FrozenMemoryMount(MemoryMount):
+    """Host-resolved Space identity and roots, never accepted from a mount request."""
+
+    space_id: str | None = None
+    roots: tuple[str, ...] = ()
+
+    @property
+    def cursor_key(self) -> str:
+        return self.memory_id if self.space_id is None else f"{self.space_id}:{','.join(self.roots)}"
+
+
 class MemoryMountUpdate(BaseModel):
     """Fields left out stay unchanged."""
 

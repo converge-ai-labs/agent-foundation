@@ -106,6 +106,10 @@ Operation paths, receipts, handles, and output references carry only provider, t
 
 File operations preserve bounded reads, streaming writes, staged publication, copy/move semantics, and typed mutation evidence. Shell foreground results remain bounded. Process completion, output completeness, and process-tree cleanup are separate observations. Capability declarations distinguish execution from process discovery, input, signals, retention, ports, and computer use; an unsupported family does not invalidate unrelated capabilities.
 
+`FileOperator.batch` executes up to 128 typed stat, mkdir, whole-text write (create, replace, or upsert), and remove operations in order, with a 64 KiB JSON request limit. All paths and actions are authorized before dispatch in one pinned file scope. It stops at the first error without rollback or replay; failed or cancelled calls may have completed a prefix. Stat and remove can explicitly tolerate a missing path. Results preserve operation order and the same receipt validation as individual operations.
+
+`FileOperator.write_archive` takes ZIP bytes, a selected archive root, and an exact manifest of relative file paths and expanded sizes. It creates an absent destination directory and extracts only the selected regular files, rejecting unsafe paths, duplicate paths, links, encrypted entries, and mismatched sizes. File limits apply to expanded members. The operation requires file-directory creation and binary-write authority in one pinned file scope; it grants no shell authority and cannot cross mounts. A failure can leave a private candidate; the caller publishes a complete directory through a separate move and never treats a partial extraction as complete.
+
 ## Process and Output Observations
 
 The Provider owns native execution truth and the recovery its state codec supports. State can select a target from which commands are discovered without enumerating every command. Reconnecting to the same target permits attempting native lookup; it does not prove that a process survived, and a missing command is never automatically restarted.

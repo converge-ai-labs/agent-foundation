@@ -19,6 +19,7 @@ import type { AgentConfig } from "./configuration";
 import { connectionState } from "../connections/api";
 import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
+import { connectionReviewTarget, type ReviewTarget } from "./reviewer";
 import styles from "./agents.module.css";
 
 type Connections = NonNullable<AgentConfig["connection_tools"]>;
@@ -55,7 +56,11 @@ export function ConnectionGroup({
   readOnly,
   onChange,
   onRemove,
+  onReview,
+  onRequireReviewer,
 }: {
+  onReview?: (target?: ReviewTarget) => void;
+  onRequireReviewer?: () => void;
   connection?: Connection;
   selection: Selection;
   readOnly: boolean;
@@ -129,6 +134,7 @@ export function ConnectionGroup({
     });
   }
   function setPermission(name: string, permission: PermissionChoice) {
+    if (permission === "review") onRequireReviewer?.();
     onChange((current) => {
       const permissions = { ...current.permissions };
       if (
@@ -261,15 +267,26 @@ export function ConnectionGroup({
                   label={t("Default tool permission")}
                   value={selection.permission}
                   readOnly={editingDisabled}
-                  onChange={(permission) =>
-                    onChange((current) => ({ ...current, permission }))
-                  }
+                  onChange={(permission) => {
+                    onChange((current) => ({ ...current, permission }));
+                    if (permission === "review") onRequireReviewer?.();
+                  }}
                 />
               </div>
               {selection.permission === "review" && (
                 <p className={styles.toolsetToolHint}>
                   {t(
-                    "Review is configured as the default. Choose another permission to replace it.",
+                    "Tools without an individual permission use automatic review.",
+                  )}
+                  {onReview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onReview()}
+                    >
+                      {t("Configure review")}
+                    </Button>
                   )}
                 </p>
               )}
@@ -327,8 +344,20 @@ export function ConnectionGroup({
                   </div>
                   {permission === "review" && (
                     <p className={styles.toolsetToolHint}>
-                      {t(
-                        "Review is configured for this tool. Choose another permission to replace it.",
+                      {t("This tool uses automatic review.")}
+                      {onReview && connection && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            onReview(
+                              connectionReviewTarget(connection, tool.name),
+                            )
+                          }
+                        >
+                          {t("Tool review rule")}
+                        </Button>
                       )}
                     </p>
                   )}

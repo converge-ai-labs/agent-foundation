@@ -115,7 +115,27 @@ class ModelUsage(BaseModel):
     cache_write_tokens: int
     # The sum of the costs priced at dispatch; None when no record of the model was priced.
     cost: Decimal | None
+    # Mean first-chunk wait and output per full request second have independent eligibility.
+    # Missing eligible observations remain None.
+    average_time_to_first_chunk_seconds: float | None
+    output_tokens_per_second: float | None
+
+
+class RunUsage(BaseModel):
+    run_id: str
+    thread_id: str
+    models: list[ModelUsage]
 
 
 class UsageSummary(BaseModel):
     models: list[ModelUsage]
+    # The same per-model sums for each Run, in creation order.
+    runs: list[RunUsage]
+
+
+class ModelRequestMetrics(BaseModel):
+    """Derived from the current model contribution."""
+
+    time_to_first_chunk_seconds: float | None
+    request_duration_seconds: float | None
+    output_tokens_per_second: float | None

@@ -7,6 +7,7 @@ import {
   comparePositions,
   isOmitted,
   readDisplay,
+  readFullDisplay,
   type DisplayItem,
 } from "./display";
 import { SessionDisplays } from "./session-displays";
@@ -339,3 +340,162 @@ it("keeps orphan tool arguments incomplete after END even if the suffix is valid
   expect(parseItemValue(presented.arguments, presented.incomplete)).toBe("{}");
   expect(displays.get("run_2")?.partial).toBe(true);
 });
+
+it("keeps reply memory sources from END metadata without altering the answer", () => {
+  const normalizer = new DisplayNormalizer();
+  const items = new Map<string, DisplayItem>();
+  normalizer.apply(items, delta(1, "Hello"));
+  const sources = [
+    {
+      kind: "record",
+      memory: "facts",
+      memory_id: "mem_1",
+      status: "recalled",
+      records: [{ id: "r1", sha256: "digest" }],
+    },
+  ];
+  const end = {
+    ...delta(2),
+    event: { type: "TEXT_MESSAGE_END", messageId: "m" },
+    item: {
+      ...delta(2).item!,
+      state: "completed" as const,
+      memory_sources: sources,
+    },
+  };
+  expect(isItemRef(end.item)).toBe(true);
+  normalizer.apply(items, end);
+  expect(items.get(end.item.id)?.content.text).toBe("Hello");
+  expect(items.get(end.item.id)?.content.memory_sources).toEqual(sources);
+  sources[0].records[0].id = "changed";
+  expect(
+    (items.get(end.item.id)?.content.memory_sources as typeof sources)[0]
+      .records[0].id,
+  ).toBe("r1");
+  expect(isItemRef({ ...end.item, memory_sources: [null] })).toBe(false);
+});
+
+const committed = (complete = false) => ({
+  run: fixtureRun(),
+  items: [item()],
+  complete,
+});
+
+it("loads all pages of a large Run, keeping the newest read's run and completion", async () => {
+  const requests: URL[] = [];
+  const items = Array.from({ length: 867 }, (_, index) => ({
+    ...item(),
+    id: `item_${index + 1}`,
+    ordinal: index + 1,
+  }));
+  const client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (input) => {
+      const url = new URL((input as Request).url);
+      requests.push(url);
+      const after = url.searchParams.get("after");
+      return Response.json(
+        after === null
+          ? { ...committed(), items: items.slice(-200) }
+          : {
+              ...committed(true),
+              items: items.slice(
+                Number(after),
+                Number(after) + Number(url.searchParams.get("limit")),
+              ),
+            },
+      );
+    },
+  });
+  const result = await readFullDisplay(client, "ws_1", "run_2");
+  expect(result.items).toEqual(items);
+  expect(result).toMatchObject({ complete: false, immutableBefore: 668 });
+  expect(requests.map((url) => url.search)).toEqual([
+    "",
+    "?after=0&limit=500",
+    "?after=500&limit=167",
+  ]);
+  client.close();
+});
+
+it("reuses immutable pages but refreshes a former mutable tail before retaining it", async () => {
+  const requests: URL[] = [];
+  const items = Array.from({ length: 5 }, (_, index) => ({
+    ...item(),
+    id: `item_${index + 1}`,
+    ordinal: index + 1,
+  }));
+  let first = 3;
+  const client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (input) => {
+      const url = new URL((input as Request).url);
+      requests.push(url);
+      const after = url.searchParams.get("after");
+      return Response.json({
+        ...committed(),
+        items:
+          after === null
+            ? [items[first - 1]]
+            : items.slice(
+                Number(after),
+                Number(after) + Number(url.searchParams.get("limit")),
+              ),
+      });
+    },
+  });
+  const previous = await readFullDisplay(client, "ws_1", "run_2");
+  first = 5;
+  items[2] = {
+    ...items[2]!,
+    content: { ...items[2]!.content, text: "Final answer" },
+    state: "completed",
+  };
+  const next = await readFullDisplay(
+    client,
+    "ws_1",
+    "run_2",
+    undefined,
+    previous,
+  );
+  expect(next.items).toEqual(items);
+  expect(previous.items[2]!.content.text).toBe("Hello");
+  expect(requests.map((url) => url.search)).toEqual([
+    "",
+    "?after=0&limit=2",
+    "",
+    "?after=2&limit=2",
+  ]);
+  client.close();
+});
+
+it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
+  "rejects missing or non-advancing history $ordinals without looping",
+  async ({ ordinals }) => {
+    let requests = 0;
+    const client = createClient({
+      baseUrl: "https://test.invalid",
+      auth: { type: "session" },
+      fetch: async (input) => {
+        requests++;
+        const historical = new URL((input as Request).url).searchParams.has(
+          "after",
+        );
+        return Response.json({
+          ...committed(),
+          items: (historical ? ordinals : [3]).map((ordinal) => ({
+            ...item(),
+            ordinal,
+          })),
+        });
+      },
+    });
+    await expect(readFullDisplay(client, "ws_1", "run_2")).rejects.toThrow(
+      "Run history could not be fully loaded.",
+    );
+    expect(requests).toBe(2);
+    client.close();
+  },
+);

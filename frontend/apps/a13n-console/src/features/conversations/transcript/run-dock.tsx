@@ -30,6 +30,7 @@ import {
   useInterruptRun,
   useRunAcceptance,
 } from "./run-actions";
+import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
 export interface PendingMessage {
@@ -118,29 +119,41 @@ export function RunDock({
       <SquareIcon size={13} weight="fill" />
     </Button>
   );
+  const feedback =
+    waiting &&
+    waiting.pending &&
+    (interactive && can("run") ? (
+      <RunFeedback
+        key={waiting.id}
+        run={waiting}
+        pending={waiting.pending}
+        accepted={accepted}
+        continuation={
+          <ContinueWithoutFeedback
+            run={waiting}
+            thread={thread}
+            accepted={accepted}
+          />
+        }
+      />
+    ) : (
+      <PendingRequests pending={waiting.pending} />
+    ));
   return (
     <>
       <ErrorToast error={interrupt.error} />
-      {waiting &&
-        waiting.pending &&
-        (interactive && can("run") ? (
-          <RunFeedback
-            key={waiting.id}
-            run={waiting}
-            pending={waiting.pending}
-            accepted={accepted}
-            continuation={
-              <ContinueWithoutFeedback
-                run={waiting}
-                thread={thread}
-                accepted={accepted}
-              />
-            }
-          />
-        ) : (
-          <PendingRequests pending={waiting.pending} />
-        ))}
-      <ThreadInbox thread={thread} canRunNext={canRunNext} />
+      {/* Debug answers a wait in a card beside the runs. */}
+      {feedback && level === "debug" ? (
+        <div className={debug.feedback}>{feedback}</div>
+      ) : (
+        feedback
+      )}
+      <ThreadInbox
+        thread={thread}
+        canRunNext={canRunNext}
+        quiet={level === "chat"}
+        className={level === "debug" ? debug.inbox : undefined}
+      />
       <div className={styles.dock}>
         {above}
         {!current ? (
@@ -157,7 +170,11 @@ export function RunDock({
                   run_id: latest,
                 })}${search}`}
               >
-                {t("Return to latest messages")}
+                {t(
+                  level === "debug"
+                    ? "Return to latest run"
+                    : "Return to latest messages",
+                )}
               </Link>
             )}
           </div>
@@ -168,13 +185,21 @@ export function RunDock({
                 key={resubmit ? "resubmit" : "message"}
                 initial={resubmit?.payload}
                 agentName={agentName}
-                label={t(active ? "Add guidance" : "Send message")}
+                label={t(
+                  active
+                    ? "Add guidance"
+                    : level === "debug"
+                      ? "Start run"
+                      : "Send message",
+                )}
                 placeholder={
                   active
                     ? t("Add guidance while it works")
-                    : agentName
-                      ? t("Message {{agent}}…", { agent: agentName })
-                      : t("Message your agent…")
+                    : level === "debug"
+                      ? t("Input for the next run…")
+                      : agentName
+                        ? t("Message {{agent}}…", { agent: agentName })
+                        : t("Message your agent…")
                 }
                 disabled={!can("run")}
                 stop={canStop ? () => interrupt.mutate() : undefined}

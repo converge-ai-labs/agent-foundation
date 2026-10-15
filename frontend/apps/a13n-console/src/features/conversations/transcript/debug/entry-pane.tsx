@@ -2,9 +2,17 @@ import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
+import { useRequestMetrics } from "../../queries";
+import { ErrorNotice } from "../../../../shared/feedback";
 import { formatCost } from "../../../../shared/cost";
 import { Patch } from "../../../../shared/diff";
-import { formatDuration, formatTokens, resultExcerpt } from "../../format";
+import {
+  formatDuration,
+  formatSpeed,
+  formatTokens,
+  resultExcerpt,
+  tokenFigures,
+} from "../../format";
 import type {
   ActionEntry,
   ContentEntry,
@@ -12,7 +20,7 @@ import type {
   OtherEntry,
   TimelineEntry,
 } from "../../timeline";
-import type { StepUsage } from "../../usage";
+import { MessageAuthor } from "../../message-author";
 import { readQuestions } from "../questions";
 import { workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
@@ -32,7 +40,8 @@ export function EntryPane({
   entry: TimelineEntry;
   scope: RunScope;
 }) {
-  if (entry.kind === "model") return <ModelPane entry={entry} />;
+  if (entry.kind === "model")
+    return <ModelPane entry={entry} runId={scope.run.id} />;
   if (
     entry.kind === "reasoning" ||
     entry.kind === "guidance" ||
@@ -49,9 +58,10 @@ function isAction(entry: TimelineEntry): entry is ActionEntry {
   return "arguments" in entry;
 }
 
-function ModelPane({ entry }: { entry: ModelEntry }) {
+function ModelPane({ entry, runId }: { entry: ModelEntry; runId: string }) {
   const { t } = useTranslation();
   const usage = entry.usage;
+  const metrics = useRequestMetrics(runId, usage?.recordId);
   const reasoning = entry.children.filter(
     (child): child is ContentEntry => child.kind === "reasoning",
   );
@@ -70,10 +80,23 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
           usage &&
             entry.reportedUsage &&
             t("{{tokens}} out", { tokens: formatTokens(usage.outputTokens) }),
-          cachedShare(usage) !== null &&
-            t("{{percent}}% cached", { percent: cachedShare(usage) }),
+          usage &&
+            tokenFigures(t, {
+              input: usage.inputTokens,
+              output: usage.outputTokens,
+              cached: usage.cacheReadTokens,
+            }).cache,
           usage?.costUsd ? formatCost(usage.costUsd) : null,
           entry.durationMs !== null ? formatDuration(entry.durationMs) : null,
+          metrics.data?.time_to_first_chunk_seconds != null &&
+            t("{{duration}} to first token", {
+              duration: formatDuration(
+                metrics.data.time_to_first_chunk_seconds * 1000,
+              ),
+            }),
+          metrics.data?.output_tokens_per_second != null
+            ? formatSpeed(t, metrics.data.output_tokens_per_second)
+            : null,
           entry.contextTokens
             ? t("{{tokens}} context", {
                 tokens: formatTokens(entry.contextTokens),
@@ -85,6 +108,7 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
         ]}
         action={<RawDialog title={t("Model request")} value={entry} />}
       />
+      <ErrorNotice error={metrics.error} retry={() => void metrics.refetch()} />
       <PaneSection label={t("Response")}>
         {reasoning.length || calls.length || replies.length ? (
           <div className={styles.responseBody}>
@@ -131,13 +155,6 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
       </DisclosureSection>
     </div>
   );
-}
-
-/** Cache reads as a share of everything the request read, or null when unreported. */
-function cachedShare(usage: StepUsage | null) {
-  if (!usage?.cacheReadTokens) return null;
-  const total = usage.inputTokens;
-  return total ? Math.round((usage.cacheReadTokens / total) * 100) : null;
 }
 
 function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
@@ -269,6 +286,10 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   return (
     <div className={styles.pane}>
+      {/* Guidance is someone's message; its author is part of the record. */}
+      {entry.kind === "guidance" && !entry.steeringSource && (
+        <MessageAuthor entryId={entry.sourceId} plain />
+      )}
       <div className={styles.reasoningProse}>
         {entry.text ? (
           <StoredContent itemId={entry.id} field="text" value={entry.text} />

@@ -266,3 +266,5 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
 通过私有测试环境提供 `A13N_TEST_DAYTONA_BACKEND_JSON` 和 `A13N_TEST_DAYTONA_CREDENTIAL_JSON`；其他四个 provider 使用对应大写前缀。可选 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 分配计费目标，并在清理中尝试删除，包括失败后。绝不能提交凭据 JSON。未主动启用或缺少凭据时跳过，不代表完成云端验证。
 
 原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/) 和 [Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html)。
+
+Docker 模板可选择 `execution: envd_http`，并用 `desktop: true` 要求桌面就绪。容器生命周期仍使用 `docker_host`，HTTP EIP 则需单独配置可达主机和端口发布策略。启动、权限和重启行为见[桌面配置说明](../a13n-envd/sandbox.md)。

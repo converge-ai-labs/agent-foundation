@@ -13,6 +13,7 @@ cursors, which each checkpoint commits.
 from collections.abc import AsyncIterator, Callable, Collection
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from a13n_harness.capabilities import (
     FileMemoryCapability,
@@ -27,19 +28,23 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, Origin, RecordPage, RecordStore
+from a13n_harness.tools import current_invocation_scope
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError
+from a13n_service.resources.memories import provenance
 from a13n_service.resources.memories.records import RecordMemory, backend, open_record_store, record_memory
-from a13n_service.resources.memories.schemas import MemoryMount
+from a13n_service.resources.memories.schemas import MemoryRecordSource
 from a13n_service.resources.memories.service import inherited_guide
 from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.tables import MemoryProviderRow
 from a13n_service.runs.attempts import Lease
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
+from a13n_service.runs.memories.view import SpaceFileView
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import MemorySettings
@@ -54,7 +59,7 @@ type Gate = Callable[[Verb], None]
 class PlannedMemory:
     """One frozen mount whose memory exists, with the memory's configuration as the attempt read it."""
 
-    mount: MemoryMount
+    mount: FrozenMemoryMount
     guide: str | None
     always_load: tuple[str, ...]
     # A record memory with its enabled provider; None for a file memory.
@@ -62,7 +67,7 @@ class PlannedMemory:
 
 
 async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedMemory, ...]:
-    mounts = [MemoryMount.model_validate(mount) for mount in run.memory_mounts]
+    mounts = [FrozenMemoryMount.model_validate(mount) for mount in run.memory_mounts]
     if not mounts:
         return ()
     rows = {
@@ -87,7 +92,13 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
                     raise
                 logger.warning("Record memory skipped", extra={"memory_id": row.id, "reason": "provider_disabled"})
                 continue
-        planned.append(PlannedMemory(mount, row.guide, tuple(row.always_load), record))
+        always_load = tuple(row.always_load)
+        if mount.space_id is not None:
+            always_load = tuple(path for path in always_load if path.startswith(mount.roots))
+            own_index = f"sessions/{run.session_id}/MEMORY.md"
+            if own_index.startswith(mount.roots) and own_index not in always_load:
+                always_load += (own_index,)
+        planned.append(PlannedMemory(mount, row.guide, always_load, record))
     return tuple(planned)
 
 
@@ -107,9 +118,15 @@ def _gate(lease: Lease, principal: Principal, authority: ExecutionAuthority) -> 
 
 
 def _guide(memory: PlannedMemory, settings: MemorySettings) -> str:
-    if memory.guide is not None:
-        return memory.guide
-    return inherited_guide(settings, "file" if memory.record is None else "record")
+    guide = (
+        memory.guide
+        if memory.guide is not None
+        else inherited_guide(settings, "file" if memory.record is None else "record")
+    )
+    if memory.mount.space_id is not None:
+        guide += "\nThis Memory Space exposes: " + ", ".join(memory.mount.roots)
+        guide += ". Save shared knowledge under global/ and conversation notes under your Session folder."
+    return guide
 
 
 def file_memory(
@@ -131,11 +148,26 @@ def file_memory(
     mounts = [
         FileMount(
             name=memory.mount.name,
-            store=PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate),
+            store=(
+                SpaceFileView(
+                    PostgresFileStore(
+                        storage,
+                        memory.mount.memory_id,
+                        settings,
+                        gate=gate,
+                        # Only the host-resolved organizer view includes every Session folder.
+                        count_changes="sessions/" not in memory.mount.roots,
+                    ),
+                    memory.mount.roots,
+                    file_format(settings),
+                )
+                if memory.mount.space_id is not None
+                else PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate)
+            ),
             access=memory.mount.access,
             guide=_guide(memory, settings),
             always_load=memory.always_load,
-            cursor_key=memory.mount.memory_id,
+            cursor_key=memory.mount.cursor_key,
         )
         for memory in files
     ]
@@ -158,6 +190,17 @@ class RunRecordStore:
     storage: Storage
     memory: RecordMemory
     gate: Gate
+    lease: Lease
+    principal_id: str
+
+    def _source(self, tool_call_id: str) -> MemoryRecordSource:
+        return MemoryRecordSource(
+            principal_id=self.principal_id,
+            run_id=self.lease.run_id,
+            attempt_id=self.lease.attempt_id,
+            tool_call_id=tool_call_id,
+            confirmed_at=datetime.now(UTC),
+        )
 
     async def _check(self, verb: Verb) -> None:
         self.gate(verb)
@@ -184,18 +227,25 @@ class RunRecordStore:
 
     async def add(self, text: str) -> MemoryRecord:
         await self._check("run")
+        tool_call_id = current_invocation_scope().invocation.tool_call_id
         with backend(write=True):
-            return await self.store.add(text)
+            item = await self.store.add(text)
+        await provenance.remember(self.storage, self.memory.id, item, self._source(tool_call_id), created=True)
+        return item
 
     async def update(self, record_id: str, text: str) -> MemoryRecord:
         await self._check("run")
+        tool_call_id = current_invocation_scope().invocation.tool_call_id
         with backend(write=True):
-            return await self.store.update(record_id, text)
+            item = await self.store.update(record_id, text)
+        await provenance.remember(self.storage, self.memory.id, item, self._source(tool_call_id), created=False)
+        return item
 
     async def delete(self, record_id: str) -> None:
         await self._check("run")
         with backend(write=True):
             await self.store.delete(record_id)
+        await provenance.forget(self.storage, self.memory.id, record_id)
 
     async def purge(self) -> None:
         await self._check("write")
@@ -241,7 +291,7 @@ async def record_memory_capability(
             mounts.append(
                 RecordMount(
                     name=memory.mount.name,
-                    store=RunRecordStore(store, runtime.storage, record, gate),
+                    store=RunRecordStore(store, runtime.storage, record, gate, lease, principal.id),
                     access=memory.mount.access,
                     guide=_guide(memory, settings),
                     recall=memory.mount.recall,

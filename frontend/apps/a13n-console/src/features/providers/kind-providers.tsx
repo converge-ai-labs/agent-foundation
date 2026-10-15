@@ -1,3 +1,4 @@
+import { Button } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -31,9 +32,18 @@ import {
 } from "./credential-hint";
 import { CredentialRow } from "./credential-row";
 import { EditProviderDialog } from "./edit-provider-dialog";
-import { ProviderConnectFields } from "./connect-fields";
+import {
+  ProviderConnectFields,
+  ProviderConfigurationFields,
+} from "./connect-fields";
+import { EnvironmentConnectionDelete } from "./environment-connection-delete";
 import { providerKeyLink } from "./key-urls";
-import { ProviderEditor, ProviderGroup, ProviderName } from "./provider-editor";
+import {
+  ProviderEditor,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
+} from "./provider-editor";
 import { ProviderFacts } from "./provider-facts";
 import { ProviderTable } from "./provider-table";
 import providerStyles from "./providers.module.css";
@@ -69,18 +79,19 @@ function schema(value: unknown): Record<string, unknown> {
     : {};
 }
 
-/**
- * The providers of a kind whose configuration is chosen when the provider is
- * added and shown afterwards; the editor changes the name, enabled state and
- * credential, and tests the saved account when its type can.
- */
+/** Workspace providers; environment connections also support configuration edits and safe deletion. */
 export function KindProviders({
   kind,
   notice,
   addDescription,
   testDescription,
+  renderCatalog,
 }: {
   kind: ProviderKind;
+  renderCatalog?: (
+    definitions: readonly Definition[],
+    onChoose: (type: string) => void,
+  ) => ReactNode;
   notice?: ReactNode;
   /** What the catalog step asks the reader to choose, as a translation key. */
   addDescription: string;
@@ -105,6 +116,7 @@ export function KindProviders({
         kind={kind}
         definitions={connectable}
         description={addDescription}
+        renderCatalog={renderCatalog}
       />
     ) : undefined;
   const definitionFor = (type: string) =>
@@ -128,7 +140,8 @@ export function KindProviders({
         page={page}
         nextCursor={query.data?.next_cursor}
         action={add}
-        canActivateRow={() => manage}
+        rowActionLabel={manage ? "Edit" : "View"}
+        canActivateRow={() => kind === "environment" || manage}
         onRowActivate={rows.activate}
         notice={notice}
         row={(item) => ({
@@ -154,7 +167,12 @@ function AddKindProvider({
   kind,
   definitions,
   description,
+  renderCatalog,
 }: {
+  renderCatalog?: (
+    definitions: readonly Definition[],
+    onChoose: (type: string) => void,
+  ) => ReactNode;
   kind: ProviderKind;
   definitions: Definition[];
   description: string;
@@ -170,7 +188,14 @@ function AddKindProvider({
   return (
     <AddProviderDialog<Definition>
       key={generation}
+      title={kind === "environment" ? t("Add connection") : undefined}
+      trigger={
+        kind === "environment" ? (
+          <Button type="button">{t("Add connection")}</Button>
+        ) : undefined
+      }
       definitions={definitions}
+      renderCatalog={renderCatalog}
       open={open}
       onOpenChange={change}
       description={t(description)}
@@ -185,6 +210,9 @@ function AddKindProvider({
         <CatalogStep backLabel={t("All providers")} onBack={back}>
           <ProviderForm
             kind={kind}
+            createLabel={
+              kind === "environment" ? t("Add connection") : undefined
+            }
             definition={definition}
             definitions={definitions}
             close={() => change(false)}
@@ -209,7 +237,7 @@ function EditKindProvider({
   testDescription: string;
 }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, can } = useWorkspace(),
     [generation, setGeneration] = useState(0),
     definitions = useProviderTypes(kind);
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
@@ -228,33 +256,49 @@ function EditKindProvider({
       open={state.open}
       name={query.data?.value.name ?? provider.name}
       id={provider.id}
+      readOnly={!can("write")}
       type={provider.type}
       definition={definition?.display_name}
       loading={definitions.isPending || query.isPending}
       error={definitions.error ?? query.error}
     >
-      {query.data && (
-        <ProviderForm
-          key={generation}
-          kind={kind}
-          initial={query.data}
-          definitions={definitions.data?.items ?? []}
-          testDescription={testDescription}
-          close={() => state.setOpen(false)}
-          reload={async () => {
-            await query.refetch();
-            setGeneration((value) => value + 1);
-          }}
+      {query.data && !can("write") ? (
+        <ProviderReadOnly
+          enabled={query.data.value.enabled}
+          credentials={
+            query.data.value.credential_configured
+              ? "configured"
+              : "not_configured"
+          }
+          configuration={query.data.value.config}
+          schema={definition?.configuration_schema}
+          onClose={() => state.setOpen(false)}
         />
+      ) : (
+        query.data && (
+          <ProviderForm
+            key={generation}
+            kind={kind}
+            initial={query.data}
+            definitions={definitions.data?.items ?? []}
+            testDescription={testDescription}
+            close={() => state.setOpen(false)}
+            reload={async () => {
+              await query.refetch();
+              setGeneration((value) => value + 1);
+            }}
+          />
+        )
       )}
     </EditProviderDialog>
   );
 }
 
-function ProviderForm({
+export function ProviderForm({
   kind,
   initial,
   definition: chosen,
+  createLabel,
   definitions,
   testDescription,
   close,
@@ -262,6 +306,7 @@ function ProviderForm({
 }: {
   kind: ProviderKind;
   initial?: Resource;
+  createLabel?: string;
   definition?: Definition;
   definitions: Definition[];
   /** What testing the saved provider does; creation offers no test. */
@@ -287,8 +332,16 @@ function ProviderForm({
     definition = definitions.find((item) => item.type === type) ?? chosen,
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);
+  const configChanged =
+    kind === "environment" &&
+    !!basis &&
+    JSON.stringify(configuration) !== JSON.stringify(basis.value.config);
   function done() {
     void cache.invalidateQueries({ queryKey: [`${kind}-providers`] });
+    if (kind === "environment")
+      void cache.invalidateQueries({
+        queryKey: ["environment-provider-options"],
+      });
     close();
   }
   const save = useMutation({
@@ -296,9 +349,13 @@ function ProviderForm({
       const credential = section.payload();
       if (credential) validateSettings(section.schema, credential);
       if (basis) {
+        if (configChanged) validateSettings(configSchema, configuration);
         return api.updateProvider(basis.value.id, basis.etag, {
           name,
           enabled,
+          ...(configChanged
+            ? { config: jsonObject(JSON.stringify(configuration)) }
+            : {}),
           ...(credential === undefined
             ? {}
             : {
@@ -327,6 +384,7 @@ function ProviderForm({
         className={providerStyles.connectForm}
         onSubmit={(event) => {
           event.preventDefault();
+          event.stopPropagation();
           save.mutate();
         }}
       >
@@ -340,6 +398,11 @@ function ProviderForm({
           configuration={configuration}
           onConfigurationChange={setConfiguration}
           name={name}
+          nameDescription={
+            kind === "environment"
+              ? "How this connection is listed across the console."
+              : undefined
+          }
           onNameChange={setName}
           keyLink={providerKeyLink(definition)}
           advancedOpen={advancedOpen}
@@ -349,7 +412,7 @@ function ProviderForm({
         <FormActions
           pending={save.isPending}
           onCancel={close}
-          label={t("Add provider")}
+          label={createLabel ?? t("Add provider")}
         />
       </form>
     );
@@ -357,10 +420,19 @@ function ProviderForm({
     <ProviderEditor
       onSubmit={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         save.mutate();
       }}
     >
-      <ProviderName value={name} onChange={setName} />
+      <ProviderName
+        value={name}
+        onChange={setName}
+        description={
+          kind === "environment"
+            ? "How this connection is listed across the console."
+            : undefined
+        }
+      />
       <ProviderGroup>
         <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
         {section.visible && (
@@ -396,6 +468,7 @@ function ProviderForm({
             description={testDescription}
             dirty={
               save.isPending ||
+              configChanged ||
               name !== basis.value.name ||
               enabled !== basis.value.enabled ||
               Object.keys(section.credential).length > 0 ||
@@ -404,17 +477,37 @@ function ProviderForm({
             retry={() => void reload()}
           />
         )}
-        <ProviderFacts
-          hideDefaults
-          configuration={configuration}
-          schema={configSchema}
-        />
+        {kind === "environment" ? (
+          <ProviderConfigurationFields
+            schema={configSchema}
+            value={configuration}
+            onChange={setConfiguration}
+            advancedOpen={advancedOpen}
+            onAdvancedOpenChange={setAdvancedOpen}
+          />
+        ) : (
+          <ProviderFacts
+            hideDefaults
+            configuration={configuration}
+            schema={configSchema}
+          />
+        )}
       </ProviderGroup>
       <ErrorNotice error={save.error} retry={() => void reload()} />
       <FormActions
         pending={save.isPending}
         onCancel={close}
         label={t("Save changes")}
+        leading={
+          kind === "environment" ? (
+            <EnvironmentConnectionDelete
+              provider={basis.value}
+              etag={basis.etag}
+              disabled={save.isPending}
+              onDeleted={close}
+            />
+          ) : undefined
+        }
       />
     </ProviderEditor>
   );

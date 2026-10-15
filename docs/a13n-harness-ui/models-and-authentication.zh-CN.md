@@ -34,6 +34,19 @@ Model 资源定义提供方连接、请求设置和工作上下文预算。将�
 
 CLI 命令 `setup`、`add model` 和 `add agent` 的新 Model 分支采用相同后端选项和准备规则。API 连接可复用已存密钥元数据或环境变量引用，不暴露密钥字节。订阅账户不可用时，设置提供直接设备/浏览器登录，或显式稍后配置的选项。
 
+### Anthropic 缓存默认值
+
+通过 Anthropic 连接创建 Model 时，会保存以下显式分块缓存设置，自定义模型 ID 和兼容端点也适用：
+
+```yaml
+settings:
+  anthropic_cache_instructions: true
+  anthropic_cache_tool_definitions: true
+  anthropic_cache_messages: true
+```
+
+所有 Anthropic 预设均包含这三个字段。为兼容端点，Harness UI 使用它们，而不是统一 `cache` 或顶层 `anthropic_cache`。高级设置仍可编辑：显式传入的映射，包括 `false`、缓存时长或空映射，均保持不变。OpenRouter 等其他协议不会仅因模型是 Claude 就获得这些字段。已有 Model 文件不会迁移；可手动添加这些字段，或显式应用预设来启用。
+
 ## 网关会话亲和性
 
 在 **Add Model** 或首次设置中选择 **Gateway session affinity** 预设，或在 **Session affinity header** 中填写其他名称。CLI `add model` 提供同样预设和自定义输入。保存结果是普通 header 名称，不是预设引用：
@@ -167,7 +180,7 @@ model_characteristics:
     max_video_bytes: 10485760
 ```
 
-Agent 可调用默认 `read_video_url(url, instructions=None, media_type=None)`。直接 HTTP(S) 视频下载为原始字节 `BinaryContent`，SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
+Agent 可调用默认 `read_media_url(url, instructions=None, media_type=None)`。该工具读取直接图像、视频和音频资源，与 `view` 共用按类型配置的媒体理解模型。支持原生输入时返回 `BinaryContent`，否则由配置的辅助模型分析并返回文本。原生视频由 SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
 
 模型输入能力与 Agent Capability、Agent 工具和模型输出模态分开。尤其是文件 `view` 工具用这些声明直接向活动模型附加媒体。没有匹配的模型输入能力时，需要显式配置[媒体理解回退](../a13n-harness/multimedia-understanding.md)，否则报告不可用。
 

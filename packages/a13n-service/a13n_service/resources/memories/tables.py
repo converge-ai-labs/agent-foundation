@@ -63,6 +63,33 @@ class MemoryRow(Stamped, Base):
     updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
 
 
+class MemorySpaceRow(Stamped, Base):
+    """Shared lifecycle and policy around one managed file Memory."""
+
+    __tablename__ = "memory_spaces"
+    KIND: ClassVar[str] = "memory_space"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id"),
+        UniqueConstraint("memory_id"),
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "memory_id"], ["memories.workspace_id", "memories.id"]),
+        rules(identity_guarded("memory_spaces")),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    memory_id: Mapped[str] = mapped_column(String(72))
+    name: Mapped[str]
+    description: Mapped[str | None]
+    labels: Mapped[dict] = mapped_column(JSONB)
+    enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    organization: Mapped[dict] = mapped_column(JSONB)
+    # The configuring actor delegates organization; business writers never replace this authority.
+    authority: Mapped[dict | None] = mapped_column(JSONB)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+
+
 class MemoryFileStoreRow(Base):
     """A PostgreSQL file memory's write lock, change sequence and byte counters. Every write locks it first, so
     changes are numbered without gaps and the byte total is exact."""
@@ -75,6 +102,8 @@ class MemoryFileStoreRow(Base):
     memory_id: Mapped[str] = mapped_column(String(72), ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True)
     # The last change's number; each change takes the next one.
     seq: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    # Saved mutations outside organization Runs; independent of revision retention and move pairs.
+    change_count: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     # Revisions up to this number may be gone, so a change cursor below it cannot list what changed since.
     pruned_through_seq: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     content_bytes: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
@@ -127,3 +156,22 @@ class MemoryFileRevisionRow(Base):
     tool_call_id: Mapped[str | None] = mapped_column(String(256))
     principal_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MemoryRecordSourceRow(Base):
+    """Best-effort attribution of confirmed provider writes, without a copy of their content."""
+
+    __tablename__ = "memory_record_sources"
+    memory_id: Mapped[str] = mapped_column(String(72), ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True)
+    record_id: Mapped[str] = mapped_column(primary_key=True)
+    created_principal_id: Mapped[str | None]
+    created_run_id: Mapped[str | None]
+    created_attempt_id: Mapped[str | None]
+    created_tool_call_id: Mapped[str | None]
+    created_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_write_principal_id: Mapped[str | None]
+    last_write_run_id: Mapped[str | None]
+    last_write_attempt_id: Mapped[str | None]
+    last_write_tool_call_id: Mapped[str | None]
+    last_write_confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    content_hash: Mapped[str] = mapped_column(String(64))

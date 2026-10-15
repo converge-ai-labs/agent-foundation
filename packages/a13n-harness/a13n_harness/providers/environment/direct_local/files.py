@@ -12,7 +12,7 @@ import shutil
 import stat as stat_module
 import sys
 import tempfile
-from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -22,12 +22,16 @@ from pathspec.gitignore import GitIgnoreSpec
 from pathspec.patterns.gitignore import GitIgnorePatternError
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
+from a13n_harness.environment.archives import FileArchive, extract_archive_files
+from a13n_harness.environment.batches import apply_file_batch
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileKind,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FilePatchResult,
     FileQueryRequest,
     FileTextMatch,
@@ -68,15 +72,17 @@ class _LocalWriter:
 
     async def open(self) -> None:
         try:
-            fd, name = await asyncio.to_thread(
-                tempfile.mkstemp,
+            # Keep candidates private while allowing ordinary file creation to
+            # apply the Host's umask. mkstemp's fixed 0600 is not a file default.
+            name = await asyncio.to_thread(
+                tempfile.mkdtemp,
                 prefix=".a13n-write-",
                 dir=self._native_path.parent,
             )
+            self._temp_path = Path(name) / "content"
+            self._file = await asyncio.to_thread(self._temp_path.open, "xb")
         except OSError as exc:
             raise _environment_error_from_os(exc, action="open a staged file") from exc
-        self._temp_path = Path(name)
-        self._file = os.fdopen(fd, "wb")
         if self._mode == "append" and await asyncio.to_thread(self._native_path.exists):
             await self._copy_append_source()
 
@@ -178,6 +184,7 @@ class _LocalWriter:
         if self._temp_path is not None:
             try:
                 await asyncio.to_thread(self._temp_path.unlink, missing_ok=True)
+                await asyncio.to_thread(self._temp_path.parent.rmdir)
             except OSError as exc:
                 cleanup = _environment_error_from_os(exc, action="remove a staged file")
                 if failure is None:
@@ -192,6 +199,12 @@ class _LocalWriter:
 
 class LocalFileOperator:
     """Root-confined Direct Local file operations with staged publication."""
+
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        return await apply_file_batch(self, operations)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        return await extract_archive_files(self, path, archive)
 
     def __init__(
         self,
@@ -342,14 +355,20 @@ class LocalFileOperator:
             if mode == "create":
                 os.link(staged, destination)
             else:
+                if exists:
+                    # Content edits retain access/executable bits, not the private
+                    # staging mode. Do not transfer set-ID bits to a new inode.
+                    os.chmod(staged, stat_module.S_IMODE(destination.stat().st_mode) & 0o777)
                 os.replace(staged, destination)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="publish a staged file") from exc
-        if mode == "create":
-            try:
+        try:
+            if mode == "create":
                 staged.unlink()
-            except OSError:
-                pass
+            staged.parent.rmdir()
+        except OSError:
+            # Publication has succeeded; staging cleanup cannot undo it.
+            pass
 
     async def read_text(
         self,
@@ -766,9 +785,28 @@ class LocalFileOperator:
             destination_metadata.st_mode
         ):
             raise EnvironmentError("Move source and destination kinds differ.", code="environment_request_invalid")
-        # One native replacement preserves directory shape and non-empty-directory
-        # preconditions. Moving the destination aside first would bypass both.
-        os.replace(source_native, destination_native)
+        try:
+            os.replace(source_native, destination_native)
+        except OSError as exc:
+            if not stat_module.S_ISDIR(source_metadata.st_mode):
+                raise
+            if sys.platform == "win32":
+                if destination_metadata is None or exc.errno not in {errno.EACCES, errno.EEXIST, errno.ENOTEMPTY}:
+                    raise
+                # Windows has no directory exchange; replacement accepts the remove/rename gap.
+                shutil.rmtree(destination_native)
+                os.replace(source_native, destination_native)
+                return
+            if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                raise
+            _rename_atomic(source_native, destination_native, exchange=True)
+            try:
+                shutil.rmtree(source_native)
+            except OSError as cleanup_error:
+                raise EnvironmentError(
+                    "Directory replacement published, but displaced source cleanup failed.",
+                    code="environment_unknown_outcome",
+                ) from cleanup_error
 
     async def remove(
         self,
@@ -944,25 +982,30 @@ def _rename_no_replace(source: Path, destination: Path) -> None:
     if sys.platform == "win32":
         os.rename(source, destination)
         return
+    _rename_atomic(source, destination, exchange=False)
+
+
+def _rename_atomic(source: Path, destination: Path, *, exchange: bool) -> None:
+    """Use the platform's no-replace or exchange publication primitive."""
     if sys.platform not in {"linux", "darwin"}:
-        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
 
     library = ctypes.CDLL(None, use_errno=True)
     name = "renamex_np" if sys.platform == "darwin" else "renameat2"
     rename = getattr(library, name, None)
     if rename is None:
-        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
     rename.restype = ctypes.c_int
     if sys.platform == "darwin":
         rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
+        result = rename(os.fsencode(source), os.fsencode(destination), 2 if exchange else 4)  # SWAP / EXCL
     else:
         rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 2 if exchange else 1)
     if result != 0:
         number = ctypes.get_errno()
         if number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
-            raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+            raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
         raise OSError(number, os.strerror(number))
 
 

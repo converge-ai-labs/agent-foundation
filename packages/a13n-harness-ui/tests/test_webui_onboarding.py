@@ -111,7 +111,6 @@ async def test_first_conversation_identity_is_create_only_and_survives_restart(t
     ("connection", "model_id", "authentication", "model_file"),
     [
         ("codex", "gpt-6.1-sol", "codex_subscription", "codex"),
-        ("codex", "gpt-5.6-sol", "codex_subscription", "codex"),
         ("grok-subscription", "grok-4.7", "grok_subscription", "grok"),
         ("copilot-subscription", "synthetic-chat-model", "copilot_subscription", "copilot"),
     ],

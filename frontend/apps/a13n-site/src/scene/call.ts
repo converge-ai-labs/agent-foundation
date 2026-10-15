@@ -10,7 +10,7 @@ import {
   rand,
   reduced,
 } from "../motion";
-import { roll } from "../roll";
+import { flip, roll } from "../roll";
 import { BLANK, type Char, charsOf } from "./code";
 import { LIGHTS } from "./lights";
 
@@ -18,15 +18,6 @@ const EVERY = 2600; // ms between calls
 const BOARD = 4; // threads on the board
 const FLIGHT = 520; // ms from the code to the Service
 const TRAIL = 18; // segments in a light's streak
-
-const TURN_AWAY: Keyframe[] = [
-  { transform: "perspective(400px)" },
-  { transform: "perspective(400px) rotateY(90deg)" },
-];
-const TURN_IN: Keyframe[] = [
-  { transform: "perspective(400px) rotateY(-90deg)" },
-  { transform: "perspective(400px)" },
-];
 
 // every call becomes a grid of cells, so a switch turns only the cells
 // that differ
@@ -180,35 +171,15 @@ export class Call {
         const same = cell.ch === to.ch;
         Object.assign(cell, to);
         // the same character only changes color
-        if (same) cell.glyph.className = toneClass(cell);
-        else if (first || reduced) {
-          cell.glyph = glyph(cell);
-          cell.el.replaceChildren(cell.glyph);
-        } else this.flip(cell, c * 9 + r * 60);
+        if (same) {
+          cell.glyph.className = toneClass(cell);
+          return;
+        }
+        cell.glyph = glyph(cell);
+        if (first) cell.el.replaceChildren(cell.glyph);
+        else flip(cell.el, cell.glyph, c * 9 + r * 60);
       }),
     );
-  }
-
-  // the old glyph turns away and the new one, laid over it, turns in; both
-  // are scheduled at once, so a busy page never strands a cell edge-on
-  private flip(cell: Cell, delay: number) {
-    // a turn still under way gives way to this one
-    for (const el of [...cell.el.children]) if (el !== cell.glyph) el.remove();
-    const old = cell.glyph;
-    cell.glyph = glyph(cell);
-    cell.el.append(cell.glyph);
-    old.animate(TURN_AWAY, {
-      duration: 140,
-      delay,
-      easing: "cubic-bezier(0.5, 0, 0.75, 0)",
-      fill: "forwards",
-    }).onfinish = () => old.remove();
-    cell.glyph.animate(TURN_IN, {
-      duration: 320,
-      delay: delay + 140,
-      easing: EASE,
-      fill: "backwards",
-    });
   }
 
   private setState(t: Thread, state: ThreadState, delay?: number) {

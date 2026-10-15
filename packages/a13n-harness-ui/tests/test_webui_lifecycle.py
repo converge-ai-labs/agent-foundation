@@ -326,7 +326,11 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
                     {
                         "kind": "input",
                         "control_epoch": controlled["terminal"]["control_epoch"],
-                        "text": f"echo $$ > {shlex.quote(str(tmp_path / 'shell-pid'))}\n",
+                        "text": (
+                            f"echo $$ > {shlex.quote(str(tmp_path / 'shell-pid.tmp'))} && "
+                            f"mv {shlex.quote(str(tmp_path / 'shell-pid.tmp'))} "
+                            f"{shlex.quote(str(tmp_path / 'shell-pid'))}\n"
+                        ),
                     }
                 )
             )
@@ -484,13 +488,20 @@ def test_prompt_rejects_invalid_presentation_identity(values: dict[str, object])
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("route", ["/api/presence/connect", "/api/realtime/connect"])
 @pytest.mark.parametrize(
-    "failure",
+    "route,failure",
     [
-        'Cannot call "send" once a close message has been sent.',
-        "Unexpected ASGI message 'websocket.send', after sending 'websocket.close'.",
-        "Unexpected ASGI message 'websocket.send', after sending 'websocket.close' or response already completed.",
+        # Both routes share InteractiveOutput's closed-transport classification.
+        ("/api/realtime/connect", 'Cannot call "send" once a close message has been sent.'),
+        ("/api/presence/connect", 'Cannot call "send" once a close message has been sent.'),
+        (
+            "/api/presence/connect",
+            "Unexpected ASGI message 'websocket.send', after sending 'websocket.close'.",
+        ),
+        (
+            "/api/presence/connect",
+            "Unexpected ASGI message 'websocket.send', after sending 'websocket.close' or response already completed.",
+        ),
     ],
 )
 async def test_interactive_output_handles_transport_close_before_disconnect_is_received(tmp_path, route, failure):

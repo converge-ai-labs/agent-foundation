@@ -1325,3 +1325,27 @@ async def test_proxy_target_permission_gate_precedes_business_dispatch(codeact: 
     result, _ = await _run(capabilities, [call])
     assert result.status == "completed"
     assert not effects
+
+
+@pytest.mark.parametrize("codeact", [False, True])
+@pytest.mark.parametrize("mode", ["allow", "inherit"])
+async def test_proxy_and_codeact_use_capability_approval_override(codeact: bool, mode: str) -> None:
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+
+    effects = []
+
+    def change(ctx: RunContext[AgentContext]) -> str:
+        effects.append(ctx.deps.tool_approval.approved)
+        return "changed"
+
+    capabilities = (
+        _group(Tool(change, requires_approval=True)),
+        ToolPermissionsCapability(ToolPermissions(rules={"tool/native/change": mode})),
+    )
+    call = ("call_proxy_tool", {"group": "crm", "tool": "change", "arguments": {}})
+    if codeact:
+        capabilities += (CodeActCapability(),)
+        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='change', arguments={})"})
+    result, _ = await _run(capabilities, [call])
+    assert result.status == "completed"
+    assert effects == ([False] if mode == "allow" else [])

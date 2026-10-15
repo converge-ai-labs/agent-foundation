@@ -86,7 +86,7 @@ class ThreadCompositionSelection:
     thread_id: str
     version: int
     project_id: str | None
-    agent_source_kind: Literal["agent", "markdown"]
+    agent_source_kind: Literal["agent", "markdown", "live"]
     agent_source_id: str
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -209,6 +209,8 @@ class AgentCompositionResolver:
     ) -> ResolvedAgentNode:
         """Resolve current Agent policy without publishing a Run or preparing an Environment."""
 
+        if selection.agent_source_kind == "live":
+            return self._live_node(source)
         self._validate_selection(source, selection)
         if selection.default_model_id is not None and (model_overrides is None or model_overrides.model_id is None):
             model_overrides = (model_overrides or RunModelOverrides()).model_copy(
@@ -256,6 +258,20 @@ class AgentCompositionResolver:
         run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
+        if selection.agent_source_kind == "live":
+            if model_overrides is not None:
+                raise CompositionError("Select the Live executor Model in Live settings.", code="live_model_override")
+            return ResolvedRunComposition(
+                package_prompt_revision=PACKAGE_PROMPT_REVISION,
+                generation_digest=source.source_digest,
+                thread_id=selection.thread_id,
+                thread_configuration_version=selection.version,
+                project_roots=selection.local_roots,
+                memory_enabled=source.document.memory.enabled,
+                run_configuration=source.document.run_configuration,
+                root=self._live_node(source),
+                environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
+            )
         root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
         environment = self._environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
@@ -528,6 +544,40 @@ class AgentCompositionResolver:
                 else None
             ),
             children=(),
+        )
+
+    def _live_node(self, source: LoadedHarnessUiConfiguration) -> ResolvedAgentNode:
+        settings = source.document.live
+        if settings is None or not settings.enabled or settings.model is None:
+            raise CompositionError("Enable Live and select a Codex subscription Model.", code="live_disabled")
+        return ResolvedAgentNode(
+            source_kind="live",
+            source_id="live",
+            roster_name="live",
+            system_prompt=(
+                "You are the user's Live task coordinator. Voice conversation is handled by the voice model; "
+                "execute its delegated tasks using the available tools and ordinary Threads. Discover Projects, "
+                "Agents and Models before selecting them. Keep substantial work in target Threads; inspect their "
+                "saved outcomes. Ask target Threads to report to your Thread with send_thread_message. "
+                "Reports are received only during an active voice session; offline reports are skipped. "
+                "Keep final replies concise and suitable for speech. Do not forward private reasoning. "
+                "Stopping voice does not stop dispatched work. Use notes and tasks for ongoing coordination.",
+            ),
+            instructions=(settings.instructions,) if settings.instructions else (),
+            model=self.model_recipe(source.models[settings.model]),
+            capabilities=(
+                ResolvedCapabilityRecipe(capability="working_state"),
+                ResolvedCapabilityRecipe(capability="runtime_context"),
+                ResolvedCapabilityRecipe(capability="user_interaction"),
+                ResolvedCapabilityRecipe(
+                    capability="dynamic_environment",
+                    configuration={
+                        "files_enabled": settings.files_enabled,
+                        "shell_enabled": False,
+                        "computer_enabled": False,
+                    },
+                ),
+            ),
         )
 
     def resolve_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> ResolvedRunComposition:

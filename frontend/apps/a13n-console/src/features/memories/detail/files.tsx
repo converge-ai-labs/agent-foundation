@@ -1,20 +1,38 @@
 import {
   ClockCounterClockwiseIcon,
+  DotsThreeIcon,
+  TextAaIcon,
+  TrashIcon,
   FilePlusIcon,
   FileTextIcon,
   PencilSimpleIcon,
   PushPinIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, StatusPill } from "a13n-ui";
-import { useMemo, useState, type ReactElement } from "react";
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuLinkItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+  StatusPill,
+} from "a13n-ui";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, ifMatch, type Schema } from "../../../shared/api";
 import { Empty } from "../../../shared/collection";
-import { Confirm, ConflictNotice } from "../../../shared/dialogs";
+import { ConflictNotice } from "../../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../../shared/feedback";
 import {
   FileBody,
@@ -28,7 +46,7 @@ import {
 import { FormActions, TextAreaField } from "../../../shared/forms";
 import { invalidateMemories, isStale, memoryQueries } from "../api";
 import styles from "../memories.module.css";
-import { NewFile, RenameFile } from "./file-dialogs";
+import { FileActionDialog, NewFile } from "./file-dialogs";
 
 type Memory = Schema["Memory"];
 type Entry = Schema["MemoryFileEntry"];
@@ -50,6 +68,10 @@ export function MemoryFiles({ memory }: { memory: Memory }) {
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
     [search, setSearch] = useSearchParams();
+  const [action, setAction] = useState<{
+    path: string;
+    kind: "edit" | "rename" | "delete";
+  }>();
   const files = useQuery(memoryQueries(client, workspace.id).files(memory.id));
   const nodes = useMemo(() => fileTree(files.data ?? []), [files.data]);
   function select(path: string | undefined) {
@@ -92,58 +114,123 @@ export function MemoryFiles({ memory }: { memory: Memory }) {
   const entry =
     files.data.find((file) => file.path === requested) ??
     files.data.find((file) => file.path === defaultFile(memory, files.data));
+  const fileMenu = (path: string) => (
+    <MemoryFileActions
+      path={path}
+      onAction={(kind) => {
+        if (kind === "edit") select(path);
+        setAction({ path, kind });
+      }}
+    />
+  );
   return (
-    <FileBrowser
-      label={t("Memory files")}
-      count={files.data.length}
-      nodes={nodes}
-      selected={entry?.path ?? ""}
-      onSelect={select}
-      marker={(path) =>
-        memory.always_load.includes(path) && (
-          <PushPinIcon
-            size={12}
-            className={styles.pin}
-            role="img"
-            aria-label={t("Always loaded")}
+    <>
+      <FileBrowser
+        embedded
+        label={t("Memory files")}
+        fileMenu={fileMenu}
+        count={files.data.length}
+        nodes={nodes}
+        selected={entry?.path ?? ""}
+        onSelect={select}
+        marker={(path) =>
+          memory.always_load.includes(path) && (
+            <PushPinIcon
+              size={12}
+              className={styles.pin}
+              role="img"
+              aria-label={t("Always loaded")}
+            />
+          )
+        }
+        actions={newFile(
+          <Button type="button" variant="ghost" size="sm">
+            <FilePlusIcon />
+            {t("New file")}
+          </Button>,
+        )}
+      >
+        {entry && (
+          <FileContent
+            key={entry.path}
+            memory={memory}
+            entry={entry}
+            menu={fileMenu(entry.path)}
+            editRequested={
+              action?.kind === "edit" && action.path === entry.path
+            }
+            onEditStarted={() => setAction(undefined)}
           />
-        )
-      }
-      actions={newFile(
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t("New file")}
-          title={t("New file")}
-        >
-          <FilePlusIcon />
-        </Button>,
-      )}
-    >
-      {entry && (
-        <FileContent
-          key={entry.path}
+        )}
+      </FileBrowser>
+      {action && action.kind !== "edit" && (
+        <FileActionDialog
           memory={memory}
-          entry={entry}
+          path={action.path}
+          kind={action.kind}
+          onClose={() => setAction(undefined)}
           onMoved={select}
-          onDeleted={() => select(undefined)}
+          onDeleted={() => {
+            if (entry?.path === action.path) select(undefined);
+          }}
         />
       )}
-    </FileBrowser>
+    </>
+  );
+}
+
+function MemoryFileActions({
+  path,
+  onAction,
+}: {
+  path: string;
+  onAction: (kind: "edit" | "rename" | "delete") => void;
+}) {
+  const { t } = useTranslation(),
+    { can } = useWorkspace();
+  return (
+    <>
+      {can("run") && (
+        <MenuItem onClick={() => onAction("edit")}>
+          <PencilSimpleIcon />
+          {t("Edit")}
+        </MenuItem>
+      )}
+      <MenuLinkItem
+        render={<Link to={`?tab=history&path=${encodeURIComponent(path)}`} />}
+      >
+        <ClockCounterClockwiseIcon />
+        {t("History")}
+      </MenuLinkItem>
+      {can("run") && (
+        <>
+          <MenuItem onClick={() => onAction("rename")}>
+            <TextAaIcon />
+            {t("Rename")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem variant="destructive" onClick={() => onAction("delete")}>
+            <TrashIcon />
+            {t("Delete")}
+          </MenuItem>
+        </>
+      )}
+    </>
   );
 }
 
 function FileContent({
   memory,
   entry,
-  onMoved,
-  onDeleted,
+  menu,
+  editRequested,
+  onEditStarted,
 }: {
   memory: Memory;
   entry: Entry;
-  onMoved: (path: string) => void;
-  onDeleted: () => void;
+  menu: ReactNode;
+  editRequested: boolean;
+  onEditStarted: () => void;
 }) {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
@@ -156,6 +243,12 @@ function FileContent({
   // The edit keeps the version it started from, so a change made meanwhile
   // fails the save instead of being overwritten.
   const [draft, setDraft] = useState<FileDraft>();
+  useEffect(() => {
+    if (editRequested && file.data) {
+      setDraft({ text: file.data.value.content, etag: file.data.etag });
+      onEditStarted();
+    }
+  }, [editRequested, file.data, onEditStarted]);
   const params = { path: { memory_id: memory.id, path: entry.path } };
   const save = useMutation({
     mutationFn: (edit: FileDraft) =>
@@ -216,44 +309,12 @@ function FileContent({
               </Button>
               {can("run") && loaded && (
                 <>
-                  <RenameFile
-                    memory={memory}
-                    path={entry.path}
-                    etag={loaded.etag}
-                    onMoved={onMoved}
-                    trigger={
-                      <Button type="button" variant="ghost" size="sm">
-                        {t("Rename")}
-                      </Button>
-                    }
-                  />
-                  <Confirm
-                    danger
-                    triggerVariant="ghost"
-                    trigger={t("Delete")}
-                    retry={() => void invalidateMemories(cache, workspace.id)}
-                    title={t("Delete file")}
-                    subject={entry.path}
-                    description={t(
-                      "The file's history stays, so it can be restored from History.",
-                    )}
-                    action={() =>
-                      client
-                        .workspace(workspace.id)
-                        .DELETE("/api/v1/memories/{memory_id}/files/{path}", {
-                          params,
-                          headers: ifMatch(loaded.etag),
-                        })
-                    }
-                    onSuccess={() => {
-                      void invalidateMemories(cache, workspace.id);
-                      onDeleted();
-                    }}
-                  />
                   <Button
                     type="button"
-                    variant="outline"
-                    size="sm"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={t("Edit")}
+                    title={t("Edit")}
                     onClick={() =>
                       setDraft({
                         text: loaded.value.content,
@@ -262,10 +323,24 @@ function FileContent({
                     }
                   >
                     <PencilSimpleIcon />
-                    {t("Edit")}
                   </Button>
                 </>
               )}
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={t("File actions")}
+                      title={t("File actions")}
+                    />
+                  }
+                >
+                  <DotsThreeIcon />
+                </MenuTrigger>
+                <MenuPopup align="end">{menu}</MenuPopup>
+              </Menu>
             </>
           )
         }

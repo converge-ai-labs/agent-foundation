@@ -3,6 +3,7 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 SANDBOX_SLIM_IMAGE ?= a13n-sandbox:local-slim
+SANDBOX_DESKTOP_IMAGE ?= a13n-sandbox:local-desktop
 COMPOSE_PULL ?= always
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin examples/mcp-apps
 PYTHON_TEST_DIRS ?=
@@ -440,7 +441,8 @@ a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production 
 	@pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
 .PHONY: a13n-service-assets
-a13n-service-assets: a13n-console-build ## Place the Console production build in the a13n-service package it serves from
+a13n-service-assets: a13n-console-build ## Prepare bundled Skill schemas and Console production assets
+	@uv run --locked python scripts/export-a13n-service-openapi.py --skills-only
 	@rm -rf packages/a13n-service/a13n_service/static
 	@cp -R frontend/apps/a13n-console/dist packages/a13n-service/a13n_service/static
 
@@ -481,8 +483,12 @@ image-sandbox: ## Build the standard sandbox with a13n-envd and agent-browser
 image-sandbox-slim: ## Build the minimal a13n-envd runtime image
 	@docker build -f deploy/docker/images/sandbox/Dockerfile --build-arg SANDBOX_VARIANT=slim -t "$(SANDBOX_SLIM_IMAGE)" .
 
+.PHONY: image-sandbox-desktop
+image-sandbox-desktop: ## Build the sandbox with an automatically started X11 desktop
+	@docker build -f deploy/docker/images/sandbox/Dockerfile --build-arg SANDBOX_VARIANT=desktop -t "$(SANDBOX_DESKTOP_IMAGE)" .
+
 .PHONY: images
-images: image-a13n-service image-sandbox image-sandbox-slim ## Build all local container images
+images: image-a13n-service image-sandbox image-sandbox-slim image-sandbox-desktop ## Build all local container images
 
 .PHONY: image-check-a13n-service
 image-check-a13n-service: ## Smoke-check the existing a13n-service container image
@@ -506,13 +512,17 @@ image-check-sandbox: ## Smoke-check sandbox defaults, development account, sudo 
 	@docker run --rm "$(SANDBOX_IMAGE)"
 	@python3 scripts/sandbox_smoke.py --image "$(SANDBOX_IMAGE)" --variant standard
 
+.PHONY: image-check-sandbox-desktop
+image-check-sandbox-desktop: ## Check desktop startup, restart and required-process supervision
+	@python3 scripts/sandbox_smoke.py --image "$(SANDBOX_DESKTOP_IMAGE)" --variant desktop
+
 .PHONY: image-check-sandbox-slim
 image-check-sandbox-slim: ## Smoke-check the minimal daemon image without development tools
 	@python3 scripts/sandbox_smoke.py --image "$(SANDBOX_SLIM_IMAGE)" --variant slim
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-sandbox-slim
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks

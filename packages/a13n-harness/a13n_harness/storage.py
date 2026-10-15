@@ -52,7 +52,14 @@ class RunStorage:
         children = _inline_subagent_refs(state.agent_context_state)
         if self.store is None:
             return state.model_copy(update={"refs": children})
+        # Public constructors canonicalize these encoded fields. Without the
+        # binary discriminator there cannot be an externalizable content part.
+        # Unknown envelope fields still take the full generic traversal path.
+        encoded = (state.message_history_json, state.agent_context_state.entries_json, state.environment_states_json)
+        if not state.model_extra and all(isinstance(value, bytes) and b'"binary"' not in value for value in encoded):
+            return state.model_copy(update={"refs": children})
         value = state.model_dump(mode="json")
+        changed = False
         refs = {ref.key: ref for ref in children}
         for part in _binary_parts(value):
             ref = _reference(part)
@@ -60,10 +67,13 @@ class RunStorage:
                 data = _content(part)
                 if data is not None and len(data) > self.store.content_threshold:
                     ref = await self._save_content(data)
+                    changed = True
                     part["data"] = ""
                     part["vendor_metadata"] = {**(part["vendor_metadata"] or {}), STORED: ref.model_dump()}
             if ref is not None:
                 refs[ref.key] = ref
+        if not changed and not state.model_extra:
+            return state.model_copy(update={"refs": tuple(refs.values())})
         return HarnessState.model_validate({**value, "refs": [ref.model_dump() for ref in refs.values()]})
 
     async def resolve_messages(self, messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:
@@ -75,6 +85,8 @@ class RunStorage:
 
     async def resolve_context(self, snapshot: AgentContextStateSnapshot) -> AgentContextStateSnapshot:
         """The Capability state with every saved content part loaded again."""
+        if isinstance(snapshot.entries_json, bytes) and b"a13n.stored" not in snapshot.entries_json:
+            return snapshot
         value = snapshot.model_dump(mode="json")
         if not await self._resolve(value):
             return snapshot

@@ -227,19 +227,23 @@ async def test_deleting_a_memory_unmounts_it_and_moves_the_thread_version(servic
 async def test_a_run_inherits_cursors_of_memories_mounted_under_the_same_name() -> None:
     parent = RunRow(
         memory_mounts=[
-            {"name": "team", "memory_id": "mem_a", "access": "write"},
-            {"name": "notes", "memory_id": "mem_b", "access": "read"},
-            {"name": "docs", "memory_id": "mem_c", "access": "read"},
+            {"name": "team", "memory_id": "mem_aaaaaaaaaaaaaaaaaaaa", "access": "write"},
+            {"name": "notes", "memory_id": "mem_bbbbbbbbbbbbbbbbbbbb", "access": "read"},
+            {"name": "docs", "memory_id": "mem_cccccccccccccccccccc", "access": "read"},
         ],
-        memory_cursors={"mem_a": "7", "mem_b": "3", "mem_c": None},
+        memory_cursors={
+            "mem_aaaaaaaaaaaaaaaaaaaa": "7",
+            "mem_bbbbbbbbbbbbbbbbbbbb": "3",
+            "mem_cccccccccccccccccccc": None,
+        },
     )
     mounts = [
-        {"name": "team", "memory_id": "mem_a", "access": "read"},
-        {"name": "renamed", "memory_id": "mem_b", "access": "read"},
-        {"name": "docs", "memory_id": "mem_c", "access": "read"},
-        {"name": "new", "memory_id": "mem_d", "access": "write"},
+        {"name": "team", "memory_id": "mem_aaaaaaaaaaaaaaaaaaaa", "access": "read"},
+        {"name": "renamed", "memory_id": "mem_bbbbbbbbbbbbbbbbbbbb", "access": "read"},
+        {"name": "docs", "memory_id": "mem_cccccccccccccccccccc", "access": "read"},
+        {"name": "new", "memory_id": "mem_dddddddddddddddddddd", "access": "write"},
     ]
-    assert inherited_cursors(parent, mounts) == {"mem_a": "7", "mem_c": None}
+    assert inherited_cursors(parent, mounts) == {"mem_aaaaaaaaaaaaaaaaaaaa": "7", "mem_cccccccccccccccccccc": None}
     assert inherited_cursors(None, mounts) == {}
 
 

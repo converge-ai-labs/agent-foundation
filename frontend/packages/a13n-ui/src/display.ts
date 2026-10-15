@@ -55,6 +55,7 @@ export type ItemRef = Pick<DisplayItem, "id" | "kind" | "state"> & {
   ordinal?: number | null;
   response_group?: string | null;
   failure?: Record<string, unknown> | null;
+  memory_sources?: Record<string, unknown>[] | null;
 };
 export interface DisplayEvent {
   run_id: string;
@@ -73,7 +74,10 @@ export function isItemRef(value: unknown): value is ItemRef {
       (Number.isSafeInteger(value.ordinal) && Number(value.ordinal) > 0)) &&
     (value.response_group == null ||
       typeof value.response_group === "string") &&
-    (value.failure == null || record(value.failure))
+    (value.failure == null || record(value.failure)) &&
+    (value.memory_sources == null ||
+      (Array.isArray(value.memory_sources) &&
+        value.memory_sources.every(record)))
   );
 }
 
@@ -302,6 +306,7 @@ export class DisplayNormalizer {
         const supplement = [
           "a13n.filesystem.edit_applied",
           "a13n.harness-ui.tool_images",
+          "a13n.tool_images",
           "a13n.harness-ui.mcp_apps",
         ].includes(name);
         const tool = supplement ? source : part;
@@ -315,7 +320,9 @@ export class DisplayNormalizer {
               before: tool.before,
               after: tool.after,
             };
-          else if (name === "a13n.harness-ui.tool_images") {
+          else if (
+            ["a13n.tool_images", "a13n.harness-ui.tool_images"].includes(name)
+          ) {
             content.tool_images = tool.images ?? [];
             content.tool_image_unavailable = tool.unavailable ?? false;
           } else content.mcp_apps = tool.apps ?? [];
@@ -374,6 +381,8 @@ export class DisplayNormalizer {
     } else if (ref.kind === "observation") content = { ...event };
     if (ref.response_group) content.responseGroup = ref.response_group;
     if (ref.failure) content.failure = structuredClone(ref.failure);
+    if (ref.memory_sources != null)
+      content.memory_sources = structuredClone(ref.memory_sources);
     // A suffix without START is useful, but END cannot turn missing text/JSON into a complete value.
     if (
       previous?.content.incomplete ||

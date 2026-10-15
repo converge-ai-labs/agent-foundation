@@ -17,7 +17,7 @@ import { previewInput, type LocalInput } from "./local-input";
 
 afterEach(cleanup);
 
-it("loads the complete lightweight directory and excludes steer and duplicate local inputs", async () => {
+it("loads directory pages on demand and excludes steer and duplicate local inputs", async () => {
   const GET = vi
     .fn()
     .mockResolvedValueOnce({
@@ -83,6 +83,14 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
         />
       </TransportContext>
     </QueryClientProvider>,
+  );
+  await screen.findByRole("button", { name: "Input 1: First input" });
+  expect(GET).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("button", { name: "Input 2: Second input" }),
+  ).toBeNull();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Load more inputs" }),
   );
   const second = await screen.findByRole("button", {
     name: "Input 2: Second input",
@@ -176,4 +184,42 @@ it("quickly previews each question and answer while the wave follows hover and k
   expect(GET).not.toHaveBeenCalled();
   view.unmount();
   client.clear();
+});
+
+it("keeps one reader observer while streaming revisions update the active input", () => {
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  const resize = vi.fn(function () {
+    return { observe, disconnect };
+  });
+  vi.stubGlobal("ResizeObserver", resize);
+  const client = new QueryClient();
+  const reader = createRef<HTMLDivElement>();
+  const view = (revision: number) => (
+    <QueryClientProvider client={client}>
+      <TransportContext
+        value={{ client: { GET: vi.fn() } } as unknown as Transport}
+      >
+        <InputNavigation
+          threadId="one"
+          reader={reader}
+          revision={revision}
+          onSelect={() => {}}
+          localInputs={[]}
+        />
+        <div ref={reader}>
+          <section data-turn-id="first">{revision}</section>
+        </div>
+      </TransportContext>
+    </QueryClientProvider>
+  );
+  const rendered = render(view(0));
+  for (let index = 1; index <= 30; index++) rendered.rerender(view(index));
+  expect(resize).toHaveBeenCalledTimes(1);
+  expect(observe).toHaveBeenCalledTimes(1);
+  expect(disconnect).not.toHaveBeenCalled();
+  rendered.unmount();
+  expect(disconnect).toHaveBeenCalledTimes(1);
+  client.clear();
+  vi.unstubAllGlobals();
 });

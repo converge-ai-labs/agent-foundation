@@ -91,14 +91,17 @@ function beginInput(
 }
 
 export const ComposerDrafts = createContext(new Map<string, ThreadDraft>());
-export function useDraft(threadId: string) {
+export function useDraft(threadId: string, historyOnly = false) {
   const drafts = useContext(ComposerDrafts);
   let draft = drafts.get(threadId);
   if (!draft) {
     draft = new ThreadDraft();
     drafts.set(threadId, draft);
   }
-  useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+  useSyncExternalStore<unknown>(
+    draft.subscribe,
+    historyOnly ? draft.getHistorySnapshot : draft.getSnapshot,
+  );
   useTrackUnsent(threadId, draft);
   return draft;
 }
@@ -218,6 +221,7 @@ export async function submitDraft(
           params: { path: { thread_id: threadId } },
           body: {
             parts,
+            draft: captured.snapshot,
             mode,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
@@ -242,6 +246,7 @@ export async function submitDraft(
           params: { path: { receipt_id: receipt } },
           body: {
             parts,
+            draft: captured.snapshot,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
           },
@@ -282,7 +287,7 @@ export async function submitDraft(
         action,
         receipt,
         message:
-          "The acknowledgement was lost. Your input is retained; it may already have been accepted. Inspect the operation and history before deciding what to send next.",
+          "The acknowledgement was lost. This input may already have been accepted and removed from the shared draft. Inspect the operation and history before deciding what to send next.",
       };
     }
   } finally {

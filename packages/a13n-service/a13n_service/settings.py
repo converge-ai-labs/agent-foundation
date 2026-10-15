@@ -65,6 +65,8 @@ class Server(Section):
     # The externally reachable URL: links, browser redirects such as OAuth callbacks, and the origin browser
     # requests may change state from. Its scheme decides whether cookies are `Secure`.
     public_url: str = Field(default="http://127.0.0.1:8000", max_length=2048)
+    # Trusted worker-to-control address for platform MCP; defaults to the public URL.
+    control_url: str | None = Field(default=None, max_length=2048)
     # Proxy addresses (IPs or CIDRs) whose X-Forwarded-For and X-Forwarded-Proto headers are trusted, so client
     # addresses, which rate limits key on, are the real clients' behind a reverse proxy.
     trusted_proxies: tuple[str, ...] = ()

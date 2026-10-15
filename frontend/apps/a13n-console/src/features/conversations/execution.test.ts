@@ -64,6 +64,17 @@ it("deduplicates starts and separates each attempt's requests with the same requ
   expect(state.steps[1]?.errorCode).toBe("provider_timeout");
 });
 
+it("reads a cancelled request as interrupted, not failed", () => {
+  const state = fold(
+    lifecycle("model_request_started"),
+    lifecycle("model_request_failed", "model-request-1", {
+      error_code: "cancelled",
+    }),
+  );
+  expect(state.steps[0]?.state).toBe("interrupted");
+  expect(state.steps[0]?.errorCode).toBeUndefined();
+});
+
 it("records the observed start and terminal time of every step", () => {
   const search = tool("search", "tool", {}, "2026-09-12T00:00:01Z");
   const state = fold(
@@ -158,6 +169,20 @@ it("attaches a usage report to the request that just completed and skips a faile
     pricingStatus: "priced",
   });
   expect(state.usage.model).toHaveLength(1);
+});
+
+it("retains the backend record identity for request metrics", () => {
+  const state = fold(
+    lifecycle("model_request_started"),
+    lifecycle("model_request_completed"),
+    usageReport([
+      {
+        ...modelRecord("record-1", 0),
+        outcome: "completed",
+      },
+    ]),
+  );
+  expect(state.steps[0]?.usage?.recordId).toBe("record-1");
 });
 
 it("keeps an unpriced record unavailable rather than zero and deduplicates repeats", () => {

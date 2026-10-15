@@ -27,9 +27,11 @@ from a13n_service.resources.connections.service import validate_selection
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.environment_templates.service import resolve_template
 from a13n_service.resources.memories.service import resolve_memory
+from a13n_service.resources.memories.tables import MemorySpaceRow
 from a13n_service.resources.models.service import model_settings, resolve_media_model, resolve_model
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
+from a13n_service.resources.rows import find_row
 from a13n_service.resources.skills.pins import require_distinct_names, require_pins
 from a13n_service.resources.skills.schemas import SkillPin
 from a13n_service.resources.skills.tables import SkillRow
@@ -107,6 +109,9 @@ async def validate_config(
             with at_field(path):
                 await resolve_template(session, actor, scope, template_id, verb=verb, authority=authority)
     if held is None:
+        for index, binding in enumerate(config.memory.spaces):
+            with at_field(f"memory.spaces.{index}.space_id"):
+                await find_row(session, actor, MemorySpaceRow, scope, binding.space_id, "read")
         # A run's thread takes default mounts at its first acceptance, which checks them then.
         for index, mount in enumerate(config.memory_mounts):
             with at_field(f"memory_mounts.{index}.memory_id"):

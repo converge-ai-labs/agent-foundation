@@ -43,7 +43,9 @@ export function ProviderEditorFields({
 export function ProviderName({
   value,
   onChange,
+  description = "How this provider is listed across the console.",
 }: {
+  description?: string;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -52,7 +54,7 @@ export function ProviderName({
     <FormField
       className="min-w-0 w-full"
       label={t("Name")}
-      description={t("How this provider is listed across the console.")}
+      description={t(description)}
     >
       <Input
         required

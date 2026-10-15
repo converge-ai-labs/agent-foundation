@@ -1,3 +1,4 @@
+import { Badge } from "a13n-ui";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
@@ -6,7 +7,11 @@ import { DetailLayout, SaveBar } from "../../../shared/page";
 import { ModelIcon } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
 import { useAgentChoices } from "../choices";
-import type { AgentConfig } from "../configuration";
+import {
+  sectionsOf,
+  type AgentConfig,
+  type EditorSection,
+} from "../configuration";
 import { AgentEnvironment } from "../environment";
 import { AgentToolsets } from "../toolsets";
 import { AdvancedSection } from "./advanced";
@@ -14,6 +19,8 @@ import { ConnectionsSection, SkillsSection } from "./capabilities";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 import { InstructionsSection } from "./instructions";
 import { MemorySection } from "./memory";
+import { ReviewerSection, ReviewerSettings } from "./reviewer";
+import type { ReviewTarget } from "../reviewer";
 import { ModelSection } from "./model";
 
 export interface AgentDraftSummary {
@@ -44,6 +51,7 @@ export function AgentEditor({
   identity,
   saveLabel,
   saveDisabled = false,
+  overridden,
 }: {
   /** The agent a save publishes a version of; none while creating. */
   agentId?: string;
@@ -61,6 +69,8 @@ export function AgentEditor({
   identity?: ReactNode;
   saveLabel?: string;
   saveDisabled?: boolean;
+  /** Fields a read-only view's configuration changes from its version. */
+  overridden?: Iterable<string>;
 }) {
   const { t } = useTranslation();
   const creating = version === undefined;
@@ -70,6 +80,10 @@ export function AgentEditor({
     [advancedExpanded, setAdvancedExpanded] = useState(false),
     [validation, setValidation] = useState<Error>(),
     [modelValidation, setModelValidation] = useState<Error>();
+  const [reviewPanel, setReviewPanel] = useState<{
+    target?: ReviewTarget;
+    validation?: Error;
+  }>();
   const choices = useAgentChoices();
   const definitions = useModelProviderDefinitions();
   const selectedModel = choices.data?.models.find(
@@ -100,6 +114,13 @@ export function AgentEditor({
     error instanceof ApiError && [400, 422].includes(error.status);
   const dirty = creating || draft.dirty;
   const nextVersion = (version ?? 0) + 1;
+  const marked = sectionsOf(overridden ?? []);
+  const mark = (section: EditorSection) =>
+    marked.has(section) && (
+      <Badge variant="info" size="sm">
+        {t("Overridden")}
+      </Badge>
+    );
 
   function save(event: FormEvent) {
     if (event.target !== event.currentTarget) return;
@@ -108,6 +129,8 @@ export function AgentEditor({
       if (built.stage === "model") {
         setModelValidation(built.error);
         setModelExpanded(true);
+      } else if (built.stage === "reviewer") {
+        setReviewPanel({ validation: built.error });
       } else {
         setModelValidation(undefined);
         setValidation(built.error);
@@ -141,16 +164,31 @@ export function AgentEditor({
             choices={choices}
             thinkingOptions={thinkingOptions}
             readOnly={readonly}
+            mark={mark("model")}
             expanded={modelExpanded || (invalidResponse && !!modelValidation)}
             onExpandedChange={setModelExpanded}
             validation={modelValidation}
           />
-          <InstructionsSection draft={draft} readOnly={readonly} />
-          <SkillsSection draft={draft} choices={choices} readOnly={readonly} />
+          <InstructionsSection
+            draft={draft}
+            readOnly={readonly}
+            mark={mark("instructions")}
+          />
+          <SkillsSection
+            draft={draft}
+            choices={choices}
+            readOnly={readonly}
+            mark={mark("skills")}
+          />
           <ConnectionsSection
             draft={draft}
             choices={choices}
             readOnly={readonly}
+            mark={mark("connections")}
+            onReview={(target) => setReviewPanel({ target })}
+            onRequireReviewer={() => {
+              if (!draft.reviewer?.model) setReviewPanel({});
+            }}
           />
           <MemorySection draft={draft} readOnly={readonly} />
           <AgentToolsets
@@ -159,15 +197,29 @@ export function AgentEditor({
             config={built.ok ? built.config : undefined}
             agentId={agentId}
             readOnly={readonly}
+            mark={mark("toolsets")}
+            onReview={(target) => setReviewPanel({ target })}
+            onRequireReviewer={() => {
+              if (!draft.reviewer?.model) setReviewPanel({});
+            }}
+          />
+          <ReviewerSection
+            draft={draft}
+            choices={choices}
+            readOnly={readonly}
+            mark={mark("reviewer")}
+            onOpen={() => setReviewPanel({})}
           />
           <AgentEnvironment
             value={draft.environmentTemplateId}
             onChange={draft.setEnvironmentTemplateId}
-            disabled={readonly || pending}
+            disabled={pending}
+            readOnly={readonly}
           />
           <AdvancedSection
             draft={draft}
             readOnly={readonly}
+            mark={mark("advanced")}
             expanded={advancedExpanded || (invalidResponse && !!validation)}
             onExpandedChange={setAdvancedExpanded}
             validation={validation}
@@ -196,6 +248,23 @@ export function AgentEditor({
           saveLabel={saveLabel ?? t("Save changes")}
           pending={pending}
           disabled={saveDisabled || !draft.model}
+        />
+      )}
+      {reviewPanel && (
+        <ReviewerSettings
+          initial={draft.reviewer}
+          target={reviewPanel.target}
+          validation={reviewPanel.validation}
+          models={choices.data?.models ?? []}
+          settingsSchemas={Object.assign(
+            {},
+            ...(definitions.data?.items.map(
+              (item) => item.settings_schemas ?? {},
+            ) ?? []),
+          )}
+          readOnly={readonly}
+          onApply={draft.setReviewer}
+          onClose={() => setReviewPanel(undefined)}
         />
       )}
       <ErrorToast error={error ?? choices.error} />

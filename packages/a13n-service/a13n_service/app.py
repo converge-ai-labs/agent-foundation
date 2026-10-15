@@ -24,6 +24,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from a13n_service.api_access import CredentialAccess
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
 from a13n_service.infra.db import Storage, short_session
@@ -43,8 +44,11 @@ from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
 from a13n_service.runs.execute import execute
+from a13n_service.runs.platform_files import open_platform_mounts
+from a13n_service.runs.platform_tokens import RunAuthenticator
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import SessionHub
+from a13n_service.runs.thread_stream import ThreadHub
 from a13n_service.runs.worker import Worker
 from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
@@ -170,9 +174,12 @@ async def open_runtime(
             content=HarnessTraceContent(telemetry.trace_content),
         )
     )
+    registry = _registry(distribution, config)
+    platform_mounts = await stack.enter_async_context(open_platform_mounts(registry, config))
     objects = await open_objects(stack, config.objects)
     tasks = Tasks()
     stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
+    access = distribution.access()
     return Runtime(
         storage=storage,
         objects=objects,
@@ -180,8 +187,9 @@ async def open_runtime(
         redis=redis,
         keys=_key_ring(config.encryption),
         settings=config,
-        registry=_registry(distribution, config),
-        access=distribution.access(),
+        registry=registry,
+        platform_mounts=platform_mounts,
+        access=replace(access, authenticator=RunAuthenticator(access.authenticator)),
         plugins=build_harness_plugin_factory_catalog(plugin_keys=config.plugins.keys),
         admission=distribution.admission,
         instrumentation=instrumentation,
@@ -280,6 +288,8 @@ def build_app(
                     runtime.tasks.start(catalog.run(), name="model-catalog", service=True)
                     app.state.session_hub = SessionHub(runtime)
                     runtime.tasks.start(app.state.session_hub.run(), name="session-hub", service=True)
+                    app.state.thread_hub = ThreadHub(runtime)
+                    runtime.tasks.start(app.state.thread_hub.run(), name="thread-hub", service=True)
                     sweeps = [factory(runtime) for factory in distribution.sweeps]
                     require_unique(sweeps)
                     runtime.tasks.start(run_sweeps(sweeps), name="control-sweeps", service=True)
@@ -300,7 +310,6 @@ def build_app(
         redoc_url=None,
     )
     app.add_middleware(BodyLimit, max_bytes=config.server.request_bytes, timeout=config.server.request_timeout)
-    install_error_envelope(app)
     documented = distribution.routers if serves_api and distribution.authenticator is None else ()
     app.openapi = partial(contract, app, locally_authenticated=documented)
 
@@ -347,8 +356,10 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        app.add_middleware(CredentialAccess, routes=api_routes)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))
     if serves_api and (console / "index.html").is_file():
         app.router.default = console_fallback(console, app.router.default)
+    install_error_envelope(app)
     return app

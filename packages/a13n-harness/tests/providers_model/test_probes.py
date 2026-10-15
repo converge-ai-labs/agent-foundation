@@ -69,7 +69,7 @@ class _AllowEndpoints:
             definition("anthropic").bind({"base_url": "https://api.anthropic.com"}, {"api_key": "secret"}),
             {"data": [{"id": "claude-next", "display_name": "Claude Next"}]},
             "https://api.anthropic.com/v1/models",
-            {"x-api-key": "secret", "anthropic-version": "2023-06-01"},
+            {"x-api-key": "secret", "authorization": "Bearer secret", "anthropic-version": "2023-06-01"},
         ),
         (
             definition("google_gemini").bind(

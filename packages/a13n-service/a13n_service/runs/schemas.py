@@ -3,10 +3,11 @@
 import hashlib
 import json
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from a13n_harness.configuration import RunConfiguration
+from a13n_harness.environment.models import EnvironmentPermissionSet
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -22,12 +23,13 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
-from a13n_service.resources.agents.schemas import AgentOverride
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
-from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
+from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
 from a13n_service.runs.display import Item
-from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
+from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
@@ -331,14 +333,29 @@ class EnvironmentMount(_Frozen):
     name: str
     environment_id: str
     working_directory: str | None = None
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
+
+
+class SpaceOrganizationStatus(_Frozen):
+    session_id: str | None = None
+    history_gap: bool = False
+    pending: bool = False
+    active_run_id: str | None = None
+    last_run_id: str | None = None
+    due_at: datetime | None = None
+    processed_seq: int = 0
+    failure: Failure | None = None
 
 
 class SessionCreate(_Frozen):
     labels: Labels = Field(default_factory=dict)
+    # Omitted/null inherits the first accepted business Agent revision's defaults.
+    memory: SessionMemorySettings | None = None
 
 
 class SessionUpdate(_Frozen):
-    labels: Labels
+    labels: Labels | None = None
+    memory: SessionMemorySettings | None = None
 
 
 class SessionQuery(_Frozen):
@@ -377,6 +394,8 @@ class SessionView(BaseModel):
     created_by_id: str
     last_run_id: str | None
     run_count: int = 0
+    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
+    purpose: Literal["conversation", "memory_organization"] = "conversation"
     preview: SessionPreview | None = None
     version: int
     created_at: datetime
@@ -390,6 +409,7 @@ class SessionPage(BaseModel):
 
 class ThreadView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    purpose: Literal["conversation", "memory_organization"] = "conversation"
     id: str
     workspace_id: str
     session_id: str
@@ -464,7 +484,7 @@ class RunView(BaseModel):
     wait_reason: WaitReason | None
     pending: Pending | None
     environment_mounts: list[EnvironmentMount]
-    memory_mounts: list[MemoryMount]
+    memory_mounts: list[MemoryMount | FrozenMemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.
     options: RunOptions
     current_attempt_id: str | None
@@ -484,9 +504,41 @@ class RunView(BaseModel):
     updated_at: datetime
 
 
+class RunQuery(_Frozen):
+    """Workspace execution search; timestamps bound creation time, newest first."""
+
+    agent_id: ObjectId | None = None
+    session_id: ObjectId | None = None
+    thread_id: ObjectId | None = None
+    principal_id: ObjectId | None = None
+    status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
+    created_after: AwareDatetime | None = None
+    created_before: AwareDatetime | None = None
+    limit: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = None
+
+    @model_validator(mode="after")
+    def ordered_time_range(self) -> Self:
+        if (
+            self.created_after is not None
+            and self.created_before is not None
+            and self.created_after >= self.created_before
+        ):
+            raise ValueError("created_after must precede created_before")
+        return self
+
+
 class RunPage(BaseModel):
     items: list[RunView]
     next_cursor: str | None
+
+
+class RunAgent(BaseModel):
+    """The agent a run executes: its frozen revision, and that revision's configuration with the run's override
+    applied. Models, connections and templates the configuration names stay live."""
+
+    revision: AgentRevision
+    config: AgentConfig
 
 
 class RunLabels(_Frozen):

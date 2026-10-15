@@ -59,6 +59,7 @@ export function covers(accepted: Y.Snapshot, local: Y.Snapshot): boolean {
 export type DraftCapture = {
   doc: Y.Doc;
   draftId: string;
+  snapshot: Schema<"DraftCapture">;
   input: ReturnType<typeof values>;
   parts: ReturnType<typeof orderedInput>;
 };
@@ -128,6 +129,34 @@ export class ThreadDraft {
     };
   };
   getSnapshot = () => this.version;
+  private historySnapshot = {
+    submission: this.submission,
+    inputs: [] as LocalInput[],
+  };
+  // Input preparation mutates its private LocalInput in place. Compare the small
+  // presentation list, never the CRDT document or the saved transcript.
+  getHistorySnapshot = () => {
+    const previous = this.historySnapshot;
+    if (
+      previous.submission !== this.submission ||
+      previous.inputs.length !== this.localInputs.length ||
+      this.localInputs.some((input, index) => {
+        const old = previous.inputs[index];
+        return (
+          old?.id !== input.id ||
+          old.action !== input.action ||
+          old.state !== input.state ||
+          old.parts !== input.parts
+        );
+      })
+    ) {
+      this.historySnapshot = {
+        submission: this.submission,
+        inputs: this.localInputs.map((input) => ({ ...input })),
+      };
+    }
+    return this.historySnapshot;
+  };
   notify() {
     this.version++;
     this.listeners.forEach((listener) => listener());
@@ -160,6 +189,10 @@ export class ThreadDraft {
       return {
         doc,
         draftId: this.draftId,
+        snapshot: {
+          draft_id: this.draftId,
+          update_base64: encode(Y.encodeStateAsUpdate(doc)),
+        },
         input: values(doc),
         parts: orderedInput(doc),
       };

@@ -145,16 +145,13 @@ async def test_ssh_clipboard_failure_preserves_text_and_attachments(monkeypatch:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("ssh", [False, True])
-@pytest.mark.parametrize("result", [None, []])
 @pytest.mark.parametrize("attachment_count", [0, 1, 8])
 @pytest.mark.parametrize("draft", ["empty", "text", "selected"])
 async def test_empty_clipboard_is_silent_and_preserves_draft(
-    monkeypatch: pytest.MonkeyPatch, ssh: bool, result: list[str] | None, attachment_count: int, draft: str
+    monkeypatch: pytest.MonkeyPatch, attachment_count: int, draft: str
 ) -> None:
-    if ssh:
-        monkeypatch.setenv("SSH_CONNECTION", "present")
-    monkeypatch.setattr(attachments.ImageGrab, "grabclipboard", lambda: result)
+    # Backend empty values and SSH hints are covered by clipboard_images tests.
+    monkeypatch.setattr(attachments.ImageGrab, "grabclipboard", lambda: None)
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
         buffer = shell.composer.buffer

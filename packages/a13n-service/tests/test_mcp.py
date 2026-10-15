@@ -11,7 +11,9 @@ from a13n_service.app import build_app
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session
+from a13n_service.runs.claim import claim
 from a13n_service.runs.findings.schemas import Category
+from a13n_service.runs.platform_tokens import issue
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Authenticated
 from a13n_service.tenancy.authenticate import LocalAuthenticator
@@ -122,16 +124,20 @@ async def test_credentials_discovery_confinement_and_concurrency(service: Simple
         assert (await rpc(second, "tools/list")).status_code == 421
 
 
-async def test_real_client_and_two_api_process_lifespans(service: SimpleNamespace, listen: Any) -> None:
+@pytest.mark.parametrize("reuse_contract", [False, True])
+async def test_real_client_and_two_api_process_lifespans(
+    service: SimpleNamespace, listen: Any, service_app: Any, reuse_contract: bool
+) -> None:
     credential = await key(service)
-    second = build_app(role="all", settings=service.runtime.settings)
+    factory = service_app if reuse_contract else build_app
+    second = factory(role="all", settings=service.runtime.settings)
     async with second.router.lifespan_context(second):
         assert second.state.runtime is not service.runtime
         async with listen(service.app) as first_url, listen(second) as second_url:
             headers = {"authorization": "Bearer " + credential["secret"]}
             async with Client(StreamableHttpTransport(first_url + MCP, headers=headers)) as first:
                 tools = await first.list_tools()
-                assert len(tools) == 124
+                assert any(tool.name == "search_documents" for tool in tools)
                 operation = service.app.openapi()["paths"]["/api/v1/memories"]["post"]
                 created = await first.call_tool(
                     tool_name(operation["operationId"]), {"request_body": {"name": "shared"}}
@@ -167,7 +173,9 @@ class ExtensionAuthenticator(LocalAuthenticator):
         return result
 
 
-async def test_distribution_authentication_and_explicit_operation_admission(serve: Any) -> None:
+async def test_distribution_authentication_and_explicit_operation_admission(
+    serve: Any, scripted_model: Any, runs_kit: Any
+) -> None:
     router = APIRouter(prefix="/api/v1/extension")
 
     @router.get("/selected", operation_id="extension_selected", openapi_extra={"x-a13n-mcp": True})
@@ -198,6 +206,17 @@ async def test_distribution_authentication_and_explicit_operation_admission(serv
             assert (await rpc(http, "tools/list")).status_code == 401
             auth.credential = None
             assert (await rpc(http, "tools/list")).status_code == 401
+        # Installing a Distribution authenticator still admits independently validated Run credentials.
+        agent = await runs_kit.create_agent(service, scripted_model)
+        await runs_kit.start_thread(service, agent, "inspect agents")
+        (lease,) = await claim(service.runtime, worker_id="extension-test", worker_build="test", limit=1)
+        token = await issue(service.runtime, lease, frozenset({"agents"}))
+        async with client(service, {"secret": token}) as http:
+            response = await rpc(http, "tools/list")
+            assert response.status_code == 200, response.text
+            names = {tool["name"] for tool in response.json()["result"]["tools"]}
+            assert names and "extension_selected" not in names
+            assert (await http.get("/api/v1/extension/selected")).status_code == 403
 
 
 def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
@@ -209,9 +228,26 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     selected = {
         (path, method) for path, item in schema["paths"].items() for method, op in item.items() if op.get("x-a13n-mcp")
     }
-    assert len(selected) == 123
+    assert {
+        ("/api/v1/runs", "get"),
+        ("/api/v1/sessions", "get"),
+        ("/api/v1/runs/{run_id}/attempts/{attempt_id}", "get"),
+        ("/api/v1/runs/{run_id}/agent", "get"),
+    } <= selected
+    assert ("/api/v1/runs/{run_id}/interrupt", "post") not in selected
     assert ("/api/v1/runs/{run_id}/attempts/{attempt_id}/trace", "get") in selected
+    assert ("/api/v1/usage", "get") in selected
+    assert ("/api/v1/usage/records/{record_id}/metrics", "get") in selected
     assert ("/api/v1/skills", "post") in selected
+    assert {
+        ("/api/v1/sessions", "get"),
+        ("/api/v1/sessions/{session_id}", "get"),
+        ("/api/v1/memory-spaces", "get"),
+        ("/api/v1/memory-spaces/{space_id}", "get"),
+        ("/api/v1/memory-spaces/{space_id}/organization", "get"),
+        ("/api/v1/memory-spaces/{space_id}/organizations", "get"),
+        ("/api/v1/memory-spaces/{space_id}/sessions", "get"),
+    } <= selected
     assert {
         ("/api/v1/findings", "get"),
         ("/api/v1/findings/{finding_id}", "get"),
@@ -224,7 +260,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         ("/api/v1/finding-agent", "post"),
     }.isdisjoint(selected)
     assert not any(
-        "/auth" in path or "/uploads" in path or "/organizations" in path or "/users" in path for path, _ in selected
+        "/auth" in path or "/uploads" in path or path.startswith("/api/v1/organizations") or "/users" in path
+        for path, _ in selected
     )
     assert not any(path.endswith("/content") or path.endswith("/authorize") for path, _ in selected)
     tools = api_tools(

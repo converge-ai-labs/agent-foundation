@@ -3,8 +3,8 @@
 Every tool acts as the run's principal within the run's delegated authority, through the same service functions
 the HTTP API calls, so it can read and change exactly what that principal could through the API. The toolset's
 write tools ask for the user's approval by default, so a repeated `create_agent` creates another agent only once
-the user approves it again; a retried `create_agent_revision` appends an equal revision, which changes nothing a
-run executes.
+the user approves it again. Creating a revision requires the resource version originally read, including on
+retries, so a concurrent change is reported instead of silently accepting a newer version.
 """
 
 from collections.abc import Awaitable, Callable, Iterator
@@ -207,25 +207,26 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
         self,
         agent_id: Annotated[str, Field(min_length=1, max_length=128)],
         config: Annotated[dict[str, JsonValue], Field(description="The whole new configuration, not a patch")],
+        expected_version: Annotated[int | None, Field(ge=1, description="The resource version originally read")] = None,
         note: Annotated[str | None, Field(max_length=2048)] = None,
         make_default: bool = True,
     ) -> JsonValue:
         storage, workspace_id = self.runtime.storage, self.scope.workspace_id
         with self._acting("write"):
             body = _parsed(AgentRevisionCreate, {"config": config, "note": note, "make_default": make_default})
-            # Revisions are immutable and appended, so the head's current version is the one to extend.
-            agent = await agents.get_agent(storage, self.principal, workspace_id, agent_id)
+            if expected_version is None:
+                raise ServiceError("precondition_required", "Read the agent and provide its original version")
             revision = await agents.create_revision(
                 storage,
                 self.principal,
                 workspace_id,
-                agent.id,
+                agent_id,
                 body,
-                if_match=etag(agent.id, agent.version),
+                if_match=etag(agent_id, expected_version),
                 registry=self.runtime.registry,
                 plugins=self.runtime.plugins,
             )
-        return {"agent_id": agent.id, "revision_id": revision.id, "number": revision.number}
+        return {"agent_id": agent_id, "revision_id": revision.id, "number": revision.number}
 
     @contextmanager
     def _acting(self, verb: Verb) -> Iterator[None]:

@@ -131,8 +131,8 @@ jobs:
                   images.append({
                       "name": f"a13n-sandbox-{arch}",
                       "runner": runner,
-                      "build_target": "image-sandbox image-sandbox-slim",
-                      "check_target": "image-check-sandbox image-check-sandbox-slim",
+                      "build_target": "image-sandbox image-sandbox-slim image-sandbox-desktop",
+                      "check_target": "image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop",
                   })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")

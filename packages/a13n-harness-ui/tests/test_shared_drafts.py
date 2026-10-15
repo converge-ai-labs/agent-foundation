@@ -3,7 +3,8 @@ from __future__ import annotations
 import base64
 
 import pytest
-from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft, composer_document, composer_values
+from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, SharedDraft, composer_document, composer_values
 from pycrdt import Doc, Map, Text
 
 pytestmark = pytest.mark.anyio
@@ -274,3 +275,77 @@ async def test_joined_draft_commands_do_not_repeat_thread_lookup_or_scratch_touc
             draft.detach(participant)
             with pytest.raises(HarnessUiError, match="instance changed"):
                 await app.edit_shared_draft(thread.thread_id, participant, command)
+
+
+def capture(draft: SharedDraft, document: Doc) -> DraftCapture:
+    return DraftCapture(draft_id=draft.draft_id, update_base64=base64.b64encode(document.get_update()).decode())
+
+
+@pytest.mark.parametrize("incoming_first", [True, False])
+async def test_server_consumes_only_captured_text_and_attachment_occurrences(incoming_first: bool) -> None:
+    draft = SharedDraft()
+    participant = draft.attach()
+    authored = composer_document()
+    key = "inline-" + "1" * 36
+    authored.get("attachments", type=Map[str])[key] = "attachment-old"
+    authored.get("text", type=Text).insert(0, f"sent你好🌍\ufffc{key}\ufffc")
+    await draft.command(participant, sync(draft, authored), valid)
+    captured = capture(draft, authored)
+    peer = replica(authored)
+    peer.get("text", type=Text).insert(0, f"NEXT\ufffc{key}\ufffc")
+    peer.get("attachments", type=Map[str])[key] = "attachment-new"
+    if incoming_first:
+        await draft.command(participant, sync(draft, peer), valid)
+    clear = draft.prepare_clear(captured)
+    # Capturing does not consume anything before execution accepts the input.
+    assert "sent" in str(draft.document["text"])
+    changed = draft.changed
+    await draft.clear(clear)
+    assert changed.is_set()
+    if not incoming_first:
+        await draft.command(participant, sync(draft, peer), valid)
+    assert composer_values(draft.document) == (f"NEXT\ufffc{key}\ufffc", ("attachment-new",))
+    assert draft.unsent_since is not None
+    # Late delivery from a disconnected peer cannot resurrect consumed identities.
+    await draft.command(participant, sync(draft, authored), valid)
+    assert composer_values(draft.document) == (f"NEXT\ufffc{key}\ufffc", ("attachment-new",))
+    assert await draft.clear(clear) is False
+
+
+async def test_server_capture_clear_updates_empty_membership_and_is_idempotent() -> None:
+    draft = SharedDraft()
+    participant = draft.attach()
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "sent")
+    await draft.command(participant, sync(draft, authored), valid)
+    clear = draft.prepare_clear(capture(draft, authored))
+    assert await draft.clear(clear) is True
+    assert draft.unsent_since is None
+    assert composer_values(draft.document) == ("", ())
+    # The browser's acknowledgement cleanup remains safe after server consumption.
+    assert await draft.clear(clear) is False
+    assert draft.prepare_clear(capture(draft, authored)) == clear
+
+
+@pytest.mark.parametrize("edit", ["insert", "delete", "attachment", "incarnation", "malformed"])
+async def test_server_rejects_unsynchronized_or_invalid_capture_before_clearing(edit: str) -> None:
+    draft = SharedDraft()
+    participant = draft.attach()
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "sent")
+    await draft.command(participant, sync(draft, authored), valid)
+    before = draft.document.get_update()
+    if edit == "insert":
+        authored.get("text", type=Text).insert(0, "not synchronized")
+    elif edit == "delete":
+        del authored.get("text", type=Text)[:]
+    elif edit == "attachment":
+        authored.get("attachments", type=Map[str])["unseen"] = "foreign"
+    captured = capture(draft, authored)
+    if edit == "incarnation":
+        captured = captured.model_copy(update={"draft_id": "old-draft"})
+    elif edit == "malformed":
+        captured = captured.model_copy(update={"update_base64": "not base64!"})
+    with pytest.raises((HarnessUiError, ValueError)):
+        draft.prepare_clear(captured)
+    assert draft.document.get_update() == before

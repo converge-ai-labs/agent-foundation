@@ -1,11 +1,12 @@
-"""A revision's package bytes: the archive, one file, and every file for materializing into an environment."""
+"""Verified revision archives for materialization and individual file reads."""
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 
+from a13n_harness.environment.archives import FileArchive
 from anyio import to_thread
 from sqlalchemy import select
 
+from a13n_service.infra.concurrency import map_concurrently
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, read
@@ -15,18 +16,6 @@ from a13n_service.resources.skills.service import resolve_revision, resolve_skil
 from a13n_service.resources.skills.tables import SkillRevisionRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
-
-
-@dataclass(frozen=True, slots=True)
-class SkillPackage:
-    """One skill revision's package as plain values; `files` maps paths below the skill directory to bytes."""
-
-    skill_id: str
-    revision_id: str
-    digest: str
-    name: str
-    description: str
-    files: Mapping[str, bytes]
 
 
 def _archive(revision: SkillRevisionRow) -> tuple[SkillManifest, ObjectRef]:
@@ -69,11 +58,11 @@ async def read_file(
 
 async def load_packages(
     storage: Storage, objects: ObjectStore, workspace_id: str, revision_ids: Sequence[str]
-) -> list[SkillPackage]:
-    """The packages of pinned skill revisions, in the given order, for execution.
+) -> list[FileArchive]:
+    """The verified archives of pinned skill revisions, in the given order, for execution.
 
     Pins are frozen with the run, so archived skills still load. Rows are read in one short session; the
-    object reads and unpacking happen after it closes.
+    object reads happen after it closes. Providers can unpack the original ZIP inside the environment.
     """
     async with short_session(storage) as session:
         rows = (
@@ -84,22 +73,13 @@ async def load_packages(
             )
         ).all()
     found = {row.id: row for row in rows}
-    packages = []
-    for revision_id in revision_ids:
+
+    async def load(revision_id: str) -> FileArchive:
         if (revision := found.get(revision_id)) is None:
             raise not_found("skill_revision", revision_id)
         manifest, reference = _archive(revision)
-        files = await to_thread.run_sync(
-            package.extract, await read(objects, reference), manifest.root, [file.path for file in manifest.files]
+        return FileArchive(
+            await read(objects, reference), tuple((file.path, file.size) for file in manifest.files), manifest.root
         )
-        packages.append(
-            SkillPackage(
-                skill_id=revision.skill_id,
-                revision_id=revision.id,
-                digest=revision.digest,
-                name=manifest.name,
-                description=manifest.description,
-                files=files,
-            )
-        )
-    return packages
+
+    return await map_concurrently(revision_ids, load)

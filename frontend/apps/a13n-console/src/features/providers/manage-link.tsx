@@ -20,7 +20,9 @@ export function ManageProvidersLink({
       size={variant === "ghost" ? "sm" : undefined}
       render={<Link to={providersPath(category, workspace)} />}
     >
-      {t("Manage providers")}
+      {t(
+        category === "environments" ? "Manage connections" : "Manage providers",
+      )}
     </Button>
   );
 }

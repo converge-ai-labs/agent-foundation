@@ -1,0 +1,236 @@
+.page {
+  min-height: 100dvh;
+  background: var(--a13n-canvas);
+  color: var(--a13n-text);
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 40px;
+  gap: 20px;
+}
+.header a,
+.header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.header a {
+  color: var(--a13n-secondary);
+}
+.header span {
+  font-weight: 600;
+}
+.header a:hover,
+.hint a,
+.thread:hover {
+  color: var(--a13n-text);
+  text-decoration: underline;
+}
+.center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px 24px 24px;
+}
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 500;
+  color: var(--a13n-tertiary);
+  margin-bottom: 24px;
+}
+.center h1 {
+  font-size: clamp(24px, 3.5vw, 40px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.25;
+  margin: 0;
+}
+.center[data-running="true"] h1 {
+  font-size: 24px;
+}
+.center[data-running="true"] .eyebrow {
+  margin-bottom: 16px;
+}
+.intro {
+  font-size: 14px;
+  color: var(--a13n-secondary);
+  margin-top: 16px;
+}
+.controlArea {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 240px;
+  height: 240px;
+  margin: 28px 0 8px;
+}
+.halo {
+  position: absolute;
+  width: 204px;
+  height: 204px;
+  border-radius: 50%;
+  background: var(--a13n-surface);
+}
+.control {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  border: none;
+  color: var(--a13n-canvas);
+  background: var(--a13n-text);
+  cursor: pointer;
+  transition: transform 0.18s;
+}
+.control:hover {
+  transform: scale(1.04);
+}
+.control:focus-visible {
+  outline: 3px solid var(--a13n-signal);
+  outline-offset: 6px;
+}
+.control:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+.controlArea[data-active="true"] .halo {
+  animation: breathe 3s ease-in-out infinite;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0;
+}
+.status span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a13n-tertiary);
+}
+.status span[data-active="true"] {
+  background: #059669;
+}
+.hint {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  margin-top: 10px;
+}
+.error {
+  font-size: 13px;
+  max-width: 520px;
+  margin-top: 16px;
+}
+.caption {
+  width: min(100%, 580px);
+  min-height: 56px;
+  max-height: 196px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  margin-top: 28px;
+  text-align: left;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--a13n-text);
+}
+.captionTurn + .captionTurn {
+  margin-top: 16px;
+}
+.captionTurn p {
+  margin: 4px 0 0;
+}
+.speaker {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.workspaceVoice {
+  position: relative;
+  flex-shrink: 0;
+}
+.indicatorError {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  right: 0;
+  width: min(320px, calc(100vw - 40px));
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow);
+  color: var(--a13n-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.thread {
+  font-size: 12px;
+  margin-top: 16px;
+  color: var(--a13n-secondary);
+}
+.footer {
+  padding: 20px 24px 28px;
+  text-align: center;
+  color: var(--a13n-tertiary);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--a13n-surface);
+  font-size: 12px;
+}
+.indicator a {
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.indicator[data-active="true"] a::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #059669;
+}
+@keyframes breathe {
+  50% {
+    transform: scale(1.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .controlArea[data-active="true"] .halo {
+    animation: none;
+  }
+}
+@media (max-width: 600px) {
+  .controlLabel {
+    display: none;
+  }
+  .header {
+    padding: 20px;
+  }
+  .center {
+    padding-top: 28px;
+  }
+  .controlArea {
+    margin-top: 16px;
+    height: 210px;
+  }
+}

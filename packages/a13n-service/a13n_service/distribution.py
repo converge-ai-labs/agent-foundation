@@ -39,11 +39,14 @@ from a13n_service.resources.environment_templates.tables import EnvironmentTempl
 from a13n_service.resources.memories.purge import MemoryPurger
 from a13n_service.resources.memories.routes import router as memories_router
 from a13n_service.resources.memories.service import PURGE as MEMORY_PURGE
+from a13n_service.resources.memories.space_routes import router as memory_spaces_router
 from a13n_service.resources.memories.tables import (
     MemoryFileRevisionRow,
     MemoryFileRow,
     MemoryFileStoreRow,
+    MemoryRecordSourceRow,
     MemoryRow,
+    MemorySpaceRow,
 )
 from a13n_service.resources.models.routes import router as models_router
 from a13n_service.resources.models.tables import ModelRow
@@ -69,11 +72,15 @@ from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
+from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.findings.routes import router as findings_router
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
+from a13n_service.runs.memories.organization import organization_sweep
+from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
+from a13n_service.runs.memories.space_routes import router as space_execution_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
@@ -300,10 +307,13 @@ OSS = Distribution(
         AgentRevisionRow,
         MemoryProviderRow,
         MemoryRow,
+        MemorySpaceRow,
         MemoryFileStoreRow,
         MemoryFileRow,
         MemoryFileRevisionRow,
+        MemoryRecordSourceRow,
         SessionRow,
+        SpaceOrganizationRow,
         ThreadRow,
         EnvironmentRow,
         ThreadEnvironmentRow,
@@ -320,6 +330,7 @@ OSS = Distribution(
         organization_router,
         member_router,
         providers_router,
+        environment_provider_lifecycle_router,
         models_router,
         agents_router,
         uploads_router,
@@ -333,13 +344,16 @@ OSS = Distribution(
         environment_templates_router,
         environments_router,
         memories_router,
+        memory_spaces_router,
         thread_memories_router,
+        space_execution_router,
         connections_router,
         connector_providers_router,
     ),
     migrations=(Path(__file__).parent / "migrations" / "versions",),
     sweeps=(
         _advance_threads,
+        organization_sweep,
         _expire_leases,
         _expire_credentials,
         maintenance_sweep,

@@ -76,7 +76,7 @@ Trivial corrections may start as a pull request when no material discussion or t
 
 ## Documentation System
 
-Documentation sources live in `docs/` as Markdown pages with front matter; each language's navigation JSON owns its navigation order. English sources keep their existing paths; Simplified Chinese translations use `.zh-CN.md` or `.zh-CN.mdx` with `meta.zh-CN.json` navigation and the same logical page slugs. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical documentation site is `https://a13n.converge.ai/docs/`.
+Documentation sources live in `docs/` as Markdown pages with front matter; each language's navigation JSON owns its navigation order. English sources keep their existing paths; Simplified Chinese translations use `.zh-CN.md` or `.zh-CN.mdx` with `meta.zh-CN.json` navigation and the same logical page slugs. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical documentation site is `https://a13n.dev/docs/`.
 
 - `frontend/apps/a13n-docs` is the private Fumadocs (Next.js) application in the frontend workspace that owns site layout, theme, and search, and generates the Service API reference from `proto/a13n-service/openapi.json`. It has no release identity.
 - English human pages use unprefixed paths under `/docs/`; Simplified Chinese pages use `/docs/zh-CN/`. Navigation, search, page metadata, and site controls follow the page language. Corresponding headings retain the English source IDs so section links remain stable across languages.
@@ -120,7 +120,7 @@ The current cross-group requirements are:
 
 | Consumer                     | Dependency               | Published requirement                  |
 | ---------------------------- | ------------------------ | -------------------------------------- |
-| Harness UI                   | Harness, Stream Protocol | `>=0.10.0,<0.11.0`, identical for both |
+| Harness UI                   | Harness, Stream Protocol | `>=0.12.0,<0.13.0`, identical for both |
 | Service                      | Harness, Stream Protocol | `>=0.10.0,<0.11.0`, identical for both |
 | Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                       |
 | Harness, Harness UI          | `a13n-envd-client`       | `>=0.1.2,<0.2.0`                       |

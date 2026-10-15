@@ -129,7 +129,7 @@ The Capability records in `MemoryCursors` the cursor of the context it delivered
 
 Changes made by other conversations during a run are not pushed to the model. A write based on stale content fails at the call and returns the current content.
 
-Each delivery emits one `HarnessExtensionEvent(kind="context")` whose payload is `{"type": "memory_context", "memories": [...]}` with one entry per mount in mount order: `{"memory", "context", "bytes"}`, where `context` is `full`, `changes`, `unchanged`, or `omitted`, or `{"memory", "context": "unavailable"}`. When the shared reminder replaces individual blocks, affected mounts report `omitted` with `bytes: 0`, and the payload adds `fallback_bytes` for the reminder once. It carries no content.
+Each delivery emits one `HarnessExtensionEvent(kind="context")` whose payload is `{"type": "memory_context", "memories": [...]}` with one entry per mount in mount order: `{"memory", "context", "bytes"}`, where `context` is `full`, `changes`, `unchanged`, or `omitted`, or `{"memory", "context": "unavailable"}`. When the shared reminder replaces individual blocks, affected mounts report `omitted` with `bytes: 0`, and the payload adds `fallback_bytes` for the reminder once. Available entries also carry the change-feed `cursor` and `files: [{path, sha256, bytes, truncated}]` for actual delivered always-load content, hashing the exact UTF-8 prefix. Index-only paths and omitted-file hints are not loaded files. The cursor precedes reads and is not an atomic file revision. Source references share a 32 KiB budget per observation; `sources_truncated: true` marks a partial reference list without changing model context. It carries no file text.
 
 ## Crash Recovery
 
