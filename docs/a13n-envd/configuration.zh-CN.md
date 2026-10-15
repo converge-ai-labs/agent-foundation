@@ -116,17 +116,32 @@ Linux 上可通过 JSON `monitoring` 对象启用独立的只读 HTTP 监听器�
 
 报告包含 `schema_version: 1`、`device_id`、十进制字符串形式的 EIP generation、`sample_interval_ms`、基于单调时钟的 `sample_age_ms` 和 `sample`。采样包含递增的 `sequence`、UTC 时间 `sampled_at`、`collection_duration_ms`，以及以下观测：
 
-| 字段组                                                       | 含义                                                                                                                                                                                                                 |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system.cpu_busy_percent`                                    | 两次采样间的系统 CPU 忙碌百分比，排除空闲和 I/O 等待。首次采样或计数器重置时为 `null`。                                                                                                                              |
-| `system.memory_total_bytes`、`system.memory_available_bytes` | Linux `/proc/meminfo` 的总内存和可用内存估计，单位为字节。                                                                                                                                                           |
-| `cgroup_v2.cpu_usage_usec`、`cgroup_v2.memory_current_bytes` | 显式选择的 cgroup 及其后代的累计 CPU 时间和当前内存用量。                                                                                                                                                            |
-| `cgroup_v2.cpu_max`、`cgroup_v2.memory_max`                  | 当前 cgroup 的本地限制：`{"kind":"unlimited"}`，或 CPU 的 `{"kind":"limited","quota_usec":150000,"period_usec":100000}`、内存的 `{"kind":"limited","bytes":1073741824}`。祖先限制和 CPU 亲和性还可能进一步约束容量。 |
-| `filesystems.<name>`                                         | 配置路径所属文件系统的 `total_bytes`、`free_bytes`、`available_bytes`。可用空间考虑保留块。这些是整个文件系统的容量，不是目录大小或工作区配额。                                                                      |
+| 字段组                                                                                                 | 含义                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system.cpu_busy_percent`                                                                              | 两次采样间的系统 CPU 忙碌百分比，排除空闲和 I/O 等待，包含 steal。首次采样或计数器下降时为 `null`。                                                                                                                  |
+| `system.cpu_time_seconds`                                                                              | 按 `user`、`nice`、`system`、`idle`、`iowait`、`irq`、`softirq`、`steal` 分类的累计系统 CPU 秒数。使用原生时钟频率换算，首次有效采样即可返回。                                                                       |
+| `system.memory_total_bytes`、`system.memory_available_bytes`                                           | Linux `/proc/meminfo` 的总内存和可用内存估计，单位为字节。                                                                                                                                                           |
+| `cgroup_v2.cpu_usage_usec`、`cgroup_v2.memory_current_bytes`                                           | 显式选择的 cgroup 及其后代的累计 CPU 时间和当前内存用量。                                                                                                                                                            |
+| `cgroup_v2.cpu_max`、`cgroup_v2.memory_max`                                                            | 当前 cgroup 的本地限制：`{"kind":"unlimited"}`，或 CPU 的 `{"kind":"limited","quota_usec":150000,"period_usec":100000}`、内存的 `{"kind":"limited","bytes":1073741824}`。祖先限制和 CPU 亲和性还可能进一步约束容量。 |
+| `cgroup_v2.cpu_user_usec`、`cgroup_v2.cpu_system_usec`                                                 | 包含后代的累计用户态和内核态 CPU 时间。                                                                                                                                                                              |
+| `cgroup_v2.cpu_periods_total`、`cgroup_v2.cpu_throttled_periods_total`、`cgroup_v2.cpu_throttled_usec` | `cpu.stat` 中的 CPU 带宽周期数、被限流周期数和累计限流微秒数。描述本组带宽限制，不涵盖所有祖先限制。                                                                                                                 |
+| `cgroup_v2.memory_events`                                                                              | `memory.events` 中包含后代的累计 `low`、`high`、`max`、`oom`、`oom_kill`、`oom_group_kill` 事件。内核缺失的字段为 `null`。                                                                                           |
+| `system.pressure`、`cgroup_v2.pressure`                                                                | 各自范围的 CPU、内存和 I/O 压力停顿信息（PSI）。每种资源包含可空的 `some`、`full` 记录，字段为 `avg10_percent`、`avg60_percent`、`avg300_percent` 和累计 `total_usec`。                                              |
+| `filesystems.<name>`                                                                                   | 同一次文件系统观测的 `total_bytes`、`free_bytes`、`available_bytes`、`total_inodes`、`free_inodes`、`available_inodes`。available 表示非特权用户可用量。这些是整个文件系统的容量，不是目录大小或工作区配额。         |
+
+PSI 平均值采用内核固定的 10、60、300 秒窗口，与守护进程采样间隔无关。`some` 统计有任务因该资源停顿的时间，`full` 统计所有非空闲任务同时停顿的时间。系统 CPU 的 `full` 在该范围没有定义，始终为 `null`；cgroup CPU 的 `full` 在内核支持时返回。资源不可用时为 `null`，单条记录缺失或格式错误不会丢弃另一条有效记录。inode 总数为零可能表示文件系统没有固定 inode 容量；仅在总数为正时计算 inode 使用率。
 
 **即使 Envd 在容器中运行，系统指标仍可能描述宿主机。** 确认目标路径对应所需工作负载组后，再设置 `cgroup_v2_directory`。使用 cgroup v1 或未选择组时省略该字段，此时 `cgroup_v2` 为 `null`。容器指标不可用时，不会自动用宿主机总量替代。缺失或不可读的测量值为 `null`；不可用的文件系统对应条目为 `null`。报告不返回路径。
 
 每个守护进程只有一个采样器，在没有会话时也持续工作。读取只返回最新缓存样本，不触发采样。默认间隔为 10 秒；`sample_interval_ms` 接受 1000–60000。`filesystems` 默认为空，最多接受 16 个绝对路径，每个名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。在 Linux managed 执行模式下，runtime 目录目标使用真实的 runtime 挂载；其他位于受保护启动路径及其下级的目标会被拒绝，避免将保护性挂载误报为工作负载存储。请使用本地文件系统路径：挂载点阻塞会延迟采样，但 HTTP 仍返回上一份样本及不断增加的数据年龄。展示为当前数据前应检查年龄。
+
+消费报告时：
+
+- 使用 `(device_id, generation, sample.sequence)` 识别样本，不将重复读取保存为新的观测。
+- HTTP 200 只表示报告可读；还应按轮询周期设置明确的最大年龄并检查 `sample_age_ms`。暴露数据新鲜度和采集健康状态，停止将过期值展示或导出为当前数据。保留缺失值，不转换为零。
+- 使用不同样本计算计数器速率。generation 改变、计数器下降或观测缺失后重建基线。Linux 的 `iowait` 可以在未重启时下降，cgroup 重建也可在 Device generation 不变时重置计数器。
+- 导出时明确类型与单位：累计 CPU、压力和限流时间映射为秒单位 counter，事件数映射为 counter，字节与 inode 观测映射为 gauge，需要比例值时将百分比换算为比例。此缓存 JSON API 不是原生 Prometheus/OpenMetrics 或 OTLP 接口。系统 CPU 各模式计数器是所有 CPU 的汇总，不是逐 CPU 观测。
+- 将图表峰值标记为采样值的最大值。CPU 忙碌值本身已是区间平均值，gauge 可能漏掉采样之间的尖峰。
 
 监听器配置、凭据、TLS 材料错误或端口绑定失败会阻止启动。运行中的测量失败不影响执行。守护进程关闭（包括 stdio EOF）时停止监控；会话清理不会停止监控。Envd 仅在内存中保留一个样本。此接口不提供历史数据、推送、Service 集成或 OpenTelemetry 导出。
 

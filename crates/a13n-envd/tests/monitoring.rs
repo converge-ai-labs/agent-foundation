@@ -165,6 +165,18 @@ async fn stdio_samples_without_sessions_and_eof_stops_listener() {
             .unwrap()
             > 0
     );
+    for field in ["total_inodes", "free_inodes", "available_inodes"] {
+        assert!(first["sample"]["filesystems"]["workspace"][field].is_u64());
+    }
+    let cpu = first["sample"]["system"]["cpu_time_seconds"]
+        .as_object()
+        .unwrap();
+    assert_eq!(cpu.len(), 8);
+    assert!(
+        cpu.values()
+            .all(|value| value.as_f64().is_some_and(|time| time >= 0.0))
+    );
+    assert!(first["sample"]["system"]["pressure"]["cpu"]["full"].is_null());
     assert!(first["sample"]["filesystems"]["missing"].is_null());
     assert!(first["sample"]["cgroup_v2"].is_null());
     assert!(!first.to_string().contains(fixture.root.to_str().unwrap()));
@@ -387,17 +399,42 @@ async fn selected_cgroup_is_separate_from_system_and_missing_fields_recover() {
     fs::create_dir(&cgroup).unwrap();
     fs::write(
         cgroup.join("cpu.stat"),
-        "usage_usec 12345\nuser_usec 10000\n",
+        "usage_usec 12345\nuser_usec 10000\nsystem_usec 2345\nnr_periods 100\nnr_throttled 12\nthrottled_usec 7654\n",
     )
     .unwrap();
     fs::write(cgroup.join("cpu.max"), "150000 100000\n").unwrap();
     fs::write(cgroup.join("memory.max"), "max\n").unwrap();
+    fs::write(
+        cgroup.join("memory.events"),
+        "low 0\nhigh 7\nmax 4\noom 2\noom_kill 1\n",
+    )
+    .unwrap();
+    fs::write(cgroup.join("cpu.pressure"), "some avg10=1.25 avg60=2.50 avg300=3.75 total=123456\nfull avg10=0.10 avg60=0.20 avg300=0.30 total=789\n").unwrap();
+    fs::write(
+        cgroup.join("memory.pressure"),
+        "some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=NaN avg60=0 avg300=0 total=0\n",
+    )
+    .unwrap();
     let mut options = fixture.options();
     options["cgroup_v2_directory"] = json!(cgroup);
     let mut child = fixture.command(options).spawn().unwrap();
     let first = fixture.ready(&mut child).await;
     let metrics = &first["sample"]["cgroup_v2"];
     assert_eq!(metrics["cpu_usage_usec"], 12345);
+    assert_eq!(metrics["cpu_user_usec"], 10000);
+    assert_eq!(metrics["cpu_system_usec"], 2345);
+    assert_eq!(metrics["cpu_periods_total"], 100);
+    assert_eq!(metrics["cpu_throttled_periods_total"], 12);
+    assert_eq!(metrics["cpu_throttled_usec"], 7654);
+    assert_eq!(metrics["memory_events"]["low"], 0);
+    assert_eq!(metrics["memory_events"]["high"], 7);
+    assert_eq!(metrics["memory_events"]["oom_kill"], 1);
+    assert!(metrics["memory_events"]["oom_group_kill"].is_null());
+    assert_eq!(metrics["pressure"]["cpu"]["some"]["avg10_percent"], 1.25);
+    assert_eq!(metrics["pressure"]["cpu"]["full"]["total_usec"], 789);
+    assert_eq!(metrics["pressure"]["memory"]["some"]["total_usec"], 0);
+    assert!(metrics["pressure"]["memory"]["full"].is_null());
+    assert!(metrics["pressure"]["io"].is_null());
     assert_eq!(
         metrics["cpu_max"],
         json!({"kind":"limited","quota_usec":150000,"period_usec":100000})
@@ -410,13 +447,122 @@ async fn selected_cgroup_is_separate_from_system_and_missing_fields_recover() {
             .unwrap()
             > 0
     );
+    // A reset remains a raw counter decrease, not a fabricated rate or zero.
+    fs::write(
+        cgroup.join("cpu.stat"),
+        "usage_usec 5\nuser_usec 3\nsystem_usec 2\nnr_throttled broken\n",
+    )
+    .unwrap();
+    fs::write(cgroup.join("memory.events"), "high 8\noom_kill broken\n").unwrap();
+    fs::write(
+        cgroup.join("io.pressure"),
+        "some avg10=4 avg60=5 avg300=6 total=100\n",
+    )
+    .unwrap();
     fs::write(cgroup.join("memory.current"), "4096\n").unwrap();
     timeout(Duration::from_secs(4), async {
         loop {
             let (_, body) = get(fixture.address, "GET", REPORT, Some(TOKEN), "").await;
             let report: Value = serde_json::from_slice(&body).unwrap();
             if report["sample"]["sequence"] != first["sample"]["sequence"] {
-                assert_eq!(report["sample"]["cgroup_v2"]["memory_current_bytes"], 4096);
+                let metrics = &report["sample"]["cgroup_v2"];
+                assert_eq!(metrics["memory_current_bytes"], 4096);
+                assert_eq!(metrics["cpu_usage_usec"], 5);
+                assert!(metrics["cpu_periods_total"].is_null());
+                assert!(metrics["cpu_throttled_periods_total"].is_null());
+                assert!(metrics["cpu_throttled_usec"].is_null());
+                assert_eq!(metrics["memory_events"]["high"], 8);
+                assert!(metrics["memory_events"]["oom_kill"].is_null());
+                assert_eq!(metrics["pressure"]["io"]["some"]["total_usec"], 100);
+                assert!(metrics["pressure"]["io"]["full"].is_null());
+                break;
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    eof(child).await;
+}
+
+#[tokio::test]
+async fn stalled_collection_keeps_one_aging_snapshot_and_recovers() {
+    use std::{
+        ffi::CString,
+        io::Write,
+        os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
+    };
+
+    let fixture = Fixture::new();
+    let cgroup = fixture.root.join("cgroup");
+    fs::create_dir(&cgroup).unwrap();
+    let cpu = cgroup.join("cpu.stat");
+    fs::write(&cpu, "usage_usec 10\n").unwrap();
+    let mut options = fixture.options();
+    options["cgroup_v2_directory"] = json!(cgroup);
+    let mut child = fixture.command(options).spawn().unwrap();
+    let first = fixture.ready(&mut child).await;
+
+    // A FIFO deterministically holds the next native read in flight without
+    // requiring a stalled network mount or blocking the test's async runtime.
+    fs::remove_file(&cpu).unwrap();
+    let path = CString::new(cpu.as_os_str().as_bytes()).unwrap();
+    // SAFETY: path is NUL-terminated and remains alive for the call.
+    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+    let mut writer = timeout(Duration::from_secs(5), async {
+        loop {
+            match fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(&cpu)
+            {
+                Ok(writer) => break writer,
+                Err(error) if error.raw_os_error() == Some(libc::ENXIO) => {
+                    sleep(Duration::from_millis(20)).await
+                }
+                Err(error) => panic!("opening observation FIFO: {error}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    // The HTTP listener remains responsive, and repeated reads do not turn
+    // the retained snapshot into new observations even after its interval.
+    timeout(Duration::from_secs(4), async {
+        loop {
+            let (status, body) = get(fixture.address, "GET", REPORT, Some(TOKEN), "").await;
+            assert_eq!(status, 200);
+            let report: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(report["sample"], first["sample"]);
+            if report["sample_age_ms"].as_u64().unwrap()
+                > 2 * report["sample_interval_ms"].as_u64().unwrap()
+            {
+                break;
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    // Replace the path before releasing the in-flight FIFO read, so every
+    // later collection sees the ordinary source without a missing-file gap.
+    let replacement = cgroup.join("cpu.next");
+    fs::write(&replacement, "usage_usec 20\n").unwrap();
+    fs::rename(replacement, &cpu).unwrap();
+    writer.write_all(b"usage_usec 20\n").unwrap();
+    drop(writer);
+    timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, body) = get(fixture.address, "GET", REPORT, Some(TOKEN), "").await;
+            let report: Value = serde_json::from_slice(&body).unwrap();
+            if report["sample"]["sequence"].as_u64().unwrap()
+                > first["sample"]["sequence"].as_u64().unwrap()
+                && report["sample_age_ms"].as_u64().unwrap()
+                    < report["sample_interval_ms"].as_u64().unwrap()
+            {
+                assert_eq!(report["sample"]["cgroup_v2"]["cpu_usage_usec"], 20);
                 break;
             }
             sleep(Duration::from_millis(20)).await;
