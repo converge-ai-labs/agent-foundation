@@ -1,4 +1,6 @@
 {
+  "Derived from the current model contribution.": "根据当前模型用量记录计算。",
+  "Model Request Metrics": "模型请求指标",
   "Exact catalog channel ID, such as openrouter.": "精确匹配的目录渠道 ID，例如 openrouter。",
   "Exact, case-sensitive model ID within the catalog channel.": "目录渠道中的模型 ID，区分大小写并精确匹配。",
   "A named Space selected by the App or inherited from Agent defaults.": "由应用选择或从 Agent 默认值继承的命名空间绑定。",
