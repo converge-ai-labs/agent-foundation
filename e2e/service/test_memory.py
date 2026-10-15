@@ -118,6 +118,8 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     # Both conversations view the file before either edits it; each edit then waits at its own gate.
     await model.call("memory_file_view", view, call_id="call_a_view", to="[mem-a]")
     await model.call("memory_file_edit", edit("tea", "coffee"), call_id="call_a_edit", to="[mem-a]", hold="a")
+    await model.call("memory_file_view", view, call_id="call_a_reread", to="[mem-a]", hold="reread")
+    await model.call("memory_file_edit", edit("tea", "coffee"), call_id="call_a_recomputed", to="[mem-a]")
     await model.call("memory_file_edit", edit("English", "French"), call_id="call_a_stale", to="[mem-a]")
     await model.say("Coffee noted.", to="[mem-a]")
     await model.call("memory_file_view", view, call_id="call_b_view", to="[mem-b]")
@@ -133,18 +135,31 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     await model.open("b")
     assert (await api.sealed(b_run))["status"] == "completed"
     await model.open("a")
+    requests = await model.arrived("[mem-a]", count=3)
+    conflict = result_of(requests[-1], "call_a_edit")
+    assert "read_conflict" in conflict and "prefs.md" in conflict
+    # Even a disjoint edit is refused when its observed file changed; refusal creates no revision.
+    current = expect(await api.client.get(f"/api/v1/memories/{memory['id']}/files/prefs.md"), 200)
+    assert current["content"] == "- likes tea\n- reply in Chinese\n"
+    assert await history(api, memory, "prefs.md") == [
+        ("update", b_run, "call_b_edit"),
+        ("create", None, None),
+    ]
+    await model.open("reread")
     assert (await api.sealed(a_run))["status"] == "completed"
     [a_worker] = workers_of(stack, a_run)
     [b_worker] = workers_of(stack, b_run)
     assert a_worker != b_worker
 
-    # The disjoint edits both apply; the edit based on the stale view fails and shows the current content.
+    # A rereads and recomputes before its edit applies; an obsolete edit anchor still fails.
     current = expect(await api.client.get(f"/api/v1/memories/{memory['id']}/files/prefs.md"), 200)
     assert current["content"] == "- likes coffee\n- reply in Chinese\n"
-    stale = result_of((await model.requests("[mem-a]"))[-1], "call_a_stale")
+    final_request = (await model.requests("[mem-a]"))[-1]
+    assert "reply in Chinese" in result_of(final_request, "call_a_reread")
+    stale = result_of(final_request, "call_a_stale")
     assert "no_match" in stale and "reply in Chinese" in stale
     assert await history(api, memory, "prefs.md") == [
-        ("update", a_run, "call_a_edit"),
+        ("update", a_run, "call_a_recomputed"),
         ("update", b_run, "call_b_edit"),
         ("create", None, None),
     ]
