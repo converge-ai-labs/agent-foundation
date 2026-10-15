@@ -2,13 +2,13 @@
 
 ## Design Position
 
-EIP 0.1 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
+EIP 0.2 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
 
 The [canonical IDL](08-protocol-source-client-and-generation.md) generates Rust/Python wire types and fixtures.
 
 ## Control Envelope
 
-Each message is one JSON-RPC request/response, without batches or application notifications. IDs are strings or signed 64-bit integers, never booleans. A response echoes its request ID and contains exactly one result/error. Session-scoped messages carry and echo `eip_session`; `initialize`, `device.describe`, `directory.list` and `session.open` omit it. This field is a route selector, not a credential.
+Each message is one JSON-RPC request/response, without batches or application notifications. IDs are strings or signed 64-bit integers, never booleans. A response echoes its request ID and contains exactly one result/error. Session-scoped messages carry and echo `eip_session`; `initialize`, `device.describe`, `device.metrics`, `directory.list` and `session.open` omit it. This field is a route selector, not a credential.
 
 Framing, JSON sizes and typed values are bounded. Validate required types, method availability, route ownership and native operation inputs at their owning boundary. There is no additional per-resource authorization lattice. Small inherent bytes such as stdin use `EncodedBytes(encoding="base64", data=...)` with canonical unpadded base64. Native file content uses the raw data plane.
 
@@ -35,6 +35,7 @@ class DeviceDescriptor(BaseModel):
     available_methods: tuple[str, ...]
     limits: EIPLimits
     lifecycle: SessionLifecyclePolicy
+    system_info: SystemInfo | None
 
 
 class InitializeResult(BaseModel):
@@ -70,7 +71,7 @@ class SessionOpenResult(BaseModel):
     descriptor: SessionDescriptor
 ```
 
-`initialize` verifies the Device and negotiates protocol without creating a Session. A null expected identity is for explicit trusted registration only. `device.describe` returns the current Device descriptor. `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
+`initialize` verifies the Device and negotiates protocol without creating a Session. A null expected identity is for explicit trusted registration only. `device.describe` returns the current Device descriptor, including basic system information. Optional `device.metrics` reads a cached Device sample as defined by [resource monitoring](11-resource-monitoring.md). `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
 
 `session.open` checks the observed identity/generation/version and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 
@@ -122,7 +123,7 @@ Response handoff and evidence publication are bounded and atomic at the operatio
 
 | Domain                      | Methods                                                                                                                                                  | Replay class                        |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Device                      | `initialize`, `device.describe`, `directory.list`, `session.open`                                                                                        | Ledger-external                     |
+| Device                      | `initialize`, `device.describe`, `device.metrics`, `directory.list`, `session.open`                                                                      | Ledger-external                     |
 | Session lifecycle           | `session.attach`, `session.keepalive`, `session.close`                                                                                                   | Ledger-external                     |
 | Session observation         | `environment.readiness`, `environment.describe`                                                                                                          | `active_only`                       |
 | Evidence/control            | `operation.cancel`, `receipt.get`                                                                                                                        | `active_only`                       |
@@ -197,6 +198,6 @@ Expired/collected selectors return invalid/not-found or Session-expired errors; 
 
 The client never automatically replays possibly dispatched work after carrier loss, recreates it in another Session or chooses another operation ID to hide ambiguity. Exact retained same-Session replay is the only replay facility. Process inspect/wait, receipt lookup and output reads provide explicit bounded observation.
 
-EIP 0.1 requires binary profile 1 and Session addressing. Other protocol versions and profiles fail negotiation.
+EIP 0.2 requires binary profile 1 and Session addressing. Other protocol versions and profiles fail negotiation.
 
 `egress.update` is the ledger-external Session control for atomic policy and secret updates. The [egress contract](07-execution-isolation.md#controlled-session-egress) owns revision, injection and isolation semantics; generated IDL owns its wire fields.

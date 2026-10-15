@@ -138,17 +138,6 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
         }
     }
     if let Some(monitoring) = &mut config.monitoring {
-        image.credential(
-            &mut monitoring.credential_file,
-            "monitoring-credential",
-            &mut config.bootstrap_files,
-        )?;
-        if let Some(path) = &mut monitoring.tls_certificate_file {
-            image.credential(path, "monitoring-certificate", &mut config.bootstrap_files)?;
-        }
-        if let Some(path) = &mut monitoring.tls_private_key_file {
-            image.credential(path, "monitoring-private-key", &mut config.bootstrap_files)?;
-        }
         monitoring
             .relocate_sources(
                 Path::new(ORIGINAL),

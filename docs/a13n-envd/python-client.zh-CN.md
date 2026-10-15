@@ -81,7 +81,8 @@ if __name__ == "__main__":
 
 设备提供：
 
-- `descriptor` 和 `describe()`：缓存或最新观测的设备信息，包括路径格式、默认工作目录和目录发现可用性。
+- `descriptor` 和 `describe()`：缓存或最新观测的设备信息，包括 `system_info`、路径格式、默认工作目录和目录发现可用性。
+- `metrics()`：设备声明支持 `device.metrics` 时，读取最新缓存的资源样本。不打开会话，也不触发采集。首次采集完成前，`sample` 为 `None`。参见[监控配置与样本语义](configuration.md#system-information-and-resource-monitoring)。
 - `list_directories(DirectoryListParams(...))`：有界的单层目录列表，携带精确预期设备 ID 与代次、绝对路径、偏移量和上限。不打开会话。
 - `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`：新的独立会话。省略 cwd 时选择设备默认值。受控出站网络设备要求提供 `egress`；其他设备会拒绝它。必需方法用于断言兼容性，不是权限。
 - `attach_session(descriptor)`：在断线宽限期内，显式附加到同一设备代次中的精确已有会话。绝不重放操作或恢复传输。
@@ -187,6 +188,7 @@ reader 验证连续偏移量、精确引用、单调计数器与完成状态、�
 | `computer.type_text`         | `computer_type_text`         | `ComputerTypeTextParams`     | `ComputerActionResult`       | `terminal_evidence` |
 | `computer.press_keys`        | `computer_press_keys`        | `ComputerPressKeysParams`    | `ComputerActionResult`       | `terminal_evidence` |
 | `device.describe`            | `device_describe`            | `DeviceDescribeParams`       | `DeviceDescribeResult`       | `ledger_external`   |
+| `device.metrics`             | `device_metrics`             | `DeviceMetricsParams`        | `DeviceMetricsResult`        | `ledger_external`   |
 | `directory.list`             | `directory_list`             | `DirectoryListParams`        | `DirectoryListResult`        | `ledger_external`   |
 | `egress.update`              | `egress_update`              | `EgressUpdateParams`         | `EgressUpdateResult`         | `ledger_external`   |
 | `environment.describe`       | `environment_describe`       | `EnvironmentDescribeParams`  | `EnvironmentDescribeResult`  | `active_only`       |

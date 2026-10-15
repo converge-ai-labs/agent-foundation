@@ -87,63 +87,63 @@ A Session can open only in an existing directory; a missing default fails Sessio
 
 Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
 
-## Resource monitoring
+## System information and resource monitoring
 
-On Linux, opt into a separate read-only HTTP listener through the `monitoring` JSON object. It works alongside stdio, HTTP, and reverse WebSocket, including `connect`. Monitoring is disabled when the object is omitted or `null`; other platforms reject an enabled configuration.
+Linux, macOS and Windows expose basic system information in the Device descriptor returned by EIP `initialize` and `device.describe`: operating system/version, kernel version, native architecture and CPU model when available. Envd's own version is in `initialize.server.version`.
 
-Create a private credential file with a dedicated random token, separate from the execution credential. Add this object to your daemon configuration:
+Enable periodic resource sampling with `monitoring` in your daemon configuration:
 
 ```json
 {
   "monitoring": {
-    "bind": "127.0.0.1:9090",
-    "credential_file": "/run/secrets/envd-monitoring",
-    "plaintext_scope": "loopback",
     "sample_interval_ms": 10000,
-    "filesystems": {
-      "workspace": "/workspace"
-    },
-    "cgroup_v2_directory": "/sys/fs/cgroup"
+    "filesystems": {"workspace": "/workspace"}
   }
 }
 ```
 
-`bind` requires a numeric address and an explicit nonzero port. Protect the credential with native file permissions. The token must differ from the HTTP or reverse-WebSocket execution token. Monitoring credentials grant no EIP access. Monitoring credential and TLS key files receive the same bootstrap protection as execution credentials.
+Use absolute native paths, such as `C:\\workspace` in Windows JSON. `monitoring: {}` enables CPU and memory sampling with defaults; omitting the object or setting it to `null` disables sampling while preserving system information. The interval accepts 1000–60000 ms. At most 16 filesystem targets are allowed, with 1–64 character names containing ASCII letters, digits, `_` or `-`. Paths cannot contain `..`.
 
-For a remote listener, configure `tls_certificate_file` and `tls_private_key_file` together and omit `plaintext_scope`. Clients must verify the server certificate. `plaintext_scope: "provider_private_link"` is also available when the deployment supplies a private transport boundary. Envd does not publish container ports, create tunnels, or change outer network policy. Reverse-WebSocket connectivity alone does not make this listener reachable.
+Read through your initialized Python Device connection, with no Session required:
 
-Send `GET /monitoring/v1/report` with `Authorization: Bearer <monitoring-token>`. Supply the token through your HTTP client's protected credential configuration; keep it out of URLs, shell history, and logs. The listener accepts bodyless GET requests only, has no browser CORS surface, and responds with `Cache-Control: no-store`. It returns 401 for missing or incorrect credentials and 503 until the first sample is available.
+```python
+info = (await device.describe()).system_info
+report = await device.metrics()
+if report.sample is not None:
+    sample = report.sample
+    print(sample.system.cpu_busy_percent, sample.system.memory_available_bytes)
+    print(sample.sample_age_ms, sample.sequence)
+```
 
-Each report contains `schema_version: 1`, `device_id`, the EIP generation as a decimal string, `sample_interval_ms`, monotonic `sample_age_ms`, and `sample`. The sample contains an increasing `sequence`, UTC `sampled_at`, `collection_duration_ms`, and these observations:
+This uses EIP `device.metrics` over the same authenticated HTTP, reverse WebSocket or stdio connection. No additional port, token or TLS configuration is needed. The method is advertised only when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.2; upgrade them together when moving from a 0.1 deployment. The `eip.v1` namespace and carrier framing are unchanged.
 
-| Group                                                                                                  | Meaning                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system.cpu_busy_percent`                                                                              | System-wide CPU busy percentage between samples, excluding idle and I/O wait and including steal. First sample or counter decrease is `null`.                                                                                                                             |
-| `system.cpu_time_seconds`                                                                              | Cumulative aggregate CPU seconds by `user`, `nice`, `system`, `idle`, `iowait`, `irq`, `softirq`, and `steal`. Available on the first valid sample, using the native tick frequency.                                                                                      |
-| `system.memory_total_bytes`, `system.memory_available_bytes`                                           | Linux `/proc/meminfo` totals and available-memory estimate in bytes.                                                                                                                                                                                                      |
-| `cgroup_v2.cpu_usage_usec`, `cgroup_v2.memory_current_bytes`                                           | Cumulative CPU time and current memory for the explicitly selected cgroup and its descendants.                                                                                                                                                                            |
-| `cgroup_v2.cpu_max`, `cgroup_v2.memory_max`                                                            | Local cgroup limits: `{"kind":"unlimited"}`, or `{"kind":"limited","quota_usec":150000,"period_usec":100000}` for CPU and `{"kind":"limited","bytes":1073741824}` for memory. Ancestor limits and CPU affinity can further restrict capacity.                             |
-| `cgroup_v2.cpu_user_usec`, `cgroup_v2.cpu_system_usec`                                                 | Cumulative user and system CPU times, including descendants.                                                                                                                                                                                                              |
-| `cgroup_v2.cpu_periods_total`, `cgroup_v2.cpu_throttled_periods_total`, `cgroup_v2.cpu_throttled_usec` | CPU bandwidth periods, throttled periods, and cumulative throttled microseconds from `cpu.stat`. These describe this group's own bandwidth limit, not every ancestor restriction.                                                                                         |
-| `cgroup_v2.memory_events`                                                                              | Cumulative `low`, `high`, `max`, `oom`, `oom_kill`, and `oom_group_kill` events from `memory.events`, including descendants. Missing kernel fields are `null`.                                                                                                            |
-| `system.pressure`, `cgroup_v2.pressure`                                                                | CPU, memory, and I/O pressure stall information (PSI) for each scope. Each resource contains nullable `some` and `full` records with `avg10_percent`, `avg60_percent`, `avg300_percent`, and cumulative `total_usec`.                                                     |
-| `filesystems.<name>`                                                                                   | `total_bytes`, `free_bytes`, `available_bytes`, `total_inodes`, `free_inodes`, and `available_inodes` from one filesystem observation. Available counts reflect unprivileged availability. These are filesystem-wide capacities, not directory sizes or workspace quotas. |
+| Observation                                                  | Meaning                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sample.system.cpu_busy_percent`                             | Overall CPU busy percentage averaged between native samples, normalized to 0–100. Absent for the first sample or invalid counter deltas.                                                                                                            |
+| `sample.system.logical_cpu_count`                            | Observed system logical CPU count, not an effective cgroup quota or affinity allowance.                                                                                                                                                             |
+| `sample.system.memory_total_bytes`, `memory_available_bytes` | Physical memory capacity and available-memory observation, in bytes. Linux uses MemAvailable; Windows uses native available physical memory; macOS estimates reclaimable memory as free + inactive pages without double-counting speculative pages. |
+| `sample.system.cpu_time_seconds`                             | Optional cumulative native CPU modes: Linux exposes eight modes, Windows user/system/idle; macOS omits cumulative seconds.                                                                                                                          |
+| `sample.filesystems.<name>.metrics`                          | Whole-filesystem total/free/available bytes and optional inode counts, not directory sizes. An unreadable target retains its name with absent metrics. Windows uses actual volume total rather than caller quota and omits inodes.                  |
+| `sample.system.pressure`                                     | Optional Linux CPU/memory/I/O PSI.                                                                                                                                                                                                                  |
+| `sample.cgroup_v2`                                           | Optional explicitly selected Linux cgroup v2 observations.                                                                                                                                                                                          |
 
-PSI averages are the kernel's fixed 10-, 60-, and 300-second windows, independent of the daemon's interval. `some` tracks time with tasks stalled on a resource; `full` tracks time when all non-idle tasks are stalled. System CPU `full` is always `null` because it is undefined at that scope; cgroup CPU `full` is available when supported. An unavailable resource is `null`, and a missing or malformed record does not discard its valid sibling. A zero inode total can mean that the filesystem has no fixed inode capacity; calculate inode utilization only with a positive total.
+On Linux, add `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"` inside `monitoring` to observe that group and its descendants. Other platforms reject this Linux-only option. The group exposes CPU user/system/total microseconds, bandwidth periods/throttling, memory usage/events, local CPU/memory limits and PSI. Limits use tagged `unlimited` or `limited` values. These are local limits, not effective limits after ancestors or affinity.
 
-**System metrics can describe the host even when Envd runs inside a container.** Select `cgroup_v2_directory` only after verifying that it identifies the intended workload group. Omit it on cgroup v1 or when no group is selected; then `cgroup_v2` is `null`. There is no automatic substitution of host totals for unavailable container metrics. Missing or unreadable measurements are `null`, and an unavailable filesystem has a `null` entry. No paths are returned in reports.
+PSI contains optional `some` and `full` records with `avg10_percent`, `avg60_percent`, `avg300_percent` and cumulative `total_usec`. The averages are kernel windows, independent of the sampling interval. System CPU `full` is absent because it is undefined at that scope. Missing fields remain absent on the wire and `None` in Python, never synthetic zero.
 
-The sampler runs once per daemon, including periods with no Sessions. Reads return the latest cached sample and never trigger sampling. The default interval is 10 seconds; `sample_interval_ms` accepts 1000–60000. `filesystems` defaults to empty and accepts at most 16 absolute paths, each with a 1–64 character ASCII name containing letters, digits, `_`, or `-`. Paths must not contain `..`. In managed Linux execution, runtime-directory targets use the real runtime binding; other targets at or below protected bootstrap paths are rejected to avoid reporting protective mounts as workload storage. Use local filesystem paths: a stalled mount can delay sampling, while HTTP continues to serve the previous sample with increasing age. Check age before presenting it as current data.
+**System metrics may describe the host even inside a container.** Select the intended cgroup explicitly; missing group observations are never replaced by host totals. APFS space describes its shared-volume view. Windows filesystem observations require the volume-information API available since Windows 10 version 1809 / Server 2019; older systems still serve other capabilities. Calculate inode utilization only for a positive inode total.
+
+One sampler runs per daemon, including with zero Sessions. Reads return its latest cached sample and never trigger collection. `report.sample` is `None` until the first collection completes. A slow source leaves the previous sample readable with increasing `sample_age_ms`. Managed Linux maps runtime targets to the actual runtime binding and other targets to the original system tree, rejecting masked bootstrap paths.
 
 When consuming reports:
 
-- Identify samples by `(device_id, generation, sample.sequence)` and do not store repeated reads as new measurements.
-- Treat HTTP 200 as report availability, then check `sample_age_ms` against an explicit maximum age suitable for your polling cadence. Expose freshness/collection health and stop presenting or exporting expired values as current data. Preserve missing values instead of converting them to zero.
-- Calculate counter rates from distinct samples. Reset the baseline after generation changes, counter decreases, or missing observations. Linux `iowait` can decrease without a reboot; cgroup recreation can reset its counters without changing Device generation.
-- Export with explicit types and units: cumulative CPU/pressure/throttling times become counters in seconds, event counts become counters, byte/inode observations become gauges, and percentages become ratios where required. This cached JSON API is not a native Prometheus/OpenMetrics or OTLP endpoint. System CPU mode counters are aggregated across CPUs, not per-CPU observations.
-- Label chart peaks as sampled maxima. CPU busy values are already interval averages, and gauges can miss spikes between samples.
+- Deduplicate by `(device_id, generation, sample.sequence)`.
+- Check `sample.sample_age_ms` against your maximum age before presenting or exporting current values; retain missing data as missing.
+- Compute counter rates from distinct samples; reset the baseline after generation changes, counter decreases or missing observations. Cgroups can reset independently of daemon generation.
+- Convert cumulative times to seconds, event counts to counters, byte/inode observations to gauges, and percentages to ratios as needed by your exporter.
+- Label chart peaks as sampled maxima. CPU percentages are interval averages; point observations can miss spikes.
 
-Invalid listener configuration, credentials, TLS material, or a bind failure stop startup. Later measurement failures leave execution available. Daemon shutdown, including stdio EOF, stops monitoring; Session cleanup does not. Envd retains one sample in memory. This endpoint provides no history, push delivery, Service integration, or OpenTelemetry export.
+Envd retains one sample. History, alerts, export adapters and product charts belong to the consuming Host. Session cleanup does not stop sampling; daemon shutdown does.
 
 ## Enable commands
 

@@ -4,6 +4,7 @@ package a13n.agent_envd.eip.v1;
 
 import "a13n-envd/eip/v1/common.proto";
 import "a13n-envd/eip/v1/options.proto";
+import "a13n-envd/eip/v1/monitoring.proto";
 import "a13n-envd/eip/v1/process.proto";
 
 message EIPClientInfo {
@@ -124,6 +125,7 @@ message DeviceDescriptor {
   EIPLimits limits = 9;
   SessionLifecyclePolicy lifecycle = 10;
   ExecutionBoundary boundary = 11;
+  optional SystemInfo system_info = 12;
 }
 
 message SessionDescriptor {

@@ -157,7 +157,13 @@ def _base_field_type(
         )
         return f"Annotated[StrictInt, Field(ge={-(2 ** (bits - 1))}, le={2 ** (bits - 1) - 1})]"
     if field.type in {descriptor_pb2.FieldDescriptorProto.TYPE_FLOAT, descriptor_pb2.FieldDescriptorProto.TYPE_DOUBLE}:
-        return "StrictFloat"
+        constraints = ["allow_inf_nan=False"]
+        if field_option is not None:
+            if field_option.HasField("minimum"):
+                constraints.append(f"ge={field_option.minimum}.0")
+            if field_option.HasField("maximum"):
+                constraints.append(f"le={field_option.maximum}.0")
+        return f"Annotated[StrictFloat, Field({', '.join(constraints)})]"
     raise ValueError(f"unsupported field type for {field.name}: {field.type}")
 
 
@@ -520,7 +526,7 @@ def method_records(index: SchemaIndex, options: OptionReader) -> list[dict[str, 
             raise ValueError(f"duplicate EIP JSON-RPC method: {name}")
         names.add(name)
         if record["kind"] != "request_response":
-            raise ValueError(f"EIP 0.1 method {name} must use correlated request-response")
+            raise ValueError(f"EIP 0.2 method {name} must use correlated request-response")
         if record["replay_class"] == "unspecified":
             raise ValueError(f"EIP method {name} has unspecified replay class")
         if record["error_family"] == "unspecified":
@@ -845,9 +851,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_v
 
 from .models import EIPError, Identifier
 
-EIP_PROTOCOL_VERSION: Final = "0.1"
+EIP_PROTOCOL_VERSION: Final = "0.2"
 EIP_PROTOCOL_MAJOR: Final = 0
-EIP_PROTOCOL_MINOR: Final = 1
+EIP_PROTOCOL_MINOR: Final = 2
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
 EIP_DESCRIPTOR_SHA256: Final = "__DESCRIPTOR_SHA256__"
 

@@ -87,63 +87,63 @@ Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有�
 
 显式设备 ID 可通过 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 提供。没有显式 ID 时，安装状态目录跨重启保留生成的身份。`--default-working-directory`、`--name` 和 `--description` 覆盖 JSON 元数据。通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置目录发现。Windows EIP 路径使用 `/C:/...` 和 `/UNC/server/share/...`；守护进程启动路径使用操作系统原生格式。
 
-## 资源监控
+## 系统信息与资源监控
 
-Linux 上可通过 JSON `monitoring` 对象启用独立的只读 HTTP 监听器。它可以与 stdio、HTTP、反向 WebSocket（包括 `connect`）并行运行。省略该对象或设为 `null` 时关闭监控；其他平台拒绝启用监控的配置。
+Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回的 Device descriptor 暴露基础系统信息：操作系统及版本、内核版本、原生架构，以及可取得的 CPU 型号。Envd 自身版本位于 `initialize.server.version`。
 
-创建受保护的凭据文件，写入独立的随机令牌，不要复用执行凭据。在守护进程配置中添加：
+在守护进程配置中启用周期采样：
 
 ```json
 {
   "monitoring": {
-    "bind": "127.0.0.1:9090",
-    "credential_file": "/run/secrets/envd-monitoring",
-    "plaintext_scope": "loopback",
     "sample_interval_ms": 10000,
-    "filesystems": {
-      "workspace": "/workspace"
-    },
-    "cgroup_v2_directory": "/sys/fs/cgroup"
+    "filesystems": {"workspace": "/workspace"}
   }
 }
 ```
 
-`bind` 必须使用数字 IP 地址和显式的非零端口。使用原生文件权限保护凭据。监控令牌必须与 HTTP 或反向 WebSocket 执行令牌不同，且不能访问 EIP。监控凭据和 TLS 私钥文件获得与执行凭据相同的启动文件保护。
+使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集 CPU 和内存；省略对象或设为 `null` 时关闭采样，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
 
-远程监听器应成对配置 `tls_certificate_file` 和 `tls_private_key_file`，并省略 `plaintext_scope`。客户端必须验证服务器证书。部署提供私有传输边界时，也可使用 `plaintext_scope: "provider_private_link"`。Envd 不会发布容器端口、创建隧道或修改外层网络策略。反向 WebSocket 已连接不代表此监听器可达。
+通过已初始化的 Python Device connection 读取，无需创建 Session：
 
-发送 `GET /monitoring/v1/report`，携带 `Authorization: Bearer <monitoring-token>`。通过 HTTP 客户端受保护的凭据配置提供令牌，避免将其放入 URL、shell 历史或日志。监听器只接受无请求体的 GET，没有浏览器 CORS 接口，响应带有 `Cache-Control: no-store`。凭据缺失或错误时返回 401，首次采样完成前返回 503。
+```python
+info = (await device.describe()).system_info
+report = await device.metrics()
+if report.sample is not None:
+    sample = report.sample
+    print(sample.system.cpu_busy_percent, sample.system.memory_available_bytes)
+    print(sample.sample_age_ms, sample.sequence)
+```
 
-报告包含 `schema_version: 1`、`device_id`、十进制字符串形式的 EIP generation、`sample_interval_ms`、基于单调时钟的 `sample_age_ms` 和 `sample`。采样包含递增的 `sequence`、UTC 时间 `sampled_at`、`collection_duration_ms`，以及以下观测：
+调用使用现有认证 HTTP、反向 WebSocket 或 stdio 连接上的 EIP `device.metrics`，不需要额外端口、令牌或 TLS 配置。只有启用采样才会声明该方法。Envd 与 `a13n-envd-client` 使用 EIP 0.2；从 0.1 部署迁移时一起升级。`eip.v1` 命名空间和传输帧保持不变。
 
-| 字段组                                                                                                 | 含义                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system.cpu_busy_percent`                                                                              | 两次采样间的系统 CPU 忙碌百分比，排除空闲和 I/O 等待，包含 steal。首次采样或计数器下降时为 `null`。                                                                                                                  |
-| `system.cpu_time_seconds`                                                                              | 按 `user`、`nice`、`system`、`idle`、`iowait`、`irq`、`softirq`、`steal` 分类的累计系统 CPU 秒数。使用原生时钟频率换算，首次有效采样即可返回。                                                                       |
-| `system.memory_total_bytes`、`system.memory_available_bytes`                                           | Linux `/proc/meminfo` 的总内存和可用内存估计，单位为字节。                                                                                                                                                           |
-| `cgroup_v2.cpu_usage_usec`、`cgroup_v2.memory_current_bytes`                                           | 显式选择的 cgroup 及其后代的累计 CPU 时间和当前内存用量。                                                                                                                                                            |
-| `cgroup_v2.cpu_max`、`cgroup_v2.memory_max`                                                            | 当前 cgroup 的本地限制：`{"kind":"unlimited"}`，或 CPU 的 `{"kind":"limited","quota_usec":150000,"period_usec":100000}`、内存的 `{"kind":"limited","bytes":1073741824}`。祖先限制和 CPU 亲和性还可能进一步约束容量。 |
-| `cgroup_v2.cpu_user_usec`、`cgroup_v2.cpu_system_usec`                                                 | 包含后代的累计用户态和内核态 CPU 时间。                                                                                                                                                                              |
-| `cgroup_v2.cpu_periods_total`、`cgroup_v2.cpu_throttled_periods_total`、`cgroup_v2.cpu_throttled_usec` | `cpu.stat` 中的 CPU 带宽周期数、被限流周期数和累计限流微秒数。描述本组带宽限制，不涵盖所有祖先限制。                                                                                                                 |
-| `cgroup_v2.memory_events`                                                                              | `memory.events` 中包含后代的累计 `low`、`high`、`max`、`oom`、`oom_kill`、`oom_group_kill` 事件。内核缺失的字段为 `null`。                                                                                           |
-| `system.pressure`、`cgroup_v2.pressure`                                                                | 各自范围的 CPU、内存和 I/O 压力停顿信息（PSI）。每种资源包含可空的 `some`、`full` 记录，字段为 `avg10_percent`、`avg60_percent`、`avg300_percent` 和累计 `total_usec`。                                              |
-| `filesystems.<name>`                                                                                   | 同一次文件系统观测的 `total_bytes`、`free_bytes`、`available_bytes`、`total_inodes`、`free_inodes`、`available_inodes`。available 表示非特权用户可用量。这些是整个文件系统的容量，不是目录大小或工作区配额。         |
+| 观测                                                         | 含义                                                                                                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sample.system.cpu_busy_percent`                             | 相邻有效原生采样之间的系统 CPU 忙碌百分比，归一化为 0–100。首次采样或无效计数器增量时缺失。                                                                               |
+| `sample.system.logical_cpu_count`                            | 系统逻辑 CPU 数量，不代表 cgroup 配额或亲和性限制后的有效容量。                                                                                                           |
+| `sample.system.memory_total_bytes`、`memory_available_bytes` | 物理内存容量与可用内存观测，单位为字节。Linux 使用 MemAvailable；Windows 使用原生可用物理内存；macOS 以 free + inactive 页面估计可回收内存，不重复计入 speculative 页面。 |
+| `sample.system.cpu_time_seconds`                             | 可选原生累计 CPU 时间：Linux 提供八种模式，Windows 提供 user/system/idle；macOS 不提供累计秒数。                                                                          |
+| `sample.filesystems.<name>.metrics`                          | 整个文件系统的总量、空闲量、可用字节数，以及可选 inode 计数，不是目录大小。目标不可读时保留名称，metrics 缺失。Windows 使用实际卷容量而非调用账户配额，不提供 inode。     |
+| `sample.system.pressure`                                     | 可选的 Linux CPU、内存、I/O PSI。                                                                                                                                         |
+| `sample.cgroup_v2`                                           | 可选的显式指定 Linux cgroup v2 观测。                                                                                                                                     |
 
-PSI 平均值采用内核固定的 10、60、300 秒窗口，与守护进程采样间隔无关。`some` 统计有任务因该资源停顿的时间，`full` 统计所有非空闲任务同时停顿的时间。系统 CPU 的 `full` 在该范围没有定义，始终为 `null`；cgroup CPU 的 `full` 在内核支持时返回。资源不可用时为 `null`，单条记录缺失或格式错误不会丢弃另一条有效记录。inode 总数为零可能表示文件系统没有固定 inode 容量；仅在总数为正时计算 inode 使用率。
+Linux 可在 `monitoring` 内添加 `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"`，观察该组及其后代；其他平台拒绝该 Linux 专用配置。数据包含 CPU 用户态/系统态/总微秒数、带宽周期和限流、内存用量及事件、本地 CPU/内存限制和 PSI。限制使用 `unlimited` 或 `limited` 标签，不代表考虑祖先限制和亲和性后的有效容量。
 
-**即使 Envd 在容器中运行，系统指标仍可能描述宿主机。** 确认目标路径对应所需工作负载组后，再设置 `cgroup_v2_directory`。使用 cgroup v1 或未选择组时省略该字段，此时 `cgroup_v2` 为 `null`。容器指标不可用时，不会自动用宿主机总量替代。缺失或不可读的测量值为 `null`；不可用的文件系统对应条目为 `null`。报告不返回路径。
+PSI 提供可选 `some`、`full` 记录，包含 `avg10_percent`、`avg60_percent`、`avg300_percent` 与累计 `total_usec`。平均值采用内核窗口，与采样间隔无关。系统级 CPU `full` 未定义，因此缺失。不可用值在线上省略，在 Python 中为 `None`，不填充为零。
 
-每个守护进程只有一个采样器，在没有会话时也持续工作。读取只返回最新缓存样本，不触发采样。默认间隔为 10 秒；`sample_interval_ms` 接受 1000–60000。`filesystems` 默认为空，最多接受 16 个绝对路径，每个名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。在 Linux managed 执行模式下，runtime 目录目标使用真实的 runtime 挂载；其他位于受保护启动路径及其下级的目标会被拒绝，避免将保护性挂载误报为工作负载存储。请使用本地文件系统路径：挂载点阻塞会延迟采样，但 HTTP 仍返回上一份样本及不断增加的数据年龄。展示为当前数据前应检查年龄。
+**容器中的系统指标仍可能描述宿主机。** 显式选择目标 cgroup；缺失的组观测不会被宿主机数据替代。APFS 空间描述其共享卷视图。Windows 文件系统观测依赖 Windows 10 version 1809 / Server 2019 起提供的卷信息 API，旧系统仍能提供其他能力。仅在 inode 总数为正时计算使用率。
+
+每个 daemon 只有一个 sampler，零 Session 时仍运行。读取返回最新缓存，不触发采样。首次采样完成前 `report.sample` 为 `None`；源阻塞时仍可读取旧样本，其 `sample_age_ms` 持续增加。Managed Linux 将 runtime 目标映射到真实 runtime 挂载，其余目标映射到原始系统目录，并拒绝被遮蔽的启动保护路径。
 
 消费报告时：
 
-- 使用 `(device_id, generation, sample.sequence)` 识别样本，不将重复读取保存为新的观测。
-- HTTP 200 只表示报告可读；还应按轮询周期设置明确的最大年龄并检查 `sample_age_ms`。暴露数据新鲜度和采集健康状态，停止将过期值展示或导出为当前数据。保留缺失值，不转换为零。
-- 使用不同样本计算计数器速率。generation 改变、计数器下降或观测缺失后重建基线。Linux 的 `iowait` 可以在未重启时下降，cgroup 重建也可在 Device generation 不变时重置计数器。
-- 导出时明确类型与单位：累计 CPU、压力和限流时间映射为秒单位 counter，事件数映射为 counter，字节与 inode 观测映射为 gauge，需要比例值时将百分比换算为比例。此缓存 JSON API 不是原生 Prometheus/OpenMetrics 或 OTLP 接口。系统 CPU 各模式计数器是所有 CPU 的汇总，不是逐 CPU 观测。
-- 将图表峰值标记为采样值的最大值。CPU 忙碌值本身已是区间平均值，gauge 可能漏掉采样之间的尖峰。
+- 按 `(device_id, generation, sample.sequence)` 去重。
+- 展示或导出当前值前检查 `sample.sample_age_ms`，保留缺失值。
+- 只用不同样本计算计数器速率；generation 改变、计数器下降或数据缺失后重建基线。cgroup 可以独立于 daemon generation 重置。
+- 根据 exporter 需要，将累计时间换算为秒、事件数映射为 counter、字节和 inode 映射为 gauge、百分比换算为比例。
+- 图表峰值标记为采样值的最大值。CPU 百分比已是区间平均，瞬时尖峰可能落在采样间隔内。
 
-监听器配置、凭据、TLS 材料错误或端口绑定失败会阻止启动。运行中的测量失败不影响执行。守护进程关闭（包括 stdio EOF）时停止监控；会话清理不会停止监控。Envd 仅在内存中保留一个样本。此接口不提供历史数据、推送、Service 集成或 OpenTelemetry 导出。
+Envd 只保留一个样本。历史、告警、导出适配器和产品图表由消费方 Host 负责。Session 清理不停止采样，daemon 关闭会停止采样。
 
 ## 启用命令
 

@@ -327,8 +327,6 @@ impl Config {
 
         if let Some(monitoring) = &mut file.monitoring {
             monitoring.validate()?;
-            bootstrap_files.push(monitoring.credential_file.clone());
-            bootstrap_files.extend(monitoring.tls_private_key_file.iter().cloned());
         }
 
         let runtime_dir = match connection {

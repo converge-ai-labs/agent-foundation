@@ -81,7 +81,8 @@ A custom `WebSocketConnection` supplies `subprotocol`, async `send`, `recv`, `cl
 
 A Device provides:
 
-- `descriptor` and `describe()`: cached or freshly observed Device information, including path style, default working directory and directory-discovery availability.
+- `descriptor` and `describe()`: cached or freshly observed Device information, including `system_info`, path style, default working directory and directory-discovery availability.
+- `metrics()`: the latest cached resource sample when the Device advertises `device.metrics`. It opens no Session and triggers no collection. `sample` is `None` until the first collection completes. See [monitoring configuration and sample semantics](configuration.md#system-information-and-resource-monitoring).
 - `list_directories(DirectoryListParams(...))`: bounded one-level directory listing with exact expected Device ID and generation, absolute path, offset and limit. It opens no Session.
 - `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`: a new independent Session. Omitted cwd selects the Device default. A controlled-egress Device requires `egress`; other Devices reject it. Required methods assert compatibility, not permissions.
 - `attach_session(descriptor)`: explicit attachment to the exact existing Session in the same Device generation during disconnect grace. It never replays operations or resumes transfers.
@@ -187,6 +188,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | `computer.type_text`         | `computer_type_text`         | `ComputerTypeTextParams`     | `ComputerActionResult`       | `terminal_evidence` |
 | `computer.press_keys`        | `computer_press_keys`        | `ComputerPressKeysParams`    | `ComputerActionResult`       | `terminal_evidence` |
 | `device.describe`            | `device_describe`            | `DeviceDescribeParams`       | `DeviceDescribeResult`       | `ledger_external`   |
+| `device.metrics`             | `device_metrics`             | `DeviceMetricsParams`        | `DeviceMetricsResult`        | `ledger_external`   |
 | `directory.list`             | `directory_list`             | `DirectoryListParams`        | `DirectoryListResult`        | `ledger_external`   |
 | `egress.update`              | `egress_update`              | `EgressUpdateParams`         | `EgressUpdateResult`         | `ledger_external`   |
 | `environment.describe`       | `environment_describe`       | `EnvironmentDescribeParams`  | `EnvironmentDescribeResult`  | `active_only`       |

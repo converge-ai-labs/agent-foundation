@@ -27,7 +27,7 @@ After `initialize`, add `egress` to `session.open.params`:
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "protocol_version": "0.1",
+  "protocol_version": "0.2",
   "working_directory": "/workspace",
   "egress": {
     "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},

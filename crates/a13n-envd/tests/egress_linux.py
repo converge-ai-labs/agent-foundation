@@ -32,6 +32,7 @@ class Device:
         arguments=(),
         user=None,
         sandbox=None,
+        monitoring=None,
     ):
         # This disposable test image provisions UID/GID 1000. The production
         # daemon no longer assumes any account when launched as root.
@@ -53,6 +54,7 @@ class Device:
                     "default_working_directory": str(self.workspace),
                     "full_control": True,
                     "egress": {"mode": egress},
+                    **({"monitoring": monitoring} if monitoring is not None else {}),
                     **({"sandbox": sandbox} if sandbox is not None else {}),
                     **({"execution": execution} if execution is not None else {}),
                 }
@@ -82,13 +84,13 @@ class Device:
         self.sequence = 0
         self.descriptor = self.call(
             "initialize",
-            {"supported_protocol_versions": ["0.1"], "client": {"name": "egress-integration", "version": "1"}},
+            {"supported_protocol_versions": ["0.2"], "client": {"name": "egress-integration", "version": "1"}},
         )["descriptor"]
 
-    def call(self, method, params, error=None):
+    def call(self, method, params, error=None, *, device_scope=False):
         self.sequence += 1
         payload = {"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params}
-        if self.session:
+        if self.session and not device_scope:
             payload["eip_session"] = self.session
         body = json.dumps(payload).encode()
         self.process.stdin.write(
@@ -125,7 +127,7 @@ class Device:
             {
                 "expected_device_id": self.descriptor["device_id"],
                 "expected_generation": self.descriptor["generation"],
-                "protocol_version": "0.1",
+                "protocol_version": "0.2",
                 "working_directory": str(self.workspace),
                 **({"egress": policy} if policy is not None else {}),
             },

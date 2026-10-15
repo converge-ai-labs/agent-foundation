@@ -632,14 +632,14 @@ mod tests {
             .await
         });
         write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-            "supported_protocol_versions":["0.1"],"client":{"name":"stdio-test","version":"1"},"expected_device_id":"env-test"
+            "supported_protocol_versions":["0.2"],"client":{"name":"stdio-test","version":"1"},"expected_device_id":"env-test"
         }})).await;
         let initialized = read_json(&mut client).await;
         let generation = initialized["result"]["descriptor"]["generation"].clone();
         let mut sessions = Vec::new();
         for id in [2, 3] {
             write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session.open","params":{
-                "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.1","working_directory":cwd,"required_methods":[]
+                "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.2","working_directory":cwd,"required_methods":[]
             }})).await;
             let opened = read_json(&mut client).await;
             let session = opened["result"]["descriptor"]["session_id"]
@@ -716,7 +716,7 @@ mod tests {
             }
         }
         write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":40,"method":"session.open","params":{
-            "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.1","working_directory":cwd,"required_methods":[]
+            "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.2","working_directory":cwd,"required_methods":[]
         }})).await;
         let opened = read_json(&mut client).await;
         assert!(opened["result"]["descriptor"]["session_id"].is_string());
@@ -765,7 +765,7 @@ mod tests {
             "id": 1,
             "method": "initialize",
             "params": {
-                "supported_protocol_versions": ["0.1"],
+                "supported_protocol_versions": ["0.2"],
                 "client": {"name": "stdio-test", "version": "1"},
                 "expected_device_id": "env-test"
             }

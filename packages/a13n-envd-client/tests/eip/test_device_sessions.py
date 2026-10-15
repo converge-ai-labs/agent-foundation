@@ -13,15 +13,18 @@ from a13n_envd_client import (
     EIPDeviceConnection,
     EIPMethodError,
     EIPRequestTimeoutError,
+    EIPSessionStateError,
     HttpTransport,
     StdioTransport,
 )
 from a13n_envd_client.eip.v1 import (
     ArgvCommand,
     CommandRequest,
+    DeviceMetricsParams,
     DirectoryListParams,
     EIPCallContext,
     EIPPath,
+    ErrorType,
     ExecutableName,
     FileReadTextParams,
     FileWriteMode,
@@ -43,7 +46,9 @@ def device_path(path: Path) -> str:
 
 
 @asynccontextmanager
-async def running_device(tmp_path: Path, carrier: str, *, limits: dict[str, int] | None = None):
+async def running_device(
+    tmp_path: Path, carrier: str, *, limits: dict[str, int] | None = None, monitoring: dict[str, object] | None = None
+):
     executable = binary()
     root = tmp_path / "alpha"
     root.mkdir()
@@ -57,6 +62,7 @@ async def running_device(tmp_path: Path, carrier: str, *, limits: dict[str, int]
                 "device_id": "device-test",
                 "default_working_directory": str(root),
                 "limits": {"max_sessions": 2, **(limits or {})},
+                "monitoring": monitoring,
                 "trusted_executable_roots": ["/usr/bin", "/bin"] if os.name != "nt" else [],
             }
         )
@@ -137,7 +143,8 @@ async def running_device(tmp_path: Path, carrier: str, *, limits: dict[str, int]
     finally:
         if device is not None:
             await device.close()
-        if carrier != "stdio" and process.returncode is None:
+        terminated_by_test = carrier != "stdio" and process.returncode is None
+        if terminated_by_test:
             process.terminate()
         if process.stdin is not None:
             process.stdin.close()
@@ -153,7 +160,8 @@ async def running_device(tmp_path: Path, carrier: str, *, limits: dict[str, int]
                 await server.wait_closed()
         assert process.stderr is not None
         stderr = await process.stderr.read()
-        assert process.returncode == 0, stderr.decode(errors="replace")
+        expected_code = 1 if os.name == "nt" and terminated_by_test else 0
+        assert process.returncode == expected_code, stderr.decode(errors="replace")
         assert b"fixture-device-token" not in stderr
 
 
@@ -161,7 +169,7 @@ async def running_device(tmp_path: Path, carrier: str, *, limits: dict[str, int]
 def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, carrier: str):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
-            assert device.protocol_version == "0.1"
+            assert device.protocol_version == "0.2"
             assert (await device.describe()).device_id == "device-test"
             discovery = await device.list_directories(
                 DirectoryListParams(
@@ -361,6 +369,107 @@ def test_session_policy_presence_must_match_device_mode_before_dispatch(tmp_path
             monkeypatch.setattr(device, "_descriptor", device.descriptor.model_copy(update={"boundary": boundary}))
             with pytest.raises(ValueError, match="exactly for controlled"):
                 await device.open_session()
+            assert not device._sessions
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_monitoring_native_sample_without_session_and_after_session_close(tmp_path: Path, carrier: str):
+    import sys
+
+    async def scenario():
+        options = {
+            "sample_interval_ms": 1000,
+            "filesystems": {"workspace": str(tmp_path), "missing": str(tmp_path / "missing")},
+        }
+        async with running_device(tmp_path, carrier, monitoring=options) as device:
+            descriptor = await device.describe()
+            assert descriptor.system_info is not None
+            expected_os = {"linux": "linux", "darwin": "macos", "win32": "windows"}[sys.platform]
+            assert descriptor.system_info.os.value == expected_os
+            assert descriptor.system_info.architecture
+            assert descriptor.system_info.os_version
+            assert descriptor.system_info.kernel_version
+            assert "device.metrics" in descriptor.available_methods
+            assert not device._sessions
+            for identity, generation in [
+                ("other-device", descriptor.generation),
+                (descriptor.device_id, descriptor.generation + 1),
+            ]:
+                with pytest.raises(EIPMethodError) as mismatch:
+                    await device._client.device_metrics(
+                        DeviceMetricsParams(expected_device_id=identity, expected_generation=generation)
+                    )
+                assert mismatch.value.error.data.error_type == ErrorType.PROTOCOL_INCOMPATIBLE
+            async with asyncio.timeout(10):
+                while True:
+                    report = await device.metrics()
+                    if report.sample is not None and report.sample.system.cpu_busy_percent is not None:
+                        break
+                    await asyncio.sleep(0.03)
+            assert report.device_id == descriptor.device_id
+            assert report.generation == descriptor.generation
+            assert report.sample_interval_ms == 1000
+            sample = report.sample
+            assert sample.sequence >= 2
+            assert sample.sample_age_ms >= sample.collection_duration_ms
+            assert sample.system.logical_cpu_count is not None and sample.system.logical_cpu_count > 0
+            assert sample.system.memory_total_bytes is not None and sample.system.memory_total_bytes > 0
+            assert sample.system.memory_available_bytes is not None
+            assert 0 <= sample.system.memory_available_bytes <= sample.system.memory_total_bytes
+            assert 0 <= sample.system.cpu_busy_percent <= 100
+            filesystem = sample.filesystems["workspace"].metrics
+            assert filesystem is not None
+            assert filesystem.total_bytes > 0
+            assert filesystem.free_bytes >= 0 and filesystem.available_bytes >= 0
+            assert sample.filesystems["missing"].metrics is None
+            assert sample.cgroup_v2 is None
+            if sys.platform == "win32":
+                assert filesystem.total_inodes is None
+                assert sample.system.pressure is None
+            elif sys.platform == "darwin":
+                assert sample.system.cpu_time_seconds is None
+                assert sample.system.pressure is None
+            else:
+                assert sample.system.cpu_time_seconds is not None
+                assert filesystem.total_inodes is not None
+            assert not device._sessions
+            # Polling can cross a scheduled tick, but does not manufacture samples.
+            sequences = []
+            for _ in range(10):
+                cached = (await device.metrics()).sample
+                assert cached is not None
+                sequences.append(cached.sequence)
+            assert len(set(sequences)) < len(sequences)
+            session = await device.open_session(working_directory=device_path(tmp_path / "alpha"))
+            await session.close()
+            async with asyncio.timeout(5):
+                while True:
+                    later = (await device.metrics()).sample
+                    assert later is not None
+                    if later.sequence > sample.sequence:
+                        break
+                    await asyncio.sleep(0.03)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_monitoring_disabled_keeps_system_information(tmp_path: Path, carrier: str):
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            assert (await device.describe()).system_info is not None
+            assert "device.metrics" not in device.descriptor.available_methods
+            with pytest.raises(EIPSessionStateError, match="does not advertise"):
+                await device.metrics()
+            with pytest.raises(EIPMethodError) as disabled:
+                await device._client.device_metrics(
+                    DeviceMetricsParams(
+                        expected_device_id=device.descriptor.device_id, expected_generation=device.descriptor.generation
+                    )
+                )
+            assert disabled.value.error.data.error_type == ErrorType.UNSUPPORTED
             assert not device._sessions
 
     asyncio.run(scenario())
