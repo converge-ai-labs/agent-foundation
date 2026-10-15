@@ -645,6 +645,11 @@ class ThreadProjectionService:
                     stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
                 else:
                     stored = await self._store.read_continuation(thread.thread_id, thread.continuation)
+                    if stored.display is not None:
+                        from a13n_harness_ui.storage.display import DisplayArchive, read_display
+
+                        display = await read_display(self._store.objects, stored.display)
+                        stored = stored.model_copy(update={"display": DisplayArchive(tail=display)})
                 data = await to_thread.run_sync(build_thread_inspection, thread, stored)
                 if not await self._store.inspections.publish(thread.thread_id, source_id, data):
                     raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
@@ -740,10 +745,36 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         notes=notes,
         tasks=tasks,
     )
-    turns = display_turns(display)
+    entry_offset = (
+        stored.display.entry_offset if isinstance(stored, StoredContinuation) and stored.display is not None else 0
+    )
+    turn_offset = (
+        stored.display.turn_offset if isinstance(stored, StoredContinuation) and stored.display is not None else 0
+    )
+    entries = tuple(
+        entry.model_copy(update={"position": entry.position + entry_offset}).model_dump_json()
+        for entry in display_entries(display, thread)
+    )
+    turns = tuple(
+        turn.model_copy(
+            update={
+                "content_revision": hashlib.sha256(
+                    ("[" + ",".join(entries[turn.input_position : turn.end_position]) + "]").encode()
+                ).hexdigest(),
+                "input_position": turn.input_position + entry_offset,
+                "end_position": turn.end_position + entry_offset,
+                "final_position": None if turn.final_position is None else turn.final_position + entry_offset,
+                "output_position": None if turn.output_position is None else turn.output_position + entry_offset,
+                "app_positions": tuple(position + entry_offset for position in turn.app_positions),
+            }
+        )
+        for turn in display_turns(display)
+    )
     return InspectionData(
+        entry_offset=entry_offset,
+        turn_offset=turn_offset,
         metadata_json=metadata.model_dump_json(),
-        entries=tuple(entry.model_dump_json() for entry in display_entries(display, thread)),
+        entries=entries,
         turns=tuple(
             InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())
             for turn in turns

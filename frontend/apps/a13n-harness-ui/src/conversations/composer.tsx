@@ -91,14 +91,17 @@ function beginInput(
 }
 
 export const ComposerDrafts = createContext(new Map<string, ThreadDraft>());
-export function useDraft(threadId: string) {
+export function useDraft(threadId: string, historyOnly = false) {
   const drafts = useContext(ComposerDrafts);
   let draft = drafts.get(threadId);
   if (!draft) {
     draft = new ThreadDraft();
     drafts.set(threadId, draft);
   }
-  useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+  useSyncExternalStore<unknown>(
+    draft.subscribe,
+    historyOnly ? draft.getHistorySnapshot : draft.getSnapshot,
+  );
   useTrackUnsent(threadId, draft);
   return draft;
 }

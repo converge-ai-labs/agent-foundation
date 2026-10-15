@@ -15,6 +15,7 @@ from a13n_harness_ui.display_history import DisplayHistory, saved_display_histor
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 
+from .display import DisplayArchive
 from .objects import ObjectKind, ObjectRef
 
 type Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -244,9 +245,12 @@ class StoredContinuation(StoredContract):
     memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     created_at: datetime
 
+    display: DisplayArchive | None = Field(default=None, exclude_if=lambda value: value is None)
+
     @property
     def display_history(self) -> DisplayHistory | None:
-        return saved_display_history(self.harness_state)
+        """The in-memory suffix; use read_display for complete inspection."""
+        return self.display.tail if self.display is not None else saved_display_history(self.harness_state)
 
     @field_validator("created_at")
     @classmethod

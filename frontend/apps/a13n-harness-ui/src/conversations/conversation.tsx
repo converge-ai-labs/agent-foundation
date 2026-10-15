@@ -139,7 +139,7 @@ function ConversationContent({
       },
       { replace: true },
     );
-  const draft = useDraft(threadId);
+  const draft = useDraft(threadId, true);
   const [selectedTurn, setSelectedTurn] = useState<string>();
   const pendingJump = useRef<string | undefined>(undefined);
   const history = useHistory(

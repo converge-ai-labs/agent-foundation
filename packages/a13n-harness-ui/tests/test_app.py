@@ -1279,7 +1279,7 @@ async def test_display_restore_validates_before_runtime_detachment(
             state = admission.previous_state
             entries = state.agent_context_state.entries
             key = "a13n.harness-ui.display-history"
-            entries.pop(key)
+            entries.pop(key, None)
             from a13n_harness_ui.display_history import _message_digest
 
             data = {
@@ -1298,6 +1298,7 @@ async def test_display_restore_validates_before_runtime_detachment(
                 entries[key] = CapabilityState(version="future" if saved_kind == "version" else "1", data=data)
             return replace(
                 admission,
+                display=None,
                 previous_state=state.model_copy(
                     update={"agent_context_state": AgentContextStateSnapshot(entries=entries)}
                 ),
@@ -1364,7 +1365,8 @@ async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it
             if kwargs["object_kind"] is ObjectKind.continuation:
                 value = kwargs["value"]
                 assert isinstance(value, StoredContinuation)
-                display = saved_display_history(value.harness_state)
+                assert saved_display_history(value.harness_state) is None
+                display = value.display_history
                 assert display is not None
                 assert "display-only old prompt" in str(display.items)
                 publications.append(display)
@@ -1431,7 +1433,7 @@ async def test_failed_stream_entry_still_exports_retained_state(
         ("root", "detach_display_history"),
         ("collector", "__init__"),
         ("collector", "capture"),
-        ("root", "with_display_history"),
+        ("root", "project_continuation"),
         ("goal", "with_goal"),
     ],
 )
@@ -1481,7 +1483,7 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
     captures = []
     model_calls = []
     restore = root_execution.detach_display_history
-    capture = root_execution.with_display_history
+    capture = root_execution.project_continuation
 
     def blocked(call):
         assert threading.get_ident() != loop_thread
@@ -1495,13 +1497,15 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
     def restore_history(state):
         return blocked(lambda: restore(state)) if stage == "prepare" else restore(state)
 
-    def capture_history(state, display):
+    def capture_history(continuation):
+        display = continuation.display_history
+        assert display is not None
         if captures and started.is_set():
             assert finished.is_set(), "Terminal serialization raced the checkpoint worker"
         captures.append(bool(display.completed))
         if (stage == "checkpoint" and len(captures) == 1) or (stage == "terminal" and display.completed):
-            return blocked(lambda: capture(state, display))
-        return capture(state, display)
+            return blocked(lambda: capture(continuation))
+        return capture(continuation)
 
     async def model(messages, info):
         model_calls.append(messages)
@@ -1512,7 +1516,7 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     monkeypatch.setattr(root_execution, "detach_display_history", restore_history)
-    monkeypatch.setattr(root_execution, "with_display_history", capture_history)
+    monkeypatch.setattr(root_execution, "project_continuation", capture_history)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
         selections = []
         select = app._store.threads.select_continuation
@@ -2714,7 +2718,10 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
             )
         )
         value = saved.model_copy(
-            update={"harness_state": HarnessState.new(thread_id=thread.thread_id, message_history=history)}
+            update={
+                "display": None,
+                "harness_state": HarnessState.new(thread_id=thread.thread_id, message_history=history),
+            }
         )
         replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
         selected = await app._store.threads.select_continuation(
@@ -2832,7 +2839,10 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
             )
         history.append(ModelResponse(parts=[TextPart("Answer")]))
         value = stored.model_copy(
-            update={"harness_state": HarnessState.new(thread_id=thread.thread_id, message_history=history)}
+            update={
+                "display": None,
+                "harness_state": HarnessState.new(thread_id=thread.thread_id, message_history=history),
+            }
         )
         replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
         await app._store.threads.select_continuation(

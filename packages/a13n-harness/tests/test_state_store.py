@@ -263,3 +263,48 @@ async def test_inline_child_state_saves_to_the_store_and_a_fork_moves_it_on_load
 
     original = HarnessState.model_validate_json(store.saved[saved.state.key][1])
     assert original.thread_id == saved.child_thread_id
+
+
+async def test_text_only_export_reuses_encoded_state_without_materializing_history(monkeypatch):
+    state = HarnessState.new(message_history=[ModelRequest(parts=[UserPromptPart("text" * 10000)])])
+    storage = RunStorage(MemoryStore())
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("text-only export must not materialize a JSON tree")
+
+    monkeypatch.setattr(HarnessState, "model_dump", unexpected)
+    exported = await storage.export(state)
+    assert exported.message_history_json is state.message_history_json
+    assert exported.agent_context_state is state.agent_context_state
+    assert exported.environment_states_json is state.environment_states_json
+    exported.message_history[0].parts.clear()
+    assert state.message_history[0].parts
+
+
+async def test_unknown_envelope_binary_still_uses_generic_externalization():
+    store = MemoryStore()
+    from a13n_harness.storage import _BINARY_CONTENTS
+
+    content = _BINARY_CONTENTS.dump_python([BinaryContent(LARGE, media_type="image/png")], mode="json")[0]
+    state = HarnessState.model_validate(
+        {
+            **HarnessState.new().model_dump(mode="json"),
+            "future": {"content": content},
+        }
+    )
+    exported = await RunStorage(store).export(state)
+    assert exported.model_extra["future"]["content"]["data"] == ""
+    assert len(exported.refs) == 1
+    assert state.model_extra["future"]["content"]["data"]
+
+
+async def test_unknown_envelope_values_are_detached_even_without_externalization():
+    state = HarnessState.model_validate(
+        {
+            **HarnessState.new().model_dump(mode="json"),
+            "future": {"items": [1]},
+        }
+    )
+    exported = await RunStorage(MemoryStore()).export(state)
+    exported.model_extra["future"]["items"].append(2)
+    assert state.model_extra["future"]["items"] == [1]

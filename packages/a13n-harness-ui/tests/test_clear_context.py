@@ -92,8 +92,10 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
         assert selected is not None and selected.continuation is not None
         stored = await app._store.objects.read_model(selected.continuation, StoredContinuation)
         assert not stored.harness_state.message_history
-        assert set(stored.harness_state.agent_context_state.entries) == {"a13n.harness-ui.display-history"}
-        assert saved_display_history(stored.harness_state) is not None
+        assert not stored.harness_state.agent_context_state.entries
+        assert stored.display is not None
+        assert saved_display_history(stored.harness_state) is None
+        assert stored.display_history is not None
         with pytest.raises(ThreadError, match="context changed"):
             await app.clear_thread_context(thread_id=thread.thread_id, expected_continuation_id=before.continuation_id)
 

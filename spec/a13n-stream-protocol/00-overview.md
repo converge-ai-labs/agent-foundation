@@ -121,6 +121,8 @@ The shared display fold consumes converted, post-processor events and maintains 
 
 Raw AG-UI events remain the live wire representation. A Host may attach stream position and item identity, ordinal, state, response grouping or native failure metadata; that envelope does not replace events with item set/append commands. Hosts coalesce unpublished adjacent fragments before allocating display sequences and flush them before freezing a checkpoint. Published events are never rewritten.
 
+The fold supports detached changed-item capture with parser continuation for Host checkpoints. Its change tracking is independent of live delivery draining: consuming live updates cannot hide checkpoint changes, and capturing a checkpoint cannot consume live updates. A previously captured value remains unchanged when the producer later revises an item. Complete export remains available.
+
 A compact baseline and its parser continuation plus an intact raw-event suffix reconstruct the same items as the fold. It is not execution history, a terminal authority, or a promise that uncommitted output survives transport loss. The memory target is retained display content plus active conversion state and bounded delivery buffers, not constant total conversation memory.
 
 ### Reply memory sources

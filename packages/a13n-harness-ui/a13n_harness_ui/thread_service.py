@@ -16,8 +16,6 @@ from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
 from a13n_harness_ui.display_history import (
     DisplayHistoryCollector,
-    saved_display_history,
-    with_display_history,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
@@ -334,15 +332,18 @@ class ThreadService:
         previous = stored.harness_state
         if previous.thread_id != thread_id:
             raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")
-        saved = saved_display_history(previous)
+        from a13n_harness_ui.storage.display import DisplayArchive, seal_display
+
+        saved = stored.display_history
         display = DisplayHistoryCollector(previous.message_history, saved).capture()
-        state = with_display_history(
-            HarnessState.new(thread_id=thread_id, environment_states=previous.environment_states), display
-        )
+        archive = stored.display if stored.display is not None else DisplayArchive(tail=display)
+        archive = await seal_display(self._store.objects, archive)
+        state = HarnessState.new(thread_id=thread_id, environment_states=previous.environment_states)
         replacement = StoredContinuation(
             harness_release=harness_version,
             run_composition=stored.run_composition,
             harness_state=state,
+            display=archive,
             excerpt=stored.excerpt,
             created_at=datetime.now(UTC),
         )

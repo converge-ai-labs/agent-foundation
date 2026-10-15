@@ -17,7 +17,7 @@ import { previewInput, type LocalInput } from "./local-input";
 
 afterEach(cleanup);
 
-it("loads the complete lightweight directory and excludes steer and duplicate local inputs", async () => {
+it("loads directory pages on demand and excludes steer and duplicate local inputs", async () => {
   const GET = vi
     .fn()
     .mockResolvedValueOnce({
@@ -83,6 +83,14 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
         />
       </TransportContext>
     </QueryClientProvider>,
+  );
+  await screen.findByRole("button", { name: "Input 1: First input" });
+  expect(GET).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("button", { name: "Input 2: Second input" }),
+  ).toBeNull();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Load more inputs" }),
   );
   const second = await screen.findByRole("button", {
     name: "Input 2: Second input",

@@ -80,3 +80,44 @@ The private `.env` template contains a commented working OTLP configuration for 
 For an embedded Logfire SDK Host, configure Logfire once and pass its existing providers through `HarnessInstrumentation` to `open_harness_ui_app()`. Do not also enable Pydantic auto-instrumentation. The UI neither replaces nor closes those providers.
 
 Exported shell values take precedence over `.env` according to `uv`; clear conflicting `OTEL_*` values when switching backends. In particular, a signal-specific endpoint or header can override the common OTLP setting. Keep remote credentials only in the ignored `.env`, not its committed example. Before exporting real conversations, review `A13N_HARNESS_TRACE_CONTENT`.
+
+## Long-history performance benchmark
+
+Run the synthetic comparison from the repository root:
+
+```bash
+uv run --locked python dev/harness-ui/benchmark_history.py --items 5000 50000 --repeats 3
+uv run --locked python dev/harness-ui/benchmark_history.py --items 10000 --single-turn --repeats 3
+```
+
+The script uses a disposable SQLite/object store, a fixed approximately 14 KB native context, and synthetic input/answer history. The baseline embeds the entire display namespace and uses the original full fold export; the referenced path seals previous turns and captures changed items. Both publish through the same verified object-store implementation. It asserts native-history equality and complete display reconstruction. Reported times are medians of three iterations; migration is a separate one-time measurement. These are storage/fold primitives, not end-to-end HTTP submission or model latency.
+
+Representative Linux/Python 3.13 measurements:
+
+| History shape                      | Operation          | Whole display | Referenced display |
+| ---------------------------------- | ------------------ | ------------: | -----------------: |
+| 5,000 items, two-item active tail  | Read checkpoint    |        503 ms |            1.93 ms |
+|                                    | Warm capture       |        219 ms |            0.31 ms |
+|                                    | Encode and publish |      1,509 ms |            3.45 ms |
+|                                    | Checkpoint JSON    |       6.61 MB |            18.7 KB |
+| 50,000 items, two-item active tail | Read checkpoint    |      7,177 ms |            2.96 ms |
+|                                    | Warm capture       |      3,219 ms |            0.35 ms |
+|                                    | Encode and publish |     24,140 ms |            2.28 ms |
+|                                    | Checkpoint JSON    |      66.21 MB |            18.7 KB |
+| 5,001 items in one active turn     | Read checkpoint    |        447 ms |             292 ms |
+|                                    | Warm capture       |        246 ms |            2.97 ms |
+|                                    | Encode and publish |      1,471 ms |             922 ms |
+|                                    | Checkpoint JSON    |       5.98 MB |            5.98 MB |
+
+Sealing cost was 1.03 seconds for 5,000 items and 9.39 seconds for 50,000 items. Historical segments remain retained on disk; checkpoint size measures the selected envelope, not total retained storage. The single-turn command removes every ordinary input except the first, leaving 5,001 items from its 10,000-item seed.
+
+The active suffix retains the complete last turn and its input-free resumes. Its initialization, indexing, serialization, and tuple scans still grow with that turn. Warm capture avoids copying unchanged item payloads but does not make all checkpoint work constant-time. Measured collector initialization for the single-turn case increased from 457 ms to 831 ms because the collector also prepares detached reusable values. The diagnostic heartbeat excludes seed publication but includes initialization and Python garbage collection; it is not a responsiveness guarantee. The observed maximum remained about 1.1 seconds for the long single turn.
+
+Two private, read-only copied checkpoints were also replayed offline into disposable stores. Only aggregates are reported; original content and replay files stay outside the repository. Complete items, completion-ID sets, transcript entries, and native histories were verified equal:
+
+| Sample | Display / active items | Read, before → after | Publish, before → after | JSON, before → after | Seal once |
+| ------ | ---------------------- | -------------------- | ----------------------- | -------------------- | --------- |
+| A      | 21,645 / 3,319         | 3,425 → 178 ms       | 5,100 → 451 ms          | 54.44 → 7.43 MB      | 3.34 s    |
+| B      | 39,774 / 690           | 4,791 → 66.7 ms      | 7,776 → 96.1 ms         | 72.83 → 2.34 MB      | 5.12 s    |
+
+WebUI regression tests check that 100 typing-and-acknowledgement cycles cause no history-subscriber renders, while local-input and submission transitions still render. Input navigation requests one page until Load more is activated. Complete turn caches survive checkpoint changes only when the server's full-entry content revision is identical; changed revisions are fetched again.

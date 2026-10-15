@@ -217,3 +217,33 @@ async def test_prepared_inspection_rechecks_the_source_after_an_independent_writ
         assert (await repository.header(_THREAD, _NEXT)).message_count == 1
     else:
         assert await repository.entries(_THREAD, _NEXT, (0, 1)) == latest.entries
+
+
+async def test_suffix_publication_reads_only_suffix_and_requires_exact_base(database):
+    repository = InspectionRepository(database.sessions)
+    first = InspectionData("{}", tuple(f"message-{index}" for index in range(5000)), ())
+    assert await repository.publish(_THREAD, _INITIAL, first)
+    await select_source(database, _NEXT)
+    reads = []
+
+    def observe(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("SELECT transcript_entry.position"):
+            reads.append((statement, parameters))
+
+    event.listen(database.engine.sync_engine, "before_cursor_execute", observe)
+    latest = InspectionData("{}", ("corrected", "appended"), (), entry_offset=4999)
+    try:
+        assert not await repository.publish(_THREAD, _NEXT, latest, expected_source="wrong")
+        assert not reads
+        assert await repository.publish(_THREAD, _NEXT, latest, expected_source=_INITIAL)
+    finally:
+        event.remove(database.engine.sync_engine, "before_cursor_execute", observe)
+    assert len(reads) == 1
+    assert "transcript_entry.position >=" in reads[0][0]
+    assert reads[0][1][-1] == 4999
+    assert await repository.entries(_THREAD, _NEXT, (0, 4998, 4999, 5000)) == (
+        "message-0",
+        "message-4998",
+        "corrected",
+        "appended",
+    )

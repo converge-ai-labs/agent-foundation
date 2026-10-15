@@ -166,6 +166,7 @@ class DisplayHistoryCollector:
                     item = item.model_copy(update={"content": content})
                 items.append(item)
             self.saved = self.saved.model_copy(update={"items": tuple(items)})
+        self._captured = {item.id: item.model_copy(deep=True) for item in self.saved.items}
         self.fold: DisplayFold | None = None
         self._observations: list[Observed] = []
         self._observation_bytes = 0
@@ -179,6 +180,7 @@ class DisplayHistoryCollector:
                 self.saved.items,
                 attempt=self.saved.position.attempt + 1,
                 full_content=True,
+                first=(self.saved.items[0].ordinal if self.saved.items else 1),
             )
             self.fold.changed.clear()
         self._enqueue(self.fold.fold(self.fold.events(source), source))
@@ -233,8 +235,9 @@ class DisplayHistoryCollector:
     def capture(self, history: Sequence[ModelMessage] = (), *, completed: bool = False) -> DisplayHistory:
         if self.fold is None:
             return self.saved.model_copy(deep=True)
-        frozen = self.fold.export()
-        items = tuple(frozen.items)
+        frozen = self.fold.capture_delta()
+        self._captured.update((item.id, item) for item in frozen.items)
+        items = tuple(self._captured.values())
         marks = set(self.saved.completed)
         last_input = next((item.ordinal for item in reversed(items) if ordinary_input(item)), 0)
         # Resuming a turn makes its former answer provisional again.
