@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
@@ -107,7 +108,8 @@ async def test_model_http_client_one_attempt_still_validates_retryable_status() 
 
 
 @pytest.mark.parametrize("permanent", [False, True])
-async def test_exhausted_transport_retains_streamed_body_for_model_recovery(permanent: bool) -> None:
+@pytest.mark.parametrize("compressed", [False, True])
+async def test_exhausted_transport_retains_streamed_body_for_model_recovery(permanent: bool, compressed: bool) -> None:
     from a13n_harness.recovery import is_recoverable_model_failure
 
     attempts = 0
@@ -116,7 +118,7 @@ async def test_exhausted_transport_retains_streamed_body_for_model_recovery(perm
 
     class ErrorStream(httpx2.AsyncByteStream):
         async def __aiter__(self) -> AsyncIterator[bytes]:
-            yield body
+            yield gzip.compress(body) if compressed else body
 
         async def aclose(self) -> None:
             closed.append(True)
@@ -124,7 +126,7 @@ async def test_exhausted_transport_retains_streamed_body_for_model_recovery(perm
     async def handle(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         attempts += 1
-        return httpx2.Response(429, stream=ErrorStream())
+        return httpx2.Response(429, headers={"Content-Encoding": "gzip"} if compressed else {}, stream=ErrorStream())
 
     async with create_model_http_client(
         transport=httpx2.MockTransport(handle),
@@ -137,6 +139,37 @@ async def test_exhausted_transport_retains_streamed_body_for_model_recovery(perm
     assert len(closed) == 2
     assert raised.value.response.content == body
     assert is_recoverable_model_failure(raised.value) is not permanent
+
+
+@pytest.mark.parametrize("chunk_size", [1024, 128 * 1024])
+async def test_retry_error_body_buffer_is_bounded(chunk_size: int) -> None:
+    attempts = 0
+    closed: list[bool] = []
+
+    class ErrorStream(httpx2.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            for _ in range(65):
+                yield b"x" * chunk_size
+            pytest.fail("Retry handling must stop reading an unbounded error body")
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(503, headers={"Retry-After": "0"}, stream=ErrorStream())
+
+    async with create_model_http_client(
+        transport=httpx2.MockTransport(handle),
+        retry=ModelHttpRetryConfig(attempts=2, backoff_multiplier=0),
+    ) as client:
+        with pytest.raises(httpx2.HTTPStatusError) as raised:
+            await client.get("https://example.test/model")
+    assert attempts == 2
+    assert len(closed) == 2
+    assert raised.value.response.content == b"x" * (64 * 1024)
+    assert raised.value.response.headers["Retry-After"] == "0"
 
 
 async def test_model_http_client_can_disable_automatic_retries() -> None:

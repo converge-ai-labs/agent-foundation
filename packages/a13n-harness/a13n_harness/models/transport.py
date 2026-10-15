@@ -14,6 +14,7 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.http import outbound_tls_verify
 
 DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
+_MAX_RETRY_ERROR_BODY_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,13 +143,27 @@ class _RetryErrorBodyTransport(httpx2.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         response = await self.wrapped.handle_async_request(request)
-        if response.status_code in self.status_codes:
-            try:
-                await response.aread()
-            except BaseException:
-                await response.aclose()
-                raise
-        return response
+        if response.status_code not in self.status_codes:
+            return response
+        content = bytearray()
+        try:
+            async for chunk in response.aiter_bytes():
+                content.extend(chunk[: _MAX_RETRY_ERROR_BODY_BYTES - len(content)])
+                if len(content) >= _MAX_RETRY_ERROR_BODY_BYTES:
+                    break
+        finally:
+            await response.aclose()
+        # The retained prefix is decoded and may be shorter than the wire body.
+        headers = response.headers.copy()
+        headers.pop("content-encoding", None)
+        headers.pop("content-length", None)
+        return httpx2.Response(
+            response.status_code,
+            headers=headers,
+            content=bytes(content),
+            request=request,
+            extensions=response.extensions,
+        )
 
     async def aclose(self) -> None:
         await self.wrapped.aclose()
