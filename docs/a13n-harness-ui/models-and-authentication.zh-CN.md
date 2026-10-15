@@ -47,6 +47,21 @@ settings:
 
 所有 Anthropic 预设均包含这三个字段。为兼容端点，Harness UI 使用它们，而不是统一 `cache` 或顶层 `anthropic_cache`。高级设置仍可编辑：显式传入的映射，包括 `false`、缓存时长或空映射，均保持不变。OpenRouter 等其他协议不会仅因模型是 Claude 就获得这些字段。已有 Model 文件不会迁移；可手动添加这些字段，或显式应用预设来启用。
 
+对于已识别且支持自适应推理的模型，初始预设还会填入以下设置，包括 Claude Sonnet / Opus 4.6 和 Sonnet / Opus / Haiku 5.5：
+
+```yaml
+settings:
+  anthropic_thinking:
+    type: adaptive
+    display: summarized
+  anthropic_effort: high
+  max_tokens: 32768
+```
+
+这些字段与缓存开关一同保存，不在运行时注入。可通过 Model 的推理控件调整 effort，也可直接编辑 YAML。Haiku 5.5 提供自适应 effort 控件；始终开启推理的模型不提供 **Off**。未知模型 ID 只获得缓存开关，不推测其推理设置。
+
+自适应预设不需要 `interleaved-thinking-2025-05-14` header。Harness UI 也不填入 `context-management-2025-06-27` 和 `context-1m-2025-08-07`：当前具备 1M 上下文的 Claude 模型默认支持该窗口。本地工作上下文预算与提供方上下文上限仍是独立设置。若兼容网关明确要求某个 beta，可在 `settings.anthropic_betas` 中显式配置。参见 Anthropic 的[推理模式](https://platform.claude.com/docs/en/build-with-claude/thinking)和[上下文窗口](https://platform.claude.com/docs/en/build-with-claude/context-windows)。
+
 ## 网关会话亲和性
 
 在 **Add Model** 或首次设置中选择 **Gateway session affinity** 预设，或在 **Session affinity header** 中填写其他名称。CLI `add model` 提供同样预设和自定义输入。保存结果是普通 header 名称，不是预设引用：
@@ -437,7 +452,7 @@ a13n-harness-ui login codex --allow-account-switch
 预设选择器在推理旁显示输出上限；最后的 Environment 或命名问题在保存前显示组装的连接和设置。首次设置、`add model` 和新 Model 的 `add agent` 共用这些创建时预设。预设写入普通、可编辑 YAML：
 
 - **OpenAI Responses：** 上游配置识别为支持推理的模型使用 high 推理、`openai_reasoning_summary: detailed` 和 `openai_store: false`。还提供 low、medium、extra-high（`xhigh`）和提供方默认选项。未知或非推理模型（如 GPT-4.1）默认中性设置，无推理摘要参数。Chat Completions 不接收 Responses 专用摘要字段。
-- **Anthropic：** 较新支持的模型配置使用自适应推理、返回摘要和 high effort；否则使用交错扩展推理，8192 token 预算和 16,384 token 输出上限。交错预设显式开启 `interleaved-thinking-2025-05-14`；自适应推理自动交错。上游配置拒绝预算推理的模型，只提供自适应和提供方默认预设。
+- **Anthropic：** 支持自适应的模型提供自适应推理、返回摘要和 high effort，以及提供方默认预设。较旧模型提供扩展推理，8192 token 预算和 16,384 token 输出上限，不再提供其不支持的自适应选项。Sonnet 4.5 等支持交错推理的旧模型保留 `interleaved-thinking-2025-05-14`；Haiku 4.5 和 Claude 3.7 使用不带该 beta 的普通扩展推理。自适应推理自动交错。
 - **Google Gemini：** 原生推理预设请求可用的思考摘要，并将强度映射到所选模型支持的级别或预算。
 - **OpenRouter：** 推理预设用 `exclude: false` 请求返回推理内容。
 - **DeepSeek、GLM 和 Kimi：** 专用原生集成保留返回的 `reasoning_content`，在工具续接和后续轮次发送回模型。已识别推理模型提供 **Thinking · preserved**（`thinking: true`）；GLM 还保存 `zai_clear_thinking: false` 并使用原生 Z.AI 请求转换。选择 `deepseek:`、`zai:` 或 `moonshotai:` 而非通用 OpenAI 兼容路由，以保留提供方专用行为。不提供通用“off”选项：部分模型始终推理，Kimi 原生关闭控制也不等同于统一 `thinking: false`。
@@ -453,7 +468,8 @@ DeepSeek Reasoner/V4 Pro、GLM 4.7/5.3 和 Kimi K2.5/K2 Thinking 的流解析、
 | 连接与经审查的模型 ID                                                                                                             | 推理选择                     |      保存的 `max_tokens` |
 | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -----------------------: |
 | OpenAI Responses / Chat Completions：`gpt-5`、`gpt-5.4`、`gpt-5.4-mini`、`gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-6-astra` | low / medium / high 或 xhigh | 16,384 / 32,768 / 65,536 |
-| Anthropic：`claude-sonnet-4-6`、`claude-opus-4-6`、`claude-haiku-4-5`、`claude-sonnet-4-5`                                        | adaptive / interleaved       |          32,768 / 16,384 |
+| Anthropic：`claude-sonnet-5-5`、`claude-opus-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-sonnet-4-6`、`claude-opus-4-6` | adaptive                     |                   32,768 |
+| Anthropic：`claude-haiku-4-5`、`claude-sonnet-4-5`                                                                                | extended / interleaved       |                   16,384 |
 | Google：`gemini-3.1-pro-preview`、`gemini-3.5-flash`、`gemini-2.5-pro`、`gemini-2.5-flash`                                        | low / medium 或 high         |          16,384 / 32,768 |
 | DeepSeek：`deepseek-v4-pro`、`deepseek-v4-flash`、`deepseek-reasoner`                                                             | Thinking · preserved         |                   32,768 |
 | Z.AI：`glm-5.3`、`glm-5.2`、`glm-4.7`、`glm-4.5`                                                                                  | Thinking · preserved         |                   32,768 |
@@ -461,7 +477,7 @@ DeepSeek Reasoner/V4 Pro、GLM 4.7/5.3 和 Kimi K2.5/K2 Thinking 的流解析、
 | OpenRouter：`openai/gpt-5.4`                                                                                                      | low / medium / high          | 16,384 / 32,768 / 65,536 |
 | OpenRouter：`anthropic/claude-sonnet-4.6`、`google/gemini-2.5-pro`                                                                | low / medium 或 high         |          16,384 / 32,768 |
 
-所选原生模型配置仍决定可提供哪些推理预设。Gemini 2.5 原生 high 推理使用 24,576 token 思考预算，32,768 token 输出上限为回答留空间。Claude 显式 8192 token 交错思考预算保留已有 16,384 token 上限，自定义模型 ID 也如此。未经审查的 Claude 自适应预设也保留 16,384 token 基线。其他未经审查模型和路由不加输出上限；增加建议项或匹配模型名前缀不会自动设置预算。确切经审查 ID 在自定义端点后获得同样可编辑建议，但端点限制可能不同。Codex、Grok 和 Copilot 订阅创建不使用 API 预设。
+所选原生模型配置仍决定可提供哪些推理预设。Gemini 2.5 原生 high 推理使用 24,576 token 思考预算，32,768 token 输出上限为回答留空间。Claude 显式 8192 token 扩展思考预算保留已有 16,384 token 上限，无论是否启用交错推理。未经审查的 Claude 自适应预设也保留 16,384 token 基线。其他未经审查模型和路由不加输出上限；增加建议项或匹配模型名前缀不会自动设置预算。确切经审查 ID 在自定义端点后获得同样可编辑建议，但端点限制可能不同。Codex、Grok 和 Copilot 订阅创建不使用 API 预设。
 
 根据端点、上下文大小、推理需要、延迟和费用检查保存值。之后可独立编辑 `settings.max_tokens`。改变 `/thinking` **不会** 重新计算。复用 Model、加载已有文件或向设置 API 显式传入设置，都不应用预设。没有运行时自动预算策略、上下文溢出保证、Harness 预设依赖，也不在设置时进行网络查询。
 
