@@ -11,6 +11,7 @@ Read only the references needed for the current task:
 
 - [Agents](references/agents.md): read before answering whether an Agent can be changed or proposing configuration changes; covers editing restrictions, full configuration revisions and selected resources.
 - [Models](references/models.md): model keys, filtered catalog price lookup, filling model configuration, and shared settings.
+- [Providers](references/providers.md): private credential cards, provider configuration and safe retries.
 - [Connections](references/connections.md): tools, tests and authorization.
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.
 - [Environment templates](references/environment-templates.md): recipes and instance boundaries.
@@ -22,4 +23,4 @@ Use `view`, `ls`, `glob`, and `grep` under this directory or `/platform-instance
 
 Keep questions focused on decisions that affect the result. Read current state before proposing a concrete change. When review is required, the request must show the exact target, parameters and original version. A changed target or configuration needs a new review. Report real result IDs and any unresolved errors.
 
-Memory operations and plugin configuration are outside Composer's scope. Preserve unrelated existing fields. Secrets, browser authorization and file uploads use their existing Console pages. Never collect secrets in chat.
+Memory operations and plugin configuration are outside Composer's scope. Preserve unrelated existing fields. Use the `configure_provider` client tool for private provider credential entry when available. Browser authorization, connection credentials and file uploads use their existing Console pages. Never collect secrets in chat or tool arguments.

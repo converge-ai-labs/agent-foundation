@@ -16,6 +16,7 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { CopyButton } from "../../../shared/identity";
 import { JsonView, TextAreaField } from "../../../shared/forms";
 import { QuestionResponse, readQuestions } from "./questions";
+import { ProviderConfiguration } from "./provider-configuration";
 import styles from "./cards.module.css";
 
 type PendingAction = Schema["PendingCall"] & { category: "approval" | "call" };
@@ -191,6 +192,23 @@ export function RunFeedback({
             action.tool_name === "ask_user_question"
               ? readQuestions(action.arguments)
               : null;
+          if (
+            action.category === "call" &&
+            action.tool_name === "configure_provider"
+          )
+            return (
+              <ActionCard key={action.tool_call_id} action={action}>
+                <ProviderConfiguration
+                  arguments={action.arguments}
+                  onResolved={(value) =>
+                    change(action.tool_call_id, {
+                      action: "returned",
+                      value: JSON.stringify(value),
+                    })
+                  }
+                />
+              </ActionCard>
+            );
           if (questions)
             return (
               <ActionCard key={action.tool_call_id} action={action}>
@@ -413,6 +431,7 @@ function ActionCard({
   const { t } = useTranslation();
   const approval = action.category === "approval";
   const question = !approval && action.tool_name === "ask_user_question";
+  const provider = !approval && action.tool_name === "configure_provider";
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
@@ -430,9 +449,11 @@ function ActionCard({
             ? t("Approval requested")
             : question
               ? t("The agent has a question")
-              : t("Waiting for a tool result")}
+              : provider
+                ? t("Configure provider")
+                : t("Waiting for a tool result")}
         </h3>
-        {action.tool_name && (
+        {action.tool_name && !provider && (
           <code className={styles.cardTool}>{action.tool_name}</code>
         )}
         {highRisk(details?.risk) && (

@@ -519,6 +519,49 @@ async def test_the_agent_composer_creates_an_agent_once_approved(service, script
         assert result["body"]["default_revision_id"] == greeter["default_revision_id"]
 
 
+async def test_composer_provider_card_keeps_credentials_out_of_the_run(service, scripted_model, runs_kit, listen):
+    await runs_kit.pause_sweeps(service)
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        await runs_kit.create_model(service, scripted_model)
+        composer = (await service.client.post(f"{service.api}/agent-composer")).json()
+        proposal = {"action": "create", "kind": "model", "type": "openai", "name": "Private provider", "config": {}}
+        scripted_model.call("configure_provider", proposal, call_id="call_provider")
+        started = await runs_kit.start_thread(service, composer, "Configure my provider")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        waiting = await runs_kit.sealed(service, started["run"]["id"])
+        assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "call"), waiting
+        assert waiting["pending"]["approvals"] == []
+        assert waiting["pending"]["calls"][0]["arguments"] == proposal
+        # The browser uses the ordinary provider API independently of the paused Run.
+        secret = "fixture-card-private-key"
+        created = await service.client.post(
+            f"{service.api}/model-providers",
+            json={"type": "openai", "name": proposal["name"], "config": {}, "credential": {"api_key": secret}},
+        )
+        assert created.status_code == 201, created.text
+        result = {"status": "saved", "provider_id": created.json()["id"]}
+        scripted_model.say("Provider configured")
+        resumed = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume",
+            json={"approvals": {}, "calls": {"call_provider": {"status": "returned", "value": result}}},
+            headers={"idempotency-key": "provider-card-resume"},
+        )
+        assert resumed.status_code == 201, resumed.text
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, resumed.json()["id"]))["status"] == "completed"
+        requests = [await scripted_model.request(), await scripted_model.request()]
+        assert secret not in json.dumps(requests)
+        returned = [message for message in requests[-1]["messages"] if message["role"] == "tool"][-1]
+        assert json.loads(returned["content"]) == result
+        for run_id in (waiting["id"], resumed.json()["id"]):
+            assert secret not in json.dumps(await runs_kit.items(service, run_id))
+
+
 async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(
     service, scripted_model, runs_kit, listen
 ) -> None:  # type: ignore[no-untyped-def]

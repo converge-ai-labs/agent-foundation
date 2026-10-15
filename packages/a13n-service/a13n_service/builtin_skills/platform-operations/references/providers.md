@@ -1,0 +1,9 @@
+# Providers
+
+Read `/platform-instance/catalog.json` for installed provider types, configuration schemas and authentication requirements. List workspace providers before proposing a create. Model, Environment, Connector and Web Providers are supported; Memory is outside Composer's scope.
+
+Use `configure_provider` to request a Console card. Supply `action` (`create` or `update`), `kind`, `type`, `name` and the complete desired non-secret `config`. For an update, read the existing provider first, preserve unrelated configuration, and include its `provider_id` and exact original `etag`. Never put API keys, tokens, client secrets or secret header values into arguments or chat. The card collects schema-defined credentials directly from the user; custom secret headers and browser OAuth authorization use the existing Console pages.
+
+The user reviews the proposal and saves through the existing Provider API under their own workspace authority. The card then returns `{status: "saved", provider_id}` through the normal client-tool response, or `{status: "cancelled"}` before a save attempt. Stopping after an unconfirmed save returns `{status: "unknown"}`; inspect provider state before proposing any further write. The Run may wait for other questions or approvals in the same batch. Do not claim a provider was saved before receiving its result. Other hosts must implement this client tool themselves or report that it is unavailable.
+
+A confirmed save and Run resume are separate operations. Retry only resume after a confirmed save. There is no create idempotency: an uncertain save or page reload requires checking the Providers page before explicitly retrying, since another create may duplicate it. A stale update requires a fresh read and proposal. Never substitute a newer ETag into an already reviewed request. If the user cancels, do not repeat the request without their instruction.
