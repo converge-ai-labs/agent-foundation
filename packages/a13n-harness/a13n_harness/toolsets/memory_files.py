@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Annotated, Literal
@@ -12,6 +12,7 @@ from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ToolFailed
 
+from a13n_harness._memory_reads import FileMemoryReads
 from a13n_harness.context import AgentContext
 from a13n_harness.providers.memory import (
     FileEntry,
@@ -94,12 +95,14 @@ class MemoryFileToolset:
         write_retries: int,
         origin: Origin,
         tools: Collection[FileToolKey],
+        reads: Callable[[RunContext[AgentContext]], Awaitable[FileMemoryReads]],
     ) -> None:
         self._mounts = {mount.name: mount for mount in mounts}
         self._format = format
         self._write_retries = write_retries
         self._origin = origin
         self._enabled = frozenset(tools)
+        self._reads = reads
 
     def get_toolset(self) -> InstructionFunctionToolset | None:
         return memory_toolset(self, "file", _TOOLS, self._enabled, self._mounts, _INSTRUCTION)
@@ -110,19 +113,21 @@ class MemoryFileToolset:
         memory: MemoryName,
         path: Annotated[str, Field(description='A file, or a directory: "" for the root or a path ending in "/"')] = "",
     ) -> dict[str, JsonValue]:
-        del ctx
         mount = self._mount(memory, "read")
+        reads = await self._reads(ctx)
         with _store_failures(self._format):
             if path == "" or path.endswith("/"):
                 directory = validate_directory(path, self._format)
-                return self._listing(mount, directory, await mount.store.list())
+                return await self._listing(reads, mount, directory, await mount.store.list())
             path = validate_path(path, self._format)
             file = await _read(mount.store, path)
             if file is not None:
+                await reads.observe(mount.key, {path: file.version})
                 return {"memory": mount.name, **_file(file, self._format)}
             entries = await mount.store.list()
             if any(entry.path.startswith(f"{path}/") for entry in entries):
-                return self._listing(mount, f"{path}/", entries)
+                return await self._listing(reads, mount, f"{path}/", entries)
+            await reads.observe(mount.key, {path: None})
         raise failure(
             "not_found", f'{path} does not exist. List the files with memory_file_view(memory="{mount.name}").'
         )
@@ -137,8 +142,8 @@ class MemoryFileToolset:
         case_sensitive: Annotated[bool, Field(description="Match letter case exactly")] = False,
         limit: Annotated[int, Field(ge=1, le=200, description="Maximum matching lines to return")] = 50,
     ) -> dict[str, JsonValue]:
-        del ctx
         mount = self._mount(memory, "read")
+        reads = await self._reads(ctx)
         with _store_failures(self._format):
             directory = validate_directory(path, self._format)
             if isinstance(mount.store, SearchableFileStore):
@@ -149,6 +154,7 @@ class MemoryFileToolset:
                 matches, truncated = await _scan(
                     mount.store, _compile(pattern, regex, case_sensitive), directory, limit
                 )
+            await reads.observe(mount.key, {match.path: match.version for match in matches})
         result: dict[str, JsonValue] = {
             "memory": mount.name,
             "matches": [{"path": match.path, "line": match.line, "text": match.text} for match in matches],
@@ -223,19 +229,27 @@ class MemoryFileToolset:
     ) -> dict[str, JsonValue]:
         mount = self._mount(memory, "write")
         origin = replace(self._origin, tool_call_id=ctx.tool_call_id)
-        with _store_failures(self._format):
-            source = validate_path(source, self._format)
-            destination = validate_path(destination, self._format)
+        reads = await self._reads(ctx)
+
+        async def apply(dependencies: Mapping[str, str | None]) -> str:
             for _ in range(self._write_retries + 1):
                 current = self._existing(await _read(mount.store, source), source)
                 try:
-                    version = await mount.store.move(source, destination, expected=current.version, origin=origin)
+                    version = await mount.store.move(
+                        source, destination, expected=current.version, origin=origin, dependencies=dependencies
+                    )
                 except MemoryStoreError as error:
                     if error.code != "version_mismatch":
                         raise
                     continue
-                return {"memory": mount.name, "path": destination, "version": version}
+                return version
             raise await self._exhausted(mount.store, source)
+
+        with _store_failures(self._format):
+            source = validate_path(source, self._format)
+            destination = validate_path(destination, self._format)
+            version = await reads.move(mount.key, source, destination, apply)
+        return {"memory": mount.name, "path": destination, "version": version}
 
     async def delete(
         self,
@@ -246,10 +260,12 @@ class MemoryFileToolset:
     ) -> dict[str, JsonValue]:
         mount = self._mount(memory, "write")
         origin = replace(self._origin, tool_call_id=ctx.tool_call_id)
+        reads = await self._reads(ctx)
+        dependencies = await reads.dependencies(mount.key)
         with _store_failures(self._format):
             path = validate_path(path, self._format)
             try:
-                await mount.store.delete(path, expected=version, origin=origin)
+                await mount.store.delete(path, expected=version, origin=origin, dependencies=dependencies)
             except MemoryStoreError as error:
                 if error.code != "version_mismatch":
                     raise
@@ -261,6 +277,7 @@ class MemoryFileToolset:
                     current,
                     self._format,
                 ) from None
+        await reads.changed(mount.key, {path: None})
         return {"memory": mount.name, "path": path, "deleted": True}
 
     async def _write(
@@ -273,6 +290,8 @@ class MemoryFileToolset:
         """Read, check the condition in `change`, and write expecting the version read."""
         mount = self._mount(memory, "write")
         origin = replace(self._origin, tool_call_id=ctx.tool_call_id)
+        reads = await self._reads(ctx)
+        dependencies = await reads.dependencies(mount.key)
         with _store_failures(self._format):
             path = validate_path(path, self._format)
             for _ in range(self._write_retries + 1):
@@ -281,11 +300,14 @@ class MemoryFileToolset:
                 describe(text, self._format)
                 expected = current.version if current is not None else None
                 try:
-                    version = await mount.store.write(path, text, expected=expected, origin=origin)
+                    version = await mount.store.write(
+                        path, text, expected=expected, origin=origin, dependencies=dependencies
+                    )
                 except MemoryStoreError as error:
                     if error.code != "version_mismatch":
                         raise
                     continue
+                await reads.changed(mount.key, {path: version})
                 return {"memory": mount.name, "path": path, "version": version, "size": len(text.encode())}
             raise await self._exhausted(mount.store, path)
 
@@ -306,7 +328,9 @@ class MemoryFileToolset:
             self._format,
         )
 
-    def _listing(self, mount: FileMount, directory: str, entries: Sequence[FileEntry]) -> dict[str, JsonValue]:
+    async def _listing(
+        self, reads: FileMemoryReads, mount: FileMount, directory: str, entries: Sequence[FileEntry]
+    ) -> dict[str, JsonValue]:
         """The files directly in `directory`, and each subdirectory with its file count."""
         files: dict[str, JsonValue] = {}
         counts: dict[str, int] = {}
@@ -326,6 +350,7 @@ class MemoryFileToolset:
                 }
         if directory and not files and not counts:
             raise failure("not_found", f"{directory} does not exist or holds no files.")
+        await reads.observe(mount.key, {entry.path: entry.version for entry in entries if entry.path in files})
         listed = files | {child: {"path": child, "files": count} for child, count in counts.items()}
         return {"memory": mount.name, "path": directory, "entries": [listed[path] for path in sorted(listed)]}
 
@@ -356,7 +381,7 @@ async def _scan(store: FileStore, pattern: re.Pattern[str], directory: str, limi
             if pattern.search(line):
                 if len(matches) == limit:
                     return matches, True
-                matches.append(GrepMatch(path=entry.path, line=number, text=line))
+                matches.append(GrepMatch(path=entry.path, line=number, text=line, version=file.version))
     return matches, False
 
 

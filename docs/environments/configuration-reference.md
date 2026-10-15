@@ -239,6 +239,11 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field                       | Required | Type / choices | Constraints and default                                   |
 | --------------------------- | -------- | -------------- | --------------------------------------------------------- |
 | `template`                  | false    | string         | minLength=1; maxLength=256; default="base"                |
+| `desktop`                   | false    | boolean        | default=false                                             |
+| `desktop_width`             | false    | integer        | minimum=256; maximum=4096; default=1280                   |
+| `desktop_height`            | false    | integer        | minimum=256; maximum=4096; default=800                    |
+| `desktop_dpi`               | false    | integer        | minimum=48; maximum=192; default=96                       |
+| `desktop_display`           | false    | string         | `pattern="^:[0-9]{1,3}$"`; default=":0"                   |
 | `root`                      | false    | string         | default="/home/user"                                      |
 | `user`                      | false    | string         | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false    | string         | default="/usr/bin/python3"                                |

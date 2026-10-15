@@ -190,9 +190,9 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
 
     copy_release_files(tmp_path)
     releases = (
-        ("a13n-envd", "0.1.2"),
+        ("a13n-envd", "0.3.0"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.10.0"),
+        ("a13n-harness", "0.13.0"),
         ("a13n-harness-ui", "0.10.0"),
     )
     for component, version in releases:
@@ -204,7 +204,7 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
 
     for package in ("a13n-harness", "a13n-harness-ui"):
         manifest = tomllib.loads((tmp_path / f"packages/{package}/pyproject.toml").read_text())
-        assert "a13n-envd-client>=0.1.2,<0.2.0" in manifest["project"]["dependencies"]
+        assert "a13n-envd-client>=0.3.0,<0.4.0" in manifest["project"]["dependencies"]
         assert "a13n-logging>=0.2.0,<0.3.0" in manifest["project"]["dependencies"]
     service = tomllib.loads((tmp_path / "packages/a13n-service/pyproject.toml").read_text())
     assert service["project"]["version"] == "0.0.0"
@@ -406,11 +406,11 @@ def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     ("component", "manifest", "dependency", "constraint"),
     [
-        ("a13n-harness", "a13n-harness", "a13n-envd-client", ">=0.1.2,<0.2.0"),
+        ("a13n-harness", "a13n-harness", "a13n-envd-client", ">=0.3.0,<0.4.0"),
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-service", "a13n-service", "a13n-logging", ">=0.2.0,<0.3.0"),
-        ("a13n-harness-ui", "a13n-harness-ui", "a13n-envd-client", ">=0.1.2,<0.2.0"),
+        ("a13n-harness-ui", "a13n-harness-ui", "a13n-envd-client", ">=0.3.0,<0.4.0"),
     ],
 )
 def test_independent_dependency_ranges_are_injected_and_checked(
@@ -434,7 +434,7 @@ def test_independent_dependency_ranges_are_injected_and_checked(
 def test_invalid_independent_dependency_policy_is_atomic(tmp_path: Path, constraint: str) -> None:
     copy_release_files(tmp_path)
     path = tmp_path / "packages/a13n-harness/pyproject.toml"
-    path.write_text(path.read_text().replace(">=0.1.2,<0.2.0", constraint))
+    path.write_text(path.read_text().replace(">=0.3.0,<0.4.0", constraint))
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
     assert result.returncode != 0
@@ -501,8 +501,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.1.0", ">=0.10.0,<0.11.0"),
-        ("a13n-harness-ui", "0.12.0", ">=0.12.0,<0.13.0"),
+        ("a13n-service", "0.1.0", ">=0.13.0,<0.14.0"),
+        ("a13n-harness-ui", "0.12.0", ">=0.13.0,<0.14.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):

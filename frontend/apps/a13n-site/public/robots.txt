@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://a13n.dev/docs/sitemap.xml
+Sitemap: https://a13n.dev/sitemap.xml

@@ -1,11 +1,36 @@
 {
   "cases": [
     {
+      "type": "SystemInfo",
+      "value": {"os": "linux", "architecture": "aarch64", "os_version": "Example Linux"}
+    },
+    {
+      "type": "DeviceMetricsParams",
+      "value": {"expected_device_id": "device-fixture", "expected_generation": 7}
+    },
+    {
+      "type": "DeviceMetricsResult",
+      "value": {"device_id": "device-fixture", "generation": 7, "sample_interval_ms": 10000}
+    },
+    {
+      "type": "DeviceMetricsResult",
+      "value": {
+        "device_id": "device-fixture", "generation": 7, "sample_interval_ms": 1000,
+        "sample": {
+          "sequence": 2, "sampled_at": "2026-08-20T14:00:00.123456789Z",
+          "sample_age_ms": 12, "collection_duration_ms": 3,
+          "system": {"cpu_busy_percent": 25.5, "logical_cpu_count": 8, "memory_total_bytes": 8589934592, "memory_available_bytes": 0, "cpu_time_seconds": {"user": 12.25, "idle": 0.0}},
+          "cgroup_v2": {"cpu_max": {"kind": "limited", "quota_usec": 150000, "period_usec": 100000}, "memory_max": {"kind": "unlimited"}, "memory_events": {"oom": 0}, "pressure": {}},
+          "filesystems": {"missing": {}, "workspace": {"metrics": {"total_bytes": 4096, "available_bytes": 0, "free_bytes": 1024}}}
+        }
+      }
+    },
+    {
       "type": "InitializeParams",
       "value": {
         "client": {"name": "fixture-client", "version": "1.2.3"},
         "expected_device_id": "device-fixture",
-        "supported_protocol_versions": ["0.1"]
+        "supported_protocol_versions": ["0.2"]
       }
     },
     {

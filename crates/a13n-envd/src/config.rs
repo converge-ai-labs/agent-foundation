@@ -101,6 +101,7 @@ use crate::execution::boundary::{Egress, Sandbox};
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    monitoring: Option<crate::monitoring::Options>,
     #[serde(default)]
     execution: crate::execution::Options,
     #[serde(default)]
@@ -219,6 +220,8 @@ pub(crate) struct ConnectionBootstrap {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Config {
     #[serde(default)]
+    pub(crate) monitoring: Option<crate::monitoring::Options>,
+    #[serde(default)]
     pub(crate) computer_use: bool,
     pub(crate) computer_use_permission_timeout: Duration,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -321,6 +324,10 @@ impl Config {
                 }
             }
         };
+
+        if let Some(monitoring) = &mut file.monitoring {
+            monitoring.validate()?;
+        }
 
         let runtime_dir = match connection {
             Some(connection) => connection.runtime_directory,
@@ -435,6 +442,7 @@ impl Config {
             prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?
         };
         Ok(Self {
+            monitoring: file.monitoring,
             computer_use,
             computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
             #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -463,6 +471,7 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
+            monitoring: None,
             computer_use: false,
             computer_use_permission_timeout: Duration::from_secs(120),
             #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -609,7 +618,7 @@ fn parse_reverse_websocket_config(
     })
 }
 
-fn validate_bootstrap_file(path: &Path, name: &str) -> Result<(), ConfigError> {
+pub(crate) fn validate_bootstrap_file(path: &Path, name: &str) -> Result<(), ConfigError> {
     if !path.is_absolute() {
         return Err(ConfigError::new(format!("{name} must be an absolute path")));
     }
@@ -1273,7 +1282,7 @@ pub(crate) struct ConfigError {
 }
 
 impl ConfigError {
-    fn new(message: impl Into<String>) -> Self {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }

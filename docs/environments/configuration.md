@@ -49,17 +49,19 @@ The Host owns one shared `LocalEnvdProviderRuntime`, its binary/bootstrap and sh
 
 ## Docker
 
-When `user` is omitted, the provider uses the image label `ai.a13n.environment.user`, falling back to the image USER for unlabeled custom images. `a13n-sandbox` selects `sandbox` (UID/GID 1000); an explicit recipe `user` takes precedence.
+For native execution, when `user` is omitted, the provider uses the image label `ai.a13n.environment.user`, falling back to the image USER for unlabeled custom images. `a13n-sandbox` selects `sandbox` (UID/GID 1000); an explicit recipe `user` takes precedence.
 
-Service’s `DockerRecipe` uses native Docker exec without starting the bundled Envd daemon. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
+Service’s `DockerRecipe` defaults to `execution="native"`, which uses Docker exec. Select `execution="envd_http"` to use the image-managed Envd daemon over HTTP EIP. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
 
 The private container filesystem supplies `/workspace`. Optional bind mounts have an existing absolute `source` on the Docker Engine's machine, a container `target`, and a `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a recipe option; external data is preserved on destruction.
 
 `cpus` measures CPU cores; `memory_gb` measures decimal GB (1 GB = 1,000,000,000 bytes) with a 6 MiB minimum (0.006291456 GB); `pids_limit` bounds processes. `environment` sets ordinary variables. `init_script` runs only on a new container, and failed initialization is not implicitly replayed. Do not store secrets in these recipe fields. `disable_network` is off by default and selects Docker's `none` network when enabled.
 
-Advanced options include user, shell, Python executable, stop grace (ten seconds), per-helper request timeout (60 seconds; includes init scripts, not Agent Runs or ordinary shell duration), file values (16 MiB), output previews (64 KiB), captured bytes per stream (16 MiB), aggregate observation/retention budgets (64 MiB each), and concurrent process observations (128). Custom images need Linux, Python 3.10+, the configured shell, writable `/workspace` and `/tmp/a13n`; Git is required only for git-ignore queries.
+Native execution options include user, shell, Python executable, stop grace (ten seconds), per-helper request timeout (60 seconds; includes init scripts, not Agent Runs or ordinary shell duration), file values (16 MiB), output previews (64 KiB), captured bytes per stream (16 MiB), aggregate observation/retention budgets (64 MiB each), and concurrent process observations (128). Custom images need Linux, Python 3.10+, the configured shell, writable `/workspace` and `/tmp/a13n`; Git is required only for git-ignore queries.
 
 `DockerConnectionConfiguration.docker_host` selects the Engine socket. After a restart, the Host process must reach the same Engine to re-enter the container. The Service's [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) mounts the Engine socket and grants its non-root Service process access.
+
+For HTTP EIP, configure `envd_http` on the Docker connection with a Worker-reachable host and bind address. Service preserves the image entrypoint and publishes port 8888 on a Docker-assigned host port. Use a compatible Envd image; add `desktop: true` when readiness must include an observable, input-ready desktop. The image owns daemon and Session identities, so recipe `user` overrides are rejected. HTTP execution requires networking. Plain HTTP uses loopback or an explicitly trusted private link. See [Create a Docker desktop](../a13n-service/environments.md#create-a-docker-desktop) for the Console workflow.
 
 ## Cloud Providers
 
@@ -69,7 +71,7 @@ E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop use the same ba
 
 Service’s `E2BRecipe` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true.
 
-Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
+Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 100 MiB (configurable up to 1 GiB), observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
 
 `E2BConnectionConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
 

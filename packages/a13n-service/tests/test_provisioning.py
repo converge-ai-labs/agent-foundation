@@ -115,7 +115,7 @@ async def test_docker_template_uses_the_reviewed_sandbox_release(service, initia
     async with short_session(service.runtime.storage) as session:
         template = await session.get_one(EnvironmentTemplateRow, receipt.template_id)
         assert template.config["recipe"] == {
-            "image": "ghcr.io/converge-ai-labs/a13n-sandbox:0.1.3",
+            "image": "ghcr.io/converge-ai-labs/a13n-sandbox:0.3.0",
             "pull_policy": "if_missing",
         }
 

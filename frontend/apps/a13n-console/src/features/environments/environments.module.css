@@ -16,6 +16,10 @@
 .advanced {
   font-size: var(--a13n-text-sm);
 }
+.lifecycleSection {
+  min-width: 0;
+  padding-bottom: 16px;
+}
 .advancedBody {
   display: grid;
   gap: 20px;
@@ -335,4 +339,59 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
   line-height: 1.6;
+}
+
+/* Keep the E2B capability and its template together as one decision. */
+.e2bSettings {
+  min-width: 0;
+  padding: 0 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.e2bTemplate {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.e2bTemplateHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.e2bTemplateSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-secondary);
+}
+.e2bTemplateSummary strong {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  color: var(--a13n-text);
+}
+.e2bHelp {
+  margin: -10px 0 0;
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+  color: var(--a13n-secondary);
+}
+.e2bRuntime {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  align-items: center;
+  gap: 12px 24px;
+}
+.e2bInternet {
+  min-width: 0;
+}
+@media (max-width: 480px) {
+  .e2bTemplateHeading {
+    flex-wrap: wrap;
+  }
 }

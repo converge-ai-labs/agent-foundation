@@ -19,6 +19,8 @@ from .models import (
     ComputerTypeTextParams,
     DeviceDescribeParams,
     DeviceDescribeResult,
+    DeviceMetricsParams,
+    DeviceMetricsResult,
     DirectoryListParams,
     DirectoryListResult,
     EgressUpdateParams,
@@ -242,6 +244,19 @@ DEVICE_DESCRIBE = MethodSpec(
     transfer_direction=None,
     params_type=DeviceDescribeParams,
     result_type=DeviceDescribeResult,
+    device_scoped=True,
+)
+
+DEVICE_METRICS = MethodSpec(
+    name="device.metrics",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.2",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=DeviceMetricsParams,
+    result_type=DeviceMetricsResult,
     device_scoped=True,
 )
 
@@ -777,6 +792,7 @@ METHODS = MappingProxyType(
         COMPUTER_SCROLL.name: COMPUTER_SCROLL,
         COMPUTER_TYPE_TEXT.name: COMPUTER_TYPE_TEXT,
         DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,
+        DEVICE_METRICS.name: DEVICE_METRICS,
         DIRECTORY_LIST.name: DIRECTORY_LIST,
         EGRESS_UPDATE.name: EGRESS_UPDATE,
         ENVIRONMENT_DESCRIBE.name: ENVIRONMENT_DESCRIBE,

@@ -362,6 +362,48 @@ def test_shell_review_suggestions_keep_gateway_family_and_custom_ids_separate() 
     assert all(item.value != "private-model" for item in shell_review_models(connection, "private-model"))
 
 
+@pytest.mark.parametrize(
+    "model_id,preset_key,thinking_type",
+    [
+        ("claude-sonnet-5-5", "adaptive", "adaptive"),
+        ("claude-opus-5-5", "adaptive", "adaptive"),
+        ("claude-haiku-5-5", "adaptive", "adaptive"),
+        ("claude-sonnet-4-6", "adaptive", "adaptive"),
+        ("claude-opus-4-6", "adaptive", "adaptive"),
+        ("claude-sonnet-4-5", "interleaved", "enabled"),
+        ("claude-haiku-4-5", "extended", "enabled"),
+    ],
+)
+def test_anthropic_creation_materializes_model_appropriate_thinking(model_id, preset_key, thinking_type) -> None:
+    options = model_options(ModelOptionsRequest(connection="anthropic", model_id=model_id))
+    assert [preset.value for preset in options.presets] == [preset_key, "default"]
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection="anthropic",
+            model_id=model_id,
+            authentication=ApiKeyAuthentication(kind="api_key", env="ANTHROPIC_API_KEY"),
+            base_url="https://gateway.example.com",
+        )
+    )
+    assert recipe.settings == options.presets[0].settings
+    assert recipe_document(recipe)["settings"] == recipe.settings
+    assert recipe.settings["anthropic_thinking"]["type"] == thinking_type
+    assert recipe.settings["anthropic_thinking"]["display"] == "summarized"
+    if thinking_type == "adaptive":
+        assert recipe.settings["anthropic_effort"] == "high"
+        assert recipe.settings["max_tokens"] == 32768
+    else:
+        assert "anthropic_effort" not in recipe.settings
+        assert recipe.settings["anthropic_thinking"]["budget_tokens"] == 8192
+        assert recipe.settings["max_tokens"] == 16384
+    assert recipe.settings.get("anthropic_betas", []) == (
+        ["interleaved-thinking-2025-05-14"] if preset_key == "interleaved" else []
+    )
+    assert "anthropic_thinking" not in options.presets[-1].settings
+    assert "anthropic_effort" not in options.presets[-1].settings
+    assert "anthropic_betas" not in options.presets[-1].settings
+
+
 @pytest.mark.parametrize("model_id", ["claude-sonnet-4-6", "claude-sonnet-4-5", "custom-model"])
 def test_anthropic_authoring_presets_materialize_block_cache_defaults(model_id: str) -> None:
     options = model_options(ModelOptionsRequest(connection="anthropic", model_id=model_id))
@@ -390,6 +432,12 @@ def test_anthropic_authoring_presets_materialize_block_cache_defaults(model_id: 
     [
         {},
         {"anthropic_cache_messages": False},
+        {
+            "anthropic_thinking": {"type": "disabled"},
+            "anthropic_effort": "low",
+            "anthropic_betas": ["context-1m-2025-08-07"],
+            "extra_headers": {"x-gateway": "kept"},
+        },
         {
             "anthropic_cache_instructions": "1h",
             "anthropic_cache_tool_definitions": "5m",

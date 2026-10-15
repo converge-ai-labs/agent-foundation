@@ -14,6 +14,7 @@ from .methods import (
     COMPUTER_SCROLL,
     COMPUTER_TYPE_TEXT,
     DEVICE_DESCRIBE,
+    DEVICE_METRICS,
     DIRECTORY_LIST,
     EGRESS_UPDATE,
     ENVIRONMENT_DESCRIBE,
@@ -70,6 +71,8 @@ from .models import (
     ComputerTypeTextParams,
     DeviceDescribeParams,
     DeviceDescribeResult,
+    DeviceMetricsParams,
+    DeviceMetricsResult,
     DirectoryListParams,
     DirectoryListResult,
     EgressUpdateParams,
@@ -189,6 +192,9 @@ class EIPClient:
 
     async def device_describe(self, params: DeviceDescribeParams) -> DeviceDescribeResult:
         return await self._requester.request(DEVICE_DESCRIBE, params)
+
+    async def device_metrics(self, params: DeviceMetricsParams) -> DeviceMetricsResult:
+        return await self._requester.request(DEVICE_METRICS, params)
 
     async def directory_list(self, params: DirectoryListParams) -> DirectoryListResult:
         return await self._requester.request(DIRECTORY_LIST, params)

@@ -13,9 +13,11 @@ from html import escape
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import AgentStreamEvent, ModelMessage, TextContent, UserContent, UserPromptPart
+from pydantic_ai.messages import AgentStreamEvent, ModelMessage, ModelResponse, TextContent, UserContent, UserPromptPart
+from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset
 
+from a13n_harness._memory_reads import FileMemoryReads
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
@@ -34,6 +36,7 @@ from a13n_harness.providers.memory import (
     FileEntry,
     FileFormat,
     FileStore,
+    FileText,
     MemoryAccess,
     MemoryRecord,
     MemoryStoreError,
@@ -214,9 +217,15 @@ class FileMemoryCapability(AbstractModelContextCapability):
                 write_retries=self.limits.write_retries,
                 origin=self.origin,
                 tools=self.tools,
+                reads=self._read_dependencies,
             ).get_toolset()
             self._toolset_bindings = bindings
         return self._toolset
+
+    async def _read_dependencies(self, ctx: RunContext[AgentContext]) -> FileMemoryReads:
+        run = await self.for_run(ctx)
+        assert isinstance(run, _FileMemoryRun)
+        return run._reads
 
 
 @dataclass(init=False)
@@ -229,6 +238,7 @@ class _FileMemoryRun(FileMemoryCapability):
         self._toolset = source.get_toolset()
         self._toolset_bindings = source._toolset_bindings
         self._positions = source.cursors if source.cursors is not None else MemoryCursors()
+        self._reads = FileMemoryReads(context.state)
         self._context = context
         self._first_input = _FirstInput(context, self._deliver)
 
@@ -236,6 +246,17 @@ class _FileMemoryRun(FileMemoryCapability):
         if ctx.deps is not self._context:
             raise DefinitionError("File memory cannot cross logical runs.", code="capability_scope_invalid")
         return self
+
+    async def after_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        request_context: ModelRequestContext,
+        response: ModelResponse,
+    ) -> ModelResponse:
+        if self._first_input.is_own(ctx):
+            await self._reads.deliver()
+        return response
 
     async def wrap_model_context(
         self,
@@ -251,6 +272,7 @@ class _FileMemoryRun(FileMemoryCapability):
             for mount in self.mounts:
                 self._positions._set(mount.key, None)
             self._first_input.forget()
+            await self._reads.clear()
 
     async def _deliver(self, ctx: RunContext[AgentContext]) -> tuple[ModelContextBlock, ...]:
         if not self.mounts:
@@ -264,8 +286,20 @@ class _FileMemoryRun(FileMemoryCapability):
                 # An unavailable memory keeps its cursor and is read again next run.
                 observed[mount.name] = {"memory": mount.name, "context": "unavailable"}
         file_sources: dict[str, list[JsonValue]] = {}
-        rendered = _layout(snapshots, self.limits, file_sources=file_sources)
+        read_versions: dict[str, dict[str, str | None]] = {}
+        rendered = _layout(snapshots, self.limits, file_sources=file_sources, read_versions=read_versions)
         for snapshot in snapshots:
+            try:
+                await self._reads.observe(snapshot.mount.key, read_versions.get(snapshot.mount.name, {}))
+            except MemoryStoreError:
+                # Keep the old cursor and guards; never deliver untracked file content.
+                if rendered is not None:
+                    rendered.pop(snapshot.mount.name, None)
+                file_sources.pop(snapshot.mount.name, None)
+                observed[snapshot.mount.name] = {"memory": snapshot.mount.name, "context": "unavailable"}
+        for snapshot in snapshots:
+            if snapshot.mount.name in observed:
+                continue
             self._positions._set(snapshot.mount.key, snapshot.cursor)
             if rendered is None:
                 kind, content = ("unchanged" if snapshot.changed == () else "omitted"), ""
@@ -307,7 +341,7 @@ class _Snapshot:
     cursor: str
     entries: tuple[FileEntry, ...]
     changed: tuple[str, ...] | None  # None: full context
-    loaded: Mapping[str, str]
+    loaded: Mapping[str, FileText]
 
 
 async def _snapshot(mount: FileMount, since: str | None) -> _Snapshot:
@@ -315,11 +349,11 @@ async def _snapshot(mount: FileMount, since: str | None) -> _Snapshot:
     feed = await mount.store.changes(since)
     entries = tuple(await mount.store.list())
     existing = {entry.path for entry in entries}
-    loaded: dict[str, str] = {}
+    loaded: dict[str, FileText] = {}
     for path in mount.always_load:
         if path in existing:
             try:
-                loaded[path] = (await mount.store.read(path)).text
+                loaded[path] = await mount.store.read(path)
             except MemoryStoreError as error:
                 if error.code != "not_found":
                     raise
@@ -332,6 +366,7 @@ def _layout(
     limits: FileMemoryLimits,
     *,
     file_sources: dict[str, list[JsonValue]] | None = None,
+    read_versions: dict[str, dict[str, str | None]] | None = None,
 ) -> dict[str, tuple[str, str]] | None:
     """Each memory's bounded block, or None to deliver one fixed-size view/cleanup reminder.
 
@@ -340,7 +375,7 @@ def _layout(
     """
     full = {snapshot.mount.name for snapshot in snapshots if snapshot.changed is None}
     while True:
-        rendered, overflow = _render(snapshots, full, limits, file_sources=file_sources)
+        rendered, overflow = _render(snapshots, full, limits, file_sources=file_sources, read_versions=read_versions)
         if not overflow:
             return rendered
         full |= overflow
@@ -352,7 +387,10 @@ def _render(
     limits: FileMemoryLimits,
     *,
     file_sources: dict[str, list[JsonValue]] | None = None,
+    read_versions: dict[str, dict[str, str | None]] | None = None,
 ) -> tuple[dict[str, tuple[str, str]] | None, set[str]]:
+    if read_versions is not None:
+        read_versions.clear()
     kinds = {
         snapshot.mount.name: "full" if snapshot.mount.name in full else "changes"
         for snapshot in snapshots
@@ -403,6 +441,20 @@ def _render(
             overflow.add(name)
             continue
         rendered[name] = (kind, _block(name, kind, body))
+        if read_versions is not None:
+            lines_shown = body["index" if kind == "full" else "changed"]
+            assert isinstance(lines_shown, list)
+            versions: dict[str, str | None] = {
+                entry.path: entry.version for entry in snapshot.entries if _line(entry) in lines_shown
+            }
+            for path in snapshot.changed or ():
+                if f"{path} (deleted)" in lines_shown:
+                    versions[path] = None
+            for item in files[name]:
+                if isinstance(item, dict) and "content" in item:
+                    path = str(item["path"])
+                    versions[path] = snapshot.loaded[path].version
+            read_versions[name] = versions
     if not overflow and file_sources is not None:
         file_sources.clear()
         for name in rendered:
@@ -425,9 +477,10 @@ def _files(snapshot: _Snapshot, full: bool, allowance: int, remaining: int) -> t
     """Bounded file prefixes and view hints; the index covers individual notices that do not fit."""
     items: list[JsonValue] = []
     for path in snapshot.mount.always_load:
-        text = snapshot.loaded.get(path)
-        if text is None or not (full or path in (snapshot.changed or ())):
+        file = snapshot.loaded.get(path)
+        if file is None or not (full or path in (snapshot.changed or ())):
             continue
+        text = file.text
         item: dict[str, JsonValue] | None = _file_item(path, text, min(allowance, remaining))
         if item is not None:
             cost = _cost(item)

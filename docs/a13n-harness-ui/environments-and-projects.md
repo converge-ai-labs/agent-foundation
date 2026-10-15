@@ -102,7 +102,7 @@ Each Thread stores its own local directories, local execution mode, Device bindi
 
 - In **Conversation details → Configuration**, edit next-Run selections to save a new Environment combination for that Thread.
 - Choose **Apply Project environments**, review the replacement, then apply it to replace just the four Environment axes. A local-only Project clears old Device bindings. Agent, Model, MCP, Plugins, and Run Extensions stay unchanged.
-- In the composer, open **Environments**. **Local · Harness server** contains Full Control, Sandbox or a custom local mode and local directories. **Device environments** contains Device bindings; **Default working location** selects one directory or Thread files. Apply commits the whole draft; closing without applying discards edits. An active override applies to subsequent Runs in this tab until reset, not just one send. The local mode does not change remote shell permissions. **Use conversation defaults** clears temporary overrides.
+- In the composer, open **Environments**. **Local · Harness server** contains Full Control, Sandbox or a custom local mode and local directories. Each environment contains its working directories: two local directories are one local environment. Remote directories with the same Device and execution policy appear together. **Default working directory**, below the environment groups, selects one directory or Thread files. Apply commits the whole draft; closing without applying discards edits. An active override applies to subsequent Runs in this tab until reset, not just one send. The local mode does not change remote shell permissions. **Use conversation defaults** clears temporary overrides.
 
 Composer overrides do not change the saved Thread. Steering keeps the active Run's captured Environment. Deferred replies keep the suspended Run's Environment unless explicitly changed; a new child starts with the parent's captured selections and then owns them independently.
 
@@ -170,13 +170,15 @@ authentication:
 
 Under **Settings → Projects → Environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
 
-1. Select an existing Device or connect a new one inline. Review the suggested unique alias, such as `build`.
-2. Enter a known absolute directory, choose **Use Device default**, or browse and explicitly select a directory.
-3. Choose the allowed actions and the default working location, then save the enclosing settings.
+1. Select an existing Device or connect a new one inline. Choose the allowed actions for this environment.
+2. Enter a known absolute directory, choose **Use Device default**, or browse and explicitly select a directory. Use **Add another directory** for additional paths on the same environment.
+3. Apply the environment draft, choose **Default working directory**, then save the enclosing settings.
+
+Use **Add directory** on an existing environment to extend its directory list. Its Device and access policy apply to all those directories. Different access, network or boundary policies remain separate groups. Routing aliases are generated automatically; **Advanced routing** lets you inspect or edit them.
 
 Directory browsing works before a Run exists and opens no Session. An unavailable Device still permits a known path or removal. Disabled directory discovery permits manual paths and the advertised default. Windows Device paths use `/C:/work` or `/UNC/server/share/work`; these are not paths on the Harness UI server.
 
-**Add project** also supports Device-only directories: add a Device binding without adding a local directory, choose its default working location, and save. The local mode stays visible because it still controls Thread files. Equivalent YAML:
+**Add project** also supports Device-only directories: add a Device binding without adding a local directory, choose its default working directory, and save. The local mode stays visible because it still controls Thread files. Equivalent YAML:
 
 ```yaml
 schema_version: "1"
@@ -206,7 +208,7 @@ Use revocation when you want to withdraw access. Use removal when you only want 
 
 ### Remove an unavailable environment
 
-To remove one Project or Thread selection, choose **Remove** beside its alias. If it is the default, select a replacement in the same dialog. Save the enclosing settings. A Project must retain at least one local root or Device binding; a Thread may remove all Device bindings and use Thread files.
+To remove one Project or Thread selection, choose **Remove** beside its directory path. If it is the default, select a replacement in the same dialog. Save the enclosing settings. A Project must retain at least one local root or Device binding; a Thread may remove all Device bindings and use Thread files.
 
 To forget the shared connection or a custom local profile, use **Settings → Environments → Forget**. This works without connecting to the target. Repair any General or Project defaults that reference the resource first; the dialog links to known Project references. Forget removes local configuration only: it neither deletes remote files nor stops the Device, cancels active Runs, or rewrites history. Built-in local profiles cannot be deleted.
 

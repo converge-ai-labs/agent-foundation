@@ -234,6 +234,64 @@ async def test_purge_removes_every_file(tmp_path: Path) -> None:
     store = DirectoryFileStore(tmp_path / "memory")
     await store.write("a/b.md", "x\n", expected=None, origin=ORIGIN)
     await store.purge()
-    assert not (tmp_path / "memory").exists()
+    assert (tmp_path / "memory/.a13n-memory/lock").exists()
     assert await store.list() == []
     await store.purge()
+
+
+@pytest.mark.parametrize("change", ["update", "delete", "move"])
+@pytest.mark.parametrize("operation", ["create", "write", "move", "delete"])
+async def test_dependency_conflicts_leave_directory_files_unchanged(
+    tmp_path: Path, change: str, operation: str
+) -> None:
+    store, other = DirectoryFileStore(tmp_path), DirectoryFileStore(tmp_path)
+    source = await store.write("source.md", "v1", expected=None, origin=ORIGIN)
+    target = await store.write("target.md", "target", expected=None, origin=ORIGIN)
+    if change == "update":
+        await other.write("source.md", "v2", expected=source, origin=ORIGIN)
+    elif change == "delete":
+        await other.delete("source.md", expected=source, origin=ORIGIN)
+    else:
+        await other.move("source.md", "renamed.md", expected=source, origin=ORIGIN)
+    before = await store.list()
+    dependencies = {"source.md": source}
+    calls = {
+        "create": lambda: store.write("derived.md", "stale", expected=None, origin=ORIGIN, dependencies=dependencies),
+        "write": lambda: store.write("target.md", "stale", expected=target, origin=ORIGIN, dependencies=dependencies),
+        "move": lambda: store.move(
+            "target.md", "derived.md", expected=target, origin=ORIGIN, dependencies=dependencies
+        ),
+        "delete": lambda: store.delete("target.md", expected=target, origin=ORIGIN, dependencies=dependencies),
+    }
+    assert (await _failure(calls[operation]())).code == "read_conflict"
+    assert await store.list() == before
+
+
+async def test_directory_dependency_checks_and_mutation_share_the_lock(tmp_path: Path) -> None:
+    # Both operations derive a replacement from the same two-file snapshot.
+    # Exactly one can commit, even though their destination paths differ.
+    first, second = DirectoryFileStore(tmp_path), DirectoryFileStore(tmp_path)
+    a = await first.write("a.md", "a", expected=None, origin=ORIGIN)
+    b = await first.write("b.md", "b", expected=None, origin=ORIGIN)
+    dependencies = {"a.md": a, "b.md": b}
+    outcomes = await asyncio.gather(
+        first.write("a.md", "from b", expected=a, origin=ORIGIN, dependencies=dependencies),
+        second.write("b.md", "from a", expected=b, origin=ORIGIN, dependencies=dependencies),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(outcome, str) for outcome in outcomes) == 1
+    errors = [outcome for outcome in outcomes if isinstance(outcome, MemoryStoreError)]
+    assert len(errors) == 1 and errors[0].code == "read_conflict"
+
+
+async def test_directory_dependencies_allow_unrelated_changes_and_check_absence(tmp_path: Path) -> None:
+    store = DirectoryFileStore(tmp_path)
+    source = await store.write("source.md", "source", expected=None, origin=ORIGIN)
+    await store.write("unrelated.md", "other", expected=None, origin=ORIGIN)
+    dependencies = {"source.md": source, "missing.md": None}
+    await store.write("derived.md", "derived", expected=None, origin=ORIGIN, dependencies=dependencies)
+    await store.write("missing.md", "created", expected=None, origin=ORIGIN)
+    refused = await _failure(
+        store.write("refused.md", "stale", expected=None, origin=ORIGIN, dependencies=dependencies)
+    )
+    assert refused.code == "read_conflict"

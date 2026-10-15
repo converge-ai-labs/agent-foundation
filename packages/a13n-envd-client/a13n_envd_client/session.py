@@ -11,6 +11,8 @@ from a13n_envd_client.eip.v1 import (
     METHODS,
     DeviceDescribeParams,
     DeviceDescriptor,
+    DeviceMetricsParams,
+    DeviceMetricsResult,
     DirectoryListParams,
     DirectoryListResult,
     EgressMode,
@@ -117,6 +119,22 @@ class EIPDeviceConnection:
         _validate_methods(observed.available_methods)
         self._descriptor = observed
         return observed
+
+    async def metrics(self) -> DeviceMetricsResult:
+        """Read the latest Device sample without opening a Session or triggering collection."""
+        self._ensure_open()
+        if "device.metrics" not in self._descriptor.available_methods:
+            raise EIPSessionStateError("Device does not advertise device.metrics")
+        result = await self._client.device_metrics(
+            DeviceMetricsParams(
+                expected_device_id=self._descriptor.device_id,
+                expected_generation=self._descriptor.generation,
+            )
+        )
+        if (result.device_id, result.generation) != (self._descriptor.device_id, self._descriptor.generation):
+            await self.close()
+            raise EIPProtocolError("Device identity or generation changed on its connection")
+        return result
 
     async def list_directories(self, params: DirectoryListParams) -> DirectoryListResult:
         self._ensure_open()

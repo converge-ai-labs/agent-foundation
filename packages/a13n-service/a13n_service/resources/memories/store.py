@@ -6,7 +6,7 @@ numbers changes without gaps, so a change cursor is a number and the feed lists 
 A version is a change number as a string: a file's version is the number of its last change.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 
 from a13n_harness.providers.memory import (
@@ -91,6 +91,34 @@ def _check(row: MemoryFileRow | None, expected: str | None) -> None:
     if (None if row is None else str(row.version)) != expected:
         current = None if row is None else file_text(row)
         raise MemoryStoreError("version_mismatch", "The file changed since that version.", current=current)
+
+
+async def _check_dependencies(
+    session: AsyncSession,
+    settings: MemorySettings,
+    memory_id: str,
+    dependencies: Mapping[str, str | None] | None,
+) -> None:
+    """Validate observed versions while the caller holds the store row lock."""
+    if not dependencies:
+        return
+    expected = {validate_path(path, file_format(settings)): version for path, version in dependencies.items()}
+    rows = (
+        await session.scalars(
+            select(MemoryFileRow)
+            .where(MemoryFileRow.memory_id == memory_id, MemoryFileRow.path.in_(expected))
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    current = {row.path: row for row in rows}
+    for path, version in expected.items():
+        row = current.get(path)
+        if (str(row.version) if row is not None else None) != version:
+            raise MemoryStoreError(
+                "read_conflict",
+                f"{path} changed since it was observed; reread it and reconsider the write.",
+                current=file_text(row) if row is not None else None,
+            )
 
 
 class _Change:
@@ -198,12 +226,14 @@ async def write_file(
     expected: str | None,
     origin: Origin,
     count_change: bool = True,
+    dependencies: Mapping[str, str | None] | None = None,
 ) -> MemoryFileRow:
     """Create the file (`expected` None) or replace the version `expected` names; the same text changes nothing."""
     fmt = file_format(settings)
     path = validate_path(path, fmt)
     description = describe(text, fmt)
     change = await _change(session, memory_id, origin)
+    await _check_dependencies(session, settings, memory_id, dependencies)
     row = await find_file(session, memory_id, path)
     _check(row, expected)
     if row is not None and row.content == text:
@@ -233,9 +263,11 @@ async def delete_file(
     expected: str,
     origin: Origin,
     count_change: bool = True,
+    dependencies: Mapping[str, str | None] | None = None,
 ) -> None:
     path = validate_path(path, file_format(settings))
     change = await _change(session, memory_id, origin)
+    await _check_dependencies(session, settings, memory_id, dependencies)
     row = await find_file(session, memory_id, path)
     _check(row, expected)
     assert row is not None
@@ -256,11 +288,13 @@ async def move_file(
     expected: str,
     origin: Origin,
     count_change: bool = True,
+    dependencies: Mapping[str, str | None] | None = None,
 ) -> MemoryFileRow:
     """Move the version `expected` names to a free path in one change; the file keeps its ID."""
     fmt = file_format(settings)
     source, destination = validate_path(source, fmt), validate_path(destination, fmt)
     change = await _change(session, memory_id, origin)
+    await _check_dependencies(session, settings, memory_id, dependencies)
     row = await find_file(session, memory_id, source)
     _check(row, expected)
     assert row is not None
@@ -343,7 +377,7 @@ async def search_lines(
     else:
         matched = func.strpos(func.lower(line), func.lower(pattern)) > 0
     query = (
-        select(MemoryFileRow.path, number, line)
+        select(MemoryFileRow.path, number, line, MemoryFileRow.version)
         .select_from(MemoryFileRow)
         .join(lines, true())
         .where(MemoryFileRow.memory_id == memory_id, MemoryFileRow.path.startswith(directory, autoescape=True))
@@ -358,7 +392,9 @@ async def search_lines(
         if message is None:
             raise
         raise MemoryStoreError("invalid_pattern", message) from None
-    return [GrepMatch(path=path, line=line, text=text) for path, line, text in rows[:limit]], len(rows) > limit
+    return [
+        GrepMatch(path=path, line=line, text=text, version=str(version)) for path, line, text, version in rows[:limit]
+    ], len(rows) > limit
 
 
 async def purge_files(session: AsyncSession, memory_id: str) -> None:
@@ -403,7 +439,15 @@ class PostgresFileStore:
         async with short_session(self.storage) as session:
             return file_text(await read_file(session, self.settings, self.memory_id, path))
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         self.gate("run")
         async with transaction(self.storage) as session:
             row = await write_file(
@@ -415,10 +459,19 @@ class PostgresFileStore:
                 expected=expected,
                 origin=origin,
                 count_change=self.count_changes,
+                dependencies=dependencies,
             )
             return str(row.version)
 
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         self.gate("run")
         async with transaction(self.storage) as session:
             row = await move_file(
@@ -430,10 +483,18 @@ class PostgresFileStore:
                 expected=expected,
                 origin=origin,
                 count_change=self.count_changes,
+                dependencies=dependencies,
             )
             return str(row.version)
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
+    async def delete(
+        self,
+        path: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> None:
         self.gate("run")
         async with transaction(self.storage) as session:
             await delete_file(
@@ -444,6 +505,7 @@ class PostgresFileStore:
                 expected=expected,
                 origin=origin,
                 count_change=self.count_changes,
+                dependencies=dependencies,
             )
 
     async def changes(self, since: str | None) -> Changes | FullResync:

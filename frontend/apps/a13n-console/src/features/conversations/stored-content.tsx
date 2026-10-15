@@ -266,24 +266,3 @@ export function LegacyTruncation({ itemId }: { itemId: string }) {
     </p>
   ) : null;
 }
-
-export function StoredObservations() {
-  const context = useContext(Context);
-  if (!context) return null;
-  return (
-    <>
-      {[...context.items.values()]
-        .filter(
-          (item) =>
-            item.kind === "observation" &&
-            Object.keys(item.content_refs ?? {}).length,
-        )
-        .map((item) => (
-          <section key={item.id}>
-            <code>{String(item.content.name ?? "Observation")}</code>
-            <ItemContents itemId={item.id} />
-          </section>
-        ))}
-    </>
-  );
-}

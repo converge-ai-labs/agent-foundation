@@ -38,7 +38,10 @@ dependencies = [
 
 [project.optional-dependencies]
 docker = ["docker>=7.2,<8"]
-e2b = ["e2b>=2.46.4,<3"]
+e2b = [
+    "e2b>=2.46.4,<3",
+    "e2b-desktop>=2.7.0,<2.8",
+]
 modal = ["modal>=1.5.5,<2"]
 
 [project.urls]
@@ -60,7 +63,7 @@ build-backend = "hatchling.build"
 packages = ["a13n_harness"]
 
 [tool.a13n.release-dependencies]
-a13n-envd-client = ">=0.1.2,<0.2.0"
+a13n-envd-client = ">=0.3.0,<0.4.0"
 a13n-logging = ">=0.2.0,<0.3.0"
 
 [tool.deptry]

@@ -4,7 +4,7 @@
 
 ## Device and Session runtime
 
-The daemon implements EIP 0.1 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
+The daemon implements EIP 0.2 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
 
 - `initialize` negotiates the Device connection without creating a Session.
 - `device.describe` and bounded `directory.list` work without a Session.
@@ -49,6 +49,8 @@ A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime \
 The default directory must exist; when omitted, it is captured from the daemon startup directory. `A13N_ENVD_DEVICE_ID` can supply the Device identity when the JSON does not. Executable roots and shell profiles are trusted launch policy, not Session configuration. Set both to empty for a file-only Device.
 
 `A13N_ENVD_TRANSPORT` defaults to `stdio` and also accepts `http` or `reverse_websocket`. HTTP requires a bind address, credential file, and either native TLS or explicit loopback/private-link plaintext scope. Reverse WebSocket requires a Host URL and credential file. The daemon exposes no inbound WebSocket, browser, generic HTTP, or health endpoint. Readiness is an EIP operation. Stdio stdout is reserved for protocol frames; diagnostics go to stderr.
+
+Linux deployments can separately enable [read-only resource monitoring](../../docs/a13n-envd/configuration.md#resource-monitoring). A dedicated authenticated HTTP listener serves cached system CPU/memory, explicitly selected cgroup v2, and filesystem-capacity observations alongside any EIP carrier. Monitoring defaults off and uses a distinct credential; it does not create Sessions or retain history.
 
 The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootstrap fields and limits. The [Python client guide](../../docs/a13n-envd/python-client.md) shows shared Device ownership and independent Session scopes.
 

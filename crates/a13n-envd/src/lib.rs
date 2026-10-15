@@ -20,6 +20,7 @@ pub mod eip;
 mod execution;
 mod filesystem;
 mod http;
+mod monitoring;
 mod operation;
 mod process;
 mod resource;
@@ -149,6 +150,7 @@ async fn serve(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync
         computer::startup::prepare(config.computer_use_permission_timeout).await?;
     }
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
+    let _monitoring = daemon.start_monitoring();
     match &config.transport {
         config::TransportConfig::Stdio => stdio::serve(daemon, &config).await?,
         config::TransportConfig::Http(http_config) => {

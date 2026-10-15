@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package a13n.agent_envd.eip.v1;
+
+import "a13n-envd/eip/v1/options.proto";
+import "google/protobuf/timestamp.proto";
+
+enum OperatingSystem {
+  OPERATING_SYSTEM_UNSPECIFIED = 0;
+  OPERATING_SYSTEM_LINUX = 1 [(eip_enum_value).json_name = "linux"];
+  OPERATING_SYSTEM_MACOS = 2 [(eip_enum_value).json_name = "macos"];
+  OPERATING_SYSTEM_WINDOWS = 3 [(eip_enum_value).json_name = "windows"];
+}
+
+message SystemInfo {
+  OperatingSystem os = 1;
+  optional string os_version = 2 [(eip_field).max_length = 256];
+  optional string kernel_version = 3 [(eip_field).max_length = 256];
+  optional string architecture = 4 [(eip_field).max_length = 64];
+  optional string cpu_model = 5 [(eip_field).max_length = 256];
+}
+
+message DeviceMetricsParams {
+  string expected_device_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 expected_generation = 2 [(eip_field).minimum = 1];
+}
+
+message DeviceMetricsResult {
+  string device_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 generation = 2 [(eip_field).minimum = 1];
+  uint64 sample_interval_ms = 3 [(eip_field).minimum = 1000, (eip_field).maximum = 60000];
+  optional MetricsSample sample = 4;
+}
+
+message MetricsSample {
+  uint64 sequence = 1 [(eip_field).minimum = 1];
+  google.protobuf.Timestamp sampled_at = 2;
+  uint64 sample_age_ms = 3;
+  uint64 collection_duration_ms = 4;
+  SystemMetrics system = 5;
+  optional CgroupMetrics cgroup_v2 = 6;
+  map<string, FilesystemObservation> filesystems = 7;
+}
+
+message SystemMetrics {
+  optional double cpu_busy_percent = 1 [(eip_field).minimum = 0, (eip_field).maximum = 100];
+  optional CpuTimeSeconds cpu_time_seconds = 2;
+  optional uint32 logical_cpu_count = 3 [(eip_field).minimum = 1];
+  optional uint64 memory_total_bytes = 4;
+  optional uint64 memory_available_bytes = 5;
+  optional Pressures pressure = 6;
+}
+
+message CpuTimeSeconds {
+  optional double user = 1 [(eip_field).minimum = 0];
+  optional double nice = 2 [(eip_field).minimum = 0];
+  optional double system = 3 [(eip_field).minimum = 0];
+  optional double idle = 4 [(eip_field).minimum = 0];
+  optional double iowait = 5 [(eip_field).minimum = 0];
+  optional double irq = 6 [(eip_field).minimum = 0];
+  optional double softirq = 7 [(eip_field).minimum = 0];
+  optional double steal = 8 [(eip_field).minimum = 0];
+}
+
+message Pressures {
+  optional Pressure cpu = 1;
+  optional Pressure memory = 2;
+  optional Pressure io = 3;
+}
+
+message Pressure {
+  optional PressureLevel some = 1;
+  optional PressureLevel full = 2;
+}
+
+message PressureLevel {
+  double avg10_percent = 1 [(eip_field).minimum = 0, (eip_field).maximum = 100];
+  double avg60_percent = 2 [(eip_field).minimum = 0, (eip_field).maximum = 100];
+  double avg300_percent = 3 [(eip_field).minimum = 0, (eip_field).maximum = 100];
+  uint64 total_usec = 4;
+}
+
+message CgroupMetrics {
+  optional uint64 cpu_usage_usec = 1;
+  optional uint64 cpu_user_usec = 2;
+  optional uint64 cpu_system_usec = 3;
+  optional uint64 cpu_periods_total = 4;
+  optional uint64 cpu_throttled_periods_total = 5;
+  optional uint64 cpu_throttled_usec = 6;
+  optional CpuLimit cpu_max = 7;
+  optional uint64 memory_current_bytes = 8;
+  optional MemoryLimit memory_max = 9;
+  MemoryEvents memory_events = 10;
+  Pressures pressure = 11;
+}
+
+message MemoryEvents {
+  optional uint64 low = 1;
+  optional uint64 high = 2;
+  optional uint64 max = 3;
+  optional uint64 oom = 4;
+  optional uint64 oom_kill = 5;
+  optional uint64 oom_group_kill = 6;
+}
+
+message UnlimitedCpuLimit {
+  string kind = 1 [(eip_field).const_string = "unlimited"];
+}
+
+message LimitedCpuLimit {
+  string kind = 1 [(eip_field).const_string = "limited"];
+  uint64 quota_usec = 2 [(eip_field).minimum = 1];
+  uint64 period_usec = 3 [(eip_field).minimum = 1];
+}
+
+message CpuLimit {
+  option (eip_message).discriminated_union = true;
+  oneof limit {
+    UnlimitedCpuLimit unlimited = 1;
+    LimitedCpuLimit limited = 2;
+  }
+}
+
+message UnlimitedMemoryLimit {
+  string kind = 1 [(eip_field).const_string = "unlimited"];
+}
+
+message LimitedMemoryLimit {
+  string kind = 1 [(eip_field).const_string = "limited"];
+  uint64 bytes = 2;
+}
+
+message MemoryLimit {
+  option (eip_message).discriminated_union = true;
+  oneof limit {
+    UnlimitedMemoryLimit unlimited = 1;
+    LimitedMemoryLimit limited = 2;
+  }
+}
+
+message FilesystemObservation {
+  optional FilesystemMetrics metrics = 1;
+}
+
+message FilesystemMetrics {
+  uint64 total_bytes = 1;
+  uint64 available_bytes = 2;
+  uint64 free_bytes = 3;
+  optional uint64 total_inodes = 4;
+  optional uint64 free_inodes = 5;
+  optional uint64 available_inodes = 6;
+}

@@ -77,7 +77,6 @@ def test_compose_smoke_checks_both_starts_and_always_removes_the_stack(monkeypat
     # compose_smoke exports the port for docker compose; owning the variable here removes it after the test, so
     # later tests in this process do not load it as a Service setting.
     monkeypatch.setenv("A13N_PORT", "18123")
-    monkeypatch.delenv("A13N_DOCKER_ENVIRONMENT_IMAGE", raising=False)
     if failing:
         error = RuntimeError if failing == "restarted" else AssertionError
         with pytest.raises(error):

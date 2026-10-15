@@ -43,27 +43,21 @@ flowchart TB
 | Cancel active work                                  | `/cancel`                                                          |
 | Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                                                 |
 
+### Choose an Agent or Model
+
+Make these selections while idle:
+
 `/agent` changes the conversation's Agent for all later Runs, including its instructions, tools, tool-review policy, and default Model, while preserving conversation history and execution permissions. Create another Agent with `a13n-harness-ui add agent`.
 
-`/model` opens a separate picker of configured Model resources. `/model <model-id>` changes only the Model and remembers your choice for this Project, without switching Agent or rewriting YAML. It survives `/new`, `/resume`, `/agent`, and TUI restarts. Resuming an old conversation uses its saved default Model when it has one; otherwise it uses the launch Project's preference, never its historical model. `/model default` clears the Project preference and returns to the selected Agent's Model. Selecting a Model or Agent clears temporary reasoning and service-tier settings; these settings are not part of the remembered preference. Both selection commands are unavailable during active work.
+| Task                        | Command             | Result                                                       |
+| --------------------------- | ------------------- | ------------------------------------------------------------ |
+| Browse configured Models    | `/model`            | Open the Model picker                                        |
+| Choose a Model              | `/model <model-id>` | Keep the Agent and YAML; remember the Model for this Project |
+| Return to the Agent's Model | `/model default`    | Clear the Project's Model preference                         |
+
+The Model preference survives `/new`, `/resume`, `/agent`, and TUI restarts. A resumed conversation uses its saved default Model when present; otherwise it uses the launch Project's preference, not its historical model. Selecting an Agent or Model clears temporary reasoning and service-tier settings.
 
 Other open TUI processes keep their current Model until restart. If the remembered Model was removed, startup falls back to the Agent's Model. `--agent`, one-shot `run`, and API callers skip this TUI preference.
-
-### Work toward a Goal
-
-Use `/goal <objective>` while idle when you want the Agent to keep checking whether its work meets a stated objective:
-
-```text
-/goal Implement the requested change, run its tests, and report any remaining blockers.
-```
-
-The initial response is check `0`. By default the same Agent can perform up to 10 additional checks, using its normal tools and execution permissions. A persistent Goal bar shows progress and the final outcome, including while you answer a question. Ctrl+C and `/cancel` still cancel execution. Goal mode does not broaden permissions or automatically approve tools.
-
-The Agent completes the protocol by returning `[GOAL_COMPLETE]` on its own line. After summarization or compaction, it must first perform another audit against your original objective. **Verified is the Agent's own completion claim, not an independent review.** Exhaustion, cancellation, errors, and an unverified stop are not success.
-
-Set `max_goal_iterations: 10` at the root of `a13n-harness-ui.yaml` to change the budget for new Goals. Zero or a negative value disables automatic follow-up checks. A suspended Goal keeps its captured budget when you answer its pending decision. Reopening a conversation alone never restarts unfinished work. Send ordinary input to return to normal behavior, or use `/goal` again to begin a new Goal and budget.
-
-The WebUI offers the same policy through the **Goal** toggle in the composer header, on desktop and narrow screens. The selection applies to one Send, resets after confirmed acceptance, and stays selected if submission is rejected or uncertain. Open the Goal status for the original objective, audit state, and token totals. **Prepare new Goal** fills a draft for review; it does not send it.
 
 ### Find a saved conversation
 
@@ -192,6 +186,22 @@ The answer editor has its own draft: returning to choices and reopening it keeps
 The answer editor accepts `/help`, `/mode`, `/status`, `/quit`, `/cancel`, `/theme`, `/mouse`, and `/review` as scoped commands. Other recognized commands are rejected and keep your draft; unmatched slash-prefixed input stays literal answer text. Ctrl+O inspects retained tool details, and Ctrl+T opens retained history without answering the question. Closing history returns to the card and its answer draft. These question controls do not change approval or setup selectors.
 
 Answers are collected locally until the whole decision batch is ready. **Collected locally** and **Submitting question responses** show that submission is still pending; a question-and-answer receipt appears after a successful result. If you cancel collection, use `/status` to reopen the pending questions.
+
+### Work toward a Goal
+
+Use `/goal <objective>` while idle when you want the Agent to keep checking whether its work meets a stated objective:
+
+```text
+/goal Implement the requested change, run its tests, and report any remaining blockers.
+```
+
+The initial response is check `0`. By default the same Agent can perform up to 10 additional checks, using its normal tools and execution permissions. A persistent Goal bar shows progress and the final outcome, including while you answer a question. Ctrl+C and `/cancel` still cancel execution. Goal mode does not broaden permissions or automatically approve tools.
+
+The Agent completes the protocol by returning `[GOAL_COMPLETE]` on its own line. After summarization or compaction, it must first perform another audit against your original objective. **Verified is the Agent's own completion claim, not an independent review.** Exhaustion, cancellation, errors, and an unverified stop are not success.
+
+Set `max_goal_iterations: 10` at the root of `a13n-harness-ui.yaml` to change the budget for new Goals. Zero or a negative value disables automatic follow-up checks. A suspended Goal keeps its captured budget when you answer its pending decision. Reopening a conversation alone never restarts unfinished work. Send ordinary input to return to normal behavior, or use `/goal` again to begin a new Goal and budget.
+
+The WebUI offers the same policy through the **Goal** toggle in the composer header, on desktop and narrow screens. The selection applies to one Send, resets after confirmed acceptance, and stays selected if submission is rejected or uncertain. Open the Goal status for the original objective, audit state, and token totals. **Prepare new Goal** fills a draft for review; it does not send it.
 
 ### Tasks and notes
 

@@ -47,6 +47,21 @@ settings:
 
 Every offered Anthropic preset includes these flags. Harness UI uses them instead of unified `cache` or top-level `anthropic_cache` for endpoint compatibility. Advanced settings remain editable: explicit mappings, including `false` flags, cache durations, or an empty mapping, are preserved. Other protocols such as OpenRouter do not receive these flags merely because the model is Claude. Existing Model files are not migrated; add the flags manually or explicitly apply a preset to enable them.
 
+For recognized adaptive-thinking models, the initial preset also fills in the following settings. This includes Claude Sonnet / Opus 4.6 and Sonnet / Opus / Haiku 5.5:
+
+```yaml
+settings:
+  anthropic_thinking:
+    type: adaptive
+    display: summarized
+  anthropic_effort: high
+  max_tokens: 32768
+```
+
+These fields are saved alongside the cache flags, not injected at runtime. Change effort through the Model's thinking control or edit the YAML. Haiku 5.5 offers adaptive effort controls; models with always-on thinking do not offer **Off**. Unknown model IDs receive the cache flags without guessed thinking settings.
+
+Adaptive presets need no `interleaved-thinking-2025-05-14` header. Harness UI also omits `context-management-2025-06-27` and `context-1m-2025-08-07`: current 1M-context Claude models support that window by default. The local working context budget remains separate from the provider's context limit. A compatible gateway that specifically requires a beta can still be configured explicitly through `settings.anthropic_betas`. See Anthropic's [thinking modes](https://platform.claude.com/docs/en/build-with-claude/thinking) and [context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows).
+
 ## Gateway session affinity
 
 In **Add Model** or initial setup, choose a **Gateway session affinity** preset or type a replacement in **Session affinity header**. CLI `add model` offers the same presets and custom entry. The saved result is an ordinary header name, not a preset reference:
@@ -437,7 +452,7 @@ The guided HTTP/API-key catalog includes integrations for OpenAI Responses, Open
 The preset picker shows the output limit alongside thinking, and the last Environment or name question shows the assembled connection and settings before saving. Initial setup, `add model`, and `add agent` with a new Model share these creation-time presets. Presets write normal editable YAML:
 
 - **OpenAI Responses:** for models recognized by the upstream profile as reasoning-capable, high thinking, `openai_reasoning_summary: detailed`, and `openai_store: false`. Low, medium, extra-high (`xhigh`), and provider-default options are available. Unknown or non-reasoning models (such as GPT-4.1) default to neutral settings without reasoning-summary parameters. Chat Completions does not receive Responses-only summary fields.
-- **Anthropic:** adaptive thinking with returned summaries and high effort for newer supported model profiles; otherwise interleaved extended thinking with an 8,192-token budget and a 16,384-token output cap. The interleaved preset explicitly enables `interleaved-thinking-2025-05-14`; adaptive thinking interleaves automatically. Models whose upstream profile rejects budget thinking only offer adaptive and provider-default presets.
+- **Anthropic:** adaptive-capable profiles offer adaptive thinking with returned summaries and high effort, plus provider defaults. Older models offer extended thinking with an 8,192-token budget and a 16,384-token output cap, without an unsupported adaptive choice. Legacy interleaving-capable models such as Sonnet 4.5 retain `interleaved-thinking-2025-05-14`; Haiku 4.5 and Claude 3.7 use plain extended thinking without that beta. Adaptive thinking interleaves automatically.
 - **Google Gemini:** native thinking presets request available thought summaries and map effort to the selected model's supported level or budget.
 - **OpenRouter:** reasoning presets request returned reasoning with `exclude: false`.
 - **DeepSeek, GLM, and Kimi:** dedicated native integrations retain returned `reasoning_content` and send it back during tool continuation and later turns. Recognized thinking models offer **Thinking · preserved** (`thinking: true`); GLM additionally saves `zai_clear_thinking: false` and uses native Z.AI request translation. Select `deepseek:`, `zai:`, or `moonshotai:` rather than a generic OpenAI-compatible route to retain these provider-specific behaviors. A generic “off” option is not offered: some models always think, and Kimi's native disable control is not equivalent to unified `thinking: false`.
@@ -453,7 +468,8 @@ For the exact reviewed model IDs below, selecting a thinking preset also saves `
 | Connection and reviewed model IDs                                                                                                 | Thinking choice              |       Saved `max_tokens` |
 | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -----------------------: |
 | OpenAI Responses / Chat Completions: `gpt-5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-6-astra` | low / medium / high or xhigh | 16,384 / 32,768 / 65,536 |
-| Anthropic: `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`, `claude-sonnet-4-5`                                        | adaptive / interleaved       |          32,768 / 16,384 |
+| Anthropic: `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-sonnet-4-6`, `claude-opus-4-6` | adaptive                     |                   32,768 |
+| Anthropic: `claude-haiku-4-5`, `claude-sonnet-4-5`                                                                                | extended / interleaved       |                   16,384 |
 | Google: `gemini-3.1-pro-preview`, `gemini-3.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash`                                        | low / medium or high         |          16,384 / 32,768 |
 | DeepSeek: `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-reasoner`                                                             | Thinking · preserved         |                   32,768 |
 | Z.AI: `glm-5.3`, `glm-5.2`, `glm-4.7`, `glm-4.5`                                                                                  | Thinking · preserved         |                   32,768 |
@@ -461,7 +477,7 @@ For the exact reviewed model IDs below, selecting a thinking preset also saves `
 | OpenRouter: `openai/gpt-5.4`                                                                                                      | low / medium / high          | 16,384 / 32,768 / 65,536 |
 | OpenRouter: `anthropic/claude-sonnet-4.6`, `google/gemini-2.5-pro`                                                                | low / medium or high         |          16,384 / 32,768 |
 
-The selected native profile still determines which thinking presets are offered. For Gemini 2.5, native high thinking uses a 24,576-token thinking budget; its 32,768-token output cap leaves room for the answer. Claude's explicit 8,192-token interleaved thinking budget retains its existing 16,384-token cap, including for custom model IDs. Unreviewed Claude adaptive presets also retain the existing 16,384-token baseline. Other unreviewed models and routes get no new output cap; adding a suggestion or matching a model-name prefix does not opt a model into a budget. Exact reviewed IDs receive the same editable recommendations behind custom endpoints, whose limits may differ. No API preset is applied to Codex, Grok, or Copilot subscription creation.
+The selected native profile still determines which thinking presets are offered. For Gemini 2.5, native high thinking uses a 24,576-token thinking budget; its 32,768-token output cap leaves room for the answer. Claude's explicit 8,192-token extended thinking budget retains its existing 16,384-token cap, with or without interleaving. Unreviewed Claude adaptive presets also retain the existing 16,384-token baseline. Other unreviewed models and routes get no new output cap; adding a suggestion or matching a model-name prefix does not opt a model into a budget. Exact reviewed IDs receive the same editable recommendations behind custom endpoints, whose limits may differ. No API preset is applied to Codex, Grok, or Copilot subscription creation.
 
 Review the saved value for your endpoint, context size, reasoning needs, latency, and cost. You can edit `settings.max_tokens` independently afterward. Changing `/thinking` does **not** recalculate it. Reusing a Model, loading an existing file, or passing explicit settings to the setup API does not apply a preset. There is no runtime auto-budget policy, context-overflow guarantee, Harness preset dependency, or network lookup during setup.
 

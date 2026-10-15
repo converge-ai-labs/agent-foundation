@@ -1,5 +1,6 @@
 """A Run's directory view of a Space. Search falls back to the same scoped file interface."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from a13n_harness.providers.memory import (
@@ -36,14 +37,50 @@ class SpaceFileView:
     async def read(self, path: str) -> FileText:
         return await self.store.read(self._path(path))
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
-        return await self.store.write(self._path(path), text, expected=expected, origin=origin)
+    def _dependencies(self, dependencies: Mapping[str, str | None] | None) -> dict[str, str | None]:
+        return {self._path(path): version for path, version in (dependencies or {}).items()}
 
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
-        return await self.store.move(self._path(source), self._path(destination), expected=expected, origin=origin)
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
+        return await self.store.write(
+            self._path(path), text, expected=expected, origin=origin, dependencies=self._dependencies(dependencies)
+        )
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
-        await self.store.delete(self._path(path), expected=expected, origin=origin)
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
+        return await self.store.move(
+            self._path(source),
+            self._path(destination),
+            expected=expected,
+            origin=origin,
+            dependencies=self._dependencies(dependencies),
+        )
+
+    async def delete(
+        self,
+        path: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> None:
+        await self.store.delete(
+            self._path(path), expected=expected, origin=origin, dependencies=self._dependencies(dependencies)
+        )
 
     async def changes(self, since: str | None) -> Changes | FullResync:
         changes = await self.store.changes(since)

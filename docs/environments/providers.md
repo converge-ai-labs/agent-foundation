@@ -107,7 +107,7 @@ Run the real Provider path with `make local-envd-test`, or follow the [Local Env
 
 ## Docker runtime
 
-Docker uses an Engine connection from the Host process. No bootstrap store, guest daemon or published control port is needed:
+Docker uses an Engine connection from the Host process. The default native route executes through Docker exec; the HTTP EIP route also connects to the image-managed Envd daemon. A native runtime can borrow the Engine client:
 
 ```python
 import docker
@@ -125,9 +125,11 @@ The native Provider overrides the image entrypoint, enables Docker init support 
 
 Docker recipes accept `pull_policy="if_missing"` (the default) or `"never"`. `never` refuses missing images with `environment_image_missing` and never contacts a registry. Use `make image-sandbox` to build the image, and follow the [Docker lifecycle example](examples.md#docker) for direct Provider use. The Service manages Docker environments from templates; see [Service environments](../a13n-service/environments.md).
 
+With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the retained container. Closing a Session preserves the desktop; stopping and restarting the container preserves files but recreates GUI state. Configure the separate HTTP route and compatible image as described in [Docker configuration](configuration.md#docker).
+
 ## Cloud Providers
 
-E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fly.io Sprites (`sprites`), and Runloop (`runloop`) provide cloud execution without installing Envd. All support files and shell commands; E2B additionally supports process observations, stdin, retained SDK text output, and loopback ports. The Service offers all six as environment provider types; its E2B accounts always use the E2B cloud ([Service environments](../a13n-service/environments.md#providers)).
+E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fly.io Sprites (`sprites`), and Runloop (`runloop`) provide cloud execution without installing Envd. All support files and shell commands; E2B additionally supports process observations, stdin, retained SDK text output, and loopback ports. The Service offers all six as environment provider types; its E2B accounts select the E2B cloud or another E2B-compatible service by domain ([Service environments](../a13n-service/environments.md#providers)).
 
 | Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                         |
 | -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------ |
@@ -214,6 +216,20 @@ The example explicitly destroys its sandbox in `finally`. Live integration tests
 ```bash
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
+
+### Native E2B desktop
+
+Use the existing E2B connection and enable **Desktop environment** when creating a template. The built-in desktop choice uses E2B's `desktop` template. Compatible custom templates can be selected explicitly. The equivalent recipe is:
+
+```json
+{"desktop": true, "template": "desktop", "desktop_width": 1280, "desktop_height": 800}
+```
+
+Service uses the official `e2b-desktop` SDK to create the desktop and perform screenshots, clicks, typing and mouse gestures. Ordinary commands and files continue to use the base asynchronous E2B SDK. Configure Agent Computer tools and the mount's exact Computer permissions separately; no a13n-envd installation or public desktop endpoint is needed. Desktop initialization failure follows the official SDK's cleanup behavior: it attempts to destroy the new sandbox. Start/resume checks the existing desktop without replacing it.
+
+Desktop scrolling supports vertical steps only (up to 100 per action); horizontal and pixel scrolling are rejected before input. Drag button and duration are preserved through the SDK's mouse methods. Input failures are not replayed automatically. Existing ordinary E2B templates are unchanged.
+
+Screenshots, clicks, moves, drag gestures, step scrolling, literal text and key chords are supported. Key chords accept the Desktop SDK's named keys and lowercase ASCII letters/digits; text delivery depends on the target application and keyboard environment. Observe before acting, and do not repeat an input after an uncertain result. This integration does not start VNC streaming or implement human takeover.
 
 ### Daytona
 

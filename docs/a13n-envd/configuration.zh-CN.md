@@ -87,6 +87,64 @@ Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有�
 
 显式设备 ID 可通过 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 提供。没有显式 ID 时，安装状态目录跨重启保留生成的身份。`--default-working-directory`、`--name` 和 `--description` 覆盖 JSON 元数据。通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置目录发现。Windows EIP 路径使用 `/C:/...` 和 `/UNC/server/share/...`；守护进程启动路径使用操作系统原生格式。
 
+## 系统信息与资源监控
+
+Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回的 Device descriptor 暴露基础系统信息：操作系统及版本、内核版本、原生架构，以及可取得的 CPU 型号。Envd 自身版本位于 `initialize.server.version`。
+
+在守护进程配置中启用周期采样：
+
+```json
+{
+  "monitoring": {
+    "sample_interval_ms": 10000,
+    "filesystems": {"workspace": "/workspace"}
+  }
+}
+```
+
+使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集 CPU 和内存；省略对象或设为 `null` 时关闭采样，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
+
+通过已初始化的 Python Device connection 读取，无需创建 Session：
+
+```python
+info = (await device.describe()).system_info
+report = await device.metrics()
+if report.sample is not None:
+    sample = report.sample
+    print(sample.system.cpu_busy_percent, sample.system.memory_available_bytes)
+    print(sample.sample_age_ms, sample.sequence)
+```
+
+调用使用现有认证 HTTP、反向 WebSocket 或 stdio 连接上的 EIP `device.metrics`，不需要额外端口、令牌或 TLS 配置。只有启用采样才会声明该方法。Envd 与 `a13n-envd-client` 使用 EIP 0.2；从 0.1 部署迁移时一起升级。`eip.v1` 命名空间和传输帧保持不变。
+
+| 观测                                                         | 含义                                                                                                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sample.system.cpu_busy_percent`                             | 相邻有效原生采样之间的系统 CPU 忙碌百分比，归一化为 0–100。首次采样或无效计数器增量时缺失。                                                                               |
+| `sample.system.logical_cpu_count`                            | 系统逻辑 CPU 数量，不代表 cgroup 配额或亲和性限制后的有效容量。                                                                                                           |
+| `sample.system.memory_total_bytes`、`memory_available_bytes` | 物理内存容量与可用内存观测，单位为字节。Linux 使用 MemAvailable；Windows 使用原生可用物理内存；macOS 以 free + inactive 页面估计可回收内存，不重复计入 speculative 页面。 |
+| `sample.system.cpu_time_seconds`                             | 可选原生累计 CPU 时间：Linux 提供八种模式，Windows 提供 user/system/idle；macOS 不提供累计秒数。                                                                          |
+| `sample.filesystems.<name>.metrics`                          | 整个文件系统的总量、空闲量、可用字节数，以及可选 inode 计数，不是目录大小。目标不可读时保留名称，metrics 缺失。Windows 使用实际卷容量而非调用账户配额，不提供 inode。     |
+| `sample.system.pressure`                                     | 可选的 Linux CPU、内存、I/O PSI。                                                                                                                                         |
+| `sample.cgroup_v2`                                           | 可选的显式指定 Linux cgroup v2 观测。                                                                                                                                     |
+
+Linux 可在 `monitoring` 内添加 `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"`，观察该组及其后代；其他平台拒绝该 Linux 专用配置。数据包含 CPU 用户态/系统态/总微秒数、带宽周期和限流、内存用量及事件、本地 CPU/内存限制和 PSI。限制使用 `unlimited` 或 `limited` 标签，不代表考虑祖先限制和亲和性后的有效容量。
+
+PSI 提供可选 `some`、`full` 记录，包含 `avg10_percent`、`avg60_percent`、`avg300_percent` 与累计 `total_usec`。平均值采用内核窗口，与采样间隔无关。系统级 CPU `full` 未定义，因此缺失。不可用值在线上省略，在 Python 中为 `None`，不填充为零。
+
+**容器中的系统指标仍可能描述宿主机。** 显式选择目标 cgroup；缺失的组观测不会被宿主机数据替代。APFS 空间描述其共享卷视图。Windows 文件系统观测依赖 Windows 10 version 1809 / Server 2019 起提供的卷信息 API，旧系统仍能提供其他能力。仅在 inode 总数为正时计算使用率。
+
+每个 daemon 只有一个 sampler，零 Session 时仍运行。读取返回最新缓存，不触发采样。首次采样完成前 `report.sample` 为 `None`；源阻塞时仍可读取旧样本，其 `sample_age_ms` 持续增加。Managed Linux 将 runtime 目标映射到真实 runtime 挂载，其余目标映射到原始系统目录，并拒绝被遮蔽的启动保护路径。
+
+消费报告时：
+
+- 按 `(device_id, generation, sample.sequence)` 去重。
+- 展示或导出当前值前检查 `sample.sample_age_ms`，保留缺失值。
+- 只用不同样本计算计数器速率；generation 改变、计数器下降或数据缺失后重建基线。cgroup 可以独立于 daemon generation 重置。
+- 根据 exporter 需要，将累计时间换算为秒、事件数映射为 counter、字节和 inode 映射为 gauge、百分比换算为比例。
+- 图表峰值标记为采样值的最大值。CPU 百分比已是区间平均，瞬时尖峰可能落在采样间隔内。
+
+Envd 只保留一个样本。历史、告警、导出适配器和产品图表由消费方 Host 负责。Session 清理不停止采样，daemon 关闭会停止采样。
+
 ## 启用命令
 
 需要以配置的执行账号权限运行原生 shell 时，使用：

@@ -63,7 +63,7 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          use serde::{Deserialize, Serialize};\n\n",
     );
     output.push_str(&format!(
-        "pub const EIP_PROTOCOL_VERSION: &str = \"0.1\";\n\
+        "pub const EIP_PROTOCOL_VERSION: &str = \"0.2\";\n\
          pub const EIP_PROTO_PACKAGE: &str = \"{PACKAGE}\";\n\n"
     ));
     render_data_frame(&mut output, pool, &extensions)?;
@@ -1059,6 +1059,12 @@ fn render_field_checks(
         output.push_str(&format!("{check_padding}{target}.validate()?;\n"));
     }
 
+    if matches!(field.kind(), Kind::Float | Kind::Double) && !field.is_list() {
+        output.push_str(&format!(
+            "{check_padding}if !{target}.is_finite() {{ return Err(ValidationError(\"{} must be finite\".to_owned())); }}\n",
+            field.name()
+        ));
+    }
     let options = field.options();
     if options.has_extension(&extensions.field) {
         let option = extension_message(options, &extensions.field)?;
@@ -1154,7 +1160,9 @@ fn render_field_checks(
             } else {
                 target.clone()
             };
-            if matches!(field.kind(), Kind::Uint64 | Kind::Fixed64) {
+            if matches!(field.kind(), Kind::Float | Kind::Double) {
+                format!("({dereferenced} as f64)")
+            } else if matches!(field.kind(), Kind::Uint64 | Kind::Fixed64) {
                 dereferenced
             } else {
                 format!("({dereferenced} as u64)")
@@ -1165,6 +1173,11 @@ fn render_field_checks(
                 .get_field_by_name("minimum")
                 .and_then(|value| value.as_u64())
                 .ok_or_else(|| "minimum is not uint64".to_owned())?;
+            let minimum = if matches!(field.kind(), Kind::Float | Kind::Double) {
+                format!("{minimum}.0")
+            } else {
+                minimum.to_string()
+            };
             let numeric_target = numeric_target();
             output.push_str(&format!(
                 "{check_padding}if {numeric_target} < {minimum} {{ return Err(ValidationError(\"{} is below its minimum\".to_owned())); }}\n",
@@ -1176,6 +1189,11 @@ fn render_field_checks(
                 .get_field_by_name("maximum")
                 .and_then(|value| value.as_u64())
                 .ok_or_else(|| "maximum is not uint64".to_owned())?;
+            let maximum = if matches!(field.kind(), Kind::Float | Kind::Double) {
+                format!("{maximum}.0")
+            } else {
+                maximum.to_string()
+            };
             let numeric_target = numeric_target();
             output.push_str(&format!(
                 "{check_padding}if {numeric_target} > {maximum} {{ return Err(ValidationError(\"{} exceeds its maximum\".to_owned())); }}\n",
@@ -1260,7 +1278,7 @@ fn method_records(
         }
         if record.kind != "request_response" {
             return Err(format!(
-                "EIP 0.1 method {} must use correlated request-response",
+                "EIP 0.2 method {} must use correlated request-response",
                 record.jsonrpc_method
             ));
         }

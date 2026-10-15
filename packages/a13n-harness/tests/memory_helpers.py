@@ -73,16 +73,40 @@ class FakeFileStore:
             raise MemoryStoreError("not_found", f"{path} does not exist.")
         return self.files[path]
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
+    def _dependencies(self, dependencies: Mapping[str, str | None] | None) -> None:
+        for path, version in (dependencies or {}).items():
+            current = self.files.get(path)
+            if (current.version if current else None) != version:
+                raise MemoryStoreError("read_conflict", f"{path} changed; reread and reconsider.", current=current)
+
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         self._enter("write")
         path = validate_path(path, FileFormat())
         describe(text, FileFormat())
+        self._dependencies(dependencies)
         self._check(path, expected)
         self.origins.append(origin)
         return self.put(path, text)
 
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         self._enter("move")
+        self._dependencies(dependencies)
         self._check(source, expected)
         if destination in self.files:
             raise MemoryStoreError("already_exists", f"{destination} exists.", current=self.files[destination])
@@ -91,8 +115,11 @@ class FakeFileStore:
         self.remove(source)
         return self.put(destination, text)
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
+    async def delete(
+        self, path: str, *, expected: str, origin: Origin, dependencies: Mapping[str, str | None] | None = None
+    ) -> None:
         self._enter("delete")
+        self._dependencies(dependencies)
         self._check(path, expected)
         self.origins.append(origin)
         self.remove(path)
@@ -119,7 +146,7 @@ class SearchingFileStore(FakeFileStore):
         self, pattern: str, *, regex: bool, case_sensitive: bool, path: str, limit: int
     ) -> tuple[list[GrepMatch], bool]:
         self.searches.append((pattern, regex, case_sensitive, path, limit))
-        return [GrepMatch(path="native.md", line=3, text="from the store")], True
+        return [GrepMatch(path="native.md", line=3, text="from the store", version="v1")], True
 
 
 async def _proceed(operation: str) -> None:
