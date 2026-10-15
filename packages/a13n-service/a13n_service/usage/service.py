@@ -251,18 +251,19 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
         record[name].astext.cast(DateTime(timezone=True))
         for name in ("request_started_at", "first_chunk_at", "request_ended_at")
     )
-    # Only a completed stream separates waiting for the model from generating.
-    timed = and_(record["outcome"].astext == "completed", first_chunk < ended)
-    generating = func.sum(func.extract("epoch", ended - first_chunk)).filter(timed)
+    completed = record["outcome"].astext == "completed"
+    streamed = and_(completed, first_chunk < ended)
+    timed = and_(completed, started < ended)
+    elapsed = func.sum(func.extract("epoch", ended - started)).filter(timed)
     query = (
         _model_totals()
         .add_columns(
             func.avg(func.extract("epoch", first_chunk - started))
-            .filter(timed)
+            .filter(streamed)
             .label("average_time_to_first_chunk_seconds"),
-            (
-                func.sum(record["request_usage"]["output_tokens"].astext.cast(BigInteger)).filter(timed) / generating
-            ).label("output_tokens_per_second"),
+            (func.sum(record["request_usage"]["output_tokens"].astext.cast(BigInteger)).filter(timed) / elapsed).label(
+                "output_tokens_per_second"
+            ),
             ModelRow.key.label("model"),
             RunRow.id.label("run_id"),
             RunRow.thread_id,

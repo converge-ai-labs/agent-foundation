@@ -19,7 +19,7 @@ START = datetime(2026, 9, 1, tzinfo=UTC)
 WINDOW = {"start": START.isoformat(), "end": (START + timedelta(days=3)).isoformat()}
 
 
-async def observed_run(service, kit, agent, *, started=START, seconds=10, records=()):  # type: ignore[no-untyped-def]
+async def observed_run(service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None):  # type: ignore[no-untyped-def]
     submitted = await kit.start_thread(service, agent, "Usage fixture")
     run_id = submitted["run"]["id"]
     [lease] = await claim(service.runtime, worker_id="usage-fixture", worker_build="test", limit=1)
@@ -47,6 +47,8 @@ async def observed_run(service, kit, agent, *, started=START, seconds=10, record
                 ),
                 **(streamed(*timing[0]) if timing else {}),
             )
+            if record_fields:
+                record = record.model_copy(update=record_fields)
             session.add(
                 UsageRecordRow(
                     id=record.record_id,
@@ -134,11 +136,11 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     ).json()
     assert [(row["model"], row["requests"]) for row in summary["models"]] == [("scripted", 3), (None, 1)]
     assert all("cache_write_tokens" in row for row in summary["models"])
-    # Only streamed requests are timed; the late Run's request was not streamed.
+    # Only the first Run has request timing; include the wait before its first chunks.
     timing = [
         (row["average_time_to_first_chunk_seconds"], row["output_tokens_per_second"]) for row in summary["models"]
     ]
-    assert timing == [(2, pytest.approx(50 / 3)), (None, None)]
+    assert timing == [(2, pytest.approx(50 / 7)), (None, None)]
     assert [run["run_id"] for run in summary["runs"]] == [first_run, late_run]
     first = summary["runs"][0]
     assert [(row["model"], row["requests"], row["input_tokens"], row["cost"]) for row in first["models"]] == [
@@ -154,6 +156,44 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     only = (await service.client.get(f"{service.api}/usage", params={"run_id": late_run})).json()
     assert [run["run_id"] for run in only["runs"]] == [late_run] and only["models"] == only["runs"][0]["models"]
     assert only["models"][0]["output_tokens_per_second"] is None
+
+
+@pytest.mark.parametrize(
+    ("outcome", "duration", "first_chunk", "expected"),
+    [
+        ("completed", 10, 8, 10),
+        ("completed", 10, None, 10),
+        ("completed", 10, 10, 10),
+        ("completed", 0, None, None),
+        ("completed", None, None, None),
+        ("failed", 10, 8, None),
+        ("cancelled", 10, 8, None),
+    ],
+)
+async def test_speed_uses_full_request_duration_and_inclusive_output(
+    service, scripted_model, runs_kit, outcome, duration, first_chunk, expected
+):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id, _ = await observed_run(
+        service,
+        runs_kit,
+        agent,
+        records=[("scripted", 20, 100, 0, None, START)],
+        record_fields={
+            "outcome": outcome,
+            "request_started_at": START,
+            "request_ended_at": START + timedelta(seconds=duration) if duration is not None else None,
+            "first_chunk_at": START + timedelta(seconds=first_chunk) if first_chunk is not None else None,
+            # Provider output includes 60 reasoning tokens; adding the detail again would yield 16/s.
+            "request_usage": BoundedRequestUsage(input_tokens=20, output_tokens=100, details={"reasoning_tokens": 60}),
+        },
+    )
+    response = await service.client.get(f"{service.api}/usage", params={"run_id": run_id})
+    assert response.status_code == 200, response.text
+    summary = response.json()
+    assert summary["models"][0]["output_tokens_per_second"] == expected
+    assert summary["runs"][0]["models"] == summary["models"]
 
 
 async def test_calendar_buckets_empty_state_and_invalid_windows(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
