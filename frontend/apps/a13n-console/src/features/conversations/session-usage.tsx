@@ -9,6 +9,7 @@ import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { exactCost, formatCost } from "../../shared/cost";
 import { conversationQueries, runPath } from "./api";
+import { ContextWindow } from "./context-window";
 import { formatTokens } from "./format";
 import { threadName } from "./thread-branches";
 import { chronological } from "./transcript/thread-runs";
@@ -33,9 +34,11 @@ type Summary = Schema["UsageSummary"];
 export function SessionUsage({
   sessionId,
   threads,
+  thread,
 }: {
   sessionId: string;
   threads: readonly Thread[];
+  thread?: Thread;
 }) {
   const { t } = useTranslation();
   const client = useClient(),
@@ -79,6 +82,7 @@ export function SessionUsage({
     >
       <SessionUsageReport
         sessionId={sessionId}
+        thread={open ? thread : undefined}
         summary={usage.data}
         threads={threads}
         close={() => setOpen(false)}
@@ -91,11 +95,13 @@ function SessionUsageReport({
   sessionId,
   summary,
   threads,
+  thread,
   close,
 }: {
   sessionId: string;
   summary: Summary;
   threads: readonly Thread[];
+  thread?: Thread;
   close: () => void;
 }) {
   const { t } = useTranslation();
@@ -163,6 +169,15 @@ function SessionUsageReport({
   return (
     <div className={styles.report}>
       <UsageStats totals={usageTotals(summary.models)} />
+      {thread && (
+        <section className={styles.section}>
+          <h3>{threadName(thread, threads, t)}</h3>
+          <ContextWindow
+            scope={{ thread_id: thread.id }}
+            live={!!thread.current_run_id}
+          />
+        </section>
+      )}
       <section className={styles.section}>
         <h3>{t("By model")}</h3>
         <UsageTable

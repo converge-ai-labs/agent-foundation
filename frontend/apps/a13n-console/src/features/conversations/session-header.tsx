@@ -29,7 +29,6 @@ import { useRun, useSession } from "./queries";
 import { useViewLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
-import { ContextWindow } from "./context-window";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
 import { ThreadMountsDialog } from "./thread-mounts";
@@ -131,13 +130,10 @@ export function SessionHeader({
           </span>
         )}
         {level === "debug" && (
-          <SessionUsage sessionId={sessionId} threads={threads} />
-        )}
-        {thread && (
-          <ContextWindow
-            scope={{ thread_id: thread.id }}
-            live={!!thread.current_run_id}
-            compact
+          <SessionUsage
+            sessionId={sessionId}
+            threads={threads}
+            thread={thread}
           />
         )}
         {thread && (

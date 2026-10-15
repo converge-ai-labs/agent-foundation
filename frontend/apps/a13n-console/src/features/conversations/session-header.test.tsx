@@ -204,18 +204,8 @@ it("identifies the session and switches the level in the URL", async () => {
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Memory" })).toBeNull();
   expect(screen.getByText("level:")).toBeTruthy();
-  expect(
-    await within(screen.getByRole("banner")).findByRole("button", {
-      name: "Context window: 21%",
-    }),
-  ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Debug" }));
   expect(await screen.findByText("level:?view=debug")).toBeTruthy();
-  expect(
-    within(screen.getByRole("banner")).getByRole("button", {
-      name: "Context window: 21%",
-    }),
-  ).toBeTruthy();
   expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Memory" })).toBeNull();
   // Chat is written out too: the level a reader chose outlives a reload.
@@ -233,11 +223,6 @@ it("opens an application's session in Debug and still offers Chat", async () => 
   const user = userEvent.setup();
   expect(await screen.findByText("Started by trigger.input")).toBeTruthy();
   expect(screen.getByText("level:")).toBeTruthy();
-  expect(
-    await within(screen.getByRole("banner")).findByRole("button", {
-      name: "Context window: 21%",
-    }),
-  ).toBeTruthy();
   // Only the Debug level collapses runs, so its menu says which level is open.
   await user.click(screen.getByRole("button", { name: "Session actions" }));
   expect(
@@ -255,11 +240,6 @@ it("opens a child thread in Debug and still offers Chat", async () => {
   );
   const user = userEvent.setup();
   expect(screen.getByText("level:")).toBeTruthy();
-  expect(
-    await within(screen.getByRole("banner")).findByRole("button", {
-      name: "Context window: 21%",
-    }),
-  ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Chat" }));
   expect(await screen.findByText("level:?view=chat")).toBeTruthy();
 });
@@ -310,6 +290,11 @@ it("shows the session's spend and breaks it down by model and by run", async () 
     await screen.findByRole("button", { name: "Session usage: $0.30" }),
   );
   const dialog = await screen.findByRole("dialog", { name: "Session usage" });
+  expect(
+    await within(dialog).findByText("42k / 200k tokens used"),
+  ).toBeTruthy();
+  expect(within(dialog).getByText("21% used (79% left)")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Context window:/ })).toBeNull();
   // Cached input is part of input, so the rate is weighted by input.
   expect(within(dialog).getAllByText("75.0%")).toHaveLength(1);
   // The workspace's model decides the logo; an unknown key gets the generic mark.
