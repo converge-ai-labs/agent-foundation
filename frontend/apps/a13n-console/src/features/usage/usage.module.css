@@ -199,6 +199,11 @@
   font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;
 }
+.model {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .identity {
   display: flex;
   flex-direction: column;

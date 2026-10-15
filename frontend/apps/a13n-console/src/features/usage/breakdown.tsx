@@ -13,6 +13,7 @@ import {
 } from "../../shared/collection";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { formatCost } from "../../shared/cost";
+import { ModelKeyIcon } from "../models/model-icon";
 import { duration, percent } from "./values";
 import styles from "./usage.module.css";
 
@@ -69,12 +70,20 @@ export function Breakdown({
     {
       label: group === "agents" ? t("Agent") : t("Model"),
       tone: "primary",
-      render: (item) => (
-        <div className={styles.identity}>
-          <strong>{item.name ?? t("Unattributed model")}</strong>
-          {"model" in item && item.model && <span>{item.model}</span>}
-        </div>
-      ),
+      render: (item) =>
+        "model" in item ? (
+          <div className={styles.model}>
+            <ModelKeyIcon modelKey={item.model} size={20} />
+            <div className={styles.identity}>
+              <strong>{item.name ?? t("Unattributed model")}</strong>
+              {item.model && <span>{item.model}</span>}
+            </div>
+          </div>
+        ) : (
+          <div className={styles.identity}>
+            <strong>{item.name ?? t("Unattributed model")}</strong>
+          </div>
+        ),
     },
     {
       label: t("Requests"),
