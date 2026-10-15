@@ -127,7 +127,7 @@ class _Change:
         row.updated_by_run_id = self.origin.run_id
         row.updated_by_principal_id = self.origin.principal_id
 
-    async def settle(self, settings: MemorySettings) -> None:
+    async def settle(self, settings: MemorySettings, *, count_change: bool) -> None:
         """Prune each changed path to its revision count, then the oldest history until the memory fits its
         byte total; only current content over the total refuses the change."""
         store = self.store
@@ -135,6 +135,8 @@ class _Change:
             raise MemoryStoreError(
                 "memory_full", f"The memory's files exceed its {settings.max_total_bytes}-byte total."
             )
+        if count_change:
+            store.change_count += 1
         await self.session.flush()
         revisions = MemoryFileRevisionRow
         for path in dict.fromkeys(self.paths):
@@ -195,6 +197,7 @@ async def write_file(
     *,
     expected: str | None,
     origin: Origin,
+    count_change: bool = True,
 ) -> MemoryFileRow:
     """Create the file (`expected` None) or replace the version `expected` names; the same text changes nothing."""
     fmt = file_format(settings)
@@ -217,12 +220,19 @@ async def write_file(
     store.content_bytes += size
     row.content, row.size, row.description = text, size, description
     change.stamp(row, version)
-    await change.settle(settings)
+    await change.settle(settings, count_change=count_change)
     return row
 
 
 async def delete_file(
-    session: AsyncSession, settings: MemorySettings, memory_id: str, path: str, *, expected: str, origin: Origin
+    session: AsyncSession,
+    settings: MemorySettings,
+    memory_id: str,
+    path: str,
+    *,
+    expected: str,
+    origin: Origin,
+    count_change: bool = True,
 ) -> None:
     path = validate_path(path, file_format(settings))
     change = await _change(session, memory_id, origin)
@@ -233,7 +243,7 @@ async def delete_file(
     change.store.content_bytes -= row.size
     change.store.file_count -= 1
     await session.delete(row)
-    await change.settle(settings)
+    await change.settle(settings, count_change=count_change)
 
 
 async def move_file(
@@ -245,6 +255,7 @@ async def move_file(
     *,
     expected: str,
     origin: Origin,
+    count_change: bool = True,
 ) -> MemoryFileRow:
     """Move the version `expected` names to a free path in one change; the file keeps its ID."""
     fmt = file_format(settings)
@@ -259,7 +270,7 @@ async def move_file(
     version = change.revise(destination, "move_in", None, source)
     row.path = destination
     change.stamp(row, version)
-    await change.settle(settings)
+    await change.settle(settings, count_change=count_change)
     return row
 
 
@@ -377,8 +388,10 @@ class PostgresFileStore:
         settings: MemorySettings,
         *,
         gate: Callable[[Verb], None] = _open,
+        count_changes: bool = True,
     ):
         self.storage, self.memory_id, self.settings, self.gate = storage, memory_id, settings, gate
+        self.count_changes = count_changes
 
     async def list(self) -> list[FileEntry]:
         self.gate("read")
@@ -393,21 +406,45 @@ class PostgresFileStore:
     async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
         self.gate("run")
         async with transaction(self.storage) as session:
-            row = await write_file(session, self.settings, self.memory_id, path, text, expected=expected, origin=origin)
+            row = await write_file(
+                session,
+                self.settings,
+                self.memory_id,
+                path,
+                text,
+                expected=expected,
+                origin=origin,
+                count_change=self.count_changes,
+            )
             return str(row.version)
 
     async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
         self.gate("run")
         async with transaction(self.storage) as session:
             row = await move_file(
-                session, self.settings, self.memory_id, source, destination, expected=expected, origin=origin
+                session,
+                self.settings,
+                self.memory_id,
+                source,
+                destination,
+                expected=expected,
+                origin=origin,
+                count_change=self.count_changes,
             )
             return str(row.version)
 
     async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
         self.gate("run")
         async with transaction(self.storage) as session:
-            await delete_file(session, self.settings, self.memory_id, path, expected=expected, origin=origin)
+            await delete_file(
+                session,
+                self.settings,
+                self.memory_id,
+                path,
+                expected=expected,
+                origin=origin,
+                count_change=self.count_changes,
+            )
 
     async def changes(self, since: str | None) -> Changes | FullResync:
         self.gate("read")

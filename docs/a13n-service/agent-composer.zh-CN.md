@@ -43,7 +43,7 @@ Agent Composer 与外部客户端共用平台 MCP 工具。Service 为当前 run
 | 连接     | 读取、创建、更新、发现工具和测试连接。                                     |
 | Skill    | 校验和导入上传包或公开 GitHub 来源、更新元数据和管理修订版本。             |
 | 环境模板 | 读取、创建和更新供后续实例使用的模板。                                     |
-| Provider | 读取有权访问的 provider；凭据通过 Console 配置。                           |
+| Provider | 读取 provider，通过 Console 私密凭据卡片创建和更新。                       |
 | 执行查询 | 查询 session、thread、输入队列、run、attempt、展示内容、trace 和 finding。 |
 
 读取默认直接执行。写入和连接测试使用[审批](agents-and-runs.md#waits-approvals-and-questions)，Console 展示实际调用供你批准或拒绝。批准不会增加平台权限。
@@ -52,7 +52,17 @@ Agent Composer 与外部客户端共用平台 MCP 工具。Service 为当前 run
 
 内置 `platform-operations` skill 通过只读文件工具提供本地说明，不需要用户环境。Composer 可以在不知道 session ID 的情况下查找历史失败 run，并区分某次 attempt 失败与最终恢复成功。缺少 trace 证据时会明确说明。
 
-Composer 不编辑 skill 包内文件、不操作 memory、不配置 plugin、不控制环境实例，也不启动或取消 run。它不会索取秘密值；凭据和 OAuth 使用已有的 Console 连接或 provider 页面。写入结果不确定时，需要先查询状态再决定是否重试。
+Composer 不编辑 skill 包内文件、不操作 memory、不配置 plugin、不控制环境实例，也不启动或取消 run。它不会在聊天中索取秘密值。Provider 凭据在 Console 私密卡片中输入；连接凭据、自定义秘密请求头和浏览器 OAuth 使用已有的 Console 页面。写入结果不确定时，需要先查询状态再决定是否重试。
+
+## 配置服务商
+
+让 Composer 添加或更新 Model、Environment、Connector 或 Web Provider，它会打开卡片，展示拟保存的名称、类型和配置。在卡片中输入所需凭据，选择**保存服务商**。保存需要工作空间的 `write` 权限。然后回答其他待处理操作，并选择**提交回复**以继续对话。保存前选择**取消配置**不会执行写入。无法确认保存结果时取消，会向 agent 报告结果未知。
+
+凭据直接提交到 Provider API，不会进入 agent 的消息、工具参数或结果。Agent 只会收到保存状态和服务商 ID。更新时凭据留空会保留已有凭据，并使用原始资源版本；发生冲突时需要重新准备请求。
+
+保存和继续对话是两个步骤。确认保存成功后，重试**提交回复**不会再次保存。保存不会自动重试，创建也不支持幂等。如果无法确定保存结果，或在继续前刷新了页面，请先检查**服务商**页面，避免重试产生重复记录。浏览器 OAuth 授权仍在已有的 Console 页面进行。
+
+通过 API 运行 Composer 的客户端需要处理原生 `configure_provider` client tool，或报告该功能不可用。它使用普通待处理调用和批量恢复约定，不需要额外的 Run 接口。
 
 ## 内置 agent 规则
 

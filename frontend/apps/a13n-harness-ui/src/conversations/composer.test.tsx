@@ -1502,3 +1502,54 @@ it("continues with selected App context and skill references from the captured d
   });
   expect(values(draft.doc).prompt).toBe("");
 });
+
+it("keeps history subscribers quiet during typing and acknowledgements, but observes input transitions", () => {
+  const draft = new ThreadDraft();
+  const renders = vi.fn();
+  function History() {
+    const value = useDraft("history", true);
+    renders();
+    return (
+      <span>
+        {value.submission.kind}:{value.localInputs.at(-1)?.state}
+      </span>
+    );
+  }
+  render(
+    <ComposerDrafts value={new Map([["history", draft]])}>
+      <History />
+    </ComposerDrafts>,
+  );
+  const initial = renders.mock.calls.length;
+  for (let index = 0; index < 100; index++) {
+    act(() => {
+      draft.doc.getText("text").insert(index, "x");
+      draft.receive({
+        draft_id: "draft",
+        participant_id: "p",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+        closed: false,
+      } as Schema<"DraftFrame">);
+    });
+  }
+  expect(renders).toHaveBeenCalledTimes(initial);
+  act(() => {
+    draft.localInputs = [
+      { id: "input", action: "send", state: "pending", parts: [] },
+    ];
+    draft.submission = { kind: "pending", action: "send" };
+    draft.notify();
+  });
+  expect(screen.getByText("pending:pending")).toBeTruthy();
+  act(() => {
+    draft.localInputs[0].state = "accepted";
+    draft.notify();
+  });
+  expect(screen.getByText("pending:accepted")).toBeTruthy();
+  act(() => {
+    draft.submission = { kind: "accepted", receipt: "receipt" };
+    draft.notify();
+  });
+  expect(screen.getByText("accepted:accepted")).toBeTruthy();
+});

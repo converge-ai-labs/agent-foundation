@@ -15,6 +15,7 @@ from a13n_harness_ui.display_history import DisplayHistory, saved_display_histor
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 
+from .display import DisplayArchive
 from .objects import ObjectKind, ObjectRef
 
 type Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -233,20 +234,16 @@ class StoredDeferredInput(StoredContract):
         return DeferredToolResume(self.requests, self.results, recovery=True)
 
 
-class StoredContinuation(StoredContract):
-    schema_version: Literal["1"] = "1"
+class ContinuationMetadata(StoredContract):
+    model_config = ConfigDict(frozen=True, extra="allow", strict=True)
+
     harness_release: str = Field(min_length=1, max_length=128)
     run_composition: ObjectRef
-    harness_state: HarnessState
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
     memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     created_at: datetime
-
-    @property
-    def display_history(self) -> DisplayHistory | None:
-        return saved_display_history(self.harness_state)
 
     @field_validator("created_at")
     @classmethod
@@ -260,6 +257,46 @@ class StoredContinuation(StoredContract):
         if self.run_composition.object_kind is not ObjectKind.run_composition:
             raise ValueError("continuation must reference a Run composition")
         return self
+
+
+class StoredContinuation(ContinuationMetadata):
+    """Released inline checkpoint; read compatibility only."""
+
+    schema_version: Literal["1"] = "1"
+    harness_state: HarnessState
+
+    @property
+    def display_history(self) -> DisplayHistory | None:
+        return saved_display_history(self.harness_state)
+
+
+class ReferencedContinuation(ContinuationMetadata):
+    """Root checkpoint manifest; each payload belongs exclusively to this checkpoint."""
+
+    schema_version: Literal["2"] = "2"
+    checkpoint_id: str = Field(min_length=1)
+    native_state: ObjectRef
+    display: ObjectRef | None = None
+
+    @model_validator(mode="after")
+    def _payload_kinds(self) -> Self:
+        if self.native_state.object_kind is not ObjectKind.continuation_state:
+            raise ValueError("continuation must reference native state")
+        if self.display is not None and self.display.object_kind is not ObjectKind.continuation_display:
+            raise ValueError("continuation must reference display archive")
+        return self
+
+
+class Continuation(ContinuationMetadata):
+    """Resolved root checkpoint, never a persisted wire format."""
+
+    harness_state: HarnessState
+    display: DisplayArchive | None = None
+    display_loaded: bool = Field(default=True, exclude=True)
+
+    @property
+    def display_history(self) -> DisplayHistory | None:
+        return self.display.tail if self.display is not None else None
 
 
 class AppReference(BaseModel):

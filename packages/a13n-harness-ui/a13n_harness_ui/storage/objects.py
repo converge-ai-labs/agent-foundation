@@ -73,6 +73,9 @@ class ObjectKind(StrEnum):
     run_composition = "run-composition"
     thread_initial_state = "thread-initial-state"
     continuation = "continuation"
+    continuation_state = "continuation-state"
+    continuation_display = "continuation-display"
+    display_segment = "display-segment"
     live_transcript = "live-transcript"
     child_checkpoint = "child-checkpoint"
     environment_state = "environment-state"
@@ -173,6 +176,7 @@ class ImmutableObjectStore:
                     in {
                         ObjectKind.thread_initial_state,
                         ObjectKind.continuation,
+                        ObjectKind.continuation_state,
                         ObjectKind.child_checkpoint,
                     }
                     else "1"

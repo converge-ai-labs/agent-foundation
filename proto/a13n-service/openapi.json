@@ -1755,6 +1755,19 @@
         "title": "AnalysisPage",
         "type": "object"
       },
+      "AnyChangeTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "any_change",
+            "default": "any_change",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "AnyChangeTrigger",
+        "type": "object"
+      },
       "ApiKey": {
         "properties": {
           "created_at": {
@@ -2826,6 +2839,28 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "ChangeCountTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "type": {
+            "const": "change_count",
+            "default": "change_count",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "ChangeCountTrigger",
+        "type": "object"
       },
       "ChildEnvironmentPolicy": {
         "additionalProperties": false,
@@ -9122,6 +9157,51 @@
         "title": "ModelPricingEntry",
         "type": "object"
       },
+      "ModelRequestMetrics": {
+        "description": "Derived from the current model contribution.",
+        "properties": {
+          "output_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens Per Second"
+          },
+          "request_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Duration Seconds"
+          },
+          "time_to_first_chunk_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time To First Chunk Seconds"
+          }
+        },
+        "required": [
+          "time_to_first_chunk_seconds",
+          "request_duration_seconds",
+          "output_tokens_per_second"
+        ],
+        "title": "ModelRequestMetrics",
+        "type": "object"
+      },
       "ModelUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -9784,6 +9864,20 @@
       "OrganizationPolicy": {
         "additionalProperties": false,
         "properties": {
+          "check_interval_seconds": {
+            "default": 10,
+            "maximum": 86400.0,
+            "minimum": 10.0,
+            "title": "Check Interval Seconds",
+            "type": "integer"
+          },
+          "cooldown_seconds": {
+            "default": 300,
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Cooldown Seconds",
+            "type": "integer"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -9800,6 +9894,24 @@
               }
             ],
             "title": "Model"
+          },
+          "trigger": {
+            "discriminator": {
+              "mapping": {
+                "any_change": "#/components/schemas/AnyChangeTrigger",
+                "change_count": "#/components/schemas/ChangeCountTrigger"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnyChangeTrigger"
+              },
+              {
+                "$ref": "#/components/schemas/ChangeCountTrigger"
+              }
+            ],
+            "title": "Trigger"
           }
         },
         "title": "OrganizationPolicy",
@@ -24982,8 +25094,49 @@
     },
     "/api/v1/model-catalog": {
       "get": {
-        "description": "The models.dev models the registered model provider types serve, for any signed-in principal.",
+        "description": "Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.\n\nBoth filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.\nNo match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.\nCopy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.",
         "operationId": "get_model_catalog_api_v1_model_catalog_get",
+        "parameters": [
+          {
+            "description": "Exact catalog channel ID, such as openrouter.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact catalog channel ID, such as openrouter.",
+              "title": "Provider"
+            }
+          },
+          {
+            "description": "Exact, case-sensitive model ID within the catalog channel.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact, case-sensitive model ID within the catalog channel.",
+              "title": "Model"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -24994,6 +25147,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -34020,6 +34176,73 @@
         "tags": [
           "usage"
         ]
+      }
+    },
+    "/api/v1/usage/records/{record_id}/metrics": {
+      "get": {
+        "operationId": "model_request_metrics_api_v1_usage_records__record_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRequestMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Model Request Metrics",
+        "tags": [
+          "usage"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/users/me": {

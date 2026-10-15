@@ -43,7 +43,7 @@ Agent Composer uses the same platform MCP tools as external clients. The Service
 | Connections           | Read, create, update, discover tools and test connections.                                    |
 | Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions. |
 | Environment templates | Read, create and update templates for later instances.                                        |
-| Providers             | Read authorized provider resources; configure credentials through Console.                    |
+| Providers             | Read, create and update providers through private Console credential cards.                   |
 | Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings. |
 
 Reads run directly by default. Writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions); Console shows the exact call to approve or deny. Approval does not grant additional platform permissions.
@@ -52,7 +52,17 @@ To change an agent, Composer reads the selected revision and preserves unrelated
 
 The built-in `platform-operations` skill supplies local instructions through read-only file tools. It needs no user environment. Composer can diagnose a past failed run without knowing its session ID, and distinguishes a failed attempt from a run that later recovered. Missing trace evidence is reported as a limitation.
 
-Composer does not edit skill package files, operate memory, configure plugins, control environment instances or start/cancel runs. It never asks for secret values; use the existing Console connection or provider page for credentials and OAuth. Unknown write outcomes require checking resource state before retrying.
+Composer does not edit skill package files, operate memory, configure plugins, control environment instances or start/cancel runs. It never asks for secret values in chat. Provider credentials are entered in a private Console card; connection credentials, custom secret headers and browser OAuth use existing Console pages. Unknown write outcomes require checking resource state before retrying.
+
+## Configure a provider
+
+Ask Composer to add or update a Model, Environment, Connector or Web Provider. It opens a card showing the proposed name, type and configuration. Enter the required credentials in that card and select **Save provider**. Only users with workspace `write` permission can save. Then select **Submit responses** to continue the conversation, answering any other pending actions first. **Cancel configuration** makes no write before a save attempt. Stopping after an unconfirmed save reports an unknown outcome to the agent.
+
+Credentials go directly to the Provider API. They are not included in the agent's messages, tool arguments or results. The agent receives only the save status and provider ID. Updates keep saved credentials when the fields are empty and use the original resource version; a conflict needs a fresh proposal.
+
+Saving and continuing are separate steps. After a confirmed save, retrying **Submit responses** does not save again. Saves are not automatically retried and creates are not idempotent. If the save outcome is unclear, or you reload before continuing, check **Providers** before retrying to avoid a duplicate. Browser OAuth authorization still takes place on the existing Console page.
+
+API clients that run Composer must handle its native `configure_provider` client tool or report that it is unavailable. It uses the ordinary pending-call and batch-resume contract; no extra Run endpoint is required.
 
 ## Built-in agent rules
 

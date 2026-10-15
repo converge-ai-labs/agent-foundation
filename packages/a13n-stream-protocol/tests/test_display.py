@@ -325,3 +325,25 @@ def test_unknown_context_payloads_remain_observations(status) -> None:
     fold.fold([event])
     assert fold.memory_sources == {}
     assert next(iter(fold.items.values())).content["name"] == "a13n.harness.context"
+
+
+def test_checkpoint_delta_is_detached_and_independent_of_live_drain():
+    fold = DisplayFold("run")
+    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "first", "delta": "a"}])
+    first = fold.capture_delta()
+    frozen = first.model_dump_json()
+    fold.changed.clear()
+    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "second", "delta": "b"}])
+    fold.changed.clear()
+    second = fold.capture_delta()
+    assert len(second.items) == 1
+    assert second.items[0].content["text"] == "b"
+    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "first", "delta": " correction"}])
+    corrected = fold.capture_delta()
+    assert len(corrected.items) == 1
+    assert corrected.items[0].id == first.items[0].id
+    assert corrected.items[0].content["text"] == "a correction"
+    assert first.model_dump_json() == frozen
+    corrected.items[0].content["text"] = "caller mutation"
+    assert next(iter(fold.items.values())).content["text"] == "a correction"
+    assert fold.capture_delta().items == []

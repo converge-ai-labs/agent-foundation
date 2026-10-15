@@ -102,7 +102,7 @@ defaults:
 
 - 在 **Conversation details → Configuration** 编辑下一 Run 选择，为该 Thread 保存新的 Environment 组合。
 - 选择 **Apply Project environments**，检查替换内容后应用，只替换四个 Environment 维度。纯本地 Project 会清除旧 Device 绑定。Agent、Model、MCP、Plugin 和 Run Extension 不变。
-- 在输入框打开 **Environments**。**Local · Harness server** 包含 Full Control、Sandbox 或自定义本地模式及本地目录。**Device environments** 包含 Device 绑定；**Default working location** 选择一个目录或 Thread 文件。Apply 提交整个草稿；关闭而不应用会丢弃编辑。活动覆盖应用于本标签页后续 Run，直到重置，不只一次发送。本地模式不改变远程 shell 权限。**Use conversation defaults** 清除临时覆盖。
+- 在输入框打开 **Environments**。**Local · Harness server** 包含 Full Control、Sandbox 或自定义本地模式及本地目录。每个环境包含自己的工作目录：两个本地目录属于一个本地环境。同一 Device、相同执行策略的远端目录显示在一组。环境分组下方的 **Default working directory** 选择一个目录或 Thread 文件。Apply 提交整个草稿；关闭而不应用会丢弃编辑。活动覆盖应用于本标签页后续 Run，直到重置，不只一次发送。本地模式不改变远程 shell 权限。**Use conversation defaults** 清除临时覆盖。
 
 输入框覆盖不改变已保存 Thread。引导保留活动 Run 捕获的 Environment。延迟回答保留挂起 Run 的 Environment，除非显式改变；新子级从父级捕获的选择开始，之后独立拥有自己的选择。
 
@@ -170,13 +170,15 @@ authentication:
 
 在 **Settings → Projects → Environments** 或 **Conversation details → Configuration → Change next Run selections** 中选择 **Add environment** ：
 
-1. 选择已有 Device 或直接连接新 Device。检查建议的唯一别名，如 `build`。
-2. 输入已知绝对目录，选择 **Use Device default**，或浏览并显式选择目录。
-3. 选择允许的操作和默认工作位置，保存所在设置。
+1. 选择已有 Device 或直接连接新 Device。选择这个环境允许的操作。
+2. 输入已知绝对目录，选择 **Use Device default**，或浏览并显式选择目录。使用 **Add another directory** 添加同一环境中的其他路径。
+3. 应用环境草稿，选择 **Default working directory**，再保存所在设置。
+
+使用已有环境上的 **Add directory** 扩展目录列表。该环境的 Device 和访问策略适用于组内所有目录。访问、网络或边界策略不同的目录保留为不同分组。路由别名自动生成，可在 **Advanced routing** 中查看或修改。
 
 创建 Run 前就可浏览目录，不会打开 Session。Device 不可用时仍可填写已知路径或移除。目录发现关闭时，仍可手动填写路径并使用公开的默认目录。Windows Device 路径使用 `/C:/work` 或 `/UNC/server/share/work`，不是 Harness UI 服务器路径。
 
-**Add project** 也支持只有 Device 目录：添加 Device 绑定，不添加本地目录，选择默认工作位置并保存。本地模式仍可见，因为它仍控制 Thread 文件。等效 YAML：
+**Add project** 也支持只有 Device 目录：添加 Device 绑定，不添加本地目录，选择默认工作目录并保存。本地模式仍可见，因为它仍控制 Thread 文件。等效 YAML：
 
 ```yaml
 schema_version: "1"
@@ -206,7 +208,7 @@ defaults:
 
 ### 移除不可用环境
 
-要移除一个 Project 或 Thread 选择，点击别名旁的 **Remove**。如果它是默认项，在同一对话框选择替代项，再保存所在设置。Project 必须保留至少一个本地根或 Device 绑定；Thread 可移除所有 Device 绑定并使用 Thread 文件。
+要移除一个 Project 或 Thread 选择，点击目录路径旁的 **Remove**。如果它是默认项，在同一对话框选择替代项，再保存所在设置。Project 必须保留至少一个本地根或 Device 绑定；Thread 可移除所有 Device 绑定并使用 Thread 文件。
 
 忘记共享连接或自定义本地 profile，使用 **Settings → Environments → Forget**，无须连接目标。先修复引用该资源的 General 或 Project 默认值；对话框链接到已知 Project 引用。Forget 只删除本地配置，不删除远程文件、不停止 Device、不取消活动 Run，也不改写历史。内置本地 profile 不能删除。
 

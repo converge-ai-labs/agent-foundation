@@ -15,7 +15,8 @@ from a13n_harness_ui import __version__
 from a13n_harness_ui.errors import StoreConflictError
 
 from .checkpoint_lock import checkpoint_lock
-from .contracts import StoredContinuation, StoredThreadInitialState
+from .continuations import read_continuation
+from .contracts import Continuation, StoredThreadInitialState
 from .database import Database, open_database
 from .inspection import InspectionRepository
 from .layout import StorageLayout
@@ -88,7 +89,9 @@ class LocalStore:
 
         return await self.objects.read(reference)
 
-    async def read_continuation(self, thread_id: str, reference: ObjectRef) -> StoredContinuation:
+    async def read_continuation(
+        self, thread_id: str, reference: ObjectRef, *, include_display: bool = False
+    ) -> Continuation:
         """Load the exact selected head, or report a selection race before file access."""
         async with checkpoint_lock(self.layout.root, thread_id):
             thread = await self.threads.get(thread_id)
@@ -97,7 +100,7 @@ class LocalStore:
                     "The selected continuation changed; refetch before reading.",
                     code="thread_continuation_conflict",
                 )
-            return await self.objects.read_model(reference, StoredContinuation)
+            return await read_continuation(self.objects, reference, include_display=include_display)
 
     async def publish_work(self, thread_id: str, reference: ObjectRef, state: HarnessState) -> bool:
         """Best-effort derived publication cannot invalidate a selected checkpoint."""

@@ -106,14 +106,26 @@ class ModelsDevCatalog:
         self.due = anyio.Event()
         self.refreshed = anyio.Event()
 
-    async def read(self, *, wait: bool = True) -> ModelCatalog:
-        """Request refresh; optional enrichment never waits for the first fetch."""
+    async def read(self, *, wait: bool = True, provider: str | None = None, model: str | None = None) -> ModelCatalog:
+        """Request a full refresh when due, then filter the snapshot without changing the cache."""
         if self.clock() >= self.refresh_after:
             self.due.set()
             if wait and self.catalog.status == "unavailable":
                 with anyio.move_on_after(FETCH_SECONDS):
                     await self.refreshed.wait()
-        return self.catalog
+        snapshot = self.catalog
+        if provider is None and model is None:
+            return snapshot
+        return snapshot.model_copy(
+            update={
+                "items": [
+                    item
+                    for item in snapshot.items
+                    if (provider is None or item.ref.provider == provider)
+                    and (model is None or item.ref.model == model)
+                ]
+            }
+        )
 
     async def characteristics(
         self, channels: tuple[str, ...], models: tuple[str, ...]

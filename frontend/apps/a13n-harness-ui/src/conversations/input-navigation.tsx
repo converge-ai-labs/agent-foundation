@@ -10,7 +10,12 @@ import {
   TooltipTrigger,
   TooltipPopup,
 } from "a13n-ui";
-import { ListBullets } from "@phosphor-icons/react";
+import {
+  ListBullets,
+  DotsThree,
+  CircleNotch,
+  ArrowClockwise,
+} from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { inputAttachment } from "./input-content";
@@ -58,11 +63,6 @@ export function InputNavigation({
       ),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-  // Fetch only the small directory, never the intervening execution transcript.
-  useEffect(() => {
-    if (query.hasNextPage && !query.isFetching && !query.isError)
-      void query.fetchNextPage();
-  }, [query.hasNextPage, query.isFetching, query.isError, query.fetchNextPage]);
   const items: Pick<
     Schema<"TranscriptTurn">,
     "turn_id" | "preview" | "output_preview"
@@ -120,11 +120,21 @@ export function InputNavigation({
     onSelect(id);
   };
   if (!items.length && !query.isError) return null;
-  const retry = query.isError && (
-    <Button variant="ghost" size="sm" onClick={() => void query.refetch()}>
-      Retry input navigation
-    </Button>
-  );
+  const moreLabel = query.isFetchingNextPage
+    ? "Loading more inputs"
+    : query.isError
+      ? "Retry input navigation"
+      : "Load more inputs";
+  const loadMore = () => {
+    if (query.hasNextPage) void query.fetchNextPage();
+    else void query.refetch();
+  };
+  const canLoad = query.hasNextPage || query.isError;
+  const MoreIcon = query.isFetchingNextPage
+    ? CircleNotch
+    : query.isError
+      ? ArrowClockwise
+      : DotsThree;
   return (
     <>
       <nav
@@ -171,7 +181,18 @@ export function InputNavigation({
             </TooltipPopup>
           </Tooltip>
         ))}
-        {retry}
+        {canLoad && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={moreLabel}
+            title={moreLabel}
+            disabled={query.isFetching}
+            onClick={loadMore}
+          >
+            <MoreIcon aria-hidden="true" />
+          </Button>
+        )}
       </nav>
       <div className={styles.mobile}>
         <Popover open={open} onOpenChange={setOpen}>
@@ -209,7 +230,16 @@ export function InputNavigation({
                 </button>
               ))}
             </nav>
-            {retry}
+            {canLoad && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={query.isFetching}
+                onClick={loadMore}
+              >
+                {moreLabel}
+              </Button>
+            )}
           </PopoverPopup>
         </Popover>
       </div>

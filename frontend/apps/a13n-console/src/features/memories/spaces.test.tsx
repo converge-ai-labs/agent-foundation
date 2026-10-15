@@ -38,7 +38,13 @@ const space: Schema["MemorySpace"] = {
   enabled: true,
   guide: null,
   always_load: ["global/MEMORY.md"],
-  organization: { enabled: false, model: "local" },
+  organization: {
+    enabled: false,
+    model: "local",
+    check_interval_seconds: 10,
+    cooldown_seconds: 300,
+    trigger: { type: "any_change" },
+  },
   labels: {},
   file_count: 0,
   content_bytes: 0,
@@ -65,7 +71,7 @@ it("builds minimal patches and preserves explicit clearing semantics", () => {
   ).toEqual({
     guide: "",
     description: null,
-    organization: { enabled: false, model: null },
+    organization: { ...space.organization, model: null },
     always_load: [],
   });
   expect(spaceUpdate({ ...space, guide: "Keep facts." }, draft)).toEqual({
@@ -268,4 +274,82 @@ it("preserves a configuration draft on conflict and reloads before retry", async
   await screen.findByRole("heading", { name: "My draft" });
   expect(writes).toHaveLength(2);
   cache.clear();
+});
+
+it("saves count and timing policy, retains it across unrelated edits, and switches back to any change", async () => {
+  const { writes, cache, user } = show(
+    `/w/memory-spaces/${space.id}?tab=configuration`,
+  );
+  await user.click(
+    await screen.findByRole("combobox", { name: "Automatic trigger" }),
+  );
+  await user.click(
+    screen.getByRole("option", { name: "After a number of changes" }),
+  );
+  for (const [label, value] of [
+    ["Changes per round", "12"],
+    ["Check interval (seconds)", "60"],
+    ["Cooldown (seconds)", "900"],
+  ]) {
+    const field = screen.getByRole("spinbutton", { name: label });
+    await user.clear(field);
+    await user.type(field, value);
+  }
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  expect(writes[0]).toMatchObject({
+    body: {
+      organization: {
+        enabled: false,
+        model: "local",
+        check_interval_seconds: 60,
+        cooldown_seconds: 900,
+        trigger: { type: "change_count", count: 12 },
+      },
+    },
+  });
+  const name = screen.getByRole("textbox", { name: "Name" });
+  await user.clear(name);
+  await user.type(name, "Updated knowledge");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByRole("heading", { name: "Updated knowledge" });
+  expect(writes[1].body).toEqual({ name: "Updated knowledge" });
+  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  await user.click(screen.getByRole("combobox", { name: "Automatic trigger" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Any saved change" }),
+  );
+  expect(
+    screen.queryByRole("spinbutton", { name: "Changes per round" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toHaveLength(3));
+  expect(writes[2]).toMatchObject({
+    body: {
+      organization: {
+        check_interval_seconds: 60,
+        cooldown_seconds: 900,
+        trigger: { type: "any_change" },
+      },
+    },
+  });
+  cache.clear();
+});
+
+it("validates whole-number timing and threshold boundaries", () => {
+  const draft = spaceDraft(space);
+  for (const invalid of [
+    { checkInterval: "" },
+    { checkInterval: "9" },
+    { checkInterval: "86401" },
+    { checkInterval: "10.5" },
+    { cooldown: "-1" },
+    { cooldown: "604801" },
+    { trigger: "change_count" as const, changeCount: "0" },
+    { trigger: "change_count" as const, changeCount: "1000001" },
+  ])
+    expect(validSpaceDraft({ ...draft, ...invalid })).toBe(false);
+  expect(
+    validSpaceDraft({ ...draft, cooldown: "0", checkInterval: "86400" }),
+  ).toBe(true);
 });

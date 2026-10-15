@@ -4,10 +4,10 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, Thinking
 
 from a13n_harness_ui.goal import saved_goal
 
-from .contracts import RetainedActivity, StoredContinuation, ThreadReadModel
+from .contracts import Continuation, RetainedActivity, StoredContinuation, ThreadReadModel
 
 
-def project_continuation(value: StoredContinuation) -> ThreadReadModel:
+def project_continuation(value: Continuation | StoredContinuation) -> ThreadReadModel:
     goal = saved_goal(value.harness_state)
     activity = None
     for message in reversed(value.harness_state.message_history):

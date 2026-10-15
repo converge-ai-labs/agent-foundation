@@ -7,6 +7,7 @@ import {
   EnvironmentsEditor,
   invalidEnvironments,
 } from "../configuration/environments";
+import { environmentSummary } from "../configuration/environment-selection";
 import styles from "./new-conversation.module.css";
 import panelStyles from "./composer-settings.module.css";
 import {
@@ -39,10 +40,10 @@ export function RunEnvironments({
     value?.default_environment === undefined
       ? configuration?.default_environment
       : value.default_environment;
-  const count = roots.length + bindings.length;
-  const summary = count
-    ? `${count} environment${count === 1 ? "" : "s"}`
-    : "Thread files";
+  const summary = environmentSummary({
+    local_roots: roots,
+    environment_bindings: bindings,
+  });
   const invalid = editing ? invalidEnvironments(editing) : false;
   const beginEditing = () =>
     setEditing({
@@ -111,10 +112,12 @@ export function RunEnvironments({
         }}
         title="Environments"
         closeLabel="Cancel"
-        description="Choose environments for subsequent Runs in this tab until reset. Conversation defaults and the active Run stay unchanged."
+        description="Choose environments and their working directories for subsequent Runs in this tab. Conversation defaults and the active Run stay unchanged."
         footer={footer}
       >
-        <fieldset disabled={disabled}>{content}</fieldset>
+        <fieldset className="min-w-0" disabled={disabled}>
+          {content}
+        </fieldset>
       </ModalFrame>
     </>
   );

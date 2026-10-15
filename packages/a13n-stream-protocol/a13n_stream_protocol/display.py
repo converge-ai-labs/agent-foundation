@@ -298,6 +298,7 @@ class DisplayFold:
         self.items = {item.id: item.model_copy(deep=True) for item in items}
         self.next = first + len(items)
         self.changed: set[str] = set(self.items)
+        self._checkpoint_changed: set[str] = set(self.items)
         self.sequence = 0
         self.full_content = full_content
         # Keep the same item identities and observation policy, but let a durable Host store full values.
@@ -329,6 +330,22 @@ class DisplayFold:
             items=list(self.items.values()),
             continuation=self.export_continuation(),
         ).model_copy(deep=True)
+
+    def capture_delta(self) -> DisplaySnapshot:
+        """Detach changed items and parser state independently of live publication.
+
+        The Host retains earlier cuts. Clearing ``changed`` for a live subscriber
+        does not consume checkpoint changes; corrections retain their item IDs.
+        """
+        snapshot = DisplaySnapshot(
+            items=[
+                self.items[key].model_copy(deep=True)
+                for key in sorted(self._checkpoint_changed, key=lambda key: self.items[key].ordinal)
+            ],
+            continuation=self.export_continuation(),
+        )
+        self._checkpoint_changed.clear()
+        return snapshot
 
     def export_continuation(self) -> DisplayContinuation:
         """Detach parser state without copying the accumulated display prefix."""
@@ -642,6 +659,7 @@ class DisplayFold:
             content=content,
         )
         self.changed.add(key)
+        self._checkpoint_changed.add(key)
         group, failure = content.get("responseGroup"), content.get("failure")
         return ItemRef(
             id=key,

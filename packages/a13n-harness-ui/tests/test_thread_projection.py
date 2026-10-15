@@ -133,9 +133,10 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
 
     import a13n_harness.state as state_module
     from a13n_harness import HarnessState
-    from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector, with_display_history
-    from a13n_harness_ui.storage import ObjectKind, ObjectRef, StoredContinuation, StoredThreadInitialState
+    from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector
+    from a13n_harness_ui.storage import Continuation, ObjectKind, ObjectRef, StoredThreadInitialState
     from a13n_harness_ui.storage.contracts import AgentResourceSource, Thread, ThreadConfiguration
+    from a13n_harness_ui.storage.display import DisplayArchive
     from a13n_harness_ui.thread_projection import ThreadInspection, build_thread_inspection
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
     from pydantic_ai.usage import RequestUsage
@@ -146,11 +147,11 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
         ModelResponse(parts=[TextPart("Saved answer")], usage=RequestUsage(input_tokens=7, output_tokens=3)),
     )
     state = HarnessState.new(thread_id="thread_one", message_history=messages if kind != "cleared" else ())
+    display = None
     if kind in {"display", "cleared"}:
         display = DisplayHistoryCollector(messages).capture(messages, completed=True)
         if kind == "cleared":
             display = DisplayHistoryCollector((), DisplayHistory(items=display.items)).capture()
-        state = with_display_history(state, display)
     composition = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
     initial = ObjectRef(object_kind=ObjectKind.thread_initial_state, object_schema_version="1", logical_digest="b" * 64)
     continuation = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="c" * 64)
@@ -168,8 +169,12 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
     stored = (
         StoredThreadInitialState(harness_state=state, created_at=now)
         if kind == "initial"
-        else StoredContinuation(
-            harness_release="test", run_composition=composition, harness_state=state, created_at=now
+        else Continuation(
+            harness_release="test",
+            run_composition=composition,
+            harness_state=state,
+            created_at=now,
+            display=DisplayArchive(tail=display) if display is not None else None,
         )
     )
     decode = Mock(wraps=state_module.decode_messages)

@@ -8,7 +8,7 @@ import { useAgent } from "../../agents/queries";
 import { isActiveRun, type ViewLevel } from "../api";
 import { useRun } from "../queries";
 import { useRunDisplay } from "../run-display";
-import { StoredContents, StoredObservations } from "../stored-content";
+import { StoredContents } from "../stored-content";
 import { runTimeline } from "../timeline";
 import { WorkingRow } from "./assistant-message";
 import { DebugRunSection } from "./debug/run-section";
@@ -80,17 +80,14 @@ export function RunEntry({
         />
       )}
       {level === "debug" ? (
-        <>
-          <DebugRunSection
-            run={run}
-            thread={thread}
-            timeline={timeline}
-            index={number(run.id)}
-            resubmit={prefill}
-            jumpToDock={jumpToDock}
-          />
-          <StoredObservations />
-        </>
+        <DebugRunSection
+          run={run}
+          thread={thread}
+          timeline={timeline}
+          index={number(run.id)}
+          resubmit={prefill}
+          jumpToDock={jumpToDock}
+        />
       ) : (
         <div className={debug.runAnchor} data-run={run.id}>
           <RunBlock

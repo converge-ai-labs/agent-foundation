@@ -237,8 +237,7 @@ const usage: StepUsage = {
   cacheWriteTokens: 0,
   costUsd: "0.0041",
   pricingStatus: "priced",
-  firstChunkMs: 640,
-  generationMs: 3500,
+  recordId: "usage_fixture",
 };
 
 /** A model request that read a file, edited it, and answered. */

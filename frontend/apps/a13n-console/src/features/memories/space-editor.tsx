@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormField, Input, Label, SearchPicker, Switch } from "a13n-ui";
+import {
+  ChoiceField,
+  FormField,
+  Input,
+  Label,
+  SearchPicker,
+  Switch,
+} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -184,6 +191,89 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
             <p className="text-muted-foreground text-xs">
               {t("A model is required for automatic and manual organization.")}
             </p>
+            <div className="grid gap-4 pt-2">
+              <ChoiceField
+                label={t("Automatic trigger")}
+                value={draft.trigger}
+                readOnly={readOnly}
+                options={[
+                  { value: "any_change", label: t("Any saved change") },
+                  {
+                    value: "change_count",
+                    label: t("After a number of changes"),
+                  },
+                ]}
+                onValueChange={(trigger) =>
+                  change({ trigger: trigger as SpaceDraft["trigger"] })
+                }
+              />
+              {draft.trigger === "change_count" && (
+                <FormField
+                  label={t("Changes per round")}
+                  readOnly={readOnly}
+                  description={t(
+                    "Count saved file changes from agents, Console and API. A rename counts once; organizer edits do not count.",
+                  )}
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1000000}
+                    step={1}
+                    required
+                    value={draft.changeCount}
+                    onChange={(event) =>
+                      change({ changeCount: event.target.value })
+                    }
+                  />
+                </FormField>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  label={t("Check interval (seconds)")}
+                  readOnly={readOnly}
+                  description={t(
+                    "How often to check for eligible changes. Minimum 10 seconds.",
+                  )}
+                >
+                  <Input
+                    type="number"
+                    min={10}
+                    max={86400}
+                    step={1}
+                    required
+                    value={draft.checkInterval}
+                    onChange={(event) =>
+                      change({ checkInterval: event.target.value })
+                    }
+                  />
+                </FormField>
+                <FormField
+                  label={t("Cooldown (seconds)")}
+                  readOnly={readOnly}
+                  description={t(
+                    "Wait after a round ends before starting another. Use 0 for no cooldown.",
+                  )}
+                >
+                  <Input
+                    type="number"
+                    min={0}
+                    max={604800}
+                    step={1}
+                    required
+                    value={draft.cooldown}
+                    onChange={(event) =>
+                      change({ cooldown: event.target.value })
+                    }
+                  />
+                </FormField>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  "Automatic organization waits for both the trigger and cooldown. Organize now bypasses these limits and the check interval.",
+                )}
+              </p>
+            </div>
             <ErrorNotice
               error={models.error}
               retry={() => void models.refetch()}

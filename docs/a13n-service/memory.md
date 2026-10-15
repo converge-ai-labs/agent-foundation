@@ -67,6 +67,24 @@ Turning participation off keeps the selection. Disabling a Space excludes it fro
 
 Configure an organizer model, then choose **Organize now** or enable **Automatic organization**. Automatic rounds process saved changes, including API edits, while the store contains files. The organizer reads shared knowledge and all session folders to maintain `global/MEMORY.md`. Each round uses a fresh thread in a dedicated organizer session, with only that Space's memory tools and a 200-model-request ceiling.
 
+In **Configuration → Organization**, choose **Any saved change** or **After a number of changes**. Count mode accumulates saved file changes from agents, Console and API. A rename counts once. Unchanged saves, rejected writes, history cleanup and organizer edits do not count. Each admitted round consumes the changes present when it starts; changes saved during the round remain for later, even if the round fails or is cancelled. Counts survive restarts and history cleanup. Existing Spaces start counting new changes when this capability is installed.
+
+Set the **Check interval** (10–86400 seconds, default 10) to control how often the Space checks for eligible changes. Set the **Cooldown** (0–604800 seconds, default 300) to control the wait after a round ends or cannot start. Automatic organization requires both its trigger and cooldown, at the next eligible check. Checks share a 10-second service sweep, so these values are minimum delays. Saved deadlines keep their original timing; edited intervals apply to later checks and rounds. **Organize now** bypasses the interval, threshold and cooldown.
+
+For example, include this policy when creating or updating a Space:
+
+```json
+{
+  "organization": {
+    "enabled": true,
+    "model": "your-model-key",
+    "check_interval_seconds": 60,
+    "cooldown_seconds": 900,
+    "trigger": {"type": "change_count", "count": 10}
+  }
+}
+```
+
 The **Organization** tab shows status and run history, with costs, traces and file revisions. These runs stay separate from business conversations. Failed or cancelled rounds retain saved edits. If retained history is insufficient to confirm progress, status reports a history gap; **Organize now** requests another round.
 
 Read status at `GET /memory-spaces/{id}/organization`, request a round with `POST /memory-spaces/{id}/organizations`, and list rounds with `GET` on that same path. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists paginate with `limit` and `cursor`. File and revision APIs use the Space's returned `memory_id` under `/memories/{memory_id}`. The backing store is managed through the Space and stays out of standalone Memory lists.

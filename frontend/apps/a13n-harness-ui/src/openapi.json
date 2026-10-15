@@ -11600,6 +11600,9 @@
           "run-composition",
           "thread-initial-state",
           "continuation",
+          "continuation-state",
+          "continuation-display",
+          "display-segment",
           "live-transcript",
           "child-checkpoint",
           "environment-state",
@@ -16002,6 +16005,17 @@
           "turn_id": {
             "type": "string",
             "title": "Turn Id"
+          },
+          "content_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Revision"
           },
           "input_position": {
             "type": "integer",

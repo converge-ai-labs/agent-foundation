@@ -8,7 +8,8 @@ from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import CompositionError, RunCoordinationError
 from a13n_harness_ui.root_execution import _selection
-from a13n_harness_ui.storage import StoredContinuation, ThreadConfigurationMutation, ThreadConfigurationPatch
+from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import ExternalToolResult, NewThreadDefaults, RootOperationStatus, ThreadDeferredResponse
 
 from .test_app import _CompletedReconstructor, _DeferredReconstructor, _settings, _write_configuration
@@ -55,7 +56,7 @@ async def test_run_environment_override_is_captured_without_changing_thread(tmp_
             assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
             stored = await app._threads.get(thread.thread_id)
             assert stored.continuation is not None
-            checkpoint = await app._store.objects.read_model(stored.continuation, StoredContinuation)
+            checkpoint = await read_continuation(app._store.objects, stored.continuation, include_display=True)
             saved = await app._store.objects.read_model(checkpoint.run_composition, ResolvedRunComposition)
             assert saved.environment_profile.profile_id == expected
 

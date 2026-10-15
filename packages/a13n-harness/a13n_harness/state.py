@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 from typing import Any, Literal, cast
 from uuid import uuid4
 
@@ -70,6 +71,15 @@ class _SelectedCapabilityState(BaseModel):
     entry: CapabilityState | None = None
 
 
+@lru_cache(maxsize=128)
+def _selected_capability_model(capability_id: str) -> type[_SelectedCapabilityState]:
+    return create_model(
+        "SelectedCapabilityState",
+        __base__=_SelectedCapabilityState,
+        entry=(CapabilityState | None, Field(default=None, alias=capability_id)),
+    )
+
+
 _CAPABILITY_ENTRIES_ADAPTER = TypeAdapter(dict[str, CapabilityState])
 _EMPTY_ENTRIES_JSON = _CAPABILITY_ENTRIES_ADAPTER.dump_json({})
 
@@ -126,11 +136,7 @@ class AgentContextStateSnapshot(BaseModel):
 
     def get(self, capability_id: str) -> CapabilityState | None:
         """Decode one detached namespace without materializing unrelated payloads."""
-        selected = create_model(
-            "SelectedCapabilityState",
-            __base__=_SelectedCapabilityState,
-            entry=(CapabilityState | None, Field(default=None, alias=capability_id)),
-        )
+        selected = _selected_capability_model(capability_id)
         return selected.model_validate_json(cast(bytes, self.entries_json)).entry
 
     @computed_field
@@ -239,7 +245,23 @@ class AgentContextState:
 
     def __init__(self, snapshot: AgentContextStateSnapshot | None = None) -> None:
         self._entries = snapshot.entries if snapshot is not None else {}
+        self._encoded_entries = {key: self._encode_entry(key, entry) for key, entry in self._entries.items()}
+        self._snapshot: AgentContextStateSnapshot | None = snapshot or AgentContextStateSnapshot()
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _encode_entry(key: str, entry: CapabilityState) -> bytes:
+        # Both the key and payload have already passed their public validators.
+        # Reuse the immutable canonical payload instead of decoding it to encode
+        # all unchanged namespaces again at every snapshot.
+        return (
+            dump_json_bytes(key)
+            + b':{"version":'
+            + dump_json_bytes(entry.version)
+            + b',"data":'
+            + cast(bytes, entry.data_json)
+            + b"}"
+        )
 
     async def read[T: BaseModel](
         self,
@@ -285,12 +307,18 @@ class AgentContextState:
         _validate_namespace(capability_id, version)
         entry = CapabilityState(version=version, data=value.model_dump(mode="json"))
         async with self._lock:
-            self._entries[capability_id] = entry
+            if self._entries.get(capability_id) != entry:
+                self._entries[capability_id] = entry
+                self._encoded_entries[capability_id] = self._encode_entry(capability_id, entry)
+                self._snapshot = None
 
     async def snapshot(self) -> AgentContextStateSnapshot:
         """Return a detached snapshot suitable for a HarnessState envelope."""
         async with self._lock:
-            return AgentContextStateSnapshot(entries=self._entries)
+            if self._snapshot is None:
+                encoded = b"{" + b",".join(self._encoded_entries.values()) + b"}"
+                self._snapshot = AgentContextStateSnapshot.model_construct(entries_json=encoded)
+            return self._snapshot
 
 
 def _validate_namespace(capability_id: str, version: str) -> None:

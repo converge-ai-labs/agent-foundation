@@ -169,9 +169,11 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   expect(screen.getByTestId("source").textContent).toBe(initial);
   const user = userEvent.setup();
   await user.click(
-    screen.getByRole("combobox", { name: "Default working location" }),
+    screen.getByRole("combobox", { name: "Default working directory" }),
   );
-  await user.click(await screen.findByRole("option", { name: "Thread files" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Local · Thread files" }),
+  );
   let value = parse(screen.getByTestId("source").textContent ?? "");
   expect(value.defaults).toEqual({
     agent: "agent-main",
@@ -202,15 +204,18 @@ it("allows the last local Project root to be removed only with Device bindings",
   const initial =
     'schema_version: "1"\nkind: project\nid: project-one\nname: Remote\nroots: [{path: /one}]\ndefaults:\n  agent: agent-main\n  default_environment: build\n  environment_bindings: [{device_id: device-missing, alias: build, working_directory: /remote}]\n';
   renderFields(initial);
-  await screen.findByText(/Not configured/);
+  await screen.findByText(/Device not configured/);
   fireEvent.click(screen.getByRole("button", { name: "Remove directory 1" }));
   expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual({
     ...parse(initial),
     roots: [],
   });
   expect(
-    (screen.getByRole("button", { name: "Remove build" }) as HTMLButtonElement)
-      .disabled,
+    (
+      screen.getByRole("button", {
+        name: "Remove directory /remote",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(true);
   expect(
     (
@@ -226,7 +231,9 @@ it("removes a missing Device offline and saves its replacement default with the 
     'schema_version: "1"\nkind: project\nid: project-one\nname: Mixed\nroots: [{path: /one}]\ndefaults:\n  agent: agent-main\n  default_environment: build\n  environment_bindings: [{device_id: device-missing, alias: build, working_directory: /remote}]\n';
   renderFields(initial);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Remove build" }));
+  await user.click(
+    screen.getByRole("button", { name: "Remove directory /remote" }),
+  );
   expect(
     (
       screen.getByRole("button", {
@@ -237,9 +244,7 @@ it("removes a missing Device offline and saves its replacement default with the 
   await user.click(
     screen.getByRole("combobox", { name: "Replacement default" }),
   );
-  await user.click(
-    await screen.findByRole("option", { name: "workspace · /one" }),
-  );
+  await user.click(await screen.findByRole("option", { name: "Local · /one" }));
   await user.click(screen.getByRole("button", { name: "Remove selection" }));
   expect(
     parse(screen.getByTestId("source").textContent ?? "").defaults,

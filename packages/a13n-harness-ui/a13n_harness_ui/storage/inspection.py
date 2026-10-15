@@ -38,6 +38,8 @@ class InspectionData:
     metadata_json: str
     entries: tuple[str, ...]
     turns: tuple[InspectionTurn, ...]
+    entry_offset: int = 0
+    turn_offset: int = 0
 
 
 def _header_key(record: ThreadInspectionRecord | None) -> tuple[str, int] | None:
@@ -55,7 +57,7 @@ def _changed_rows(
     return (
         [
             {"thread_id": thread_id, "position": position, "value_json": value}
-            for position, value in enumerate(data.entries)
+            for position, value in enumerate(data.entries, data.entry_offset)
             if old_entries.get(position) != value
         ],
         [
@@ -67,7 +69,7 @@ def _changed_rows(
                 "end_position": turn.end_position,
                 "value_json": turn.value_json,
             }
-            for position, turn in enumerate(data.turns)
+            for position, turn in enumerate(data.turns, data.turn_offset)
             if old_turns.get(position) != turn
         ],
     )
@@ -84,7 +86,9 @@ class InspectionRepository:
                 return None
             return InspectionHeader(record.source_id, record.message_count, record.turn_count, record.metadata_json)
 
-    async def publish(self, thread_id: str, source_id: str, data: InspectionData) -> bool:
+    async def publish(
+        self, thread_id: str, source_id: str, data: InspectionData, *, expected_source: str | None = None
+    ) -> bool:
         """Prepare a delta without the writer lock, then publish one atomic source."""
         target = (source_id, INSPECTION_VERSION)
         while True:
@@ -101,11 +105,16 @@ class InspectionRepository:
                 previous = _header_key(await session.get(ThreadInspectionRecord, thread_id))
                 if previous == target:
                     return True
+                if (data.entry_offset or data.turn_offset) and previous != (expected_source, INSPECTION_VERSION):
+                    # A missing/stale derived prefix rebuilds on inspection, never
+                    # from execution authority or an unverified index base.
+                    return False
                 entries = (
                     (
                         await session.execute(
                             select(TranscriptEntryRecord.position, TranscriptEntryRecord.value_json).where(
-                                TranscriptEntryRecord.thread_id == thread_id
+                                TranscriptEntryRecord.thread_id == thread_id,
+                                TranscriptEntryRecord.position >= data.entry_offset,
                             )
                         )
                     )
@@ -121,7 +130,10 @@ class InspectionRepository:
                                 TranscriptTurnRecord.input_position,
                                 TranscriptTurnRecord.end_position,
                                 TranscriptTurnRecord.value_json,
-                            ).where(TranscriptTurnRecord.thread_id == thread_id)
+                            ).where(
+                                TranscriptTurnRecord.thread_id == thread_id,
+                                TranscriptTurnRecord.position >= data.turn_offset,
+                            )
                         )
                     )
                     .tuples()
@@ -146,8 +158,8 @@ class InspectionRepository:
                     thread_id=thread_id,
                     source_id=source_id,
                     version=INSPECTION_VERSION,
-                    message_count=len(data.entries),
-                    turn_count=len(data.turns),
+                    message_count=data.entry_offset + len(data.entries),
+                    turn_count=data.turn_offset + len(data.turns),
                     metadata_json=data.metadata_json,
                 )
                 await session.execute(
@@ -165,12 +177,13 @@ class InspectionRepository:
                 await session.execute(
                     delete(TranscriptEntryRecord).where(
                         TranscriptEntryRecord.thread_id == thread_id,
-                        TranscriptEntryRecord.position >= len(data.entries),
+                        TranscriptEntryRecord.position >= data.entry_offset + len(data.entries),
                     )
                 )
                 await session.execute(
                     delete(TranscriptTurnRecord).where(
-                        TranscriptTurnRecord.thread_id == thread_id, TranscriptTurnRecord.position >= len(data.turns)
+                        TranscriptTurnRecord.thread_id == thread_id,
+                        TranscriptTurnRecord.position >= data.turn_offset + len(data.turns),
                     )
                 )
                 entry = insert(TranscriptEntryRecord)

@@ -1345,7 +1345,11 @@ export interface paths {
     };
     /**
      * Get Model Catalog
-     * @description The models.dev models the registered model provider types serve, for any signed-in principal.
+     * @description Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.
+     *
+     *     Both filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.
+     *     No match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.
+     *     Copy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.
      */
     get: operations["get_model_catalog_api_v1_model_catalog_get"];
     put?: never;
@@ -2729,6 +2733,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/usage/records/{record_id}/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Model Request Metrics */
+    get: operations["model_request_metrics_api_v1_usage_records__record_id__metrics_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/users/me": {
     parameters: {
       query?: never;
@@ -3829,6 +3850,14 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** AnyChangeTrigger */
+    AnyChangeTrigger: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "any_change";
+    };
     /** ApiKey */
     ApiKey: {
       /**
@@ -4204,6 +4233,16 @@ export interface components {
       | "boundary_violation";
     /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
+    /** ChangeCountTrigger */
+    ChangeCountTrigger: {
+      /** Count */
+      count: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "change_count";
+    };
     /**
      * ChildEnvironmentPolicy
      * @description What a child run mounts: no environment, the parent's, or a new one from `template_id`.
@@ -6436,6 +6475,18 @@ export interface components {
       /** Source Url */
       source_url?: string | null;
     };
+    /**
+     * ModelRequestMetrics
+     * @description Derived from the current model contribution.
+     */
+    ModelRequestMetrics: {
+      /** Output Tokens Per Second */
+      output_tokens_per_second: number | null;
+      /** Request Duration Seconds */
+      request_duration_seconds: number | null;
+      /** Time To First Chunk Seconds */
+      time_to_first_chunk_seconds: number | null;
+    };
     /** ModelUpdate */
     ModelUpdate: {
       catalog_ref?: components["schemas"]["CatalogRef"] | null;
@@ -6684,12 +6735,26 @@ export interface components {
     /** OrganizationPolicy */
     OrganizationPolicy: {
       /**
+       * Check Interval Seconds
+       * @default 10
+       */
+      check_interval_seconds?: number;
+      /**
+       * Cooldown Seconds
+       * @default 300
+       */
+      cooldown_seconds?: number;
+      /**
        * Enabled
        * @default false
        */
       enabled?: boolean;
       /** Model */
       model?: string | null;
+      /** Trigger */
+      trigger?:
+        | components["schemas"]["AnyChangeTrigger"]
+        | components["schemas"]["ChangeCountTrigger"];
     };
     /** OrganizationUpdate */
     OrganizationUpdate: {
@@ -12054,7 +12119,12 @@ export interface operations {
   };
   get_model_catalog_api_v1_model_catalog_get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Exact catalog channel ID, such as openrouter. */
+        provider?: string | null;
+        /** @description Exact, case-sensitive model ID within the catalog channel. */
+        model?: string | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -12070,6 +12140,7 @@ export interface operations {
           "application/json": components["schemas"]["ModelCatalog"];
         };
       };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };
@@ -15128,6 +15199,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["UsageOverview"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  model_request_metrics_api_v1_usage_records__record_id__metrics_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        record_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelRequestMetrics"];
         };
       };
       400: components["responses"]["Error"];

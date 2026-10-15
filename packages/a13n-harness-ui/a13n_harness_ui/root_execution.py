@@ -77,16 +77,18 @@ from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
+    Continuation,
     LocalStore,
     ObjectKind,
     ObjectRef,
-    StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfigurationMutation,
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
+from a13n_harness_ui.storage.continuations import publish_continuation, remove_continuation
 from a13n_harness_ui.storage.contracts import StoredDeferredInput, ThreadReadModel
+from a13n_harness_ui.storage.display import DisplayArchive, seal_display
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
@@ -128,6 +130,7 @@ class RootRunAdmission:
     memory_positions: dict[str, str | None] = field(default_factory=dict)
     organization: MemoryOrganizationRun | None = None
     resume_usage: bool = False
+    display: DisplayArchive | None = None
 
 
 class RootRunExecutor:
@@ -213,22 +216,26 @@ class RootRunExecutor:
                 raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
             source = organization.source
             published = await self._compositions.publish_memory(source, thread)
-            previous, _, _, _, _ = await self._load_run_state(thread)
+            previous, _, _, _, _, archive = await self._load_run_state(thread)
 
             def prepare_memory_history() -> HarnessState:
-                saved = saved_display_history(previous)
+                saved = archive.tail if archive is not None else saved_display_history(previous)
                 display = DisplayHistoryCollector(previous.message_history, saved).capture()
                 return with_display_history(HarnessState.new(thread_id=thread_id), display)
 
             fresh = await to_thread.run_sync(prepare_memory_history)
-            return RootRunAdmission(thread, source, published, fresh, None, prompt, None, organization=organization)
+            return RootRunAdmission(
+                thread, source, published, fresh, None, prompt, None, organization=organization, display=archive
+            )
         if organization is not None:
             raise ThreadError("Organization requires a Memory Thread.", code="memory_thread_required")
         if mutation is not None:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
-        previous_state, deferred, previous_composition, accepted, positions = await self._load_run_state(thread)
+        previous_state, deferred, previous_composition, accepted, positions, archive = await self._load_run_state(
+            thread
+        )
         if prompt is not None and deferred is not None:
             assert thread.continuation is not None
             response = ThreadDeferredResponse(
@@ -314,6 +321,7 @@ class RootRunExecutor:
             response,
             positions,
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
+            display=archive,
         )
 
     async def execute(
@@ -336,12 +344,19 @@ class RootRunExecutor:
                 {"prepare.input_kind": "deferred_response" if admission.response is not None else "prompt"},
             )
 
+            previous_state, legacy_display = await to_thread.run_sync(detach_display_history, previous_state)
+            archive = admission.display
+            if archive is None and legacy_display is not None:
+                archive = DisplayArchive(tail=legacy_display)
+            if archive is not None:
+                archive = await seal_display(self._store.objects, archive)
+
             def prepare_history() -> tuple[HarnessState, GoalView | None, DisplayHistoryCollector]:
                 # Admission without a prompt is an explicit deferred/planned continuation;
                 # an ordinary prompt can never reactivate a checkpointed Goal.
                 selected_goal = saved_goal(previous_state) if admission.prompt is None else goal
                 state, saved = detach_display_history(previous_state)
-                display = DisplayHistoryCollector(state.message_history, saved)
+                display = DisplayHistoryCollector(state.message_history, archive.tail if archive is not None else saved)
                 # The collector owns inspection history during execution. Native
                 # snapshots need not repeatedly decode and serialize that history;
                 # _select_state reattaches it at every durable root boundary.
@@ -369,6 +384,7 @@ class RootRunExecutor:
                     accepted=stream.pending_deferred_input,
                     state=state,
                     display=frozen,
+                    display_base=archive,
                     excerpt=excerpt,
                     activity_changed=excerpt != thread.excerpt,
                 )
@@ -594,6 +610,7 @@ class RootRunExecutor:
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=paused_state,
                         display=display.capture(paused_state.message_history) if display is not None else None,
+                        display_base=archive,
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
                         activity_changed=True,
                     )
@@ -644,6 +661,7 @@ class RootRunExecutor:
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=result.state,
+                        display_base=archive,
                         display=(
                             display.capture(result.state.message_history, completed=completed_run_id is not None)
                             if display is not None and result.state is not None
@@ -672,6 +690,7 @@ class RootRunExecutor:
                             accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                             state=state,
                             display=display.capture(state.message_history) if display is not None else None,
+                            display_base=archive,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
                             activity_changed=excerpts is not None and excerpts.changed,
                         )
@@ -775,9 +794,15 @@ class RootRunExecutor:
     async def _load_run_state(
         self, thread: Thread
     ) -> tuple[
-        HarnessState, DeferredToolRequests | None, ObjectRef | None, StoredDeferredInput | None, dict[str, str | None]
+        HarnessState,
+        DeferredToolRequests | None,
+        ObjectRef | None,
+        StoredDeferredInput | None,
+        dict[str, str | None],
+        DisplayArchive | None,
     ]:
         accepted = None
+        archive = None
         positions: dict[str, str | None] = {}
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
@@ -785,8 +810,11 @@ class RootRunExecutor:
             deferred = None
             composition = None
         else:
-            stored_continuation = await self._store.read_continuation(thread.thread_id, thread.continuation)
+            stored_continuation = await self._store.read_continuation(
+                thread.thread_id, thread.continuation, include_display=True
+            )
             state = stored_continuation.harness_state
+            archive = stored_continuation.display
             deferred = stored_continuation.deferred_requests
             composition = stored_continuation.run_composition
             accepted = stored_continuation.accepted_input
@@ -796,7 +824,7 @@ class RootRunExecutor:
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return state, deferred, composition, accepted, positions
+        return state, deferred, composition, accepted, positions, archive
 
     async def _select_state(
         self,
@@ -805,6 +833,7 @@ class RootRunExecutor:
         composition: ObjectRef,
         state: HarnessState | None,
         display: DisplayHistory | None = None,
+        display_base: DisplayArchive | None = None,
         deferred: DeferredToolRequests | None = None,
         accepted: DeferredToolResume | None = None,
         excerpt: ConversationExcerpt,
@@ -818,12 +847,19 @@ class RootRunExecutor:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
 
-        def prepare_continuation() -> tuple[StoredContinuation, ThreadReadModel]:
-            continuation = StoredContinuation(
+        def prepare_continuation() -> tuple[Continuation, ThreadReadModel]:
+            continuation = Continuation(
                 harness_release=harness_version,
                 run_composition=composition,
                 memory_cursors=dict(memory_positions or {}),
-                harness_state=with_display_history(state, display) if display is not None else state,
+                harness_state=state,
+                display=(
+                    display_base.model_copy(update={"tail": display})
+                    if display_base is not None
+                    else DisplayArchive(tail=display)
+                )
+                if display is not None
+                else display_base,
                 excerpt=excerpt,
                 deferred_requests=deferred,
                 accepted_input=StoredDeferredInput.capture(accepted, state),
@@ -837,9 +873,7 @@ class RootRunExecutor:
             # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             async with checkpoint_lock(self._store.layout.root, thread.thread_id):
-                published_ref = (
-                    await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
-                ).ref
+                published_ref = await publish_continuation(self._store.objects, continuation)
                 selected = await self._store.threads.select_continuation(
                     thread_id=thread.thread_id,
                     expected=thread.continuation,
@@ -853,8 +887,8 @@ class RootRunExecutor:
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.
                 if superseded is not None and superseded == thread.continuation and superseded != published_ref:
                     try:
-                        await self._store.objects.remove(superseded)
-                    except OSError as exc:
+                        await remove_continuation(self._store.objects, superseded)
+                    except Exception as exc:
                         get_logger(__name__).warning(
                             "Could not remove superseded Run checkpoint",
                             extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},
@@ -866,7 +900,14 @@ class RootRunExecutor:
         # execution checkpoint. Missing indexes rebuild on the next inspection.
         try:
             inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
-            await self._store.inspections.publish(thread.thread_id, published_ref.logical_digest, inspection)
+            await self._store.inspections.publish(
+                thread.thread_id,
+                published_ref.logical_digest,
+                inspection,
+                expected_source=thread.continuation.logical_digest
+                if thread.continuation is not None
+                else f"initial:{thread.initial_state.logical_digest}",
+            )
         except Exception as exc:
             get_logger("a13n_harness_ui.storage").warning(
                 "Could not publish Thread inspection index",
