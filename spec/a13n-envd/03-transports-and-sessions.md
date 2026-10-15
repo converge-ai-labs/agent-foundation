@@ -6,6 +6,8 @@ Trusted stdio, Host-dialed HTTP(S) and outbound reverse WebSocket carry the same
 
 [EIP](02-eip-protocol.md) owns methods/results and operation evidence. [Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns Session liveness, disconnect grace and collection. This document owns framing, attachment authentication, routing and failure isolation. A Session owns its native resources; ordinary Sessions are not tenant sandboxes. Optional controlled Sessions follow [Execution Isolation](07-execution-isolation.md). A carrier owns delivery only.
 
+Optional [resource monitoring](11-resource-monitoring.md) uses a separate listener and credential alongside any carrier. It has no EIP method, Session or carrier liveness role.
+
 ## Device and Session Admission
 
 The first stdio/WebSocket application request is `initialize`, with the expected device identity and offered versions. Success establishes one device connection, not an Agent workspace. HTTP performs the same authenticated handshake without creating a server-side TCP-affine connection object. Explicit first-contact discovery is allowed only for Host registration; ordinary acquisition pins the registered identity.

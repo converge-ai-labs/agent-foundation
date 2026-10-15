@@ -740,7 +740,7 @@ async fn read_body_bounded(mut body: Incoming, maximum: usize) -> Result<Vec<u8>
     Ok(output)
 }
 
-fn authorized(headers: &hyper::HeaderMap, credential: &[u8]) -> bool {
+pub(crate) fn authorized(headers: &hyper::HeaderMap, credential: &[u8]) -> bool {
     let Some(value) = headers.get(header::AUTHORIZATION) else {
         return false;
     };
@@ -811,7 +811,7 @@ fn infallible_to_io(error: Infallible) -> io::Error {
     match error {}
 }
 
-fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcceptor>> {
+pub(crate) fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcceptor>> {
     let (Some(certificate), Some(private_key)) =
         (&http.tls_certificate_file, &http.tls_private_key_file)
     else {
@@ -836,7 +836,7 @@ fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8>> {
+pub(crate) async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8>> {
     let mut bytes = tokio::fs::read(path).await?;
     if bytes.ends_with(b"\r\n") {
         bytes.truncate(bytes.len() - 2);

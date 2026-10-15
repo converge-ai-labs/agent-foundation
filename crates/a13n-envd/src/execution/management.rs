@@ -137,6 +137,26 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
             }
         }
     }
+    if let Some(monitoring) = &mut config.monitoring {
+        image.credential(
+            &mut monitoring.credential_file,
+            "monitoring-credential",
+            &mut config.bootstrap_files,
+        )?;
+        if let Some(path) = &mut monitoring.tls_certificate_file {
+            image.credential(path, "monitoring-certificate", &mut config.bootstrap_files)?;
+        }
+        if let Some(path) = &mut monitoring.tls_private_key_file {
+            image.credential(path, "monitoring-private-key", &mut config.bootstrap_files)?;
+        }
+        monitoring
+            .relocate_sources(
+                Path::new(ORIGINAL),
+                &runtime_parent,
+                &config.bootstrap_files,
+            )
+            .map_err(io::Error::other)?;
+    }
     for path in &config.bootstrap_files {
         use std::os::unix::fs::MetadataExt;
         let metadata = fs::metadata(path)?;

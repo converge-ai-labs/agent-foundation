@@ -174,6 +174,10 @@ fn session_methods(config: &Config) -> Vec<String> {
 }
 
 impl Daemon {
+    pub(crate) fn generation(&self) -> u64 {
+        self.descriptor.generation
+    }
+
     pub(crate) fn new(config: &Config) -> Result<Self, DaemonInitError> {
         Self::with_generation(config, fresh_generation()?)
     }

@@ -87,6 +87,49 @@ Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有�
 
 显式设备 ID 可通过 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 提供。没有显式 ID 时，安装状态目录跨重启保留生成的身份。`--default-working-directory`、`--name` 和 `--description` 覆盖 JSON 元数据。通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置目录发现。Windows EIP 路径使用 `/C:/...` 和 `/UNC/server/share/...`；守护进程启动路径使用操作系统原生格式。
 
+## 资源监控
+
+Linux 上可通过 JSON `monitoring` 对象启用独立的只读 HTTP 监听器。它可以与 stdio、HTTP、反向 WebSocket（包括 `connect`）并行运行。省略该对象或设为 `null` 时关闭监控；其他平台拒绝启用监控的配置。
+
+创建受保护的凭据文件，写入独立的随机令牌，不要复用执行凭据。在守护进程配置中添加：
+
+```json
+{
+  "monitoring": {
+    "bind": "127.0.0.1:9090",
+    "credential_file": "/run/secrets/envd-monitoring",
+    "plaintext_scope": "loopback",
+    "sample_interval_ms": 10000,
+    "filesystems": {
+      "workspace": "/workspace"
+    },
+    "cgroup_v2_directory": "/sys/fs/cgroup"
+  }
+}
+```
+
+`bind` 必须使用数字 IP 地址和显式的非零端口。使用原生文件权限保护凭据。监控令牌必须与 HTTP 或反向 WebSocket 执行令牌不同，且不能访问 EIP。监控凭据和 TLS 私钥文件获得与执行凭据相同的启动文件保护。
+
+远程监听器应成对配置 `tls_certificate_file` 和 `tls_private_key_file`，并省略 `plaintext_scope`。客户端必须验证服务器证书。部署提供私有传输边界时，也可使用 `plaintext_scope: "provider_private_link"`。Envd 不会发布容器端口、创建隧道或修改外层网络策略。反向 WebSocket 已连接不代表此监听器可达。
+
+发送 `GET /monitoring/v1/report`，携带 `Authorization: Bearer <monitoring-token>`。通过 HTTP 客户端受保护的凭据配置提供令牌，避免将其放入 URL、shell 历史或日志。监听器只接受无请求体的 GET，没有浏览器 CORS 接口，响应带有 `Cache-Control: no-store`。凭据缺失或错误时返回 401，首次采样完成前返回 503。
+
+报告包含 `schema_version: 1`、`device_id`、十进制字符串形式的 EIP generation、`sample_interval_ms`、基于单调时钟的 `sample_age_ms` 和 `sample`。采样包含递增的 `sequence`、UTC 时间 `sampled_at`、`collection_duration_ms`，以及以下观测：
+
+| 字段组                                                       | 含义                                                                                                                                                                                                                 |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system.cpu_busy_percent`                                    | 两次采样间的系统 CPU 忙碌百分比，排除空闲和 I/O 等待。首次采样或计数器重置时为 `null`。                                                                                                                              |
+| `system.memory_total_bytes`、`system.memory_available_bytes` | Linux `/proc/meminfo` 的总内存和可用内存估计，单位为字节。                                                                                                                                                           |
+| `cgroup_v2.cpu_usage_usec`、`cgroup_v2.memory_current_bytes` | 显式选择的 cgroup 及其后代的累计 CPU 时间和当前内存用量。                                                                                                                                                            |
+| `cgroup_v2.cpu_max`、`cgroup_v2.memory_max`                  | 当前 cgroup 的本地限制：`{"kind":"unlimited"}`，或 CPU 的 `{"kind":"limited","quota_usec":150000,"period_usec":100000}`、内存的 `{"kind":"limited","bytes":1073741824}`。祖先限制和 CPU 亲和性还可能进一步约束容量。 |
+| `filesystems.<name>`                                         | 配置路径所属文件系统的 `total_bytes`、`free_bytes`、`available_bytes`。可用空间考虑保留块。这些是整个文件系统的容量，不是目录大小或工作区配额。                                                                      |
+
+**即使 Envd 在容器中运行，系统指标仍可能描述宿主机。** 确认目标路径对应所需工作负载组后，再设置 `cgroup_v2_directory`。使用 cgroup v1 或未选择组时省略该字段，此时 `cgroup_v2` 为 `null`。容器指标不可用时，不会自动用宿主机总量替代。缺失或不可读的测量值为 `null`；不可用的文件系统对应条目为 `null`。报告不返回路径。
+
+每个守护进程只有一个采样器，在没有会话时也持续工作。读取只返回最新缓存样本，不触发采样。默认间隔为 10 秒；`sample_interval_ms` 接受 1000–60000。`filesystems` 默认为空，最多接受 16 个绝对路径，每个名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。在 Linux managed 执行模式下，runtime 目录目标使用真实的 runtime 挂载；其他位于受保护启动路径及其下级的目标会被拒绝，避免将保护性挂载误报为工作负载存储。请使用本地文件系统路径：挂载点阻塞会延迟采样，但 HTTP 仍返回上一份样本及不断增加的数据年龄。展示为当前数据前应检查年龄。
+
+监听器配置、凭据、TLS 材料错误或端口绑定失败会阻止启动。运行中的测量失败不影响执行。守护进程关闭（包括 stdio EOF）时停止监控；会话清理不会停止监控。Envd 仅在内存中保留一个样本。此接口不提供历史数据、推送、Service 集成或 OpenTelemetry 导出。
+
 ## 启用命令
 
 需要以配置的执行账号权限运行原生 shell 时，使用：

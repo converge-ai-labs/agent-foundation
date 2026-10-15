@@ -48,6 +48,7 @@ pub(crate) struct WorkerConfig {
 impl WorkerConfig {
     fn config(&self) -> io::Result<Config> {
         Ok(Config {
+            monitoring: None,
             computer_use: self.computer_use,
             // Permission readiness belongs to daemon startup, not Session workers.
             computer_use_permission_timeout: Duration::ZERO,

@@ -87,6 +87,49 @@ A Session can open only in an existing directory; a missing default fails Sessio
 
 Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
 
+## Resource monitoring
+
+On Linux, opt into a separate read-only HTTP listener through the `monitoring` JSON object. It works alongside stdio, HTTP, and reverse WebSocket, including `connect`. Monitoring is disabled when the object is omitted or `null`; other platforms reject an enabled configuration.
+
+Create a private credential file with a dedicated random token, separate from the execution credential. Add this object to your daemon configuration:
+
+```json
+{
+  "monitoring": {
+    "bind": "127.0.0.1:9090",
+    "credential_file": "/run/secrets/envd-monitoring",
+    "plaintext_scope": "loopback",
+    "sample_interval_ms": 10000,
+    "filesystems": {
+      "workspace": "/workspace"
+    },
+    "cgroup_v2_directory": "/sys/fs/cgroup"
+  }
+}
+```
+
+`bind` requires a numeric address and an explicit nonzero port. Protect the credential with native file permissions. The token must differ from the HTTP or reverse-WebSocket execution token. Monitoring credentials grant no EIP access. Monitoring credential and TLS key files receive the same bootstrap protection as execution credentials.
+
+For a remote listener, configure `tls_certificate_file` and `tls_private_key_file` together and omit `plaintext_scope`. Clients must verify the server certificate. `plaintext_scope: "provider_private_link"` is also available when the deployment supplies a private transport boundary. Envd does not publish container ports, create tunnels, or change outer network policy. Reverse-WebSocket connectivity alone does not make this listener reachable.
+
+Send `GET /monitoring/v1/report` with `Authorization: Bearer <monitoring-token>`. Supply the token through your HTTP client's protected credential configuration; keep it out of URLs, shell history, and logs. The listener accepts bodyless GET requests only, has no browser CORS surface, and responds with `Cache-Control: no-store`. It returns 401 for missing or incorrect credentials and 503 until the first sample is available.
+
+Each report contains `schema_version: 1`, `device_id`, the EIP generation as a decimal string, `sample_interval_ms`, monotonic `sample_age_ms`, and `sample`. The sample contains an increasing `sequence`, UTC `sampled_at`, `collection_duration_ms`, and these observations:
+
+| Group                                                        | Meaning                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system.cpu_busy_percent`                                    | System-wide CPU busy percentage between samples, excluding idle and I/O wait. First sample or counter reset is `null`.                                                                                                                        |
+| `system.memory_total_bytes`, `system.memory_available_bytes` | Linux `/proc/meminfo` totals and available-memory estimate in bytes.                                                                                                                                                                          |
+| `cgroup_v2.cpu_usage_usec`, `cgroup_v2.memory_current_bytes` | Cumulative CPU time and current memory for the explicitly selected cgroup and its descendants.                                                                                                                                                |
+| `cgroup_v2.cpu_max`, `cgroup_v2.memory_max`                  | Local cgroup limits: `{"kind":"unlimited"}`, or `{"kind":"limited","quota_usec":150000,"period_usec":100000}` for CPU and `{"kind":"limited","bytes":1073741824}` for memory. Ancestor limits and CPU affinity can further restrict capacity. |
+| `filesystems.<name>`                                         | `total_bytes`, `free_bytes`, and `available_bytes` for the filesystem containing the configured path. Available space accounts for reserved blocks. These are filesystem-wide capacities, not directory sizes or workspace quotas.            |
+
+**System metrics can describe the host even when Envd runs inside a container.** Select `cgroup_v2_directory` only after verifying that it identifies the intended workload group. Omit it on cgroup v1 or when no group is selected; then `cgroup_v2` is `null`. There is no automatic substitution of host totals for unavailable container metrics. Missing or unreadable measurements are `null`, and an unavailable filesystem has a `null` entry. No paths are returned in reports.
+
+The sampler runs once per daemon, including periods with no Sessions. Reads return the latest cached sample and never trigger sampling. The default interval is 10 seconds; `sample_interval_ms` accepts 1000–60000. `filesystems` defaults to empty and accepts at most 16 absolute paths, each with a 1–64 character ASCII name containing letters, digits, `_`, or `-`. Paths must not contain `..`. In managed Linux execution, runtime-directory targets use the real runtime binding; other targets at or below protected bootstrap paths are rejected to avoid reporting protective mounts as workload storage. Use local filesystem paths: a stalled mount can delay sampling, while HTTP continues to serve the previous sample with increasing age. Check age before presenting it as current data.
+
+Invalid listener configuration, credentials, TLS material, or a bind failure stop startup. Later measurement failures leave execution available. Daemon shutdown, including stdio EOF, stops monitoring; Session cleanup does not. Envd retains one sample in memory. This endpoint provides no history, push delivery, Service integration, or OpenTelemetry export.
+
 ## Enable commands
 
 For native shell execution with the configured execution account's authority, use:
