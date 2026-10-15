@@ -50,6 +50,14 @@ a13n-harness-ui --environment-profile environment-team
 
 `--environment-mode` 选择内置模式；`--environment-profile` 选择已配置 profile。两者互斥。在 TUI 中，`/environment` 显示选项，并为该对话的后续 Run 保存选择。改变已保存对话的 Environment 前先恢复；启动覆盖不能与 `--resume` 同用。
 
+## 监控 Environment 资源
+
+从 WebUI 对话工具栏打开 **Environment monitor**。选择 Device，查看操作系统、CPU 型号、最新 CPU 和内存观测、文件系统容量，以及 24 小时的分钟平均值和峰值曲线。面板覆盖整个 App；切换对话或编辑下一次 Run 的目录不会改变观测对象。系统指标描述 Envd 可见的系统，cgroup 指标描述操作员指定的 Linux cgroup，均不是单次 Run 的用量。
+
+远程 Device 复用已有的认证连接。在 Envd 启动配置中启用 `monitoring` 后开始采样；禁用采样时仍可查看静态系统信息。内置本地 Sandbox 在 daemon 启动时启用采样。打开监控不会下载或启动 Envd。Full Control 和非 Envd Provider 不提供这些指标。本地运行时获取与已安装 `a13n-envd-client` 完全相同的版本；已发布的 Envd 0.3.0 提供此监控协议。远程 daemon 和客户端应一起升级。
+
+面板区分等待采样、禁用、样本过期和离线。缺失值显示为 **—**，缺失分钟保留为空白。最新观测详情包含原始单位的压力值和累积计数。历史仅保存在 App 内存中，重启即清空。采集最多覆盖 64 个 Device、同时发起四个请求，每个 Device 保留 1,440 个分钟槽；超出数量会明确提示，不继续扩大 buffer。修改或撤销 Device 会清空其历史。
+
 ## Project 文件参考
 
 需要稳定的多目录 Project 时，在根 YAML 旁创建 `projects/work.yaml`。将两个路径替换为现有目录：

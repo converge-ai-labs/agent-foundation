@@ -1,0 +1,256 @@
+.monitor {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.monitor h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.monitor p {
+  margin: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.toolbar label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.toolbar select {
+  max-width: 100%;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 8px;
+  background: var(--a13n-elevated);
+}
+.toolbar > span,
+.note,
+.identity span,
+.gauges small,
+.trendHeading > span,
+.axis,
+.timeAxis,
+.readout {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.note {
+  line-height: 1.6;
+}
+.identity {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+.identity > div {
+  display: grid;
+  gap: 5px;
+}
+.freshness {
+  text-align: right;
+  flex-shrink: 0;
+}
+.freshness strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.gauges {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.gauges > div {
+  background: var(--a13n-surface);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+.gauges span {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.gauges strong {
+  font-size: 24px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.trend {
+  position: relative;
+  padding-left: 65px;
+}
+.trendHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-left: -65px;
+  margin-bottom: 14px;
+}
+.trendHeading > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.averageKey,
+.peakKey {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  background: var(--a13n-signal);
+  margin-right: 6px;
+}
+.peakKey {
+  background: var(--a13n-secondary);
+}
+.trend svg {
+  width: 100%;
+  height: 100px;
+  overflow: visible;
+}
+.grid {
+  stroke: var(--a13n-border-soft);
+  fill: none;
+}
+.average,
+.peak {
+  stroke: var(--a13n-signal);
+  fill: var(--a13n-signal);
+}
+.peak {
+  stroke: var(--a13n-secondary);
+  fill: var(--a13n-secondary);
+  stroke-dasharray: 4 3;
+}
+.average polyline,
+.peak polyline {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.axis {
+  position: absolute;
+  left: 0;
+  top: 34px;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+.timeAxis {
+  display: flex;
+  justify-content: space-between;
+}
+.trend input {
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  margin: 8px 0;
+  background: transparent;
+  cursor: pointer;
+}
+.trend input::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--a13n-border-soft);
+}
+.trend input::-moz-range-track {
+  height: 2px;
+  background: var(--a13n-border-soft);
+}
+.trend input::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--a13n-signal);
+}
+.trend input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--a13n-signal);
+}
+.readout {
+  min-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.filesystems {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+.filesystems > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  background: var(--a13n-surface);
+  border-radius: 8px;
+}
+.monitor details {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.monitor summary {
+  cursor: pointer;
+  color: var(--a13n-secondary);
+}
+.monitor pre {
+  max-height: 260px;
+  overflow: auto;
+  background: var(--a13n-surface);
+  padding: 12px;
+  border-radius: 8px;
+}
+@media (max-width: 600px) {
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .gauges {
+    grid-template-columns: 1fr;
+  }
+  .gauges > div {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    padding: 12px;
+  }
+  .gauges strong {
+    text-align: right;
+    font-size: 20px;
+  }
+  .gauges small {
+    grid-column: 1 / -1;
+  }
+  .identity {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .freshness {
+    text-align: left;
+  }
+  .trendHeading {
+    align-items: start;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .axis {
+    top: 52px;
+  }
+  .filesystems > div {
+    flex-direction: column;
+  }
+}

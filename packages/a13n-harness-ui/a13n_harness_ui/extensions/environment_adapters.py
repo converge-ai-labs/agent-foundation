@@ -21,6 +21,7 @@ from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCA
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
+    LocalEnvdMonitoringConfiguration,
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -172,6 +173,7 @@ class LocalEnvdProfileConfiguration(BaseModel):
         default_factory=lambda: LocalEnvdLaunchConfiguration(
             sandbox=RestrictedSandbox(mode="restricted", grants=()),
             egress=EnvdNetworkConfiguration(mode="deny"),
+            monitoring=LocalEnvdMonitoringConfiguration(),
         )
     )
     session: LocalEnvdEnvironmentConfiguration = Field(default_factory=LocalEnvdEnvironmentConfiguration)

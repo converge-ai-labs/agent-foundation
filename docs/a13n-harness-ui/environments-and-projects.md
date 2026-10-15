@@ -50,6 +50,14 @@ a13n-harness-ui --environment-profile environment-team
 
 `--environment-mode` selects a built-in mode; `--environment-profile` selects a configured profile. They are mutually exclusive. In the TUI, `/environment` shows choices and saves the selection for this conversation's later Runs. Resume first before changing a saved conversation's Environment; launch overrides cannot be combined with `--resume`.
 
+## Monitor Environment resources
+
+Open **Environment monitor** from the WebUI conversation toolbar. Select a Device to see its operating system, CPU model, latest CPU and memory observations, filesystem capacity, and 24-hour minute-average and peak charts. The panel covers the whole App; changing conversations or editing next-Run directories does not change the observed Device. System metrics describe the system visible to Envd. Cgroup metrics describe the operator-selected Linux cgroup. They are not per-Run usage.
+
+Remote Devices use their existing authenticated connections. Enable `monitoring` in the Envd startup configuration to collect samples; static system information remains available when sampling is disabled. Built-in local Sandbox enables sampling when its daemon starts. Opening the monitor does not download or start Envd. Full Control and non-Envd providers do not supply these metrics. Local runtime acquisition uses the exact installed `a13n-envd-client` release; published Envd 0.3.0 supplies this monitoring protocol. Upgrade remote daemons and clients together.
+
+The panel distinguishes waiting, disabled, stale and offline observations. Missing values display as **—**, and missing minutes remain gaps. Latest observation details include pressure and cumulative counters in their native units. History lives only in App memory and clears on restart. Collection is limited to 64 Devices, four concurrent requests, and 1,440 minute slots per Device; excess Devices are reported rather than growing the buffer. Changing or revoking a Device clears its history.
+
 ## Project file reference
 
 For a stable multi-directory Project, create `projects/work.yaml` beside root YAML. Replace both paths with existing directories:

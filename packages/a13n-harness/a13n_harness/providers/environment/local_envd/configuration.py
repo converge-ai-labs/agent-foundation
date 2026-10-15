@@ -51,6 +51,28 @@ class LocalEnvdEnvironmentConfiguration(RemoteEnvdEnvironmentConfiguration):
     """One fixed-cwd Session selection; never a daemon launch policy."""
 
 
+class LocalEnvdMonitoringConfiguration(BaseModel):
+    """Optional outer-daemon sampling; independent of Session execution policy."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sample_interval_ms: Annotated[int, Field(ge=1000, le=60000)] = 10000
+    filesystems: dict[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")], Path] = Field(
+        default_factory=dict, max_length=16
+    )
+    cgroup_v2_directory: Path | None = None
+
+    @field_validator("filesystems")
+    @classmethod
+    def _filesystem_paths(cls, value: dict[str, Path]) -> dict[str, Path]:
+        return {name: _absolute_os_path(path, label="monitoring filesystem") for name, path in value.items()}
+
+    @field_validator("cgroup_v2_directory")
+    @classmethod
+    def _cgroup_path(cls, value: Path | None) -> Path | None:
+        return None if value is None else _absolute_os_path(value, label="monitoring cgroup")
+
+
 class LocalEnvdLaunchConfiguration(BaseModel):
     """Host-selected daemon launch configuration, shared by every Session on this runtime."""
 
@@ -61,6 +83,7 @@ class LocalEnvdLaunchConfiguration(BaseModel):
     egress: EnvdNetworkConfiguration = Field(default_factory=lambda: EnvdNetworkConfiguration(mode="inherit"))
     default_working_directory: Path | None = None
     directory_discovery: bool = True
+    monitoring: LocalEnvdMonitoringConfiguration | None = None
     trusted_executable_roots: tuple[Path, ...] = ()
     shell_profiles: tuple[LocalEnvdShellProfile, ...] = ()
     max_file_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB

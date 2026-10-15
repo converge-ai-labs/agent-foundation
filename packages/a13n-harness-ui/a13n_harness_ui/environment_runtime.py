@@ -6,7 +6,7 @@ import hashlib
 import inspect
 import os
 import stat
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,6 +15,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
+from a13n_envd_client import EIPDeviceConnection
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -37,6 +38,7 @@ from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunC
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
 from a13n_harness_ui.configuration.models import HttpDeviceTransport, canonical_digest
 from a13n_harness_ui.devices import DeviceConnections
+from a13n_harness_ui.environment_monitoring import MonitoringSource
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError
 from a13n_harness_ui.extensions import (
@@ -258,6 +260,17 @@ class EnvironmentSnapshotReconstructor:
                 )
             return self._local_runtimes[key]
 
+    def monitoring_sources(self) -> Iterable[MonitoringSource]:
+        for (roots, revision), runtime in self._local_runtimes.items():
+            yield MonitoringSource(
+                id="local-" + runtime.device_id,
+                name="Local Sandbox",
+                transport="stdio",
+                revision=revision,
+                roots=tuple(str(root) for root in roots[:16]),
+                acquire=partial(_running_local_device, runtime),
+            )
+
     async def close(self) -> None:
         async with AsyncExitStack() as stack:
             for runtime in self._local_runtimes.values():
@@ -275,6 +288,10 @@ class EnvironmentSnapshotReconstructor:
             )
         value = factory(provider)
         return await value if inspect.isawaitable(value) else value
+
+
+async def _running_local_device(runtime: LocalEnvdProviderRuntime) -> EIPDeviceConnection | None:
+    return runtime.running_device()
 
 
 class EnvironmentRunPlan:

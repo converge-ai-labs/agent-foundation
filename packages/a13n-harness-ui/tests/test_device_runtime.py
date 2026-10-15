@@ -94,7 +94,7 @@ async def app_listener(tmp_path, recipe=None):
 
 
 @asynccontextmanager
-async def daemon(tmp_path, carrier, *, endpoint):
+async def daemon(tmp_path, carrier, *, endpoint, monitoring=None):
     executable = Path(os.environ["A13N_ENVD_TEST_BINARY"]).resolve()
     root = tmp_path / "remote"
     root.mkdir()
@@ -109,6 +109,7 @@ async def daemon(tmp_path, carrier, *, endpoint):
                 "device_id": "native-build",
                 "default_working_directory": str(root),
                 "limits": {"max_sessions": 2},
+                "monitoring": monitoring,
             }
         )
     )
@@ -543,3 +544,129 @@ async def test_restart_reuses_captured_device_recipe_and_opens_a_fresh_session(t
                 assert goal.iteration == 0
             else:
                 assert goal is None
+
+
+@requires_envd
+@pytest.mark.parametrize("carrier", ["http", "websocket"])
+async def test_device_monitoring_uses_authenticated_queries_without_sessions(tmp_path, monkeypatch, carrier):
+    monkeypatch.setenv("DEVICE_TOKEN", TOKEN)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        endpoint = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    recipe = resource(carrier, endpoint)
+
+    async def forbidden_session(*args, **kwargs):
+        pytest.fail("Monitoring must never open a Session")
+
+    monkeypatch.setattr(EIPDeviceConnection, "open_session", forbidden_session)
+    async with app_listener(tmp_path, recipe) as (app, http, ws):
+        async with daemon(
+            tmp_path, carrier, endpoint=endpoint if carrier == "http" else ws, monitoring={"sample_interval_ms": 1000}
+        ):
+            async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+                for path in ("/api/environment-monitoring", f"/api/environment-monitoring/{recipe.id}"):
+                    assert (await api.get(path, headers={"Authorization": "Bearer invalid"})).status_code == 401
+                async with asyncio.timeout(15):
+                    while True:
+                        await app._environment_monitoring.collect()
+                        response = await api.get(f"/api/environment-monitoring/{recipe.id}")
+                        assert response.status_code == 200, response.text
+                        detail = response.json()
+                        if detail["environment"]["status"] == "ready":
+                            break
+                        await asyncio.sleep(0.05)
+                assert detail["environment"]["system_info"]["os"]
+                assert detail["environment"]["sample"]["system"]["memory_total_bytes"] > 0
+                assert detail["history"]
+                catalog = (await api.get("/api/environment-monitoring")).json()
+                assert len(catalog["environments"]) == 1
+                assert catalog["environments"][0]["id"] == recipe.id
+                assert TOKEN not in response.text
+        await app._environment_monitoring.collect()
+        assert (await app.environment_metrics(recipe.id)).environment.status == "offline"
+
+
+@requires_envd
+async def test_local_monitoring_does_not_launch_and_survives_session_close(tmp_path):
+    from a13n_harness.providers.environment.local_envd.configuration import (
+        LocalEnvdEnvironmentConfiguration,
+        LocalEnvdLaunchConfiguration,
+        LocalEnvdMonitoringConfiguration,
+    )
+    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+    from a13n_harness.providers.environment.local_envd.runtime import (
+        LocalEnvdProviderRuntime,
+        TemporaryLocalEnvdRuntimeAllocator,
+    )
+    from a13n_harness_ui.environment_monitoring import EnvironmentMonitoring, MonitoringSource
+
+    allocations = tmp_path / "allocations"
+    allocations.mkdir()
+    runtime = LocalEnvdProviderRuntime(
+        executable=Path(os.environ["A13N_ENVD_TEST_BINARY"]).resolve(),
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=allocations),
+        configuration=LocalEnvdLaunchConfiguration(
+            default_working_directory=tmp_path, monitoring=LocalEnvdMonitoringConfiguration(sample_interval_ms=1000)
+        ),
+    )
+
+    async def acquire():
+        return runtime.running_device()
+
+    async def sources():
+        return [
+            MonitoringSource(id=runtime.device_id, name="Sandbox", transport="stdio", revision="one", acquire=acquire)
+        ]
+
+    monitor = EnvironmentMonitoring(sources)
+    async with runtime:
+        await monitor.collect()
+        assert (await monitor.detail(runtime.device_id)).environment.status == "not_started"
+        assert not list(allocations.iterdir())
+        connector = LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(), runtime=runtime, environment_id="local"
+        )
+        execution = await connector.open()
+        await execution.close()
+        device = runtime.running_device()
+        assert device is not None and not device._sessions
+        async with asyncio.timeout(10):
+            while True:
+                await monitor.collect()
+                detail = await monitor.detail(runtime.device_id)
+                if detail.environment.status == "ready":
+                    break
+                await asyncio.sleep(0.05)
+        assert detail.history and not device._sessions
+    await monitor.collect()
+    assert runtime.running_device() is None
+    assert not list(allocations.iterdir())
+
+
+@requires_envd
+async def test_http_monitoring_recovers_when_daemon_restarts_with_sampling_enabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEVICE_TOKEN", TOKEN)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        endpoint = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    recipe = resource("http", endpoint)
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    async with app_listener(tmp_path, recipe) as (app, _, _):
+        async with daemon(first, "http", endpoint=endpoint):
+            async with asyncio.timeout(10):
+                while True:
+                    await app._environment_monitoring.collect()
+                    if (await app.environment_metrics(recipe.id)).environment.status == "disabled":
+                        break
+                    await asyncio.sleep(0.05)
+        async with daemon(second, "http", endpoint=endpoint, monitoring={"sample_interval_ms": 1000}):
+            async with asyncio.timeout(15):
+                while True:
+                    await app._environment_monitoring.collect()
+                    detail = await app.environment_metrics(recipe.id)
+                    if detail.environment.status == "ready":
+                        break
+                    await asyncio.sleep(0.05)
+            assert detail.history

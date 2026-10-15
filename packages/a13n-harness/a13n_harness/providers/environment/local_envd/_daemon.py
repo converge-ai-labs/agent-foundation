@@ -223,6 +223,9 @@ def _write_private_bootstrap(root: Path, configuration: LocalEnvdLaunchConfigura
         "egress": configuration.egress.model_dump(mode="json"),
         "default_working_directory": str(configuration.default_working_directory),
         "directory_discovery": configuration.directory_discovery,
+        "monitoring": None
+        if configuration.monitoring is None
+        else configuration.monitoring.model_dump(mode="json", exclude_none=True),
         "limits": {
             name: getattr_limit
             for name, getattr_limit in configuration.model_dump(mode="json").items()

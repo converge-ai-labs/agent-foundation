@@ -51,6 +51,7 @@ from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspecti
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+from a13n_harness_ui.environment_monitoring import MonitoringCatalog, MonitoringDetail
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.extensions import CatalogReference
 from a13n_harness_ui.host_file_transfers import (
@@ -681,6 +682,14 @@ def create_webui(
     @server.post("/api/devices/{device_id}/revoke")
     async def revoke_device(device_id: str) -> DeviceSummary:
         return await app().revoke_device(device_id)
+
+    @server.get("/api/environment-monitoring")
+    async def environment_monitoring() -> MonitoringCatalog:
+        return await app().environment_monitoring()
+
+    @server.get("/api/environment-monitoring/{target_id}")
+    async def environment_metrics(target_id: str) -> MonitoringDetail:
+        return await app().environment_metrics(target_id)
 
     @server.get("/api/devices")
     async def devices() -> tuple[DeviceSummary, ...]:

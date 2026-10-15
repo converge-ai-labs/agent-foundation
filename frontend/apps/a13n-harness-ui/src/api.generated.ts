@@ -254,6 +254,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/environment-monitoring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Environment Monitoring */
+        get: operations["environment_monitoring_api_environment_monitoring_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment-monitoring/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Environment Metrics */
+        get: operations["environment_metrics_api_environment_monitoring__target_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/devices": {
         parameters: {
             query?: never;
@@ -2495,6 +2529,27 @@ export interface components {
             /** Configurable */
             configurable: boolean;
         };
+        /** CgroupMetrics */
+        CgroupMetrics: {
+            /** Cpu Usage Usec */
+            cpu_usage_usec?: number | null;
+            /** Cpu User Usec */
+            cpu_user_usec?: number | null;
+            /** Cpu System Usec */
+            cpu_system_usec?: number | null;
+            /** Cpu Periods Total */
+            cpu_periods_total?: number | null;
+            /** Cpu Throttled Periods Total */
+            cpu_throttled_periods_total?: number | null;
+            /** Cpu Throttled Usec */
+            cpu_throttled_usec?: number | null;
+            cpu_max?: components["schemas"]["CpuLimit"] | null;
+            /** Memory Current Bytes */
+            memory_current_bytes?: number | null;
+            memory_max?: components["schemas"]["MemoryLimit"] | null;
+            memory_events: components["schemas"]["MemoryEvents"];
+            pressure: components["schemas"]["Pressures"];
+        };
         /** ChangesPage */
         ChangesPage: {
             /**
@@ -2939,6 +2994,26 @@ export interface components {
              */
             kind: "copilot_subscription";
         };
+        CpuLimit: components["schemas"]["UnlimitedCpuLimit"] | components["schemas"]["LimitedCpuLimit"];
+        /** CpuTimeSeconds */
+        CpuTimeSeconds: {
+            /** User */
+            user?: number | null;
+            /** Nice */
+            nice?: number | null;
+            /** System */
+            system?: number | null;
+            /** Idle */
+            idle?: number | null;
+            /** Iowait */
+            iowait?: number | null;
+            /** Irq */
+            irq?: number | null;
+            /** Softirq */
+            softirq?: number | null;
+            /** Steal */
+            steal?: number | null;
+        };
         /** DecisionBatchView */
         DecisionBatchView: {
             /** Continuation Id */
@@ -3152,6 +3227,34 @@ export interface components {
             kind: "environment";
             /** Name */
             name: string;
+        };
+        /** EnvironmentObservation */
+        EnvironmentObservation: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "http" | "websocket" | "stdio";
+            /**
+             * Roots
+             * @default []
+             */
+            roots?: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "waiting" | "not_started" | "disabled" | "ready" | "stale" | "offline" | "revoked";
+            system_info?: components["schemas"]["SystemInfo"] | null;
+            sample?: components["schemas"]["MetricsSample"] | null;
+            /** Sample Interval Ms */
+            sample_interval_ms?: number | null;
+            /** Age Ms */
+            age_ms?: number | null;
         };
         /** EnvironmentOutcomeView */
         EnvironmentOutcomeView: {
@@ -3384,6 +3487,32 @@ export interface components {
             /** Expires At */
             expires_at: number;
         };
+        /** FilesystemMetrics */
+        FilesystemMetrics: {
+            /** Total Bytes */
+            total_bytes: number;
+            /** Available Bytes */
+            available_bytes: number;
+            /** Free Bytes */
+            free_bytes: number;
+            /** Total Inodes */
+            total_inodes?: number | null;
+            /** Free Inodes */
+            free_inodes?: number | null;
+            /** Available Inodes */
+            available_inodes?: number | null;
+        };
+        /** FilesystemObservation */
+        FilesystemObservation: {
+            metrics?: components["schemas"]["FilesystemMetrics"] | null;
+        };
+        /** Gauge */
+        Gauge: {
+            /** Average */
+            average: number;
+            /** Peak */
+            peak: number;
+        };
         /** GitChange */
         GitChange: {
             /** Path */
@@ -3602,6 +3731,16 @@ export interface components {
              */
             compact_threshold?: number;
         };
+        /** HistoryPoint */
+        HistoryPoint: {
+            /** Minute */
+            minute: number;
+            /** Segment */
+            segment: number;
+            cpu_busy_percent?: components["schemas"]["Gauge"] | null;
+            memory_used_bytes?: components["schemas"]["Gauge"] | null;
+            cgroup_memory_bytes?: components["schemas"]["Gauge"] | null;
+        };
         /**
          * ImageInputPolicy
          * @description Preparation limits for one model's image input, not native ModelSettings.
@@ -3647,6 +3786,28 @@ export interface components {
             support_gif?: boolean;
         };
         JsonValue: unknown;
+        /** LimitedCpuLimit */
+        LimitedCpuLimit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "limited";
+            /** Quota Usec */
+            quota_usec: number;
+            /** Period Usec */
+            period_usec: number;
+        };
+        /** LimitedMemoryLimit */
+        LimitedMemoryLimit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "limited";
+            /** Bytes */
+            bytes: number;
+        };
         /**
          * ListenerFeatures
          * @description Implemented browser facilities, not the eventual workbench roadmap.
@@ -3850,6 +4011,21 @@ export interface components {
              */
             id?: string;
         };
+        /** MemoryEvents */
+        MemoryEvents: {
+            /** Low */
+            low?: number | null;
+            /** High */
+            high?: number | null;
+            /** Max */
+            max?: number | null;
+            /** Oom */
+            oom?: number | null;
+            /** Oom Kill */
+            oom_kill?: number | null;
+            /** Oom Group Kill */
+            oom_group_kill?: number | null;
+        };
         /** MemoryFileEntry */
         MemoryFileEntry: {
             /** Path */
@@ -3870,6 +4046,7 @@ export interface components {
             /** Text */
             text: string;
         };
+        MemoryLimit: components["schemas"]["UnlimitedMemoryLimit"] | components["schemas"]["LimitedMemoryLimit"];
         /** MemoryOrganizationStatus */
         MemoryOrganizationStatus: {
             /**
@@ -3909,6 +4086,26 @@ export interface components {
              * @default 0
              */
             output_tokens?: number;
+        };
+        /** MetricsSample */
+        MetricsSample: {
+            /** Sequence */
+            sequence: number;
+            /**
+             * Sampled At
+             * Format: date-time
+             */
+            sampled_at: string;
+            /** Sample Age Ms */
+            sample_age_ms: number;
+            /** Collection Duration Ms */
+            collection_duration_ms: number;
+            system: components["schemas"]["SystemMetrics"];
+            cgroup_v2?: components["schemas"]["CgroupMetrics"] | null;
+            /** Filesystems */
+            filesystems?: {
+                [key: string]: components["schemas"]["FilesystemObservation"];
+            };
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
@@ -4111,6 +4308,34 @@ export interface components {
             descendants: components["schemas"]["UsageTotals"];
             combined: components["schemas"]["UsageTotals"];
         };
+        /** MonitoringCatalog */
+        MonitoringCatalog: {
+            /** Environments */
+            environments: components["schemas"]["EnvironmentObservation"][];
+            /** Omitted */
+            omitted: number;
+            /**
+             * Capacity
+             * @default 64
+             */
+            capacity?: number;
+            /**
+             * Retention Minutes
+             * @default 1440
+             */
+            retention_minutes?: number;
+        };
+        /** MonitoringDetail */
+        MonitoringDetail: {
+            environment: components["schemas"]["EnvironmentObservation"];
+            /** History */
+            history: components["schemas"]["HistoryPoint"][];
+            /**
+             * Retention Minutes
+             * @default 1440
+             */
+            retention_minutes?: number;
+        };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
         /** NotePage */
@@ -4173,6 +4398,11 @@ export interface components {
             /** Logical Digest */
             logical_digest: string;
         };
+        /**
+         * OperatingSystem
+         * @enum {string}
+         */
+        OperatingSystem: "linux" | "macos" | "windows";
         /** PageFocus */
         PageFocus: {
             target: components["schemas"]["PageTarget"];
@@ -4312,6 +4542,28 @@ export interface components {
              * @default false
              */
             closed?: boolean;
+        };
+        /** Pressure */
+        Pressure: {
+            some?: components["schemas"]["PressureLevel"] | null;
+            full?: components["schemas"]["PressureLevel"] | null;
+        };
+        /** PressureLevel */
+        PressureLevel: {
+            /** Avg10 Percent */
+            avg10_percent: number;
+            /** Avg60 Percent */
+            avg60_percent: number;
+            /** Avg300 Percent */
+            avg300_percent: number;
+            /** Total Usec */
+            total_usec: number;
+        };
+        /** Pressures */
+        Pressures: {
+            cpu?: components["schemas"]["Pressure"] | null;
+            memory?: components["schemas"]["Pressure"] | null;
+            io?: components["schemas"]["Pressure"] | null;
         };
         /**
          * ProjectDefaults
@@ -4986,6 +5238,31 @@ export interface components {
              * @default false
              */
             metadata_omitted?: boolean;
+        };
+        /** SystemInfo */
+        SystemInfo: {
+            os: components["schemas"]["OperatingSystem"];
+            /** Os Version */
+            os_version?: string | null;
+            /** Kernel Version */
+            kernel_version?: string | null;
+            /** Architecture */
+            architecture?: string | null;
+            /** Cpu Model */
+            cpu_model?: string | null;
+        };
+        /** SystemMetrics */
+        SystemMetrics: {
+            /** Cpu Busy Percent */
+            cpu_busy_percent?: number | null;
+            cpu_time_seconds?: components["schemas"]["CpuTimeSeconds"] | null;
+            /** Logical Cpu Count */
+            logical_cpu_count?: number | null;
+            /** Memory Total Bytes */
+            memory_total_bytes?: number | null;
+            /** Memory Available Bytes */
+            memory_available_bytes?: number | null;
+            pressure?: components["schemas"]["Pressures"] | null;
         };
         /** TaskPage */
         TaskPage: {
@@ -5822,6 +6099,22 @@ export interface components {
              * @default 0
              */
             steering_count?: number;
+        };
+        /** UnlimitedCpuLimit */
+        UnlimitedCpuLimit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "unlimited";
+        };
+        /** UnlimitedMemoryLimit */
+        UnlimitedMemoryLimit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "unlimited";
         };
         /**
          * UrlInputSupport
@@ -7507,6 +7800,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    environment_monitoring_api_environment_monitoring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringCatalog"];
+                };
+            };
+        };
+    };
+    environment_metrics_api_environment_monitoring__target_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringDetail"];
                 };
             };
             /** @description Validation Error */
