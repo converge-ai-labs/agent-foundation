@@ -2,6 +2,7 @@ import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
+import { ContextWindow } from "../../context-window";
 import { useRequestMetrics } from "../../queries";
 import { ErrorNotice } from "../../../../shared/feedback";
 import { formatCost } from "../../../../shared/cost";
@@ -109,6 +110,9 @@ function ModelPane({ entry, runId }: { entry: ModelEntry; runId: string }) {
         action={<RawDialog title={t("Model request")} value={entry} />}
       />
       <ErrorNotice error={metrics.error} retry={() => void metrics.refetch()} />
+      {usage?.recordId && (
+        <ContextWindow scope={{ record_id: usage.recordId }} />
+      )}
       <PaneSection label={t("Response")}>
         {reasoning.length || calls.length || replies.length ? (
           <div className={styles.responseBody}>

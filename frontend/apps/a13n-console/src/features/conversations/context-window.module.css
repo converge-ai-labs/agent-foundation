@@ -1,0 +1,81 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.trigger:hover,
+.trigger[data-popup-open] {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+.trigger:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+.ringTrack,
+.ringValue {
+  fill: none;
+  stroke-width: 2;
+}
+.ringTrack {
+  stroke: var(--a13n-border);
+}
+.ringValue {
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+.popup {
+  width: min(300px, calc(100vw - 32px));
+}
+.details {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  font-size: var(--a13n-text-xs);
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--a13n-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.heading strong {
+  font-weight: 500;
+}
+.track {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--a13n-surface);
+  overflow: hidden;
+}
+.track span {
+  display: block;
+  height: 100%;
+  background: var(--a13n-secondary);
+  border-radius: inherit;
+}
+.balance,
+.tokens,
+.note {
+  margin: 0;
+}
+.balance {
+  color: var(--a13n-secondary);
+}
+.tokens {
+  font-variant-numeric: tabular-nums;
+}
+.note {
+  color: var(--a13n-muted);
+  line-height: 1.5;
+}

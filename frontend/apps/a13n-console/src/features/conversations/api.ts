@@ -13,6 +13,9 @@ export type SessionFilters = Omit<
   "limit" | "cursor"
 >;
 
+export type ContextScope =
+  { thread_id: string } | { run_id: string } | { record_id: string };
+
 export type UsageScope = { session_id: string } | { run_id: string };
 
 export function conversationKeys(workspaceId: string) {
@@ -34,6 +37,7 @@ export function conversationKeys(workspaceId: string) {
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
+    context: (id: string) => [...root, "context", id] as const,
     requestMetrics: (runId: string, recordId: string) =>
       [...root, "usage", runId, "record", recordId] as const,
     /** Recorded model usage of one Session or one Run. */
@@ -60,6 +64,21 @@ function newer(previous: unknown, next: unknown) {
 export function conversationQueries(client: Client, workspaceId: string) {
   const keys = conversationKeys(workspaceId);
   return {
+    context: (scope: ContextScope) =>
+      queryOptions({
+        queryKey: keys.context(
+          "thread_id" in scope
+            ? scope.thread_id
+            : "run_id" in scope
+              ? scope.run_id
+              : scope.record_id,
+        ),
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/usage/context", { params: { query: scope }, signal })
+            .then(data),
+      }),
     requestMetrics: (runId: string, record_id: string) =>
       queryOptions({
         queryKey: keys.requestMetrics(runId, record_id),
@@ -297,6 +316,8 @@ export function invalidateConversation(
           case "session":
           case "threads":
             return !!change.sessionId && id === change.sessionId;
+          case "context":
+            return id === change.threadId || id === change.runId;
           // Usage is keyed by the Session or the Run it sums.
           case "usage":
             return id === change.sessionId || id === change.runId;
@@ -343,6 +364,10 @@ export function applyThreadState(
       queryKey: keys.root,
       predicate: ({ queryKey: [, , kind, id] }) =>
         kind === "sessions" ||
+        (kind === "context" &&
+          (id === thread.id ||
+            id === current_run?.id ||
+            id === last_run?.id)) ||
         ((kind === "session" || kind === "threads") &&
           id === thread.session_id) ||
         ((kind === "runs" || kind === "inbox") && id === thread.id),

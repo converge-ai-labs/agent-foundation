@@ -2721,6 +2721,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/usage/context": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Context Usage */
+    get: operations["context_usage_api_v1_usage_context_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/usage/models": {
     parameters: {
       query?: never;
@@ -4566,6 +4583,22 @@ export interface components {
        * @default false
        */
       truncated?: boolean;
+    };
+    /**
+     * ContextUsage
+     * @description One reported generation, compared with its currently configured window.
+     */
+    ContextUsage: {
+      /** Context Window Tokens */
+      context_window_tokens: number | null;
+      /** Input Tokens */
+      input_tokens: number | null;
+      /** Output Tokens */
+      output_tokens: number | null;
+      /** Record Id */
+      record_id: string;
+      /** Run Id */
+      run_id: string;
     };
     /** CreatedSubscription */
     CreatedSubscription: {
@@ -14967,6 +15000,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AgentUsagePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  context_usage_api_v1_usage_context_get: {
+    parameters: {
+      query?: {
+        thread_id?: string | null;
+        run_id?: string | null;
+        record_id?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextUsage"] | null;
         };
       };
       400: components["responses"]["Error"];
