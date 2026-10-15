@@ -102,6 +102,8 @@ class MemoryFileStoreRow(Base):
     memory_id: Mapped[str] = mapped_column(String(72), ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True)
     # The last change's number; each change takes the next one.
     seq: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    # Saved mutations outside organization Runs; independent of revision retention and move pairs.
+    change_count: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     # Revisions up to this number may be gone, so a change cursor below it cannot list what changed since.
     pruned_through_seq: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     content_bytes: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))

@@ -48,7 +48,7 @@ async def due(service: SimpleNamespace, space: dict[str, Any]) -> None:
             .where(
                 SpaceOrganizationRow.space_id == space["id"],
             )
-            .values(due_at=None)
+            .values(due_at=None, next_check_at=None)
         )
 
 

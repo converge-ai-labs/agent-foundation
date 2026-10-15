@@ -68,10 +68,26 @@ class SessionMemorySettings(BaseModel):
         return self
 
 
+class AnyChangeTrigger(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["any_change"] = "any_change"
+
+
+class ChangeCountTrigger(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["change_count"] = "change_count"
+    count: int = Field(ge=1, le=1_000_000)
+
+
 class OrganizationPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
     model: Key | None = None
+    check_interval_seconds: int = Field(default=10, ge=10, le=86400)
+    cooldown_seconds: int = Field(default=300, ge=0, le=604800)
+    trigger: Annotated[AnyChangeTrigger | ChangeCountTrigger, Field(discriminator="type")] = Field(
+        default_factory=AnyChangeTrigger
+    )
 
     @model_validator(mode="after")
     def organization_model(self) -> "OrganizationPolicy":

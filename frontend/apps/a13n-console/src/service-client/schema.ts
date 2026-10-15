@@ -3829,6 +3829,14 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** AnyChangeTrigger */
+    AnyChangeTrigger: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "any_change";
+    };
     /** ApiKey */
     ApiKey: {
       /**
@@ -4204,6 +4212,16 @@ export interface components {
       | "boundary_violation";
     /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
+    /** ChangeCountTrigger */
+    ChangeCountTrigger: {
+      /** Count */
+      count: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "change_count";
+    };
     /**
      * ChildEnvironmentPolicy
      * @description What a child run mounts: no environment, the parent's, or a new one from `template_id`.
@@ -6684,12 +6702,26 @@ export interface components {
     /** OrganizationPolicy */
     OrganizationPolicy: {
       /**
+       * Check Interval Seconds
+       * @default 10
+       */
+      check_interval_seconds?: number;
+      /**
+       * Cooldown Seconds
+       * @default 300
+       */
+      cooldown_seconds?: number;
+      /**
        * Enabled
        * @default false
        */
       enabled?: boolean;
       /** Model */
       model?: string | null;
+      /** Trigger */
+      trigger?:
+        | components["schemas"]["AnyChangeTrigger"]
+        | components["schemas"]["ChangeCountTrigger"];
     };
     /** OrganizationUpdate */
     OrganizationUpdate: {

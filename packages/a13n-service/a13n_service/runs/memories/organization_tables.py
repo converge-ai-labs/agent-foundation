@@ -17,6 +17,9 @@ class SpaceOrganizationRow(Base):
     # An explicit manual request; automatic work is discovered from sequence/configuration changes.
     pending: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_change_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    observed_change_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     active_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"))
     last_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"))
     source_seq: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))

@@ -1755,6 +1755,19 @@
         "title": "AnalysisPage",
         "type": "object"
       },
+      "AnyChangeTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "any_change",
+            "default": "any_change",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "AnyChangeTrigger",
+        "type": "object"
+      },
       "ApiKey": {
         "properties": {
           "created_at": {
@@ -2826,6 +2839,28 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "ChangeCountTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "type": {
+            "const": "change_count",
+            "default": "change_count",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "ChangeCountTrigger",
+        "type": "object"
       },
       "ChildEnvironmentPolicy": {
         "additionalProperties": false,
@@ -9784,6 +9819,20 @@
       "OrganizationPolicy": {
         "additionalProperties": false,
         "properties": {
+          "check_interval_seconds": {
+            "default": 10,
+            "maximum": 86400.0,
+            "minimum": 10.0,
+            "title": "Check Interval Seconds",
+            "type": "integer"
+          },
+          "cooldown_seconds": {
+            "default": 300,
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Cooldown Seconds",
+            "type": "integer"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -9800,6 +9849,24 @@
               }
             ],
             "title": "Model"
+          },
+          "trigger": {
+            "discriminator": {
+              "mapping": {
+                "any_change": "#/components/schemas/AnyChangeTrigger",
+                "change_count": "#/components/schemas/ChangeCountTrigger"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnyChangeTrigger"
+              },
+              {
+                "$ref": "#/components/schemas/ChangeCountTrigger"
+              }
+            ],
+            "title": "Trigger"
           }
         },
         "title": "OrganizationPolicy",

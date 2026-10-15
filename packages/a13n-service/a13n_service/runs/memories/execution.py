@@ -150,7 +150,14 @@ def file_memory(
             name=memory.mount.name,
             store=(
                 SpaceFileView(
-                    PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate),
+                    PostgresFileStore(
+                        storage,
+                        memory.mount.memory_id,
+                        settings,
+                        gate=gate,
+                        # Only the host-resolved organizer view includes every Session folder.
+                        count_changes="sessions/" not in memory.mount.roots,
+                    ),
                     memory.mount.roots,
                     file_format(settings),
                 )

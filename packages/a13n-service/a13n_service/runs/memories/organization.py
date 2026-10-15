@@ -3,13 +3,13 @@
 from datetime import timedelta
 from functools import partial
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.sweeps import Sweep
-from a13n_service.resources.memories.schemas import OrganizationPolicy
+from a13n_service.resources.memories.schemas import ChangeCountTrigger, OrganizationPolicy
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow, MemoryFileStoreRow, MemorySpaceRow
 from a13n_service.runs.accept import Source, start_run
 from a13n_service.runs.inbox import append_message
@@ -23,8 +23,6 @@ from a13n_service.runs.tables import RunRow, SessionRow
 from a13n_service.runs.threads import new_thread
 from a13n_service.tenancy.access import principal_for, require_active_workspace
 from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope, authorize
-
-COOLDOWN = timedelta(minutes=5)
 
 
 async def _settle(session: AsyncSession, space: MemorySpaceRow, state: SpaceOrganizationRow) -> bool:
@@ -56,10 +54,13 @@ async def _settle(session: AsyncSession, space: MemorySpaceRow, state: SpaceOrga
         state.processed_seq = store.seq
     # Keep external changes eligible under the current automatic policy. Consume our own writes,
     # including a history gap caused by them, so they do not schedule another round.
-    state.observed_seq = state.source_seq if external is not None else store.seq
+    has_external = external is not None or store.change_count > state.source_change_count
+    state.observed_seq = state.source_seq if has_external else store.seq
+    state.observed_change_count = state.source_change_count
     state.last_run_id, state.active_run_id = run.id, None
     state.failure = run.failure
-    state.due_at = await now(session) + COOLDOWN
+    policy = OrganizationPolicy.model_validate(space.organization)
+    state.due_at = await now(session) + timedelta(seconds=policy.cooldown_seconds)
     return False
 
 
@@ -130,10 +131,23 @@ def _candidates():
             or_(
                 state.active_run_id.is_not(None),
                 and_(MemorySpaceRow.enabled, state.pending),
-                and_(automatic, changed, MemoryFileStoreRow.file_count > 0),
+                and_(
+                    automatic,
+                    changed,
+                    MemoryFileStoreRow.file_count > 0,
+                    or_(state.next_check_at.is_(None), state.next_check_at <= func.clock_timestamp()),
+                ),
             ),
         )
-        .order_by(state.due_at.asc().nullsfirst(), MemorySpaceRow.id)
+        .order_by(
+            case(
+                (or_(state.active_run_id.is_not(None), state.pending), state.due_at),
+                else_=func.greatest(state.due_at, state.next_check_at),
+            )
+            .asc()
+            .nullsfirst(),
+            MemorySpaceRow.id,
+        )
     )
 
 
@@ -159,8 +173,16 @@ async def organize(runtime: Runtime) -> None:
                 continue
             if not space.enabled:
                 continue
-            store = await session.get_one(MemoryFileStoreRow, space.memory_id)
-            automatic = OrganizationPolicy.model_validate(space.organization).enabled
+            policy = OrganizationPolicy.model_validate(space.organization)
+            if not state.pending:
+                if not policy.enabled or (state.next_check_at is not None and state.next_check_at > at):
+                    continue
+                state.next_check_at = at + timedelta(seconds=policy.check_interval_seconds)
+            store = await session.scalar(
+                select(MemoryFileStoreRow).where(MemoryFileStoreRow.memory_id == space.memory_id).with_for_update()
+            )
+            assert store is not None
+            automatic = policy.enabled
             changed = store.seq > state.observed_seq or (
                 space.version > state.configuration_version and store.seq > state.processed_seq
             )
@@ -171,14 +193,21 @@ async def organize(runtime: Runtime) -> None:
                 state.observed_seq = store.seq
                 state.configuration_version = space.version
                 continue
-            state.source_seq = store.seq
+            if (
+                not state.pending
+                and isinstance(policy.trigger, ChangeCountTrigger)
+                and store.change_count - state.observed_change_count < policy.trigger.count
+            ):
+                continue
             try:
                 async with session.begin_nested():
+                    state.source_seq = store.seq
+                    state.source_change_count = store.change_count
                     await _admit(session, runtime, space, state)
                     state.configuration_version = space.version
             except ServiceError as error:
                 state.failure = Failure.of(error).model_dump()
-                state.due_at = at + COOLDOWN
+                state.due_at = at + timedelta(seconds=policy.cooldown_seconds)
 
 
 def organization_sweep(runtime: Runtime) -> Sweep:

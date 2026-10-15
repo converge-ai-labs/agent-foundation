@@ -111,10 +111,42 @@ export function SpaceOrganization({ space }: { space: Schema["MemorySpace"] }) {
                         ? t("Organization is queued.")
                         : t("Ready to organize when you need it.")}
               </p>
+              {space.organization.enabled && (
+                <dl className="grid gap-3 text-xs sm:grid-cols-3">
+                  <div>
+                    <dt className="text-muted-foreground">
+                      {t("Automatic trigger")}
+                    </dt>
+                    <dd className="mt-1">
+                      {space.organization.trigger?.type === "change_count"
+                        ? t("After {{count}} saved changes", {
+                            count: space.organization.trigger.count,
+                          })
+                        : t("Any saved change")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">
+                      {t("Check interval (seconds)")}
+                    </dt>
+                    <dd className="mt-1 tabular-nums">
+                      {space.organization.check_interval_seconds ?? 10}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">
+                      {t("Cooldown (seconds)")}
+                    </dt>
+                    <dd className="mt-1 tabular-nums">
+                      {space.organization.cooldown_seconds ?? 300}
+                    </dd>
+                  </div>
+                </dl>
+              )}
               {state.history_gap && (
                 <p role="status">
                   {t(
-                    "Some revision history is no longer available. Automatic organization is paused; review the files and organize manually.",
+                    "Some revision history is no longer available, so progress could not be confirmed. Review the files or organize manually.",
                   )}
                 </p>
               )}
