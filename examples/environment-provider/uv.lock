@@ -34,6 +34,7 @@ source = { editable = "." }
 dependencies = [
     { name = "a13n-harness", extra = ["docker", "e2b"] },
     { name = "a13n-service" },
+    { name = "e2b" },
     { name = "pydantic" },
     { name = "websockets" },
 ]
@@ -49,6 +50,7 @@ dev = [
 requires-dist = [
     { name = "a13n-harness", extras = ["docker", "e2b"], editable = "../../packages/a13n-harness" },
     { name = "a13n-service", editable = "../../packages/a13n-service" },
+    { name = "e2b", specifier = ">=2.46.4,<3" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]

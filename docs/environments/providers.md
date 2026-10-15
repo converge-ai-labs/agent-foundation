@@ -231,6 +231,19 @@ Desktop scrolling supports vertical steps only (up to 100 per action); horizonta
 
 Screenshots, clicks, moves, drag gestures, step scrolling, literal text and key chords are supported. Key chords accept the Desktop SDK's named keys and lowercase ASCII letters/digits; text delivery depends on the target application and keyboard environment. Observe before acting, and do not repeat an input after an uncertain result. This integration does not start VNC streaming or implement human takeover.
 
+Text uses the Desktop SDK's default typing pace and sends each non-ASCII character in a separate SDK call to avoid dropped or repeated Unicode characters. LF, CRLF and CR line endings become Enter keystrokes, including empty and trailing lines. Enter can submit a form or execute a terminal command; check focus before typing multiline text. The adapter checks `request_timeout_seconds` between text chunks and stops dispatching when the budget expires. An in-flight SDK command retains its own timeout. A timed-out input may be partial and is not replayed. Split long text into smaller actions, observe the result, or use file operations for large documents.
+
+Fonts belong to the sandbox template. E2B's default `desktop` template may lack Chinese glyphs even when input reaches the application correctly. Build a compatible template with `fonts-noto-cjk` using the [desktop template example](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py):
+
+```bash
+# Set E2B_API_KEY securely in the environment first.
+cd examples/environment-provider
+uv sync --locked
+uv run python desktop_template.py my-desktop-cjk
+```
+
+In Console, enable **Desktop environment**, choose **Custom template**, and enter the resulting template ID or `my-desktop-cjk`. Create a new environment from that configuration. Existing sandboxes are unchanged. Font installation happens once during the E2B template build, not during attachment or each input. The operator owns this custom template; Service does not replace E2B's official default. To run the opt-in editor acceptance test, set `A13N_TEST_E2B_API_KEY` and `A13N_TEST_E2B_DESKTOP_CJK_TEMPLATE` to that template before running `make e2b-provider-test`.
+
 ### Daytona
 
 Default file root: `/home/daytona`. The standard sandbox supplies Python; commands select `python3` on the guest PATH. Custom snapshots must supply the selected root and executables. Stop requires confirmed disabled auto-delete; delete waits for terminal destruction rather than accepting the initial acknowledgement. See [Daytona's sandbox example](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/) and [delete semantics](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/).

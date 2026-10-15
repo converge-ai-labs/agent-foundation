@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import time
 from collections.abc import Callable
 from functools import cached_property, wraps
@@ -175,6 +176,24 @@ class Desktop:
         if self.client.get_cursor_position() != (x, y):
             self.client.move_mouse(x, y)
 
+    def _write(self, text: str) -> None:
+        # Reusing xdotool's temporary Unicode keycode within one command can
+        # drop/repeat glyphs in GTK. Isolate non-ASCII characters into SDK calls
+        # at its default pace. LF needs a native Return key in those apps too.
+        deadline = time.monotonic() + self.configuration.request_timeout_seconds
+
+        def check_deadline() -> None:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("E2B desktop text input exceeded its time budget.")
+
+        for index, line in enumerate(text.replace("\r\n", "\n").replace("\r", "\n").split("\n")):
+            if index:
+                check_deadline()
+                self.client.press("enter")
+            for chunk in re.finditer(r"[\x00-\x7f]{1,25}|[^\x00-\x7f]", line):
+                check_deadline()
+                self.client.write(chunk.group())
+
     async def execute(self, request: ComputerInput, basis: DesktopDescription | None) -> None:
         def dispatch() -> None:
             if basis is not None and self._describe() != basis:
@@ -215,7 +234,7 @@ class Desktop:
                 if request.delta_y:
                     self.client.scroll("down" if request.delta_y > 0 else "up", abs(request.delta_y))
             elif isinstance(request, ComputerTypeText):
-                self.client.write(request.text, chunk_size=1024, delay_in_ms=1)
+                self._write(request.text)
             elif isinstance(request, ComputerPressKeys):
                 self.client.press(list(request.keys))
 

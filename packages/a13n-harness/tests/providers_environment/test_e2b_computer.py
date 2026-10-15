@@ -222,13 +222,38 @@ async def test_real_sdk_literal_text_key_chords_and_failure_are_not_replayed(sdk
     from a13n_harness.environment.errors import EnvironmentProviderError
 
     await desktop.execute(ComputerTypeText(text="中文 'quoted' $(touch /tmp/no)"), None)
-    assert split(native.call_args.args[0])[-1] == "中文 'quoted' $(touch /tmp/no)"
+    assert "".join(split(call.args[0])[-1] for call in native.call_args_list) == "中文 'quoted' $(touch /tmp/no)"
     await desktop.execute(ComputerPressKeys(keys=("control", "a")), None)
     assert native.call_args.args[0] == "xdotool key Control_L+a"
     native.reset_mock()
     native.side_effect = TimeoutError("private error")
     with pytest.raises(EnvironmentProviderError):
         await desktop.execute(ComputerTypeText(text="hello"), None)
+    assert native.call_count == 1
+
+
+async def test_real_sdk_multiline_text_keeps_empty_lines_and_default_typing_pace(sdk_desktop):
+    from shlex import split
+
+    desktop, native = sdk_desktop
+    text = "中文" + "abcdef" * 5
+    await desktop.execute(ComputerTypeText(text="\n" + text + "\r\n\r\n'quoted'\r"), None)
+    calls = [call.args[0] for call in native.call_args_list]
+    assert calls[0] == calls[-1] == "xdotool key Return"
+    assert calls.count("xdotool key Return") == 4
+    typed = [split(command) for command in calls if command.startswith("xdotool type")]
+    assert [args[-1] for args in typed] == ["中", "文", text[2:27], text[27:], "'quoted'"]
+    assert all(args[:5] == ["xdotool", "type", "--delay", "75", "--"] for args in typed)
+
+
+async def test_text_budget_stops_before_next_chunk_without_replaying(sdk_desktop, monkeypatch):
+    from a13n_harness.environment.errors import EnvironmentProviderError
+    from a13n_harness.providers.environment.e2b import desktop as module
+
+    desktop, native = sdk_desktop
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=Mock(side_effect=[0, 0, 31])))
+    with pytest.raises(EnvironmentProviderError):
+        await desktop.execute(ComputerTypeText(text="中" * 50), None)
     assert native.call_count == 1
 
 

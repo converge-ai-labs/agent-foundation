@@ -1,10 +1,13 @@
 """Opt-in real E2B desktop input and lifecycle acceptance; owns exactly one sandbox."""
 
+# ruff: noqa: RUF001 -- Fullwidth punctuation is intentional Unicode input coverage.
+
 from __future__ import annotations
 
 import asyncio
 import os
 import secrets
+from pathlib import Path
 
 import pytest
 from a13n_harness.environment.computer import (
@@ -131,6 +134,82 @@ async def test_native_desktop_unicode_input_reconnect_and_pause_resume():
             await computer.execute(ComputerClick(observation=before.observation, point=point))
         assert (await computer.observe()).data
         assert (await computer.execute(ComputerPressKeys(keys=("escape",)))).effect == "executed"
+    finally:
+        try:
+            if execution is not None:
+                await execution.close()
+        finally:
+            if management.state is not None:
+                await management.destroy()
+                assert await management.inspect() == "absent"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("A13N_TEST_E2B_DESKTOP_CJK_TEMPLATE"), reason="Requires a desktop template with Noto CJK fonts"
+)
+async def test_desktop_editor_multiline_chinese_and_fonts(tmp_path: Path):
+    recipe = E2BRecipe(
+        desktop=True,
+        template=os.environ["A13N_TEST_E2B_DESKTOP_CJK_TEMPLATE"],
+        timeout_seconds=300,
+        request_timeout_seconds=60,
+    )
+    runtime = E2BProviderRuntime(SecretStr(os.environ["A13N_TEST_E2B_API_KEY"]))
+    identity = "env-text-" + secrets.token_hex(8)
+    management = E2BManagement(recipe, environment_id=identity, state=None, runtime=runtime, operation_id="op-create")
+    execution = None
+    try:
+        await management.create()
+        execution = E2BExecution(recipe, environment_id=identity, state=management.state, runtime=runtime)
+        await execution.open(execution_id="exec-text")
+        computer = execution.operations.computer
+        assert computer is not None
+        sandbox = execution._sandbox
+        assert sandbox is not None
+        fonts = await sandbox.commands.run("fc-list :lang=zh family", timeout=10)
+        assert "Noto Sans CJK" in fonts.stdout
+        (tmp_path / "fonts.txt").write_text(fonts.stdout)
+        path = "/home/user/a13n-text-acceptance.txt"
+        await sandbox.files.write(path, "")
+        await sandbox.commands.run(f"mousepad {path}", background=True, timeout=0)
+        async with asyncio.timeout(30):
+            while True:
+                try:
+                    await sandbox.commands.run("xdotool search --onlyvisible --class Mousepad windowactivate --sync")
+                    break
+                except Exception:
+                    await asyncio.sleep(0.2)
+        samples = [
+            "\n第一行：中文输入，不应丢字。\r\n\r\nSecond line: 'quoted' $literal $(not-a-command)\r\n末行\r\n",
+            "中文输入连续测试：" + "春夏秋冬天地玄黄宇宙洪荒。" * 12 + "\n",
+            "E2B Desktop — 合并后验收\n\n这份笔记通过真实桌面键盘输入。\n"
+            "能力：截图、点击、中文输入、快捷键、拖拽、滚动。\n"
+            "保存位置：/home/user/a13n-text-acceptance.txt\n\n"
+            "Service / Worker / Harness / Official E2B Desktop SDK\n",
+        ]
+        for index, text in enumerate(samples):
+            for request in (
+                ComputerPressKeys(keys=("control", "a")),
+                ComputerPressKeys(keys=("backspace",)),
+                ComputerTypeText(text=text),
+                ComputerPressKeys(keys=("control", "s")),
+            ):
+                assert (await computer.execute(request)).effect == "executed"
+            expected = text.replace("\r\n", "\n").replace("\r", "\n")
+            screenshot = await computer.observe(max_dimension=1280)
+            (tmp_path / f"sample-{index}.jpg").write_bytes(screenshot.data)
+            async with asyncio.timeout(10):
+                while True:
+                    actual = await sandbox.files.read(path)
+                    (tmp_path / f"sample-{index}.txt").write_text(actual)
+                    if actual == expected:
+                        break
+                    await asyncio.sleep(0.2)
+            assert actual == expected
+            (tmp_path / f"sample-{index}.txt").write_text(actual)
+        screenshot = await computer.observe(max_dimension=1280)
+        (tmp_path / "chinese-editor.jpg").write_bytes(screenshot.data)
+        print(f"Desktop text/font evidence: {tmp_path}")
     finally:
         try:
             if execution is not None:

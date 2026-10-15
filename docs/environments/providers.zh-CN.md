@@ -231,6 +231,19 @@ Service 使用官方 `e2b-desktop` SDK 创建桌面并执行截图、点击、�
 
 支持截图、点击、移动、拖拽、按步滚动、文本和组合键。组合键接受 Desktop SDK 定义的按键名称和小写 ASCII 字母、数字；文本是否正确进入应用取决于目标应用和键盘环境。操作前先观察，结果不确定时不要重复输入。本次接入不启动 VNC，也不包含人工接管。
 
+文本保持 Desktop SDK 默认输入速度，并将非 ASCII 字符逐个交给 SDK，避免 Unicode 字符丢失或重复。LF、CRLF 和 CR 换行转换为 Enter 按键，包括空行和末尾换行。Enter 可能提交表单或执行终端命令，输入多行文本前需确认焦点。适配器在文本分块之间检查 `request_timeout_seconds`，超时后停止发送；正在执行的 SDK 命令仍受其自身超时限制。超时输入可能只完成了一部分，不会自动重放。长文本应拆成较小的操作并观察结果，大型文档应使用文件操作。
+
+字体由沙箱模板提供。E2B 默认 `desktop` 模板可能缺少中文字形，即使文字已正确输入也会显示方框。使用[桌面模板示例](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py)构建安装了 `fonts-noto-cjk` 的兼容模板：
+
+```bash
+# 先通过安全方式设置环境变量 E2B_API_KEY。
+cd examples/environment-provider
+uv sync --locked
+uv run python desktop_template.py my-desktop-cjk
+```
+
+在 Console 中开启**桌面环境**，选择**自定义模板**，填入构建结果的模板 ID 或 `my-desktop-cjk`，再按此配置创建新环境。已有沙箱不变。字体仅在 E2B 模板构建时安装，不会在连接或每次输入时安装。自定义模板由操作者维护，Service 不替换 E2B 官方默认模板。运行真实编辑器验收前，设置 `A13N_TEST_E2B_API_KEY` 和指向该模板的 `A13N_TEST_E2B_DESKTOP_CJK_TEMPLATE`，然后执行 `make e2b-provider-test`。
+
 ### Daytona
 
 默认文件根目录：`/home/daytona`。标准沙箱提供 Python；命令选择客体 PATH 上的 `python3`。自定义快照必须提供所选根目录和可执行文件。停止要求确认已禁用自动删除；删除等待最终销毁，不只接受初始确认。参见 [Daytona 沙箱示例](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/)和[删除语义](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)。

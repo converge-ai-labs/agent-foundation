@@ -17,6 +17,8 @@ The Host explicitly manages backing targets through `EnvironmentProvider`, recor
 
 The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/environments/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
 
+For Chinese desktop applications, [desktop_template.py](desktop_template.py) builds an operator-owned template derived from E2B's `desktop` with Noto CJK fonts. Set `E2B_API_KEY` securely, run `uv sync --locked` in this directory, then `uv run python desktop_template.py my-desktop-cjk`. The build creates or updates that named template in your E2B account. Select its ID or name under Console's **Desktop environment → Custom template** when creating a new environment. Font installation runs during template build only. See [native E2B desktop](../../docs/environments/providers.md#native-e2b-desktop) for text semantics and the opt-in editor acceptance test.
+
 ## Try remote providers in one command
 
 Build the daemon once, then try both transports without credentials, Docker, or a model:
