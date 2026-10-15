@@ -251,6 +251,10 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
     (cwd / "AGENTS.md").write_text(
         "\n".join(f"Repository rule {index}" for index in range(150)) + "\nFINAL REPOSITORY RULE"
     )
+    project = cwd / "backend"
+    (project / ".agents" / "skills" / "review").mkdir(parents=True)
+    (project / "AGENTS.md").write_text("DO NOT INJECT PROJECT BODY")
+    (project / ".agents" / "skills" / "review" / "SKILL.md").write_text("DO NOT INJECT SKILL BODY")
     seen = []
 
     async def stream(messages, info):
@@ -312,6 +316,9 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
     assert "Harness UI TUI" in user_text
     visible = str(seen[0])
     assert "Repository rule 0" in visible and "FINAL REPOSITORY RULE" in visible
+    assert (project / "AGENTS.md").as_posix() in visible
+    assert (project / ".agents" / "skills").as_posix() in visible
+    assert "<project-guidance>" in user_text
     assert "DO NOT INJECT" not in visible
     assert "File context truncated" not in visible
 

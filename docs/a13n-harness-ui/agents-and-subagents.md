@@ -338,6 +338,8 @@ Every Agent receives the package's base system prompt, authored in [`a13n_harnes
 
 Harness UI also reads `AGENTS.md` beside the root YAML and in the working directory. These are user-role contextual guidance, retained in native history but hidden in ordinary TUI and `/history` presentation. There is no ancestor scan and no `RULES.md` or `AGENTS.override.md` fallback. Global guidance is captured with accepted configuration; working-directory guidance uses the Environment's bounded reader. Neither source changes execution permissions.
 
+Working-directory file context also lists project-local guidance entrypoints: `AGENTS.md` files in immediate child directories and `.agents/skills` directories in the working directory and its immediate children. It reads no child guidance bodies or Skill descriptions. The Agent inspects relevant project guidance on demand; existing selected Skill catalogs stay unchanged. Discovery checks at most 64 non-hidden entries and contributes at most 8 KiB of hints, marking incomplete results. To disable these hints, explicitly select `file_context` with `configuration: {include_project_guidance: false}`.
+
 ## Import external definitions
 
 `/import` in the TUI offers Codex or Claude Code source selection, scope, a preview, and explicit **import and enable** confirmation. It preserves role instructions while inheriting the parent Model and tools. Saving the imported files and adding them to an Agent's roster are separate steps; if only one succeeds, Harness UI reports it so you can retry the other.
