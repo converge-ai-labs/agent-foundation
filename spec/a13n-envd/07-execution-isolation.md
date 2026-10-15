@@ -37,7 +37,7 @@ All Sessions share the Device's fixed grants and network mode. A Session cannot 
 
 The EIP `ExecutionBoundary` descriptor reports `identity` (paired native UID/GID where supported), tagged `sandbox` with canonical grants, `egress`, `privilege_gain_blocked`, `backend`, and a nonsecret `policy_digest`. Backend values are `native`, `linux_managed`, `linux_bubblewrap` and `macos_seatbelt`. Device initialization reports validated launch configuration; Session publication reports that required worker preparation completed. Neither attests the surrounding deployment. The digest is SHA-256 of the deterministic JSON encoding of these fields excluding the digest itself; it contains no Session destinations, secrets or revisions.
 
-An unavailable requested boundary fails preparation without fallback. Full Control deliberately uses native account access; UI Full Control remains Direct Local. UI Sandbox selects restricted+deny. `allow_sudo: true` does not override Linux restricted Sandbox privilege-gain blocking or outer-platform restrictions.
+An unavailable requested boundary fails preparation without fallback. Full Control deliberately uses native account access; UI Full Control remains Direct Local. UI Sandbox defaults to restricted+inherit, including Host localhost access, under the [Harness UI Environment contract](../a13n-harness-ui/04-projects-threads-and-environments.md). `allow_sudo: true` does not override Linux restricted Sandbox privilege-gain blocking or outer-platform restrictions.
 
 ## Child Environment and Runtime Data
 

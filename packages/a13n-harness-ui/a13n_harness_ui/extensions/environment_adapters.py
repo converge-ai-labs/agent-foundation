@@ -172,7 +172,7 @@ class LocalEnvdProfileConfiguration(BaseModel):
     launch: LocalEnvdLaunchConfiguration = Field(
         default_factory=lambda: LocalEnvdLaunchConfiguration(
             sandbox=RestrictedSandbox(mode="restricted", grants=()),
-            egress=EnvdNetworkConfiguration(mode="deny"),
+            egress=EnvdNetworkConfiguration(mode="inherit"),
             monitoring=LocalEnvdMonitoringConfiguration(),
         )
     )

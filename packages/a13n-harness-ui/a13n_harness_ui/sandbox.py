@@ -46,7 +46,7 @@ def create_sandbox_runtime(
         raise _unavailable("Sandbox roots must be existing directories.")
     launch = launch or LocalEnvdLaunchConfiguration(
         sandbox=RestrictedSandbox(mode="restricted", grants=()),
-        egress=EnvdNetworkConfiguration(mode="deny"),
+        egress=EnvdNetworkConfiguration(mode="inherit"),
     )
     grants = []
     thread_root = None if thread_files_root is None else thread_files_root.resolve(strict=True)
@@ -128,7 +128,7 @@ async def validate_sandbox_runtime(
             process_check = f"test ! -e /proc/{os.getpid()}/status || exit 42; " if sys.platform == "linux" else ""
             script = (
                 f"test ! -r {shlex.quote(str(sentinel))} || exit 40; "
-                f"if (echo probe > /dev/tcp/127.0.0.1/{port}) 2>/dev/null; then exit 41; fi; "
+                f"(echo probe > /dev/tcp/127.0.0.1/{port}) 2>/dev/null || exit 41; "
                 f"{process_check}printf sandbox-ready"
             )
             started = await processes.start(
@@ -141,7 +141,7 @@ async def validate_sandbox_runtime(
             )
             result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
             if result.status.exit_code != 0:
-                raise _unavailable("Sandbox filesystem, process or denied-network probe failed.")
+                raise _unavailable("Sandbox filesystem, process or Host localhost connectivity probe failed.")
             await processes.release(started.process.handle)
         finally:
             with CancelScope(shield=True):

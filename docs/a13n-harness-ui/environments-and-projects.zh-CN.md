@@ -7,7 +7,7 @@ description: 选择执行权限、在 Project 中工作、连接 Device，并定
 
 **Full Control** 使用宿主机账户现有的文件系统和网络权限运行，不下载或启动 `a13n-envd`。Full Control 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。
 
-**Sandbox** 要求 Envd 使用显式目录授权和禁止联网来准备受限 Session worker。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查 Sandbox 就绪状态。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows 不支持生产 Sandbox 隔离。见[外层安全指南](../a13n-envd/isolation.md)。
+**Sandbox** 要求 Envd 使用显式目录授权和继承宿主机网络来准备受限 Session worker，包括访问宿主 localhost 服务。命令可使用宿主机路由和防火墙策略允许的网络，文件系统和进程隔离仍然生效。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查文件系统和进程隔离，以及宿主 localhost 连通性，无须依赖外部互联网服务。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows 不支持生产 Sandbox 隔离。见[外层安全指南](../a13n-envd/isolation.md)。
 
 ### 原生命令环境
 
@@ -265,7 +265,7 @@ adapter_configuration:
   project_access: read_write
 ```
 
-adapter 将每个捕获的 Project 根按 `project_access` 加入授权集合。其他授权属于 `launch.sandbox.grants`。继承网络与内置 Sandbox 禁止联网有意不同。受控出站使用 `launch.egress.mode: controlled`，并按上述目的地/引用用法提供 `session.egress`；它要求特权 Linux 后端，不是 rootless 桌面默认值。改变 Session 策略不重建兼容守护进程；改变启动边界会重建。
+adapter 将每个捕获的 Project 根按 `project_access` 加入授权集合。其他授权属于 `launch.sandbox.grants`。继承网络与内置 Sandbox 默认值一致。要禁止联网，在自定义 profile 中设置 `launch.egress.mode: deny`，同时保留 `launch.sandbox.mode: restricted`。显式 `deny` 和 `controlled` 策略保持不变；省略 `launch` 的 profile 使用新的继承网络默认值。受控出站使用 `launch.egress.mode: controlled`，并按上述目的地/引用用法提供 `session.egress`；它要求特权 Linux 后端，不是 rootless 桌面默认值。改变 Session 策略不重建兼容守护进程；改变启动边界会重建。
 
 ## 从 WebUI 使用 Mac 桌面
 
