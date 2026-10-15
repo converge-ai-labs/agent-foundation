@@ -236,6 +236,23 @@ Local requires an explicit absolute root on the machine running the Service; the
 
 Docker uses the existing operator Engine setting, `environments.docker_host`, or the process Docker environment. Running inside Compose requires access to the Engine, normally the socket mount in the supplied single-host stack. Installing a Docker CLI alone is insufficient. Docker provisioning does not affect manual Docker providers.
 
-Environment variables take a JSON object for each nested section, for example `A13N_PROVISIONING__DOCKER='{"enabled":true}'`. The default Docker template pins the independently versioned GHCR sandbox image reviewed by Service and pulls it when an instance is first created if needed. The supplied socket-enabled Compose stack enables Docker and leaves Local off; `A13N_DOCKER_ENVIRONMENT_IMAGE` overrides the initial template's image there.
+Environment variables take a JSON object for each nested section, for example `A13N_PROVISIONING__DOCKER='{"enabled":true}'`. The default Docker template pins the independently versioned GHCR sandbox image reviewed by Service and pulls it when an instance is first created if needed. The supplied socket-enabled Compose stack enables Docker and leaves Local off. It passes a fixed JSON value; omitting `image` keeps the Service default.
+
+For a custom image, edit the complete `A13N_PROVISIONING__DOCKER` value in the Compose file's `service.environment`, or save this override as `compose.local.yaml` in the repository root:
+
+```yaml
+services:
+  service:
+    environment:
+      A13N_PROVISIONING__DOCKER: '{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'
+```
+
+After building the local image with `make image-sandbox`, start the stack with both files:
+
+```sh
+docker compose -f deploy/docker/compose/a13n-service.yaml -f compose.local.yaml up -d --wait
+```
+
+Set `pull_policy` to `if_missing` for registry images. Keep the value as complete JSON rather than assembling it with Compose interpolation. The former `A13N_DOCKER_ENVIRONMENT_IMAGE` shortcut is no longer read; migrate to this explicit configuration.
 
 To use a locally built image, run `make image-sandbox`. Then set `image = "a13n-sandbox:local"` and `pull_policy = "never"` in `[provisioning.docker]`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [workspace provisioning](environments.md#workspace-provisioning) for retry and ownership behavior.
