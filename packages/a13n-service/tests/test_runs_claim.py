@@ -117,12 +117,13 @@ async def test_mixed_initial_recovery_and_handoff_preserve_numbers_and_cleanup(s
     for name in ("recovery", "handoff"):
         await runs_kit.start_thread(service, agent, name)
     recovered, yielded = await claim(runtime, worker_id="before", worker_build="test", limit=2)
-    await release_attempt(runtime, recovered, status="failed")
+    # Keep recovery leased while preparing handoffs so its backoff cannot make it claimable.
     # More handoffs than charged attempts: the next number must come from history.
     for _ in range(2):
         await release_attempt(runtime, yielded, status="yielded", yield_reason="drain")
         [yielded] = await claim(runtime, worker_id="handoff", worker_build="test", limit=1)
     await release_attempt(runtime, yielded, status="yielded", yield_reason="drain")
+    await release_attempt(runtime, recovered, status="failed")
     await runs_kit.start_thread(service, agent, "initial")
     async with transaction(runtime.storage) as session:
         await session.execute(
