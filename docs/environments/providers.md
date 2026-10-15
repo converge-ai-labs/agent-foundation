@@ -107,7 +107,7 @@ Run the real Provider path with `make local-envd-test`, or follow the [Local Env
 
 ## Docker runtime
 
-Docker uses an Engine connection from the Host process. No bootstrap store, guest daemon or published control port is needed:
+Docker uses an Engine connection from the Host process. The default native route executes through Docker exec; the HTTP EIP route also connects to the image-managed Envd daemon. A native runtime can borrow the Engine client:
 
 ```python
 import docker
@@ -125,9 +125,11 @@ The native Provider overrides the image entrypoint, enables Docker init support 
 
 Docker recipes accept `pull_policy="if_missing"` (the default) or `"never"`. `never` refuses missing images with `environment_image_missing` and never contacts a registry. Use `make image-sandbox` to build the image, and follow the [Docker lifecycle example](examples.md#docker) for direct Provider use. The Service manages Docker environments from templates; see [Service environments](../a13n-service/environments.md).
 
+With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the retained container. Closing a Session preserves the desktop; stopping and restarting the container preserves files but recreates GUI state. Configure the separate HTTP route and compatible image as described in [Docker configuration](configuration.md#docker).
+
 ## Cloud Providers
 
-E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fly.io Sprites (`sprites`), and Runloop (`runloop`) provide cloud execution without installing Envd. All support files and shell commands; E2B additionally supports process observations, stdin, retained SDK text output, and loopback ports. The Service offers all six as environment provider types; its E2B accounts always use the E2B cloud ([Service environments](../a13n-service/environments.md#providers)).
+E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fly.io Sprites (`sprites`), and Runloop (`runloop`) provide cloud execution without installing Envd. All support files and shell commands; E2B additionally supports process observations, stdin, retained SDK text output, and loopback ports. The Service offers all six as environment provider types; its E2B accounts select the E2B cloud or another E2B-compatible service by domain ([Service environments](../a13n-service/environments.md#providers)).
 
 | Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                         |
 | -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------ |

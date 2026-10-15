@@ -3,28 +3,14 @@ title: Memory
 description: Workspace memories that agents keep across conversations, as versioned files or recalled records.
 ---
 
-A memory is what agents keep across conversations: preferences, decisions, conventions and reference facts. It belongs to a workspace, and several threads can mount it at once. There are two kinds:
+Memory keeps preferences, decisions and reference facts across conversations. Choose how agents share it:
 
-- A **file memory** is a small tree of text files. The Service keeps its files, and the history of every change, in PostgreSQL. Every write checks the file's version at the moment it runs, so a change based on stale content fails and returns the current file instead of overwriting another run's work. [File memory](../a13n-harness/memory.md) explains what the model sees and how to write good memory files.
-- A **record memory** is a set of short text records, such as "The user prefers metric units", kept in a [mem0](https://mem0.ai) backend through a [Memory Provider](#set-up-a-memory-provider). At the start of each run, the records closest to the run's input are **recalled** into it. Records have no versions: the last write wins.
+| Task                                                                              | Use                                         |
+| --------------------------------------------------------------------------------- | ------------------------------------------- |
+| Share knowledge across sessions, keep session notes, and organize saved knowledge | [Memory Spaces](#memory-spaces)             |
+| Mount a file store or mem0 namespace directly on threads                          | [Standalone memories](#standalone-memories) |
 
-Threads **mount** memories under names. Each run freezes the thread's memory mounts when it is accepted, sees each memory's context or recalled records at its start, and changes the memories through the `memory_file_*` and `memory_record_*` tools.
-
-```mermaid
-flowchart TB
-    Thread["Thread mounts"] --> Run["Run"]
-    subgraph Workspace["Workspace"]
-        File["Versioned files"]
-        Record["mem0 records"]
-    end
-    Run <-->|"Context and file tools"| File
-    Run <-->|"Recall and record tools"| Record
-
-    class Thread,Run a13n
-    class File,Record store
-```
-
-All API paths below are under `/api/v1`.
+Resources belong to a workspace. Accepted runs keep their selected memory mounts; new selections apply to later runs. All API paths below are under `/api/v1`.
 
 ## Memory Spaces
 
@@ -88,6 +74,13 @@ For example, include this policy when creating or updating a Space:
 The **Organization** tab shows status and run history, with costs, traces and file revisions. These runs stay separate from business conversations. Failed or cancelled rounds retain saved edits. If retained history is insufficient to confirm progress, status reports a history gap; **Organize now** requests another round.
 
 Read status at `GET /memory-spaces/{id}/organization`, request a round with `POST /memory-spaces/{id}/organizations`, and list rounds with `GET` on that same path. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists paginate with `limit` and `cursor`. File and revision APIs use the Space's returned `memory_id` under `/memories/{memory_id}`. The backing store is managed through the Space and stays out of standalone Memory lists.
+
+## Standalone memories
+
+- A **file memory** is a small tree of text files. The Service keeps its files, and the history of every change, in PostgreSQL. Every write checks the file's version at the moment it runs, so a change based on stale content fails and returns the current file instead of overwriting another run's work. [File memory](../a13n-harness/memory.md) explains what the model sees and how to write good memory files.
+- A **record memory** is a set of short text records, such as "The user prefers metric units", kept in a [mem0](https://mem0.ai) backend through a [Memory Provider](#set-up-a-memory-provider). At the start of each run, the records closest to the run's input are **recalled** into it. Records have no versions: the last write wins.
+
+Threads **mount** memories under names. Each run freezes the thread's memory mounts when it is accepted, sees each memory's context or recalled records at its start, and changes the memories through the `memory_file_*` and `memory_record_*` tools.
 
 ## Create a file memory
 

@@ -1,74 +1,79 @@
 ---
 title: Harness
 sidebarTitle: Overview
-description: An embeddable Python SDK for building Agents, connecting tools and Environments, and continuing work from saved state.
+description: Build Agents in Python, give them tools, and continue their work from saved state.
 ---
 
-Harness (`a13n-harness`) runs or streams Agent work inside your own process. Your application supplies current credentials and chooses what to persist. [Harness UI](../a13n-harness-ui/index.md) provides an interactive local Host; [Service](../a13n-service/index.md) operates managed Agents.
+Harness runs Agents inside your Python application. Define instructions and tools, choose a model, and call or stream the Agent. Each Run returns a result and state you can save for the next turn.
+
+Start with the [offline quickstart](getting-started.md). It runs a complete example before connecting a model account.
 
 ## Start with a small Agent
 
-The [offline quickstart](getting-started.md) builds and runs an Agent without credentials or external services:
+A Harness application follows this path:
 
 ```mermaid
 flowchart TB
-    Spec["AgentSpec and Capabilities"] --> Build["HarnessBuilder"]
-    Build --> Agent["Reusable ExecutableAgent"]
-    Agent --> Run["Scoped Run"]
-    Bindings["Current bindings and Environment"] --> Run
+    Spec["Define instructions and tools"] --> Build["Build an ExecutableAgent"]
+    Build --> Run["Run or stream input"]
     State["Previous HarnessState"] --> Run
-    Run --> Result["Result and next state"]
+    Run --> Result["Read the result"]
+    Run --> Save["Save state for the next turn"]
 
-    class Spec,Build,Agent,Run a13n
-    class Bindings app
-    class State,Result store
+    class Spec,Build,Run a13n
+    class State,Save store
+    class Result success
 ```
 
-Build once, then supply current Run inputs. Save the returned state to continue the same Thread.
+`AgentSpec` describes the Agent. `HarnessBuilder` builds a reusable `ExecutableAgent`. Call `run()` for a result or `stream()` for events; pass the previous `HarnessState` to continue a Thread. See [Agents and Runs](agents-and-runs.md).
 
-## Learn by feature
+## Give the Agent what it needs
 
-| Task                                                | Guide                                                                   |
-| --------------------------------------------------- | ----------------------------------------------------------------------- |
-| Build, run, stream, and handle results              | [Agents and Runs](agents-and-runs.md)                                   |
-| Select a model and configure authentication         | [Models](models.md) and [Model authentication](model-authentication.md) |
-| Add function tools and application dependencies     | [Tools and dependencies](tools-and-dependencies.md)                     |
-| Ask structured questions and supply human feedback  | [Human-in-the-loop tools](human-in-the-loop.md)                         |
-| Accept media input and return typed output          | [Inputs and outputs](inputs-and-outputs.md)                             |
-| Select optional behavior                            | [Capabilities](capabilities.md)                                         |
-| Manage model context and working state              | [Context](context.md)                                                   |
-| Add file or record memory that outlives one Thread  | [Memory](memory.md)                                                     |
-| Work with files, shell, and multiple Environments   | [Environments](environments.md)                                         |
-| Persist, resume, and fork Threads                   | [State and Resume](state-and-resume.md)                                 |
-| Connect MCP tools                                   | [MCP](mcp.md)                                                           |
-| Understand images, audio, and video                 | [Multimedia understanding](multimedia-understanding.md)                 |
-| Run child Agents or restricted Python orchestration | [Delegation and CodeAct](delegation-and-codeact.md)                     |
-| Discover procedural instructions                    | [Skills](skills.md)                                                     |
-| Set budgets and inspect usage                       | [Usage and limits](usage-and-limits.md)                                 |
-| Trace Runs and stream observations                  | [Observation](observation.md)                                           |
-| Add middleware and Environment integrations         | [Plugins](plugins.md)                                                   |
-| Embed Harness with durable application state        | [Hosting](hosting.md)                                                   |
-| Test without provider credentials                   | [Testing](testing.md)                                                   |
+| Task                                          | Guide                                                             |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| Connect a model account                       | [Models](models.md) and [authentication](model-authentication.md) |
+| Call your application functions               | [Tools and dependencies](tools-and-dependencies.md)               |
+| Ask a question or request approval            | [Human-in-the-loop tools](human-in-the-loop.md)                   |
+| Accept files and return typed results         | [Inputs and outputs](inputs-and-outputs.md)                       |
+| Read images, audio, video, and media URLs     | [Multimedia understanding](multimedia-understanding.md)           |
+| Add a real-time voice connection              | [Live](live.md)                                                   |
+| Work with files and commands                  | [Environments](environments.md)                                   |
+| Connect MCP tools or interactive results      | [MCP](mcp.md)                                                     |
+| Load reusable instructions                    | [Skills](skills.md)                                               |
+| Delegate tasks or orchestrate tools in Python | [Delegation and CodeAct](delegation-and-codeact.md)               |
 
-## What Harness owns
+[Capabilities](capabilities.md) add reusable context, tools, and lifecycle behavior. Choose them as the workflow grows.
 
-`AgentSpec` and `HarnessBuilder` define and build an `ExecutableAgent`. Each Run creates an `AgentContext` and returns events, results, usage, and `HarnessState`. Harness owns process-local execution; an embedding Host owns its users, persistence, and recovery policy.
+## Continue and manage work
 
-The SDK accepts native Pydantic AI model, message, tool, and output types. Harness UI YAML is Host configuration, not an `AgentSpec` schema.
+| Task                                   | Guide                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| Save, restore, or fork a Thread        | [State and Resume](state-and-resume.md)                                               |
+| Manage context, notes, and task state  | [Context](context.md)                                                                 |
+| Remember information across Threads    | [Memory](memory.md)                                                                   |
+| Set request budgets and inspect usage  | [Usage and limits](usage-and-limits.md)                                               |
+| Observe execution and publish a stream | [Observation](observation.md) and [Stream Protocol](../a13n-stream-protocol/index.md) |
+| Run deterministic tests                | [Testing](testing.md)                                                                 |
 
-## Three places to put configuration
+## Embed Harness in your application
 
-- **Definition** (`AgentSpec` and builder arguments): instructions, output type, and stable Capabilities.
-- **Invocation** (`RunBindings`, Environment, input): current identity, clients, tools, and access policy.
-- **Continuation** (`HarnessState`): messages and portable Capability state; not credentials or live resources.
+Your application supplies credentials, access policy, and storage. Keep configuration in three places:
+
+- **Agent definition:** instructions, output type, and stable Capabilities in `AgentSpec` and builder arguments.
+- **Run inputs:** current identity, clients, tools, and Environment through bindings and invocation arguments.
+- **Continuation:** messages and portable Capability state in `HarnessState`. Reconstruct credentials and live resources when restoring it.
+
+[Hosting](hosting.md) shows how to connect these pieces. [Plugins](plugins.md) add middleware and Environment integrations. Harness accepts native Pydantic AI model, message, tool, and output types.
+
+For a ready-made workbench, use [Harness UI](../a13n-harness-ui/index.md). For managed users and durable server execution, use [Service](../a13n-service/index.md).
 
 ## Runnable applications
 
 - [Agent application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app): offline streaming, persisted turns, and restart recovery.
-- [Environment Providers](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider): fresh adapters, re-entry, and explicit destruction.
-- [Plugins](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins): trusted middleware and Environment extensions.
-- [Installed Provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin): Provider package discovery.
-- [MCP App](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/mcp-apps): interactive MCP tool results.
+- [Environment Providers](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider): connect execution and manage target lifecycles.
+- [Plugins](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins): middleware and Environment extensions.
+- [Installed Provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin): discover a packaged Provider.
+- [MCP App](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/mcp-apps): interactive tool results.
 
 ## Versions and scope
 

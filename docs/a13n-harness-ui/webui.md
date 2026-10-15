@@ -3,7 +3,7 @@ title: Use WebUI
 description: Run WebUI for shared conversations, files, Git changes, terminals, and configuration.
 ---
 
-WebUI, the browser workbench, is Harness UI's collaborative playground for individuals and trusted small teams. It shares the same `HarnessUiApp` as the TUI, with conversations, execution controls, setup, provider accounts, configuration, and Environment readiness. WebUI is not Console and does not provide separate participant permissions or tenant isolation. Each conversation is one root Thread and its saved history.
+Use WebUI to work with Agents, files and terminals from your browser. It shares the TUI's App and saved conversations. Each conversation is a root Thread. Share an instance with people you trust: participants use the same credentials and Host access. Use [Service](../a13n-service/index.md) for managed identities and permissions.
 
 Start the server, open its printed login link, connect a model, and send a first prompt. Keep the server process running while you work. Review [authentication](#authentication-and-key-retention) before sharing the instance.
 
@@ -31,6 +31,52 @@ flowchart TB
 ```
 
 Markdown opens in **Preview**; **Text** switches to the editor. Preview includes unsaved edits. **Add to chat** attaches selected source lines, or the complete file when nothing is selected, without sending. Agent links in the form `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` open the Files drawer. Bare paths and Files API URLs do not; external links open separately.
+
+## Organize Projects and work in a conversation
+
+1. Open **Home** or a Project’s **+** to start a draft. Select a Project when the Agent needs its server directories.
+2. Select the Agent and Model in **Agent & Model settings**.
+3. Write a task and press Enter. Attach files or select a [Skill](skills-and-content-plugins.md) when needed.
+4. While the Agent works, use **Steer** to add guidance and **Stop** to cancel. Answer pending questions and approvals in their cards.
+
+### Projects and saved conversations
+
+Use **Add project** beside the **Projects** heading to save a name and server directory; additional roots are optional. It creates only the Project, not an empty conversation. Expand a Project to see its five most recently updated root conversations. **Show more** loads the next page for that Project only; collapsing a group retains its loaded pages. **Without a project** and **Unavailable projects** keep unassigned conversations and those with removed Project references accessible.
+
+Drag a Project’s handle to reorder it, or use its menu’s Move and Reset actions. Keyboard: focus the handle, Space, Up/Down, then Enter to save or Escape to cancel. Order and expansion are browser-local. **Rename project** changes only its display name. Active work appears first; completed work updates its navigation time. Search covers all saved roots, including unloaded pages. Open **Archived** to restore archived conversations; conversations cannot be dragged between Projects.
+
+**Home** and each Project’s **+** share one browser-local New conversation draft. Switching Project preserves input and explicit selections. Text and settings survive reload; local file bytes do not, so reattach unavailable files. **Send** creates the Thread. Accepted submission clears the saved draft; uncertain submission retains it and locks Project selection until reviewed, without automatic resubmission. A direct Thread link opens the saved conversation. Use its **…** menu to star, rename, share, inspect or archive it; **Project settings** edits the Project instead.
+
+### Send, steer and inspect
+
+Enter sends; Shift+Enter adds a line. Ctrl/Cmd+Enter also sends; input-method composition does not. **Send** waits for your edits to synchronize. Attach, paste or drop files at the desired text position. Click an attachment to inspect it; pending or failed uploads block Send, so retry in the originating tab or remove them. Editing and undo preserve attachment identity; plain filename text does not attach a file. Submitted input preserves text/attachment order. A positive receipt clears only the submitted snapshot; concurrent edits remain. An uncertain acknowledgement keeps input for outcome review, never automatic retry. Remote media URLs do not load automatically.
+
+While a Run is active, **Next message** remains editable without becoming a queue. **Steer** (the Send button while a Run is active) targets the current operation, rather than creating a new turn. Steering preserves the same ordered text and attachments as ordinary Send. **Stop** addresses the exact displayed receipt. Closing a page stops observation, not execution. Questions, approvals (including allowed argument overrides) and external-result requests have complete-set response controls; stale or competing decisions are refreshed rather than represented as a second success. After a question is answered, its short title and recorded answer remain visible, including multiple selections and custom text. Expand **Questions & details** to revisit the full questions and options.
+
+Saved history stays visible while replacement history loads. Live output is provisional until saved history arrives; stream completion alone does not prove a saved continuation. Failed work shows a short reason with expandable details. **Retry** sends `Continue completing the previous task.` as a new turn, preserving your draft. It does not restore the failed Run or replay history, and is unavailable while submission is pending or uncertain.
+
+Expand **Explored**, Shell, browsing or **File changes** to inspect grouped activity, arguments, results and observed edit diffs. Failures and missing results remain visible when collapsed; **Awaiting result** is not success. Older omitted content remains unavailable, and **Requested replacement** is not an applied diff. **Open on host** opens an absolute server/container path, not an Agent Environment path. It preserves dirty buffers; current disk content may differ from the recorded content.
+
+Open **Details** for the root operation, child executions, tasks, notes, usage and configuration. Execution, continuation saving and Environment cleanup report separate outcomes. Child controls target the exact parent execution; saved results are paged, while activity previews are bounded. Applying Project defaults requires a reviewed before/after preview. Competing changes retain your edits and require fresh review.
+
+### Shared drafts
+
+Draft collaboration lives only in this App instance. In-app navigation retains the browser's editor state, and reconnecting to the same instance resynchronizes it. After server restart, explicitly rejoin the replacement draft and choose whether to restore this browser's text. Edits that this browser has not yet synchronized are lost on reload or browser crash; synchronized text stays in the shared draft while the server runs. Display names are not authenticated identities; undo is local to the editor, and accepted Send establishes a new undo boundary.
+
+### Skills and work inspection
+
+Type `$` followed by a Skill name to see available Skills and their descriptions. Use Up/Down to choose and Enter or Tab to insert the name; Escape dismisses the list. Accepting a completion does not send the prompt. The reference stays editable as ordinary `$name` text and works in new conversations, saved conversations, and steering. Recognized references are validated against the current or active Run's catalog; unknown names remain ordinary text. No slash-command interface is added.
+
+**Tasks**, **Notes**, **Subagents**, and **Processes** above the composer open floating inspectors without changing your draft or conversation. Processes shows the last observed background command and status, with expandable process handle, Run identity, and exit code. Its count reflects observed running handles, not all processes on the server. Foreground shell calls do not count. Run completion or loss of observation marks unfinished handles unavailable rather than exited; gaps and bounded omissions are explicit. At most 16 entries are shown from 128 retained observations. Reloading or changing conversations does not reconstruct processes from saved messages. Output stays in tool details; the inspector cannot stop or control processes.
+
+## Fork a conversation
+
+Use a fork to try another approach while keeping the original conversation.
+
+1. Open an independent conversation's **…** menu and choose **Fork conversation**.
+2. Review the newly opened copy, then send your next instruction there. Creating the copy makes no Model request.
+
+The fork copies saved history, notes, tasks, settings and Thread-owned files. An active source contributes its last saved checkpoint, not unsaved live output. Project directories, remote targets and sandboxes remain the same external resources; the fork does not isolate them. Coordinators, their Workers, Subagent Threads and internal Memory/Live Threads cannot be forked. If creation has an uncertain outcome, inspect the conversation list before trying again.
 
 ## Observe Memory
 
@@ -223,32 +269,6 @@ The test reports whether the push service accepted the message, **not whether yo
 Turn off **Enable browser notifications** to remove this browser's subscription and stop permission reminders without disabling in-app notices or affecting other devices. Logging out also attempts cleanup. If both browser and server cleanup fail, use the site's browser notification permissions to block delivery. Clearing browser storage is not a server-side unsubscribe; turn notifications off first when possible.
 
 Push is best effort, not a durable notification inbox. The server uses a bounded memory queue and limited retries; shutdown or provider failure can lose reminders. Reopening WebUI does not replay old completions. Push does not alter saved history, browser-local new-result dots, or the lifetime of the Agent's work. Back up the server data root securely to retain its signing identity and subscriptions.
-
-## Organize Projects and work in a conversation
-
-Use **Add project** beside the **Projects** heading to save a name and server directory; additional roots are optional. It creates only the Project, not an empty conversation. Expand a Project to see its five most recently updated root conversations. **Show more** loads the next page for that Project only; collapsing a group retains its loaded pages. **Without a project** and **Unavailable projects** keep unassigned conversations and those with removed Project references accessible.
-
-Drag a Project’s handle to reorder it, or use its menu’s Move and Reset actions. Keyboard: focus the handle, Space, Up/Down, then Enter to save or Escape to cancel. Order and expansion are browser-local. **Rename project** changes only its display name. Active work appears first; completed work updates its navigation time. Search covers all saved roots, including unloaded pages. Open **Archived** to restore archived conversations; conversations cannot be dragged between Projects.
-
-**Home** and each Project’s **+** share one browser-local New conversation draft. Switching Project preserves input and explicit selections. Text and settings survive reload; local file bytes do not, so reattach unavailable files. **Send** creates the Thread. Accepted submission clears the saved draft; uncertain submission retains it and locks Project selection until reviewed, without automatic resubmission. A direct Thread link opens the saved conversation. Use its **…** menu to star, rename, share, inspect or archive it; **Project settings** edits the Project instead.
-
-Enter sends; Shift+Enter adds a line. Ctrl/Cmd+Enter also sends; input-method composition does not. **Send** waits for your edits to synchronize. Attach, paste or drop files at the desired text position. Click an attachment to inspect it; pending or failed uploads block Send, so retry in the originating tab or remove them. Editing and undo preserve attachment identity; plain filename text does not attach a file. Submitted input preserves text/attachment order. A positive receipt clears only the submitted snapshot; concurrent edits remain. An uncertain acknowledgement keeps input for outcome review, never automatic retry. Remote media URLs do not load automatically.
-
-While a Run is active, **Next message** remains editable without becoming a queue. **Steer** (the Send button while a Run is active) targets the current operation, rather than creating a new turn. Steering preserves the same ordered text and attachments as ordinary Send. **Stop** addresses the exact displayed receipt. Closing a page stops observation, not execution. Questions, approvals (including allowed argument overrides) and external-result requests have complete-set response controls; stale or competing decisions are refreshed rather than represented as a second success. After a question is answered, its short title and recorded answer remain visible, including multiple selections and custom text. Expand **Questions & details** to revisit the full questions and options.
-
-Saved history stays visible while replacement history loads. Live output is provisional until saved history arrives; stream completion alone does not prove a saved continuation. Failed work shows a short reason with expandable details. **Retry** sends `Continue completing the previous task.` as a new turn, preserving your draft. It does not restore the failed Run or replay history, and is unavailable while submission is pending or uncertain.
-
-Expand **Explored**, Shell, browsing or **File changes** to inspect grouped activity, arguments, results and observed edit diffs. Failures and missing results remain visible when collapsed; **Awaiting result** is not success. Older omitted content remains unavailable, and **Requested replacement** is not an applied diff. **Open on host** opens an absolute server/container path, not an Agent Environment path. It preserves dirty buffers; current disk content may differ from the recorded content.
-
-Open **Details** for the root operation, child executions, tasks, notes, usage and configuration. Execution, continuation saving and Environment cleanup report separate outcomes. Child controls target the exact parent execution; saved results are paged, while activity previews are bounded. Applying Project defaults requires a reviewed before/after preview. Competing changes retain your edits and require fresh review.
-
-Draft collaboration lives only in this App instance. In-app navigation retains the browser's editor state, and reconnecting to the same instance resynchronizes it. After server restart, explicitly rejoin the replacement draft and choose whether to restore this browser's text. Edits that this browser has not yet synchronized are lost on reload or browser crash; synchronized text stays in the shared draft while the server runs. Display names are not authenticated identities; undo is local to the editor, and accepted Send establishes a new undo boundary.
-
-### Skills and work inspection
-
-Type `$` followed by a Skill name to see available Skills and their descriptions. Use Up/Down to choose and Enter or Tab to insert the name; Escape dismisses the list. Accepting a completion does not send the prompt. The reference stays editable as ordinary `$name` text and works in new conversations, saved conversations, and steering. Recognized references are validated against the current or active Run's catalog; unknown names remain ordinary text. No slash-command interface is added.
-
-**Tasks**, **Notes**, **Subagents**, and **Processes** above the composer open floating inspectors without changing your draft or conversation. Processes shows the last observed background command and status, with expandable process handle, Run identity, and exit code. Its count reflects observed running handles, not all processes on the server. Foreground shell calls do not count. Run completion or loss of observation marks unfinished handles unavailable rather than exited; gaps and bounded omissions are explicit. At most 16 entries are shown from 128 retained observations. Reloading or changing conversations does not reconstruct processes from saved messages. Output stays in tool details; the inspector cannot stop or control processes.
 
 ## Agent collaboration and Sidekick
 
