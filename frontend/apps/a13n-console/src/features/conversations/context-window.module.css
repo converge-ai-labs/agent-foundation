@@ -34,16 +34,15 @@
   stroke-linecap: round;
 }
 .popup {
-  width: min(280px, calc(100vw - 32px));
+  width: min(240px, calc(100vw - 32px));
 }
 .details {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   font-size: var(--a13n-text-xs);
 }
-.heading,
-.footer {
+.heading {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -66,25 +65,23 @@
   background: var(--a13n-text);
   border-radius: inherit;
 }
-.balance {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  font-variant-numeric: tabular-nums;
-}
 .used {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
+  white-space: nowrap;
 }
 .used strong {
-  font-size: 26px;
+  font-size: var(--a13n-text-base);
   font-weight: 500;
   line-height: 1.15;
-  letter-spacing: -0.03em;
 }
 .used > span {
+  color: var(--a13n-secondary);
+}
+.footer {
+  display: flex;
+  justify-content: flex-end;
   color: var(--a13n-secondary);
 }
 .tokens {

@@ -50,8 +50,6 @@ export function ContextWindow({
     <div className={styles.details}>
       <div className={styles.heading}>
         <strong>{t("Context window")}</strong>
-      </div>
-      <div className={styles.balance}>
         <span className={styles.used}>
           <strong>{label}</strong>
           <span>{t("used")}</span>
