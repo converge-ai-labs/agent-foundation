@@ -55,7 +55,8 @@ def test_restricted_windows_daemon_environment_keeps_only_runtime_inputs(tmp_pat
     environment = _daemon._daemon_environment(
         device_id="device-test", runtime_dir=tmp_path, configuration=configuration
     )
-    assert environment["SystemRoot"] == "C:/Windows"
+    # Windows normalizes os.environ keys to uppercase; POSIX preserves spelling.
+    assert {name.upper(): value for name, value in environment.items()}["SYSTEMROOT"] == "C:/Windows"
     assert environment["PATH"] == str(tmp_path)
     assert environment["TEMP"] == str(tmp_path)
     assert "PRIVATE_TOKEN" not in environment
