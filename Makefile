@@ -270,6 +270,7 @@ site-serve: frontend-sync ## Serve the landing page locally with live reload
 site-build: docs-build ## Build the public site: the landing page, with the documentation under /docs
 	@pnpm --dir frontend --filter a13n-site run build
 	@cp -R frontend/apps/a13n-docs/out frontend/apps/a13n-site/dist/docs
+	@pnpm --dir frontend --filter a13n-site run build:sitemap
 
 .PHONY: verify
 verify: ## Run only the checks and tests that local changes can affect (VERIFY_ARGS=--full for every gate)
