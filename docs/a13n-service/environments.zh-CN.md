@@ -16,7 +16,7 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 挂载 Docker socket 的单机 Compose 部署在 Engine 可访问时，为每个工作空间自动添加 **Docker** provider 和 **Linux Sandbox** 模板。模板固定使用[Service 审定的独立版本 sandbox 镜像](#docker-image-versions)，并设置 `pull_policy: if_missing`。如果本地没有镜像，Engine 在创建首个实例时拉取；工作空间初始化不会拉取镜像。Linux 镜像包含 Python 3.13、pip、venv、uv、Node.js 24、npm、pnpm、Git、Bash、curl、ripgrep、jq、归档工具和 C/C++ 构建工具。命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。项目依赖可以安装到虚拟环境或项目目录中。
 
-新工作空间要使用本地构建镜像，运行 `make image-sandbox`，启动 Compose 时设置 `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-sandbox:local`。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
+新工作空间要使用本地构建镜像，运行 `make image-sandbox`。在 Compose 文件的 `service.environment` 中，将 `A13N_PROVISIONING__DOCKER` 设置为完整 JSON 值 `'{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'`。省略 `image` 即可使用 Service 默认镜像。覆盖文件示例见 [Compose 配置](configuration.md#workspace-provisioning)。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
 
 不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 进程的操作系统用户身份运行命令，不提供隔离。
 

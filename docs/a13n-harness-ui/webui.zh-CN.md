@@ -165,7 +165,7 @@ WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** �
 
 在 **Settings → Environments** 中，使用标识、HTTP endpoint 或反向 WebSocket 传输，以及凭据引用添加 Device 连接。**Check connection** 读取实时 Device 描述；保存连接不要求 Device 在线。同一资源可复用于不同工作目录和别名。
 
-在 **Projects** 或 **Configuration → Change next Run selections** 中，使用 **Add environment** ，选定 Device，再输入已知绝对工作目录，或浏览在线 Device。**Use this directory** 只修改草稿。添加或移除当前默认 Environment 时，明确选择新的默认 Environment，再保存。Project 可以组合本地文件夹和远程 Environment，也可以只使用远程 Environment，但不能移除最后一个工作 Environment。Device 目录浏览不依赖原生计算机共享。
+在 **Projects** 或 **Configuration → Change next Run selections** 中，使用 **Add environment** ，选定 Device，再输入已知绝对工作目录，或浏览在线 Device。**Use this directory** 只修改草稿。使用 **Add directory** 在已有环境内添加路径。通过 **Default working directory** 从选中的环境里选择默认工作目录；移除该目录时，必须先选择替代目录再保存。Project 可以组合本地文件夹和远程 Environment，也可以只使用远程 Environment，但必须保留至少一个工作目录。Device 目录浏览不依赖原生计算机共享。
 
 对未被使用的 Device 或自定义 profile 使用 **Forget**，即可删除本地配置，即使 Device 离线或 provider 已卸载也可以。对话框会列出当前配置引用，并链接到对应编辑器。先修复这些默认值，再回来移除资源。这不会删除远程数据、卸载 provider 或删除对话历史。内置 Environment 不能移除。
 

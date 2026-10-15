@@ -6,6 +6,8 @@ A Project is the optional Harness UI concept for grouping working context and or
 
 A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, optional default Model, ordered local directory references, local Environment profile, additional Environment bindings and default mount, Harness Plugins, Environment Run Extensions and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
 
+The user-facing working-context hierarchy is Project → Environment → working directories. Multiple local roots belong to one local Environment group; directory mounts and their execution scopes remain internal. [Environment selection](04a-devices-and-environment-bindings.md#webui-behavior) owns grouping, readable defaults and the lossless projection onto retained configuration.
+
 ## Projects
 
 One file under `projects/` defines a Project:

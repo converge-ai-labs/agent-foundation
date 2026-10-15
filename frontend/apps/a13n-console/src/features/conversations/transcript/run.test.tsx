@@ -7,6 +7,11 @@ import { MemoryRouter } from "react-router";
 import { createClient, type Client } from "../../../service-client";
 import { fixtureRun, fixtureThread, textInput } from "./fixture";
 import { RunContent } from "./run";
+import type { DisplayItem } from "../display";
+import { runExecution } from "../execution";
+import { presentItems } from "../projection";
+
+let displayItems: DisplayItem[] = [];
 
 let client: Client;
 let cache: QueryClient;
@@ -37,14 +42,11 @@ vi.mock("../run-display", () => ({
   useRunDisplay: (_runId: string, options: { live?: boolean } = {}) => {
     stream.calls.push(options);
     return {
-      items: [],
+      displayItems,
+      items: presentItems(displayItems),
       state: "connected",
       execution: {
-        steps: [],
-        observations: [],
-        retries: [],
-        usage: { model: [], provider: [], recordIds: [] },
-        contextTokens: {},
+        ...runExecution(fixtureRun(), displayItems),
         coverage: "complete",
       },
     };
@@ -54,6 +56,7 @@ vi.mock("./history", () => ({ HistoryTranscript: () => null }));
 vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
 vi.mock("./inbox", () => ({ ThreadInbox: () => <p>Thread inbox</p> }));
 beforeEach(() => {
+  displayItems = [];
   requests.length = 0;
   stream.calls.length = 0;
   labels = { "a13n.console": "debug" };
@@ -72,6 +75,12 @@ beforeEach(() => {
       const request = new Request(input, init);
       requests.push(request);
       const path = new URL(request.url).pathname;
+      if (path.endsWith("/runs/run/contents/cnt_observation"))
+        return Response.json({
+          id: "cnt_observation",
+          media_type: "application/json",
+          value: { detail: "Full tool invocation details" },
+        });
       if (path.endsWith("/threads/thread"))
         return Response.json(
           fixtureThread({
@@ -177,4 +186,49 @@ it("reads the level from the URL and follows the Thread at either level", async 
     (request) => new URL(request.url).pathname.split("/").at(-1) === "attempts",
   );
   expect(panels).toEqual([]);
+});
+
+it("keeps retained observations inside Debug and loads their full content on demand", async () => {
+  const name = "a13n.pydantic_ai.function_tool_call";
+  displayItems = [
+    {
+      id: "itm_observation",
+      ordinal: 1,
+      kind: "observation",
+      state: "completed",
+      first_stream_id: "1-1",
+      last_stream_id: "1-1",
+      started_at: "2026-09-20T10:00:01.000Z",
+      content: { name, value: { preview: "Tool invocation" } },
+      content_refs: {
+        value: {
+          id: "cnt_observation",
+          size_bytes: 50000,
+          media_type: "application/json",
+          preview: '{"detail":"Full tool invocation',
+        },
+      },
+    },
+  ];
+  show("/?view=debug");
+  const user = userEvent.setup();
+  const observations = await screen.findByRole("button", {
+    name: /1 other observations/,
+  });
+  expect(screen.queryByText(name)).toBeNull();
+  expect(requests.some((request) => request.url.includes("/contents/"))).toBe(
+    false,
+  );
+  await user.click(observations);
+  expect(screen.getAllByText(name)).toHaveLength(1);
+  await user.click(screen.getByText("Full content: Details"));
+  await user.click(screen.getByRole("button", { name: "Expand full content" }));
+  expect(await screen.findByText(/Full tool invocation details/)).toBeTruthy();
+  expect(
+    requests.filter((request) =>
+      request.url.includes("/runs/run/contents/cnt_observation"),
+    ),
+  ).toHaveLength(1);
+  await user.click(observations);
+  expect(screen.queryByText(name)).toBeNull();
 });

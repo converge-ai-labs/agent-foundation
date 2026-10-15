@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "vite build",
+    "build:sitemap": "node scripts/sitemap.mjs",
     "check": "pnpm run typecheck",
+    "check:sitemap": "node scripts/sitemap.mjs --check",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "vite",
     "preview": "vite preview",
@@ -22,6 +24,8 @@
     "a13n-ui": "workspace:*"
   },
   "devDependencies": {
+    "parse5": "^8.0.1",
+    "sitemap": "^9.0.1",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"

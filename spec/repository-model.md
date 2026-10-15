@@ -84,6 +84,7 @@ Documentation sources live in `docs/` as Markdown pages with front matter; each 
 - `make docs-serve` runs the local documentation server.
 - `make docs-build` performs the static export into `frontend/apps/a13n-docs/out/` and fails on any broken internal link or anchor.
 - `frontend/apps/a13n-site` is the private Vite landing page at the site root. It has no release identity.
+- The site root publishes `/sitemap.xml` with the canonical URLs of indexable landing and documentation pages in both languages. The root `robots.txt` declares this sitemap. Builds generate and validate it from the assembled site's HTML metadata; error pages, redirects, and machine-readable resources are excluded. The existing `/docs/sitemap.xml` endpoint remains available and matches the documentation subset of the root sitemap.
 - `.github/workflows/site.yml` builds both applications into one site, with the documentation export under `/docs/`, uploads pull-request artifacts, and deploys `main` to Cloudflare Pages through Wrangler.
 
 Site configuration and generated output do not live in `docs/`, which holds only pages and navigation JSON.
