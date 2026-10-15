@@ -21,6 +21,7 @@ def workflow() -> dict:
     "changed",
     [
         "proto/a13n-service/openapi.json",
+        "proto/a13n-service/session-stream.schema.json",
         "proto/a13n-service/thread-stream.schema.json",
         "spec/api-conventions.md",
         "spec/a13n-service/05-runs.md",

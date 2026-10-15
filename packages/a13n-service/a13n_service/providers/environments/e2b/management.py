@@ -12,13 +12,15 @@ from a13n_harness.providers.environment.e2b.configuration import (
     PROVIDER_KEY,
     E2BProviderStateData,
 )
-from a13n_harness.providers.environment.e2b.connection import close_sandbox
+from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
+from a13n_harness.providers.environment.e2b.desktop import Desktop, create_desktop
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
 
 from a13n_service.providers.environment._backend import ManagementBackend
 
 if TYPE_CHECKING:
+    from e2b import AsyncSandbox
     from e2b.sandbox.sandbox_api import SandboxInfo
 
 
@@ -86,7 +88,7 @@ class E2BManagement(E2BReference, ManagementBackend):
 
         target = await self._inspect()
         if target is not None:
-            if target.state.value != "running":
+            if target.state.value != "running" or self._configuration.desktop:
                 await self.start()
             return
         if self._state is not None:
@@ -95,6 +97,15 @@ class E2BManagement(E2BReference, ManagementBackend):
         metadata = {"a13n_environment": self._native_id, "a13n_configuration": config.fingerprint}
         if self._operation_id:
             metadata["a13n_operation"] = self._operation_id
+        if config.desktop:
+            await create_desktop(
+                config,
+                timeout=config.timeout_seconds,
+                metadata=metadata,
+                options=self._options(),
+                allocated=self._remember,
+            )
+            return
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.create(
                 template=config.template,
@@ -115,6 +126,12 @@ class E2BManagement(E2BReference, ManagementBackend):
         if target is None:
             raise provider_error("provider_target_missing", Category.MISSING)
         if target.state.value == "running":
+            if self._configuration.desktop:
+                sandbox = await open_sandbox(target.sandbox_id, self._options(), self._validate_target)
+                try:
+                    await self._check_desktop(sandbox)
+                finally:
+                    await close_sandbox(sandbox)
             return
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.connect(
@@ -122,8 +139,17 @@ class E2BManagement(E2BReference, ManagementBackend):
             )
             try:
                 self._validate_target(await sandbox.get_info())
+                if self._configuration.desktop:
+                    await self._check_desktop(sandbox)
             finally:
                 await close_sandbox(sandbox)
+
+    async def _check_desktop(self, sandbox: AsyncSandbox) -> None:
+        desktop = Desktop(sandbox, self._configuration)
+        try:
+            await desktop.describe()
+        finally:
+            await desktop.close()
 
     async def inspect(self) -> Literal["running", "stopped", "absent"]:
         target = await self._inspect()

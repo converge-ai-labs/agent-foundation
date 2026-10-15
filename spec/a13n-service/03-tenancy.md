@@ -133,7 +133,7 @@ class Authenticator(Protocol):
     async def logout(self, request: Request, response: Response, credential: Authenticated) -> None: ...
 ```
 
-Long-lived requests such as thread streams call `recheck` and reload current status and grants on their refresh interval ([07](07-facts-and-delivery.md#the-thread-stream)). Refresh preserves credential confinement and intersects current grants with any accepted execution ceiling. Membership, grant, API-key, service-account and account management keep working under a replacement, because they are tenancy functions that take a principal value. The local account routes stay installed; session restore (`GET /auth/session`) requires a local login session (403 `forbidden` otherwise).
+Long-lived requests such as session and thread streams call `recheck` and reload current status and grants on their refresh interval ([07](07-facts-and-delivery.md#the-session-stream)). Refresh preserves credential confinement and intersects current grants with any accepted execution ceiling. Membership, grant, API-key, service-account and account management keep working under a replacement, because they are tenancy functions that take a principal value. The local account routes stay installed; session restore (`GET /auth/session`) requires a local login session (403 `forbidden` otherwise).
 
 ## Authorization
 
@@ -167,7 +167,7 @@ What each verb covers, by example (the owning chapters name the verb of each ope
 
 | Verb  | Covers                                                                                                                                                                                                   |
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| read  | listing and reading everything in scope, including other principals' sessions, threads and runs; run items, thread streams, usage and traces; memory files and their history                             |
+| read  | listing and reading everything in scope, including other principals' sessions, threads and runs; run items, session streams, usage and traces; memory files and their history                            |
 | run   | submitting input, steering, interrupting, forking, resuming; creating sessions and threads; thread environments and memory mounts; editing and restoring memory files                                    |
 | write | creating, updating and retiring resources: agents and revisions, skills, templates, providers and models, connections and their authorization, assets, memories and the purge of a memory file's history |
 | admin | grants, invitations, service accounts and their keys, the workspace's API keys, workspace settings, webhook subscriptions, audit reads; at organization scope also workspaces and the organization       |

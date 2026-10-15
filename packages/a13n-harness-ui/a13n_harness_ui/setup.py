@@ -87,7 +87,7 @@ async def preflight_environment(
             profile_id=profile_id,
             ready=True,
             code="sandbox_ready",
-            message="Production filesystem, process, and denied-network isolation checks passed.",
+            message="Production filesystem and process isolation and Host localhost connectivity checks passed.",
         )
     except (HarnessUiError, EnvironmentError, EnvironmentProviderError, OSError, TimeoutError) as exc:
         code = exc.code if isinstance(exc, HarnessUiError) else "sandbox_probe_failed"

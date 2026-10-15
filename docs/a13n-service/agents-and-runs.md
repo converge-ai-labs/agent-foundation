@@ -394,7 +394,7 @@ Every ended run is the history its thread continues, whatever its outcome. After
 Read `GET …/runs/{run_id}` and branch on `status`. A completed run has `output` (text or JSON matching `output_spec`); a waiting run has `pending`; a failed run has `failure {code, message}`. The [API reference](api-reference/index.md) lists the run's configuration, lineage, mounts and timestamps.
 
 - `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `last_run_id` is the run that ended last, whose history the next run continues, and `current_run_id` its active run.
-- `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) in order, each with its `ordinal`, plus `position`, optional `resume_after`, and `complete`. By default it returns the newest `limit` items (200 by default, at most 500); pass the first item's ordinal as `before` to read the items before it, or `after` to read on from an ordinal. Items of a run that ended while they were in progress read `interrupted`.
+- `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) in order, each with its `ordinal`, and `complete`. By default it returns the newest `limit` items (200 by default, at most 500); pass the first item's ordinal as `before` to read the items before it, or `after` to read on from an ordinal. Items of a run that ended while they were in progress read `interrupted`.
 - Display fields larger than 32 KiB use separate objects, capped at 16 MiB of uncompressed UTF-8 per field. Larger values retain only a text prefix and set `truncated=true`; oversized JSON also becomes a text prefix. An Item’s `content_refs` maps field names to immutable references with `id`, saved `size_bytes`, `media_type`, `truncated` and a short `preview`. Read the saved value with `GET …/runs/{run_id}/contents/{content_id}` under the same workspace read permission. Console offers **Expand full content**, or **Expand saved content** with a truncation notice when capped. Discarded suffixes and legacy truncated records cannot be recovered this way. The cap does not alter agent execution state, and live deltas retain their existing size limits.
 - `GET …/runs/{run_id}/agent` returns the agent revision the run executes and its configuration with the run's overrides applied.
 - `GET …/runs/{run_id}/lineage` returns the run and its ancestors, nearest first, across forks.
@@ -402,34 +402,33 @@ Read `GET …/runs/{run_id}` and branch on `status`. A completed run has `output
 
 A failed run's `failure.code` names the cause, such as `usage_limit_exceeded`, `environment_unavailable`, a validation code, or `attempt_failed`.
 
-## Follow a thread stream
+## Follow a session stream
 
-`GET …/threads/{thread_id}/stream` is a server-sent event stream of the thread's live output:
+`GET …/sessions/{session_id}/stream` is a server-sent event stream of a session's threads and the live output of their active runs:
 
 ```sh
-curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13N_API_KEY"
+curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| Event      | Data                                       | Meaning                                                                                                                       |
-| ---------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `delta`    | `{run_id, attempt, sequence, event, item}` | One [AG-UI](https://docs.ag-ui.com) event of the active run, and the display item it changed (`{id, kind, state}` or `null`). |
-| `boundary` | `{run_id, attempt, sequence}`              | The run committed a checkpoint; its items now cover everything up to this point.                                              |
-| `changed`  | `{version}`                                | The thread changed (a run started or ended, the inbox changed): read the thread again.                                        |
-| `reset`    | `{run_id}`                                 | The run moved to a new attempt: discard its live output and read its items again.                                             |
-| `gap`      | `{run_id}`                                 | Live output was skipped: read the run's items again.                                                                          |
+| Event    | Data                                                        | Meaning                                                                                                                           |
+| -------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `thread` | `{thread, current_run, last_run, entries}`                  | The current state of one thread: the thread, its active run, the run that ended last, and its pending and assigned inbox entries. |
+| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | The committed items of a run from ordinal `first` on. `complete` is `true` for the final items of a run that ended.               |
+| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | One [AG-UI](https://docs.ag-ui.com) event of an active run, and the display item it changed (`{id, kind, state}` or `null`).      |
+| `gap`    | `{thread_id, run_id}`                                       | Live output of the run was lost. The run sends no more deltas until its next `items` frame.                                       |
 
-The stream is provisional; the run's items are the durable record. To render a thread:
+Every connection starts with the current state of the session: one `thread` frame per thread, oldest first, each followed by an `items` frame for its active run and the output that run already streamed. The stream has no cursor, so a reconnect sends no position. To render a session:
 
-1. Read `GET …/runs/{run_id}/items` for the active run.
-2. When `position` is non-null, open the stream with `?run=<run_id>&position=<position>`, and pass a non-null `resume_after` as the `Last-Event-ID` header.
-3. Without a saved position, open the stream without a cursor for retained replay.
-4. Apply `delta` frames whose `attempt` and `sequence` come after the items' `position` (`"{attempt}-{sequence}"`).
-5. On `reset`, discard superseded provisional output and read items again. On `gap`, read items and compare their position with the gap's optional `position`: clear the gap only when the missing range is covered, otherwise await a newer checkpoint or terminal state. On `changed`, read the thread.
-6. Recheck the run on connection and periodically while it remains active: a run that ended before subscription may not produce another stream notification. Read its final items once sealed.
+1. Open the stream.
+2. On `thread`, replace your copy of the thread and of the runs it names.
+3. On `items`, replace the items of the run from ordinal `first` on. Keep the items before `first`; they are final. Read earlier items with `GET …/runs/{run_id}/items?before=<first>` when you need them.
+4. On `delta`, apply the event to the items of the run, continuing the display from the `continuation` of its last `items` frame.
+5. On `gap`, show that output is missing. The next `items` frame of the run repairs its display.
+6. When a run ends, its `thread` frame arrives first, then the final `items` of the run with `complete: true`.
 
-On reconnect, keep the display and send its last continuously applied position and matching resume hint. Deduplicate overlapping delivery. Missing or expired hints fall back to retained replay; they do not alone mean output was lost. After a page refresh, load items first. Never advance the position across a gap. Live output has bounded retention; see [worker settings](configuration-reference.md#worker) for coalescing and retention limits.
+When the connection ends, reconnect after a random delay that grows to at most 30 seconds, or after the `Retry-After` of a 429 or 503 response. Do not reconnect after any other 4xx response. On reconnect, discard the items you held for runs that had not ended: the new connection sends the items of every active run again. Read a run that ended while you were disconnected with `GET …/runs/{run_id}/items`. Ignore events you do not know.
 
-`delta` and `boundary` frames carry an SSE `id`. Readers without a run and position can reconnect with the last one in `Last-Event-ID`; a missing cursor then reports `gap`. Readers supplying a run and position instead receive a gap only for a missing required sequence or a transport failure. Reload items and reassess coverage at later boundaries or when the run seals. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. The frames' JSON Schema is `proto/a13n-service/thread-stream.schema.json`.
+The stream is provisional; the items of a run are the durable record. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. Changes made by other clients reach the stream within `control.stream_refresh_seconds`. Live output has bounded retention; see [worker settings](configuration-reference.md#worker) for coalescing and retention limits. The frames' JSON Schema is `proto/a13n-service/session-stream.schema.json`.
 
 ## Usage
 

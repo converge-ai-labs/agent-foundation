@@ -32,6 +32,7 @@ import type { EnvironmentChoice } from "./composer/options-dialog";
 import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
+import { SessionStreamProvider } from "./session-stream";
 import {
   defaultSessionMemory,
   SessionMemoryFields,
@@ -257,52 +258,54 @@ export function SessionLayout() {
       key={`${workspace.id}:${sessionId}`}
       sessionId={sessionId}
     >
-      <RunCollapseProvider>
-        <div className={styles.sessionDetail}>
-          <SessionHeader threads={threads.data ?? []} />
-          <ErrorNotice
-            error={threads.error}
-            retry={() => void threads.refetch()}
-          />
-          <div
-            className={`${styles.sessionContent} a13n-scrollbar`}
-            data-session-stage
-          >
-            {threadId ? (
-              <Outlet />
-            ) : first ? (
-              <Navigate to={`threads/${first.id}${search}`} replace />
-            ) : threads.isPending ? (
-              <Loading variant="list" rows={3} />
-            ) : threads.data?.length ? (
-              <div className="grid gap-3 p-6">
-                <h2>{t("Choose a conversation")}</h2>
-                <p>{t("Choose which conversation history to open.")}</p>
-                <ul className="grid gap-2">
-                  {threads.data.map((thread) => (
-                    <li key={thread.id}>
-                      <Button
-                        variant="outline"
-                        render={<Link to={`threads/${thread.id}${search}`} />}
-                      >
-                        {thread.id} · {t(`origin.${thread.origin}`)}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : !threads.error ? (
-              <Empty
-                icon={<ChatsIcon aria-hidden="true" />}
-                title={t("No threads yet")}
-                description={t(
-                  "Threads created by the host application appear here.",
-                )}
-              />
-            ) : null}
+      <SessionStreamProvider sessionId={sessionId}>
+        <RunCollapseProvider>
+          <div className={styles.sessionDetail}>
+            <SessionHeader threads={threads.data ?? []} />
+            <ErrorNotice
+              error={threads.error}
+              retry={() => void threads.refetch()}
+            />
+            <div
+              className={`${styles.sessionContent} a13n-scrollbar`}
+              data-session-stage
+            >
+              {threadId ? (
+                <Outlet />
+              ) : first ? (
+                <Navigate to={`threads/${first.id}${search}`} replace />
+              ) : threads.isPending ? (
+                <Loading variant="list" rows={3} />
+              ) : threads.data?.length ? (
+                <div className="grid gap-3 p-6">
+                  <h2>{t("Choose a conversation")}</h2>
+                  <p>{t("Choose which conversation history to open.")}</p>
+                  <ul className="grid gap-2">
+                    {threads.data.map((thread) => (
+                      <li key={thread.id}>
+                        <Button
+                          variant="outline"
+                          render={<Link to={`threads/${thread.id}${search}`} />}
+                        >
+                          {thread.id} · {t(`origin.${thread.origin}`)}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : !threads.error ? (
+                <Empty
+                  icon={<ChatsIcon aria-hidden="true" />}
+                  title={t("No threads yet")}
+                  description={t(
+                    "Threads created by the host application appear here.",
+                  )}
+                />
+              ) : null}
+            </div>
           </div>
-        </div>
-      </RunCollapseProvider>
+        </RunCollapseProvider>
+      </SessionStreamProvider>
     </SessionAuthorsProvider>
   );
 }

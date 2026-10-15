@@ -34,7 +34,7 @@ def test_windows_sandbox_selects_powershell_without_posix_paths(tmp_path, monkey
     assert profile.executable == shell
     assert profile.fixed_arguments == ("-NoLogo", "-NoProfile", "-NonInteractive", "-Command")
     assert runtime.configuration.trusted_executable_roots == (tmp_path,)
-    assert runtime.configuration.egress.mode == "deny"
+    assert runtime.configuration.egress.mode == "inherit"
 
 
 @pytest.fixture

@@ -14,13 +14,15 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import {
+  ApiError,
   createClient,
   type Client,
-  type ThreadFrame,
+  type SessionEvent,
 } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import { conversationQueries, invalidateConversation } from "./api";
+import { conversationQueries } from "./api";
 import { useRunDisplay } from "./run-display";
+import { SessionStreamProvider } from "./session-stream";
 import {
   fixtureAttempt,
   fixtureRun,
@@ -32,8 +34,6 @@ let cache: QueryClient;
 let requests: Request[];
 let read: (request: Request) => Promise<Response>;
 let display: Schema["RunItems"];
-let attempts: number[];
-let thread: Schema["ThreadView"];
 let frames: ReturnType<typeof channel>;
 vi.mock("../../auth/context", () => ({
   useClient: () => client,
@@ -85,31 +85,29 @@ function response(request: Request) {
   if (path.endsWith("/items")) return Response.json(display);
   if (path.endsWith("/attempts"))
     return Response.json({
-      items: attempts.map((number) =>
-        fixtureAttempt(number, { run_id: "run_one", status: "running" }),
-      ),
+      items: [fixtureAttempt(1, { run_id: "run_one", status: "running" })],
     });
-  if (path.endsWith("/threads/thread_one")) return Response.json(thread);
   return Response.json(display.run);
 }
 
-/** The Thread stream the test feeds, frame by frame, until it detaches. */
+/** The session stream the test feeds, event by event, until it detaches. */
 function channel() {
-  const queue: ThreadFrame[] = [];
+  const queue: (SessionEvent | Error)[] = [];
   let wake: (() => void) | undefined;
   return {
-    push(...next: ThreadFrame[]) {
+    push(...next: (SessionEvent | Error)[]) {
       queue.push(...next);
       wake?.();
     },
     async *stream(
       _workspace: string,
-      _thread: string,
+      _session: string,
       options: { signal?: AbortSignal } = {},
-    ): AsyncGenerator<ThreadFrame> {
+    ): AsyncGenerator<SessionEvent> {
       const { signal } = options;
       while (!signal?.aborted) {
         const next = queue.shift();
+        if (next instanceof Error) throw next;
         if (next) {
           yield next;
           continue;
@@ -123,41 +121,73 @@ function channel() {
   };
 }
 
-const delta = (
-  attempt: number,
-  sequence: number,
-  text: string,
-  item = "item_1-0",
-): ThreadFrame => ({
-  type: "delta",
-  cursor: `c${attempt}-${sequence}`,
-  delta: {
-    run_id: "run_one",
-    attempt,
-    sequence,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: item, delta: text },
-    item: { id: item, kind: "text_message", state: "in_progress" },
+const live: SessionEvent = { type: "connection", state: "live" };
+const threadState = (
+  current: Schema["RunView"] | null,
+  last: Schema["RunView"] | null = null,
+): SessionEvent => ({
+  type: "thread",
+  data: {
+    thread: fixtureThread({
+      id: "thread_one",
+      session_id: "session_one",
+      current_run_id: current?.id ?? null,
+      last_run_id: last?.id ?? null,
+      version: current?.version ?? 2,
+    }),
+    current_run: current,
+    last_run: last,
+    entries: [],
   },
 });
-const boundary = (attempt: number, sequence: number): ThreadFrame => ({
-  type: "boundary",
-  cursor: `c${attempt}-${sequence}`,
-  run_id: "run_one",
-  attempt,
-  sequence,
+const items = (
+  shown: Schema["Item"][],
+  { first = 1, complete = false } = {},
+): SessionEvent => ({
+  type: "items",
+  data: {
+    thread_id: "thread_one",
+    run_id: "run_one",
+    first,
+    items: shown,
+    continuation: null,
+    complete,
+  },
 });
+const delta = (
+  sequence: number,
+  event: Record<string, unknown>,
+  item: Schema["Item"]["id"] = "item_1-0",
+  kind: Schema["Item"]["kind"] = "text_message",
+): SessionEvent => ({
+  type: "delta",
+  data: {
+    thread_id: "thread_one",
+    run_id: "run_one",
+    attempt: 1,
+    sequence,
+    event,
+    item: { id: item, kind, state: "in_progress" },
+  },
+});
+const text = (sequence: number, value: string) =>
+  delta(sequence, {
+    type: "TEXT_MESSAGE_CONTENT",
+    messageId: "item_1-0",
+    delta: value,
+  });
 
 function Readers() {
-  const queries = conversationQueries(client, "workspace");
-  const current = useQuery(queries.run("run_one"));
-  useQuery(queries.thread("thread_one"));
+  const current = useQuery(
+    conversationQueries(client, "workspace").run("run_one"),
+  );
   return <output data-testid="status">{current.data?.status}</output>;
 }
-function Live({ live }: { live: boolean }) {
-  const stream = useRunDisplay("run_one", { live });
+function Display() {
+  const stream = useRunDisplay("run_one");
   return (
     <>
-      <output data-testid="live">{stream.state}</output>
+      <output data-testid="connected">{String(stream.connected)}</output>
       <output data-testid="items">
         {stream.items.map((item) => item.text).join("|")}
       </output>
@@ -172,20 +202,27 @@ function Live({ live }: { live: boolean }) {
           .map((step) => `${step.kind}:${step.state}`)
           .join("|")}
       </output>
-      <output data-testid="attempts">
-        {stream.attempts.map((attempt) => attempt.number).join("|")}
-      </output>
       <output data-testid="gap">{String(stream.gap)}</output>
       <output data-testid="incomplete">{String(stream.incomplete)}</output>
+      <output data-testid="error">
+        {stream.error instanceof Error ? stream.error.message : ""}
+      </output>
       <button onClick={stream.reconnect}>Reconnect</button>
     </>
   );
 }
-function View({ live = true, mounted = true }) {
+function View({ streamed = true, mounted = true }) {
   return (
     <QueryClientProvider client={cache}>
       <Readers />
-      {mounted && <Live live={live} />}
+      {mounted &&
+        (streamed ? (
+          <SessionStreamProvider sessionId="session_one">
+            <Display />
+          </SessionStreamProvider>
+        ) : (
+          <Display />
+        ))}
     </QueryClientProvider>
   );
 }
@@ -194,27 +231,18 @@ function pathRequests(suffix: string) {
     new URL(request.url).pathname.endsWith(suffix),
   );
 }
-const text = () => screen.getByTestId("items").textContent;
-function resumeOptions() {
-  const resume = vi.mocked(client.streamThread).mock.calls.at(-1)?.[2]?.resume;
-  return typeof resume === "function" ? resume() : resume;
-}
+const shown = () => screen.getByTestId("items").textContent;
+const flag = (name: string) => screen.getByTestId(name).textContent;
+const push = (...events: (SessionEvent | Error)[]) =>
+  act(async () => frames.push(...events));
 
 beforeEach(() => {
   requests = [];
-  attempts = [1];
   display = {
-    run: run(),
-    baseline: true,
-    items: [message("Hello", "1-0", "1-1")],
-    position: "1-1",
-    complete: false,
+    run: run({ status: "completed" }),
+    items: [message("Saved", "1-0", "1-1", "completed")],
+    complete: true,
   };
-  thread = fixtureThread({
-    id: "thread_one",
-    session_id: "session_one",
-    current_run_id: "run_one",
-  });
   cache = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -234,7 +262,7 @@ beforeEach(() => {
     },
   });
   frames = channel();
-  client.streamThread = vi.fn(frames.stream);
+  client.streamSession = vi.fn(frames.stream);
 });
 afterEach(() => {
   cleanup();
@@ -242,134 +270,119 @@ afterEach(() => {
   client.close();
 });
 
-it("detaches a sealed run without fetching its display again when a successor is followed", async () => {
-  display = { ...display, complete: true, run: run({ status: "completed" }) };
-  const view = render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  const reads = pathRequests("/items").length;
-  const attemptReads = pathRequests("/attempts").length;
-  view.rerender(<View live={false} />);
-  await waitFor(() =>
-    expect(screen.getByTestId("live").textContent).toBe("closed"),
-  );
-  expect(text()).toBe("Hello");
-  expect(pathRequests("/items")).toHaveLength(reads);
-  expect(pathRequests("/attempts")).toHaveLength(attemptReads);
-});
-
-it("continues the committed display with the Thread's later deltas", async () => {
-  display.resume_after = "1720000000000-0";
+it("follows an active Run's output from its session stream", async () => {
   render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  expect(resumeOptions()).toEqual({
-    run: "run_one",
-    position: "1-1",
-    after: "1720000000000-0",
-  });
-  // The stream repeats what the display already covers before what it does not.
-  await act(async () => {
-    frames.push(delta(1, 1, "Hello"), delta(1, 2, " world"));
-  });
-  await waitFor(() => expect(text()).toBe("Hello world"));
-  expect(screen.getByTestId("live").textContent).toBe("connected");
-  expect(screen.getByTestId("coverage").textContent).toBe("complete");
-  // The display's Run is the Run every reader shares.
-  expect(screen.getByTestId("status").textContent).toBe("running");
-  expect(client.streamThread).toHaveBeenCalledWith(
+  await push(
+    live,
+    threadState(run({ version: 9 })),
+    items([message("Hello", "1-0", "1-1")]),
+    text(2, " world"),
+  );
+  await waitFor(() => expect(shown()).toBe("Hello world"));
+  expect(flag("connected")).toBe("true");
+  expect(flag("coverage")).toBe("complete");
+  // The thread's state is the Run every reader shares.
+  expect(flag("status")).toBe("running");
+  expect(client.streamSession).toHaveBeenCalledWith(
     "workspace",
-    "thread_one",
-    expect.objectContaining({
-      signal: expect.any(AbortSignal),
-      resume: expect.any(Function),
+    "session_one",
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  );
+});
+
+it("shows a Run's final items after its thread reports the seal", async () => {
+  render(<View />);
+  await push(live, threadState(run()), items([message("Hello", "1-0")]));
+  await waitFor(() => expect(shown()).toBe("Hello"));
+  const sealed = run({ status: "completed", version: 3 });
+  await push(
+    threadState(null, sealed),
+    items([message("Hello there", "1-0", "1-4", "completed")], {
+      complete: true,
     }),
+    text(5, " late"),
   );
+  await waitFor(() => expect(shown()).toBe("Hello there"));
+  expect(flag("status")).toBe("completed");
 });
 
-it("reads a Run without following its Thread when not live", async () => {
-  display = { ...display, run: run({ status: "completed" }), complete: true };
-  render(<View live={false} />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  expect(screen.getByTestId("live").textContent).toBe("closed");
-  expect(client.streamThread).not.toHaveBeenCalled();
-});
-
-it("times a reloaded Run's Items from its display", async () => {
-  display = {
-    ...display,
-    run: run({ status: "completed" }),
-    items: [message("Hello", "1-0", "1-1", "completed")],
-    complete: true,
-  };
-  render(<View live={false} />);
-  await waitFor(() =>
-    expect(screen.getByTestId("times").textContent).toBe(
-      "2026-09-20T10:00:01.000Z → 2026-09-20T10:00:03.000Z",
-    ),
-  );
-});
-
-it("closes delivery without interrupting the Run after detachment", async () => {
-  const view = render(<View />);
-  await waitFor(() => expect(client.streamThread).toHaveBeenCalled());
-  const signal = vi.mocked(client.streamThread).mock.calls[0]![2]!.signal!;
-  const count = requests.length;
-  await act(async () => {
-    view.rerender(<View mounted={false} />);
-  });
-  expect(signal.aborted).toBe(true);
-  expect(requests).toHaveLength(count);
-  expect(requests.every((request) => request.method === "GET")).toBe(true);
-});
-
-it("discards provisional output when the Run changes attempt", async () => {
+it("pauses a Run's output after a gap until its next items repair it", async () => {
   render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () => {
-    frames.push(delta(1, 2, " world"));
+  await push(live, threadState(run()), items([message("Hello", "1-0")]));
+  await push({
+    type: "gap",
+    data: { thread_id: "thread_one", run_id: "run_one" },
   });
-  await waitFor(() => expect(text()).toBe("Hello world"));
-  attempts = [1, 2];
-  display = {
-    ...display,
-    items: [
-      message("Hello", "1-0", "1-1", "interrupted"),
-      message("Retry", "2-1"),
-    ],
-    position: "2-1",
-  };
-  await act(async () => {
-    frames.push({ type: "reset", run_id: "run_one" });
-  });
-  await waitFor(() => expect(text()).toBe("Hello|Retry"));
-  await act(async () => {
-    frames.push(delta(2, 2, " again", "item_2-1"));
-  });
-  await waitFor(() => expect(text()).toBe("Hello|Retry again"));
+  await push(text(5, " lost"));
+  await waitFor(() => expect(flag("gap")).toBe("true"));
+  expect(shown()).toBe("Hello");
+  expect(flag("coverage")).toBe("partial");
+  await push(items([message("Hello again", "1-0", "1-5")]), text(6, "!"));
+  await waitFor(() => expect(shown()).toBe("Hello again!"));
+  expect(flag("gap")).toBe("false");
 });
 
-it("reports partial history after a gap until a boundary's display covers it", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () => {
-    frames.push({ type: "gap", run_id: "run_one" });
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId("coverage").textContent).toBe("partial"),
+it("reads a Run the stream does not hold from its committed display", async () => {
+  render(<View streamed={false} />);
+  await waitFor(() => expect(shown()).toBe("Saved"));
+  expect(flag("connected")).toBe("false");
+  expect(screen.getByTestId("times").textContent).toBe(
+    "2026-09-20T10:00:01.000Z → 2026-09-20T10:00:03.000Z",
   );
-  expect(screen.getByTestId("gap").textContent).toBe("true");
+  expect(client.streamSession).not.toHaveBeenCalled();
+});
+
+it("reads the committed display of a Run that ended while disconnected", async () => {
+  render(<View />);
+  await push(live, threadState(run()), items([message("Hello", "1-0")]));
+  await waitFor(() => expect(shown()).toBe("Hello"));
+  const reads = pathRequests("/items").length;
+  // The new connection's snapshot no longer names the Run current.
+  await push(
+    { type: "connection", state: "reconnecting" },
+    live,
+    threadState(null, run({ status: "completed", version: 3 })),
+  );
+  await waitFor(() => expect(shown()).toBe("Saved"));
+  expect(pathRequests("/items").length).toBeGreaterThan(reads);
+});
+
+it("reads every Item before the stream's first from the Run's committed history", async () => {
   display = {
     ...display,
-    items: [message("Hello there", "1-0", "1-6")],
-    position: "1-6",
+    run: run(),
+    items: [message("Hello", "1-4", "1-5", "in_progress", 3)],
+    complete: false,
   };
-  await act(async () => {
-    frames.push(boundary(1, 6));
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId("coverage").textContent).toBe("complete"),
+  read = async (request) => {
+    const query = new URL(request.url).searchParams;
+    if (!query.has("after")) return response(request);
+    const after = Number(query.get("after"));
+    return Response.json({
+      ...display,
+      items: Array.from({ length: Number(query.get("limit")) }, (_, index) =>
+        message(
+          `Item ${after + 1 + index}`,
+          `1-${after + index}`,
+          `1-${after + index}`,
+          "completed",
+          after + 1 + index,
+        ),
+      ),
+    });
+  };
+  render(<View />);
+  await push(
+    live,
+    threadState(run()),
+    items([message("Hello", "1-4", "1-5", "in_progress", 3)], { first: 3 }),
   );
-  expect(text()).toBe("Hello there");
-  expect(screen.getByTestId("gap").textContent).toBe("false");
+  await waitFor(() => expect(shown()).toBe("Item 1|Item 2|Hello"));
+  expect(flag("coverage")).toBe("complete");
+  expect(flag("gap")).toBe("false");
+  expect(
+    pathRequests("/items").map((request) => new URL(request.url).search),
+  ).toEqual(["", "?after=0&limit=2"]);
 });
 
 it("reports content the display omitted as incomplete", async () => {
@@ -377,536 +390,50 @@ it("reports content the display omitted as incomplete", async () => {
     ...display,
     items: [{ ...message("", "1-0"), content: { omitted: true } }],
   };
-  render(<View />);
-  await waitFor(() =>
-    expect(screen.getByTestId("coverage").textContent).toBe("partial"),
-  );
-  expect(screen.getByTestId("incomplete").textContent).toBe("true");
-  expect(screen.getByTestId("gap").textContent).toBe("true");
-});
-
-it("automatically reads every Item of the selected Run before publishing complete history", async () => {
-  display = {
-    ...display,
-    items: [message("Hello", "1-4", "1-5", "in_progress", 3)],
-  };
-  read = async (request) => {
-    const query = new URL(request.url).searchParams;
-    if (!query.has("after")) return response(request);
-    const ordinal = Number(query.get("after")) + 1;
-    return Response.json({
-      ...display,
-      baseline: false,
-      position: null,
-      items: [
-        message(
-          `Item ${ordinal}`,
-          `1-${ordinal}`,
-          `1-${ordinal}`,
-          "completed",
-          ordinal,
-        ),
-      ],
-    });
-  };
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Item 1|Item 2|Hello"));
-  expect(screen.getByTestId("coverage").textContent).toBe("complete");
-  expect(screen.getByTestId("gap").textContent).toBe("false");
-  expect(
-    pathRequests("/items").map((request) => new URL(request.url).search),
-  ).toEqual(["", "?after=0&limit=2", "?after=1&limit=1"]);
-  expect(resumeOptions()).toMatchObject({ run: "run_one", position: "1-1" });
-});
-
-it("keeps visible Items while a moving window catches up and reuses immutable history", async () => {
-  const item = (ordinal: number) =>
-    message(
-      `Item ${ordinal}`,
-      `1-${ordinal}`,
-      `1-${ordinal}`,
-      "completed",
-      ordinal,
-    );
-  display = { ...display, items: [item(3)] };
-  let finishHistory!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    finishHistory = resolve;
-  });
-  read = async (request) => {
-    const query = new URL(request.url).searchParams;
-    if (!query.has("after")) return response(request);
-    const after = Number(query.get("after"));
-    if (after === 2) await waiting;
-    return Response.json({
-      ...display,
-      baseline: false,
-      items: Array.from({ length: Number(query.get("limit")) }, (_, index) =>
-        item(after + 1 + index),
-      ),
-    });
-  };
-  const view = render(<View />);
-  await waitFor(() => expect(text()).toBe("Item 1|Item 2|Item 3"));
-  display = { ...display, items: [item(6)] };
-  await act(async () => {
-    frames.push({ type: "reset", run_id: "run_one" });
-  });
-  await waitFor(() => expect(pathRequests("/items")).toHaveLength(4));
-  expect(text()).toBe("Item 1|Item 2|Item 3");
-  await act(async () => finishHistory());
-  const all = "Item 1|Item 2|Item 3|Item 4|Item 5|Item 6";
-  await waitFor(() => expect(text()).toBe(all));
-  expect(screen.getByTestId("coverage").textContent).toBe("complete");
-  const windows = () =>
-    pathRequests("/items")
-      .map((request) => new URL(request.url).search)
-      .filter(Boolean);
-  expect(windows()).toEqual(["?after=0&limit=2", "?after=2&limit=3"]);
-  view.rerender(<View mounted={false} />);
-  view.rerender(<View />);
-  await waitFor(() => expect(text()).toBe(all));
-  expect(windows()).toHaveLength(2);
-});
-
-it("learns a new attempt's identity once before folding its deltas", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  expect(pathRequests("/attempts")).toHaveLength(1);
-  attempts = [1, 2];
-  await act(async () => {
-    frames.push(
-      {
-        type: "delta",
-        cursor: "c2-1",
-        delta: {
-          run_id: "run_one",
-          attempt: 2,
-          sequence: 1,
-          event: {
-            type: "TEXT_MESSAGE_START",
-            messageId: "item_2-1",
-            role: "assistant",
-          },
-          item: { id: "item_2-1", kind: "text_message", state: "in_progress" },
-        },
-      },
-      delta(2, 2, "Second", "item_2-1"),
-      delta(2, 3, " try", "item_2-1"),
-    );
-  });
-  await waitFor(() => expect(text()).toBe("Hello|Second try"));
-  expect(pathRequests("/attempts")).toHaveLength(2);
-  expect(screen.getByTestId("attempts").textContent).toBe("1|2");
-});
-
-const observed = (
-  sequence: number,
-  name: string,
-  value: unknown,
-): ThreadFrame => ({
-  type: "delta",
-  cursor: `c1-${sequence}`,
-  delta: {
-    run_id: "run_one",
-    attempt: 1,
-    sequence,
-    event: { type: "CUSTOM", name, value },
-    item: {
-      id: `obs_${sequence}`,
-      kind: "observation",
-      state: "completed",
-      ordinal: sequence,
-    },
-  },
+  render(<View streamed={false} />);
+  await waitFor(() => expect(flag("incomplete")).toBe("true"));
+  expect(flag("gap")).toBe("true");
+  expect(flag("coverage")).toBe("partial");
 });
 
 it("reads the execution from the observations the stream delivers", async () => {
   render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
+  await push(live, threadState(run()), items([message("Hello", "1-0")]));
   const lifecycle = (sequence: number, type: string) =>
-    observed(sequence, "a13n.harness.lifecycle", {
-      event: { payload: { type, request_id: "model-request-1" } },
-    });
-  await act(async () => {
-    frames.push(lifecycle(2, "model_request_started"));
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId("steps").textContent).toBe("llm:running"),
-  );
-  await act(async () => {
-    frames.push(lifecycle(3, "model_request_completed"));
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId("steps").textContent).toBe("llm:completed"),
-  );
-});
-
-it("refreshes durable coverage after a complete observation batch", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  expect(pathRequests("/items")).toHaveLength(1);
-  await act(async () => {
-    frames.push(observed(2, "plugin.large", "whole"));
-  });
-  display = {
-    ...display,
-    items: [
-      message("Hello", "1-0", "1-1"),
+    delta(
+      sequence,
       {
-        id: "obs_2",
-        ordinal: 2,
-        kind: "observation",
-        state: "completed",
-        first_stream_id: "1-2",
-        last_stream_id: "1-2",
-        started_at: "2026-09-20T10:00:02.000Z",
-        ended_at: "2026-09-20T10:00:02.000Z",
-        content: { name: "plugin.large", value: "whole" },
+        type: "CUSTOM",
+        name: "a13n.harness.lifecycle",
+        value: { event: { payload: { type, request_id: "model-request-1" } } },
       },
-    ],
-    position: "1-2",
-  };
-  await act(async () => {
-    frames.push(boundary(1, 2));
-  });
-  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
-});
-
-it("reconciles the sealed display once the Thread's current Run moves on", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  thread = { ...thread, current_run_id: null, version: 5 };
-  display = {
-    run: run({ status: "completed", sealed_at: "2026-09-20T10:00:09.000Z" }),
-    baseline: true,
-    items: [message("Hello", "1-0", "1-2", "completed")],
-    position: "1-2",
-    complete: true,
-  };
-  await act(async () => {
-    frames.push({ type: "changed", version: 5 });
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId("live").textContent).toBe("closed"),
-  );
-  expect(screen.getByTestId("status").textContent).toBe("completed");
-});
-
-it("joins replacement reads when a Thread change cancels reconciliation", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let blocked = false;
-  read = async (request) => {
-    if (
-      !blocked &&
-      new URL(request.url).pathname.endsWith("/threads/thread_one")
-    ) {
-      blocked = true;
-      await pending;
-    }
-    return response(request);
-  };
-  thread = { ...thread, current_run_id: null, version: 5 };
-  display = { ...display, run: run({ status: "completed" }), complete: true };
-  await act(async () => {
-    frames.push({ type: "changed", version: 5 });
-  });
-  await waitFor(() => expect(blocked).toBe(true));
-  await act(async () => {
-    await invalidateConversation(cache, "workspace", {
-      threadId: "thread_one",
-    });
-    release();
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId("live").textContent).toBe("closed"),
-  );
-});
-
-it("re-reads the display on reconnect even when cached reads remain fresh", async () => {
-  client.streamThread = vi.fn(async function* (): AsyncGenerator<ThreadFrame> {
-    throw new Error("Disconnected");
-  });
-  render(<View />);
-  await waitFor(() =>
-    expect(screen.getByTestId("live").textContent).toBe("disconnected"),
-  );
-  display = {
-    ...display,
-    run: run({ status: "completed" }),
-    items: [message("Hello again", "1-0", "1-3", "completed")],
-    position: "1-3",
-    resume_after: "1720000000001-0",
-    complete: true,
-  };
-  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
-  await waitFor(() => expect(text()).toBe("Hello again"));
-  expect(pathRequests("/items")).toHaveLength(2);
-  expect(screen.getByTestId("status").textContent).toBe("completed");
-  expect(resumeOptions()).toEqual({
-    run: "run_one",
-    position: "1-3",
-    after: "1720000000001-0",
-  });
-  expect(client.streamThread).toHaveBeenLastCalledWith(
-    "workspace",
-    "thread_one",
-    expect.objectContaining({ resume: expect.any(Function) }),
-  );
-});
-
-it("keeps the contiguous local suffix when reconnecting to an older checkpoint", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () => frames.push(delta(1, 2, " world")));
-  await waitFor(() => expect(text()).toBe("Hello world"));
-  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
-  await waitFor(() => expect(client.streamThread).toHaveBeenCalledTimes(2));
-  expect(text()).toBe("Hello world");
-  expect(resumeOptions()).toEqual({
-    run: "run_one",
-    position: "1-2",
-    after: "c1-2",
-  });
-  await act(async () => frames.push(delta(1, 2, " world"), delta(1, 3, "!")));
-  await waitFor(() => expect(text()).toBe("Hello world!"));
-});
-
-it("heals a known gap immediately when the refreshed snapshot covers it", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  display = {
-    ...display,
-    items: [message("Repaired", "1-0", "1-5")],
-    position: "1-5",
-  };
-  await act(async () =>
-    frames.push(
-      { type: "gap", run_id: "run_one", position: "1-4" },
-      delta(1, 6, "!"),
-    ),
-  );
-  await waitFor(() => expect(text()).toBe("Repaired!"));
-  expect(screen.getByTestId("gap").textContent).toBe("false");
-  expect(screen.getByTestId("coverage").textContent).toBe("complete");
-});
-
-it.each([true, false])(
-  "resolves an unknown gap once its range is covered (already covered: %s)",
-  async (alreadyCovered) => {
-    render(<View />);
-    await waitFor(() => expect(text()).toBe("Hello"));
-    const repaired = {
-      ...display,
-      items: [message("Repaired", "1-0", "1-5")],
-      position: "1-5",
-    };
-    if (alreadyCovered) display = repaired;
-    await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
-    await waitFor(() =>
-      expect(screen.getByTestId("gap").textContent).toBe(
-        alreadyCovered ? "false" : "true",
-      ),
+      `obs_${sequence}`,
+      "observation",
     );
-    expect(pathRequests("/items")).toHaveLength(2);
+  await push(lifecycle(2, "model_request_started"));
+  await waitFor(() => expect(flag("steps")).toBe("llm:running"));
+  await push(lifecycle(3, "model_request_completed"));
+  await waitFor(() => expect(flag("steps")).toBe("llm:completed"));
+});
 
-    display = repaired;
-    await act(async () =>
-      frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
-    );
-    await waitFor(() => {
-      expect(screen.getByTestId("gap").textContent).toBe("false");
-      expect(text()).toBe("Repaired");
-      expect(screen.getByTestId("coverage").textContent).toBe("complete");
-    });
-    expect(resumeOptions()?.position).toBe("1-5");
-    expect(pathRequests("/items")).toHaveLength(alreadyCovered ? 2 : 3);
-  },
-);
-
-it("keeps an unknown gap incomplete when its clarified range is not yet covered", async () => {
+it("reports a refused stream and opens it again on request", async () => {
   render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
-  await waitFor(() =>
-    expect(screen.getByTestId("gap").textContent).toBe("true"),
-  );
-  display = {
-    ...display,
-    items: [message("Still incomplete", "1-0", "1-2")],
-    position: "1-2",
-  };
-  await act(async () =>
-    frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
-  );
-  await waitFor(() => expect(text()).toBe("Still incomplete"));
-  expect(screen.getByTestId("gap").textContent).toBe("true");
-  expect(resumeOptions()?.position).toBe("1-2");
-  await act(async () =>
-    frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
-  );
-  expect(pathRequests("/items")).toHaveLength(3);
-
-  display = {
-    ...display,
-    items: [message("Repaired", "1-0", "1-5")],
-    position: "1-5",
-  };
+  await push(live, threadState(run()), items([message("Hello", "1-0")]));
+  await push(new ApiError(403, "forbidden", "Access ended.", {}, null));
+  await waitFor(() => expect(flag("error")).toBe("Access ended."));
   fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
-  await waitFor(() => expect(text()).toBe("Repaired"));
-  expect(screen.getByTestId("gap").textContent).toBe("false");
-  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+  await waitFor(() => expect(client.streamSession).toHaveBeenCalledTimes(2));
+  await push(live, threadState(run()), items([message("Hello", "1-0")]));
+  await waitFor(() => expect(flag("error")).toBe(""));
 });
 
-it("displays a degraded suffix across a hole until a covering checkpoint repairs it", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () =>
-    frames.push(
-      { type: "gap", run_id: "run_one", position: "1-3" },
-      delta(1, 4, "!"),
-    ),
-  );
-  await waitFor(() =>
-    expect(screen.getByTestId("gap").textContent).toBe("true"),
-  );
-  await waitFor(() => expect(text()).toBe("Hello!"));
-  expect(resumeOptions()?.position).toBe("1-4");
-  expect(pathRequests("/items")).toHaveLength(2);
-  await act(async () => frames.push(boundary(1, 2), boundary(1, 2)));
-  await waitFor(() => expect(pathRequests("/items")).toHaveLength(3));
-  expect(screen.getByTestId("gap").textContent).toBe("true");
-  display = {
-    ...display,
-    items: [message("Hello world", "1-0", "1-3")],
-    position: "1-3",
-  };
-  await act(async () => frames.push(boundary(1, 3)));
-  await waitFor(() => expect(text()).toBe("Hello world!"));
-  expect(screen.getByTestId("gap").textContent).toBe("false");
-  expect(resumeOptions()?.position).toBe("1-4");
-});
-
-it("drops superseded provisional output before a new attempt's first checkpoint", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () => frames.push(delta(1, 2, " discarded")));
-  await waitFor(() => expect(text()).toBe("Hello discarded"));
-  attempts = [1, 2];
-  await act(async () => frames.push({ type: "reset", run_id: "run_one" }));
-  await waitFor(() => expect(text()).toBe("Hello"));
-  expect(resumeOptions()).toEqual({
-    run: "run_one",
-    position: "2-0",
-    after: undefined,
-  });
-  await act(async () =>
-    frames.push(delta(1, 3, " late"), delta(2, 1, "Retry", "item_2-1")),
-  );
-  await waitFor(() => expect(text()).toBe("Hello|Retry"));
-  expect(resumeOptions()?.position).toBe("2-1");
-});
-
-it("discards a terminal provisional suffix without falsely healing uncovered missing events", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  await act(async () =>
-    frames.push(
-      { type: "gap", run_id: "run_one", position: "1-3" },
-      delta(1, 4, "lost"),
-    ),
-  );
-  await waitFor(() =>
-    expect(screen.getByTestId("gap").textContent).toBe("true"),
-  );
-  display = {
-    ...display,
-    run: run({ status: "cancelled", sealed_at: "2026-09-20T10:00:09Z" }),
-    items: [message("Saved", "1-0", "1-2", "interrupted")],
-    position: "1-2",
-    complete: true,
-  };
-  thread = { ...thread, current_run_id: null, version: 5 };
-  await act(async () => frames.push({ type: "changed", version: 5 }));
-  await waitFor(() => expect(text()).toBe("Saved"));
-  expect(screen.getByTestId("gap").textContent).toBe("true");
-  expect(screen.getByTestId("live").textContent).toBe("closed");
-});
-
-it.each([false, true])(
-  "repairs quiet durable progress without a final stream notification (sealed: %s)",
-  async (sealed) => {
-    const intervals = vi.spyOn(globalThis, "setInterval");
-    render(<View />);
-    await waitFor(() => expect(text()).toBe("Hello"));
-    await waitFor(() =>
-      expect(intervals.mock.calls.some(([, ms]) => ms === 10000)).toBe(true),
-    );
-    display = {
-      ...display,
-      run: run({
-        display_position: "1-5",
-        ...(sealed
-          ? { status: "completed", sealed_at: "2026-09-20T10:00:09Z" }
-          : {}),
-      }),
-      items: [
-        message(
-          "Quiet progress",
-          "1-0",
-          "1-5",
-          sealed ? "completed" : "in_progress",
-        ),
-      ],
-      position: "1-5",
-      complete: sealed,
-    };
-    const check = intervals.mock.calls.find(([, ms]) => ms === 10000)![0];
-    await act(async () => {
-      if (typeof check === "function") check();
-    });
-    await waitFor(() => expect(text()).toBe("Quiet progress"));
-    expect(pathRequests("/items")).toHaveLength(2);
-    intervals.mockRestore();
-  },
-);
-
-it("keeps the displayed history after a failed page read and completes it on reconnect", async () => {
-  render(<View />);
-  await waitFor(() => expect(text()).toBe("Hello"));
-  display = {
-    ...display,
-    items: [message("Latest", "1-3", "1-3", "completed", 2)],
-    position: "1-3",
-  };
-  read = async (request) =>
-    new URL(request.url).searchParams.has("after")
-      ? Response.json(
-          { error: { code: "unavailable", message: "History unavailable" } },
-          { status: 503 },
-        )
-      : response(request);
+it("stops following when the page leaves the session", async () => {
+  const view = render(<View />);
+  await waitFor(() => expect(client.streamSession).toHaveBeenCalled());
+  const signal = vi.mocked(client.streamSession).mock.calls[0]![2]!.signal!;
   await act(async () => {
-    frames.push({ type: "reset", run_id: "run_one" });
+    view.rerender(<View mounted={false} />);
   });
-  await waitFor(() =>
-    expect(screen.getByTestId("live").textContent).toBe("disconnected"),
-  );
-  expect(text()).toBe("Hello");
-  read = async (request) =>
-    new URL(request.url).searchParams.has("after")
-      ? Response.json({
-          ...display,
-          baseline: false,
-          items: [message("Hello", "1-0", "1-2", "completed")],
-        })
-      : response(request);
-  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
-  await waitFor(() => expect(text()).toBe("Hello|Latest"));
-  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+  expect(signal.aborted).toBe(true);
+  expect(requests.every((request) => request.method === "GET")).toBe(true);
 });

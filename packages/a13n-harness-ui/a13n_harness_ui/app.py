@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
+from itertools import chain
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -86,6 +87,12 @@ from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.device_pairing import DevicePairings
 from a13n_harness_ui.devices import DeviceAttachment, DeviceConnections, DeviceInfo, DeviceSummary
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+from a13n_harness_ui.environment_monitoring import (
+    EnvironmentMonitoring,
+    MonitoringCatalog,
+    MonitoringDetail,
+    MonitoringSource,
+)
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES, built_in_environment_profile
 from a13n_harness_ui.environment_runtime import (
     EnvironmentRunService,
@@ -374,6 +381,7 @@ class HarnessUiApp:
         ],
         resolve_sandbox_executable: Callable[[], Awaitable[Path]],
         devices: DeviceConnections,
+        environment_monitoring: EnvironmentMonitoring,
         grok_account: GrokAccountStore | None,
         grok_account_error: AccountStoreError | None,
         codex_login: CodexLoginCallback | None,
@@ -436,6 +444,7 @@ class HarnessUiApp:
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
         self._devices = devices
+        self._environment_monitoring = environment_monitoring
         self._device_pairings = DevicePairings()
         self._configuration_lock = Lock()
         self._sandbox_ready_paths: set[Path] = set()
@@ -2523,6 +2532,14 @@ class HarnessUiApp:
             raise HarnessUiError("The selected Device is not configured.", code="device_missing")
         return resource
 
+    async def environment_monitoring(self) -> MonitoringCatalog:
+        async with self._operation():
+            return await self._environment_monitoring.catalog()
+
+    async def environment_metrics(self, target_id: str) -> MonitoringDetail:
+        async with self._operation():
+            return await self._environment_monitoring.detail(target_id)
+
     async def device_info(self, device_id: str) -> DeviceInfo:
         async with self._operation():
             return await self._devices.info(await self._device_resource(device_id))
@@ -2980,6 +2997,15 @@ async def open_harness_ui_app(
             device_configuration = await configurations.current()
             if device_configuration is not None:
                 await devices.synchronize_registrations(device_configuration.devices.values())
+
+            async def monitoring_sources() -> Iterable[MonitoringSource]:
+                source = await configurations.current()
+                return chain(
+                    devices.monitoring_sources(() if source is None else source.devices.values()),
+                    environment_reconstructor.monitoring_sources(),
+                )
+
+            environment_monitoring = EnvironmentMonitoring(monitoring_sources)
             environment_service = EnvironmentRunService(
                 store,
                 environment_reconstructor,
@@ -3228,6 +3254,7 @@ async def open_harness_ui_app(
                 rediscover_accounts=rediscover_accounts,
                 resolve_sandbox_executable=environment_reconstructor.resolve_sandbox_executable,
                 devices=devices,
+                environment_monitoring=environment_monitoring,
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
@@ -3277,6 +3304,8 @@ async def open_harness_ui_app(
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
                     background.start_soon(app._maintain_read_models)
+                    if host_mode == "webui":
+                        background.start_soon(environment_monitoring.run)
                     await recover_restart(restart_coordinator, root_runs, operator)
                     if web_push is not None:
                         background.start_soon(web_push.run)

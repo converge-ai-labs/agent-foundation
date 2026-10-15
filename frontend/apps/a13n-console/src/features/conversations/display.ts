@@ -1,5 +1,9 @@
-import { DisplayNormalizer, type DisplayItem } from "a13n-ui/display";
-import { isRecord, type Client, type ThreadDelta } from "../../service-client";
+import {
+  DisplayNormalizer,
+  type DisplayEvent,
+  type DisplayItem,
+} from "a13n-ui/display";
+import { isRecord, type Client } from "../../service-client";
 import { data, type Schema } from "../../shared/api";
 
 export type { DisplayItem } from "a13n-ui/display";
@@ -8,7 +12,7 @@ export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
   "a13n.input.steering",
 ]);
 
-/** Read a committed display window; only the default window is a live baseline. */
+/** Read a committed display window: by default the newest Items, always with the whole tail. */
 export function readDisplay(
   client: Client,
   workspaceId: string,
@@ -105,7 +109,7 @@ export function isOmitted(content: unknown) {
 
 export function applyDelta(
   items: Map<string, DisplayItem>,
-  delta: ThreadDelta,
+  delta: DisplayEvent,
   normalizer = new DisplayNormalizer(),
 ) {
   const previous = delta.item ? items.get(delta.item.id) : undefined;

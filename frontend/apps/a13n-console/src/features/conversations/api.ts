@@ -1,8 +1,9 @@
 import { readFullDisplay, type FullDisplay } from "./display";
-import type { Client, paths } from "../../service-client";
+import type { Client, paths, ThreadState } from "../../service-client";
 import {
   infiniteQueryOptions,
   queryOptions,
+  replaceEqualDeep,
   type QueryClient,
 } from "@tanstack/react-query";
 import { allPages, data, type Schema } from "../../shared/api";
@@ -11,6 +12,9 @@ export type SessionFilters = Omit<
   NonNullable<paths["/api/v1/sessions"]["get"]["parameters"]["query"]>,
   "limit" | "cursor"
 >;
+
+export type ContextScope =
+  { thread_id: string } | { run_id: string } | { record_id: string };
 
 export type UsageScope = { session_id: string } | { run_id: string };
 
@@ -33,6 +37,7 @@ export function conversationKeys(workspaceId: string) {
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
+    context: (id: string) => [...root, "context", id] as const,
     requestMetrics: (runId: string, recordId: string) =>
       [...root, "usage", runId, "record", recordId] as const,
     /** Recorded model usage of one Session or one Run. */
@@ -45,10 +50,35 @@ export function conversationKeys(workspaceId: string) {
   };
 }
 
+const version = (view: unknown) =>
+  (view as { version?: number } | undefined)?.version ?? -1;
+
+/** A view never goes back to an older version, whether a read or a session stream frame lands last. */
+function newer(previous: unknown, next: unknown) {
+  return version(previous) > version(next)
+    ? previous
+    : replaceEqualDeep(previous, next);
+}
+
 /** Query owns request cancellation; delivery attachments never abort shared reads. */
 export function conversationQueries(client: Client, workspaceId: string) {
   const keys = conversationKeys(workspaceId);
   return {
+    context: (scope: ContextScope) =>
+      queryOptions({
+        queryKey: keys.context(
+          "thread_id" in scope
+            ? scope.thread_id
+            : "run_id" in scope
+              ? scope.run_id
+              : scope.record_id,
+        ),
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/usage/context", { params: { query: scope }, signal })
+            .then(data),
+      }),
     requestMetrics: (runId: string, record_id: string) =>
       queryOptions({
         queryKey: keys.requestMetrics(runId, record_id),
@@ -90,6 +120,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
     run: (run_id: string) =>
       queryOptions({
         queryKey: keys.run(run_id),
+        structuralSharing: newer,
         queryFn: ({ signal }) =>
           client
             .workspace(workspaceId)
@@ -128,6 +159,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
     thread: (thread_id: string) =>
       queryOptions({
         queryKey: keys.thread(thread_id),
+        structuralSharing: newer,
         queryFn: ({ signal }) =>
           client
             .workspace(workspaceId)
@@ -268,7 +300,7 @@ export interface ConversationChange {
   runId?: string | null;
 }
 
-/** One invalidation map for command receipts and Thread stream changes. */
+/** One invalidation map for command receipts. */
 export function invalidateConversation(
   cache: QueryClient,
   workspaceId: string,
@@ -284,6 +316,8 @@ export function invalidateConversation(
           case "session":
           case "threads":
             return !!change.sessionId && id === change.sessionId;
+          case "context":
+            return id === change.threadId || id === change.runId;
           // Usage is keyed by the Session or the Run it sums.
           case "usage":
             return id === change.sessionId || id === change.runId;
@@ -301,6 +335,46 @@ export function invalidateConversation(
         }
       }),
   });
+}
+
+/**
+ * Write a thread's state from its session stream: the thread and the runs it
+ * names. A changed thread also marks the lists that hold it or its inbox
+ * stale.
+ */
+export function applyThreadState(
+  cache: QueryClient,
+  workspaceId: string,
+  { thread, current_run, last_run }: ThreadState,
+) {
+  const keys = conversationKeys(workspaceId);
+  for (const run of [current_run, last_run]) {
+    if (!run) continue;
+    const held = version(cache.getQueryData(keys.run(run.id)));
+    cache.setQueryData(keys.run(run.id), run);
+    // A run's version moves with its attempts.
+    if (held >= 0 && held < run.version)
+      void cache.invalidateQueries({ queryKey: keys.attempts(run.id) });
+  }
+  const held = version(cache.getQueryData(keys.thread(thread.id)));
+  cache.setQueryData(keys.thread(thread.id), thread);
+  if (held >= thread.version) return;
+  void cache.invalidateQueries(
+    {
+      queryKey: keys.root,
+      predicate: ({ queryKey: [, , kind, id] }) =>
+        kind === "sessions" ||
+        (kind === "context" &&
+          (id === thread.id ||
+            id === current_run?.id ||
+            id === last_run?.id)) ||
+        ((kind === "session" || kind === "threads") &&
+          id === thread.session_id) ||
+        ((kind === "runs" || kind === "inbox") && id === thread.id),
+    },
+    // A thread seen first does not restart the reads that load the page.
+    { cancelRefetch: held >= 0 },
+  );
 }
 
 /**

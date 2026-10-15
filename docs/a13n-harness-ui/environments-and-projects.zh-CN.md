@@ -7,7 +7,7 @@ description: 选择执行权限、在 Project 中工作、连接 Device，并定
 
 **Full Control** 使用宿主机账户现有的文件系统和网络权限运行，不下载或启动 `a13n-envd`。Full Control 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。
 
-**Sandbox** 要求 Envd 使用显式目录授权和禁止联网来准备受限 Session worker。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查 Sandbox 就绪状态。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows Sandbox 使用实验性的原生 Microsoft eXecution Container（MXC）后端；宿主机必须通过实际创建/关闭探测和生产隔离探测。见[外层安全指南](../a13n-envd/isolation.md)。
+**Sandbox** 要求 Envd 使用显式目录授权和继承宿主机网络来准备受限 Session worker，包括访问宿主 localhost 服务。命令可使用宿主机路由和防火墙策略允许的网络，文件系统和进程隔离仍然生效。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查文件系统和进程隔离，以及宿主 localhost 连通性，无须依赖外部互联网服务。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows Sandbox 使用实验性的原生 Microsoft eXecution Container（MXC）后端；宿主机必须通过实际创建/关闭探测和生产隔离探测。见[外层安全指南](../a13n-envd/isolation.md)。
 
 ### 原生命令环境
 
@@ -49,6 +49,14 @@ a13n-harness-ui --environment-profile environment-team
 ```
 
 `--environment-mode` 选择内置模式；`--environment-profile` 选择已配置 profile。两者互斥。在 TUI 中，`/environment` 显示选项，并为该对话的后续 Run 保存选择。改变已保存对话的 Environment 前先恢复；启动覆盖不能与 `--resume` 同用。
+
+## 监控 Environment 资源
+
+从 WebUI 对话工具栏打开 **Environment monitor**。选择 Device，查看操作系统、CPU 型号、最新 CPU 和内存观测、文件系统容量，以及 24 小时的分钟平均值和峰值曲线。面板覆盖整个 App；切换对话或编辑下一次 Run 的目录不会改变观测对象。系统指标描述 Envd 可见的系统，cgroup 指标描述操作员指定的 Linux cgroup，均不是单次 Run 的用量。
+
+远程 Device 复用已有的认证连接。在 Envd 启动配置中启用 `monitoring` 后开始采样；禁用采样时仍可查看静态系统信息。内置本地 Sandbox 在 daemon 启动时启用采样。打开监控不会下载或启动 Envd。Full Control 和非 Envd Provider 不提供这些指标。本地运行时获取与已安装 `a13n-envd-client` 完全相同的版本；已发布的 Envd 0.3.0 提供此监控协议。远程 daemon 和客户端应一起升级。
+
+面板区分等待采样、禁用、样本过期和离线。缺失值显示为 **—**，缺失分钟保留为空白。最新观测详情包含原始单位的压力值和累积计数。历史仅保存在 App 内存中，重启即清空。采集最多覆盖 64 个 Device、同时发起四个请求，每个 Device 保留 1,440 个分钟槽；超出数量会明确提示，不继续扩大 buffer。修改或撤销 Device 会清空其历史。
 
 ## Project 文件参考
 
@@ -257,7 +265,7 @@ adapter_configuration:
   project_access: read_write
 ```
 
-adapter 将每个捕获的 Project 根按 `project_access` 加入授权集合。其他授权属于 `launch.sandbox.grants`。继承网络与内置 Sandbox 禁止联网有意不同。受控出站使用 `launch.egress.mode: controlled`，并按上述目的地/引用用法提供 `session.egress`；它要求特权 Linux 后端，不是 rootless 桌面默认值。改变 Session 策略不重建兼容守护进程；改变启动边界会重建。
+adapter 将每个捕获的 Project 根按 `project_access` 加入授权集合。其他授权属于 `launch.sandbox.grants`。继承网络与内置 Sandbox 默认值一致。要禁止联网，在自定义 profile 中设置 `launch.egress.mode: deny`，同时保留 `launch.sandbox.mode: restricted`。显式 `deny` 和 `controlled` 策略保持不变；省略 `launch` 的 profile 使用新的继承网络默认值。受控出站使用 `launch.egress.mode: controlled`，并按上述目的地/引用用法提供 `session.egress`；它要求特权 Linux 后端，不是 rootless 桌面默认值。改变 Session 策略不重建兼容守护进程；改变启动边界会重建。
 
 ## 从 WebUI 使用 Mac 桌面
 

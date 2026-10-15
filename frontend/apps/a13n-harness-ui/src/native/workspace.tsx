@@ -34,6 +34,7 @@ import {
   withinRoot,
 } from "./buffer";
 import { Files } from "./files";
+import { EnvironmentMonitor } from "./environment-monitor";
 import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
@@ -513,6 +514,7 @@ export function NativeWorkspace({
           </h1>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
+              <EnvironmentMonitor />
               {status.data?.features?.host_files && (
                 <Button
                   variant="ghost"

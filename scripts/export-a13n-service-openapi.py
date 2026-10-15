@@ -7,6 +7,7 @@ from pathlib import Path
 from a13n_service.app import build_app
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.runs.stream import frames_schema
+from a13n_service.runs.thread_stream import frames_schema as thread_frames_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "proto/a13n-service"
@@ -14,7 +15,11 @@ SKILL_SCHEMA = ROOT / "packages/a13n-service/a13n_service/builtin_skills/platfor
 
 
 def documents() -> dict[str, dict]:
-    return {"openapi.json": build_app().openapi(), "thread-stream.schema.json": frames_schema()}
+    return {
+        "openapi.json": build_app().openapi(),
+        "session-stream.schema.json": frames_schema(),
+        "thread-stream.schema.json": thread_frames_schema(),
+    }
 
 
 def main() -> None:

@@ -39,6 +39,14 @@ from a13n_service.tenancy.authorize import Principal
 
 # Ancestors per lineage page.
 MAX_LINEAGE = 50
+# The items a default read returns: the newest, and always the whole tail.
+NEWEST_ITEMS = 200
+
+
+def newest(pointer: TailPointer | None, limit: int) -> int:
+    """The first ordinal of a run's newest `limit` items, or of its tail when that holds more."""
+    tail, count = (pointer.first, pointer.count) if pointer is not None else (1, 0)
+    return max(1, min(tail, count + 1 - limit))
 
 
 async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunView]:
@@ -58,14 +66,7 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         else {}
     )
     return [
-        RunView.model_validate(run).model_copy(
-            update={
-                "input": payloads.get(run.source_entry_id or ""),
-                "display_position": str(TailPointer.model_validate(run.tail).position)
-                if run.tail is not None
-                else None,
-            }
-        )
+        RunView.model_validate(run).model_copy(update={"input": payloads.get(run.source_entry_id or "")})
         for run in runs
     ]
 
@@ -199,10 +200,6 @@ async def items(
             for item in (*(item for page in pages for item in page.items), *tail.items)
             if window.first <= item.ordinal <= window.last
         ],
-        baseline=before is None and after is None,
-        continuation=tail.continuation if before is None and after is None else None,
-        position=str(window.tail.position) if window.tail is not None and before is None and after is None else None,
-        resume_after=tail.resume_after if before is None and after is None else None,
         complete=sealed,
     )
 
@@ -242,7 +239,7 @@ async def _read(
         elif after is not None:
             first, last = after + 1, min(count, after + limit)
         else:
-            first, last = max(1, min(tail, count + 1 - limit)), count
+            first, last = newest(pointer, limit), count
         rows = await session.scalars(
             select(RunItemPageRow)
             .where(

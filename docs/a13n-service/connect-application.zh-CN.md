@@ -79,7 +79,7 @@ curl -X POST "$A13N_URL/api/v1/threads" \
 
 ### 读取结果
 
-响应包含 `thread`、`entry`，也可能包含 `run`。如果 `run` 为 null，请通过[线程事件流](agents-and-runs.md#follow-a-thread-stream)观察消息接收情况。否则，将 `RUN_ID` 设为返回运行的 `id` 并读取状态：
+响应包含 `thread`、`entry`，也可能包含 `run`。如果 `run` 为 null，请通过[会话事件流](agents-and-runs.md#follow-a-session-stream)观察消息接收情况。否则，将 `RUN_ID` 设为返回运行的 `id` 并读取状态：
 
 ```sh
 RUN_ID=run_replace_with_the_returned_id
@@ -88,6 +88,6 @@ curl "$A13N_URL/api/v1/runs/$RUN_ID" -H "Authorization: Bearer $A13N_API_KEY"
 
 重复此请求，直到运行状态为 `completed`、`waiting`、`failed` 或 `cancelled`。完成运行的回答位于 `output`。等待中的运行需要[回答、审批或客户端工具结果](agents-and-runs.md#waits-approvals-and-questions)；失败运行的结果请按[故障排查指南](monitoring.md#troubleshoot-a-request-or-run)检查。
 
-也可以订阅线程事件流或 [webhook](files-and-webhooks.md#webhooks)，无需轮询。客户端断开连接后，运行会继续。向 `POST …/threads/{thread_id}/inbox` 发送后续消息来继续该线程。
+也可以订阅会话事件流或 [webhook](files-and-webhooks.md#webhooks)，无需轮询。客户端断开连接后，运行会继续。向 `POST …/threads/{thread_id}/inbox` 发送后续消息来继续该线程。
 
 认证、分页、条件写入和错误处理请参阅 [HTTP 约定](http.md)；请求和响应 schema 请参阅 [API 参考](api-reference/index.md)。请核对 [SDK 支持的协议约定](sdks.md#keep-version-ownership-clear)是否匹配部署的 Service 版本。

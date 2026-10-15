@@ -111,7 +111,7 @@ curl --fail-with-body "$A13N_URL/api/v1/threads" \
   -d "{\"agent_id\":\"$AGENT_ID\",\"payload\":{\"content\":[{\"type\":\"text\",\"text\":\"Summarize these notes.\"}]}}"
 ```
 
-保存返回的 `thread.id` 和 `entry.id`。输入仍在排队时，返回的 `run` 可能为 null。跟踪[线程流](agents-and-runs.md#follow-a-thread-stream)，或读取该 Entry，直到 `assigned_run_id` 指出消费它的 Run：
+保存返回的 `thread.id` 和 `entry.id`。输入仍在排队时，返回的 `run` 可能为 null。跟踪[会话事件流](agents-and-runs.md#follow-a-session-stream)，或读取该 Entry，直到 `assigned_run_id` 指出消费它的 Run：
 
 ```sh
 curl --fail-with-body "$A13N_URL/api/v1/threads/$THREAD_ID/inbox/$ENTRY_ID" \

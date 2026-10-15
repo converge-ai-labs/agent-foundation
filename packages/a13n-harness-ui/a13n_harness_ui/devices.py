@@ -9,9 +9,10 @@ import os
 from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from functools import partial
 from typing import Literal
 
-from a13n_envd_client import EIPClientError
+from a13n_envd_client import EIPClientError, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -36,6 +37,7 @@ from a13n_harness_ui.configuration.models import (
     WebSocketDeviceTransport,
     canonical_digest,
 )
+from a13n_harness_ui.environment_monitoring import MonitoringSource
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 
@@ -176,6 +178,26 @@ class DeviceConnections:
         for key, connections in tuple(self._websocket.items()):
             if key[1] == digest:
                 await connections.close()
+
+    def monitoring_sources(self, resources: Iterable[DeviceResource]) -> Iterable[MonitoringSource]:
+        for resource in resources:
+            yield MonitoringSource(
+                id=resource.id,
+                name=resource.name,
+                transport=resource.transport.kind,
+                revision=canonical_digest(resource.model_dump(mode="json", exclude={"name"})),
+                revoked=isinstance(resource.authentication, PairedDeviceAuthentication)
+                and resource.authentication.revoked,
+                acquire=partial(self.acquire_device, resource),
+            )
+
+    async def acquire_device(self, resource: DeviceResource) -> EIPDeviceConnection:
+        """Borrow the App's authenticated carrier without opening an execution Session."""
+        if isinstance(resource.transport, HttpDeviceTransport):
+            return await (await self._http_runtime(resource)).acquire_device(expected_device_id=resource.device_id)
+        return await (await self._websocket_connections(resource)).acquire_device(
+            expected_device_id=resource.device_id, timeout=resource.transport.configuration.connection_timeout
+        )
 
     async def info(self, resource: DeviceResource) -> DeviceInfo:
         summary = DeviceSummary.from_resource(resource)

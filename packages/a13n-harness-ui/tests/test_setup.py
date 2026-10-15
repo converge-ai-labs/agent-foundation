@@ -442,7 +442,7 @@ async def test_native_preflight_never_resolves_envd(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_sandbox_preflight_uses_production_denied_network_and_does_not_downgrade(
+async def test_sandbox_preflight_uses_production_boundary_and_does_not_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from a13n_harness.environment.models import EnvironmentError

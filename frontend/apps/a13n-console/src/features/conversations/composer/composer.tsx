@@ -34,6 +34,7 @@ export function Composer({
   disabled = false,
   agentName,
   options,
+  contextUsage,
   stop,
   stopping = false,
 }: {
@@ -47,6 +48,8 @@ export function Composer({
   agentName?: string;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
+  /** Last reported context, beside the send control. */
+  contextUsage?: ReactNode;
   /** Interrupts the active run; the empty-draft send button becomes Stop. */
   stop?: () => void;
   stopping?: boolean;
@@ -253,6 +256,7 @@ export function Composer({
         <span className={styles.hint}>
           {stopMode ? t("Esc stops") : t("Enter to send")}
         </span>
+        {contextUsage}
         {stopMode ? (
           <Button
             type="button"

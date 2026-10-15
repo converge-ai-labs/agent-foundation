@@ -36,6 +36,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import (
     CompactionCapability,
+    FileContextCapability,
     SubagentCapability,
     SubagentOperator,
     UserInteractionCapability,
@@ -326,6 +327,7 @@ class _Host:
         features: list[AbstractCapability[AgentContext]] = [
             *self.capabilities(agent),
             DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets)),
+            FileContextCapability(),
             self._permissions(agent),
             # Compacts at the agent's threshold of the model's context window.
             CompactionCapability(),

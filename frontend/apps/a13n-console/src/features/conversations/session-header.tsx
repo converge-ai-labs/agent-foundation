@@ -31,7 +31,6 @@ import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
-import { SessionMemory } from "./session-memory";
 import { ThreadMountsDialog } from "./thread-mounts";
 import styles from "./conversations.module.css";
 
@@ -114,7 +113,6 @@ export function SessionHeader({
         </span>
       </div>
       <div className={styles.sessionControls}>
-        <SessionMemory sessionId={sessionId} />
         {active && run.data && (
           <span className={styles.headerState}>
             <StatePill state={run.data.status} />

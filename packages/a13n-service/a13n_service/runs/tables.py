@@ -423,6 +423,8 @@ class RunRow(Stamped, Base):
             """,
             trigger("runs", "guard_run"),
             _thread_pointer_check("runs"),
+            # A checkpoint commit keeps the run's version, so session streams send its state only on real changes.
+            unversioned=("checkpoint", "tail", "memory_cursors"),
         ),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)

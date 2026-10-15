@@ -21,6 +21,7 @@ from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCA
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
+    LocalEnvdMonitoringConfiguration,
     local_envd_path,
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
@@ -172,7 +173,8 @@ class LocalEnvdProfileConfiguration(BaseModel):
     launch: LocalEnvdLaunchConfiguration = Field(
         default_factory=lambda: LocalEnvdLaunchConfiguration(
             sandbox=RestrictedSandbox(mode="restricted", grants=()),
-            egress=EnvdNetworkConfiguration(mode="deny"),
+            egress=EnvdNetworkConfiguration(mode="inherit"),
+            monitoring=LocalEnvdMonitoringConfiguration(),
         )
     )
     session: LocalEnvdEnvironmentConfiguration = Field(default_factory=LocalEnvdEnvironmentConfiguration)

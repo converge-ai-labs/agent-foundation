@@ -147,12 +147,13 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
     assert run["status"] == "cancelled" and run["failure"]["code"] == "cancelled"
     listing = await runs_kit.items(executing, run["id"])
     assert listing["complete"] and runs_kit.texts(listing) == [("user", "write a long poem")]
-    assert listing["resume_after"] is not None
+    display = await runs_kit.tail(executing, run["id"])
+    assert display.resume_after is not None
     saved = await executing.runtime.redis.xrange(
-        f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
+        f"a13n:thread:{run['thread_id']}", min=display.resume_after, max=display.resume_after
     )
     assert saved and {"event", "item"} <= saved[0][1].keys()
-    assert int(saved[0][1]["sequence"]) <= int(listing["position"].split("-")[1])
+    assert int(saved[0][1]["sequence"]) <= display.position.sequence
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     # The request carried the input and its checkpoint committed before the call: it was consumed.
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
@@ -224,7 +225,7 @@ async def test_a_draining_worker_hands_the_run_off(serve, settings, scripted_mod
         ]
 
 
-async def test_the_thread_stream_carries_live_output_and_resumes(executing, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_the_session_stream_carries_live_output(executing, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(executing, scripted_model)
     gate = asyncio.Event()
     scripted_model.say("Streaming reply", gate=gate)
@@ -235,40 +236,25 @@ async def test_the_thread_stream_carries_live_output_and_resumes(executing, scri
             json=runs_kit.message(agent, "stream this"),
             headers=runs_kit.fresh_key(),
         )
-        thread_id = created.json()["thread"]["id"]
-        url = f"{base}{executing.api}/threads/{thread_id}/stream"
+        run_id = created.json()["run"]["id"]
+        url = f"{base}{executing.api}/sessions/{created.json()['thread']['session_id']}/stream"
         async with runs_kit.frames(url, headers) as stream:
-            before = await runs_kit.until(stream, lambda frame: frame[0] == "boundary")
-            # The input the run was offered streams before the checkpoint that consumed it.
-            display = DisplayFold(created.json()["run"]["id"], attempt=1)
-            for event, _, data in before:
-                if event == "delta":
-                    display.fold([data["event"]])
-            inputs = [
-                item.content.get("text")
-                for item in display.items.values()
-                if item.kind == "text_message" and item.content.get("role") == "user"
-            ]
-            assert "stream this" in inputs
-            first_delta = next(entry_id for event, entry_id, _ in before if event == "delta")
+            before = await runs_kit.until(stream, lambda frame: frame[0] == "items")
+            # The deltas after the run's items stream its reply before the run seals.
+            display = DisplayFold(run_id, attempt=1)
             gate.set()
             after = await runs_kit.until(
-                stream, lambda frame: frame[0] == "delta" and "Streaming reply" in str(frame[2])
+                stream, lambda frame: frame[0] == "items" and frame[2]["complete"] and frame[2]["run_id"] == run_id
             )
-        assert all(
-            data["item"] is None or data["item"]["id"].startswith("itm_")
-            for event, _, data in after
-            if event == "delta"
-        )
-
-        # Resuming after the first delta continues its sequence without a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": first_delta}) as resumed:
-            event, _, data = await anext(resumed)
-            assert event == "delta" and data["sequence"] == 2
-        # A position that is not one is refused, instead of a gap the client would reconnect after forever.
-        stream_path = f"{executing.api}/threads/{thread_id}/stream"
-        malformed = await executing.client.get(stream_path, headers={**headers, "last-event-id": "latest"})
-        assert malformed.status_code == 400, malformed.text
+        assert before[0][0] == "thread" and before[0][2]["thread"]["id"] == created.json()["thread"]["id"]
+        for event, _, data in after:
+            if event == "delta":
+                display.fold([data["event"]])
+                assert data["item"] is None or data["item"]["id"].startswith("itm_")
+        assert "Streaming reply" in [
+            item.content.get("text") for item in display.items.values() if item.kind == "text_message"
+        ]
+        assert runs_kit.texts(after[-1][2]) == [("user", "stream this"), ("assistant", "Streaming reply")]
 
 
 async def test_a_run_stops_when_its_principal_loses_authority(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -383,13 +369,14 @@ async def test_an_admission_refusal_prevents_the_call_and_fails_the_run(service,
     assert scripted_model.requests.empty()
     assert [(call.run_id, call.source) for call in policy.calls] == [(run_id, "agent")]
     assert policy.calls[0].call_id and policy.calls[0].model_id is not None
-    listing = await runs_kit.items(service, run_id)
-    assert listing["complete"] and listing["resume_after"] is not None
+    assert (await runs_kit.items(service, run_id))["complete"]
+    display = await runs_kit.tail(service, run_id)
+    assert display.resume_after is not None
     saved = await service.runtime.redis.xrange(
-        f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
+        f"a13n:thread:{run['thread_id']}", min=display.resume_after, max=display.resume_after
     )
     assert saved and {"event", "item"} <= saved[0][1].keys()
-    assert int(saved[0][1]["sequence"]) <= int(listing["position"].split("-")[1])
+    assert int(saved[0][1]["sequence"]) <= display.position.sequence
 
 
 async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

@@ -1,7 +1,7 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { DisplayNormalizer, isItemRef } from "a13n-ui/display";
-import { createClient, type ThreadDelta } from "../../service-client";
-import { fixtureRun } from "./transcript/fixture";
+import { createClient, type SessionDelta } from "../../service-client";
+import { fixtureRun, fixtureThread } from "./transcript/fixture";
 import {
   applyDelta,
   comparePositions,
@@ -10,7 +10,16 @@ import {
   readFullDisplay,
   type DisplayItem,
 } from "./display";
-import { RunDisplayState } from "./run-display-state";
+import { SessionDisplays } from "./session-displays";
+
+let frames: (() => void)[] = [];
+const nextFrame = () => frames.splice(0).forEach((frame) => frame());
+beforeEach(() => {
+  frames = [];
+  vi.stubGlobal("requestAnimationFrame", (frame: () => void) =>
+    frames.push(frame),
+  );
+});
 
 const item = (sequence = 1, text = "Hello"): DisplayItem => ({
   id: "message",
@@ -23,7 +32,8 @@ const item = (sequence = 1, text = "Hello"): DisplayItem => ({
   ended_at: null,
   content: { text, role: "assistant", messageId: "m" },
 });
-const delta = (sequence: number, text = "!"): ThreadDelta => ({
+const delta = (sequence: number, text = "!"): SessionDelta => ({
+  thread_id: "thread_2",
   run_id: "run_2",
   attempt: 1,
   sequence,
@@ -35,11 +45,15 @@ const delta = (sequence: number, text = "!"): ThreadDelta => ({
     ordinal: 1,
   },
 });
-const baseline = (sequence: number, complete = false) => ({
-  run: fixtureRun(),
-  baseline: true,
-  items: [item(sequence)],
-  position: `1-${sequence}`,
+const snapshot = (
+  items: DisplayItem[],
+  { first = 1, complete = false } = {},
+) => ({
+  thread_id: "thread_2",
+  run_id: "run_2",
+  first,
+  items,
+  continuation: null,
   complete,
 });
 
@@ -48,7 +62,11 @@ it("reads the committed display of one Run", async () => {
     expect(new URL((input as Request).url).pathname).toBe(
       "/api/v1/runs/run_2/items",
     );
-    return Response.json(baseline(4, true));
+    return Response.json({
+      run: fixtureRun(),
+      items: [item(4)],
+      complete: true,
+    });
   });
   const client = createClient({
     baseUrl: "https://test.invalid",
@@ -56,7 +74,7 @@ it("reads the committed display of one Run", async () => {
     fetch,
   });
   expect(await readDisplay(client, "ws_1", "run_2")).toMatchObject({
-    position: "1-4",
+    items: [item(4)],
     complete: true,
   });
 });
@@ -106,120 +124,91 @@ it("does not append live deltas to a saved preview or lose the full-content refe
   expect(items.get("message")?.last_stream_id).toBe("1-2");
 });
 
-it("rejects stale durable baselines but replays a valid newer baseline's suffix", () => {
-  const state = new RunDisplayState();
-  state.reconcile(baseline(5), 1);
-  state.receive(delta(6), "6-0");
-  expect(state.reconcile(baseline(3), 1)).toBe(false);
-  expect(state.position).toBe("1-6");
-  expect(state.items.get("message")?.content.text).toBe("Hello!");
-  state.receive(delta(7), "7-0");
-  state.reconcile(baseline(6), 1);
-  expect(state.position).toBe("1-7");
-  expect(state.items.get("message")?.content.text).toBe("Hello!");
+const thread = (current?: string) => ({
+  thread: fixtureThread({ id: "thread_2", current_run_id: current ?? null }),
+  current_run: current ? fixtureRun({ id: current }) : null,
+  last_run: null,
+  entries: [],
 });
+const text = (displays: SessionDisplays) =>
+  displays.get("run_2")?.items.map((item) => item.content.text);
 
-it("refreshes covered boundaries and releases acknowledged pending batches", () => {
-  const state = new RunDisplayState();
-  state.reconcile(baseline(1), 1);
-  for (let sequence = 2; sequence < 2100; sequence++) {
-    state.receive(delta(sequence), `${sequence}-0`);
-    if (sequence % 50 === 0) {
-      expect(state.boundary(1, sequence, `${sequence}-1`)).toBe(true);
-      state.reconcile(baseline(sequence), 1);
-    }
-  }
-  expect(state.incomplete).toBe(false);
-});
-
-it.each(["count", "bytes"])(
-  "requires durable coverage after pending %s overflow",
-  (limit) => {
-    const state = new RunDisplayState();
-    state.reconcile(baseline(1), 1);
-    const end = limit === "count" ? 1030 : 3;
-    for (let sequence = 2; sequence <= end; sequence++)
-      state.receive(
-        delta(sequence, limit === "bytes" ? "x".repeat(600000) : "x"),
-        `${sequence}-0`,
-      );
-    expect(state.incomplete).toBe(true);
-    state.reconcile(baseline(2), 1);
-    expect(state.incomplete).toBe(true);
-    state.reconcile(baseline(end), 1);
-    expect(state.incomplete).toBe(false);
-  },
-);
-
-it("does not let an old queued frame clear unknown transport loss", () => {
-  const state = new RunDisplayState();
-  state.reconcile(baseline(1), 1);
-  state.gap();
-  state.receive(delta(2), "2-0");
-  expect(state.incomplete).toBe(true);
-  state.reconcile(baseline(1), 1);
-  expect(state.incomplete).toBe(true);
-  state.boundary(1, 2, "2-1");
-  state.reconcile(baseline(2), 1);
-  expect(state.incomplete).toBe(false);
-});
-
-it("advances read progress through a gap without claiming the partial text is complete", () => {
-  const state = new RunDisplayState();
-  state.reconcile(baseline(1), 1);
-  state.receive(delta(3, "tail"), "3-0");
-  state.receive(
-    {
-      ...delta(4),
-      event: { type: "TEXT_MESSAGE_END", messageId: "m" },
-      item: { ...delta(4).item!, state: "completed" },
-    },
-    "4-0",
+it("replaces held items from a snapshot's first ordinal on and folds later deltas", () => {
+  const displays = new SessionDisplays();
+  const done = { ...item(1, "Done"), id: "done", state: "completed" as const };
+  displays.items(snapshot([done, { ...item(1), ordinal: 2 }]));
+  displays.delta(delta(2));
+  expect(text(displays)).toEqual(["Done", "Hello!"]);
+  // A repair from ordinal 2 keeps the final item before it.
+  displays.items(
+    snapshot([{ ...item(3, "Hello!!"), ordinal: 2 }], { first: 2 }),
   );
-  expect(state.position).toBe("1-4");
-  expect(state.items.get("message")?.content).toMatchObject({
-    text: "Hellotail",
+  expect(displays.get("run_2")).toMatchObject({ first: 1, partial: false });
+  expect(text(displays)).toEqual(["Done", "Hello!!"]);
+});
+
+it("holds a run's output after a gap until its next items", () => {
+  const displays = new SessionDisplays();
+  displays.items(snapshot([item(1)]));
+  displays.gap("run_2");
+  displays.delta(delta(5, " lost"));
+  expect(displays.get("run_2")).toMatchObject({ partial: true });
+  expect(displays.get("run_2")?.items[0]?.content).toMatchObject({
+    text: "Hello",
     incomplete: true,
   });
-  expect(state.incomplete).toBe(true);
-  state.reconcile(baseline(1), 1);
-  expect(state.incomplete).toBe(true);
-  state.reconcile(baseline(4), 1);
-  expect(state.incomplete).toBe(false);
-  expect(state.items.get("message")?.content.incomplete).toBeUndefined();
+  displays.items(snapshot([item(5, "Hello again")]));
+  displays.delta(delta(6));
+  expect(displays.get("run_2")).toMatchObject({ partial: false });
+  expect(text(displays)).toEqual(["Hello again!"]);
+  // The final display ends live output.
+  displays.items(snapshot([item(6, "Hello again!")], { complete: true }));
+  displays.delta(delta(7));
+  expect(text(displays)).toEqual(["Hello again!"]);
 });
 
-it("rejects a regressing terminal baseline and discards provisional output on a new attempt", () => {
-  const state = new RunDisplayState();
-  state.reconcile(baseline(5), 1);
-  state.receive(delta(6), "6-0");
-  expect(state.reconcile(baseline(3, true), 1)).toBe(false);
-  expect(state.position).toBe("1-6");
-  expect(state.items.get("message")?.content.text).toBe("Hello!");
-  const active = new RunDisplayState();
-  active.reconcile(baseline(1), 1);
-  active.receive(delta(2), "2-0");
-  active.receive({ ...delta(1), attempt: 2, item: null }, "3-0");
-  expect(active.position).toBe("2-1");
-  expect(active.items.get("message")?.content.text).toBe("Hello");
+it("keeps no earlier items after a delta fails to apply", () => {
+  const displays = new SessionDisplays();
+  const done = { ...item(1, "Done"), id: "done", state: "completed" as const };
+  displays.items(snapshot([done, { ...item(1), ordinal: 2 }]));
+  displays.delta({ ...delta(2), event: null as never });
+  expect(displays.get("run_2")).toMatchObject({ partial: true });
+  // The stream does not know this display missed output, so earlier items are read again.
+  displays.items(
+    snapshot([{ ...item(9, "Hello all"), ordinal: 3 }], { first: 3 }),
+  );
+  expect(displays.get("run_2")).toMatchObject({ first: 3, partial: false });
+  expect(text(displays)).toEqual(["Hello all"]);
 });
 
-it("never installs a historical window as live state even if it advertises newer sealed coverage", () => {
-  const state = new RunDisplayState();
-  state.reconcile(baseline(1), 1);
-  state.gap("1-3");
-  const held = state.items;
-  expect(
-    state.reconcile(
-      { ...baseline(10, true), baseline: false, resume_after: "10-0" },
-      1,
-    ),
-  ).toBe(false);
-  expect(state.items).toBe(held);
-  expect(state.position).toBe("1-1");
-  expect(state.after).toBeUndefined();
-  expect(state.incomplete).toBe(true);
-  expect(state.read?.complete).toBe(false);
+it("replaces unfinished displays from each new connection's snapshot", () => {
+  const displays = new SessionDisplays();
+  const listener = vi.fn();
+  displays.subscribe("run_2", listener);
+  displays.items(
+    snapshot([
+      { ...item(1, "Earlier"), id: "earlier" },
+      { ...item(1), ordinal: 2 },
+    ]),
+  );
+  displays.connected();
+  // Items an earlier connection held may have missed output, even before the new first ordinal.
+  displays.items(
+    snapshot([{ ...item(9, "Hello all"), ordinal: 2 }], { first: 2 }),
+  );
+  expect(displays.get("run_2")).toMatchObject({ first: 2 });
+  expect(text(displays)).toEqual(["Hello all"]);
+  // A held run that ended while disconnected is dropped, so its committed display is read.
+  displays.connected();
+  expect(displays.thread(thread("run_3"))).toEqual(["run_2"]);
+  expect(displays.get("run_2")).toBeUndefined();
+  expect(listener).not.toHaveBeenCalled();
+  nextFrame();
+  expect(listener).toHaveBeenCalledOnce();
+  // On a live connection the thread frame precedes the run's final items, which keep it.
+  displays.items(snapshot([item(1)]));
+  expect(displays.thread(thread("run_3"))).toEqual([]);
+  expect(displays.get("run_2")).toBeDefined();
 });
 
 it("normalizes every intact raw suffix identically to the Python producer", async () => {
@@ -235,7 +224,7 @@ it("normalizes every intact raw suffix identically to the Python producer", asyn
   ) as {
     initial: import("a13n-ui/display").DisplayContinuation;
     steps: {
-      delta: ThreadDelta;
+      delta: SessionDelta;
       item?: DisplayItem;
       continuation: import("a13n-ui/display").DisplayContinuation;
     }[];
@@ -324,30 +313,24 @@ it("retains Host-selected grouping and native failure diagnostics with raw event
 
 it("keeps orphan tool arguments incomplete after END even if the suffix is valid JSON", async () => {
   const { presentItem, parseItemValue } = await import("./projection");
-  const state = new RunDisplayState();
-  state.reconcile({ ...baseline(1), items: [] }, 1);
+  const displays = new SessionDisplays();
+  displays.items(snapshot([]));
   const ref = {
     id: "tool",
     kind: "tool_call" as const,
     state: "in_progress" as const,
   };
-  state.receive(
-    {
-      ...delta(3),
-      item: ref,
-      event: { type: "TOOL_CALL_ARGS", toolCallId: "t", delta: "{}" },
-    },
-    "3-0",
-  );
-  state.receive(
-    {
-      ...delta(4),
-      item: ref,
-      event: { type: "TOOL_CALL_END", toolCallId: "t" },
-    },
-    "4-0",
-  );
-  const tool = state.items.get("tool")!;
+  displays.delta({
+    ...delta(3),
+    item: ref,
+    event: { type: "TOOL_CALL_ARGS", toolCallId: "t", delta: "{}" },
+  });
+  displays.delta({
+    ...delta(4),
+    item: ref,
+    event: { type: "TOOL_CALL_END", toolCallId: "t" },
+  });
+  const tool = displays.get("run_2")!.items[0]!;
   expect(tool.content).toMatchObject({
     arguments: "{}",
     incomplete: true,
@@ -355,7 +338,7 @@ it("keeps orphan tool arguments incomplete after END even if the suffix is valid
   });
   const presented = presentItem(tool);
   expect(parseItemValue(presented.arguments, presented.incomplete)).toBe("{}");
-  expect(state.incomplete).toBe(true);
+  expect(displays.get("run_2")?.partial).toBe(true);
 });
 
 it("keeps reply memory sources from END metadata without altering the answer", () => {
@@ -392,7 +375,13 @@ it("keeps reply memory sources from END metadata without altering the answer", (
   expect(isItemRef({ ...end.item, memory_sources: [null] })).toBe(false);
 });
 
-it("loads all pages of a large Run without using historical pages as a live baseline", async () => {
+const committed = (complete = false) => ({
+  run: fixtureRun(),
+  items: [item()],
+  complete,
+});
+
+it("loads all pages of a large Run, keeping the newest read's run and completion", async () => {
   const requests: URL[] = [];
   const items = Array.from({ length: 867 }, (_, index) => ({
     ...item(),
@@ -408,17 +397,9 @@ it("loads all pages of a large Run without using historical pages as a live base
       const after = url.searchParams.get("after");
       return Response.json(
         after === null
-          ? {
-              ...baseline(900),
-              items: items.slice(-200),
-              resume_after: "123-0",
-              continuation: { retained: true },
-            }
+          ? { ...committed(), items: items.slice(-200) }
           : {
-              ...baseline(0, true),
-              baseline: false,
-              position: null,
-              continuation: null,
+              ...committed(true),
               items: items.slice(
                 Number(after),
                 Number(after) + Number(url.searchParams.get("limit")),
@@ -429,14 +410,7 @@ it("loads all pages of a large Run without using historical pages as a live base
   });
   const result = await readFullDisplay(client, "ws_1", "run_2");
   expect(result.items).toEqual(items);
-  expect(result).toMatchObject({
-    baseline: true,
-    complete: false,
-    position: "1-900",
-    resume_after: "123-0",
-    continuation: { retained: true },
-    immutableBefore: 668,
-  });
+  expect(result).toMatchObject({ complete: false, immutableBefore: 668 });
   expect(requests.map((url) => url.search)).toEqual([
     "",
     "?after=0&limit=500",
@@ -461,8 +435,7 @@ it("reuses immutable pages but refreshes a former mutable tail before retaining 
       requests.push(url);
       const after = url.searchParams.get("after");
       return Response.json({
-        ...baseline(first),
-        baseline: after === null,
+        ...committed(),
         items:
           after === null
             ? [items[first - 1]]
@@ -511,7 +484,7 @@ it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
           "after",
         );
         return Response.json({
-          ...baseline(3),
+          ...committed(),
           items: (historical ? ordinals : [3]).map((ordinal) => ({
             ...item(),
             ordinal,

@@ -65,30 +65,50 @@ function setup() {
     response: new Response(),
     data: path.endsWith("overview")
       ? overview
-      : {
-          items: path.endsWith("models")
-            ? [
-                {
-                  model: "unknown",
-                  name: "Unpriced model",
-                  usage: { ...metrics, cost: null },
+      : path === "/api/v1/models"
+        ? {
+            items: [
+              {
+                key: "anthropic-claude-opus-5.5",
+                name: "NexusHub Claude Opus 5.5",
+                config: { model_name: "claude-opus-5.5" },
+                catalog_ref: {
+                  provider: "anthropic",
+                  model: "claude-opus-5.5",
                 },
-              ]
-            : [
-                {
-                  agent_id: "agent_one",
-                  name: options.params.query.cursor
-                    ? "Second page"
-                    : "Support assistant",
-                  usage: metrics,
-                  runs: overview.runs,
-                },
-              ],
-          next_cursor:
-            path.endsWith("agents") && !options.params.query.cursor
-              ? "cursor_next"
-              : null,
-        },
+              },
+            ],
+            next_cursor: null,
+          }
+        : {
+            items: path.endsWith("models")
+              ? [
+                  {
+                    model: "anthropic-claude-opus-5.5",
+                    name: "NexusHub Claude Opus 5.5",
+                    usage: metrics,
+                  },
+                  {
+                    model: "unknown",
+                    name: "Unpriced model",
+                    usage: { ...metrics, cost: null },
+                  },
+                ]
+              : [
+                  {
+                    agent_id: "agent_one",
+                    name: options.params.query.cursor
+                      ? "Second page"
+                      : "Support assistant",
+                    usage: metrics,
+                    runs: overview.runs,
+                  },
+                ],
+            next_cursor:
+              path.endsWith("agents") && !options.params.query.cursor
+                ? "cursor_next"
+                : null,
+          },
   }));
 }
 it("loads summaries, switches dimensions, pages, and keeps chart metric switches local", async () => {
@@ -109,10 +129,21 @@ it("loads summaries, switches dimensions, pages, and keeps chart metric switches
   expect(await screen.findByText("Second page")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "By model" }));
   expect(await screen.findByText("Unpriced model")).toBeTruthy();
+  const table = screen.getByRole("table", { name: "Usage breakdown" });
+  await waitFor(() =>
+    expect(table.querySelector("img")?.getAttribute("src")).toContain(
+      "claude-color.svg",
+    ),
+  );
+  expect(table.querySelectorAll("img")).toHaveLength(1);
   expect(
     screen.queryByRole("columnheader", { name: "Avg. run time" }),
   ).toBeNull();
-  expect(http.GET.mock.calls.at(-1)?.[1].params.query.cursor).toBeUndefined();
+  expect(
+    http.GET.mock.calls
+      .filter(([path]) => path === "/api/v1/usage/models")
+      .at(-1)?.[1].params.query.cursor,
+  ).toBeUndefined();
 });
 it("recovers from a query failure and displays empty usage", async () => {
   http.GET.mockRejectedValue(new Error("Usage unavailable"));

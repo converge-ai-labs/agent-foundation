@@ -79,7 +79,7 @@ curl -X POST "$A13N_URL/api/v1/threads" \
 
 ### Read the result
 
-The response contains `thread`, `entry`, and possibly `run`. If `run` is null, follow the [thread stream](agents-and-runs.md#follow-a-thread-stream) to observe acceptance. Otherwise, set `RUN_ID` to the returned run's `id` and read its status:
+The response contains `thread`, `entry`, and possibly `run`. If `run` is null, follow the [session stream](agents-and-runs.md#follow-a-session-stream) to observe acceptance. Otherwise, set `RUN_ID` to the returned run's `id` and read its status:
 
 ```sh
 RUN_ID=run_replace_with_the_returned_id
@@ -88,6 +88,6 @@ curl "$A13N_URL/api/v1/runs/$RUN_ID" -H "Authorization: Bearer $A13N_API_KEY"
 
 Repeat this request until the run is `completed`, `waiting`, `failed`, or `cancelled`. A completed run's answer is in `output`. A waiting run needs an [answer, approval, or client tool result](agents-and-runs.md#waits-approvals-and-questions); inspect the result of a failed run with the [troubleshooting guide](monitoring.md#troubleshoot-a-request-or-run).
 
-Instead of polling, follow the thread stream or subscribe to [webhooks](files-and-webhooks.md#webhooks). The run continues when the client disconnects. Send follow-ups to `POST …/threads/{thread_id}/inbox` to continue the thread.
+Instead of polling, follow the session stream or subscribe to [webhooks](files-and-webhooks.md#webhooks). The run continues when the client disconnects. Send follow-ups to `POST …/threads/{thread_id}/inbox` to continue the thread.
 
 See [HTTP conventions](http.md) for authentication, pagination, conditional writes, and errors; the [API reference](api-reference/index.md) lists request and response schemas. Match your [SDK's supported contract](sdks.md#keep-version-ownership-clear) to your deployed Service version.

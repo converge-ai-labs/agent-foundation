@@ -5,7 +5,8 @@ export interface SseFrame {
   event: string;
   data: string;
 }
-const maxFrameCharacters = 1024 * 1024;
+/** A run's `items` frame holds its display tail, and a repair the pages before it. */
+const maxFrameCharacters = 64 * 1024 * 1024;
 
 /** Decode incremental UTF-8 and LF/CRLF/CR framing, including split delimiters. */
 export async function* decodeSse(

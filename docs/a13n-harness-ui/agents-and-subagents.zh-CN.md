@@ -338,6 +338,8 @@ Capability 自行定义 JSON 配置 schema。见[工具与扩展用法](extensio
 
 Harness UI 还读取根 YAML 旁和工作目录中的 `AGENTS.md`。这些是 user 角色上下文指导，保留在原生历史中，但在普通 TUI 和 `/history` 展示中隐藏。不扫描祖先目录，不回退到 `RULES.md` 或 `AGENTS.override.md`。全局指导随已接受配置捕获；工作目录指导使用 Environment 有界读取器。两种来源都不改变执行权限。
 
+工作目录文件上下文还会列出项目指导入口：直属子目录中的 `AGENTS.md`，以及工作目录和直属子目录中的 `.agents/skills`。它不会读取子目录的指导正文或 Skill 描述。Agent 按需查看相关项目指导，已有的 Skill 目录保持不变。发现过程最多检查 64 个非隐藏条目，提供最多 8 KiB 的提示，并标记不完整结果。要关闭这些提示，可显式选择 `file_context` 并设置 `configuration: {include_project_guidance: false}`。
+
 ## 导入外部定义
 
 TUI 中的 `/import` 提供 Codex 或 Claude Code 来源选择、范围、预览，以及显式的**导入并启用** 确认。它保留角色指令，同时继承父级 Model 和工具。保存导入文件和将其加入 Agent 角色清单是两个独立步骤；如果只有一步成功，Harness UI 会报告，供你重试另一步。

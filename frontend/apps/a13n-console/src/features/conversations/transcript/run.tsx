@@ -191,7 +191,6 @@ function RunBody({
                 runId={id}
                 thread={thread}
                 level={level}
-                followed={id === run.id}
                 jumpToDock={scroll.jumpToLatest}
                 prefill={id === run.id ? prefill : undefined}
               />

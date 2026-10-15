@@ -23,14 +23,12 @@ export function RunEntry({
   runId,
   thread,
   level,
-  followed,
   prefill,
   jumpToDock,
 }: {
   runId: string;
   thread: Schema["ThreadView"];
   level: ViewLevel;
-  followed: boolean;
   prefill?: () => void;
   jumpToDock: () => void;
 }) {
@@ -40,7 +38,7 @@ export function RunEntry({
   const agent = useAgent(run?.agent_id);
   const agentName = agent.data?.name;
   const agentImageUrl = agent.data?.image_url;
-  const live = useRunDisplay(runId, { live: followed });
+  const live = useRunDisplay(runId);
   const { number } = useThreadRuns(level === "debug" ? thread.id : "");
   const timeline = useMemo(
     () =>
@@ -73,11 +71,8 @@ export function RunEntry({
               )}
         </p>
       )}
-      {live.state === "disconnected" && (
-        <ErrorNotice
-          error={live.error ?? new Error(t("Live connection disconnected."))}
-          retry={live.reconnect}
-        />
+      {live.error != null && (
+        <ErrorNotice error={live.error} retry={live.reconnect} />
       )}
       {level === "debug" ? (
         <DebugRunSection
@@ -97,7 +92,7 @@ export function RunEntry({
             agentName={agentName}
             agentImageUrl={agentImageUrl}
           >
-            {active && <WorkingRow connected={live.state === "connected"} />}
+            {active && <WorkingRow connected={live.connected} />}
             {(run.failure != null || stopped) && (
               <FailureNotice
                 failure={run.failure}

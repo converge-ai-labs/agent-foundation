@@ -473,6 +473,63 @@
         }
       }
     },
+    "/api/environment-monitoring": {
+      "get": {
+        "summary": "Environment Monitoring",
+        "operationId": "environment_monitoring_api_environment_monitoring_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment-monitoring/{target_id}": {
+      "get": {
+        "summary": "Environment Metrics",
+        "operationId": "environment_metrics_api_environment_monitoring__target_id__get",
+        "parameters": [
+          {
+            "name": "target_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/devices": {
       "get": {
         "summary": "Devices",
@@ -7349,6 +7406,134 @@
         ],
         "title": "CatalogReference"
       },
+      "CgroupMetrics": {
+        "properties": {
+          "cpu_usage_usec": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Usage Usec"
+          },
+          "cpu_user_usec": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu User Usec"
+          },
+          "cpu_system_usec": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu System Usec"
+          },
+          "cpu_periods_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Periods Total"
+          },
+          "cpu_throttled_periods_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Throttled Periods Total"
+          },
+          "cpu_throttled_usec": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Throttled Usec"
+          },
+          "cpu_max": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CpuLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory_current_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Current Bytes"
+          },
+          "memory_max": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory_events": {
+            "$ref": "#/components/schemas/MemoryEvents"
+          },
+          "pressure": {
+            "$ref": "#/components/schemas/Pressures"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "memory_events",
+          "pressure"
+        ],
+        "title": "CgroupMetrics"
+      },
       "ChangesPage": {
         "additionalProperties": false,
         "properties": {
@@ -8484,6 +8669,126 @@
         ],
         "title": "CopilotSubscriptionAuthentication"
       },
+      "CpuLimit": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UnlimitedCpuLimit"
+          },
+          {
+            "$ref": "#/components/schemas/LimitedCpuLimit"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "limited": "#/components/schemas/LimitedCpuLimit",
+            "unlimited": "#/components/schemas/UnlimitedCpuLimit"
+          }
+        }
+      },
+      "CpuTimeSeconds": {
+        "properties": {
+          "user": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "nice": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nice"
+          },
+          "system": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System"
+          },
+          "idle": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idle"
+          },
+          "iowait": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iowait"
+          },
+          "irq": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irq"
+          },
+          "softirq": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Softirq"
+          },
+          "steal": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CpuTimeSeconds"
+      },
       "DecisionBatchView": {
         "properties": {
           "continuation_id": {
@@ -9127,6 +9432,99 @@
         "title": "EnvironmentCredentialSource",
         "type": "object"
       },
+      "EnvironmentObservation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "http",
+              "websocket",
+              "stdio"
+            ],
+            "title": "Transport"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Roots",
+            "default": []
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "not_started",
+              "disabled",
+              "ready",
+              "stale",
+              "offline",
+              "revoked"
+            ],
+            "title": "Status"
+          },
+          "system_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricsSample"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_interval_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Interval Ms"
+          },
+          "age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Ms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "transport",
+          "status"
+        ],
+        "title": "EnvironmentObservation"
+      },
       "EnvironmentOutcomeView": {
         "additionalProperties": false,
         "properties": {
@@ -9755,6 +10153,111 @@
         ],
         "title": "FileTransferAccess"
       },
+      "FilesystemMetrics": {
+        "properties": {
+          "total_bytes": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Total Bytes"
+          },
+          "available_bytes": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Available Bytes"
+          },
+          "free_bytes": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Free Bytes"
+          },
+          "total_inodes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Inodes"
+          },
+          "free_inodes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Inodes"
+          },
+          "available_inodes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Inodes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_bytes",
+          "available_bytes",
+          "free_bytes"
+        ],
+        "title": "FilesystemMetrics"
+      },
+      "FilesystemObservation": {
+        "properties": {
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilesystemMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FilesystemObservation"
+      },
+      "Gauge": {
+        "properties": {
+          "average": {
+            "type": "number",
+            "title": "Average"
+          },
+          "peak": {
+            "type": "number",
+            "title": "Peak"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "average",
+          "peak"
+        ],
+        "title": "Gauge"
+      },
       "GitChange": {
         "properties": {
           "path": {
@@ -10336,6 +10839,55 @@
         "title": "HarnessModelCharacteristics",
         "description": "Resolved Harness characteristics of the active Agent model."
       },
+      "HistoryPoint": {
+        "properties": {
+          "minute": {
+            "type": "integer",
+            "title": "Minute"
+          },
+          "segment": {
+            "type": "integer",
+            "title": "Segment"
+          },
+          "cpu_busy_percent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory_used_bytes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cgroup_memory_bytes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "minute",
+          "segment"
+        ],
+        "title": "HistoryPoint"
+      },
       "ImageInputPolicy": {
         "properties": {
           "split_large_images": {
@@ -10388,6 +10940,57 @@
         "description": "Preparation limits for one model's image input, not native ModelSettings."
       },
       "JsonValue": {},
+      "LimitedCpuLimit": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "limited",
+            "title": "Kind"
+          },
+          "quota_usec": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Quota Usec"
+          },
+          "period_usec": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Period Usec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "quota_usec",
+          "period_usec"
+        ],
+        "title": "LimitedCpuLimit"
+      },
+      "LimitedMemoryLimit": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "limited",
+            "title": "Kind"
+          },
+          "bytes": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "bytes"
+        ],
+        "title": "LimitedMemoryLimit"
+      },
       "ListenerFeatures": {
         "properties": {
           "shared_drafts": {
@@ -10795,6 +11398,91 @@
         "title": "MemoryAgentSource",
         "description": "Application-owned organizer; not a selectable Agent resource."
       },
+      "MemoryEvents": {
+        "properties": {
+          "low": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "oom": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oom"
+          },
+          "oom_kill": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oom Kill"
+          },
+          "oom_group_kill": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oom Group Kill"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MemoryEvents"
+      },
       "MemoryFileEntry": {
         "properties": {
           "path": {
@@ -10853,6 +11541,23 @@
           "text"
         ],
         "title": "MemoryFileText"
+      },
+      "MemoryLimit": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UnlimitedMemoryLimit"
+          },
+          {
+            "$ref": "#/components/schemas/LimitedMemoryLimit"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "limited": "#/components/schemas/LimitedMemoryLimit",
+            "unlimited": "#/components/schemas/UnlimitedMemoryLimit"
+          }
+        }
       },
       "MemoryOrganizationStatus": {
         "properties": {
@@ -10924,6 +11629,63 @@
           "availability"
         ],
         "title": "MemoryOrganizationStatus"
+      },
+      "MetricsSample": {
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "sampled_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sampled At"
+          },
+          "sample_age_ms": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Sample Age Ms"
+          },
+          "collection_duration_ms": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Collection Duration Ms"
+          },
+          "system": {
+            "$ref": "#/components/schemas/SystemMetrics"
+          },
+          "cgroup_v2": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CgroupMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filesystems": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FilesystemObservation"
+            },
+            "type": "object",
+            "title": "Filesystems"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sequence",
+          "sampled_at",
+          "sample_age_ms",
+          "collection_duration_ms",
+          "system"
+        ],
+        "title": "MetricsSample"
       },
       "ModelAuthentication": {
         "oneOf": [
@@ -11484,6 +12246,64 @@
         ],
         "title": "ModelUsageView"
       },
+      "MonitoringCatalog": {
+        "properties": {
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentObservation"
+            },
+            "type": "array",
+            "title": "Environments"
+          },
+          "omitted": {
+            "type": "integer",
+            "title": "Omitted"
+          },
+          "capacity": {
+            "type": "integer",
+            "title": "Capacity",
+            "default": 64
+          },
+          "retention_minutes": {
+            "type": "integer",
+            "title": "Retention Minutes",
+            "default": 1440
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "environments",
+          "omitted"
+        ],
+        "title": "MonitoringCatalog"
+      },
+      "MonitoringDetail": {
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/EnvironmentObservation"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPoint"
+            },
+            "type": "array",
+            "title": "History"
+          },
+          "retention_minutes": {
+            "type": "integer",
+            "title": "Retention Minutes",
+            "default": 1440
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "environment",
+          "history"
+        ],
+        "title": "MonitoringDetail"
+      },
       "NativeInputMediaKind": {
         "type": "string",
         "enum": [
@@ -11639,6 +12459,15 @@
         ],
         "title": "ObjectRef",
         "type": "object"
+      },
+      "OperatingSystem": {
+        "type": "string",
+        "enum": [
+          "linux",
+          "macos",
+          "windows"
+        ],
+        "title": "OperatingSystem"
       },
       "PageFocus": {
         "additionalProperties": false,
@@ -11964,6 +12793,107 @@
         ],
         "title": "PresenceFrame",
         "type": "object"
+      },
+      "Pressure": {
+        "properties": {
+          "some": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PressureLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "full": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PressureLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "Pressure"
+      },
+      "PressureLevel": {
+        "properties": {
+          "avg10_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Avg10 Percent"
+          },
+          "avg60_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Avg60 Percent"
+          },
+          "avg300_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Avg300 Percent"
+          },
+          "total_usec": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Total Usec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "avg10_percent",
+          "avg60_percent",
+          "avg300_percent",
+          "total_usec"
+        ],
+        "title": "PressureLevel"
+      },
+      "Pressures": {
+        "properties": {
+          "cpu": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "io": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "Pressures"
       },
       "ProjectDefaults": {
         "properties": {
@@ -13773,6 +14703,146 @@
           "questions"
         ],
         "title": "StructuredQuestionRequestView"
+      },
+      "SystemInfo": {
+        "properties": {
+          "os": {
+            "$ref": "#/components/schemas/OperatingSystem"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os Version"
+          },
+          "kernel_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kernel Version"
+          },
+          "architecture": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "cpu_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "os"
+        ],
+        "title": "SystemInfo"
+      },
+      "SystemMetrics": {
+        "properties": {
+          "cpu_busy_percent": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Busy Percent"
+          },
+          "cpu_time_seconds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CpuTimeSeconds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logical_cpu_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4294967295.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logical Cpu Count"
+          },
+          "memory_total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Bytes"
+          },
+          "memory_available_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Available Bytes"
+          },
+          "pressure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SystemMetrics"
       },
       "TaskPage": {
         "properties": {
@@ -16111,6 +17181,36 @@
         ],
         "title": "TranscriptTurn",
         "description": "One ordinary input and its execution, including steering and resumes."
+      },
+      "UnlimitedCpuLimit": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "unlimited",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "UnlimitedCpuLimit"
+      },
+      "UnlimitedMemoryLimit": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "unlimited",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "UnlimitedMemoryLimit"
       },
       "UrlInputSupport": {
         "properties": {

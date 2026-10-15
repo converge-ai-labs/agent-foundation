@@ -36,7 +36,7 @@ Console uses Service permission hints for navigation and controls; the Service a
 
 ## Service contract
 
-Console owns `src/service-client/`; it does not install, build, or release with an external Service SDK. HTTP types are generated from `proto/a13n-service/openapi.json`, not edited by hand. After changing a Service route or model, run `make service-contract-generate`; `make service-contract-check` detects drift without modifying files. Transport, session/CSRF, and thread stream tests run against the internal client.
+Console owns `src/service-client/`; it does not install, build, or release with an external Service SDK. HTTP types are generated from `proto/a13n-service/openapi.json`, not edited by hand. After changing a Service route or model, run `make service-contract-generate`; `make service-contract-check` detects drift without modifying files. Transport, session/CSRF, and session stream tests run against the internal client.
 
 ## Validation and production build
 

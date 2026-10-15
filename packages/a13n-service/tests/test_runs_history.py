@@ -249,7 +249,6 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     await (await runs_kit.attempt(service, runtime=runtime))
 
     newest = await runs_kit.items(service, run_id)
-    assert newest["baseline"] is True and newest["continuation"] is not None
     count = newest["items"][-1]["ordinal"]
     assert count > 32
     assert [item["ordinal"] for item in newest["items"]] == list(range(count - len(newest["items"]) + 1, count + 1)), (
@@ -268,12 +267,7 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     async def window(**params: int) -> list[int]:
         response = await service.client.get(f"{service.api}/runs/{run_id}/items", params=params)
         assert response.status_code == 200, response.text
-        body = response.json()
-        historical = "before" in params or "after" in params
-        assert body["baseline"] is not historical
-        if historical:
-            assert body["continuation"] is None and body["position"] is None and body["resume_after"] is None
-        return [item["ordinal"] for item in body["items"]]
+        return [item["ordinal"] for item in response.json()["items"]]
 
     # The newest items, then each earlier window, until the first item.
     windows, before = [await window(limit=10)], None
@@ -378,13 +372,9 @@ async def test_default_window_includes_whole_active_tail_beyond_limit(service, s
     monkeypatch.setattr(checkpoints, "load_tail", load_tail)
     path = f"{service.api}/runs/{run_id}/items"
     default = (await service.client.get(path, params={"limit": 2})).json()
-    assert default["baseline"] is True and default["complete"] is False
+    assert default["complete"] is False
     assert len(default["items"]) == 10
     assert all(item["state"] == "in_progress" for item in default["items"])
-    assert default["continuation"]["next_ordinal"] == 11
     for window in ({"before": 5}, {"after": 2}):
         historical = (await service.client.get(path, params={"limit": 2, **window})).json()
         assert [item["ordinal"] for item in historical["items"]] == [3, 4]
-        assert historical["baseline"] is False
-        assert historical["continuation"] is None and historical["position"] is None
-        assert historical["resume_after"] is None

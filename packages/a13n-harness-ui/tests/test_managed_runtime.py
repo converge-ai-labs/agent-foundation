@@ -55,7 +55,7 @@ async def test_unselected_release_fails_before_download(tmp_path: Path, monkeypa
 
 
 @pytest.mark.parametrize(
-    "version,expected", [("0.0.0", "0.0.0"), ("0.0.5", "0.0.5"), ("12.34.56rc78", "12.34.56-rc.78")]
+    "version,expected", [("0.0.0", "0.0.0"), ("0.0.5", "0.0.5"), ("0.3.0", "0.3.0"), ("12.34.56rc78", "12.34.56-rc.78")]
 )
 def test_installed_client_selects_native_version(monkeypatch: pytest.MonkeyPatch, version: str, expected: str) -> None:
     def installed_version(name: str) -> str:

@@ -58,7 +58,7 @@ PostgreSQL 保存 Service 的持久状态。请为部署设置连接和语句超
 
 ### Redis
 
-Redis 保存限流计数器、worker 唤醒和临时线程事件；PostgreSQL 保存持久状态。Redis 不可用时，已保存结果仍可读取，worker 通过扫描领取任务，但实时事件流不可用且跳过限流。就绪检查报告 `"degraded": ["redis"]`。
+Redis 保存限流计数器、worker 唤醒和会话事件流使用的临时运行输出；PostgreSQL 保存持久状态。Redis 不可用时，已保存结果仍可读取，worker 通过扫描领取任务，但会话事件流不含实时输出，且跳过限流。就绪检查报告 `"degraded": ["redis"]`。
 
 ### 对象存储
 

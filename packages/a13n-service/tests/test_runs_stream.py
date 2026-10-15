@@ -1,4 +1,4 @@
-"""The thread stream: coalesced fragments, trimming at boundaries, and what readers receive after a trim."""
+"""Thread output in Redis, coalesced and trimmed at boundaries, and the session stream that reads it."""
 
 import asyncio
 import json
@@ -9,9 +9,13 @@ from uuid import uuid4
 import pytest
 from a13n_harness import HarnessEvent
 from a13n_service.runs import stream as stream_module
+from a13n_service.runs.attempts import AttemptControl
+from a13n_service.runs.claim import claim
 from a13n_service.runs.coalesce import MAX_MERGED_CHARS, Coalescer
 from a13n_service.runs.display import DisplayFold, Observed, Tail
+from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.seal import release_attempt
 from a13n_service.runs.stream import ThreadStream, WrittenPosition, stream_key
 from a13n_service.settings import Settings
 from pydantic_ai.messages import (
@@ -256,8 +260,9 @@ async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted
     listing = await runs_kit.items(executing, run["id"])
     assert runs_kit.texts(listing) == [("user", "fast"), ("assistant", "".join(pieces))]
     last_id, last_fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
-    assert listing["resume_after"] == last_id
-    assert listing["position"] == f"{last_fields['attempt']}-{last_fields['sequence']}"
+    display = await runs_kit.tail(executing, run["id"])
+    assert display.resume_after == last_id
+    assert str(display.position) == f"{last_fields['attempt']}-{last_fields['sequence']}"
     deltas = [int(fields["sequence"]) for _, fields in entries if "boundary" not in fields]
     assert deltas == list(range(1, len(deltas) + 1))
 
@@ -374,15 +379,16 @@ async def test_checkpoint_does_not_wait_for_pending_redis_writes(
                 await scripted_model.request()
                 await runs_kit.checkpointed(service, run_id)
                 listing = await runs_kit.items(service, run_id)
+                display = await runs_kit.tail(service, run_id)
             assert not release.is_set()
-            assert listing["position"] is not None and not listing["complete"]
-            assert listing["resume_after"] is None
+            assert display.position.sequence > 0 and not listing["complete"]
+            assert display.resume_after is None
             assert runs_kit.texts(listing) == [("user", "hi")]
         finally:
             release.set()
             gate.set()
             await task
-        assert (await runs_kit.items(service, run_id))["resume_after"] is not None
+        assert (await runs_kit.tail(service, run_id)).resume_after is not None
 
 
 async def test_final_snapshot_keeps_an_earlier_cursor_when_redis_writes_fail(
@@ -422,8 +428,9 @@ async def test_final_snapshot_keeps_an_earlier_cursor_when_redis_writes_fail(
     assert runs_kit.texts(listing) == [("user", "hi"), ("assistant", "Still saved")]
     entries = await _entries(service.runtime.redis, thread_id)
     last_id, fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
-    assert listing["resume_after"] == last_id
-    assert int(fields["sequence"]) < int(listing["position"].split("-")[1])
+    display = await runs_kit.tail(service, run_id)
+    assert display.resume_after == last_id
+    assert int(fields["sequence"]) < display.position.sequence
 
 
 async def test_a_boundary_trims_what_its_display_covers(runtime: Runtime) -> None:
@@ -480,76 +487,6 @@ async def test_a_run_keeps_only_the_tail_after_its_latest_boundary(serve, settin
     assert runs_kit.texts(listing) == [("user", "Removed"), ("assistant", "Kept")]
 
 
-async def _queued_run(service, scripted_model, runs_kit) -> dict[str, Any]:  # type: ignore[no-untyped-def]
-    """A thread whose run waits for a worker the control role does not run: the stream's current run."""
-    agent = await runs_kit.create_agent(service, scripted_model)
-    return (await runs_kit.start_thread(service, agent, "hi"))["run"]
-
-
-async def _frames(stream: Any, count: int) -> list[tuple[str, Any]]:
-    async with asyncio.timeout(10):
-        return [(event, data.get("sequence")) for event, _, data in [await anext(stream) for _ in range(count)]]
-
-
-async def test_readers_after_a_trim_receive_the_tail_and_gaps(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    run = await _queued_run(service, scripted_model, runs_kit)
-    settings = _trimming(service.runtime.settings, 0)
-    async with ThreadStream(
-        service.runtime.redis, settings, thread_id=run["thread_id"], run_id=run["id"], attempt=1
-    ) as live:
-        live.delta(_delta(1))
-        live.delta(_delta(2))
-        await live.buffer.join()
-        assert live.last_written is not None
-        live.boundary(2, resume_after=live.last_written.redis_id)
-        live.delta(_delta(3))
-    boundary_id = next(
-        entry_id for entry_id, fields in await _entries(service.runtime.redis, run["thread_id"]) if "boundary" in fields
-    )
-    headers = await runs_kit.bearer(service)
-    async with listen(service.app) as base:
-        url = f"{base}{service.api}/threads/{run['thread_id']}/stream"
-        # A new reader sees the conservative covered anchor and the intact suffix.
-        async with runs_kit.frames(url, headers) as stream:
-            assert await _frames(stream, 4) == [("gap", None), ("delta", 2), ("boundary", 2), ("delta", 3)]
-        # A reader resuming exactly at the boundary continues without a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": boundary_id}) as stream:
-            assert await _frames(stream, 1) == [("delta", 3)]
-        # A reader whose position was removed starts with a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": "1-0"}) as stream:
-            assert (await _frames(stream, 1))[0] == ("gap", None)
-
-
-async def test_a_live_reader_skipped_past_removed_entries_gets_a_gap(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    run = await _queued_run(service, scripted_model, runs_kit)
-    redis, key = service.runtime.redis, stream_key(run["thread_id"])
-    fields = {"run_id": run["id"], "attempt": "1"}
-
-    def delta(sequence: int) -> dict[str, str]:
-        return {
-            **fields,
-            "sequence": str(sequence),
-            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
-            "item": "null",
-        }
-
-    first = await redis.xadd(key, delta(1))
-    headers = await runs_kit.bearer(service)
-    async with listen(service.app) as base:
-        url = f"{base}{service.api}/threads/{run['thread_id']}/stream"
-        async with runs_kit.frames(url, headers) as stream:
-            assert await _frames(stream, 1) == [("delta", 1)]
-            # Trimmed before the shared read reached them, as a lagging reader experiences it.
-            milliseconds = int(first.partition("-")[0]) + 1
-            async with redis.pipeline(transaction=True) as pipe:
-                pipe.xadd(key, delta(2), id=f"{milliseconds}-0")
-                pipe.xadd(key, {**fields, "sequence": "2", "boundary": "1"}, id=f"{milliseconds}-1")
-                pipe.xadd(key, delta(3), id=f"{milliseconds}-2")
-                pipe.xtrim(key, minid=f"{milliseconds}-1", approximate=False)
-                await pipe.execute()
-            assert await _frames(stream, 3) == [("gap", None), ("boundary", 2), ("delta", 3)]
-
-
 async def test_cancelling_stream_close_still_signals_its_writer(runtime: Runtime, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     stream = ThreadStream(runtime.redis, runtime.settings, thread_id="thread_close", run_id=RUN, attempt=1)
     joining = asyncio.Event()
@@ -577,95 +514,6 @@ async def test_cancelling_stream_close_still_signals_its_writer(runtime: Runtime
         await asyncio.gather(stream.writer, return_exceptions=True)
 
 
-@pytest.mark.parametrize("hint", ["valid", "absent", "expired", "ahead", "other_run", "old_attempt"])
-async def test_snapshot_position_filters_replay_and_ignores_unsafe_hints(
-    service, scripted_model, listen, runs_kit, hint
-) -> None:  # type: ignore[no-untyped-def]
-    from a13n_service.runs.claim import claim
-
-    run = await _queued_run(service, scripted_model, runs_kit)
-    await claim(service.runtime, worker_id="resume-test", worker_build="test", limit=1)
-    redis, key = service.runtime.redis, stream_key(run["thread_id"])
-
-    async def put(sequence: int, **extra: str) -> str:
-        return await redis.xadd(
-            key,
-            {
-                "run_id": run["id"],
-                "attempt": "1",
-                "sequence": str(sequence),
-                "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
-                "item": "null",
-                **extra,
-            },
-        )
-
-    cursor = await put(80)
-    await put(90)
-    await put(100)
-    await put(100, boundary="1")
-    ahead = await put(101)
-    if hint == "expired":
-        await redis.xtrim(key, minid=ahead, approximate=False)
-    elif hint == "ahead":
-        cursor = ahead
-    elif hint == "other_run":
-        cursor = await put(100, run_id="run_other")
-    elif hint == "old_attempt":
-        cursor = await put(100, attempt="0")
-    headers = await runs_kit.bearer(service)
-    if hint != "absent":
-        headers["Last-Event-ID"] = cursor
-    async with listen(service.app) as base:
-        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
-        async with runs_kit.frames(url, headers) as frames:
-            expected = [("delta", 101)] if hint == "expired" else [("boundary", 100), ("delta", 101)]
-            assert await _frames(frames, len(expected)) == expected
-
-
-async def test_snapshot_position_reports_only_the_missing_suffix(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    from a13n_service.runs.claim import claim
-
-    run = await _queued_run(service, scripted_model, runs_kit)
-    await claim(service.runtime, worker_id="resume-test", worker_build="test", limit=1)
-    await service.runtime.redis.xadd(
-        stream_key(run["thread_id"]),
-        {
-            "run_id": run["id"],
-            "attempt": "1",
-            "sequence": "151",
-            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
-            "item": "null",
-        },
-    )
-    async with listen(service.app) as base:
-        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
-        async with runs_kit.frames(url, await runs_kit.bearer(service)) as frames:
-            async with asyncio.timeout(10):
-                event, _, data = await anext(frames)
-            assert event == "gap" and data == {"run_id": run["id"], "position": "1-150"}
-            assert await _frames(frames, 1) == [("delta", 151)]
-
-
-@pytest.mark.parametrize("query", ["run_only", "position_only", "malformed", "future", "wrong_thread"])
-async def test_resume_claim_is_validated_before_streaming(service, scripted_model, runs_kit, query) -> None:  # type: ignore[no-untyped-def]
-    run = await _queued_run(service, scripted_model, runs_kit)
-    params = {"run": run["id"], "position": "0-0"}
-    if query == "run_only":
-        params.pop("position")
-    elif query == "position_only":
-        params.pop("run")
-    elif query == "malformed":
-        params["position"] = "01-2"
-    elif query == "future":
-        params["position"] = "2-0"
-    else:
-        other = await runs_kit.start_thread(service, {"id": run["agent_id"]}, "other")
-        params["run"] = other["run"]["id"]
-    response = await service.client.get(f"{service.api}/threads/{run['thread_id']}/stream", params=params)
-    assert response.status_code == 400, response.text
-
-
 async def test_final_display_does_not_need_redis(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(executing, scripted_model)
     scripted_model.say("Saved")
@@ -673,56 +521,6 @@ async def test_final_display_does_not_need_redis(executing, scripted_model, runs
     before = await runs_kit.items(executing, run["id"])
     await executing.runtime.redis.delete(stream_key(run["thread_id"]))
     assert await runs_kit.items(executing, run["id"]) == before
-
-
-async def test_resuming_an_older_attempt_resets_before_the_new_attempt_tail(
-    service, scripted_model, listen, runs_kit
-) -> None:  # type: ignore[no-untyped-def]
-    from a13n_service.runs.claim import claim
-    from a13n_service.runs.seal import release_attempt
-
-    run = await _queued_run(service, scripted_model, runs_kit)
-    first = (await claim(service.runtime, worker_id="resume-test", worker_build="test", limit=1))[0]
-    await release_attempt(service.runtime, first, status="yielded", yield_reason="handoff")
-    second = (await claim(service.runtime, worker_id="resume-test-2", worker_build="test", limit=1))[0]
-    assert second.number == 2
-    redis, key = service.runtime.redis, stream_key(run["thread_id"])
-    await redis.xadd(
-        key,
-        {
-            "run_id": run["id"],
-            "attempt": "1",
-            "sequence": "100",
-            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
-            "item": "null",
-        },
-    )
-    await redis.xadd(
-        key,
-        {
-            "run_id": run["id"],
-            "attempt": "2",
-            "sequence": "1",
-            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
-            "item": "null",
-        },
-    )
-    # A fenced-out worker can finish an old Redis write after the new attempt starts.
-    cursor = await redis.xadd(
-        key,
-        {
-            "run_id": run["id"],
-            "attempt": "1",
-            "sequence": "100",
-            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
-            "item": "null",
-        },
-    )
-    headers = {**await runs_kit.bearer(service), "Last-Event-ID": cursor}
-    async with listen(service.app) as base:
-        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
-        async with runs_kit.frames(url, headers) as frames:
-            assert await _frames(frames, 2) == [("reset", None), ("delta", 1)]
 
 
 async def test_failed_checkpoint_publication_never_enqueues_a_boundary_or_trims(
@@ -790,37 +588,6 @@ async def test_display_retains_standard_interrupt_and_scopes_child_native_ids() 
     assert restored.snapshot().tail.items[-1].content == interrupt.content
 
 
-async def test_retained_operation_delta_requires_recovery_unless_already_covered() -> None:
-    from types import SimpleNamespace
-
-    from a13n_service.infra.redis import StreamEntry
-    from a13n_service.runs.stream import Snapshot, _View
-
-    view = _View(SimpleNamespace(), "thread", Snapshot(1, RUN, 1))
-    old = StreamEntry(
-        key=stream_key("thread"),
-        id="1-0",
-        fields={
-            "run_id": RUN,
-            "attempt": "1",
-            "sequence": "1",
-            "changes": "[]",
-        },
-    )
-    frames = await view.entry(old)
-    assert len(frames) == 1 and "event: gap" in frames[0]
-    assert await view.entry(old) == []
-
-
-async def test_reader_overflow_keeps_revocation_terminal() -> None:
-    from a13n_service.runs.stream import Reader, Revoked, Snapshot
-
-    reader = Reader(credential=None, workspace_id="workspace", thread_id="thread", signals=asyncio.Queue(1))
-    reader.send(Snapshot(1, RUN, 1))
-    reader.send(Revoked())
-    assert reader.revoked and reader.overflowed and reader.dropped is None
-
-
 @pytest.mark.parametrize("hint", [True, False])
 async def test_late_checkpoint_marker_never_trims_uncovered_deltas(runtime: Runtime, hint: bool) -> None:
     thread_id = f"thr_{uuid4().hex}"
@@ -842,3 +609,275 @@ async def test_late_checkpoint_marker_never_trims_uncovered_deltas(runtime: Runt
         int(fields["sequence"]) for _, fields in await _entries(runtime.redis, thread_id) if "boundary" not in fields
     ]
     assert retained == (list(range(3, 7)) if hint else list(range(1, 7)))
+
+
+# Reading
+
+
+def _entry(run_id: str, sequence: int, *, attempt: int = 1, **fields: str) -> dict[str, str]:
+    return {
+        "run_id": run_id,
+        "attempt": str(attempt),
+        "sequence": str(sequence),
+        "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+        "item": "null",
+        **fields,
+    }
+
+
+def _summary(frames: list[Any]) -> list[tuple[str, Any]]:
+    """Each frame's event and what tells it apart: a thread's ID, a run's base ordinal or a delta's position."""
+    described = {
+        "thread": lambda data: data["thread"]["id"],
+        "items": lambda data: (data["run_id"], data["first"], data["complete"]),
+        "delta": lambda data: (data["run_id"], data["attempt"], data["sequence"]),
+        "gap": lambda data: data["run_id"],
+    }
+    return [(event, described[event](data)) for event, _, data in frames]
+
+
+async def test_a_session_stream_starts_with_each_thread_and_streams_its_active_runs(
+    service, scripted_model, listen, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    first = await runs_kit.start_thread(service, agent, "first")
+    second = await runs_kit.start_thread(service, agent, "second", session_id=first["thread"]["session_id"])
+    run, key = first["run"]["id"], stream_key(first["thread"]["id"])
+    redis = service.runtime.redis
+    assert len(await claim(service.runtime, worker_id="worker", worker_build="test", limit=2)) == 2
+    # Retained output of the active run reaches a new reader after its run's items.
+    await redis.xadd(key, _entry(run, 1))
+    headers = await runs_kit.bearer(service)
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/sessions/{first['thread']['session_id']}/stream"
+        async with runs_kit.frames(url, headers) as stream:
+            opened = await runs_kit.until(stream, lambda frame: frame[0] == "items" and frame[2]["run_id"] != run)
+            assert _summary(opened) == [
+                ("thread", first["thread"]["id"]),
+                ("items", (run, 1, False)),
+                ("delta", (run, 1, 1)),
+                ("thread", second["thread"]["id"]),
+                ("items", (second["run"]["id"], 1, False)),
+            ]
+            state = opened[0][2]
+            assert state["current_run"]["id"] == run and state["last_run"] is None
+            assert [entry["id"] for entry in state["entries"]] == [first["entry"]["id"]]
+            assert "message_history" not in state["thread"]
+            assert opened[2][2]["event"]["type"] == "TEXT_MESSAGE_CONTENT"
+
+            # Live output follows in order; a skipped sequence holds the run's output.
+            await redis.xadd(key, _entry(run, 2))
+            await redis.xadd(key, _entry(run, 4))
+            await redis.xadd(key, _entry(run, 5))
+            await redis.xadd(stream_key(second["thread"]["id"]), _entry(second["run"]["id"], 1))
+            live = await runs_kit.until(stream, lambda frame: frame[0] == "delta" and frame[2]["run_id"] != run)
+            assert _summary(live) == [("delta", (run, 1, 2)), ("gap", run), ("delta", (second["run"]["id"], 1, 1))]
+
+
+async def test_lost_output_is_held_until_a_checkpoint_covers_it(
+    service, scripted_model, listen, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    gate = asyncio.Event()
+    scripted_model.say("Recovered", gate=gate)
+    submitted = await runs_kit.start_thread(service, agent, "hi")
+    run = submitted["run"]["id"]
+    read = stream_module.read
+    dropped: list[str] = []
+
+    async def lossy(*args: Any, **kwargs: Any) -> list[Any]:
+        # The shared read misses the run's second delta, as a reader whose entries were trimmed does.
+        entries = await read(*args, **kwargs)
+        lost = [entry for entry in entries if entry.fields.get("sequence") == "2" and "boundary" not in entry.fields]
+        dropped.extend(entry.id for entry in lost[:1])
+        return [entry for entry in entries if entry.id not in dropped]
+
+    monkeypatch.setattr(stream_module, "read", lossy)
+    headers = await runs_kit.bearer(service)
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/sessions/{submitted['thread']['session_id']}/stream"
+        (lease,) = await claim(service.runtime, worker_id="worker", worker_build="test", limit=1)
+        async with runs_kit.frames(url, headers) as stream:
+            # The stream follows the claimed attempt before its worker writes anything.
+            await runs_kit.until(stream, lambda frame: frame[0] == "items")
+            deadline = asyncio.get_running_loop().time() + service.runtime.settings.worker.lease_seconds
+            task = asyncio.create_task(execute(service.runtime, lease, AttemptControl(deadline=deadline)))
+            try:
+                held = await runs_kit.until(stream, lambda frame: frame[0] == "gap")
+                assert _summary(held)[-2:] == [("delta", (run, 1, 1)), ("gap", run)]
+                # Nothing of the run arrives until a checkpoint covers the loss and the stream sends its items again.
+                repaired = await runs_kit.until(stream, lambda frame: frame[0] == "items")
+                assert [event for event, _, _ in repaired] in (["items"], ["thread", "items"])
+                assert repaired[-1][2]["first"] == 1 and not repaired[-1][2]["complete"]
+                assert runs_kit.texts(repaired[-1][2]) == [("user", "hi")]
+                gate.set()
+                sealed = await runs_kit.until(stream, lambda frame: frame[0] == "items" and frame[2]["complete"])
+            finally:
+                gate.set()
+                await task
+    assert dropped
+    # Sealing sends the thread, then the run's final items.
+    thread, final = sealed[-2][2], sealed[-1][2]
+    assert sealed[-2][0] == "thread" and thread["current_run"] is None
+    assert thread["last_run"]["id"] == run and thread["last_run"]["status"] == "completed"
+    assert runs_kit.texts(final) == [("user", "hi"), ("assistant", "Recovered")]
+    assert any(event == "delta" and data["event"].get("delta") == "Recovered" for event, _, data in sealed), (
+        "live output resumes after the repair"
+    )
+
+    # A new connection starts from the current state: the thread, and no items of a sealed run.
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/sessions/{submitted['thread']['session_id']}/stream"
+        async with runs_kit.frames(url, headers) as stream:
+            event, _, state = await anext(stream)
+            assert event == "thread" and state["current_run"] is None and state["last_run"]["id"] == run
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0.5):
+                    await anext(stream)
+
+
+async def test_a_new_attempt_restarts_its_runs_output(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "hi")
+    run, key = submitted["run"]["id"], stream_key(submitted["thread"]["id"])
+    redis = service.runtime.redis
+    first = (await claim(service.runtime, worker_id="first", worker_build="test", limit=1))[0]
+    headers = await runs_kit.bearer(service)
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/sessions/{submitted['thread']['session_id']}/stream"
+        async with runs_kit.frames(url, headers) as stream:
+            await runs_kit.until(stream, lambda frame: frame[0] == "items")
+            await redis.xadd(key, _entry(run, 1))
+            assert _summary(await runs_kit.until(stream, lambda frame: frame[0] == "delta")) == [("delta", (run, 1, 1))]
+            await release_attempt(service.runtime, first, status="yielded", yield_reason="handoff")
+            second = (await claim(service.runtime, worker_id="second", worker_build="test", limit=1))[0]
+            assert second.number == 2
+            # The new attempt's output restarts the run from its items.
+            await redis.xadd(key, _entry(run, 1, attempt=2))
+            restarted = await runs_kit.until(stream, lambda frame: frame[0] == "delta")
+            assert [frame for frame in _summary(restarted) if frame[0] != "thread"] == [
+                ("items", (run, 1, False)),
+                ("delta", (run, 2, 1)),
+            ]
+            # A fenced-out worker can finish an old write after the new attempt started.
+            await redis.xadd(key, _entry(run, 2))
+            await redis.xadd(key, _entry(run, 2, attempt=2))
+            later = await runs_kit.until(stream, lambda frame: frame[0] == "delta")
+            assert [frame for frame in _summary(later) if frame[0] != "thread"] == [("delta", (run, 2, 2))]
+
+
+async def test_a_session_stream_ends_when_its_reader_loses_access(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "hi")
+    issued = await service.client.post(
+        "/api/v1/users/me/keys", json={"name": "stream", "workspace_id": service.tenant.workspace_id}
+    )
+    assert issued.status_code == 201, issued.text
+    key = issued.json()["key"]
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/sessions/{submitted['thread']['session_id']}/stream"
+        async with runs_kit.frames(url, {"authorization": f"Bearer {issued.json()['secret']}"}) as stream:
+            await runs_kit.until(stream, lambda frame: frame[0] == "items")
+            revoked = await service.client.delete(f"/api/v1/users/me/keys/{key['id']}", headers=runs_kit.if_match(key))
+            assert revoked.status_code == 200, revoked.text
+            async with asyncio.timeout(10):
+                assert [frame async for frame in stream] == []
+    # A session outside the workspace is not found before any frame.
+    missing = await service.client.get(f"{service.api}/sessions/ses_missing/stream")
+    assert missing.status_code == 404, missing.text
+
+
+def _connection() -> tuple[Any, Any]:
+    from types import SimpleNamespace
+
+    from a13n_service.runs.stream import Reader, _Connection, _Follow
+
+    hub = SimpleNamespace(nudges=0)
+    hub.nudge = lambda: setattr(hub, "nudges", hub.nudges + 1)
+    connection = _Connection(hub, Reader(credential=None, workspace_id="workspace", session_id="session"))  # type: ignore[arg-type]
+    connection.follows["run_a"] = _Follow("thread", attempt=2, sequence=0, first=1)
+    connection.follows["run_b"] = _Follow("thread", attempt=1, sequence=3, first=1)
+    return connection, hub
+
+
+def _stream_entry(run_id: str, sequence: int, **fields: Any) -> Any:
+    from a13n_service.infra.redis import StreamEntry
+
+    return StreamEntry(key=stream_key("thread"), id=f"1-{sequence}", fields=_entry(run_id, sequence, **fields))
+
+
+def _names(frames: list[str]) -> list[str]:
+    return [frame.split("\n", 1)[0].removeprefix("event: ") for frame in frames]
+
+
+async def test_a_connection_holds_a_run_from_its_first_loss() -> None:
+    connection, hub = _connection()
+    deliver = connection.entry
+    assert _names(deliver(_stream_entry("run_a", 1, attempt=2))) == ["delta"]
+    # An older attempt is fenced out; a newer one asks for a refresh once.
+    assert deliver(_stream_entry("run_a", 2, attempt=1)) == []
+    assert deliver(_stream_entry("run_a", 1, attempt=3)) == deliver(_stream_entry("run_a", 2, attempt=3)) == []
+    assert hub.nudges == 1
+    # A skipped sequence reports one gap and holds everything after it.
+    assert _names(deliver(_stream_entry("run_a", 3, attempt=2))) == ["gap"]
+    assert deliver(_stream_entry("run_a", 4, attempt=2)) == []
+    assert connection.follows["run_a"].held == 2
+    # A boundary past the delivered output covers deltas that never arrived.
+    assert _names(deliver(_stream_entry("run_b", 5, boundary="1"))) == ["gap"]
+    assert connection.follows["run_b"].held == 5
+    # Output of a run the connection does not follow asks for a refresh.
+    assert deliver(_stream_entry("run_c", 1)) == []
+    assert hub.nudges == 2
+
+
+def _refresh(run_id: str, sequence: int, first: int) -> Any:
+    from a13n_service.runs.display import StreamPosition
+    from a13n_service.runs.stream import Progress, Update
+
+    return Update("thread", None, Progress(run_id, 1, StreamPosition(attempt=1, sequence=sequence), first), None)
+
+
+async def test_a_refresh_sends_items_again_for_missing_output_and_final_previews() -> None:
+    from a13n_service.runs.stream import RunSnapshot, _Base
+
+    connection, hub = _connection()
+    del connection.follows["run_a"]
+    hub.bases = []
+
+    async def base(run_id: str, first: int) -> _Base:
+        hub.bases.append(first)
+        snapshot = RunSnapshot(
+            thread_id="thread", run_id=run_id, first=first, items=[], continuation=None, complete=False
+        )
+        # Redis retains nothing after the base up to the connection's position.
+        return _Base(snapshot, attempt=1, sequence=7, first=first, resume_after="1-9", preview=4)
+
+    hub.base = base
+    # Output committed ahead of delivery is expected by the next refresh, and arriving in time is enough.
+    assert await connection.update(_refresh("run_b", 5, first=1)) == []
+    assert _names(connection.entry(_stream_entry("run_b", 4)) + connection.entry(_stream_entry("run_b", 5))) == [
+        "delta",
+        "delta",
+    ]
+    assert await connection.update(_refresh("run_b", 5, first=3)) == []
+    assert connection.follows["run_b"].first == 3 and hub.bases == []
+    # Output still missing a refresh later was lost: a gap, then items from the first item not received final.
+    assert await connection.update(_refresh("run_b", 7, first=3)) == []
+    assert _names(await connection.update(_refresh("run_b", 7, first=3))) == ["gap", "items"]
+    assert hub.bases == [3]
+    # That base sent item 4 as a preview of a large field: it is sent again once final.
+    assert await connection.update(_refresh("run_b", 7, first=4)) == []
+    assert _names(await connection.update(_refresh("run_b", 7, first=5))) == ["items"]
+    assert hub.bases == [3, 4]
+
+
+async def test_a_reader_too_far_behind_is_closed() -> None:
+    from a13n_service.runs.stream import READ_BYTES, Close, Reader
+
+    reader = Reader(credential=None, workspace_id="workspace", session_id="session")  # type: ignore[arg-type]
+    reader.send(_stream_entry("run_a", 1))
+    reader.send(_stream_entry("run_a", 2, event="x" * READ_BYTES))
+    reader.send(_stream_entry("run_a", 3))
+    assert reader.closed and reader.signals.qsize() == 2
+    assert (await reader.receive()).id == "1-1" and isinstance(await reader.receive(), Close)

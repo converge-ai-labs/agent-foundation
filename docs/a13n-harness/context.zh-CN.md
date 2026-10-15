@@ -86,6 +86,10 @@ capabilities = (
 
 通过各 Capability 的配置设置适合工作空间的字节数、条目数、深度和行数限制。
 
+文件上下文默认读取工作目录的 `AGENTS.md`，还会提示直属子目录中的 `AGENTS.md` 路径，以及工作目录和直属子目录中的 `.agents/skills` 目录。这些提示不载入子目录文件正文或 Skill 描述。Agent 按任务需要，通过普通文件工具读取相关项目的指导和 Skill。发现入口不会扩大已选择的 Skill 目录，也不会改变权限。
+
+入口扫描最多检查工作目录的 64 个非隐藏条目，提示最多占用独立于文件正文预算的 8 KiB。不完整结果标记为 `incomplete`；更深层仍可能有指导文件。提示在下一个逻辑 Run 刷新，根目录没有 `AGENTS.md` 时也会发现子项目入口。设置 `FileContextConfiguration(include_project_guidance=False)` 可保留文件正文而关闭入口提示。
+
 ## 压缩较长的 Thread
 
 添加 `CompactionCapability()` 以启用自动历史压缩。默认根据报告的 token 用量，在有效 Model 上下文窗口的 90% 处触发。Model 缺少窗口信息时，设置 `AgentSpec.model_characteristics`。固定 token 阈值可使用以下策略：

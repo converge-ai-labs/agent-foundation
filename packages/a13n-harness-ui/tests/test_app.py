@@ -629,7 +629,7 @@ async def test_application_lists_release_owned_environment_modes(tmp_path: Path)
     assert all(item.release_owned for item in profiles)
     assert all(item.canonical_host_paths for item in profiles)
     assert "outside Project roots" in profiles[0].description
-    assert "denied networking" in profiles[1].description
+    assert "inherited Host networking, including localhost" in profiles[1].description
 
 
 async def test_environment_run_service_prepares_sandbox_with_canonical_host_path(

@@ -219,7 +219,7 @@ class Control(Section):
     webhook_timeout: float = Field(default=10, gt=0, le=30)
     # Each request of a GitHub skill import, including the repository archive download.
     import_timeout: float = Field(default=30, gt=0, le=120)
-    # How stale a thread stream's authority and thread snapshot may become while it is idle.
+    # How stale a session stream's authority and thread states may become while no reader asks for a refresh.
     stream_refresh_seconds: float = Field(default=2, gt=0, le=60)
 
 
@@ -267,7 +267,7 @@ class Worker(Section):
     content_bytes: int = Field(default=65536, ge=1024, le=16777216)
     # The zstd level of every run object a worker writes.
     compression_level: int = Field(default=3, ge=1, le=19)
-    # The thread stream's backstop cap. Coalesced text and reasoning append about ten entries a second, so one step
+    # A thread's Redis stream's backstop cap. Coalesced text and reasoning append about ten entries a second, so one step
     # streams for about a quarter of an hour before the cap removes its start; boundaries trim covered entries first.
     stream_length: int = Field(default=10000, ge=16, le=100000)
     stream_ttl: int = Field(default=600, ge=1, le=86400)
@@ -565,7 +565,7 @@ class Settings(Section):
         nested = (
             # A blocking Redis read must return before the client's socket timeout cuts it off.
             ("worker.scan_seconds", worker.scan_seconds, "redis.timeout", self.redis.timeout),
-            ("thread stream block (1 s)", 1, "redis.timeout", self.redis.timeout),
+            ("session stream block (1 s)", 1, "redis.timeout", self.redis.timeout),
             # An attempt survives one failed renewal, and still has room to write an object before it expires.
             ("worker.authority_seconds", 3 * worker.authority_seconds, "worker.lease_seconds", worker.lease_seconds),
             ("objects.timeout", 3 * self.objects.timeout, "worker.lease_seconds", worker.lease_seconds),

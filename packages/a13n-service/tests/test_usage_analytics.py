@@ -346,3 +346,128 @@ async def test_dst_day_uses_local_calendar_with_both_repeated_hours(service, scr
     assert len(result["daily"]) == 1
     assert result["daily"][0]["date"] == "2026-11-01"
     assert result["usage"]["requests"] == 2 and result["usage"]["cache_hit_rate"] is None
+
+
+async def test_context_usage_selects_main_call_and_current_capacity(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(
+        service, scripted_model, model_characteristics={"context_window_tokens": 100000}
+    )
+    run_id, _ = await observed_run(
+        service,
+        runs_kit,
+        agent,
+        records=[("scripted", 40000, 2000, 30000, None, START)],
+    )
+    async with transaction(service.runtime.storage) as session:
+        original = await session.scalar(select(UsageRecordRow).where(UsageRecordRow.run_id == run_id))
+        assert original is not None
+        model = await session.get_one(ModelRow, original.model_id)
+        model.config = {**model.config, "characteristics": {"context_window_tokens": 200000}}
+        run = await session.get_one(RunRow, run_id)
+        thread_id = run.thread_id
+        record_id = original.id
+        # A late older report, inline child, compaction and failed call cannot replace the main call.
+        for ordinal, extra in enumerate(
+            [
+                {"response_ordinal": 0},
+                {"parent_agent_instance_id": "root", "agent_instance_id": "child"},
+                {"source": "compaction"},
+                {"outcome": "failed"},
+            ],
+            start=2,
+        ):
+            child_id = new_object_id("usage")
+            if ordinal == 3:
+                inline_id = child_id
+            payload = {
+                **original.record,
+                "record_id": child_id,
+                "response_ordinal": ordinal,
+                "request_usage": {"input_tokens": 90000, "output_tokens": 1000},
+                **extra,
+            }
+            # The older record has a lower ordinal than the selected main call below.
+            session.add(
+                UsageRecordRow(
+                    id=child_id,
+                    organization_id=original.organization_id,
+                    workspace_id=original.workspace_id,
+                    run_id=run_id,
+                    run_attempt_id=original.run_attempt_id,
+                    harness_run_id=original.harness_run_id,
+                    record=payload,
+                    digest="fixture",
+                    model_id=original.model_id,
+                    ingested_at=START + timedelta(days=1),
+                )
+            )
+        # Original ordinal zero is older; a genuine next main response must win by ordinal, not ingestion.
+        latest_id = new_object_id("usage")
+        session.add(
+            UsageRecordRow(
+                id=latest_id,
+                organization_id=original.organization_id,
+                workspace_id=original.workspace_id,
+                run_id=run_id,
+                run_attempt_id=original.run_attempt_id,
+                harness_run_id=original.harness_run_id,
+                record={**original.record, "record_id": latest_id, "response_ordinal": 1},
+                digest="fixture",
+                model_id=original.model_id,
+                ingested_at=START,
+            )
+        )
+    for scope in ({"run_id": run_id}, {"thread_id": thread_id}, {"record_id": latest_id}):
+        response = await service.client.get(f"{service.api}/usage/context", params=scope)
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "run_id": run_id,
+            "record_id": latest_id,
+            "input_tokens": 40000,
+            "output_tokens": 2000,
+            "context_window_tokens": 100000,
+        }
+    response = await service.client.get(f"{service.api}/usage/context", params={"record_id": inline_id})
+    assert response.status_code == 200
+    assert response.json()["context_window_tokens"] == 200000
+    receipt = await runs_kit.submit(
+        service,
+        thread_id,
+        {
+            "kind": "message",
+            "delivery": "next_run",
+            "agent_id": agent["id"],
+            "payload": {"content": [{"type": "text", "text": "Next round"}]},
+        },
+    )
+    assert receipt.status_code == 201, receipt.text
+    response = await service.client.get(f"{service.api}/usage/context", params={"thread_id": thread_id})
+    assert response.status_code == 200 and response.json()["record_id"] == latest_id
+    other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other"})).json()
+    for scope in ({"run_id": run_id}, {"thread_id": thread_id}, {"record_id": record_id}):
+        response = await service.client.get(
+            f"{service.api}/usage/context", params=scope, headers={"X-Workspace-ID": other["id"]}
+        )
+        assert response.status_code == 404
+    for scope in ({}, {"run_id": run_id, "thread_id": thread_id}):
+        response = await service.client.get(f"{service.api}/usage/context", params=scope)
+        assert response.status_code == 400
+
+
+async def test_context_usage_preserves_unknowns_and_agent_override(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(
+        service, scripted_model, model_characteristics={"context_window_tokens": 100000}
+    )
+    run_id, _ = await observed_run(service, runs_kit, agent, records=[("scripted", 0, 0, 0, None, START)])
+    response = await service.client.get(f"{service.api}/usage/context", params={"run_id": run_id})
+    assert response.status_code == 200, response.text
+    assert response.json()["input_tokens"] is None
+    assert response.json()["output_tokens"] is None
+    assert response.json()["context_window_tokens"] == 100000
+    empty_id, _ = await observed_run(service, runs_kit, agent)
+    response = await service.client.get(f"{service.api}/usage/context", params={"run_id": empty_id})
+    assert response.status_code == 200 and response.json() is None
+    response = await service.client.get(f"{service.api}/usage/context", params={"record_id": "missing"})
+    assert response.status_code == 404

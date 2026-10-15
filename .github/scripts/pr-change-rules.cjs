@@ -2,6 +2,7 @@
 const generated = new Set([
   ...require('../../proto/a13n-envd/eip/v1/artifacts/generated-files.json').files,
   'proto/a13n-service/openapi.json',
+  'proto/a13n-service/session-stream.schema.json',
   'proto/a13n-service/thread-stream.schema.json',
   'frontend/apps/a13n-console/src/service-client/schema.ts',
   'frontend/apps/a13n-harness-ui/src/api.generated.ts',

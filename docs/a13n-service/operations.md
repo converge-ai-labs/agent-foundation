@@ -12,11 +12,11 @@ a13n-service --config service.toml run --role control
 a13n-service --config service.toml run --role worker
 ```
 
-| Role            | Serves                                                                                                        | Background work                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `control`       | Console, the HTTP API, thread streams, `/api/v1/openapi.json` and the interactive API page at `/api/v1/docs`. | All maintenance sweeps and deliveries.                   |
-| `worker`        | Only `/healthz` and `/readyz`.                                                                                | Claims accepted runs and executes them with the Harness. |
-| `all` (default) | Everything `control` serves.                                                                                  | Everything `control` and `worker` do.                    |
+| Role            | Serves                                                                                                         | Background work                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `control`       | Console, the HTTP API, session streams, `/api/v1/openapi.json` and the interactive API page at `/api/v1/docs`. | All maintenance sweeps and deliveries.                   |
+| `worker`        | Only `/healthz` and `/readyz`.                                                                                 | Claims accepted runs and executes them with the Harness. |
+| `all` (default) | Everything `control` serves.                                                                                   | Everything `control` and `worker` do.                    |
 
 Use `all` for one process. Scale `control` replicas behind a load balancer and `worker` replicas separately; workers accept no API traffic. Control replicas coordinate maintenance work through database claims.
 
@@ -52,7 +52,7 @@ Repeat the command until it reports zero converted runs; `--limit` accepts 1–1
 | `GET /healthz` | Always `200 {"status": "ok", "role": "<role>"}` while the process serves HTTP.                                                     |
 | `GET /readyz`  | `200 {"status": "ready", "role": "<role>"}` once startup finished, background tasks are running and the database schema is usable. |
 
-Readiness returns `503 {"status": "unavailable", "dependency": "runtime"}` before startup completes or after a background task stopped, and `"dependency": "database"` when the schema cannot be checked within `server.readiness_timeout`. Losing Redis keeps the process ready and adds `"degraded": ["redis"]`, because PostgreSQL holds all durable state; live thread streams and rate limits stop until Redis returns.
+Readiness returns `503 {"status": "unavailable", "dependency": "runtime"}` before startup completes or after a background task stopped, and `"dependency": "database"` when the schema cannot be checked within `server.readiness_timeout`. Losing Redis keeps the process ready and adds `"degraded": ["redis"]`, because PostgreSQL holds all durable state; session streams carry no live output and rate limits stop until Redis returns.
 
 ## Background work
 

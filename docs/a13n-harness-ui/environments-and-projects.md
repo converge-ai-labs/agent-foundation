@@ -7,7 +7,7 @@ description: Choose execution permissions, work in Projects, connect Devices, an
 
 **Full Control** runs as your host account with ambient filesystem and network authority. It does not download or launch `a13n-envd`. Full Control uses the Direct Local Provider, which executes natively on Linux, macOS, and Windows without WSL. Windows uses PowerShell (`pwsh`, then Windows PowerShell), UTF-8 text streams, and a Job Object that owns the command's descendants. Cancellation, timeout, and exit clean up that owned tree. Portable interrupt signals are unavailable on Windows; cancellation uses tree termination instead. Full Control remains host-account execution, not a sandbox.
 
-**Sandbox** asks Envd to prepare restricted Session workers with explicit directory grants and denied networking. Envd owns the complete worker boundary, including file RPCs and commands; Harness UI does not wrap the whole daemon. Project roots are writable, while the Thread file worker exposes attachments read-only and tmp read-write. Setup checks Sandbox readiness before saving. Outside setup, readiness is checked when execution needs it rather than on the initial landing view. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Harness UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows Sandbox uses the experimental native Microsoft eXecution Container (MXC) backend; the host must pass its actual create/close and production isolation probes. See the [outer security guide](../a13n-envd/isolation.md).
+**Sandbox** asks Envd to prepare restricted Session workers with explicit directory grants and inherited Host networking, including Host localhost services. Commands can access the network allowed by the Host's routing and firewall policy while filesystem and process isolation remain enforced. Envd owns the complete worker boundary, including file RPCs and commands; Harness UI does not wrap the whole daemon. Project roots are writable, while the Thread file worker exposes attachments read-only and tmp read-write. Setup checks filesystem and process isolation and Host localhost connectivity before saving, without requiring an external Internet service. Outside setup, readiness is checked when execution needs it rather than on the initial landing view. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Harness UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows Sandbox uses the experimental native Microsoft eXecution Container (MXC) backend; the host must pass its actual create/close and production isolation probes. See the [outer security guide](../a13n-envd/isolation.md).
 
 ### Native command environment
 
@@ -49,6 +49,14 @@ a13n-harness-ui --environment-profile environment-team
 ```
 
 `--environment-mode` selects a built-in mode; `--environment-profile` selects a configured profile. They are mutually exclusive. In the TUI, `/environment` shows choices and saves the selection for this conversation's later Runs. Resume first before changing a saved conversation's Environment; launch overrides cannot be combined with `--resume`.
+
+## Monitor Environment resources
+
+Open **Environment monitor** from the WebUI conversation toolbar. Select a Device to see its operating system, CPU model, latest CPU and memory observations, filesystem capacity, and 24-hour minute-average and peak charts. The panel covers the whole App; changing conversations or editing next-Run directories does not change the observed Device. System metrics describe the system visible to Envd. Cgroup metrics describe the operator-selected Linux cgroup. They are not per-Run usage.
+
+Remote Devices use their existing authenticated connections. Enable `monitoring` in the Envd startup configuration to collect samples; static system information remains available when sampling is disabled. Built-in local Sandbox enables sampling when its daemon starts. Opening the monitor does not download or start Envd. Full Control and non-Envd providers do not supply these metrics. Local runtime acquisition uses the exact installed `a13n-envd-client` release; published Envd 0.3.0 supplies this monitoring protocol. Upgrade remote daemons and clients together.
+
+The panel distinguishes waiting, disabled, stale and offline observations. Missing values display as **—**, and missing minutes remain gaps. Latest observation details include pressure and cumulative counters in their native units. History lives only in App memory and clears on restart. Collection is limited to 64 Devices, four concurrent requests, and 1,440 minute slots per Device; excess Devices are reported rather than growing the buffer. Changing or revoking a Device clears its history.
 
 ## Project file reference
 
@@ -257,7 +265,7 @@ adapter_configuration:
   project_access: read_write
 ```
 
-The adapter adds each captured Project root to the grant set with `project_access`. Additional grants belong to `launch.sandbox.grants`. Inherited networking is deliberately different from built-in Sandbox's denied networking. For controlled egress, select `launch.egress.mode: controlled` and provide `session.egress` with the destination/reference recipe above; this requires the privileged Linux backend and is not a rootless desktop default. Changing Session policy does not rebuild a compatible daemon; changing the launch boundary does.
+The adapter adds each captured Project root to the grant set with `project_access`. Additional grants belong to `launch.sandbox.grants`. Inherited networking matches the built-in Sandbox default. To block networking, set `launch.egress.mode: deny` in a custom profile while keeping `launch.sandbox.mode: restricted`. Explicit `deny` and `controlled` policies remain unchanged; profiles that omit `launch` use the new inherited-networking default. For controlled egress, select `launch.egress.mode: controlled` and provide `session.egress` with the destination/reference recipe above; this requires the privileged Linux backend and is not a rootless desktop default. Changing Session policy does not rebuild a compatible daemon; changing the launch boundary does.
 
 ## Use a Mac desktop from WebUI
 

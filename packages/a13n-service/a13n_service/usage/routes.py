@@ -7,9 +7,12 @@ from fastapi import APIRouter, Query
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, WorkspaceId
 from a13n_service.usage import service
+from a13n_service.usage.context import read_context_usage
 from a13n_service.usage.schemas import (
     AgentUsagePage,
     BreakdownQuery,
+    ContextUsage,
+    ContextUsageQuery,
     ModelRequestMetrics,
     ModelUsagePage,
     OverviewQuery,
@@ -54,3 +57,10 @@ async def model_request_metrics(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, record_id: str
 ) -> ModelRequestMetrics:
     return await service.request_metrics(runtime.storage, actor, workspace_id, record_id)
+
+
+@router.get("/context", openapi_extra={"x-a13n-mcp": True})
+async def context_usage(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[ContextUsageQuery, Query()]
+) -> ContextUsage | None:
+    return await read_context_usage(runtime.storage, actor, workspace_id, query)

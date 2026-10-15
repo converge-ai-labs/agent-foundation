@@ -36,15 +36,15 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 const stream = vi.hoisted(() => ({
-  calls: [] as { live?: boolean }[],
+  calls: [] as string[],
 }));
 vi.mock("../run-display", () => ({
-  useRunDisplay: (_runId: string, options: { live?: boolean } = {}) => {
-    stream.calls.push(options);
+  useRunDisplay: (runId: string) => {
+    stream.calls.push(runId);
     return {
       displayItems,
       items: presentItems(displayItems),
-      state: "connected",
+      connected: true,
       execution: {
         ...runExecution(fixtureRun(), displayItems),
         coverage: "complete",
@@ -171,15 +171,15 @@ it("opens an application's session at the Debug level", async () => {
   expect(await screen.findByText("Run")).toBeTruthy();
   expect(screen.getByText("Run failed")).toBeTruthy();
 });
-it("reads the level from the URL and follows the Thread at either level", async () => {
+it("reads the level from the URL and shows the run's display at either level", async () => {
   show();
   expect(await screen.findByText("Build an agent")).toBeTruthy();
-  expect(stream.calls.at(-1)).toEqual({ live: true });
+  expect(stream.calls.at(-1)).toBe("run");
   cleanup();
   show("/?view=debug");
   // Debug reads one run as a section, with its terminal fact in the timeline.
   expect(await screen.findByText("Run")).toBeTruthy();
-  expect(stream.calls.at(-1)).toEqual({ live: true });
+  expect(stream.calls.at(-1)).toBe("run");
   expect(screen.getByText("Run failed")).toBeTruthy();
   // The details card stays lazy; only the navigator's lineage read happens.
   const panels = requests.filter(

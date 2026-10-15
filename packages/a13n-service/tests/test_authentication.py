@@ -313,7 +313,7 @@ async def test_replacement_authenticator_keeps_management(serve) -> None:  # typ
             grants = await client.get(f"/api/v1/workspaces/{created.json()['id']}/grants")
             assert grants.status_code == 200
             assert (await client.get("/api/v1/auth/session")).status_code == 403
-            # Long-lived requests such as thread streams re-check through the installed authenticator.
+            # Long-lived requests such as session streams re-check through the installed authenticator.
             access = service.runtime.access
             headers = [(b"x-test-principal", principal_id.encode())]
             live = await access.authenticator.authenticate(

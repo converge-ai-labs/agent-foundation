@@ -18,6 +18,7 @@ from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment._guest_ports import GuestPorts
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
+from a13n_harness.providers.environment.e2b.computer import E2BComputerOperations
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
@@ -44,6 +45,7 @@ class E2BExecution(E2BReference, ExecutionBackend):
         self._commands: GuestCommands | None = None
         self._processes: E2BProcesses | None = None
         self._sandbox: AsyncSandbox | None = None
+        self._computer: E2BComputerOperations | None = None
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
@@ -74,6 +76,9 @@ class E2BExecution(E2BReference, ExecutionBackend):
             self._availability = EnvironmentAvailability(status="unavailable")
             raise EnvironmentError("E2B is unavailable.", code="environment_unavailable")
 
+        if "computer" in operations and self._computer is not None:
+            await self._computer.describe()
+
     async def close(self) -> None:
         try:
             if self._processes is not None:
@@ -81,13 +86,18 @@ class E2BExecution(E2BReference, ExecutionBackend):
         finally:
             if self._commands is not None:
                 self._commands.closed = True
-            self._commands = None
-            self._processes = None
-            self._operations = EnvironmentOperations()
-            self._availability = EnvironmentAvailability(status="unavailable")
-            sandbox, self._sandbox = self._sandbox, None
-            if sandbox is not None:
-                await close_sandbox(sandbox)
+            try:
+                if self._computer is not None:
+                    await self._computer.close()
+            finally:
+                self._computer = None
+                self._commands = None
+                self._processes = None
+                self._operations = EnvironmentOperations()
+                self._availability = EnvironmentAvailability(status="unavailable")
+                sandbox, self._sandbox = self._sandbox, None
+                if sandbox is not None:
+                    await close_sandbox(sandbox)
 
     async def _open_operations(self, sandbox: AsyncSandbox, execution_id: str) -> None:
         commands = GuestCommands(sandbox, self._configuration)
@@ -98,7 +108,9 @@ class E2BExecution(E2BReference, ExecutionBackend):
         self._commands = commands
         processes = E2BProcesses(commands, self.environment_id)
         self._processes = processes
+        self._computer = E2BComputerOperations(commands) if self._configuration.desktop else None
         self._operations = EnvironmentOperations(
+            computer=self._computer,
             files=files,
             shell=processes,
             processes=processes,

@@ -86,6 +86,10 @@ capabilities = (
 
 Use each Capability's configuration to set byte, item, depth, and line limits for your workspace.
 
+File context reads the working directory's `AGENTS.md` by default. It also announces immediate child `AGENTS.md` paths and `.agents/skills` directories in the working directory and its immediate children. These hints load no child file contents or skill descriptions. The Agent reads relevant project guidance and Skills through ordinary file tools when needed. Discovery does not expand the selected Skill catalog or change permissions.
+
+The hint scan examines at most 64 non-hidden working-directory entries and emits at most 8 KiB separately from the file-content budget. Partial results are marked `incomplete`; deeper guidance can still exist. Hints refresh on the next logical Run, even when the root has no `AGENTS.md`. Set `FileContextConfiguration(include_project_guidance=False)` to keep file contents without entrypoint hints.
+
 ## Compact a long Thread
 
 Add `CompactionCapability()` to enable automatic history compaction. The default trigger is 90% of the effective Model's context window, using reported token usage. Set `AgentSpec.model_characteristics` when your Model lacks context-window information. For a fixed trigger, select a token policy:

@@ -3726,6 +3726,61 @@
         "title": "ContentRef",
         "type": "object"
       },
+      "ContextUsage": {
+        "description": "One reported generation, compared with its currently configured window.",
+        "properties": {
+          "context_window_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Tokens"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "record_id",
+          "input_tokens",
+          "output_tokens",
+          "context_window_tokens"
+        ],
+        "title": "ContextUsage",
+        "type": "object"
+      },
       "CreatedSubscription": {
         "properties": {
           "created_at": {
@@ -3921,69 +3976,6 @@
           "action"
         ],
         "title": "Deny",
-        "type": "object"
-      },
-      "DisplayContinuation": {
-        "additionalProperties": false,
-        "description": "Parsing state at a semantic cut; Host paging may retire only immutable items.",
-        "properties": {
-          "arguments": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/_Arguments"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "fragments": {
-            "$ref": "#/components/schemas/FragmentState"
-          },
-          "full_content": {
-            "default": false,
-            "title": "Full Content",
-            "type": "boolean"
-          },
-          "memory_sources": {
-            "additionalProperties": {
-              "items": {
-                "$ref": "#/components/schemas/MemorySource"
-              },
-              "type": "array"
-            },
-            "title": "Memory Sources",
-            "type": "object"
-          },
-          "next_ordinal": {
-            "minimum": 1.0,
-            "title": "Next Ordinal",
-            "type": "integer"
-          },
-          "observer": {
-            "$ref": "#/components/schemas/ObserverContinuation"
-          },
-          "position": {
-            "$ref": "#/components/schemas/StreamPosition"
-          },
-          "response_groups": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Response Groups",
-            "type": "object"
-          },
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "position",
-          "next_ordinal"
-        ],
-        "title": "DisplayContinuation",
         "type": "object"
       },
       "EmailChangeConfirm": {
@@ -4910,36 +4902,6 @@
         "title": "Failure",
         "type": "object"
       },
-      "FileSource": {
-        "additionalProperties": false,
-        "properties": {
-          "bytes": {
-            "minimum": 0.0,
-            "title": "Bytes",
-            "type": "integer"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "sha256": {
-            "title": "Sha256",
-            "type": "string"
-          },
-          "truncated": {
-            "default": false,
-            "title": "Truncated",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "path",
-          "sha256",
-          "bytes"
-        ],
-        "title": "FileSource",
-        "type": "object"
-      },
       "Finding": {
         "additionalProperties": false,
         "properties": {
@@ -5292,38 +5254,6 @@
           "agent_id"
         ],
         "title": "Fork",
-        "type": "object"
-      },
-      "FragmentState": {
-        "additionalProperties": false,
-        "description": "Incomplete custom payloads, not a journal of completed events.",
-        "properties": {
-          "gap": {
-            "default": false,
-            "title": "Gap",
-            "type": "boolean"
-          },
-          "max_bytes": {
-            "default": 67108864,
-            "minimum": 1.0,
-            "title": "Max Bytes",
-            "type": "integer"
-          },
-          "max_pending": {
-            "default": 8,
-            "minimum": 1.0,
-            "title": "Max Pending",
-            "type": "integer"
-          },
-          "pending": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/_Assembly"
-            },
-            "title": "Pending",
-            "type": "object"
-          }
-        },
-        "title": "FragmentState",
         "type": "object"
       },
       "FrozenMemoryMount": {
@@ -7804,88 +7734,6 @@
         "title": "MemoryRevisionPage",
         "type": "object"
       },
-      "MemorySource": {
-        "additionalProperties": false,
-        "description": "One automatic delivery in this Run; content remains in the memory or execution archive.",
-        "properties": {
-          "cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cursor"
-          },
-          "files": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/FileSource"
-            },
-            "title": "Files",
-            "type": "array"
-          },
-          "kind": {
-            "enum": [
-              "record",
-              "file"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "memory": {
-            "title": "Memory",
-            "type": "string"
-          },
-          "memory_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Memory Id"
-          },
-          "records": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/RecordSource"
-            },
-            "title": "Records",
-            "type": "array"
-          },
-          "sources_truncated": {
-            "default": false,
-            "title": "Sources Truncated",
-            "type": "boolean"
-          },
-          "status": {
-            "enum": [
-              "recalled",
-              "failed",
-              "timeout",
-              "full",
-              "changes",
-              "unchanged",
-              "omitted",
-              "unavailable"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "memory",
-          "status"
-        ],
-        "title": "MemorySource",
-        "type": "object"
-      },
       "MemorySpace": {
         "properties": {
           "always_load": {
@@ -9736,39 +9584,6 @@
         "title": "OAuthSettings",
         "type": "object"
       },
-      "ObserverContinuation": {
-        "additionalProperties": false,
-        "description": "Native conversion cursors required to resume mid-part, without raw history.",
-        "properties": {
-          "run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          },
-          "state": {
-            "$ref": "#/components/schemas/_ObserverState"
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id"
-          }
-        },
-        "title": "ObserverContinuation",
-        "type": "object"
-      },
       "OperationKind": {
         "enum": [
           "setup",
@@ -11282,25 +11097,6 @@
         "title": "ProviderUpdate",
         "type": "object"
       },
-      "RecordSource": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "sha256": {
-            "title": "Sha256",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "sha256"
-        ],
-        "title": "RecordSource",
-        "type": "object"
-      },
       "Resume": {
         "additionalProperties": false,
         "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
@@ -11664,25 +11460,11 @@
         "type": "object"
       },
       "RunItems": {
-        "description": "Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,\nso the first item's ordinal tells whether earlier ones exist. Live output continues after `position`.",
+        "description": "Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,\nso the first item's ordinal tells whether earlier ones exist.",
         "properties": {
-          "baseline": {
-            "title": "Baseline",
-            "type": "boolean"
-          },
           "complete": {
             "title": "Complete",
             "type": "boolean"
-          },
-          "continuation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DisplayContinuation"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "items": {
             "items": {
@@ -11691,28 +11473,6 @@
             "title": "Items",
             "type": "array"
           },
-          "position": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Position"
-          },
-          "resume_after": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resume After"
-          },
           "run": {
             "$ref": "#/components/schemas/RunView"
           }
@@ -11720,8 +11480,6 @@
         "required": [
           "run",
           "items",
-          "baseline",
-          "position",
           "complete"
         ],
         "title": "RunItems",
@@ -11983,17 +11741,6 @@
               }
             ],
             "title": "Current Attempt Id"
-          },
-          "display_position": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Position"
           },
           "environment_mounts": {
             "items": {
@@ -13719,27 +13466,6 @@
         "title": "SpanPage",
         "type": "object"
       },
-      "StreamPosition": {
-        "additionalProperties": false,
-        "properties": {
-          "attempt": {
-            "minimum": 0.0,
-            "title": "Attempt",
-            "type": "integer"
-          },
-          "sequence": {
-            "minimum": 0.0,
-            "title": "Sequence",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "attempt",
-          "sequence"
-        ],
-        "title": "StreamPosition",
-        "type": "object"
-      },
       "SubagentOverride-Input": {
         "additionalProperties": false,
         "description": "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.",
@@ -14783,9 +14509,6 @@
             "title": "Mcp Headers",
             "type": "object"
           },
-          "message_history": {
-            "$ref": "#/components/schemas/MessageHistory"
-          },
           "origin": {
             "enum": [
               "new",
@@ -14867,7 +14590,6 @@
           }
         },
         "required": [
-          "message_history",
           "id",
           "workspace_id",
           "session_id",
@@ -16007,154 +15729,6 @@
           }
         },
         "title": "WorkspaceUpdate",
-        "type": "object"
-      },
-      "_Arguments": {
-        "description": "A tool-call part's streamed arguments so far and the one observation item that holds them.",
-        "properties": {
-          "at": {
-            "format": "date-time",
-            "title": "At",
-            "type": "string"
-          },
-          "event": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Event"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "sequence": {
-            "title": "Sequence",
-            "type": "integer"
-          },
-          "size": {
-            "title": "Size",
-            "type": "integer"
-          },
-          "stream": {
-            "$ref": "#/components/schemas/JsonValue"
-          }
-        },
-        "required": [
-          "stream",
-          "key",
-          "at",
-          "sequence",
-          "event",
-          "size"
-        ],
-        "title": "_Arguments",
-        "type": "object"
-      },
-      "_Assembly": {
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "parts": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Parts",
-            "type": "array"
-          },
-          "size": {
-            "default": 0,
-            "title": "Size",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "count"
-        ],
-        "title": "_Assembly",
-        "type": "object"
-      },
-      "_ObserverState": {
-        "properties": {
-          "children": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/_ObserverState"
-            },
-            "title": "Children",
-            "type": "object"
-          },
-          "parts": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/_PartCursor"
-            },
-            "title": "Parts",
-            "type": "object"
-          },
-          "request_index": {
-            "default": 0,
-            "title": "Request Index",
-            "type": "integer"
-          },
-          "threads": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Threads",
-            "type": "object"
-          }
-        },
-        "title": "_ObserverState",
-        "type": "object"
-      },
-      "_PartCursor": {
-        "properties": {
-          "emitted_content": {
-            "default": false,
-            "title": "Emitted Content",
-            "type": "boolean"
-          },
-          "emitted_signature": {
-            "default": false,
-            "title": "Emitted Signature",
-            "type": "boolean"
-          },
-          "kind": {
-            "enum": [
-              "text",
-              "reasoning",
-              "tool_call"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "part_id": {
-            "title": "Part Id",
-            "type": "string"
-          },
-          "tool_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Name"
-          }
-        },
-        "required": [
-          "kind",
-          "part_id"
-        ],
-        "title": "_PartCursor",
         "type": "object"
       }
     },
@@ -29406,6 +28980,69 @@
         }
       }
     },
+    "/api/v1/sessions/{session_id}/stream": {
+      "get": {
+        "description": "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes. Every connection starts from a snapshot.",
+        "operationId": "session_stream_api_v1_sessions__session_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Session Stream",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/v1/skills": {
       "get": {
         "description": "Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of\nsource the default revision was read from; `archived` keeps only archived skills, or only open ones.",
@@ -33041,7 +32678,7 @@
     },
     "/api/v1/threads/{thread_id}/stream": {
       "get": {
-        "description": "Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.",
+        "description": "Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.\nResumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.",
         "operationId": "thread_stream_api_v1_threads__thread_id__stream_get",
         "parameters": [
           {
@@ -33982,6 +33619,126 @@
         "tags": [
           "usage"
         ]
+      }
+    },
+    "/api/v1/usage/context": {
+      "get": {
+        "operationId": "context_usage_api_v1_usage_context_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "record_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Record Id"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ContextUsage"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Context Usage Api V1 Usage Context Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Context Usage",
+        "tags": [
+          "usage"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/models": {

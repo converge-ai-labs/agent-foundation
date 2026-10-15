@@ -10,7 +10,12 @@ from uuid import uuid4
 
 import pytest
 from a13n_harness import AbstractHarnessPlugin
-from a13n_harness.capabilities import CompactionCapability, SubagentCapability, UserInteractionCapability
+from a13n_harness.capabilities import (
+    CompactionCapability,
+    FileContextCapability,
+    SubagentCapability,
+    UserInteractionCapability,
+)
 from a13n_harness.capabilities.web import WebCapability
 from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.plugin_factories import (
@@ -344,6 +349,7 @@ def test_build_composes_the_definition_without_io() -> None:
     [prices] = [item for item in composed.capabilities if isinstance(item, AbstractModelCostCapability)]
     assert {type(capability) for capability in composed.capabilities} - {type(prices)} == {
         DynamicEnvironmentCapability,
+        FileContextCapability,
         ToolPermissionsCapability,
         CompactionCapability,
         WebCapability,
@@ -386,6 +392,43 @@ async def test_service_connection_permission_overrides_native_approval(mode: str
     result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
     assert result.status == ("suspended" if mode in {"ask", "inherit"} else "completed")
     assert executed == ([False] if mode == "allow" else [])
+
+
+@pytest.mark.parametrize("mounted", [False, True])
+async def test_service_build_projects_workspace_guidance_without_loading_child_contents(tmp_path, mounted):
+    from a13n_harness import RunBindings
+    from pydantic_ai.models.function import FunctionModel
+
+    from .test_host_capabilities import ENVIRONMENT, mount
+
+    selected = resolved(new_object_id("ap"), new_object_id("apr"), config())
+    executable = build(selected, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    environment = mount(tmp_path)
+    workspace = tmp_path / ENVIRONMENT
+    (workspace / "AGENTS.md").write_text("ROOT GUIDANCE")
+    (workspace / "backend/.agents/skills").mkdir(parents=True)
+    (workspace / "backend/AGENTS.md").write_text("CHILD GUIDANCE BODY")
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(str(messages))
+        yield "done"
+
+    async def model_resolver(context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    result = await executable.run(
+        "Work on backend",
+        environments={"workspace": environment} if mounted else None,
+        default_environment="workspace" if mounted else None,
+        bindings=RunBindings.embedded(model_resolver=model_resolver),
+    )
+    assert result.output_or_raise() == "done"
+    text = seen[0]
+    assert ("ROOT GUIDANCE" in text) is mounted
+    assert ("/workspace/backend/AGENTS.md" in text) is mounted
+    assert ("/workspace/backend/.agents/skills" in text) is mounted
+    assert "CHILD GUIDANCE BODY" not in text
 
 
 async def create_model(service, **config: object) -> str:  # type: ignore[no-untyped-def]

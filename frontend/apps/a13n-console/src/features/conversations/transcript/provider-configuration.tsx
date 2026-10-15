@@ -15,6 +15,7 @@ import {
 import { useCredentialSection } from "../../../shared/use-credential-section";
 import { providerApi } from "../../providers/api";
 import { providerKeyLink } from "../../providers/key-urls";
+import { providersPath } from "../../providers/navigation";
 import styles from "./cards.module.css";
 
 type Proposal = {
@@ -120,7 +121,7 @@ function ProviderConfigurationFields({
 }) {
   const { t } = useTranslation();
   const client = useClient();
-  const { workspace, can, basePath } = useWorkspace();
+  const { workspace, can } = useWorkspace();
   const queries = useQueryClient();
   const api = providerApi(client, workspace.id, request.kind);
   const [result, setResult] = useState<Result | null>(null);
@@ -253,7 +254,7 @@ function ProviderConfigurationFields({
       </p>
       <a
         className="text-sm underline underline-offset-4"
-        href={`${basePath}/providers?category=${tabs[request.kind]}`}
+        href={providersPath(tabs[request.kind], workspace)}
         target="_blank"
         rel="noreferrer"
       >

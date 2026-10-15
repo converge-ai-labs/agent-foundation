@@ -1,5 +1,6 @@
 """UI selects grants; Envd enforces them across file and process APIs."""
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -8,12 +9,15 @@ import pytest
 from a13n_harness import RunBindings
 from a13n_harness.environment import EnvironmentMount, EnvironmentPermissionSet
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_runtime import _PreparedMount
 from a13n_harness_ui.errors import EnvironmentLifecycleError
+from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProfileConfiguration
 from a13n_harness_ui.sandbox import create_sandbox_runtime, validate_sandbox_runtime
 
 pytestmark = pytest.mark.anyio
@@ -47,11 +51,18 @@ def test_protected_host_state_is_not_granted_by_a_broad_project_root(tmp_path):
         tmp_path / "envd", roots=(thread_files,), protected_roots=(state,), thread_files_root=thread_files
     )
     assert runtime.configuration.sandbox.mode == "restricted"
-    assert runtime.configuration.egress.mode == "deny"
+    assert runtime.configuration.egress.mode == "inherit"
     assert [(grant.path, grant.access) for grant in runtime.configuration.sandbox.grants] == [
         ((thread_files / "attachments").as_posix(), "read_only"),
         ((thread_files / "tmp").as_posix(), "read_write"),
     ]
+
+
+def test_sandbox_profile_defaults_to_restricted_with_inherited_networking():
+    selected = LocalEnvdProfileConfiguration()
+    assert selected.launch.sandbox.mode == "restricted"
+    assert selected.launch.egress.mode == "inherit"
+    assert selected.session.egress is None
 
 
 async def test_production_sandbox_preflight_probes_real_boundaries(binary, tmp_path):
@@ -59,6 +70,78 @@ async def test_production_sandbox_preflight_probes_real_boundaries(binary, tmp_p
     root.mkdir()
     await validate_sandbox_runtime(binary, root)
     assert list(root.iterdir()) == []
+
+
+async def test_production_sandbox_preflight_rejects_blocked_host_localhost(binary, tmp_path, monkeypatch):
+    from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
+
+    def denied_runtime(*args, **kwargs):
+        launch = LocalEnvdProfileConfiguration().launch.model_copy(
+            update={"egress": EnvdNetworkConfiguration(mode="deny")}
+        )
+        return create_sandbox_runtime(*args, **kwargs, launch=launch)
+
+    monkeypatch.setattr("a13n_harness_ui.sandbox.create_sandbox_runtime", denied_runtime)
+    root = tmp_path / "project"
+    root.mkdir()
+    with pytest.raises(EnvironmentLifecycleError, match="Host localhost connectivity probe failed"):
+        await validate_sandbox_runtime(binary, root)
+
+
+@pytest.mark.parametrize("mode", [None, "deny"])
+async def test_sandbox_profile_host_localhost_access(binary, tmp_path, monkeypatch, mode):
+    from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
+    from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
+
+    root = tmp_path / "project"
+    root.mkdir()
+    reconstructor = EnvironmentSnapshotReconstructor()
+
+    async def executable():
+        return binary
+
+    monkeypatch.setattr(reconstructor, "resolve_sandbox_executable", executable)
+    profile = ResolvedEnvironmentProfile(
+        profile_id="environment-test",
+        behavior_digest="a" * 64,
+        provider_key="local_envd",
+        adapter_key="local_envd_project",
+        provider_configuration={}
+        if mode is None
+        else {"launch": {"sandbox": {"mode": "restricted", "grants": []}, "egress": {"mode": mode}}},
+    )
+    server = await asyncio.start_server(lambda reader, writer: writer.close(), "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    try:
+        owner = await reconstructor.sandbox_runtime((root,), profile=profile)
+        connector = LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(working_directory=root.as_posix()),
+            runtime=owner,
+            environment_id="network-test",
+        )
+        environment = await connector.open()
+        try:
+            assert environment.descriptor.execution_boundary["egress"] == (mode or "inherit")
+            processes = environment.operations.processes
+            assert processes is not None
+            started = await processes.start(
+                CommandRequest(
+                    command=ShellCommand(profile_id="default", script=f"echo probe > /dev/tcp/127.0.0.1/{port}"),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
+                )
+            )
+            result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
+            assert result.status.exit_code is not None
+            assert (result.status.exit_code == 0) is (mode is None)
+            await processes.release(started.process.handle)
+        finally:
+            await environment.close()
+    finally:
+        server.close()
+        await server.wait_closed()
+        await reconstructor.close()
 
 
 async def test_shared_sandbox_sessions_preserve_host_paths_and_hide_unrelated_files(binary, tmp_path, monkeypatch):
@@ -260,6 +343,9 @@ async def test_runtime_cache_separates_launch_policy_but_not_session_destination
         inherited = await reconstructor.sandbox_runtime((root,), profile=profile("inherit"))
         controlled = await reconstructor.sandbox_runtime((root,), profile=profile("controlled", ("a.example.com",)))
         assert denied is not inherited and controlled not in (denied, inherited)
+        assert denied.configuration.egress.mode == "deny"
+        assert inherited.configuration.egress.mode == "inherit"
+        assert controlled.configuration.egress.mode == "controlled"
         assert controlled is await reconstructor.sandbox_runtime(
             (root,), profile=profile("controlled", ("b.example.com",))
         )
@@ -289,7 +375,7 @@ async def test_thread_attachment_grant_is_read_only(binary, tmp_path):
             with pytest.raises(EnvironmentError):
                 await files.write_text(attachment.as_posix(), "overwritten", mode="replace")
             await files.write_text((thread / "tmp/result").as_posix(), "output", mode="create")
-            assert environment.descriptor.execution_boundary["egress"] == "deny"
+            assert environment.descriptor.execution_boundary["egress"] == "inherit"
         finally:
             await environment.close()
     assert attachment.read_text() == "submitted input"

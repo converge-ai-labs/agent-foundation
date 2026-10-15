@@ -8,7 +8,6 @@ from urllib.parse import urlsplit
 
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment.models import EnvironmentPermissionSet
-from a13n_stream_protocol.display import DisplayContinuation
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -411,7 +410,6 @@ class SessionPage(BaseModel):
 class ThreadView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     purpose: Literal["conversation", "memory_organization"] = "conversation"
-    message_history: MessageHistory
     id: str
     workspace_id: str
     session_id: str
@@ -497,8 +495,6 @@ class RunView(BaseModel):
     output: JsonValue | None
     failure: Failure | None
     usage_at_seal: dict[str, JsonValue] | None
-    # Durable display progress from the existing tail pointer; no object read required.
-    display_position: str | None = None
     labels: dict[str, str]
     cancel_requested_at: datetime | None
     version: int
@@ -560,18 +556,11 @@ class RunContent(BaseModel):
 
 class RunItems(BaseModel):
     """Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
-    so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`."""
+    so the first item's ordinal tells whether earlier ones exist."""
 
     run: RunView
     items: list[Item]
-    # Only an unwindowed read contains the whole mutable tail and can seed a live consumer.
-    baseline: bool
-    continuation: DisplayContinuation | None = None
-    # The "{attempt}-{sequence}" stream position the display covers; None until the first checkpoint.
-    position: str | None
-    # A confirmed Redis delta ID covered by this display, usable as SSE Last-Event-ID while retained.
-    resume_after: str | None = None
-    # Execution sealed: the items are final and live output no longer applies.
+    # Execution sealed: the items are final.
     complete: bool
 
 

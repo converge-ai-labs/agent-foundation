@@ -864,26 +864,33 @@ async def test_timed_out_management_publishes_observed_state(env, monkeypatch) -
     assert row.failure["certainty"] == "unknown"
 
 
-async def test_unused_run_keeps_reservation_without_native_creation(env, scripted_model, runs_kit) -> None:
+@pytest.mark.parametrize("primary", [False, True])
+async def test_guidance_activates_the_default_mount_without_tool_calls(env, scripted_model, runs_kit, primary) -> None:
     model = await runs_kit.create_model(env, scripted_model)
     agent = await runs_kit.add_agent(
         env,
         "plain",
         model,
-        default_environment_template_id=env.template["id"],
+        default_environment_template_id=env.template["id"] if primary else None,
     )
-    scripted_model.say("No environment needed")
-    submitted = await runs_kit.start_thread(env, agent, "hello")
+    extra = await reserve(env, env.template["id"]) if not primary else None
+    scripted_model.say("No tools needed")
+    submitted = await runs_kit.start_thread(
+        env, agent, "hello", environments=[{"name": "data", "environment_id": extra["id"]}] if extra else []
+    )
     environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
     await maintain_environments(env.runtime, owner="control")
-    assert (await environment(env, environment_id))["status"] == "reserved"
-    assert BACKEND.preparations == []
+    # Explicit extra-instance creation is dispatched by maintenance; the primary is only reserved.
+    assert (await environment(env, environment_id))["status"] == ("reserved" if primary else "ready")
+    assert len(BACKEND.preparations) == (0 if primary else 1)
     await (await runs_kit.attempt(env))
     assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
     current = await environment(env, environment_id)
-    assert current["status"] == "reserved"
-    assert current["operation_id"] is current["last_used_at"] is None
-    assert BACKEND.instances == {}
+    assert current["status"] == "ready"
+    assert current["operation_id"] is None
+    # A sole named user mount is the default when there is no workspace mount.
+    assert current["last_used_at"] is not None
+    assert set(BACKEND.instances) == {environment_id}
 
 
 @pytest.mark.parametrize(
@@ -926,20 +933,23 @@ async def test_preparation_policy_applies_to_all_mounts_before_the_model(
         options={"overrides": {"lazy_environment": override}},
     )
     ids = {mount["environment_id"] for mount in submitted["run"]["environment_mounts"]}
+    primary_ids = [
+        mount["environment_id"] for mount in submitted["run"]["environment_mounts"] if mount["name"] == "workspace"
+    ]
     eager = not (lazy if override is None else override)
     task = await runs_kit.attempt(env)
     try:
         await scripted_model.request()
-        assert set(BACKEND.instances) == (ids if eager else set())
-        assert opened == []
+        assert set(BACKEND.instances) == (ids if eager else set(primary_ids))
+        assert opened == primary_ids
         assert closed == []
     finally:
         gate.set()
         await task
     current = await runs_kit.get_run(env, submitted["run"]["id"])
     assert current["status"] == "completed", current
-    assert opened == closed == []
-    assert len(BACKEND.preparations) == (len(ids) if eager else 0)
+    assert opened == closed == primary_ids
+    assert len(BACKEND.preparations) == (len(ids) if eager else len(primary_ids))
 
 
 async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_model, runs_kit, monkeypatch) -> None:
@@ -976,12 +986,13 @@ async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_mode
     await (await runs_kit.attempt(env))
     current = await runs_kit.get_run(env, submitted["run"]["id"])
     assert current["status"] == "completed", current
-    assert preparations == [identity, identity]
+    # Retry eagerly prepares the instance, then file context opens its execution through readiness.
+    assert preparations == [identity, identity, identity]
     assert len(BACKEND.preparations) == 1
     assert current["options"]["overrides"]["lazy_environment"] is False
 
 
-async def test_eager_preparation_leaves_execution_opening_to_first_tool(
+async def test_guidance_opens_primary_execution_before_inference_and_reuses_it_for_tools(
     env, local_instance, scripted_model, runs_kit, monkeypatch
 ) -> None:
     from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
@@ -1006,7 +1017,7 @@ async def test_eager_preparation_leaves_execution_opening_to_first_tool(
     task = await runs_kit.attempt(env)
     try:
         await scripted_model.request()
-        assert opened == []
+        assert opened == [identity]
     finally:
         gate.set()
         await task

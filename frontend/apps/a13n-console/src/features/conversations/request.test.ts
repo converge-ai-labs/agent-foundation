@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
 import { runRequest } from "./request";
+import { isInteractive } from "./transcript/run-actions";
 
 const run = (overrides: Partial<Schema["RunView"]>) =>
   ({
@@ -119,4 +120,13 @@ it("shows a structured delegated task compactly and keeps plain text a message",
       thread("new"),
     ),
   ).toMatchObject({ kind: "message" });
+});
+
+it("labels organizer input as maintenance and excludes conversation controls", () => {
+  const organizer = {
+    ...thread("new"),
+    purpose: "memory_organization" as const,
+  };
+  expect(runRequest(run({}), organizer).kind).toBe("memory_organization");
+  expect(isInteractive(organizer)).toBe(false);
 });

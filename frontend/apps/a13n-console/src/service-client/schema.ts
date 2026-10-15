@@ -2044,6 +2044,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/sessions/{session_id}/stream": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Session Stream
+     * @description The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
+     *     frames. Every connection starts from a snapshot.
+     */
+    get: operations["session_stream_api_v1_sessions__session_id__stream_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/skills": {
     parameters: {
       query?: never;
@@ -2537,7 +2558,8 @@ export interface paths {
     };
     /**
      * Thread Stream
-     * @description Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
+     * @description Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
+     *     Resumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.
      */
     get: operations["thread_stream_api_v1_threads__thread_id__stream_get"];
     put?: never;
@@ -2691,6 +2713,23 @@ export interface paths {
     };
     /** Usage Agents */
     get: operations["usage_agents_api_v1_usage_agents_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage/context": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Context Usage */
+    get: operations["context_usage_api_v1_usage_context_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -4545,6 +4584,22 @@ export interface components {
        */
       truncated?: boolean;
     };
+    /**
+     * ContextUsage
+     * @description One reported generation, compared with its currently configured window.
+     */
+    ContextUsage: {
+      /** Context Window Tokens */
+      context_window_tokens: number | null;
+      /** Input Tokens */
+      input_tokens: number | null;
+      /** Output Tokens */
+      output_tokens: number | null;
+      /** Record Id */
+      record_id: string;
+      /** Run Id */
+      run_id: string;
+    };
     /** CreatedSubscription */
     CreatedSubscription: {
       /**
@@ -4631,33 +4686,6 @@ export interface components {
       action: "deny";
       /** Reason */
       reason?: string | null;
-    };
-    /**
-     * DisplayContinuation
-     * @description Parsing state at a semantic cut; Host paging may retire only immutable items.
-     */
-    DisplayContinuation: {
-      arguments?: components["schemas"]["_Arguments"] | null;
-      fragments?: components["schemas"]["FragmentState"];
-      /**
-       * Full Content
-       * @default false
-       */
-      full_content?: boolean;
-      /** Memory Sources */
-      memory_sources?: {
-        [key: string]: components["schemas"]["MemorySource"][];
-      };
-      /** Next Ordinal */
-      next_ordinal: number;
-      observer?: components["schemas"]["ObserverContinuation"];
-      position: components["schemas"]["StreamPosition"];
-      /** Response Groups */
-      response_groups?: {
-        [key: string]: string;
-      };
-      /** Run Id */
-      run_id: string;
     };
     /** EmailChangeConfirm */
     EmailChangeConfirm: {
@@ -5014,20 +5042,6 @@ export interface components {
       /** Message */
       message: string;
     };
-    /** FileSource */
-    FileSource: {
-      /** Bytes */
-      bytes: number;
-      /** Path */
-      path: string;
-      /** Sha256 */
-      sha256: string;
-      /**
-       * Truncated
-       * @default false
-       */
-      truncated?: boolean;
-    };
     /** Finding */
     Finding: {
       /** Agent Id */
@@ -5150,31 +5164,6 @@ export interface components {
       memories?: components["schemas"]["MemoryMount"][];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
-    };
-    /**
-     * FragmentState
-     * @description Incomplete custom payloads, not a journal of completed events.
-     */
-    FragmentState: {
-      /**
-       * Gap
-       * @default false
-       */
-      gap?: boolean;
-      /**
-       * Max Bytes
-       * @default 67108864
-       */
-      max_bytes?: number;
-      /**
-       * Max Pending
-       * @default 8
-       */
-      max_pending?: number;
-      /** Pending */
-      pending?: {
-        [key: string]: components["schemas"]["_Assembly"];
-      };
     };
     /**
      * FrozenMemoryMount
@@ -6042,51 +6031,6 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
-    /**
-     * MemorySource
-     * @description One automatic delivery in this Run; content remains in the memory or execution archive.
-     */
-    MemorySource: {
-      /** Cursor */
-      cursor?: string | null;
-      /**
-       * Files
-       * @default []
-       */
-      files?: components["schemas"]["FileSource"][];
-      /**
-       * Kind
-       * @enum {string}
-       */
-      kind: "record" | "file";
-      /** Memory */
-      memory: string;
-      /** Memory Id */
-      memory_id?: string | null;
-      /**
-       * Records
-       * @default []
-       */
-      records?: components["schemas"]["RecordSource"][];
-      /**
-       * Sources Truncated
-       * @default false
-       */
-      sources_truncated?: boolean;
-      /**
-       * Status
-       * @enum {string}
-       */
-      status:
-        | "recalled"
-        | "failed"
-        | "timeout"
-        | "full"
-        | "changes"
-        | "unchanged"
-        | "omitted"
-        | "unavailable";
-    };
     /** MemorySpace */
     MemorySpace: {
       /** Always Load */
@@ -6689,17 +6633,6 @@ export interface components {
       /** @default none */
       token_endpoint_auth_method?: components["schemas"]["ClientAuthentication"];
     };
-    /**
-     * ObserverContinuation
-     * @description Native conversion cursors required to resume mid-part, without raw history.
-     */
-    ObserverContinuation: {
-      /** Run Id */
-      run_id?: string | null;
-      state?: components["schemas"]["_ObserverState"];
-      /** Thread Id */
-      thread_id?: string | null;
-    };
     /** @enum {string} */
     OperationKind: "setup" | "complete" | "refresh" | "revoke";
     /** Organization */
@@ -7228,13 +7161,6 @@ export interface components {
       /** Name */
       name?: string | null;
     };
-    /** RecordSource */
-    RecordSource: {
-      /** Id */
-      id: string;
-      /** Sha256 */
-      sha256: string;
-    };
     /**
      * Resume
      * @description The complete result batch, submitted and stored on the successor without omission defaults.
@@ -7398,20 +7324,13 @@ export interface components {
     /**
      * RunItems
      * @description Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
-     *     so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`.
+     *     so the first item's ordinal tells whether earlier ones exist.
      */
     RunItems: {
-      /** Baseline */
-      baseline: boolean;
       /** Complete */
       complete: boolean;
-      continuation?: components["schemas"]["DisplayContinuation"] | null;
       /** Items */
       items: components["schemas"]["Item"][];
-      /** Position */
-      position: string | null;
-      /** Resume After */
-      resume_after?: string | null;
       run: components["schemas"]["RunView"];
     };
     /** RunLabels */
@@ -7490,8 +7409,6 @@ export interface components {
       created_at: string;
       /** Current Attempt Id */
       current_attempt_id: string | null;
-      /** Display Position */
-      display_position?: string | null;
       /** Environment Mounts */
       environment_mounts: components["schemas"]["EnvironmentMount"][];
       failure: components["schemas"]["Failure"] | null;
@@ -8080,13 +7997,6 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
-    /** StreamPosition */
-    StreamPosition: {
-      /** Attempt */
-      attempt: number;
-      /** Sequence */
-      sequence: number;
-    };
     /**
      * SubagentOverride
      * @description Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.
@@ -8384,7 +8294,6 @@ export interface components {
           [key: string]: string;
         };
       };
-      message_history: components["schemas"]["MessageHistory"];
       /**
        * Origin
        * @enum {string}
@@ -8843,82 +8752,6 @@ export interface components {
     WorkspaceUpdate: {
       /** Name */
       name?: string | null;
-    };
-    /**
-     * _Arguments
-     * @description A tool-call part's streamed arguments so far and the one observation item that holds them.
-     */
-    _Arguments: {
-      /**
-       * At
-       * Format: date-time
-       */
-      at: string;
-      /** Event */
-      event: {
-        [key: string]: unknown;
-      } | null;
-      /** Key */
-      key: string;
-      /** Sequence */
-      sequence: number;
-      /** Size */
-      size: number;
-      stream: components["schemas"]["JsonValue"];
-    };
-    /** _Assembly */
-    _Assembly: {
-      /** Count */
-      count: number;
-      /** Parts */
-      parts?: string[];
-      /**
-       * Size
-       * @default 0
-       */
-      size?: number;
-    };
-    /** _ObserverState */
-    _ObserverState: {
-      /** Children */
-      children?: {
-        [key: string]: components["schemas"]["_ObserverState"];
-      };
-      /** Parts */
-      parts?: {
-        [key: string]: components["schemas"]["_PartCursor"];
-      };
-      /**
-       * Request Index
-       * @default 0
-       */
-      request_index?: number;
-      /** Threads */
-      threads?: {
-        [key: string]: string;
-      };
-    };
-    /** _PartCursor */
-    _PartCursor: {
-      /**
-       * Emitted Content
-       * @default false
-       */
-      emitted_content?: boolean;
-      /**
-       * Emitted Signature
-       * @default false
-       */
-      emitted_signature?: boolean;
-      /**
-       * Kind
-       * @enum {string}
-       */
-      kind: "text" | "reasoning" | "tool_call";
-      /** Part Id */
-      part_id: string;
-      /** Tool Name */
-      tool_name?: string | null;
     };
   };
   responses: {
@@ -13665,6 +13498,33 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  session_stream_api_v1_sessions__session_id__stream_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/event-stream": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_skills_api_v1_skills_get: {
     parameters: {
       query?: {
@@ -15140,6 +15000,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AgentUsagePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  context_usage_api_v1_usage_context_get: {
+    parameters: {
+      query?: {
+        thread_id?: string | null;
+        run_id?: string | null;
+        record_id?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextUsage"] | null;
         };
       };
       400: components["responses"]["Error"];

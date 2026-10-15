@@ -27,8 +27,11 @@ from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
 from a13n_service.mcp import build_mcp
 from a13n_service.migrations.runner import heads
+from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import AttemptControl
+from a13n_service.runs.checkpoints import TailPointer
 from a13n_service.runs.claim import claim
+from a13n_service.runs.display import Tail
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
@@ -514,6 +517,14 @@ async def items(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
     return response.json()
 
 
+async def tail(service: SimpleNamespace, run_id: str) -> Tail:
+    """The run's committed display tail: the stream position it covers and its Redis resume hint."""
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, run_id)
+        pointer = TailPointer.model_validate(run.tail) if run.tail is not None else None
+    return await checkpoints.load_tail(service.runtime.objects, pointer)
+
+
 def texts(listing: dict[str, Any]) -> list[tuple[str | None, str]]:
     return [
         (item["content"].get("role"), item["content"]["text"])
@@ -613,6 +624,7 @@ def runs_kit() -> SimpleNamespace:
         sealed=sealed,
         checkpointed=checkpointed,
         items=items,
+        tail=tail,
         texts=texts,
         user_texts=user_texts,
         attempt=attempt,

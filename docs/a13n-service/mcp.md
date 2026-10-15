@@ -111,7 +111,7 @@ curl --fail-with-body "$A13N_URL/api/v1/threads" \
   -d "{\"agent_id\":\"$AGENT_ID\",\"payload\":{\"content\":[{\"type\":\"text\",\"text\":\"Summarize these notes.\"}]}}"
 ```
 
-Save the returned `thread.id` and `entry.id`. A returned `run` may be null while input is queued. Follow the [thread stream](agents-and-runs.md#follow-a-thread-stream), or read that entry until `assigned_run_id` identifies the run that consumed it:
+Save the returned `thread.id` and `entry.id`. A returned `run` may be null while input is queued. Follow the [session stream](agents-and-runs.md#follow-a-session-stream), or read that entry until `assigned_run_id` identifies the run that consumed it:
 
 ```sh
 curl --fail-with-body "$A13N_URL/api/v1/threads/$THREAD_ID/inbox/$ENTRY_ID" \

@@ -58,6 +58,7 @@ Request and response bodies are JSON objects without an envelope, except these r
 | `GET` avatar and icon routes and `GET …/assets/{asset}/content` | the stored bytes with their recorded type                                                               |
 | `GET …/skills/{skill}/revisions/{revision}/content`             | the package as `application/zip`                                                                        |
 | `GET …/skills/{skill}/revisions/{revision}/files/{path}`        | one file of the package as `application/octet-stream`                                                   |
+| `GET …/sessions/{session}/stream`                               | `text/event-stream` ([07](07-facts-and-delivery.md#the-session-stream))                                 |
 | `GET …/threads/{thread}/stream`                                 | `text/event-stream` ([07](07-facts-and-delivery.md#the-thread-stream))                                  |
 | `GET /connections/callback`                                     | a 303 redirect to the authorization's return URL, or a JSON outcome ([04](04-resources.md#connections)) |
 
@@ -102,8 +103,14 @@ Two internal commands replay the same way without a header: a child spawn is uni
 Every failure, including a request no route answers, answers in one envelope; `/readyz` reports unreadiness in its own 503 body ([09](09-runtime.md#startup-readiness-and-shutdown)):
 
 ```json
-{"error": {"code": "not_found", "message": "agent agent_… not found",
-           "details": {"kind": "agent", "id": "agent_…"}, "request_id": "req_…"}}
+{
+  "error": {
+    "code": "not_found",
+    "message": "agent agent_… not found",
+    "details": { "kind": "agent", "id": "agent_…" },
+    "request_id": "req_…"
+  }
+}
 ```
 
 [02](02-layout.md#error-codes) lists the codes, their statuses and details. Clients branch on `code` and `details`, never on `message`.
@@ -279,31 +286,32 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Sessions, threads and runs
 
-| Path                                  | Methods            | Owner                                            |
-| ------------------------------------- | ------------------ | ------------------------------------------------ |
-| `/sessions`                           | GET, POST          | [05](05-runs.md#reads)                           |
-| `/sessions/{session}`                 | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/sessions/{session}/message-authors` | GET                | [05](05-runs.md#reads)                           |
-| `/threads`                            | GET, POST          | [05](05-runs.md#submit-and-accept)               |
-| `/threads/{thread}`                   | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/threads/{thread}/archive`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/threads/{thread}/runs`              | GET                | [05](05-runs.md#reads)                           |
-| `/threads/{thread}/stream`            | GET                | [07](07-facts-and-delivery.md#the-thread-stream) |
-| `/threads/{thread}/inbox`             | GET, POST          | [05](05-runs.md#submit-and-accept)               |
-| `/threads/{thread}/inbox/order`       | PUT                | [05](05-runs.md#editing-queued-input)            |
-| `/threads/{thread}/inbox/{entry}`     | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)            |
-| `/runs/{run}`                         | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/runs`                               | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/interrupt`               | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/fork`                    | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/resume`                  | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/items`                   | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/contents/{content}`      | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/images/{image}`          | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/agent`                   | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/lineage`                 | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/attempts`                | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/attempts/{attempt}`      | GET                | [05](05-runs.md#reads)                           |
+| Path                                  | Methods            | Owner                                             |
+| ------------------------------------- | ------------------ | ------------------------------------------------- |
+| `/sessions`                           | GET, POST          | [05](05-runs.md#reads)                            |
+| `/sessions/{session}`                 | GET, PATCH         | [05](05-runs.md#reads)                            |
+| `/sessions/{session}/message-authors` | GET                | [05](05-runs.md#reads)                            |
+| `/sessions/{session}/stream`          | GET                | [07](07-facts-and-delivery.md#the-session-stream) |
+| `/threads`                            | GET, POST          | [05](05-runs.md#submit-and-accept)                |
+| `/threads/{thread}`                   | GET, PATCH         | [05](05-runs.md#reads)                            |
+| `/threads/{thread}/archive`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
+| `/threads/{thread}/runs`              | GET                | [05](05-runs.md#reads)                            |
+| `/threads/{thread}/stream`            | GET                | [07](07-facts-and-delivery.md#the-thread-stream)  |
+| `/threads/{thread}/inbox`             | GET, POST          | [05](05-runs.md#submit-and-accept)                |
+| `/threads/{thread}/inbox/order`       | PUT                | [05](05-runs.md#editing-queued-input)             |
+| `/threads/{thread}/inbox/{entry}`     | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)             |
+| `/runs/{run}`                         | GET, PATCH         | [05](05-runs.md#reads)                            |
+| `/runs`                               | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/interrupt`               | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
+| `/runs/{run}/fork`                    | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
+| `/runs/{run}/resume`                  | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
+| `/runs/{run}/items`                   | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/contents/{content}`      | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/images/{image}`          | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/agent`                   | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/lineage`                 | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/attempts`                | GET                | [05](05-runs.md#reads)                            |
+| `/runs/{run}/attempts/{attempt}`      | GET                | [05](05-runs.md#reads)                            |
 
 ### Environments
 
@@ -365,6 +373,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 `proto/a13n-service/` holds the two wire contracts generated from the code:
 
 - `openapi.json`, the OpenAPI document the application serves at `/api/v1/openapi.json`;
+- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`).
 - `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.

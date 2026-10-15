@@ -394,7 +394,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 读取 `GET …/runs/{run_id}` 并根据 `status` 处理。完成运行包含 `output`（文本或符合 `output_spec` 的 JSON）；等待运行包含 `pending`；失败运行包含 `failure {code, message}`。运行配置、血缘、挂载和时间戳请参阅 [API 参考](api-reference/index.md)。
 
 - `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`last_run_id` 是最后结束的运行，下一个运行从它的历史继续；`current_run_id` 是活跃运行。
-- `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `position`、可选 `resume_after` 和 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
+- `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
 - 超过 32 KiB 的展示字段单独保存，每个字段最多保留压缩前 16 MiB 的 UTF-8 内容。超限时只保留文本前缀并标记 `truncated=true`，超限 JSON 也会转为文本前缀。Item 的 `content_refs` 按字段名提供正文引用，包含 `id`、已保存字节数 `size_bytes`、`media_type`、`truncated` 和短预览 `preview`。通过 `GET …/runs/{run_id}/contents/{content_id}` 读取已保存内容，需要相同的工作区读取权限。Console 提供“展开全文”入口；超限时改为“展开已保存内容”，并提示内容已截断。被丢弃的后续内容和旧版已截断记录无法据此恢复。此上限不改变 Agent 执行状态，实时 delta 仍保留原有大小限制。
 - `GET …/runs/{run_id}/agent` 返回运行执行的 Agent 版本，以及应用该运行覆盖项后的配置。
 - `GET …/runs/{run_id}/lineage` 返回运行及其祖先，可跨分叉，按最近到最远排列。
@@ -402,34 +402,33 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 失败运行的 `failure.code` 指出原因，例如 `usage_limit_exceeded`、`environment_unavailable`、校验错误码或 `attempt_failed`。
 
-## 跟踪线程事件流
+## 跟踪会话事件流
 
-`GET …/threads/{thread_id}/stream` 是线程实时输出的 server-sent event 流：
+`GET …/sessions/{session_id}/stream` 是会话中各线程及其活跃运行实时输出的 server-sent event 流：
 
 ```sh
-curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13N_API_KEY"
+curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| 事件       | 数据                                       | 含义                                                                                                   |
-| ---------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `delta`    | `{run_id, attempt, sequence, event, item}` | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
-| `boundary` | `{run_id, attempt, sequence}`              | 运行提交了检查点；显示项现在覆盖截至此处的全部内容。                                                   |
-| `changed`  | `{version}`                                | 线程变化（运行开始、结束或收件箱变化）；请重新读取线程。                                               |
-| `reset`    | `{run_id}`                                 | 运行进入新尝试；丢弃实时输出并重新读取显示项。                                                         |
-| `gap`      | `{run_id}`                                 | 跳过了实时输出；请重新读取运行显示项。                                                                 |
+| 事件     | 数据                                                        | 含义                                                                                                   |
+| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `thread` | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                   |
+| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                   |
+| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
+| `gap`    | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                      |
 
-事件流是临时观测，运行显示项才是持久记录。渲染线程时：
+每个连接都从会话的当前状态开始：每个线程一个 `thread` 帧，按创建时间从旧到新，每个帧之后是其活跃运行的 `items` 帧和该运行已产生的输出。事件流没有游标，因此重连时不发送位置。渲染会话时：
 
-1. 对活跃运行读取 `GET …/runs/{run_id}/items`。
-2. `position` 非 null 时，用 `?run=<run_id>&position=<position>` 打开事件流，并将非 null 的 `resume_after` 作为 `Last-Event-ID` 请求头。
-3. 没有已保存位置时，不带游标打开事件流，进行保留事件回放。
-4. 应用 `attempt` 和 `sequence` 晚于显示项 `position`（`"{attempt}-{sequence}"`）的 `delta` 帧。
-5. 收到 `reset` 时，丢弃被替代的临时输出并重读显示项。收到 `gap` 时，重读显示项，将位置与 gap 的可选 `position` 比较：只有缺失范围被覆盖后才清除 gap，否则等待新检查点或终态。收到 `changed` 时重读线程。
-6. 连接时及运行仍活跃期间定期检查运行：订阅前已经结束的运行可能不会再发送通知。封存后读取最终显示项。
+1. 打开事件流。
+2. 收到 `thread` 时，替换本地的线程及其指向的运行。
+3. 收到 `items` 时，替换该运行从序号 `first` 起的显示项。保留 `first` 之前的显示项，它们不会再变化。需要时用 `GET …/runs/{run_id}/items?before=<first>` 读取更早的显示项。
+4. 收到 `delta` 时，将事件应用到该运行的显示项，并从其最近一个 `items` 帧的 `continuation` 继续显示。
+5. 收到 `gap` 时，提示输出有缺失。该运行的下一个 `items` 帧会修复显示。
+6. 运行结束时，先收到其 `thread` 帧，再收到 `complete: true` 的最终 `items`。
 
-重连时保留显示数据，发送最后连续应用的位置及匹配的恢复提示，并对重叠投递去重。提示缺失或过期时会回退到保留事件回放；这本身不表示输出丢失。页面刷新后先加载显示项。不能跨过 gap 推进位置。实时输出的保留量有限；合并和保留限制参阅 [worker 设置](configuration-reference.md#worker)。
+连接结束后，等待一个随机延迟再重连，延迟逐次增长，最长 30 秒；收到 429 或 503 响应时按其 `Retry-After` 等待。收到其他 4xx 响应时不要重连。重连时丢弃尚未结束的运行的显示项：新连接会重新发送每个活跃运行的显示项。断开期间结束的运行，用 `GET …/runs/{run_id}/items` 读取。忽略不认识的事件。
 
-`delta` 和 `boundary` 帧携带 SSE `id`。未提供运行和 position 的读取方可将最后 ID 放入 `Last-Event-ID` 重连，游标缺失时报告 `gap`。提供运行和 position 的读取方只在必需序列缺失或传输失败时收到 gap。请重新加载显示项，在后续 boundary 或运行封存时重新评估覆盖。Service 每 15 秒发送 keep-alive 注释，工作空间访问权限结束时关闭事件流。帧 JSON Schema 位于 `proto/a13n-service/thread-stream.schema.json`。
+事件流是临时观测，运行显示项才是持久记录。Service 每 15 秒发送 keep-alive 注释，工作空间访问权限结束时关闭事件流。其他客户端做出的变化会在 `control.stream_refresh_seconds` 内出现在事件流中。实时输出的保留量有限；合并和保留限制参阅 [worker 设置](configuration-reference.md#worker)。帧 JSON Schema 位于 `proto/a13n-service/session-stream.schema.json`。
 
 ## 用量
 

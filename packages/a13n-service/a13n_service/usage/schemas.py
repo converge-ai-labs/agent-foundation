@@ -139,3 +139,27 @@ class ModelRequestMetrics(BaseModel):
     time_to_first_chunk_seconds: float | None
     request_duration_seconds: float | None
     output_tokens_per_second: float | None
+
+
+class ContextUsageQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    thread_id: ObjectId | None = None
+    run_id: ObjectId | None = None
+    record_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def one_scope(self) -> "ContextUsageQuery":
+        if sum(value is not None for value in (self.thread_id, self.run_id, self.record_id)) != 1:
+            raise ValueError("Provide exactly one thread_id, run_id or record_id")
+        return self
+
+
+class ContextUsage(BaseModel):
+    """One reported generation, compared with its currently configured window."""
+
+    run_id: str
+    record_id: str
+    input_tokens: int | None
+    output_tokens: int | None
+    context_window_tokens: int | None

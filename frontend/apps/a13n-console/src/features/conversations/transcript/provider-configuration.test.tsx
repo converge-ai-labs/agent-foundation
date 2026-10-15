@@ -19,7 +19,7 @@ vi.mock("../../../auth/context", () => ({
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/workspace/test",
+    basePath: "/workspace/workspace",
     workspace: { id: "workspace" },
     can,
   }),
@@ -125,6 +125,9 @@ const submit = () => screen.getByRole("button", { name: "Submit responses" });
 
 it("sends credentials only to provider storage and resumes the complete mixed batch with a safe result", async () => {
   const { user, queryClient } = setup(false, true);
+  expect(
+    screen.getByRole("link", { name: "Open Providers" }).getAttribute("href"),
+  ).toBe("/workspace/workspace/settings/providers?category=models");
   await enterSecret(user);
   await screen.findByText(/Provider saved\./);
   expect(screen.queryByLabelText("API key")).toBeNull();
