@@ -432,5 +432,7 @@
   "Platform MCP groups selected independently of local operating instructions.": "独立于本地操作说明选择的平台 MCP 工具组。",
   "Workspace execution search; timestamps bound creation time, newest first.": "工作空间执行查询；按创建时间范围筛选，最新记录在前。",
   "Delete Environment Provider": "删除环境连接",
-  "Environment Provider References": "环境连接引用"
+  "Environment Provider References": "环境连接引用",
+  "One reported generation, compared with its currently configured window.": "单次模型生成报告的用量，与当前配置的上下文窗口大小比较。",
+  "Context Usage": "上下文用量"
 }
