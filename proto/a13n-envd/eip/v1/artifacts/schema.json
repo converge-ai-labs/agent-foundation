@@ -51,6 +51,143 @@
       "title": "ArgvCommand",
       "type": "object"
     },
+    "CgroupMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_max": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CpuLimit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cpu_periods_total": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Periods Total"
+        },
+        "cpu_system_usec": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu System Usec"
+        },
+        "cpu_throttled_periods_total": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Throttled Periods Total"
+        },
+        "cpu_throttled_usec": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Throttled Usec"
+        },
+        "cpu_usage_usec": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Usage Usec"
+        },
+        "cpu_user_usec": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu User Usec"
+        },
+        "memory_current_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Current Bytes"
+        },
+        "memory_events": {
+          "$ref": "#/$defs/MemoryEvents"
+        },
+        "memory_max": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryLimit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pressure": {
+          "$ref": "#/$defs/Pressures"
+        }
+      },
+      "required": [
+        "memory_events",
+        "pressure"
+      ],
+      "title": "CgroupMetrics",
+      "type": "object"
+    },
     "CleanupOutcome": {
       "enum": [
         "pending",
@@ -689,6 +826,134 @@
       "title": "ContentDigest",
       "type": "object"
     },
+    "CpuLimit": {
+      "discriminator": {
+        "mapping": {
+          "limited": "#/$defs/LimitedCpuLimit",
+          "unlimited": "#/$defs/UnlimitedCpuLimit"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/UnlimitedCpuLimit"
+        },
+        {
+          "$ref": "#/$defs/LimitedCpuLimit"
+        }
+      ]
+    },
+    "CpuTimeSeconds": {
+      "additionalProperties": false,
+      "properties": {
+        "idle": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idle"
+        },
+        "iowait": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Iowait"
+        },
+        "irq": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Irq"
+        },
+        "nice": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nice"
+        },
+        "softirq": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Softirq"
+        },
+        "steal": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Steal"
+        },
+        "system": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User"
+        }
+      },
+      "title": "CpuTimeSeconds",
+      "type": "object"
+    },
     "DesiredPortStatus": {
       "enum": [
         "listening",
@@ -784,6 +1049,17 @@
         },
         "path_style": {
           "$ref": "#/$defs/PathStyle"
+        },
+        "system_info": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SystemInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -797,6 +1073,68 @@
         "boundary"
       ],
       "title": "DeviceDescriptor",
+      "type": "object"
+    },
+    "DeviceMetricsParams": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_device_id": {
+          "minLength": 1,
+          "title": "Expected Device Id",
+          "type": "string"
+        },
+        "expected_generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Expected Generation",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_device_id",
+        "expected_generation"
+      ],
+      "title": "DeviceMetricsParams",
+      "type": "object"
+    },
+    "DeviceMetricsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "device_id": {
+          "minLength": 1,
+          "title": "Device Id",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "sample": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetricsSample"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_interval_ms": {
+          "maximum": 60000,
+          "minimum": 1000,
+          "title": "Sample Interval Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "device_id",
+        "generation",
+        "sample_interval_ms"
+      ],
+      "title": "DeviceMetricsResult",
       "type": "object"
     },
     "DirectoryEntry": {
@@ -3015,6 +3353,96 @@
       "title": "FileWriterOpenResult",
       "type": "object"
     },
+    "FilesystemMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "available_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Available Bytes",
+          "type": "integer"
+        },
+        "available_inodes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available Inodes"
+        },
+        "free_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Free Bytes",
+          "type": "integer"
+        },
+        "free_inodes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Free Inodes"
+        },
+        "total_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Total Bytes",
+          "type": "integer"
+        },
+        "total_inodes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Inodes"
+        }
+      },
+      "required": [
+        "total_bytes",
+        "available_bytes",
+        "free_bytes"
+      ],
+      "title": "FilesystemMetrics",
+      "type": "object"
+    },
+    "FilesystemObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilesystemMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "FilesystemObservation",
+      "type": "object"
+    },
     "GrantAccess": {
       "enum": [
         "read_only",
@@ -3080,6 +3508,232 @@
       ],
       "title": "InitializeResult",
       "type": "object"
+    },
+    "LimitedCpuLimit": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "limited",
+          "title": "Kind",
+          "type": "string"
+        },
+        "period_usec": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Period Usec",
+          "type": "integer"
+        },
+        "quota_usec": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Quota Usec",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "quota_usec",
+        "period_usec"
+      ],
+      "title": "LimitedCpuLimit",
+      "type": "object"
+    },
+    "LimitedMemoryLimit": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "limited",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "bytes"
+      ],
+      "title": "LimitedMemoryLimit",
+      "type": "object"
+    },
+    "MemoryEvents": {
+      "additionalProperties": false,
+      "properties": {
+        "high": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "High"
+        },
+        "low": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Low"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        },
+        "oom": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oom"
+        },
+        "oom_group_kill": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oom Group Kill"
+        },
+        "oom_kill": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oom Kill"
+        }
+      },
+      "title": "MemoryEvents",
+      "type": "object"
+    },
+    "MemoryLimit": {
+      "discriminator": {
+        "mapping": {
+          "limited": "#/$defs/LimitedMemoryLimit",
+          "unlimited": "#/$defs/UnlimitedMemoryLimit"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/UnlimitedMemoryLimit"
+        },
+        {
+          "$ref": "#/$defs/LimitedMemoryLimit"
+        }
+      ]
+    },
+    "MetricsSample": {
+      "additionalProperties": false,
+      "properties": {
+        "cgroup_v2": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CgroupMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "collection_duration_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Collection Duration Ms",
+          "type": "integer"
+        },
+        "filesystems": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FilesystemObservation"
+          },
+          "title": "Filesystems",
+          "type": "object"
+        },
+        "sample_age_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Sample Age Ms",
+          "type": "integer"
+        },
+        "sampled_at": {
+          "format": "date-time",
+          "title": "Sampled At",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "system": {
+          "$ref": "#/$defs/SystemMetrics"
+        }
+      },
+      "required": [
+        "sequence",
+        "sampled_at",
+        "sample_age_ms",
+        "collection_duration_ms",
+        "system"
+      ],
+      "title": "MetricsSample",
+      "type": "object"
+    },
+    "OperatingSystem": {
+      "enum": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "title": "OperatingSystem",
+      "type": "string"
     },
     "OperationCancelParams": {
       "additionalProperties": false,
@@ -3481,6 +4135,112 @@
         "observation"
       ],
       "title": "PortWaitResult",
+      "type": "object"
+    },
+    "Pressure": {
+      "additionalProperties": false,
+      "properties": {
+        "full": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PressureLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "some": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PressureLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Pressure",
+      "type": "object"
+    },
+    "PressureLevel": {
+      "additionalProperties": false,
+      "properties": {
+        "avg10_percent": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Avg10 Percent",
+          "type": "number"
+        },
+        "avg300_percent": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Avg300 Percent",
+          "type": "number"
+        },
+        "avg60_percent": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Avg60 Percent",
+          "type": "number"
+        },
+        "total_usec": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Total Usec",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "avg10_percent",
+        "avg60_percent",
+        "avg300_percent",
+        "total_usec"
+      ],
+      "title": "PressureLevel",
+      "type": "object"
+    },
+    "Pressures": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pressure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "io": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pressure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pressure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Pressures",
       "type": "object"
     },
     "ProcessCloseStdinParams": {
@@ -4434,6 +5194,156 @@
       "title": "ShellProfileDescriptor",
       "type": "object"
     },
+    "SystemInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Architecture"
+        },
+        "cpu_model": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Model"
+        },
+        "kernel_version": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kernel Version"
+        },
+        "os": {
+          "$ref": "#/$defs/OperatingSystem"
+        },
+        "os_version": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os Version"
+        }
+      },
+      "required": [
+        "os"
+      ],
+      "title": "SystemInfo",
+      "type": "object"
+    },
+    "SystemMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_busy_percent": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Busy Percent"
+        },
+        "cpu_time_seconds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CpuTimeSeconds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "logical_cpu_count": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logical Cpu Count"
+        },
+        "memory_available_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Available Bytes"
+        },
+        "memory_total_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Total Bytes"
+        },
+        "pressure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pressures"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "SystemMetrics",
+      "type": "object"
+    },
     "TerminationReason": {
       "enum": [
         "exit",
@@ -4445,9 +5355,39 @@
       ],
       "title": "TerminationReason",
       "type": "string"
+    },
+    "UnlimitedCpuLimit": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "unlimited",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "UnlimitedCpuLimit",
+      "type": "object"
+    },
+    "UnlimitedMemoryLimit": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "unlimited",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "UnlimitedMemoryLimit",
+      "type": "object"
     }
   },
   "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Environment Interaction Protocol 0.1"
+  "title": "Environment Interaction Protocol 0.2"
 }

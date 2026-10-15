@@ -22,4 +22,12 @@ make site-build
 - `src/scene/` holds the Service scene in three acts: `build.ts`, `call.ts`, and `run.ts`. `stage.ts` maps the scroll position to the acts and their transitions.
 - `src/main.ts` shows the hero once the display face loads, then loads `src/page.ts`, which mounts everything below the hero. One frame loop drives both.
 
-`index.html` preloads the two faces above the fold, and `public/_headers` lets browsers cache hashed assets for a year. `public/robots.txt` points crawlers to the documentation sitemap. Reduced-motion preferences stop the loops and make transitions instant. The `Site` workflow checks, tests, builds, and deploys the site to the `a13n-site` Cloudflare Pages project.
+`index.html` preloads the two faces above the fold, and `public/_headers` lets browsers cache hashed assets for a year. Reduced-motion preferences stop the loops and make transitions instant. The `Site` workflow checks, tests, builds, and deploys the site to the `a13n-site` Cloudflare Pages project.
+
+## Sitemaps
+
+`https://a13n.dev/sitemap.xml` lists every indexable page across the landing application and the English and Chinese documentation. `public/robots.txt` declares this single entry point. After assembling both applications, `make site-build` reads canonical URLs from their HTML with [`parse5`](https://github.com/inikulin/parse5) and generates XML with the MIT-licensed [`sitemap`](https://github.com/ekalinin/sitemap.js) package. No URL lists or XML files are maintained by hand. Pages marked `noindex` and HTML redirects are excluded. Modification dates are omitted because the build does not track each page's content modification time.
+
+The build rejects missing or mismatched canonical URLs, duplicate entries, incomplete documentation exports, and sitemaps exceeding 50,000 URLs or 50 MB. It parses the generated XML to verify coverage and checks the root declaration in `robots.txt`. Next.js continues to publish `/docs/sitemap.xml` for existing consumers; the build verifies that it matches the documentation subset of the root sitemap. To check an existing build without regenerating it, run `pnpm --dir frontend --filter a13n-site run check:sitemap`.
+
+Local previews serve the deployment artifact, so sitemap URLs retain the production domain `https://a13n.dev`. Inspect the full local inventory at `/sitemap.xml`; following a listed URL opens the production page. A browser's message that the XML has no style information is normal.

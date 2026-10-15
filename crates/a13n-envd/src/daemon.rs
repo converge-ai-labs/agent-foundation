@@ -115,6 +115,7 @@ impl CarrierResponse {
 pub(crate) struct Daemon {
     config: Config,
     descriptor: DeviceDescriptor,
+    monitoring: Option<Arc<crate::monitoring::State>>,
     filesystem: Arc<DeviceFilesystem>,
     retention_quota: RetentionQuota,
     capacity: DeviceCapacity,
@@ -174,6 +175,10 @@ fn session_methods(config: &Config) -> Vec<String> {
 }
 
 impl Daemon {
+    pub(crate) fn start_monitoring(&self) -> Option<crate::monitoring::Runtime> {
+        self.monitoring.as_ref().map(|state| state.start())
+    }
+
     pub(crate) fn new(config: &Config) -> Result<Self, DaemonInitError> {
         Self::with_generation(config, fresh_generation()?)
     }
@@ -192,6 +197,7 @@ impl Daemon {
                 .iter()
                 .filter(|method| method.device_scoped)
                 .filter(|method| method.name != "directory.list" || config.directory_discovery)
+                .filter(|method| method.name != "device.metrics" || config.monitoring.is_some())
                 .map(|method| method.name.to_owned()),
         );
         if config.egress.controlled() && cfg!(target_os = "linux") {
@@ -200,6 +206,10 @@ impl Daemon {
         available_methods.sort();
         Ok(Self {
             config: config.clone(),
+            monitoring: config
+                .monitoring
+                .as_ref()
+                .map(crate::monitoring::State::new),
             filesystem,
             retention_quota,
             capacity: DeviceCapacity::new(&config.limits),
@@ -207,6 +217,7 @@ impl Daemon {
                 config.limits.max_device_concurrent_operations as usize,
             )),
             descriptor: DeviceDescriptor {
+                system_info: Some(crate::monitoring::system_info(config)),
                 boundary: crate::execution::boundary::descriptor(config)
                     .map_err(|_| DaemonInitError::new("invalid execution boundary"))?,
                 device_id: config.device_id.clone(),
@@ -805,6 +816,23 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         Ok(eip::DeviceDescribeResult {
             descriptor: self.daemon.descriptor.clone(),
         })
+    }
+
+    async fn device_metrics(
+        &self,
+        params: eip::DeviceMetricsParams,
+    ) -> Result<eip::DeviceMetricsResult, EIPError> {
+        self.daemon
+            .check_device(&params.expected_device_id, params.expected_generation)?;
+        let state = self
+            .daemon
+            .monitoring
+            .as_ref()
+            .ok_or_else(|| protocol_error(ErrorType::Unsupported, "monitoring is disabled"))?;
+        Ok(state.report(
+            &self.daemon.descriptor.device_id,
+            self.daemon.descriptor.generation,
+        ))
     }
 
     async fn directory_list(
@@ -3487,7 +3515,7 @@ mod tests {
         fn open_params(&self, required_methods: Value) -> Value {
             json!({"expected_device_id": self.device.descriptor.device_id,
                 "expected_generation": self.device.descriptor.generation,
-                "protocol_version": "0.1",
+                "protocol_version": "0.2",
                 "working_directory": self.device.descriptor.default_working_directory,
                 "required_methods": required_methods})
         }
@@ -3543,7 +3571,7 @@ mod tests {
 
     fn initialize_params() -> Value {
         json!({
-            "supported_protocol_versions": ["0.1"],
+            "supported_protocol_versions": ["0.2"],
             "client": {"name": "test", "version": "1"},
             "expected_device_id": "env-test"
         })
@@ -3588,13 +3616,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn old_protocol_is_rejected_before_returning_a_device_descriptor() {
+        let config = Config::for_test("env-test");
+        let fixture = Fixture::new(&config, 7);
+        let mut params = initialize_params();
+        params["supported_protocol_versions"] = json!(["0.1"]);
+        let response = fixture.call("initialize", params).await;
+        assert_eq!(
+            response["error"]["data"]["error_type"],
+            "protocol_incompatible"
+        );
+        assert!(response.get("result").is_none());
+    }
+
+    #[tokio::test]
     async fn device_metadata_and_session_descriptor_are_distinct() {
         let mut config = Config::for_test("env-test");
         config.display_name = Some("Build Linux".into());
         config.description = Some("Build artifacts".into());
         let fixture = Fixture::new(&config, 7);
         let initialized = initialize(&fixture).await;
-        assert_eq!(initialized["result"]["protocol_version"], "0.1");
+        assert_eq!(initialized["result"]["protocol_version"], "0.2");
         let device = fixture.call("device.describe", json!({})).await;
         assert_eq!(
             device["result"]["descriptor"],

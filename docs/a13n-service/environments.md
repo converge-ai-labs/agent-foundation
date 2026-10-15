@@ -16,7 +16,7 @@ In Console, **Environments → Templates** manages templates and **Environments 
 
 The single-host Compose stack with a mounted Docker socket automatically adds a **Docker** provider and **Linux Sandbox** template to each workspace when the Engine is reachable. The template pins the [independently versioned sandbox image reviewed by Service](#docker-image-versions) and uses `pull_policy: if_missing`. The Engine pulls the image when the first instance is created if it is not already present; workspace initialization does not pull it. The Linux image includes Python 3.13, pip, venv, uv, Node.js 24, npm, pnpm, Git, Bash, curl, ripgrep, jq, archive utilities and C/C++ build tools. Commands run as `sandbox`, with writable `/workspace` and `/tmp/a13n`. Project dependencies can be installed in a virtual environment or the project directory.
 
-To use a locally built image for a new workspace, run `make image-sandbox` and start Compose with `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-sandbox:local`. Change an existing template in Console or through the API; provisioning does not replace it after initialization.
+To use a locally built image for a new workspace, run `make image-sandbox`. In the Compose file's `service.environment`, set `A13N_PROVISIONING__DOCKER` to the complete JSON value `'{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'`. Omit `image` to use the Service default. See [Compose configuration](configuration.md#workspace-provisioning) for an override-file example. Change an existing template in Console or through the API; provisioning does not replace it after initialization.
 
 The socket-free quickstart does not enable Docker provisioning. For source development, `make dev` explicitly enables **Local** and creates a **Local Workspace** template rooted at that checkout's `var/dev/environments`. Each environment later gets its own subdirectory. Local runs commands directly as the operating-system user of the Service process and provides no isolation.
 
@@ -91,7 +91,7 @@ Leave `recipe.image` unset to use the Service-reviewed `ghcr.io/converge-ai-labs
 
 | Service build                                         | Image tag |
 | ----------------------------------------------------- | --------- |
-| Stable or RC                                          | `0.1.3`   |
+| Stable or RC                                          | `0.3.0`   |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`     |
 
 Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. A Docker recipe defaults to `pull_policy: if_missing`: the Engine uses local images and pulls missing ones. Set `never` to require a local image. The automatically provisioned template stores the reviewed sandbox image explicitly, so later Service upgrades do not silently change it.
@@ -197,7 +197,20 @@ Two conversations can use different project directories on one instance, or deli
 
 ## Computer Use
 
-An Agent can operate a compatible desktop without a person taking control first. This requires an environment whose provider exposes Computer operations and a working graphical session; enabling permissions does not add a desktop to a headless environment.
+Give an agent a graphical desktop to inspect screens, click controls and type. Set up the desktop first, then grant its tools and mount permissions.
+
+### Create a Docker desktop
+
+1. Open **Workspace settings → Providers → Environment** and configure a Docker connection. Enable **Environment operation channel** and set **Host access address** to an address the Workers can reach. Docker Engine access and this HTTP route are separate connections.
+2. Open **Environments → Templates → Create template**. Choose Docker, select the connection, and choose **Desktop environment**. The preset selects the desktop image, HTTP EIP execution and desktop readiness requirement. Save the template.
+3. Select that template as the agent's default environment, or create an instance from it and add it to the conversation.
+4. Once the environment is running, use **Check desktop** in **Environments and memory** to inspect readiness. Then enable the permissions below.
+
+Use loopback or an explicitly trusted private link for the plain-HTTP operation channel, with the deployment's outbound policy configured accordingly. Workers need access to the host address and Docker-assigned port. For a custom image, select **Custom image** and provide an image compatible with Envd HTTP and a graphical session; set `execution: "envd_http"` and `desktop: true`.
+
+### Enable observation and interaction
+
+For an existing compatible desktop, start here. Computer permissions default off and are independent of desktop readiness.
 
 1. Enable **Computer** in the Agent's tools and save its configuration. Per-tool approval settings still apply.
 2. Open the conversation's **Environments and memory** settings. Add the environment if needed, then open its **Computer permissions**. Choose **Observe** for screenshots and display information, or **Interact** to also allow mouse and keyboard actions. The primary `workspace` mount uses the same settings.

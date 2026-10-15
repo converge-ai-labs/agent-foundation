@@ -1,40 +1,34 @@
 ---
 title: Agent Composer
-description: A built-in agent that creates agents and new agent revisions with you, saving each one after your approval.
+description: Create agents, configure workspace resources, and diagnose runs through a conversation.
 ---
 
-Agent Composer works in an ordinary conversation. It reads the workspace's models, skills, connections, environment templates and agents, proposes a configuration, and saves it after you approve each write.
+Agent Composer helps you build and change agents in Console. Describe the result you want, review the proposed configuration, and approve the writes. It can also configure models, connections and providers, import skills, and investigate failed runs.
 
 ## Start Agent Composer
 
+The workspace needs an [enabled model](models.md) you can use. Preparing Composer requires `write`; once prepared, callers with `run` can use it.
+
 1. Open **Agents → Create with AI**, or open an agent and choose **Edit with AI**.
-2. Review the new conversation. **Edit with AI** fills in a request naming the agent and selected version; add the changes you want.
-3. Select **Send** to start the conversation. Review each proposed write before submitting your approval.
+2. Describe the task. For example: “Create an agent that turns project notes into next steps. Use an available model and show me the instructions before saving.” **Edit with AI** fills in the agent and selected version; add your requested changes.
+3. Select **Send**. Review each proposed write and approve or deny it. Complete every pending item, then select **Submit responses** to continue.
+4. Open the saved agent and choose **Try agent**. Test it with representative input, then return to Composer for further changes.
 
-Console prepares Agent Composer for callers with `write`. Callers with only `run` use the existing built-in agent once a builder has prepared it.
+To change an agent, Composer reads its selected revision and preserves unrelated fields in a complete new configuration. Writes use the resource version originally read. A concurrent change requires a fresh read and review.
 
-Through the API, prepare it, then [start a session](agents-and-runs.md#start-a-conversation) with the returned agent:
+## Configure a provider
 
-```sh
-curl -X POST "$A13N_URL/api/v1/agent-composer" \
-  -H "Authorization: Bearer $A13N_API_KEY"
-```
+1. Ask Composer to add or update a Model, Environment, Connector or Web Provider.
+2. Review the card's proposed name, type and configuration. Enter credentials in the private card and select **Save provider**. Saving requires workspace `write` permission.
+3. Answer any other pending actions, then select **Submit responses** to continue the conversation.
 
-Preparing requires `write` in the workspace. The first call creates the workspace's Composer preset (`source: "builtin"`, `preset_kind: "composer"`), which `GET /api/v1/agents?source=builtin&preset_kind=composer` also finds. Later calls refresh its name and description and add a revision only when its configuration changed. Anyone with `run` can start runs with it once it exists.
+Credentials go directly to the Provider API. The agent receives only the save status and provider ID; credentials stay out of messages, tool arguments and results. Empty credential fields on updates keep saved credentials. Updates use the original resource version, so a conflict needs a fresh proposal.
 
-## Choose its model
+Saving and continuing are separate steps. After a confirmed save, retrying **Submit responses** does not save again. If the save outcome is unclear, or you reload before continuing, check **Providers** before retrying: saves are not automatically retried and another create can add a duplicate. **Cancel configuration** before a save attempt makes no write; stopping after an unconfirmed save reports an unknown outcome.
 
-Agent Composer needs an enabled model the caller can use. Preparing picks, in order:
-
-1. the model its current revision already uses, while it stays usable;
-2. otherwise the first available model whose upstream name appears in the deployment's [`composer.models`](configuration.md#execution) list, in list order (a `vendor/` prefix is ignored);
-3. otherwise the first usable model of the workspace, by key.
-
-When the workspace has no usable model, preparing fails with `409 conflict` and reason `model_required`, and Console points you to model setup. [Add a model](models.md), then prepare again.
+Use the existing Console pages for connection credentials, custom secret headers and browser OAuth authorization. API clients running Composer handle its native `configure_provider` client tool or report it unavailable, using the ordinary pending-call and batch-resume contract.
 
 ## What it can do
-
-Agent Composer uses the same platform MCP tools as external clients. The Service supplies a short-lived credential for the current run; you do not need to create an API key. Operations remain limited by your current permissions, the run's accepted authority and its selected workspace.
 
 | Group                 | Available work                                                                                |
 | --------------------- | --------------------------------------------------------------------------------------------- |
@@ -46,31 +40,40 @@ Agent Composer uses the same platform MCP tools as external clients. The Service
 | Providers             | Read, create and update providers through private Console credential cards.                   |
 | Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings. |
 
-Reads run directly by default. Writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions); Console shows the exact call to approve or deny. Approval does not grant additional platform permissions.
+Composer uses platform MCP tools with a short-lived credential supplied for the run. Reads run directly by default; writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions). Operations remain within your current permissions, the run's accepted authority and its workspace. Approval grants no additional platform permissions.
 
-To change an agent, Composer reads the selected revision and preserves unrelated fields in a complete new configuration. It retains the resource version originally read. A concurrent change causes a conflict and requires a fresh read and review. It never silently replaces the original version with the latest one.
+For diagnosis, give Composer a run ID or describe the failure. It can find a past failed run without its session ID and distinguish a failed attempt from a run that later recovered. Its answer identifies missing trace evidence when relevant.
 
-The built-in `platform-operations` skill supplies local instructions through read-only file tools. It needs no user environment. Composer can diagnose a past failed run without knowing its session ID, and distinguishes a failed attempt from a run that later recovered. Missing trace evidence is reported as a limitation.
+Use the dedicated guides to [edit skill packages](skills.md), [manage memory](memory.md), [configure plugins](configuration-reference.md#plugins), [manage environment instances](environments.md) or [control runs](agents-and-runs.md). These operations are outside Composer's tool selection. For any uncertain write outcome, check the resource state before retrying.
 
-Composer does not edit skill package files, operate memory, configure plugins, control environment instances or start/cancel runs. It never asks for secret values in chat. Provider credentials are entered in a private Console card; connection credentials, custom secret headers and browser OAuth use existing Console pages. Unknown write outcomes require checking resource state before retrying.
+## Prepare through the API
 
-## Configure a provider
+Prepare Composer, then [start a session](agents-and-runs.md#start-a-conversation) with the returned agent:
 
-Ask Composer to add or update a Model, Environment, Connector or Web Provider. It opens a card showing the proposed name, type and configuration. Enter the required credentials in that card and select **Save provider**. Only users with workspace `write` permission can save. Then select **Submit responses** to continue the conversation, answering any other pending actions first. **Cancel configuration** makes no write before a save attempt. Stopping after an unconfirmed save reports an unknown outcome to the agent.
+```sh
+curl -X POST "$A13N_URL/api/v1/agent-composer" \
+  -H "Authorization: Bearer $A13N_API_KEY"
+```
 
-Credentials go directly to the Provider API. They are not included in the agent's messages, tool arguments or results. The agent receives only the save status and provider ID. Updates keep saved credentials when the fields are empty and use the original resource version; a conflict needs a fresh proposal.
+The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and adds a revision only when its configuration changed.
 
-Saving and continuing are separate steps. After a confirmed save, retrying **Submit responses** does not save again. Saves are not automatically retried and creates are not idempotent. If the save outcome is unclear, or you reload before continuing, check **Providers** before retrying to avoid a duplicate. Browser OAuth authorization still takes place on the existing Console page.
+## Choose its model
 
-API clients that run Composer must handle its native `configure_provider` client tool or report that it is unavailable. It uses the ordinary pending-call and batch-resume contract; no extra Run endpoint is required.
+Preparation selects an enabled model the caller can use, in this order:
+
+1. The model in Composer's current revision, while it stays usable.
+2. The first available model matching the deployment's [`composer.models`](configuration.md#execution) list, in list order. Matching uses the upstream name and ignores a `vendor/` prefix.
+3. The first usable workspace model, by key.
+
+If no model is usable, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
 
 ## Built-in agent rules
 
-Agent Composer cannot be edited, revised, archived or given an avatar (`409 conflict`, reason `builtin`); only preparing changes it. Its model is selected automatically as described above. Duplicate it to create a custom agent you can change.
+Preparation owns Composer's configuration and model selection. Editing, revising, archiving or setting an avatar returns `409 conflict` with reason `builtin`. Duplicate Composer to create a custom agent you can change.
 
 ## Use the toolset in your own agents
 
-Any agent can independently select platform groups and the local operating skill through its advanced configuration JSON:
+Select platform groups and the local operating skill in advanced configuration JSON:
 
 ```json
 {
@@ -83,10 +86,10 @@ Any agent can independently select platform groups and the local operating skill
 }
 ```
 
-Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. Selecting the skill alone grants no operations. A later configuration change does not widen an active run's authority or tool selection.
+Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. Select tool groups to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
 
-The built-in Skill reads packaged documents through a read-only local Environment in the Worker. It requires no user Environment or container. Its catalog and read events use the same Harness Skills lifecycle as user Skills; when both are selected, they appear in one catalog. The Agent configuration schema ships with the documents under `/platform-skills/platform-operations/schemas`. The deployment-specific catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
+The `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. It shares the Harness Skills catalog and read lifecycle with user Skills. The Agent configuration schema is under `/platform-skills/platform-operations/schemas`; the deployment catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
 
-Keep the standard file tools enabled to read the selected Skill: `view`, `ls`, `glob` and `grep`. Composer enables only these four file tools. Builtin document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
+Enable `view`, `ls`, `glob` and `grep` to read the skill. Composer enables only these four file tools. Built-in document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
 
-Existing agents can still use the legacy `configuration` toolset. Its `create_agent_revision` now requires the `expected_version` from the original resource read; calls missing that value must read again and submit a new request. Historical runs retain their original tools.
+Existing agents can use the legacy `configuration` toolset. Its `create_agent_revision` requires `expected_version` from the original resource read. Calls missing it must read again and submit a new request. Historical runs retain their original tools.

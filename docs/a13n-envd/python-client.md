@@ -15,6 +15,8 @@ uv add a13n-envd-client
 
 Python 3.13 or later is required. The Python client and native daemon publish at the same Envd release version; EIP's negotiated wire version is a separate identity. Source examples should use the repository lockfile, not a published client against a source-version daemon.
 
+Envd `0.3.0` and its co-versioned client use EIP `0.2`; the Envd `0.2.0` release uses EIP `0.1`. Upgrade the daemon and client together: EIP `0.1` peers fail version negotiation. Harness `0.13.x` and its consumers require client `>=0.3.0,<0.4.0`; custom images and remote endpoints must provide a compatible daemon. Existing Service environments retain their stored image, so recreate them with the upgraded image before using EIP `0.2` clients. The generated `eip.v1` namespace and binary data-frame profile `1` remain unchanged.
+
 ## Connect to an existing HTTP daemon
 
 This complete example requires a running daemon, its expected Device identity, and a Host-issued credential. It does not provision infrastructure or test account access offline.
@@ -81,7 +83,8 @@ A custom `WebSocketConnection` supplies `subprotocol`, async `send`, `recv`, `cl
 
 A Device provides:
 
-- `descriptor` and `describe()`: cached or freshly observed Device information, including path style, default working directory and directory-discovery availability.
+- `descriptor` and `describe()`: cached or freshly observed Device information, including `system_info`, path style, default working directory and directory-discovery availability.
+- `metrics()`: the latest cached resource sample when the Device advertises `device.metrics`. It opens no Session and triggers no collection. `sample` is `None` until the first collection completes. See [monitoring configuration and sample semantics](configuration.md#system-information-and-resource-monitoring).
 - `list_directories(DirectoryListParams(...))`: bounded one-level directory listing with exact expected Device ID and generation, absolute path, offset and limit. It opens no Session.
 - `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`: a new independent Session. Omitted cwd selects the Device default. A controlled-egress Device requires `egress`; other Devices reject it. Required methods assert compatibility, not permissions.
 - `attach_session(descriptor)`: explicit attachment to the exact existing Session in the same Device generation during disconnect grace. It never replays operations or resumes transfers.
@@ -187,6 +190,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | `computer.type_text`         | `computer_type_text`         | `ComputerTypeTextParams`     | `ComputerActionResult`       | `terminal_evidence` |
 | `computer.press_keys`        | `computer_press_keys`        | `ComputerPressKeysParams`    | `ComputerActionResult`       | `terminal_evidence` |
 | `device.describe`            | `device_describe`            | `DeviceDescribeParams`       | `DeviceDescribeResult`       | `ledger_external`   |
+| `device.metrics`             | `device_metrics`             | `DeviceMetricsParams`        | `DeviceMetricsResult`        | `ledger_external`   |
 | `directory.list`             | `directory_list`             | `DirectoryListParams`        | `DirectoryListResult`        | `ledger_external`   |
 | `egress.update`              | `egress_update`              | `EgressUpdateParams`         | `EgressUpdateResult`         | `ledger_external`   |
 | `environment.describe`       | `environment_describe`       | `EnvironmentDescribeParams`  | `EnvironmentDescribeResult`  | `active_only`       |

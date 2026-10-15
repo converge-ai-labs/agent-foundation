@@ -513,6 +513,47 @@ async def test_organizer_real_memory_tool_write(tmp_path, monkeypatch):
     assert calls == 2
 
 
+async def test_organizer_rejects_stale_tool_write_before_progress_confirmation(tmp_path, monkeypatch):
+    import json
+
+    from pydantic_ai.models.function import DeltaToolCall
+
+    root, source, scope, store = await _seed(tmp_path)
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            assert "Keep stable preferences" in str(messages)
+            current = await store.read("MEMORY.md")
+            await store.write("MEMORY.md", "Changed externally", expected=current.version, origin=Origin())
+            yield {
+                0: DeltaToolCall(
+                    name="memory_file_create",
+                    json_args=json.dumps({"memory": "global", "path": "derived.md", "content": "Stale conclusion"}),
+                    tool_call_id="derive",
+                )
+            }
+        else:
+            assert "read_conflict" in str(messages)
+            yield "Conflict acknowledged."
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        organizer = app._memory_organizer
+        organizer.offer(None)
+        await _settle(organizer)
+        assert organizer.status(source).last_outcome == "concurrent_change"
+        assert not (scope.root / "derived.md").exists()
+        assert _read_state(scope.root / ".a13n-memory/organization.json").manifest == {}
+        organizer.stop()
+    assert calls == 2
+
+
 async def test_deadline_leaves_backoff_and_releases_scope_lock(tmp_path, monkeypatch):
     from a13n_harness_ui import memory_organization
 

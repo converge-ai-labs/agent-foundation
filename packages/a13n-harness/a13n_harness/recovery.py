@@ -361,7 +361,7 @@ def is_recoverable_model_failure(error: BaseException) -> bool:
         )
     if type(error) is ModelAPIError and error.message == "Streamed response ended without a `finish_reason`":
         return True
-    if not isinstance(error, ModelAPIError | httpx2.TransportError | ConnectionError | TimeoutError):
+    if not isinstance(error, ModelAPIError | httpx2.HTTPError | ConnectionError | TimeoutError):
         return False
 
     transient = False
@@ -371,6 +371,14 @@ def is_recoverable_model_failure(error: BaseException) -> bool:
         seen.add(id(cause))
         if isinstance(cause, ssl.SSLCertVerificationError):
             return False
+        if isinstance(cause, httpx2.HTTPStatusError):
+            try:
+                body = cause.response.json()
+            except (ValueError, httpx2.ResponseNotRead):
+                body = None
+            return cause.response.status_code in {408, 429, 500, 502, 503, 504, 529} and not _has_permanent_error_code(
+                body
+            )
         if isinstance(cause, ModelHTTPError):
             return cause.status_code in {408, 429, 500, 502, 503, 504, 529} and not _has_permanent_error_code(
                 cause.body

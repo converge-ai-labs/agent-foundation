@@ -128,6 +128,8 @@ API 字段是 `config.characteristics.image_input`，不是 `config.settings`。
 
 模型的 **Advanced** 区域提供 Thinking effort 和 Max output tokens，OpenAI Responses 还提供 Reasoning summary 和 Store response。这些字段与 **Settings JSON** 编辑同一份草稿，其他原生参数仍可在 JSON 中设置。保留默认值不会强制设置推理强度或输出额度；请使用上游模型支持的值。模型默认值应用于使用该模型的 agent，也应用于使用各自选定模型的 reviewer 和媒体理解调用。
 
+Service 为主模型和辅助模型调用显式设置 `cache: true`，默认开启提示缓存。Model 设置和 Agent/运行覆盖可用 `cache: false` 关闭库管理的缓存，也可以指定保留时长。Anthropic Messages 默认还开启 `anthropic_cache_instructions`、`anthropic_cache_tool_definitions` 和 `anthropic_cache_messages`，将缓存标记放在内容块上，避免向网关发送顶层 `cache_control`。显式统一 `cache` 设置或任意 provider 缓存设置（包括 `anthropic_cache`）保留原生策略。Pydantic AI 负责缓存标记的具体位置；此设置不保证缓存命中，也不会关闭 provider 的隐式缓存。
+
 对于 `openai.responses`，**Store response 默认关闭**，包括从未设置 `openai_store` 的已有模型。设置 `openai_store: true` 可开启，设为 `null` 则交由 provider 决定。此设置控制上游响应存储，不影响 Service 自身运行历史或 provider 的其他保留策略。agent 和运行设置可以覆盖默认值。其他调用 API 保持既有存储行为。
 
 模型 Settings JSON 对应 API 的 `config.settings`。agent 的 **Provider-specific settings** 对应 `model_settings`。优先使用类型化设置，例如 OpenAI Responses：

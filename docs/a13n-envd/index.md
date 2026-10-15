@@ -62,7 +62,7 @@ uv run environment-provider-example local_envd \
   --executable ../../target/debug/a13n-envd
 ```
 
-The example creates its own working directory, starts a private daemon over stdio, creates one Session for its adapter, and verifies that closing the adapter preserves that directory. The example's `LocalEnvdProviderRuntime` then closes the daemon. For Agent integration, supply a **fresh** Local Envd adapter to Harness with `DynamicEnvironmentCapability`; [Harness integration](../a13n-harness/environments.md) shows that boundary. A Host can reuse its `LocalEnvdProviderRuntime` across adapters, but each adapter opens an independent Session.
+The example creates its own working directory, starts a private daemon over stdio, creates one Session for its adapter, and verifies that closing the adapter preserves that directory. The example's `LocalEnvdProviderRuntime` then closes the daemon. For Agent integration, supply an `EnvironmentSource` that returns a Local Envd connector and enable `DynamicEnvironmentCapability`; [Harness integration](../a13n-harness/environments.md) shows that boundary. A Host can reuse its `LocalEnvdProviderRuntime` across adapters, but each adapter opens an independent Session.
 
 Configure `LocalEnvdLaunchConfiguration` on that runtime when you need execution identity, Sandbox grants, egress mode, executable roots, shell profiles, or limits. Envd manages Session workers; the Host owns outer container or VM isolation. See [execution boundaries](isolation.md) and [Session credential references](../environments/remote-envd.md#session-egress-and-credential-references).
 

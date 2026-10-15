@@ -62,7 +62,7 @@ uv run environment-provider-example local_envd \
   --executable ../../target/debug/a13n-envd
 ```
 
-示例创建自己的工作目录，通过 stdio 启动私有守护进程，为适配器创建一个会话，并验证关闭适配器后该目录仍然保留。随后由示例的 `LocalEnvdProviderRuntime` 关闭守护进程。接入 agent 时，通过 `DynamicEnvironmentCapability` 向 Harness 提供一个**新建的** Local Envd 适配器；[Harness 集成](../a13n-harness/environments.md)介绍了这条边界。Host 可以在多个适配器之间复用 `LocalEnvdProviderRuntime`，但每个适配器都会打开独立会话。
+示例创建自己的工作目录，通过 stdio 启动私有守护进程，为适配器创建一个会话，并验证关闭适配器后该目录仍然保留。随后由示例的 `LocalEnvdProviderRuntime` 关闭守护进程。接入 Agent 时，提供返回 Local Envd connector 的 `EnvironmentSource`，并启用 `DynamicEnvironmentCapability`；[Harness 集成](../a13n-harness/environments.md)介绍了这条边界。Host 可以在多个适配器之间复用 `LocalEnvdProviderRuntime`，但每个适配器都会打开独立会话。
 
 需要设置执行身份、Sandbox 目录授权、出站网络模式、可执行文件根目录、shell 配置或限制时，在运行时上配置 `LocalEnvdLaunchConfiguration`。Envd 管理会话 worker；Host 管理外层容器或虚拟机隔离。参见[执行边界](isolation.md)和[会话凭据引用](../environments/remote-envd.md#session-egress-and-credential-references)。
 

@@ -47,11 +47,11 @@ The client package is lower-level than Harness and Service and is reusable by pr
 
 ## Canonical IDL Profile
 
-Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.1 selects data-frame profile 1, including explicit Session routing. Device handshake selects the protocol; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers reject unsupported protocol versions and frame profiles. EIP-specific method options declare at least:
+Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.2 selects data-frame profile 1, including explicit Session routing. Device handshake selects the protocol; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers reject unsupported protocol versions and frame profiles. EIP-specific method options declare at least:
 
 - exact JSON-RPC method name;
 - whether the method opens, closes, commits, or aborts a typed file transfer and the permitted direction;
-- device/session method scope and replay class (`terminal_evidence` or `active_only`) under origin-scoped operation identity; initialize, device.describe, directory.list, session.open and Session lifecycle controls are explicitly ledger-external;
+- device/session method scope and replay class (`terminal_evidence` or `active_only`) under origin-scoped operation identity; initialize, device.describe, device.metrics, directory.list, session.open and Session lifecycle controls are explicitly ledger-external;
 - correlated request-response behavior;
 - protocol major and first minor in which the method exists;
 - owning error set or error family when narrower than the common EIP set.

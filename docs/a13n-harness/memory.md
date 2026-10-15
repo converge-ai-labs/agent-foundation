@@ -70,7 +70,9 @@ The model addresses this memory by its mount name, `user`. Memory mounts are sep
 | `memory_file_move`   | Renames a file                                           | The source is missing or the destination exists       |
 | `memory_file_delete` | Deletes a file at the version the model viewed           | The file changed or no longer exists                  |
 
-A call that fails its condition or a version check changes nothing and returns the current file, so the model can read it and decide again. For example, two Threads viewed a file that contains "likes tea" and "reply in English". One Thread edits "reply in English" to "reply in Chinese". The other Thread then edits "likes tea" to "likes coffee". Both changes remain. A later edit of "reply in English" by either Thread fails and returns the file as it is now.
+Every write also checks the file versions the conversation observed in the same memory. If another Thread changes, deletes or moves an observed source, a derived write fails with `read_conflict` before changing any file. The same applies to an observed target even when `old_string` still matches. For example, after another Thread changes "reply in English" to "reply in Chinese", an edit of "likes tea" based on the old file is refused. The model must reread the changed file, reconsider its edit, then issue a new write. A reread in the same tool batch cannot refresh an already chosen write.
+
+These guards survive saved `HarnessState` continuations. Views, matching grep results, individual index entries and always-loaded files contribute observations; collapsed directory counts do not. Unobserved unrelated files can change freely. The scope is one memory per mutation, with earlier successful writes retained if a later call conflicts.
 
 A `read` mount offers only `memory_file_view` and `memory_file_grep`. `tools=("view", "grep")` narrows the tools for every mount. Tool permission rules can target the tool IDs `memory.file.view` through `memory.file.delete`.
 
@@ -111,7 +113,7 @@ Several processes can mount the same directory. `DirectoryFileStore` serializes 
 
 ### Bring your own file store
 
-A store implements the `FileStore` protocol from `a13n_harness.providers.memory`: `list`, `read`, compare-and-swap `write`, `move`, and `delete`, `changes` for the context cursor, and `purge`. Add `search` to implement `SearchableFileStore`; otherwise `memory_file_grep` reads the files. `validate_path()` and `describe()` apply the shared file rules. `Origin` tells a store with history which Run, principal, and tool call made each change.
+A store implements the `FileStore` protocol from `a13n_harness.providers.memory`: `list`, `read`, compare-and-swap `write`, `move`, and `delete`, `changes` for the context cursor, and `purge`. Its mutations must accept `dependencies`, a path-to-version map (`None` means absence), and validate it atomically with the target mutation. A mismatch raises `read_conflict` with no storage effects. Add `search` to implement `SearchableFileStore`, returning each match's content version from the same read; otherwise `memory_file_grep` reads the files. `validate_path()` and `describe()` apply the shared file rules. `Origin` tells a store with history which Run, principal, and tool call made each change.
 
 The [File Memory specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/21-file-memory.md) defines the complete store contract, context budget, and failure codes.
 

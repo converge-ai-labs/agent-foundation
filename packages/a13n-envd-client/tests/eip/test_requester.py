@@ -140,20 +140,47 @@ def params(operation: str = "op-test", timeout_ms: int | None = None) -> Environ
     return EnvironmentReadinessParams(context=EIPCallContext(operation_id=operation, timeout_ms=timeout_ms))
 
 
-async def initialized(transport: FakeTransport) -> EIPDeviceConnection:
+async def initialized(transport: FakeTransport, *, monitoring: bool = False) -> EIPDeviceConnection:
     task = asyncio.create_task(EIPDeviceConnection.initialize(transport, expected_device_id="device-test"))
     request = await transport.request()
     assert request.method == "initialize" and request.eip_session is None
-    assert request.params["supported_protocol_versions"] == ["0.1"]
+    assert request.params["supported_protocol_versions"] == ["0.2"]
+    advertised = device_descriptor().model_dump(mode="json", exclude_none=True)
+    if monitoring:
+        advertised["available_methods"].append("device.metrics")
     transport.reply(
         request,
         {
-            "protocol_version": "0.1",
+            "protocol_version": "0.2",
             "server": {"name": "a13n-envd", "version": "0"},
-            "descriptor": device_descriptor().model_dump(mode="json", exclude_none=True),
+            "descriptor": advertised,
         },
     )
     return await task
+
+
+@pytest.mark.parametrize("identity,generation", [("device-test", 1), ("other-device", 1), ("device-test", 2)])
+def test_metrics_is_device_scoped_and_checks_response_identity(identity: str, generation: int) -> None:
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport, monitoring=True)
+        task = asyncio.create_task(device.metrics())
+        request = await transport.request()
+        assert request.method == "device.metrics"
+        assert request.eip_session is None
+        assert request.params == {"expected_device_id": "device-test", "expected_generation": 1}
+        transport.reply(request, {"device_id": identity, "generation": generation, "sample_interval_ms": 10000})
+        if (identity, generation) == ("device-test", 1):
+            assert (await task).sample is None
+            assert not device.is_closed
+        else:
+            with pytest.raises(EIPProtocolError, match="identity or generation"):
+                await task
+            assert device.is_closed
+            assert transport.closed
+        await device.close()
+
+    asyncio.run(scenario())
 
 
 async def opened(

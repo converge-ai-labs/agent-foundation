@@ -138,14 +138,22 @@ async def test_auxiliary_success_does_not_replenish_primary_budget() -> None:
     assert primary_calls == auxiliary_calls == 3
 
 
+def _raw_http_error(status: int, body: object = None) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("POST", "https://example.test/model")
+    response = httpx2.Response(status, json=body, request=request)
+    return httpx2.HTTPStatusError("provider error", request=request, response=response)
+
+
 @pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504, 529])
 def test_transient_http_status_is_recoverable(status: int) -> None:
     assert is_recoverable_model_failure(ModelHTTPError(status, "test"))
+    assert is_recoverable_model_failure(_raw_http_error(status))
 
 
 @pytest.mark.parametrize("status", [400, 401, 501, 505])
 def test_other_http_status_is_terminal(status: int) -> None:
     assert not is_recoverable_model_failure(ModelHTTPError(status, "test"))
+    assert not is_recoverable_model_failure(_raw_http_error(status))
 
 
 # Every recognized code once, and every placement of the code field at least once.
@@ -161,6 +169,7 @@ def test_other_http_status_is_terminal(status: int) -> None:
 def test_permanent_quota_code_overrides_retryable_status(nested: bool, field: str, code: str) -> None:
     body = {"error": {field: code}} if nested else {field: code}
     assert not is_recoverable_model_failure(ModelHTTPError(429, "test", body))
+    assert not is_recoverable_model_failure(_raw_http_error(429, body))
 
 
 @pytest.mark.parametrize(
@@ -169,6 +178,7 @@ def test_permanent_quota_code_overrides_retryable_status(nested: bool, field: st
         httpx2.ConnectError("offline"),
         httpx2.ReadTimeout("timeout"),
         httpx2.RemoteProtocolError("truncated"),
+        _raw_http_error(429),
         ConnectionResetError("reset"),
         TimeoutError("timeout"),
     ],
@@ -215,6 +225,7 @@ def test_unknown_cyclic_provider_cause_is_terminal() -> None:
     "error",
     [
         ModelHTTPError(401, "test"),
+        _raw_http_error(429, {"error": {"code": "insufficient_quota"}}),
         ContentFilterError("filtered"),
         RuntimeError("programming error"),
         httpx2.LocalProtocolError("invalid headers"),
@@ -249,7 +260,9 @@ async def test_permanent_and_unknown_model_failures_stop_without_retry(error: Ex
     )
 
 
-@pytest.mark.parametrize("error", [httpx2.ReadError("tool network failure"), ModelHTTPError(503, "tool")])
+@pytest.mark.parametrize(
+    "error", [httpx2.ReadError("tool network failure"), ModelHTTPError(503, "tool"), _raw_http_error(429)]
+)
 async def test_transient_errors_from_tools_do_not_restart_model_execution(error: Exception) -> None:
     calls = 0
 
@@ -273,7 +286,7 @@ async def test_transient_errors_from_tools_do_not_restart_model_execution(error:
         assert result.failure is not None
         assert result.failure.code == "agent_run_failed"
     else:
-        with pytest.raises(httpx2.ReadError):
+        with pytest.raises(type(error)):
             await executable.run("start")
     assert calls == 1
 

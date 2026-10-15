@@ -149,7 +149,7 @@ async def initialize_direct(process: asyncio.subprocess.Process) -> tuple[Reques
     client = EIPClient(requester)
     result = await client.initialize(
         InitializeParams(
-            supported_protocol_versions=("0.1",),
+            supported_protocol_versions=("0.2",),
             client=EIPClientInfo(name="e2e", version="1"),
             expected_device_id="env-e2e",
         )
@@ -1144,7 +1144,7 @@ def test_preinitialize_and_repeated_initialize_errors() -> None:
         with pytest.raises(EIPMethodError) as captured:
             await client.initialize(
                 InitializeParams(
-                    supported_protocol_versions=("0.1",),
+                    supported_protocol_versions=("0.2",),
                     client=EIPClientInfo(name="e2e", version="1"),
                     expected_device_id="env-e2e",
                 )
@@ -1291,7 +1291,7 @@ def test_unknown_method_is_rejected_as_unavailable() -> None:
             name="future.unknown",
             kind="request_response",
             replay_class="active_only",
-            introduced="0.1",
+            introduced="0.2",
             error_family="common",
             params_type=EnvironmentDescribeParams,
             result_type=EnvironmentDescribeResult,
@@ -1380,7 +1380,7 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
                     "id": 1,
                     "method": "initialize",
                     "params": {
-                        "supported_protocol_versions": ["0.1"],
+                        "supported_protocol_versions": ["0.2"],
                         "client": {"name": "backpressure", "version": "1"},
                         "expected_device_id": "env-e2e",
                     },

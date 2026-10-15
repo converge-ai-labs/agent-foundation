@@ -156,7 +156,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     assert first.state == state
 
     # A restarted/new Worker reconstructs the same target under the next Service release without a fingerprint conflict.
-    monkeypatch.setattr(import_module(default_image.__module__), "DEFAULT_SANDBOX_IMAGE", f"{IMAGE}:0.2.0")
+    monkeypatch.setattr(import_module(default_image.__module__), "DEFAULT_SANDBOX_IMAGE", f"{IMAGE}:0.4.0")
     await select_release(service, monkeypatch, "0.1.1")
     await backdate(service, instance["id"], lease_expires_at=timedelta(seconds=1))
     resumed = await claim(service.runtime, instance["id"], owner="new-worker")
@@ -168,7 +168,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     next_instance = await reserve(service, configured["id"])
     next_operation = await claim(service.runtime, next_instance["id"], owner="test")
     assert next_operation is not None
-    assert next_operation.target.recipe["image"] == (image or f"{IMAGE}:0.2.0")
+    assert next_operation.target.recipe["image"] == (image or f"{IMAGE}:0.4.0")
 
 
 @pytest.mark.anyio

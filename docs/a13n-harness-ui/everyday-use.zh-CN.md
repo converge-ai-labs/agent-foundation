@@ -43,27 +43,21 @@ flowchart TB
 | 取消当前执行                   | `/cancel`                                                          |
 | 取消并清理当前执行后退出       | `/quit` 或 `/exit`                                                 |
 
+### 选择 Agent 或 Model
+
+在空闲时进行以下选择：
+
 `/agent` 为该对话后续所有 Run 更换 Agent，包括其指令、工具、工具审查策略和默认 Model，同时保留对话历史和执行权限。运行 `a13n-harness-ui add agent` 可创建其他 Agent。
 
-`/model` 打开独立的已配置 Model 资源选择器。`/model <model-id>` 只改变 Model，并为当前 Project 记住选择，不切换 Agent 或改写 YAML。该偏好会在 `/new`、`/resume`、`/agent` 和 TUI 重启后保留。恢复旧对话时，如果对话保存了默认 Model，则使用该 Model；否则使用启动 Project 的偏好，绝不使用历史模型。`/model default` 清除 Project 偏好，回到所选 Agent 的 Model。选择 Model 或 Agent 会清除临时推理和服务层级设置；这些设置不属于记住的偏好。两种选择命令在执行期间均不可用。
+| 任务                | 命令                | 结果                                          |
+| ------------------- | ------------------- | --------------------------------------------- |
+| 浏览已配置的 Model  | `/model`            | 打开 Model 选择器                             |
+| 选择 Model          | `/model <model-id>` | 保留 Agent 和 YAML，为当前 Project 记住 Model |
+| 回到 Agent 的 Model | `/model default`    | 清除 Project 的 Model 偏好                    |
+
+Model 偏好在 `/new`、`/resume`、`/agent` 和 TUI 重启后保留。恢复对话时，优先使用该对话保存的默认 Model；未保存时使用启动 Project 的偏好，而非历史模型。选择 Agent 或 Model 会清除临时推理和服务层级设置。
 
 其他已打开的 TUI 进程会保留当前 Model，直到重启。如果记住的 Model 已移除，启动时回退到 Agent 的 Model。`--agent`、单次 `run` 和 API 调用方跳过该 TUI 偏好。
-
-### 围绕 Goal 持续工作
-
-空闲时使用 `/goal <objective>`，让 Agent 持续检查工作是否满足指定目标：
-
-```text
-/goal Implement the requested change, run its tests, and report any remaining blockers.
-```
-
-首次响应是第 `0` 次检查。默认情况下，同一 Agent 可再检查最多 10 次，使用普通工具和执行权限。持续显示的 Goal 状态条会展示进度和最终结果，回答问题时也可见。Ctrl+C 和 `/cancel` 仍可取消执行。Goal 模式不会扩大权限或自动批准工具。
-
-Agent 通过单独一行返回 `[GOAL_COMPLETE]` 完成协议。摘要或上下文压缩后，必须先针对原目标重新审查。**Verified 是 Agent 自己的完成声明，不是独立审查。** 预算耗尽、取消、错误和未经验证的停止都不算成功。
-
-在 `a13n-harness-ui.yaml` 根级设置 `max_goal_iterations: 10` 可修改新 Goal 的预算。零或负数关闭自动后续检查。回答待处理决策时，挂起的 Goal 保留捕获的预算。仅重新打开对话不会重启未完成的工作。发送普通输入恢复普通行为，或再次使用 `/goal` 开始新 Goal 和预算。
-
-WebUI 输入框标题栏中的 **Goal** 开关采用同一策略，桌面和窄屏均可使用。选择只应用于一次发送，确认接受后重置；提交被拒绝或结果不确定时保留选择。打开 Goal 状态可查看原目标、审查状态和 token 总量。**Prepare new Goal** 只填入草稿供检查，不会发送。
 
 ### 查找已保存对话
 
@@ -192,6 +186,22 @@ CodeAct 默认开启，提供受限 Python `run_code`/`run_program` 和 `store`/
 答案编辑器接受 `/help`、`/mode`、`/status`、`/quit`、`/cancel`、`/theme`、`/mouse` 和 `/review` 作为受限命令。其他已识别命令会被拒绝并保留草稿；未匹配的斜杠输入保持为字面答案文本。Ctrl+O 查看保留工具详情，Ctrl+T 打开保留历史，都不回答问题。关闭历史返回卡片和答案草稿。这些问题控件不改变审批或设置选择器。
 
 答案先在本地收集，直到整个决策批次准备好。**Collected locally** 和 **Submitting question responses** 表示仍待提交；成功后显示问题与回答回执。取消收集后，可用 `/status` 重新打开待回答问题。
+
+### 围绕 Goal 持续工作
+
+空闲时使用 `/goal <objective>`，让 Agent 持续检查工作是否满足指定目标：
+
+```text
+/goal Implement the requested change, run its tests, and report any remaining blockers.
+```
+
+首次响应是第 `0` 次检查。默认情况下，同一 Agent 可再检查最多 10 次，使用普通工具和执行权限。持续显示的 Goal 状态条会展示进度和最终结果，回答问题时也可见。Ctrl+C 和 `/cancel` 仍可取消执行。Goal 模式不会扩大权限或自动批准工具。
+
+Agent 通过单独一行返回 `[GOAL_COMPLETE]` 完成协议。摘要或上下文压缩后，必须先针对原目标重新审查。**Verified 是 Agent 自己的完成声明，不是独立审查。** 预算耗尽、取消、错误和未经验证的停止都不算成功。
+
+在 `a13n-harness-ui.yaml` 根级设置 `max_goal_iterations: 10` 可修改新 Goal 的预算。零或负数关闭自动后续检查。回答待处理决策时，挂起的 Goal 保留捕获的预算。仅重新打开对话不会重启未完成的工作。发送普通输入恢复普通行为，或再次使用 `/goal` 开始新 Goal 和预算。
+
+WebUI 输入框标题栏中的 **Goal** 开关采用同一策略，桌面和窄屏均可使用。选择只应用于一次发送，确认接受后重置；提交被拒绝或结果不确定时保留选择。打开 Goal 状态可查看原目标、审查状态和 token 总量。**Prepare new Goal** 只填入草稿供检查，不会发送。
 
 ### 任务与笔记
 

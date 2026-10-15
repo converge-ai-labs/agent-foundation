@@ -137,6 +137,15 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
             }
         }
     }
+    if let Some(monitoring) = &mut config.monitoring {
+        monitoring
+            .relocate_sources(
+                Path::new(ORIGINAL),
+                &runtime_parent,
+                &config.bootstrap_files,
+            )
+            .map_err(io::Error::other)?;
+    }
     for path in &config.bootstrap_files {
         use std::os::unix::fs::MetadataExt;
         let metadata = fs::metadata(path)?;

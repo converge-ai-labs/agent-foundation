@@ -25,7 +25,7 @@ Set `server.public_url` to the externally reachable Service URL, and have the pr
 | Available through MCP                                                                                                                                              | Use direct HTTP instead                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | Agents and revisions; models and provider configuration; skills; connections; environment templates and instances; memories; asset metadata; webhook subscriptions | Submit input, start/resume/cancel/wait for execution, read live output and thread SSE   |
-| Read-only traces, spans, and Run/Attempt trace lookup                                                                                                              | Multipart upload, archive/image/file download, raw binary content                       |
+| Read-only sessions, threads, inbox entries, runs, attempts, display content, usage, traces and spans                                                               | Multipart upload, archive/image/file download, raw binary content                       |
 | Local documentation search                                                                                                                                         | Organization/member/permission administration, browser login, OAuth authorization flows |
 
 Tools are generated from explicitly admitted operations in the deployment's assembled OpenAPI, including admitted Distribution extensions. New HTTP routes are not automatically exposed. Tool names derive from operation IDs; discover the exact names and parameter schemas from your deployment. No tool accepts an arbitrary URL, method, or operation name.
@@ -49,6 +49,14 @@ API tools take their ordinary path, query, and declared header arguments. JSON b
 Each API result contains `status`, `headers`, and the unchanged JSON `body`. `headers` includes `etag`, `x-request-id`, and `retry-after` when present. A `204` response has `body: null`. Pagination stays in the API body. HTTP failures are MCP tool errors with the same structured envelope, including Service error codes and details.
 
 Read the resource first and pass its returned `headers.etag` as the **`If-Match`** argument. Missing preconditions produce `428`; stale ones produce `412`. Do not replace a stale ETag without inspecting the changed resource. MCP does not retry writes or manufacture idempotency keys. After a lost response, inspect existing resource state before deciding whether to submit another write.
+
+## Inspect a failed run
+
+1. Discover your deployment's execution query tools. Read the run by ID, or find it through session and thread queries.
+2. Read its attempts and display content to see where execution stopped. A failed attempt can belong to a run that later recovered; check the run's final status.
+3. Query its trace and spans for available diagnostic evidence. Share the run ID and relevant error when asking an operator for help.
+
+These queries use the same workspace permissions and redaction as HTTP. Use direct HTTP to resume or cancel work, and the thread SSE endpoint to follow live output. [Monitoring](monitoring.md#troubleshoot-a-request-or-run) explains the diagnostic fields.
 
 ## Search the installed documentation
 

@@ -4,7 +4,7 @@
 
 `a13n-envd` is a client-neutral device daemon for files, shells, processes, output, transfers and optional native computer use. One daemon normally serves a machine or outer sandbox. Its trusted Host connection carries multiple independent Sessions, each with a Host-selected working directory and Session-owned resources.
 
-HTTP, reverse WebSocket and stdio share EIP 0.1 semantics. Device connection lifetime is independent of individual Sessions. The Host selects immutable Device identity, Sandbox grants and egress mode; Envd applies them to complete Session workers and directory discovery. The Host owns the outer deployment; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
+HTTP, reverse WebSocket and stdio share EIP 0.2 semantics. Device connection lifetime is independent of individual Sessions. The Host selects immutable Device identity, Sandbox grants and egress mode; Envd applies them to complete Session workers and directory discovery. The Host owns the outer deployment; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
 
 Harness is one consumer through the provider-neutral [Environment integration](../a13n-harness/08-environment-integration.md). The [Environment Providers](../a13n-harness/08a-environment-execution.md) open independent execution Sessions while Host runtimes can reuse Device connections. Direct Local, native Docker and E2B do not require envd. The low-level client does not discover, install or launch daemons.
 
@@ -23,7 +23,7 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 | [08-protocol-source-client-and-generation.md](08-protocol-source-client-and-generation.md) | IDL, generated Rust/Python surfaces, client and release ownership              |
 | [09-resource-lifetime-and-reclamation.md](09-resource-lifetime-and-reclamation.md)         | Session inactivity, disconnect grace, history and pressure collection          |
 
-[10-computer-use.md](10-computer-use.md) owns optional native desktop targets, observations, input effects and cleanup.
+[10-computer-use.md](10-computer-use.md) owns optional native desktop targets, observations, input effects and cleanup. [11-resource-monitoring.md](11-resource-monitoring.md) owns Device system information, optional cross-platform resource observations, metric scopes and sampler lifecycle.
 
 ## Reading Paths
 

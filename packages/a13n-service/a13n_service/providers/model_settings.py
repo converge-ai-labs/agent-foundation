@@ -141,8 +141,16 @@ def effective_settings(
     model_api: str, defaults: Mapping[str, JsonValue], overrides: Mapping[str, JsonValue]
 ) -> dict[str, JsonValue]:
     """One shallow composition for validation and every primary or auxiliary model call."""
-    baseline: dict[str, JsonValue] = {"openai_store": False} if model_api == "openai.responses" else {}
-    return {**baseline, **defaults, **overrides}
+    baseline: dict[str, JsonValue] = {}
+    if model_api == "openai.responses":
+        baseline["openai_store"] = False
+    settings = {**baseline, **defaults, **overrides}
+    if "cache" not in settings:
+        settings["cache"] = True
+        block_keys = ("anthropic_cache_instructions", "anthropic_cache_tool_definitions", "anthropic_cache_messages")
+        if model_api == "anthropic.messages" and not any(key in settings for key in ("anthropic_cache", *block_keys)):
+            settings.update(dict.fromkeys(block_keys, True))
+    return settings
 
 
 class _PortableSchema(GenerateJsonSchema):

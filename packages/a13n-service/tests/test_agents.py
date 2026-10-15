@@ -353,7 +353,7 @@ def test_build_composes_the_definition_without_io() -> None:
     }
     assert asked == [root_revision, HELPER_REVISION]
     assert composed.definition_id == root_revision and composed.agent.instructions == "Help."
-    assert composed.agent.model_settings == {"temperature": 0.5, "max_tokens": 64}
+    assert composed.agent.model_settings == {"temperature": 0.5, "max_tokens": 64, "cache": True}
     assert [plugin.plugin_id for plugin in composed.plugins] == ["audit"]
     (subagent,) = composed.subagents
     assert (subagent.name, subagent.description, subagent.agent.definition_id) == ("helper", "Helps", HELPER_REVISION)

@@ -27,10 +27,12 @@ export function DeviceDirectory({
   deviceId,
   value,
   onChange,
+  label = "Working directory",
 }: {
   deviceId: string;
   value: string;
   onChange: (path: string) => void;
+  label?: string;
 }) {
   const { client } = useTransport();
   const info = useDeviceInfo(deviceId);
@@ -60,7 +62,7 @@ export function DeviceDirectory({
   return (
     <section className="flex flex-col gap-3" aria-label="Device directory">
       <TextField
-        label="Working directory"
+        label={label}
         value={value}
         onChange={onChange}
         description="An absolute path on the Device, not this server. This is not a filesystem sandbox."

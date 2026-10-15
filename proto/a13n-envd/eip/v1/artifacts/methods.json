@@ -1,6 +1,6 @@
 {
   "generated": true,
-  "method_count": 50,
+  "method_count": 51,
   "methods": [
     {
       "device_scoped": false,
@@ -129,6 +129,19 @@
       "replay_class": "ledger_external",
       "result_type": "DeviceDescribeResult",
       "rpc_name": "DeviceDescribe",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": true,
+      "error_family": "resource",
+      "introduced": "0.2",
+      "jsonrpc_method": "device.metrics",
+      "kind": "request_response",
+      "params_type": "DeviceMetricsParams",
+      "replay_class": "ledger_external",
+      "result_type": "DeviceMetricsResult",
+      "rpc_name": "DeviceMetrics",
       "transfer_action": null,
       "transfer_direction": null
     },
@@ -655,6 +668,6 @@
   ],
   "protocol": {
     "package": "a13n.agent_envd.eip.v1",
-    "version": "0.1"
+    "version": "0.2"
   }
 }

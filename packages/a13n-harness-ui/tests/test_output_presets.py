@@ -18,8 +18,10 @@ from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     [
         ("openai-responses", "gpt-5.6-sol", {"low": 16384, "medium": 32768, "high": 65536, "xhigh": 65536}),
         ("openai-chat", "gpt-5.4", {"low": 16384, "medium": 32768, "high": 65536, "xhigh": 65536}),
-        ("anthropic", "claude-sonnet-4-6", {"adaptive": 32768, "interleaved": 16384}),
-        ("anthropic", "claude-haiku-4-5", {"adaptive": 32768, "interleaved": 16384}),
+        ("anthropic", "claude-sonnet-4-6", {"adaptive": 32768}),
+        ("anthropic", "claude-haiku-5-5", {"adaptive": 32768}),
+        ("anthropic", "claude-haiku-4-5", {"extended": 16384}),
+        ("anthropic", "claude-sonnet-4-5", {"interleaved": 16384}),
         ("google", "gemini-2.5-pro", {"low": 16384, "medium": 32768, "high": 32768}),
         ("google", "gemini-3.5-flash", {"low": 16384, "medium": 32768, "high": 32768}),
         ("deepseek", "deepseek-v4-pro", {"thinking": 32768}),
@@ -70,7 +72,6 @@ def test_custom_anthropic_presets_retain_safe_existing_thinking_budget() -> None
     presets = settings_presets("anthropic", "custom-claude")
     assert {p.key: p.settings.get("max_tokens") for p in presets} == {
         "interleaved": 16384,
-        "adaptive": 16384,
         "default": None,
     }
 

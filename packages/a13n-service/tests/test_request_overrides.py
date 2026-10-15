@@ -128,7 +128,7 @@ def test_provider_owned_headers_remain_reserved_and_defaults_replace_whole() -> 
     cleared = model_settings(
         model.config, model.provider, {"extra_body": {}, "extra_headers": {}}, registry=registry, field="settings"
     )
-    assert cleared == {"openai_store": False, "extra_body": {}, "extra_headers": {}}
+    assert cleared == {"cache": True, "openai_store": False, "extra_body": {}, "extra_headers": {}}
     provider = SimpleNamespace(
         type="openai",
         config={"auth_mode": "api_key", "api_key_header_name": "x-custom-key", "session_affinity_header": "x-thread"},
@@ -563,9 +563,13 @@ async def test_child_and_continuation_requests_keep_thread_affinity(
 
 
 @pytest.mark.parametrize("api", list(MODEL_APIS))
-def test_service_defaults_are_scoped_to_responses(api: str) -> None:
+def test_service_enables_cache_for_all_apis_and_disables_storage_only_for_responses(api: str) -> None:
     model = selected(ModelConfig(model_name="custom", model_api=api))
-    expected = {"openai_store": False} if api == "openai.responses" else {}
+    expected = {"cache": True, **({"openai_store": False} if api == "openai.responses" else {})}
+    if api == "anthropic.messages":
+        expected.update(
+            anthropic_cache_instructions=True, anthropic_cache_tool_definitions=True, anthropic_cache_messages=True
+        )
     assert _settings(model, {}) == expected
     assert model.config.defaults() == {}  # The baseline is not an authored value.
 
@@ -853,3 +857,13 @@ def test_inline_child_image_policy_is_bound_from_its_own_resolved_model():
     later = build(updated, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None)
     assert later.definition.agent.model_characteristics.image_input is None
     assert executable.definition.agent.model_characteristics.image_input == ImageInputPolicy(max_images=0)
+
+
+@pytest.mark.parametrize(
+    "default,override,expected",
+    [(False, {}, False), ("1h", {}, "1h"), (True, {"cache": False}, False), (False, {"cache": True}, True)],
+)
+def test_service_cache_defaults_preserve_model_and_agent_policy(default, override, expected):
+    model = selected(ModelConfig(model_name="custom", model_api="anthropic.messages", settings={"cache": default}))
+    assert _settings(model, override)["cache"] == expected
+    assert model.config.settings == {"cache": default}

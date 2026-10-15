@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
@@ -11,6 +12,8 @@ type MemoryErrorCode = Literal[
     "not_found",
     "already_exists",
     "version_mismatch",
+    "read_conflict",
+    "read_set_full",
     "invalid_path",
     "invalid_file",
     "invalid_pattern",
@@ -83,6 +86,7 @@ class GrepMatch:
     path: str
     line: int
     text: str
+    version: str
 
 
 @runtime_checkable
@@ -92,18 +96,44 @@ class FileStore(Protocol):
     `write` with `expected=None` creates a file that must not exist yet. A failed
     check raises `version_mismatch` with the current file. `changes` returns a
     cursor taken before any content the caller reads next, so a change made
-    meanwhile is listed again rather than skipped.
+    meanwhile is listed again rather than skipped. Mutations validate every
+    `dependencies` path/version under the same lock or transaction as the write;
+    None expects absence. A stale dependency raises `read_conflict` before any
+    effect. Dependencies belong to this store's namespace.
     """
 
     async def list(self) -> list[FileEntry]: ...
 
     async def read(self, path: str) -> FileText: ...
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str: ...
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str: ...
 
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str: ...
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str: ...
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None: ...
+    async def delete(
+        self,
+        path: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> None: ...
 
     async def changes(self, since: str | None) -> Changes | FullResync: ...
 

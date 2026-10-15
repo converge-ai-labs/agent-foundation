@@ -42,7 +42,7 @@ impl Fixture {
 
     fn initialize(&self, mut command: Command) -> Value {
         let payload = json!({"jsonrpc":"2.0", "id":1, "method":"initialize", "params":{
-            "supported_protocol_versions":["0.1"], "client":{"name":"startup-test","version":"1"}
+            "supported_protocol_versions":["0.2"], "client":{"name":"startup-test","version":"1"}
         }})
         .to_string();
         let mut child = command

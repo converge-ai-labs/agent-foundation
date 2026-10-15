@@ -107,7 +107,7 @@ runtime = LocalEnvdProviderRuntime(
 
 ## Docker 运行时
 
-Docker 使用 Host 进程的 Engine 连接。无需启动存储、客体守护进程或公开控制端口：
+Docker 使用 Host 进程的 Engine 连接。默认原生路线通过 Docker exec 执行；HTTP EIP 路线还连接镜像管理的 Envd 守护进程。原生运行时可借用 Engine 客户端：
 
 ```python
 import docker
@@ -121,13 +121,15 @@ runtime = DockerProviderRuntime(engine=engine)
 
 原生 provider 覆盖镜像入口，启用 Docker init 支持，并在执行之间保持容器存活。私有工作目录为 `/workspace`。可选绑定挂载将 Docker Engine 所在机器上的已有目录开放到显式容器目标；删除时保留外部数据。不支持命名卷配置。镜像仓库身份验证、凭据 helper、镜像站和代理仍由 Docker 客户端配置。
 
-`close()` 断开本地观测，不停止容器或后台进程。新的托管适配器复用已保存容器；确认不存在时创建替代容器，其私有 `/workspace` 为空。传输失败不能证明目标不存在。Docker 文件路径为原生容器路径，Harness 添加聚合挂载前缀；相对工具路径从 `/workspace` 开始。
+`close()` 断开本地观测，不停止容器或后台进程。新的托管适配器复用已保存容器；确认不存在时打开失败，由管理方决定后续操作，不会自动创建替代容器。传输失败不能证明目标不存在。Docker 文件路径为原生容器路径，Harness 添加聚合挂载前缀；相对工具路径从 `/workspace` 开始。
 
 Docker 目标配置接受 `pull_policy="if_missing"`（默认）或 `"never"`。`never` 对缺失镜像返回 `environment_image_missing`，绝不联系镜像仓库。使用 `make image-sandbox` 构建镜像，直接 provider 使用见 [Docker 生命周期示例](examples.md#docker)。Service 从模板管理 Docker 环境；参见 [Service 环境](../a13n-service/environments.md)。
 
+使用 `execution="envd_http"` 时，connector 向保留的容器打开 HTTP EIP Session。关闭 Session 会保留桌面；停止并重启容器会保留文件，但重建图形会话状态。独立 HTTP 路由和兼容镜像见 [Docker 配置](configuration.md#docker)。
+
 ## 云 provider
 
-E2B（`e2b`）、Daytona（`daytona`）、Modal（`modal`）、Vercel Sandbox（`vercel`）、Fly.io Sprites（`sprites`）和 Runloop（`runloop`）无需安装 Envd 即可提供云执行。全部支持文件和 shell 命令；E2B 还支持进程观测、stdin、保留 SDK 文本输出和回环端口。Service 提供全部六种环境 provider；其 E2B 账号始终使用 E2B 云（[Service 环境](../a13n-service/environments.md#providers)）。
+E2B（`e2b`）、Daytona（`daytona`）、Modal（`modal`）、Vercel Sandbox（`vercel`）、Fly.io Sprites（`sprites`）和 Runloop（`runloop`）无需安装 Envd 即可提供云执行。全部支持文件和 shell 命令；E2B 还支持进程观测、stdin、保留 SDK 文本输出和回环端口。Service 提供全部六种环境 provider；其 E2B 账号通过域名选择 E2B 云或其他 E2B 兼容服务（[Service 环境](../a13n-service/environments.md#providers)）。
 
 | Provider       | 后端设置                                                              | 凭据字段                         | 常用目标配置设置                                                              |
 | -------------- | --------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |

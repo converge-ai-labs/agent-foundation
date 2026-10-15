@@ -16,7 +16,7 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 挂载 Docker socket 的单机 Compose 部署在 Engine 可访问时，为每个工作空间自动添加 **Docker** provider 和 **Linux Sandbox** 模板。模板固定使用[Service 审定的独立版本 sandbox 镜像](#docker-image-versions)，并设置 `pull_policy: if_missing`。如果本地没有镜像，Engine 在创建首个实例时拉取；工作空间初始化不会拉取镜像。Linux 镜像包含 Python 3.13、pip、venv、uv、Node.js 24、npm、pnpm、Git、Bash、curl、ripgrep、jq、归档工具和 C/C++ 构建工具。命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。项目依赖可以安装到虚拟环境或项目目录中。
 
-新工作空间要使用本地构建镜像，运行 `make image-sandbox`，启动 Compose 时设置 `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-sandbox:local`。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
+新工作空间要使用本地构建镜像，运行 `make image-sandbox`。在 Compose 文件的 `service.environment` 中，将 `A13N_PROVISIONING__DOCKER` 设置为完整 JSON 值 `'{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'`。省略 `image` 即可使用 Service 默认镜像。覆盖文件示例见 [Compose 配置](configuration.md#workspace-provisioning)。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
 
 不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 进程的操作系统用户身份运行命令，不提供隔离。
 
@@ -91,7 +91,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 | Service 构建                            | 镜像标签 |
 | --------------------------------------- | -------- |
-| 稳定版或 RC                             | `0.1.3`  |
+| 稳定版或 RC                             | `0.3.0`  |
 | 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
 发布镜像支持 `linux/amd64` 和 `linux/arm64`。显式设置 `recipe.image` 可在 Service 升级后保留指定标签，也可用 digest 固定精确内容。Docker recipe 默认 `pull_policy: if_missing`：Engine 优先使用本地镜像，缺失时拉取。设置 `never` 可要求镜像必须在本地。自动配置的模板显式保存审定的 sandbox 镜像，因此后续 Service 升级不会悄悄修改它。
@@ -197,7 +197,20 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 ## Computer Use
 
-Agent 可以直接操作兼容的桌面，不需要先由人接管。环境的 provider 必须支持 Computer 操作，并且已运行图形桌面；开启权限不会给无桌面的环境自动安装桌面。
+为 agent 提供图形桌面，让它查看屏幕、点击控件和输入文字。先准备桌面，再授予工具和挂载权限。
+
+### 创建 Docker 桌面
+
+1. 打开**工作空间设置 → 服务商 → 环境**，配置 Docker 连接。启用**环境操作通道**，将**主机访问地址**设为 Worker 可达的地址。Docker Engine 与此 HTTP 通道是两条独立连接。
+2. 打开**环境 → 模板 → 创建模板**。选择 Docker 和相应连接，再选择**桌面环境**。预设会选定桌面镜像、HTTP EIP 执行方式和桌面就绪要求。保存模板。
+3. 将模板设为 agent 的默认环境，或从模板创建实例，再添加到对话。
+4. 环境运行后，在**环境与记忆**中选择**检查桌面**查看就绪情况，再按下文启用权限。
+
+明文 HTTP 操作通道使用回环地址或显式信任的私有链路，并配置相应的部署出站策略。Worker 需要访问主机地址和 Docker 分配的端口。使用自定义镜像时，选择**自定义镜像**，提供兼容 Envd HTTP 且包含图形会话的镜像，并设置 `execution: "envd_http"` 和 `desktop: true`。
+
+### 启用观察和操作
+
+已有兼容桌面时，从这里开始。电脑权限默认关闭，与桌面就绪状态独立。
 
 1. 在 Agent 的工具配置中开启 **电脑** 工具集并保存。每个工具的审批设置仍然生效。
 2. 打开会话的 **环境与记忆** 设置。需要时先添加环境，再打开对应挂载的 **电脑操作权限**。选择 **可观察** 可获取截图与显示器信息；选择 **可操作** 还可使用鼠标和键盘。主挂载 `workspace` 使用同样的设置。

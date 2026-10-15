@@ -14,6 +14,7 @@ vi.mock("../configuration/project-folders", () => ({
 vi.mock("../configuration/environment-bindings", () => ({
   EnvironmentBindings: () => null,
   BindingSummary: () => null,
+  DefaultWorkingDirectory: () => null,
 }));
 afterEach(cleanup);
 

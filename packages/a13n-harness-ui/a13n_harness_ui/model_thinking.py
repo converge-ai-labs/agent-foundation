@@ -115,6 +115,7 @@ def _choices(route: str) -> tuple[_Choice, ...]:
                 "claude-sonnet-4",
                 "claude-opus-4",
                 "claude-haiku-4-5",
+                "claude-haiku-5-5",
                 "claude-sonnet-5",
                 "claude-opus-5",
                 "claude-fable-5",
@@ -123,7 +124,11 @@ def _choices(route: str) -> tuple[_Choice, ...]:
         ):
             return ()
         profile = anthropic_model_profile(name) or {}
-        off = _Choice(False, "Disable thinking", {"anthropic_thinking": {"type": "disabled"}})
+        off = (
+            ()
+            if profile.get("thinking_always_enabled")
+            else (_Choice(False, "Disable thinking", {"anthropic_thinking": {"type": "disabled"}}),)
+        )
         if profile.get("anthropic_supports_adaptive_thinking"):
             efforts: tuple[ThinkingSelection, ...] = ("low", "medium", "high")
             if profile.get("anthropic_supports_xhigh_effort"):
@@ -131,7 +136,7 @@ def _choices(route: str) -> tuple[_Choice, ...]:
             if name.startswith("claude-opus"):
                 efforts = (*efforts, "max")
             return (
-                off,
+                *off,
                 *(
                     _Choice(
                         v,
@@ -142,7 +147,7 @@ def _choices(route: str) -> tuple[_Choice, ...]:
                 ),
             )
         return (
-            off,
+            *off,
             *(
                 _Choice(
                     v,
