@@ -106,6 +106,39 @@ async def test_model_http_client_one_attempt_still_validates_retryable_status() 
     assert attempts == 1
 
 
+@pytest.mark.parametrize("permanent", [False, True])
+async def test_exhausted_transport_retains_streamed_body_for_model_recovery(permanent: bool) -> None:
+    from a13n_harness.recovery import is_recoverable_model_failure
+
+    attempts = 0
+    closed: list[bool] = []
+    body = b'{"error":{"code":"insufficient_quota"}}' if permanent else b"overloaded"
+
+    class ErrorStream(httpx2.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield body
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(429, stream=ErrorStream())
+
+    async with create_model_http_client(
+        transport=httpx2.MockTransport(handle),
+        retry=ModelHttpRetryConfig(attempts=2, backoff_multiplier=0),
+    ) as client:
+        with pytest.raises(httpx2.HTTPStatusError) as raised:
+            async with client.stream("POST", "https://example.test/model"):
+                pytest.fail("Retry exhaustion must raise")
+    assert attempts == 2
+    assert len(closed) == 2
+    assert raised.value.response.content == body
+    assert is_recoverable_model_failure(raised.value) is not permanent
+
+
 async def test_model_http_client_can_disable_automatic_retries() -> None:
     attempts = 0
 

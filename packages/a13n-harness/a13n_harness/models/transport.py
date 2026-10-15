@@ -128,9 +128,30 @@ class _ModelHttpClient(httpx2.AsyncClient):
                 stop=stop_after_attempt(retry.attempts),
                 reraise=True,
             ),
-            wrapped=transport,
+            wrapped=_RetryErrorBodyTransport(transport, retry.status_codes),
             validate_response=lambda response: _validate_retry_response(response, retry),
         )
+
+
+class _RetryErrorBodyTransport(httpx2.AsyncBaseTransport):
+    """Retain error bodies before the retry validator closes streamed responses."""
+
+    def __init__(self, wrapped: httpx2.AsyncBaseTransport, status_codes: frozenset[int]) -> None:
+        self.wrapped = wrapped
+        self.status_codes = status_codes
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        response = await self.wrapped.handle_async_request(request)
+        if response.status_code in self.status_codes:
+            try:
+                await response.aread()
+            except BaseException:
+                await response.aclose()
+                raise
+        return response
+
+    async def aclose(self) -> None:
+        await self.wrapped.aclose()
 
 
 def _is_retryable_http_error(error: BaseException, config: ModelHttpRetryConfig) -> bool:
