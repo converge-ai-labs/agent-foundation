@@ -5,7 +5,11 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createClient } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import { ContextWindow, contextFigures } from "./context-window";
+import {
+  ContextWindow,
+  contextFigures,
+  formatContextTokens,
+} from "./context-window";
 
 let value: Schema["ContextUsage"] | null;
 let status = 200;
@@ -66,8 +70,8 @@ it("shows last-call occupancy and opens details by keyboard without submitting",
   expect(scopes).toEqual(["?thread_id=thread"]);
   trigger.focus();
   await userEvent.keyboard("{Enter}");
-  expect(await screen.findByText("Context window")).toBeTruthy();
-  expect(screen.getByText("42k / 200k tokens")).toBeTruthy();
+  expect(await screen.findByText("42k / 200k tokens used")).toBeTruthy();
+  expect(screen.getByText("21% used (79% left)")).toBeTruthy();
   await userEvent.keyboard("{Escape}");
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 });
@@ -101,5 +105,14 @@ it("offers retry when context usage cannot be read", async () => {
   expect(await screen.findByText("Usage unavailable")).toBeTruthy();
   status = 200;
   await userEvent.click(screen.getByRole("button", { name: "Reload" }));
-  expect(await screen.findByText("42k / 200k tokens")).toBeTruthy();
+  expect(await screen.findByText("42k / 200k tokens used")).toBeTruthy();
+});
+
+it("uses k as the minimum context unit and m for millions", () => {
+  expect(formatContextTokens(191)).toBe("0.2k");
+  expect(formatContextTokens(900)).toBe("0.9k");
+  expect(formatContextTokens(318400)).toBe("318.4k");
+  expect(formatContextTokens(1200000)).toBe("1.2m");
+  expect(formatContextTokens(0)).toBe("0k");
+  expect(formatContextTokens(null)).toBe("—");
 });

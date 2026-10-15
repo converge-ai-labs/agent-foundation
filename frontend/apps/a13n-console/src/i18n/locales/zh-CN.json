@@ -2395,7 +2395,9 @@
   "Configure Agent Computer tools and mount permissions separately.": "使用前，还需配置 Agent 的 Computer 工具和挂载权限。",
   "Allow the sandbox to connect to external services.": "允许沙箱连接外部服务。",
   "Context window: {{usage}}": "上下文窗口：{{usage}}",
-  "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} token",
   "No context usage reported yet.": "暂无已报告的上下文用量。",
-  "Context window size is unknown.": "上下文窗口大小未知。"
+  "Context window size is unknown.": "上下文窗口大小未知。",
+  "Context window:": "上下文窗口：",
+  "{{usage}} used ({{remaining}} left)": "已用 {{usage}}（剩余 {{remaining}}）",
+  "{{used}} / {{capacity}} tokens used": "已使用 {{used}} / {{capacity}} tokens"
 }

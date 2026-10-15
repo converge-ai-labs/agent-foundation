@@ -7,7 +7,6 @@ import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { UNKNOWN } from "../../shared/unknown";
 import { conversationQueries, type ContextScope } from "./api";
-import { formatTokens } from "./format";
 import styles from "./context-window.module.css";
 
 export function contextFigures(
@@ -23,6 +22,13 @@ export function contextFigures(
       ? Math.round((used / capacity) * 100)
       : null;
   return { used, capacity, percent };
+}
+
+export function formatContextTokens(value: number | null): string {
+  if (value === null) return UNKNOWN;
+  const unit = value >= 1_000_000 ? "m" : "k";
+  const scale = unit === "m" ? 1_000_000 : 1000;
+  return `${Number((value / scale).toFixed(1))}${unit}`;
 }
 
 /** Reported usage is a last-call estimate, independent of the draft and cumulative cost. */
@@ -48,22 +54,20 @@ export function ContextWindow({
     value === null ? UNKNOWN : value.toLocaleString(i18n.resolvedLanguage);
   const details = (
     <div className={styles.details}>
-      <div className={styles.heading}>
-        <span>{t("Context window")}</span>
-        <strong>{label}</strong>
-      </div>
-      <div
-        className={styles.tokens}
-        title={`${exact(used)} / ${exact(capacity)}`}
-      >
-        {t("{{used}} / {{capacity}} tokens", {
-          used: formatTokens(used),
-          capacity: formatTokens(capacity),
+      <span className={styles.heading}>{t("Context window:")}</span>
+      <span>
+        {t("{{usage}} used ({{remaining}} left)", {
+          usage: label,
+          remaining:
+            percent === null ? UNKNOWN : `${Math.max(0, 100 - percent)}%`,
         })}
-      </div>
-      <div className={styles.track} aria-hidden="true">
-        <span style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
-      </div>
+      </span>
+      <span title={`${exact(used)} / ${exact(capacity)}`}>
+        {t("{{used}} / {{capacity}} tokens used", {
+          used: formatContextTokens(used),
+          capacity: formatContextTokens(capacity),
+        })}
+      </span>
       {query.isPending && <p className={styles.note}>{t("Loading…")}</p>}
       {!query.isPending && !query.error && used === null && (
         <p className={styles.note}>{t("No context usage reported yet.")}</p>

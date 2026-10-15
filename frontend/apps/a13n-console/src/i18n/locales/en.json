@@ -2395,7 +2395,9 @@
   "Configure Agent Computer tools and mount permissions separately.": "Configure Agent Computer tools and mount permissions separately.",
   "Allow the sandbox to connect to external services.": "Allow the sandbox to connect to external services.",
   "Context window: {{usage}}": "Context window: {{usage}}",
-  "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} tokens",
   "No context usage reported yet.": "No context usage reported yet.",
-  "Context window size is unknown.": "Context window size is unknown."
+  "Context window size is unknown.": "Context window size is unknown.",
+  "Context window:": "Context window:",
+  "{{usage}} used ({{remaining}} left)": "{{usage}} used ({{remaining}} left)",
+  "{{used}} / {{capacity}} tokens used": "{{used}} / {{capacity}} tokens used"
 }
