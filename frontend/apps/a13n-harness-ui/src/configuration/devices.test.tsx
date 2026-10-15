@@ -250,10 +250,10 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
   );
   expect(savedContent).toBeUndefined();
   await user.click(
-    screen.getByRole("combobox", { name: "Default working location" }),
+    screen.getByRole("combobox", { name: "Default working directory" }),
   );
   await user.click(
-    screen.getByRole("option", { name: "my-workstation · /work" }),
+    screen.getByRole("option", { name: "My workstation · /work" }),
   );
   await user.click(screen.getByRole("button", { name: "Add project" }));
   await waitFor(() => expect(created).toHaveBeenCalled());

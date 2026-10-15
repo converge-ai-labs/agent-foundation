@@ -516,7 +516,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
   await user.click(
     screen.getByRole("button", {
       name: "Environments",
-      description: "2 environments",
+      description: "2 environments · 2 directories",
     }),
   );
   const path = screen.getByRole("textbox", { name: "Server directory" });
