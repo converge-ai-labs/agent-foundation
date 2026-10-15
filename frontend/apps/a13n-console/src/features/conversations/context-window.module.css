@@ -84,14 +84,8 @@
   line-height: 1.15;
   letter-spacing: -0.03em;
 }
-.used > span,
-.remaining {
+.used > span {
   color: var(--a13n-secondary);
-}
-.source {
-  color: var(--a13n-muted);
-  font-size: var(--a13n-text-2xs);
-  white-space: nowrap;
 }
 .tokens {
   font-variant-numeric: tabular-nums;

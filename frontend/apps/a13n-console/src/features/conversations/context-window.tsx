@@ -50,22 +50,12 @@ export function ContextWindow({
     <div className={styles.details}>
       <div className={styles.heading}>
         <strong>{t("Context window")}</strong>
-        <span className={styles.source}>
-          {"record_id" in scope ? t("This call") : t("Last call")}
-        </span>
       </div>
       <div className={styles.balance}>
         <span className={styles.used}>
           <strong>{label}</strong>
           <span>{t("used")}</span>
         </span>
-        {percent !== null && (
-          <span className={styles.remaining}>
-            {t("{{percent}}% remaining", {
-              percent: Math.max(0, 100 - percent),
-            })}
-          </span>
-        )}
       </div>
       <div className={styles.track} aria-hidden="true">
         <span style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
@@ -80,7 +70,6 @@ export function ContextWindow({
             capacity: formatTokens(capacity),
           })}
         </span>
-        <span className={styles.source}>{t("Configured limit")}</span>
       </div>
       {query.isPending && <p className={styles.note}>{t("Loading…")}</p>}
       {!query.isPending && !query.error && used === null && (

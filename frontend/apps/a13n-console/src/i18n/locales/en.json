@@ -2398,9 +2398,5 @@
   "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} tokens",
   "No context usage reported yet.": "No context usage reported yet.",
   "Context window size is unknown.": "Context window size is unknown.",
-  "This call": "This call",
-  "Last call": "Last call",
-  "used": "used",
-  "{{percent}}% remaining": "{{percent}}% remaining",
-  "Configured limit": "Configured limit"
+  "used": "used"
 }

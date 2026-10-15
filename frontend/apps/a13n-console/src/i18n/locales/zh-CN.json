@@ -2398,9 +2398,5 @@
   "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} token",
   "No context usage reported yet.": "暂无已报告的上下文用量。",
   "Context window size is unknown.": "上下文窗口大小未知。",
-  "This call": "本次调用",
-  "Last call": "上次调用",
-  "used": "已使用",
-  "{{percent}}% remaining": "剩余 {{percent}}%",
-  "Configured limit": "配置上限"
+  "used": "已使用"
 }
