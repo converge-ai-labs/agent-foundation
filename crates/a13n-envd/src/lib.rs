@@ -70,11 +70,11 @@ pub fn run_internal_restricted_worker() -> std::io::Result<()> {
 /// Runs an ordinary Session under its trusted startup identity.
 #[doc(hidden)]
 pub fn run_internal_session_worker() -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
         execution::worker::run_session()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Err(std::io::Error::other(
             "Session workers are unavailable on this platform",
@@ -85,16 +85,23 @@ pub fn run_internal_session_worker() -> std::io::Result<()> {
 /// Runs a one-shot directory observation under the execution identity.
 #[doc(hidden)]
 pub fn run_internal_directory_worker() -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
         execution::discovery::run()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Err(std::io::Error::other(
             "Session workers are unavailable on this platform",
         ))
     }
+}
+
+/// Runs the strict native Windows MXC launcher before ordinary daemon startup.
+#[doc(hidden)]
+#[cfg(windows)]
+pub fn run_internal_mxc_launcher() -> std::io::Result<i32> {
+    execution::windows::run_launcher()
 }
 
 /// Runs one a13n-envd instance from trusted process configuration.

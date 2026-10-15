@@ -40,6 +40,24 @@ Envd 会为每个会话 worker 应用可信的设备策略：原生执行身份�
 
 macOS 不提供 Linux 挂载/PID 命名空间，也不声明 `no_new_privs`：`privilege_gain_blocked` 为 false。路径解析可能仍可见父目录元数据，原生进程启动也可读取根目录本身；两者都不允许读取未授权文件的内容。worker 运行期间请保持授权路径稳定。Linux 绑定已检查的目录句柄。不支持的组合会在准备阶段失败。
 
+### 原生 Windows MXC
+
+Windows 受限 Sandbox 使用实验性的 Microsoft eXecution Container（MXC）Process Security Environment 后端（`windows_mxc`），支持 inherit 或 deny 网络。Envd 实际探测原生创建、启动信息准备和关闭操作。仅匹配 Windows 版本号不够：操作系统必须提供可用的 PSEC 契约。不支持的宿主机会失败，不自动降级。WSL 使用 Linux 后端。
+
+运行时视图包含只读的 Windows、Program Files 目录和 Envd 可执行文件，以及私有可写的 HOME/USERPROFILE/TEMP/state。请将私有配置放在这些系统目录之外，并保持授权目录的祖先路径稳定。worker 运行期间，Envd 保留已验证且不共享删除权限的目录句柄。PowerShell 启动使用私有桌面和只读注册表访问，不修改 ACL 或提权。`privilege_gain_blocked` 为 false，不声明 Linux 的 `no_new_privs` 保证。
+
+在安装了 Rust、Python、uv 和 PowerShell 的原生 Windows 机器上，从仓库根目录运行源码验收：
+
+```powershell
+cargo build -p a13n-envd --locked
+cargo test -p a13n-envd native_mxc_probe -- --ignored --nocapture
+uv sync --locked --all-packages
+$env:A13N_ENVD_TEST_BINARY = (Resolve-Path target/debug/a13n-envd.exe).Path
+uv run --no-sync pytest packages/a13n-harness-ui/tests/test_windows_sandbox.py -v
+```
+
+显式启用的测试覆盖生产就绪状态、拒绝回环网络、原生 shell 和文件访问、只读授权、私有环境、Session 清理和授权目录替换拒绝。指定 binary 后，缺少 MXC 支持会导致测试失败。还应在目标 Windows 版本上验证活动命令期间终止 broker，以及取消 Session 打开；交叉编译无法验证这些内核生命周期。清理未确认时，worker 状态和活动进程计费保留至 Device 重启。
+
 ### 原生进程归属
 
 | 平台    | 进程生命周期                                                               |

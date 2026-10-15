@@ -7,7 +7,7 @@ description: 选择执行权限、在 Project 中工作、连接 Device，并定
 
 **Full Control** 使用宿主机账户现有的文件系统和网络权限运行，不下载或启动 `a13n-envd`。Full Control 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。
 
-**Sandbox** 要求 Envd 使用显式目录授权和禁止联网来准备受限 Session worker。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查 Sandbox 就绪状态。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows 不支持生产 Sandbox 隔离。见[外层安全指南](../a13n-envd/isolation.md)。
+**Sandbox** 要求 Envd 使用显式目录授权和禁止联网来准备受限 Session worker。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查 Sandbox 就绪状态。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows Sandbox 使用实验性的原生 Microsoft eXecution Container（MXC）后端；宿主机必须通过实际创建/关闭探测和生产隔离探测。见[外层安全指南](../a13n-envd/isolation.md)。
 
 ### 原生命令环境
 
@@ -17,7 +17,7 @@ Full Control 命令继承 Harness UI 进程的完整环境，包括 `PATH`、代
 
 ## Windows 本地执行
 
-Windows 内置本地模式**仅支持 Full Control**。设置向导和 TUI Environment 选择器提供 Full Control，并说明命令使用宿主机账户的文件系统和网络权限运行。Job Object 清理不是 Sandbox 隔离。显式 Sandbox 请求会失败，不下载 Envd、不改变保存选择、不降级。自定义和远程 Provider 保留自己的契约。
+Windows 提供 **Full Control** 和 **Sandbox**。Sandbox 使用 PowerShell，原生 MXC 负责文件系统和网络隔离，Job Object 负责进程所有权。如果原生 MXC 不可用，请更新 Windows 后重试，或明确选择 Full Control。不会自动降级、创建账户、修改 ACL 或提权。WSL 属于 Linux 环境，使用 Linux 后端。自定义和远程 Provider 保留自己的契约。
 
 ## 文件、Project 与恢复
 

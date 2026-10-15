@@ -113,13 +113,13 @@ pub(crate) enum RetentionError {
     Internal,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) struct SessionSpoolReservation {
     quota: RetentionQuota,
     bytes: u64,
     objects: usize,
 }
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl Drop for SessionSpoolReservation {
     fn drop(&mut self) {
         self.quota.release(self.bytes, self.objects);
@@ -127,7 +127,7 @@ impl Drop for SessionSpoolReservation {
 }
 
 impl RetentionQuota {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     pub(crate) fn reserve_session(
         &self,
         bytes: u64,

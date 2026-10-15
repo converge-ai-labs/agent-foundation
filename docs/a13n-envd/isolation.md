@@ -40,6 +40,24 @@ Grants must be existing absolute directories without overlaps. Changing grants r
 
 macOS does not provide Linux mount/PID namespaces or advertise `no_new_privs`: `privilege_gain_blocked` is false. Parent metadata may remain visible for path resolution, and the root directory itself is readable for native process startup; neither permits reading ungranted file contents. Keep grant paths stable while workers run. Linux binds checked directory handles. Unsupported combinations fail preparation.
 
+### Native Windows MXC
+
+Windows restricted Sandbox uses the experimental Microsoft eXecution Container (MXC) Process Security Environment backend (`windows_mxc`) with inherit or deny networking. Envd probes real native creation, startup-info preparation and closure. A matching Windows version string alone is insufficient: the OS must expose a usable PSEC contract. Unsupported hosts fail without fallback. WSL uses the Linux backend.
+
+The runtime view includes read-only Windows and Program Files directories, the Envd executable, and private writable HOME/USERPROFILE/TEMP/state. Keep private configuration outside those system directories and keep grant ancestor paths stable. Envd retains checked grant directory handles without delete sharing while workers run. It uses a private desktop for PowerShell startup, read-only registry access, and no ACL mutation or elevation. `privilege_gain_blocked` is false; this is not the Linux `no_new_privs` guarantee.
+
+For source-checkout acceptance on a native Windows machine with Rust, Python, uv and PowerShell, run from the repository root:
+
+```powershell
+cargo build -p a13n-envd --locked
+cargo test -p a13n-envd native_mxc_probe -- --ignored --nocapture
+uv sync --locked --all-packages
+$env:A13N_ENVD_TEST_BINARY = (Resolve-Path target/debug/a13n-envd.exe).Path
+uv run --no-sync pytest packages/a13n-harness-ui/tests/test_windows_sandbox.py -v
+```
+
+The opt-in suite checks production readiness, denied loopback networking, native shell and file access, read-only grants, private environment, Session cleanup and replaced grant rejection. Once the binary is selected, missing MXC support fails the test. Also exercise broker termination during an active command and Session-open cancellation on the target Windows build; cross-compilation does not verify these kernel lifecycles. If cleanup is unconfirmed, worker state and active process charges remain retained until Device restart.
+
 ### Native process ownership
 
 | Platform | Process lifecycle                                                                                 |

@@ -1,6 +1,6 @@
 use crate::{config::Config, device_path, eip::EIPPath};
 use cap_std::{ambient_authority, fs::Dir};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(unix)]
 use std::ffi::CString;
 #[cfg(unix)]
 use std::os::unix::{ffi::OsStrExt, io::AsRawFd};
@@ -217,20 +217,20 @@ impl Drop for StagingReservation {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) struct SessionStagingReservation {
     quota: StagingQuota,
     bytes: u64,
     objects: u64,
     retained: bool,
 }
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl SessionStagingReservation {
     pub(crate) fn retain(&mut self) {
         self.retained = true;
     }
 }
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl Drop for SessionStagingReservation {
     fn drop(&mut self) {
         if !self.retained {
@@ -247,7 +247,7 @@ impl DeviceFilesystem {
         Ok(reservation)
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     pub(crate) fn reserve_session_staging(
         &self,
         bytes: u64,

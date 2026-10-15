@@ -21,6 +21,7 @@ from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCA
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
+    local_envd_path,
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -220,7 +221,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
     ) -> EnvironmentConnector:
         _require_provider(provider, LOCAL_ENVD)
         selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
-        configuration = selected.session.model_copy(update={"working_directory": root.as_posix()})
+        configuration = selected.session.model_copy(update={"working_directory": local_envd_path(root)})
         return provider.execution_connector(
             environment=configuration,
             environment_id=_environment_id(self.key, root),

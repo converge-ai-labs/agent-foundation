@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -17,6 +18,8 @@ from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
     LocalEnvdShellProfile,
+    local_envd_native_path,
+    local_envd_path,
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
@@ -39,7 +42,7 @@ def create_sandbox_runtime(
     project_access: GrantAccess = GrantAccess.READ_WRITE,
 ) -> LocalEnvdProviderRuntime:
     """Build an inert Device owner; broad roots cannot expose Host private state."""
-    if sys.platform not in {"linux", "darwin"}:
+    if sys.platform not in {"linux", "darwin", "win32"}:
         raise _unavailable("Local Sandbox is not available on this platform.")
     canonical = tuple(dict.fromkeys(root.resolve(strict=True) for root in roots))
     if not canonical or any(not root.is_dir() for root in canonical):
@@ -53,7 +56,7 @@ def create_sandbox_runtime(
     if isinstance(launch.sandbox, RestrictedSandbox):
         # Only the adapter's own Thread directories bypass the protected-state
         # check. Explicit grants cannot authorize arbitrary application state.
-        for root in (*canonical, *(Path(grant.path) for grant in launch.sandbox.grants)):
+        for root in (*canonical, *(local_envd_native_path(grant.path) for grant in launch.sandbox.grants)):
             root = root.resolve(strict=True)
             if root == thread_root and root in canonical:
                 continue
@@ -67,17 +70,27 @@ def create_sandbox_runtime(
                 for name, access in (("attachments", GrantAccess.READ_ONLY), ("tmp", GrantAccess.READ_WRITE)):
                     child = root / name
                     child.mkdir(exist_ok=True)
-                    grants.append(SandboxGrant(path=child.as_posix(), access=access))
+                    grants.append(SandboxGrant(path=local_envd_path(child), access=access))
             else:
-                grants.append(SandboxGrant(path=root.as_posix(), access=project_access))
+                grants.append(SandboxGrant(path=local_envd_path(root), access=project_access))
         launch = launch.model_copy(update={"sandbox": RestrictedSandbox(mode="restricted", grants=tuple(grants))})
-    shell = Path("/bin/bash").resolve(strict=True)
+    if sys.platform == "win32":
+        selected = shutil.which("pwsh") or shutil.which("powershell")
+        if selected is None:
+            raise _unavailable("Windows Sandbox requires PowerShell.")
+        shell = Path(selected).resolve(strict=True)
+        trusted_roots = (shell.parent,)
+        arguments = ("-NoLogo", "-NoProfile", "-NonInteractive", "-Command")
+    else:
+        shell = Path("/bin/bash").resolve(strict=True)
+        trusted_roots = (Path("/usr/bin"), Path("/bin"))
+        arguments = ("-c",)
     launch = launch.model_copy(
         update={
             "default_working_directory": launch.default_working_directory or canonical[0],
-            "trusted_executable_roots": launch.trusted_executable_roots or (Path("/usr/bin"), Path("/bin")),
+            "trusted_executable_roots": launch.trusted_executable_roots or trusted_roots,
             "shell_profiles": launch.shell_profiles
-            or (LocalEnvdShellProfile(profile_id="default", executable=shell, fixed_arguments=("-c",)),),
+            or (LocalEnvdShellProfile(profile_id="default", executable=shell, fixed_arguments=arguments),),
         }
     )
     return LocalEnvdProviderRuntime(
@@ -106,7 +119,7 @@ async def validate_sandbox_runtime(
             )
         )
         connector = LOCAL_ENVD.execution_connector(
-            LocalEnvdEnvironmentConfiguration(working_directory=project_path.resolve().as_posix()),
+            LocalEnvdEnvironmentConfiguration(working_directory=local_envd_path(project_path.resolve())),
             runtime=runtime,
             environment_id="sandbox-probe",
         )
@@ -120,7 +133,7 @@ async def validate_sandbox_runtime(
             from a13n_harness.environment.models import EnvironmentError
 
             try:
-                await files.read_text(sentinel.as_posix())
+                await files.read_text(local_envd_path(sentinel))
             except EnvironmentError:
                 pass
             else:
@@ -131,6 +144,14 @@ async def validate_sandbox_runtime(
                 f"if (echo probe > /dev/tcp/127.0.0.1/{port}) 2>/dev/null; then exit 41; fi; "
                 f"{process_check}printf sandbox-ready"
             )
+            if sys.platform == "win32":
+                path = str(sentinel).replace("'", "''")
+                script = (
+                    f"try {{ [IO.File]::ReadAllText('{path}') | Out-Null; exit 40 }} catch {{}}; "
+                    "$client = [Net.Sockets.TcpClient]::new(); "
+                    f"try {{ $client.Connect('127.0.0.1', {port}); exit 41 }} "
+                    "catch {} finally { $client.Dispose() }; Write-Output sandbox-ready; exit 0"
+                )
             started = await processes.start(
                 CommandRequest(
                     command=ShellCommand(profile_id="default", script=script),

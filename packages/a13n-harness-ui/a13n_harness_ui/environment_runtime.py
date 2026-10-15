@@ -30,6 +30,7 @@ from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentD
 from a13n_harness.environment.providers import EnvironmentRuntime
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
 from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime, resolve_a13n_envd_executable
 from anyio import CancelScope, Lock, fail_after, to_thread
 
@@ -387,7 +388,7 @@ class EnvironmentRunService:
                         operations=FILE_ACTIONS if live else FILE_EXECUTION_ACTIONS
                     ),
                     mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
-                    provider_root=root.as_posix()
+                    provider_root=local_envd_path(root)
                     if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
                     else "/",
                 )
@@ -545,7 +546,7 @@ class EnvironmentRunService:
             environment=environment,
             permission_ceiling=EnvironmentPermissionSet(operations=operations),
             mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
-            provider_root=root.as_posix() if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter) else "/",
+            provider_root=local_envd_path(root) if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter) else "/",
         )
 
     async def _prepare_host_files_mount(

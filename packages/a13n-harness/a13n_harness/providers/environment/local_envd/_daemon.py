@@ -22,7 +22,11 @@ from a13n_harness.environment.errors import EnvironmentProviderError, provider_e
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.errors import EnvironmentProviderRecoveryHint as Recovery
-from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdLaunchConfiguration,
+    local_envd_native_path,
+    local_envd_path,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdRuntimeAllocator
@@ -155,7 +159,11 @@ def _canonical_configuration(configuration: LocalEnvdLaunchConfiguration) -> Loc
     sandbox = configuration.sandbox
     if isinstance(sandbox, RestrictedSandbox):
         grants = tuple(
-            grant.model_copy(update={"path": _canonical_directory(Path(grant.path), "Sandbox grant").as_posix()})
+            grant.model_copy(
+                update={
+                    "path": local_envd_path(_canonical_directory(local_envd_native_path(grant.path), "Sandbox grant"))
+                }
+            )
             for grant in sandbox.grants
         )
         sandbox = sandbox.model_copy(update={"grants": tuple(sorted(set(grants), key=lambda grant: grant.path))})
@@ -217,9 +225,15 @@ def _write_private_bootstrap(root: Path, configuration: LocalEnvdLaunchConfigura
         }
         for profile in configuration.shell_profiles
     ]
+    sandbox = configuration.sandbox.model_dump(mode="json")
+    if isinstance(configuration.sandbox, RestrictedSandbox):
+        sandbox["grants"] = [
+            {"path": str(local_envd_native_path(grant.path)), "access": grant.access.value}
+            for grant in configuration.sandbox.grants
+        ]
     payload = {
         "execution": configuration.execution.model_dump(mode="json", exclude_none=True),
-        "sandbox": configuration.sandbox.model_dump(mode="json"),
+        "sandbox": sandbox,
         "egress": configuration.egress.model_dump(mode="json"),
         "default_working_directory": str(configuration.default_working_directory),
         "directory_discovery": configuration.directory_discovery,
@@ -243,7 +257,21 @@ def _daemon_environment(
     # A controlled/restricted worker must not inherit Host credential sources,
     # even when the source variable differs from the injected payload variable.
     if configuration.sandbox.mode == "restricted" or configuration.egress.mode == "controlled":
-        environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C.UTF-8"}
+        if sys.platform == "win32":
+            environment = {
+                name: value
+                for name, value in os.environ.items()
+                if name.upper() in {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"}
+            }
+            environment.update(
+                {
+                    "PATH": os.pathsep.join(str(path) for path in configuration.trusted_executable_roots),
+                    "TEMP": str(runtime_dir),
+                    "TMP": str(runtime_dir),
+                }
+            )
+        else:
+            environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C.UTF-8"}
     else:
         environment = {name: value for name, value in os.environ.items() if not name.startswith("A13N_ENVD_")}
     environment.update(

@@ -88,6 +88,17 @@ impl Sandbox {
                 .map(|grant| Ok(GrantSource::from_metadata(&std::fs::metadata(&grant.path)?)))
                 .collect();
         }
+        #[cfg(windows)]
+        if let Self::Restricted { grants } = self {
+            return grants
+                .iter()
+                .map(|grant| {
+                    super::windows::directory_identity(&super::windows::open_directory(
+                        &grant.path,
+                    )?)
+                })
+                .collect();
+        }
         Ok(Vec::new())
     }
 
@@ -99,6 +110,17 @@ impl Sandbox {
         let Self::Restricted { grants } = self else {
             return Ok(());
         };
+        #[cfg(windows)]
+        let runtime_roots = super::windows::platform_roots()?;
+        #[cfg(windows)]
+        if runtime_roots
+            .iter()
+            .any(|root| protected.iter().any(|path| overlaps(root, path)))
+        {
+            return Err(io::Error::other(
+                "Windows runtime view overlaps protected state",
+            ));
+        }
         for grant in grants.iter_mut() {
             if !grant.path.is_absolute() || !grant.path.is_dir() {
                 return Err(io::Error::other(
@@ -106,6 +128,12 @@ impl Sandbox {
                 ));
             }
             grant.path = std::fs::canonicalize(&grant.path)?;
+            #[cfg(windows)]
+            if runtime_roots.iter().any(|root| overlaps(root, &grant.path)) {
+                return Err(io::Error::other(
+                    "Sandbox grant overlaps a Windows runtime path",
+                ));
+            }
             if protected.iter().any(|path| overlaps(&grant.path, path))
                 || [
                     "/proc",
@@ -145,6 +173,13 @@ impl Sandbox {
 }
 
 fn overlaps(a: &Path, b: &Path) -> bool {
+    #[cfg(windows)]
+    let (a, b) = (
+        PathBuf::from(a.to_string_lossy().to_lowercase()),
+        PathBuf::from(b.to_string_lossy().to_lowercase()),
+    );
+    #[cfg(windows)]
+    let (a, b) = (a.as_path(), b.as_path());
     a.starts_with(b) || b.starts_with(a)
 }
 
@@ -179,6 +214,8 @@ pub(crate) fn descriptor(
     let backend = if config.sandbox.restricted() {
         if cfg!(target_os = "macos") {
             eip::ExecutionBackend::MacosSeatbelt
+        } else if cfg!(windows) {
+            eip::ExecutionBackend::WindowsMxc
         } else {
             eip::ExecutionBackend::LinuxBubblewrap
         }

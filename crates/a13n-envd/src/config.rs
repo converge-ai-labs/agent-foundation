@@ -224,7 +224,7 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) computer_use: bool,
     pub(crate) computer_use_permission_timeout: Duration,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[serde(skip)]
     pub(crate) managed: bool,
     pub(crate) execution: Option<crate::execution::Identity>,
@@ -399,13 +399,19 @@ impl Config {
             .validate(&bootstrap_files)
             .map_err(|error| ConfigError::new(error.to_string()))?;
         if !cfg!(target_os = "linux")
-            && ((file.sandbox.restricted() && !cfg!(target_os = "macos"))
+            && ((file.sandbox.restricted()
+                && !cfg!(any(target_os = "macos", target_os = "windows")))
                 || file.egress.controlled()
                 || (!file.sandbox.restricted() && file.egress != Egress::Inherit {}))
         {
             return Err(ConfigError::new(
                 "execution boundary is unavailable on this platform",
             ));
+        }
+        #[cfg(windows)]
+        if file.sandbox.restricted() {
+            crate::execution::windows::probe()
+                .map_err(|error| ConfigError::new(error.to_string()))?;
         }
         let grant_sources = file
             .sandbox
@@ -445,7 +451,7 @@ impl Config {
             monitoring: file.monitoring,
             computer_use,
             computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             managed: false,
             execution,
             allow_sudo,
@@ -474,7 +480,7 @@ impl Config {
             monitoring: None,
             computer_use: false,
             computer_use_permission_timeout: Duration::from_secs(120),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
             managed: false,
             execution: None,
             allow_sudo: true,

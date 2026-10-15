@@ -2047,7 +2047,8 @@
         "native",
         "linux_managed",
         "linux_bubblewrap",
-        "macos_seatbelt"
+        "macos_seatbelt",
+        "windows_mxc"
       ],
       "title": "ExecutionBackend",
       "type": "string"

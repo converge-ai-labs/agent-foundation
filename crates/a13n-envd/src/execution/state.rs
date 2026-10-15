@@ -1,5 +1,7 @@
 //! Private worker state, removed only after its owning child has been reaped.
-use std::{fs, io, os::unix::fs::DirBuilderExt, path::PathBuf};
+#[cfg(unix)]
+use std::os::unix::fs::DirBuilderExt;
+use std::{fs, io, path::PathBuf};
 
 pub(crate) struct StateDirectory(pub PathBuf);
 
@@ -9,9 +11,23 @@ impl StateDirectory {
         getrandom::fill(&mut random).map_err(|error| io::Error::other(error.to_string()))?;
         let path =
             std::env::temp_dir().join(format!("a13n-session-{:032x}", u128::from_ne_bytes(random)));
-        fs::DirBuilder::new().mode(0o700).create(&path)?;
+        let builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        let builder = {
+            let mut builder = builder;
+            builder.mode(0o700);
+            builder
+        };
+        builder.create(&path)?;
         let mut directory = Self(path);
         directory.0 = fs::canonicalize(&directory.0)?;
+        #[cfg(windows)]
+        if identity.is_some() {
+            return Err(io::Error::other(
+                "Windows workers do not accept Unix identities",
+            ));
+        }
+        #[cfg(unix)]
         if let Some(identity) = identity {
             use std::os::fd::AsRawFd;
             let file = fs::File::open(&directory.0)?;

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Annotated, Self
 
 from a13n_envd_client.eip.v1 import DisabledSandbox, SandboxPolicy
@@ -12,6 +12,30 @@ from a13n_harness.providers.environment.remote_envd.configuration import RemoteE
 _MIB = 1024 * 1024
 _GIB = 1024 * _MIB
 _MAX_RESPONSE_BYTES = 16 * _MIB
+
+
+def local_envd_native_path(path: str) -> Path:
+    """Translate a local Device EIP path to its Host-native path."""
+    if isinstance(Path(), PureWindowsPath):
+        if path.startswith("/UNC/"):
+            return Path("//" + path.removeprefix("/UNC/"))
+        return Path(path.removeprefix("/"))
+    return Path(path)
+
+
+def local_envd_path(path: PurePath) -> str:
+    """Translate an absolute Host path to the local Device's EIP namespace."""
+    if not path.is_absolute():
+        raise ValueError("Local Envd paths must be absolute")
+    text = path.as_posix()
+    if isinstance(path, PureWindowsPath):
+        text = text.removeprefix("//?/")
+        if text.startswith("UNC/"):
+            return "/" + text
+        if text.startswith("//"):
+            return "/UNC/" + text[2:]
+        return "/" + text
+    return text
 
 
 class LocalEnvdShellProfile(BaseModel):

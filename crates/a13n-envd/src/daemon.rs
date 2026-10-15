@@ -41,9 +41,9 @@ use crate::{
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
 mod computer;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod execution;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod isolated;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
@@ -80,7 +80,7 @@ pub(crate) enum ResponseHandoff {
         operation: Option<ActiveResponseHandoff>,
         _history: OwnedRwLockReadGuard<()>,
     },
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     Remote(crate::execution::worker::client::Handoff),
 }
 
@@ -92,7 +92,7 @@ impl ResponseHandoff {
                     operation.complete();
                 }
             }
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             Self::Remote(handoff) => handoff.complete(),
         }
     }
@@ -413,7 +413,7 @@ impl Daemon {
             .session
             .admit_work()
             .ok_or(TransferError::Protocol)?;
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(remote) = &session.remote {
             return remote
                 .client
@@ -441,7 +441,7 @@ impl Daemon {
             detaching.spawn(async move {
                 let clean = tokio::time::timeout(Duration::from_secs(5), async {
                     let _cleanup = session.cleanup.lock().await;
-                    #[cfg(any(target_os = "linux", target_os = "macos"))]
+                    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
                     if let Some(remote) = &session.remote {
                         let _ = remote.client.detach().await;
                     }
@@ -660,7 +660,7 @@ impl Daemon {
                 Err(error) => return error_response(error),
             }
         };
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(session) = &session
             && session.remote.is_some()
             && !matches!(request.method.as_str(), "egress.update" | "session.close")
@@ -847,7 +847,7 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "directory discovery is disabled",
             ));
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         if self.daemon.config.sandbox.restricted() {
             return crate::execution::discovery::list(&self.daemon.config, params)
                 .await
@@ -917,9 +917,9 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             || self.daemon.config.execution.is_some_and(|identity| {
                 crate::execution::needs_worker(identity) || !self.daemon.config.allow_sudo
             });
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         let worker = self.daemon.config.sandbox.restricted();
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let worker = false;
         let cwd = tokio::task::spawn_blocking(move || {
             if worker {
@@ -952,7 +952,7 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 ));
             }
         }
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if worker {
             return self.daemon.open_worker(self.carrier, cwd, None).await;
         }
@@ -1009,7 +1009,7 @@ impl Daemon {
 
 pub(crate) struct Session {
     computer: Arc<crate::computer::Computer>,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     remote: Option<crate::execution::runtime::Runtime>,
     descriptor: SessionDescriptor,
     filesystem: Arc<DeviceFilesystem>,
@@ -1138,7 +1138,7 @@ impl Session {
         let (closed, _) = watch::channel(false);
         Ok(Self {
             computer: Arc::new(crate::computer::Computer::new(daemon.ids.clone())),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             remote: None,
             closed,
             descriptor,
@@ -1229,7 +1229,7 @@ impl Session {
         self.closed.send_replace(true);
         self.operations.begin_drain();
         self.transfers.begin_session_close();
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(remote) = &self.remote {
             return tokio::time::timeout(budget, remote.close())
                 .await
@@ -2352,7 +2352,7 @@ impl EipSessionHandler for Session {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         let request =
             crate::execution::worker::request_environment(&params.request).map_err(|()| {
                 protocol_error(
@@ -2360,7 +2360,7 @@ impl EipSessionHandler for Session {
                     "command cannot override egress environment variables",
                 )
             })?;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
             .start(&filesystem, &request, true, || {
@@ -2689,7 +2689,7 @@ impl EipSessionHandler for Session {
         let filesystem = self.filesystem.clone();
         let hard_deadline =
             effective_deadline(params.context.timeout_ms, self.max_operation_duration)?;
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         let request =
             crate::execution::worker::request_environment(&params.request).map_err(|()| {
                 protocol_error(
@@ -2697,7 +2697,7 @@ impl EipSessionHandler for Session {
                     "command cannot override egress environment variables",
                 )
             })?;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
             .start(&filesystem, &request, true, || {

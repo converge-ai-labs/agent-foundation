@@ -102,6 +102,7 @@ enum ExecutionBackend {
   EXECUTION_BACKEND_LINUX_MANAGED = 2 [(eip_enum_value).json_name = "linux_managed"];
   EXECUTION_BACKEND_LINUX_BUBBLEWRAP = 3 [(eip_enum_value).json_name = "linux_bubblewrap"];
   EXECUTION_BACKEND_MACOS_SEATBELT = 4 [(eip_enum_value).json_name = "macos_seatbelt"];
+  EXECUTION_BACKEND_WINDOWS_MXC = 5 [(eip_enum_value).json_name = "windows_mxc"];
 }
 
 message ExecutionBoundary {
