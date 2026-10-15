@@ -18,7 +18,7 @@ From a repository checkout, start the same stack and print its Console URL after
 make compose-up
 ```
 
-The source Compose file defaults to the published `ghcr.io/converge-ai-labs/a13n-service:latest` image, so no source build is needed. `make compose-up` always pulls the stack's images before starting, refreshing cached tags. The equivalent direct command is `docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait --pull always`; Compose does not print the Console URL after a detached start. To use a local build instead, run `make image-a13n-service` and then `A13N_SERVICE_IMAGE=a13n-service:local make compose-up COMPOSE_PULL=missing`. Use `COMPOSE_PULL=never` to start entirely from local images.
+The source Compose file defaults to the published `ghcr.io/converge-ai-labs/a13n-service:latest` image, so no source build is needed. `make compose-up` always pulls the stack's images before starting, refreshing cached tags. For direct Compose use, run `docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait --pull always`, then `docker compose -f deploy/docker/compose/a13n-service.yaml exec -T service a13n-service --config /app/service.toml refresh-builtin-agents`. Compose does not print the Console URL after a detached start. To use a local build instead, run `make image-a13n-service` and then `A13N_SERVICE_IMAGE=a13n-service:local make compose-up COMPOSE_PULL=missing`. Use `COMPOSE_PULL=never` to start entirely from local images.
 
 Without a checkout, download `a13n-service.yaml` from a Service release and run `docker compose -f a13n-service.yaml up -d --wait` in its directory. The release's copy pins that release's image, for `linux/amd64` or `linux/arm64`.
 
@@ -84,7 +84,7 @@ docker compose run --rm --no-deps -v "$PWD:/backup" --entrypoint tar service -xz
 docker compose up -d --wait
 ```
 
-To upgrade, back up, then run `docker compose up -d --wait` with the new image: from a checkout, after rebuilding it; with a release's file, after replacing it with the new release's and carrying over your `environment` changes. Compose recreates the Service, which migrates the schema at startup. A migrated schema stops older images at startup; to return to one, restore the backup taken before the upgrade.
+To upgrade, back up, then run `make compose-up` with the new image. This waits for the Service and refreshes existing Composer and Finding Agents. If using Compose directly, run `docker compose up -d --wait`, then `docker compose exec -T service a13n-service --config /app/service.toml refresh-builtin-agents`. From a checkout, rebuild and select the image first. With a release file, replace it with the new release's file and carry over your `environment` changes. Compose recreates the Service, which migrates the schema at startup. A migrated schema stops older images at startup; to return to one, restore the backup taken before the upgrade.
 
 ## Local quickstart
 

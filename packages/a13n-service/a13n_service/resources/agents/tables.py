@@ -62,7 +62,7 @@ class AgentRow(Stamped, Base):
     image: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
-    updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    updated_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
 
     @property
     def builtin(self) -> bool:
@@ -76,3 +76,5 @@ class AgentRevisionRow(RevisionColumns):
     HEAD_KEY = "agent_id"
     ID_PREFIX = "apr"
     agent_id: Mapped[str]
+    # Deployment refresh has operator authority, without a tenant principal.
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))

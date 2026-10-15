@@ -125,8 +125,15 @@
             "type": "string"
           },
           "updated_by_id": {
-            "title": "Updated By Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
           },
           "version": {
             "title": "Version",
@@ -1329,8 +1336,15 @@
             "type": "string"
           },
           "created_by_id": {
-            "title": "Created By Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
           },
           "digest": {
             "title": "Digest",

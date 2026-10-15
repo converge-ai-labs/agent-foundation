@@ -95,7 +95,7 @@ export function AgentVersions({
           {
             label: t("Created by"),
             tone: "muted",
-            render: (item) => item.created_by_id,
+            render: (item) => item.created_by_id ?? t("Deployment"),
           },
           {
             label: t("Actions"),

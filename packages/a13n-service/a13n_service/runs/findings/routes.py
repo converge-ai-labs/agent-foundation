@@ -4,9 +4,9 @@ from fastapi import APIRouter, Response
 
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
-from a13n_service.resources.agents import presets
+from a13n_service.resources.agents import finding, presets
 from a13n_service.resources.agents.schemas import Agent
-from a13n_service.runs.findings import analysis, preset, service
+from a13n_service.runs.findings import analysis, service
 from a13n_service.runs.findings.schemas import (
     Analysis,
     AnalysisCreate,
@@ -34,9 +34,9 @@ async def prepare_finding_agent(
         actor,
         workspace_id,
         kind="finding",
-        name=preset.NAME,
-        description=preset.DESCRIPTION,
-        configuration=preset.configuration,
+        name=finding.NAME,
+        description=finding.DESCRIPTION,
+        configuration=finding.configuration,
         preferred=(),
         registry=runtime.registry,
         plugins=runtime.plugins,

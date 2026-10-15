@@ -1,0 +1,55 @@
+name: Validate builtin refresh branch
+
+on:
+  push:
+    branches: [codex/refresh-builtin-agents-on-deploy]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Generate migration in a disposable database
+        run: make db-migrate msg='allow operator authorship for builtin agent refresh'
+      - name: Collect generated migration
+        run: |
+          mkdir -p generated
+          git ls-files --others --exclude-standard packages/a13n-service/a13n_service/migrations/versions |
+            while IFS= read -r source; do cp "$source" generated/; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: builtin-refresh-migration
+          path: generated/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Test refresh, revision consumers and migrations
+        run: >-
+          uv run --locked python -m pytest -n 2 --dist loadgroup
+          -vv --tb=short --maxfail=3 --junitxml=test-results/refresh.xml
+          packages/a13n-service/tests/test_builtin_refresh.py
+          packages/a13n-service/tests/test_agents.py
+          packages/a13n-service/tests/test_skills.py
+          packages/a13n-service/tests/test_cli.py
+          packages/a13n-service/tests/test_migrations.py
+          packages/a13n-service/tests/test_findings.py::test_presets_coexist_and_finder_has_no_configuration_writes
+          packages/a13n-service/tests/test_findings.py::test_builtin_configuration_is_readonly_and_models_are_selected_automatically
+          packages/a13n-service/tests/test_runs.py::test_the_agent_composer_follows_the_usable_models
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: builtin-refresh-tests
+          path: test-results/
+          retention-days: 3

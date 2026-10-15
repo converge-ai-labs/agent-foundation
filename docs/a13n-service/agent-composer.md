@@ -64,9 +64,11 @@ Saving and continuing are separate steps. After a confirmed save, retrying **Sub
 
 API clients that run Composer must handle its native `configure_provider` client tool or report that it is unavailable. It uses the ordinary pending-call and batch-resume contract; no extra Run endpoint is required.
 
+After rollout, the deployment refresh command updates existing Composer definitions and keeps usable model selections. Later default-selected runs use the new configuration, including conversations opened through **Try agent**. Accepted runs, pending operations and explicit revision pins keep their original versions. Metadata-only updates do not create configuration revisions. Workspaces without a Composer still create it on first use.
+
 ## Built-in agent rules
 
-Agent Composer cannot be edited, revised, archived or given an avatar (`409 conflict`, reason `builtin`); only preparing changes it. Its model is selected automatically as described above. Duplicate it to create a custom agent you can change.
+Agent Composer cannot be edited, revised, archived or given an avatar (`409 conflict`, reason `builtin`); only preparation and deployment refresh change it. Its model is selected automatically as described above. Duplicate it to create a custom agent you can change.
 
 ## Use the toolset in your own agents
 

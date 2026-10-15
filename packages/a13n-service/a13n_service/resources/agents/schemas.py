@@ -376,7 +376,7 @@ class Agent(BaseModel):
     archived_at: datetime | None
     version: int
     created_by_id: str
-    updated_by_id: str
+    updated_by_id: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -389,7 +389,7 @@ class AgentRevision(BaseModel):
     config: AgentConfig
     digest: str
     note: str | None
-    created_by_id: str
+    created_by_id: str | None
     created_at: datetime
 
 

@@ -106,8 +106,22 @@ def test_digest_overrides_tag_for_all_service_containers():
         if document["kind"] in {"Deployment", "Job"}:
             pod = document["spec"]["template"]["spec"]
             images.extend(c["image"] for c in pod["containers"] + pod.get("initContainers", []))
-    assert len(images) == 5
+    assert len(images) == 6
     assert set(images) == {f"ghcr.io/converge-ai-labs/a13n-service@{digest}"}
+
+
+@helm
+def test_builtin_refresh_is_a_post_rollout_hook_whose_failure_fails_the_release():
+    documents = render(*LOCAL)
+    job = next(d for d in documents if d["kind"] == "Job" and "refresh-agents" in d["metadata"]["name"])
+    assert job["metadata"]["annotations"] == {
+        "helm.sh/hook": "post-install,post-upgrade",
+        "helm.sh/hook-delete-policy": "before-hook-creation",
+    }
+    assert job["spec"]["backoffLimit"] == 2 and job["spec"]["activeDeadlineSeconds"] == 600
+    pod = job["spec"]["template"]["spec"]
+    assert pod["restartPolicy"] == "Never"
+    assert pod["containers"][0]["args"] == ["a13n-service", "--config", "/app/service.toml", "refresh-builtin-agents"]
 
 
 @helm
@@ -203,7 +217,7 @@ def test_runtime_identity_is_consistent_across_roles_and_migrations(arguments, a
     accounts = [d for d in documents if d["kind"] == "ServiceAccount"]
     assert [d["metadata"]["name"] for d in accounts] == ([account_name] if created else [])
     workloads = [d for d in documents if d["kind"] in {"Deployment", "Job"}]
-    assert len(workloads) == 3
+    assert len(workloads) == 4
     for workload in workloads:
         pod = workload["spec"]["template"]["spec"]
         assert pod["serviceAccountName"] == account_name

@@ -40,6 +40,14 @@ The runtime ServiceAccount is separate from the identity running Helm. When movi
 
 Every install and upgrade creates the Job `a13n-a13n-migrate-<revision>`, which runs `a13n-service migrate` under the Service's PostgreSQL advisory lock. Replicas never migrate: the Chart configures `auto_migrate = false`, and each Control and Worker Pod first runs a `wait-for-schema` init container that repeats `a13n-service migrate --check` every five seconds until the database matches its image. Rolling updates keep old Pods serving until new ones are ready, so review schema compatibility before upgrading: old replicas remain active during migration. A Helm rollback rolls back Kubernetes resources, not the database schema. Finished Jobs are deleted after one day.
 
+### Builtin Agent refresh
+
+Install and upgrade with `--wait`. After both Deployments are ready, the post-install/post-upgrade hook Job `a13n-a13n-refresh-agents-<revision>` runs `a13n-service refresh-builtin-agents` from the same image. It updates existing Composer and Finding Agents, keeps usable model selections and leaves accepted Runs and explicit revision pins unchanged. Missing presets remain on demand. Ordinary replica startup and schema migration do not refresh presets, because older Workers may still be running during a rollout.
+
+The command reports updated, unchanged and failed counts. An individual failure leaves that Agent unchanged while other Agents continue; a failed hook fails the Helm release. Inspect the Job logs, restore missing model availability or correct the reported problem, then repeat the command in the upgraded Control container. Successful updates are safe to repeat. Do not run Helm without `--wait` or with `--no-hooks`: readiness alone does not prove builtin definitions are current. Custom deployers, including direct `kubectl set image` workflows, must wait for both role rollouts and explicitly run the same command. Finished hook Jobs are retained for one day.
+
+Operator-authored Agent revisions expose a null `created_by_id`, and refreshed Agent heads expose a null `updated_by_id`; clients must accept these values. Complete both role upgrades before refreshing. A rollback must also account for any already-published builtin revisions and the database schema; restoring only the image does not undo publication.
+
 ### Objects
 
 With `objects.backend: local`, every Service Pod mounts the claim `a13n-a13n-objects` at `/app/var/objects`. The Chart's claim is ReadWriteOnce, which shares it only among Pods on one node; kind has one node. On multi-node clusters set `persistence.existingClaim` to a ReadWriteMany claim (adapt `examples/objects-pvc.yaml`) or use `objects.backend: s3`. The local claim has Helm's `keep` policy. Switching backends does not migrate stored objects.

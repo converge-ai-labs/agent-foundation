@@ -8,7 +8,7 @@ Read the Agent head and check `source` and `archived_at` before promising a chan
 - `source=custom` with `archived_at` set: restore it through the unarchive operation before editing or duplicating it, subject to the user's request and write review.
 - An unarchived custom Agent can be edited within the current user's authority and tool review requirements.
 
-Builtin definition updates are deployment work. Preparing the preset synchronizes the deployment's definition; it does not accept user configuration changes. A valid AgentConfig describes configuration structure, not whether the target Agent permits a write. Configuration validation does not prove that a builtin Agent can be edited.
+Builtin definition updates are deployment work. Deployments refresh existing Composer and Finding Agents after all Service roles upgrade. Preparing the preset also synchronizes the deployment's definition; it does not accept user configuration changes. A valid AgentConfig describes configuration structure, not whether the target Agent permits a write. Configuration validation does not prove that a builtin Agent can be edited.
 
 ## Change an editable Agent
 

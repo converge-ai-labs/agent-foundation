@@ -51,5 +51,7 @@ class SkillRevisionRow(RevisionColumns):
     HEAD_KEY = "skill_id"
     ID_PREFIX = "skr"
     skill_id: Mapped[str]
+    # Skills are always published by a principal; operator publication is limited to builtin Agents.
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     # The staged upload holding the package archive, referenced in place.
     package_ref: Mapped[str]
