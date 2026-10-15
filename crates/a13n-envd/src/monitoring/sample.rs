@@ -256,6 +256,9 @@ mod tests {
         assert_eq!(memory_limit("broken"), None);
     }
 
+    // Native collection is Linux-only. Windows fs2 queries the containing volume
+    // even for a missing path, so it does not share Linux statvfs failure semantics.
+    #[cfg(target_os = "linux")]
     #[test]
     fn unavailable_sources_are_null_and_paths_are_not_exported() {
         let missing = std::env::temp_dir()
