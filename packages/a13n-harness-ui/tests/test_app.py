@@ -60,6 +60,12 @@ from a13n_harness_ui.model_accounts import (
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage import ObjectKind
+from a13n_harness_ui.storage.continuations import (
+    ContinuationDisplay,
+    ContinuationState,
+    publish_continuation,
+    read_continuation,
+)
 from a13n_harness_ui.surfaces import (
     ChildExecutionPage,
     DecisionResponseBatch,
@@ -1328,7 +1334,6 @@ async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it
     tmp_path: Path, monkeypatch, failed_entry: bool
 ) -> None:
     from a13n_harness_ui.display_history import saved_display_history
-    from a13n_harness_ui.storage import StoredContinuation
 
     root = _write_configuration(tmp_path)
     settings = _settings(tmp_path / "state")
@@ -1362,11 +1367,11 @@ async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it
         publish = app._store.objects.publish_model
 
         async def check_publication(**kwargs):
-            if kwargs["object_kind"] is ObjectKind.continuation:
-                value = kwargs["value"]
-                assert isinstance(value, StoredContinuation)
+            value = kwargs["value"]
+            if isinstance(value, ContinuationState):
                 assert saved_display_history(value.harness_state) is None
-                display = value.display_history
+            if isinstance(value, ContinuationDisplay):
+                display = value.archive.tail
                 assert display is not None
                 assert "display-only old prompt" in str(display.items)
                 publications.append(display)
@@ -1555,7 +1560,10 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
             assert "retain checkpoint input" in str(history)
 
 
-async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "failed_kind", [ObjectKind.continuation_state, ObjectKind.continuation_display, ObjectKind.continuation]
+)
+async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path, monkeypatch, failed_kind) -> None:
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
         app._root_runs._executor._agents = _CompletedReconstructor()
@@ -1566,7 +1574,7 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         publish = app._store.objects.publish_model
 
         async def fail_continuation(**kwargs):
-            if kwargs["object_kind"] == ObjectKind.continuation:
+            if kwargs["object_kind"] == failed_kind:
                 raise OSError("checkpoint disk unavailable")
             return await publish(**kwargs)
 
@@ -2689,7 +2697,6 @@ async def test_input_directory_and_bidirectional_history_use_saved_turn_boundari
 
 
 async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decode_native_state(tmp_path, monkeypatch):
-    from a13n_harness_ui.storage import StoredContinuation
     from a13n_harness_ui.storage.inspection import InspectionData
     from a13n_harness_ui.storage.read_models import project_continuation
     from a13n_harness_ui.thread_projection import ThreadProjectionService
@@ -2704,7 +2711,7 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
         await app.wait_root_operation(receipt.receipt_id)
         thread = await app._store.threads.get(created.thread_id)
         assert thread is not None and thread.continuation is not None
-        saved = await app._store.objects.read_model(thread.continuation, StoredContinuation)
+        saved = await read_continuation(app._store.objects, thread.continuation, include_display=True)
         # The old 16 MiB cache inserted and immediately evicted this history.
         history = tuple(
             message
@@ -2723,7 +2730,7 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
                 "harness_state": HarnessState.new(thread_id=thread.thread_id, message_history=history),
             }
         )
-        replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
+        replacement = await publish_continuation(app._store.objects, value)
         selected = await app._store.threads.select_continuation(
             thread_id=thread.thread_id,
             expected=thread.continuation,
@@ -2737,7 +2744,7 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
 
         async def counted(reference, model):
             nonlocal native_reads
-            if model is StoredContinuation:
+            if model is ContinuationState:
                 native_reads += 1
             return await read(reference, model)
 
@@ -2815,7 +2822,7 @@ async def test_history_rebuilds_share_only_their_thread_and_focus_does_not_load_
 
 
 async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_pages(tmp_path, monkeypatch):
-    from a13n_harness_ui.storage import StoredContinuation, inspection
+    from a13n_harness_ui.storage import inspection
     from a13n_harness_ui.storage.read_models import project_continuation
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextContent, TextPart, UserPromptPart
 
@@ -2828,7 +2835,7 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
         await app.wait_root_operation(receipt.receipt_id)
         thread = await app._store.threads.get(created.thread_id)
         assert thread is not None and thread.continuation is not None
-        stored = await app._store.objects.read_model(thread.continuation, StoredContinuation)
+        stored = await read_continuation(app._store.objects, thread.continuation, include_display=True)
         history = [ModelRequest(parts=[UserPromptPart("Question")])]
         for source in ("background_process", "async_subagent", "external"):
             history.append(
@@ -2844,7 +2851,7 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
                 "harness_state": HarnessState.new(thread_id=thread.thread_id, message_history=history),
             }
         )
-        replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
+        replacement = await publish_continuation(app._store.objects, value)
         await app._store.threads.select_continuation(
             thread_id=thread.thread_id,
             expected=thread.continuation,

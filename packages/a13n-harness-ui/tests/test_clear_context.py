@@ -8,7 +8,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.display_history import saved_display_history
 from a13n_harness_ui.errors import RunCoordinationError, StoreConflictError, ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-from a13n_harness_ui.storage import StoredContinuation
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
 from anyio import Event, fail_after
 from pydantic_ai.messages import ModelMessagesTypeAdapter
@@ -90,7 +90,7 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
             assert (await app.context_usage(thread.thread_id)).latest_request_tokens is None
         selected = await app._store.threads.get(thread.thread_id)
         assert selected is not None and selected.continuation is not None
-        stored = await app._store.objects.read_model(selected.continuation, StoredContinuation)
+        stored = await read_continuation(app._store.objects, selected.continuation, include_display=True)
         assert not stored.harness_state.message_history
         assert not stored.harness_state.agent_context_state.entries
         assert stored.display is not None

@@ -23,7 +23,9 @@ from a13n_harness_ui.display_history import (
     with_display_history,
 )
 from a13n_harness_ui.settings import StorageSettings
-from a13n_harness_ui.storage import StoredContinuation, open_local_store
+from a13n_harness_ui.storage import Continuation, StoredContinuation, open_local_store
+from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
+from a13n_harness_ui.storage.contracts import ReferencedContinuation
 from a13n_harness_ui.storage.display import DisplayArchive, read_display, seal_display
 from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from a13n_stream_protocol.display import DisplayFold
@@ -33,13 +35,29 @@ COMPOSITION = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_ve
 
 
 def continuation(state, display=None):
-    return StoredContinuation(
+    fields = dict(
         harness_release="benchmark",
         run_composition=COMPOSITION,
         harness_state=state,
-        display=display,
         created_at=datetime.now(UTC),
     )
+    return StoredContinuation(**fields) if display is None else Continuation(**fields, display=display)
+
+
+async def publish(objects, value):
+    if isinstance(value, Continuation):
+        return await publish_continuation(objects, value)
+    return (await objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
+
+
+async def checkpoint_sizes(objects, reference, mode):
+    refs = {"manifest": reference}
+    if mode == "referenced":
+        manifest = await objects.read_model(reference, ReferencedContinuation)
+        refs["native"] = manifest.native_state
+        if manifest.display is not None:
+            refs["display"] = manifest.display
+    return {name: len((await objects.read(ref)).model_dump_json().encode()) for name, ref in refs.items()}
 
 
 async def measure(count: int, repeats: int, single_turn: bool = False):
@@ -90,11 +108,15 @@ async def measure(count: int, repeats: int, single_turn: bool = False):
                         if mode == "legacy"
                         else continuation(native, archive)
                     )
-                    reference = (await store.objects.publish_model(object_kind=ObjectKind.continuation, value=seed)).ref
+                    reference = await publish(store.objects, seed)
                     timer = asyncio.create_task(heartbeat())
                     await asyncio.sleep(0.01)
                     start = perf_counter()
-                    loaded = await store.objects.read_model(reference, StoredContinuation)
+                    loaded = (
+                        await store.objects.read_model(reference, StoredContinuation)
+                        if mode == "legacy"
+                        else await read_continuation(store.objects, reference, include_display=True)
+                    )
                     read_seconds = perf_counter() - start
                     start = perf_counter()
                     collector = None
@@ -123,7 +145,7 @@ async def measure(count: int, repeats: int, single_turn: bool = False):
                         if mode == "legacy"
                         else continuation(native, archive.model_copy(update={"tail": frozen}))
                     )
-                    await store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)
+                    published = await publish(store.objects, value)
                     publish_seconds = perf_counter() - start
                     samples.append(
                         {
@@ -137,11 +159,13 @@ async def measure(count: int, repeats: int, single_turn: bool = False):
                     timer.cancel()
                     await asyncio.gather(timer, return_exceptions=True)
                     assert loaded.harness_state.message_history == native.message_history
+                sizes = await checkpoint_sizes(store.objects, published, mode)
                 results[mode] = {
                     "median_ms": {
                         key: round(statistics.median(sample[key] for sample in samples), 3) for key in samples[0]
                     },
-                    "checkpoint_json_bytes": len(value.model_dump_json().encode()),
+                    "checkpoint_json_bytes": sum(sizes.values()),
+                    "object_json_bytes": sizes,
                     "capture_items": len(selected_history.items),
                     "max_event_loop_delay_ms": round(max(delays, default=0) * 1000, 3),
                 }

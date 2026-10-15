@@ -52,7 +52,7 @@ async def test_fork_preserves_saved_conversation_work_and_files_and_continues_in
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
         source = await app._threads.get(source.thread_id)
         assert source.continuation is not None
-        original = await app._store.read_continuation(source.thread_id, source.continuation)
+        original = await app._store.read_continuation(source.thread_id, source.continuation, include_display=True)
         attachment = await app._thread_files.stage(source.thread_id, AttachmentUpload("notes.txt", b"saved attachment"))
         await app._thread_files.retain(source.thread_id, attachment.attachment_id)
         source_dir = app._thread_files.directory(source.thread_id)
@@ -66,11 +66,12 @@ async def test_fork_preserves_saved_conversation_work_and_files_and_continues_in
         saved = await app._threads.get(copied.thread_id)
         assert saved.configuration == source.configuration.model_copy(update={"version": 1})
         assert saved.continuation is not None and saved.continuation != source.continuation
-        forked = await app._store.read_continuation(copied.thread_id, saved.continuation)
+        forked = await app._store.read_continuation(copied.thread_id, saved.continuation, include_display=True)
         assert forked.harness_state.thread_id == copied.thread_id
         assert forked.harness_state.message_history == original.harness_state.message_history
         assert forked.harness_state.agent_context_state == original.harness_state.agent_context_state
-        assert saved_display_history(forked.harness_state) == saved_display_history(original.harness_state)
+        assert saved_display_history(forked.harness_state) is None
+        assert forked.display == original.display and forked.display is not None
         assert forked.run_composition == original.run_composition
         assert (await app.thread_notes(thread_id=copied.thread_id)).total == 1
         assert (await app.thread_tasks(thread_id=copied.thread_id)).total == 1

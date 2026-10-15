@@ -8,7 +8,8 @@ from a13n_harness_ui.display_history import DisplayHistoryCollector, import_disp
 from a13n_harness_ui.display_projection import display_entries, display_turns
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import open_local_store
-from a13n_harness_ui.storage.contracts import StoredContinuation
+from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
+from a13n_harness_ui.storage.contracts import Continuation
 from a13n_harness_ui.storage.display import DisplayArchive, read_display, seal_display
 from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -42,7 +43,7 @@ async def test_archive_reopens_without_reading_prefix_and_rebuilds_exact_coordin
         assert restored.items == original.items
         assert display_entries(restored) == display_entries(original)
         assert display_turns(restored) == display_turns(original)
-        value = StoredContinuation(
+        value = Continuation(
             harness_release="test",
             created_at=datetime.now(UTC),
             run_composition=ObjectRef(
@@ -51,7 +52,7 @@ async def test_archive_reopens_without_reading_prefix_and_rebuilds_exact_coordin
             harness_state=HarnessState.new(),
             display=archive,
         )
-        selected = await store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)
+        selected = await publish_continuation(store.objects, value)
         read = store.objects.read_model
         seen = []
 
@@ -60,12 +61,12 @@ async def test_archive_reopens_without_reading_prefix_and_rebuilds_exact_coordin
             return await read(ref, model)
 
         monkeypatch.setattr(store.objects, "read_model", record)
-        reopened = await store.objects.read_model(selected.ref, StoredContinuation)
+        reopened = await read_continuation(store.objects, selected, include_display=True)
         assert reopened.display is not None
         assert await seal_display(store.objects, reopened.display) == archive
         collector = DisplayHistoryCollector((), reopened.display.tail)
         assert len(collector.capture().items) == 2
-        assert seen == [ObjectKind.continuation]
+        assert seen == [ObjectKind.continuation, ObjectKind.continuation_state, ObjectKind.continuation_display]
         assert len(reopened.model_dump_json()) < 5000
 
 
@@ -102,7 +103,7 @@ async def test_turn_content_revision_matches_sealed_and_rebuilt_entries(tmp_path
     original = history(3)
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
         archive = await seal_display(store.objects, DisplayArchive(tail=original))
-        stored = StoredContinuation(
+        stored = Continuation(
             harness_release="test",
             created_at=datetime.now(UTC),
             run_composition=ObjectRef(

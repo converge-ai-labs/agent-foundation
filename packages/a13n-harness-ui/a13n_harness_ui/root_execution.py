@@ -77,15 +77,16 @@ from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
+    Continuation,
     LocalStore,
     ObjectKind,
     ObjectRef,
-    StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfigurationMutation,
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
+from a13n_harness_ui.storage.continuations import publish_continuation, remove_continuation
 from a13n_harness_ui.storage.contracts import StoredDeferredInput, ThreadReadModel
 from a13n_harness_ui.storage.display import DisplayArchive, seal_display
 from a13n_harness_ui.storage.read_models import project_continuation
@@ -809,7 +810,9 @@ class RootRunExecutor:
             deferred = None
             composition = None
         else:
-            stored_continuation = await self._store.read_continuation(thread.thread_id, thread.continuation)
+            stored_continuation = await self._store.read_continuation(
+                thread.thread_id, thread.continuation, include_display=True
+            )
             state = stored_continuation.harness_state
             archive = stored_continuation.display
             deferred = stored_continuation.deferred_requests
@@ -844,8 +847,8 @@ class RootRunExecutor:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
 
-        def prepare_continuation() -> tuple[StoredContinuation, ThreadReadModel]:
-            continuation = StoredContinuation(
+        def prepare_continuation() -> tuple[Continuation, ThreadReadModel]:
+            continuation = Continuation(
                 harness_release=harness_version,
                 run_composition=composition,
                 memory_cursors=dict(memory_positions or {}),
@@ -870,9 +873,7 @@ class RootRunExecutor:
             # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             async with checkpoint_lock(self._store.layout.root, thread.thread_id):
-                published_ref = (
-                    await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
-                ).ref
+                published_ref = await publish_continuation(self._store.objects, continuation)
                 selected = await self._store.threads.select_continuation(
                     thread_id=thread.thread_id,
                     expected=thread.continuation,
@@ -886,8 +887,8 @@ class RootRunExecutor:
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.
                 if superseded is not None and superseded == thread.continuation and superseded != published_ref:
                     try:
-                        await self._store.objects.remove(superseded)
-                    except OSError as exc:
+                        await remove_continuation(self._store.objects, superseded)
+                    except Exception as exc:
                         get_logger(__name__).warning(
                             "Could not remove superseded Run checkpoint",
                             extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},

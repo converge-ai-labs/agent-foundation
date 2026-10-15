@@ -6,8 +6,9 @@ import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import StoreConflictError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-from a13n_harness_ui.storage import StoredContinuation, open_local_store
+from a13n_harness_ui.storage import open_local_store
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.storage.objects import ObjectKind
 from a13n_harness_ui.surfaces import RootOperationStatus
 from anyio import Event, create_task_group, fail_after, sleep
@@ -44,7 +45,7 @@ async def test_each_run_retains_only_its_last_checkpoint_and_preserves_previous_
         assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
         before = await app._store.threads.get(thread.thread_id)
         assert before is not None and before.continuation is not None
-        frozen = await app._store.objects.read_model(before.continuation, StoredContinuation)
+        frozen = await read_continuation(app._store.objects, before.continuation, include_display=True)
         second = await app.submit_thread(thread_id=thread.thread_id, prompt="Second")
         with fail_after(10):
             await started.wait()
@@ -65,15 +66,18 @@ async def test_each_run_retains_only_its_last_checkpoint_and_preserves_previous_
             before.continuation,
             after.continuation,
         }
-        assert await app._store.objects.read_model(before.continuation, StoredContinuation) == frozen
-        saved = await app._store.objects.read_model(after.continuation, StoredContinuation)
+        assert await read_continuation(app._store.objects, before.continuation, include_display=True) == frozen
+        saved = await read_continuation(app._store.objects, after.continuation, include_display=True)
+        refs = await app._store.objects.references()
+        assert sum(ref.object_kind is ObjectKind.continuation_state for ref in refs) == 2
+        assert sum(ref.object_kind is ObjectKind.continuation_display for ref in refs) == 2
         if ending != "completed":
             assert after.completion == before.completion
         async with open_local_store(settings.storage) as other:
             with pytest.raises(StoreConflictError) as stale:
                 await other.read_continuation(thread.thread_id, during.continuation)
             assert stale.value.code == "thread_continuation_conflict"
-            assert await other.read_continuation(thread.thread_id, after.continuation) == saved
+            assert await other.read_continuation(thread.thread_id, after.continuation, include_display=True) == saved
 
 
 async def test_selected_reader_in_another_store_waits_for_replacement_lock(tmp_path, monkeypatch):

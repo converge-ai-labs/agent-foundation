@@ -40,9 +40,9 @@ from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import app_references
 from a13n_harness_ui.storage import (
+    Continuation,
     LocalStore,
     ObjectRef,
-    StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
@@ -644,7 +644,9 @@ class ThreadProjectionService:
                 if thread.continuation is None:
                     stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
                 else:
-                    stored = await self._store.read_continuation(thread.thread_id, thread.continuation)
+                    stored = await self._store.read_continuation(
+                        thread.thread_id, thread.continuation, include_display=True
+                    )
                     if stored.display is not None:
                         from a13n_harness_ui.storage.display import DisplayArchive, read_display
 
@@ -713,12 +715,12 @@ def project_working_state(working: WorkingState, continuation_id: str | None = N
     )
 
 
-def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredThreadInitialState) -> InspectionData:
+def build_thread_inspection(thread: Thread, stored: Continuation | StoredThreadInitialState) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
     if state.thread_id != thread.thread_id:
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
-    display = stored.display_history if isinstance(stored, StoredContinuation) else None
+    display = stored.display_history if isinstance(stored, Continuation) else None
     model_history = state.message_history
     from a13n_harness_ui.display_history import import_display_history
     from a13n_harness_ui.display_projection import display_entries, display_turns
@@ -733,7 +735,7 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
         context_empty=not model_history,
-        run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
+        run_composition=stored.run_composition if isinstance(stored, Continuation) else None,
         latest_request_tokens=next(
             (
                 message.usage.total_tokens
@@ -745,12 +747,8 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         notes=notes,
         tasks=tasks,
     )
-    entry_offset = (
-        stored.display.entry_offset if isinstance(stored, StoredContinuation) and stored.display is not None else 0
-    )
-    turn_offset = (
-        stored.display.turn_offset if isinstance(stored, StoredContinuation) and stored.display is not None else 0
-    )
+    entry_offset = stored.display.entry_offset if isinstance(stored, Continuation) and stored.display is not None else 0
+    turn_offset = stored.display.turn_offset if isinstance(stored, Continuation) and stored.display is not None else 0
     entries = tuple(
         entry.model_copy(update={"position": entry.position + entry_offset}).model_dump_json()
         for entry in display_entries(display, thread)

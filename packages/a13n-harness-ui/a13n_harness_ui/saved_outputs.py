@@ -153,7 +153,7 @@ class SavedOutputs:
     async def _text(self, target: SavedOutputTarget, source: ObjectRef) -> str:
         location = target.location
         if isinstance(location, RootOutputLocation):
-            continuation = await self._store.read_continuation(target.producing_thread_id, source)
+            continuation = await self._store.read_continuation(target.producing_thread_id, source, include_display=True)
             from a13n_harness_ui.display_projection import original_text
 
             if continuation.harness_state.thread_id != target.producing_thread_id:

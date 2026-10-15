@@ -22,15 +22,16 @@ from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.storage import (
     AgentResourceSource,
+    Continuation,
     LocalStore,
     ObjectKind,
-    StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
     ThreadConfigurationMutation,
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
+from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
 from a13n_harness_ui.storage.contracts import LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
@@ -167,7 +168,7 @@ class ThreadService:
                 raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
             baseline = await self._store.objects.read_model(source.initial_state, StoredThreadInitialState)
             stored = (
-                await self._store.objects.read_model(source.continuation, StoredContinuation)
+                await read_continuation(self._store.objects, source.continuation, include_display=True)
                 if source.continuation is not None
                 else baseline
             )
@@ -190,11 +191,9 @@ class ThreadService:
             )
             continuation = None
             read_model = None
-            if isinstance(stored, StoredContinuation):
+            if isinstance(stored, Continuation):
                 replacement = stored.model_copy(update={"harness_state": state, "created_at": now})
-                continuation = (
-                    await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=replacement)
-                ).ref
+                continuation = await publish_continuation(self._store.objects, replacement)
                 read_model = await to_thread.run_sync(project_continuation, replacement)
             async with files.fork(thread_id, state.thread_id):
                 copied = await self._store.threads.fork(
@@ -328,7 +327,7 @@ class ThreadService:
                 "The conversation context changed. Review it before clearing context.",
                 code="thread_continuation_conflict",
             )
-        stored = await self._store.read_continuation(thread.thread_id, thread.continuation)
+        stored = await self._store.read_continuation(thread.thread_id, thread.continuation, include_display=True)
         previous = stored.harness_state
         if previous.thread_id != thread_id:
             raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")
@@ -339,7 +338,7 @@ class ThreadService:
         archive = stored.display if stored.display is not None else DisplayArchive(tail=display)
         archive = await seal_display(self._store.objects, archive)
         state = HarnessState.new(thread_id=thread_id, environment_states=previous.environment_states)
-        replacement = StoredContinuation(
+        replacement = Continuation(
             harness_release=harness_version,
             run_composition=stored.run_composition,
             harness_state=state,
@@ -349,15 +348,15 @@ class ThreadService:
         )
         read_model = await to_thread.run_sync(project_continuation, replacement)
         with CancelScope(shield=True):
-            published = await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=replacement)
+            published = await publish_continuation(self._store.objects, replacement)
             await self._store.threads.select_continuation(
                 thread_id=thread_id,
                 expected=thread.continuation,
-                replacement=published.ref,
+                replacement=published,
                 read_model=read_model,
                 activity_changed=False,
             )
-            await self._store.publish_work(thread_id, published.ref, state)
+            await self._store.publish_work(thread_id, published, state)
 
     async def update_metadata(
         self,

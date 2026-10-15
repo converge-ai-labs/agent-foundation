@@ -18,7 +18,7 @@ from a13n_harness_ui.memory_organization import (
     manifest,
 )
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-from a13n_harness_ui.storage import StoredContinuation
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import RootOperationStatus
 from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
 from filelock import FileLock
@@ -445,7 +445,7 @@ async def test_app_input_starts_parallel_memory_work_hidden_from_ordinary_thread
             assert (await app.status()).memory_organization.availability == "webui_only"
         assert [item.thread_id for item in (await app.list_threads()).threads] == [thread.thread_id]
         saved = await app._threads.get(thread.thread_id)
-        continuation = await app._store.objects.read_model(saved.continuation, StoredContinuation)
+        continuation = await read_continuation(app._store.objects, saved.continuation, include_display=True)
         assert set(continuation.memory_cursors) == {"global", "project:project-main"}
         release.set()
         await _settle(app._memory_organizer)

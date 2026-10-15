@@ -8,6 +8,7 @@ from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, Harne
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.display_history import _message_digest, import_display_history, with_display_history
 from a13n_harness_ui.storage import ObjectKind, StoredContinuation
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.thread_projection import _transcript_turns
 from a13n_harness_ui.webui import create_webui
@@ -67,7 +68,7 @@ async def seed_history(app, format):
     receipt = await app.submit_thread(thread_id=created.thread_id, prompt="Seed composition")
     await app.wait_root_operation(receipt.receipt_id)
     thread = await app._store.threads.get(created.thread_id)
-    stored = await app._store.objects.read_model(thread.continuation, StoredContinuation)
+    stored = await read_continuation(app._store.objects, thread.continuation, include_display=True)
     history = history_fixture()
     native = HarnessState.new(thread_id=thread.thread_id, message_history=history[-2:] if format == "v1" else history)
     state = native
@@ -96,7 +97,12 @@ async def seed_history(app, format):
         )
     elif format == "v2":
         state = with_display_history(native, import_display_history(history))
-    value = stored.model_copy(update={"harness_state": state})
+    value = StoredContinuation(
+        harness_release=stored.harness_release,
+        run_composition=stored.run_composition,
+        harness_state=state,
+        created_at=stored.created_at,
+    )
     replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
     selected = await app._store.threads.select_continuation(
         thread_id=thread.thread_id,
@@ -115,7 +121,21 @@ async def test_history_http_pages_and_originals_never_rewrite_selected_storage(t
     async with open_harness_ui_app(settings, configuration_path=configuration) as app:
         selected, history = await seed_history(app, format)
         original = (await app._store.objects.read(selected.continuation)).model_dump_json()
-    expected_turns = [turn.model_dump(mode="json") for turn in _transcript_turns(tuple(history))]
+    import hashlib
+
+    from a13n_harness_ui.display_projection import display_entries
+
+    entries = [entry.model_dump_json() for entry in display_entries(import_display_history(history), selected)]
+    expected_turns = [
+        turn.model_copy(
+            update={
+                "content_revision": hashlib.sha256(
+                    ("[" + ",".join(entries[turn.input_position : turn.end_position]) + "]").encode()
+                ).hexdigest(),
+            }
+        ).model_dump(mode="json")
+        for turn in _transcript_turns(tuple(history))
+    ]
 
     base = f"/api/threads/{selected.thread_id}"
     # Cold index construction and a subsequent App restart use the same old source.

@@ -11600,6 +11600,8 @@
           "run-composition",
           "thread-initial-state",
           "continuation",
+          "continuation-state",
+          "continuation-display",
           "display-segment",
           "live-transcript",
           "child-checkpoint",

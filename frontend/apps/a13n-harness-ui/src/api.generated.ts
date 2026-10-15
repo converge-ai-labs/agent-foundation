@@ -4161,7 +4161,7 @@ export interface components {
          * @description Immutable payload families owned by the Harness UI store.
          * @enum {string}
          */
-        ObjectKind: "configuration-generation" | "run-composition" | "thread-initial-state" | "continuation" | "display-segment" | "live-transcript" | "child-checkpoint" | "environment-state" | "mcp-app-resource" | "mcp-app-snapshot";
+        ObjectKind: "configuration-generation" | "run-composition" | "thread-initial-state" | "continuation" | "continuation-state" | "continuation-display" | "display-segment" | "live-transcript" | "child-checkpoint" | "environment-state" | "mcp-app-resource" | "mcp-app-snapshot";
         /**
          * ObjectRef
          * @description Authority-neutral identity for one verified immutable object.
