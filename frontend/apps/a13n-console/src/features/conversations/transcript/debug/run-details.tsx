@@ -25,10 +25,9 @@ import { AgentLink } from "../../../agents/link";
 import { useAgent } from "../../../agents/queries";
 import { EnvironmentReference } from "../../../environments/reference";
 import { MemoryMountRows } from "../../../memories/mounts";
-import { conversationQueries, isActiveRun, runPath } from "../../api";
+import { conversationQueries, runPath } from "../../api";
 import { formatDuration } from "../../format";
 import { useRun, useRunUsage } from "../../queries";
-import { ContextWindow } from "../../context-window";
 import { UsageTable } from "../../usage-table";
 import {
   computerPermissionMode,
@@ -124,12 +123,6 @@ function RunDetails({ selected }: { selected: Run }) {
           )
         )}
       </Section>
-      <section className={styles.section}>
-        <ContextWindow
-          scope={{ run_id: run.id }}
-          live={isActiveRun(run.status)}
-        />
-      </section>
       <Section title={t("Overview")}>
         <dl className={styles.facts}>
           <Fact term={t("Run")}>
