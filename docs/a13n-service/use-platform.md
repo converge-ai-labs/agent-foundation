@@ -22,11 +22,11 @@ Console follows your browser's preferred language when it supports it; otherwise
 3. Watch the response stream. The conversation can also show reasoning and tool calls.
 4. Send a follow-up, such as “Make the first step more specific.” The same thread retains the discussion history.
 
-To return later, open **Sessions** and select **Continue conversation**. Choose a thread when the session has no unique main thread; a thread ID search keeps that exact target. Use Chat for the conversation and Debug to inspect execution.
+To return later, open **Sessions** and select **Continue thread**. Choose a thread when the session has no unique main thread; a thread ID search keeps that exact target. Use Chat for the conversation and Debug to inspect execution.
 
 ## Create a conversation branch
 
-Choose **Create branch from here** below the response you want to continue from, or **Create branch** beside a run in Debug. Enter the new branch's first message and select **Create branch and send**. The branch stays in the same session and uses that run's agent version and options. Switch conversations from the header; the branch's origin link returns to the exact run it inherited.
+Choose **Create branch from here** below the response you want to continue from, or **Create branch** beside a run in Debug. Enter the new branch's first message and select **Create branch and send**. The branch stays in the same session and uses that run's agent version and options. Switch threads from the header; the branch's origin link returns to the exact run it inherited.
 
 The origin must have stopped executing, and you need permission to run agents. A waiting run can be branched without resolving its original wait; the new branch denies pending approvals and fails unanswered calls. Failed or cancelled runs continue from their last saved checkpoint.
 

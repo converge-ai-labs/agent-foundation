@@ -34,9 +34,12 @@ export function formatContextTokens(value: number | null): string {
 export function ContextWindow({
   scope,
   live = false,
+  statLabel,
 }: {
   scope: ContextScope;
   live?: boolean;
+  /** Render as one item in the Session usage statistics. */
+  statLabel?: string;
 }) {
   const { t, i18n } = useTranslation();
   const client = useClient(),
@@ -49,6 +52,21 @@ export function ContextWindow({
   const label = percent === null ? UNKNOWN : `${percent}%`;
   const exact = (value: number | null) =>
     value === null ? UNKNOWN : value.toLocaleString(i18n.resolvedLanguage);
+  if (statLabel !== undefined) {
+    return (
+      <div>
+        <dt>{t("Context window")}</dt>
+        <dd>
+          <strong>{label}</strong>
+          <small title={`${exact(used)} / ${exact(capacity)}`}>
+            {formatContextTokens(used)} / {formatContextTokens(capacity)}
+          </small>
+          <small>{statLabel}</small>
+          <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+        </dd>
+      </div>
+    );
+  }
   return (
     <div className={styles.details}>
       <span className={styles.heading}>{t("Context window")}</span>

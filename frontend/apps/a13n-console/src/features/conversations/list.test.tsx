@@ -147,13 +147,13 @@ it.each([
   [
     "",
     true,
-    "Continue conversation",
+    "Continue thread",
     "/workspace/test/sessions/sess_first?view=chat",
   ],
   [
     "?q=thr_branch",
     true,
-    "Continue conversation",
+    "Continue thread",
     "/workspace/test/sessions/sess_first/threads/thr_branch?view=chat",
   ],
   [
@@ -197,7 +197,7 @@ it.each([
     const link = await screen.findByRole("link", { name: action });
     if (!permission)
       expect(
-        screen.queryByRole("link", { name: "Continue conversation" }),
+        screen.queryByRole("link", { name: "Continue thread" }),
       ).toBeNull();
     await userEvent.setup().click(link);
     expect(await screen.findByText(expected)).toBeTruthy();

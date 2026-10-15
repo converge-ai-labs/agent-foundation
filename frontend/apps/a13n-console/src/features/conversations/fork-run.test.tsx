@@ -260,7 +260,7 @@ it("forks a waiting Run without answering the original approvals", async () => {
   const user = await draft();
   expect(
     screen.getByText(
-      "Pending approvals will be denied and unanswered calls will fail in the new branch. The original conversation keeps waiting.",
+      "Pending approvals will be denied and unanswered calls will fail in the new branch. The original thread keeps waiting.",
     ),
   ).toBeTruthy();
   await user.click(

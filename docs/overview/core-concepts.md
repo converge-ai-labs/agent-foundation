@@ -35,7 +35,7 @@ Answer questions and approve or deny tool calls in their conversation cards, the
 
 ## Continue later
 
-Open **Sessions** and choose **Continue conversation**, then ask “Which task should I do first?” Applications send the follow-up to the returned thread reference. Work continues when you disconnect, and Service stores the history for your return. **Inspect execution** opens the diagnostic view when you need to investigate a problem.
+Open **Sessions** and choose **Continue thread**, then ask “Which task should I do first?” Applications send the follow-up to the returned thread reference. Work continues when you disconnect, and Service stores the history for your return. **Inspect execution** opens the diagnostic view when you need to investigate a problem.
 
 | Information       | Purpose                                            |
 | ----------------- | -------------------------------------------------- |

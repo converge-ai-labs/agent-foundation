@@ -278,8 +278,8 @@ export function SessionLayout() {
                 <Loading variant="list" rows={3} />
               ) : threads.data?.length ? (
                 <div className="grid gap-3 p-6">
-                  <h2>{t("Choose a conversation")}</h2>
-                  <p>{t("Choose which conversation history to open.")}</p>
+                  <h2>{t("Choose a thread")}</h2>
+                  <p>{t("Choose which thread history to open.")}</p>
                   <ul className="grid gap-2">
                     {threads.data.map((thread) => (
                       <li key={thread.id}>
@@ -324,9 +324,7 @@ export function ThreadLayout() {
   if (thread.data && thread.data.session_id !== sessionId)
     return (
       <ErrorNotice
-        error={
-          new Error(t("This thread does not belong to this conversation."))
-        }
+        error={new Error(t("This thread does not belong to this session."))}
       />
     );
   return (

@@ -26,7 +26,7 @@ export function ThreadMountsDialog({
       size="lg"
       title={t("Environments and memory")}
       description={t(
-        "Mounts apply to this conversation's later runs. A run keeps the mounts it started with.",
+        "Mounts apply to this thread's later runs. A run keeps the mounts it started with.",
       )}
       closeLabel={t("Close")}
     >

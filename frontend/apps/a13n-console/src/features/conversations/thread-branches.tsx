@@ -25,8 +25,8 @@ export function threadName(
   if (thread.origin === "fork")
     return index ? t("Branch {{index}}", { index }) : t("Branch");
   return peers.length === 1
-    ? t("Main conversation")
-    : t("Conversation {{index}}", { index });
+    ? t("Main thread")
+    : t("Thread {{index}}", { index });
 }
 
 /** Switch independent conversations without changing the Chat/Debug level. */
@@ -55,7 +55,7 @@ export function ThreadBranches({
             size="sm"
             variant="ghost"
             className={styles.branchTrigger}
-            aria-label={t("Switch conversation")}
+            aria-label={t("Switch thread")}
           />
         }
       >
@@ -83,8 +83,8 @@ export function ThreadBranches({
                 <span>{threadName(entry, threads, t)}</span>{" "}
                 {origin && (
                   <small>
-                    {t("From {{conversation}}", {
-                      conversation: threadName(origin, threads, t),
+                    {t("From {{thread}}", {
+                      thread: threadName(origin, threads, t),
                     })}
                   </small>
                 )}
@@ -140,8 +140,8 @@ export function BranchOrigin({
         )}
       >
         {origin
-          ? t("View origin in {{conversation}}", {
-              conversation: threadName(origin, threads, t),
+          ? t("View origin in {{thread}}", {
+              thread: threadName(origin, threads, t),
             })
           : t("View original run")}
       </Link>

@@ -77,8 +77,8 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  flex: none;
-  max-width: 220px;
+  flex: 0 1 auto;
+  max-width: min(220px, 100%);
   min-width: 0;
   padding: 2px 4px 2px 2px;
   margin-left: -2px;
@@ -87,6 +87,12 @@
   font-size: var(--a13n-text-sm);
   font-weight: 500;
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agentName {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

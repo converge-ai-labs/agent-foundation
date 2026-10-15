@@ -61,7 +61,7 @@ export function SessionHeader({
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
   const debugSession = isConsoleSession(session.data);
-  // Delegated children retain their execution breadcrumb beside conversation switching.
+  // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
   const active =
     valid &&
@@ -86,14 +86,14 @@ export function SessionHeader({
               url={agent.data.image_url}
               className={styles.headerAvatar}
             />
-            {agent.data.name}
+            <span className={styles.agentName}>{agent.data.name}</span>
           </Link>
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
         <span className={styles.subNote}>
           {level === "chat"
-            ? t("Conversation")
+            ? t("Thread")
             : debugSession
               ? [
                   t("Debug session"),

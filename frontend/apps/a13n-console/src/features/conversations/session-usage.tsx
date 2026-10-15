@@ -1,7 +1,7 @@
 import { Button, ModalFrame } from "a13n-ui";
 import { ChartBarIcon } from "@phosphor-icons/react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -15,7 +15,6 @@ import { threadName } from "./thread-branches";
 import { chronological } from "./transcript/thread-runs";
 import { percent } from "../usage/values";
 import {
-  Meter,
   Tokens,
   UsageTable,
   usageTotals,
@@ -63,7 +62,7 @@ export function SessionUsage({
       size="xl"
       title={t("Session usage")}
       description={t(
-        "Model requests recorded across this session's conversations, including late reports. Cached input is part of input.",
+        "Model requests across this session's threads. Cached tokens are included in input.",
       )}
       closeLabel={t("Close")}
       trigger={
@@ -136,7 +135,7 @@ function SessionUsageReport({
         threadIds.length > 1
           ? thread
             ? threadName(thread, threads, t)
-            : t("Conversation")
+            : t("Thread")
           : undefined,
       groups: summary.runs
         .filter((run) => run.thread_id === threadId)
@@ -168,16 +167,18 @@ function SessionUsageReport({
   });
   return (
     <div className={styles.report}>
-      <UsageStats totals={usageTotals(summary.models)} />
-      {thread && (
-        <section className={styles.section}>
-          <h3>{threadName(thread, threads, t)}</h3>
-          <ContextWindow
-            scope={{ thread_id: thread.id }}
-            live={!!thread.current_run_id}
-          />
-        </section>
-      )}
+      <UsageStats
+        totals={usageTotals(summary.models)}
+        context={
+          thread && (
+            <ContextWindow
+              scope={{ thread_id: thread.id }}
+              live={!!thread.current_run_id}
+              statLabel={threadName(thread, threads, t)}
+            />
+          )
+        }
+      />
       <section className={styles.section}>
         <h3>{t("By model")}</h3>
         <UsageTable
@@ -204,10 +205,16 @@ function SessionUsageReport({
   );
 }
 
-function UsageStats({ totals }: { totals: UsageTotals }) {
+function UsageStats({
+  totals,
+  context,
+}: {
+  totals: UsageTotals;
+  context?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
-    <dl className={styles.stats}>
+    <dl className={styles.stats} data-context={context ? "" : undefined}>
       <div>
         <dt>{t("Spend")}</dt>
         <dd>
@@ -219,33 +226,32 @@ function UsageStats({ totals }: { totals: UsageTotals }) {
         </dd>
       </div>
       <div>
-        <dt>{t("Input tokens")}</dt>
+        <dt>{t("Tokens")}</dt>
         <dd>
-          <strong>
-            <Tokens value={totals.inputTokens} />
-          </strong>
+          <div className={styles.tokenPair}>
+            <span>
+              <small>{t("Input")}</small>
+              <strong>
+                <Tokens value={totals.inputTokens} />
+              </strong>
+            </span>
+            <span>
+              <small>{t("Output")}</small>
+              <strong>
+                <Tokens value={totals.outputTokens} />
+              </strong>
+            </span>
+          </div>
           <small>
             {t("{{tokens}} cached", {
               tokens: formatTokens(totals.cachedTokens),
             })}
+            {" · "}
+            {t("{{rate}} cache hit", { rate: percent(totals.cacheRate) })}
           </small>
         </dd>
       </div>
-      <div>
-        <dt>{t("Cache hit rate")}</dt>
-        <dd>
-          <strong>{percent(totals.cacheRate)}</strong>
-          <Meter rate={totals.cacheRate} wide />
-        </dd>
-      </div>
-      <div>
-        <dt>{t("Output tokens")}</dt>
-        <dd>
-          <strong>
-            <Tokens value={totals.outputTokens} />
-          </strong>
-        </dd>
-      </div>
+      {context}
     </dl>
   );
 }

@@ -139,7 +139,7 @@ export function ForkRun({
       }
       title={t("Create branch from here")}
       description={t(
-        "Continue from this run's saved history with a new message. The new branch stays in this session; the original conversation can continue.",
+        "Continue from this run's saved history with a new message. The new branch stays in this session; the original thread can continue.",
       )}
       closeLabel={t("Close")}
     >
@@ -169,7 +169,7 @@ export function ForkRun({
         {run.status === "waiting" && (
           <p className={styles.warning}>
             {t(
-              "Pending approvals will be denied and unanswered calls will fail in the new branch. The original conversation keeps waiting.",
+              "Pending approvals will be denied and unanswered calls will fail in the new branch. The original thread keeps waiting.",
             )}
           </p>
         )}
@@ -211,7 +211,7 @@ export function ForkRun({
             {t(
               fresh
                 ? "Uses the agent's default environment, if configured. Existing files are not copied. Memory remains shared."
-                : "Branches use the same files and memory. Changes can be visible in both conversations.",
+                : "Branches use the same files and memory. Changes can be visible in both threads.",
             )}
           </p>
           <DisclosureSection title={t("Environment options")}>

@@ -43,21 +43,19 @@ it.each(["chat", "debug"] as const)(
       </MemoryRouter>,
     );
     expect(
-      screen.getByRole("button", { name: "Switch conversation" }).textContent,
+      screen.getByRole("button", { name: "Switch thread" }).textContent,
     ).toBe("Branch 2");
     const user = userEvent.setup();
-    await user.click(
-      screen.getByRole("button", { name: "Switch conversation" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Switch thread" }));
     const menu = await screen.findByRole("menu");
     const root = within(menu).getByRole("menuitem", {
-      name: "Main conversation",
+      name: "Main thread",
     });
     expect(root.getAttribute("href")).toBe(
       `/workspace/ws_1/sessions/ses_1/threads/thr_1?view=${level}`,
     );
     const branch = within(menu).getByRole("menuitem", {
-      name: "Branch 1 From Main conversation",
+      name: "Branch 1 From Main thread",
     });
     expect(branch.getAttribute("href")).toBe(
       `/workspace/ws_1/sessions/ses_1/threads/thr_fork?view=${level}`,
@@ -79,7 +77,7 @@ it.each(["chat", "debug"] as const)(
       </MemoryRouter>,
     );
     expect(
-      screen.getByRole("button", { name: "Switch conversation" }).textContent,
+      screen.getByRole("button", { name: "Switch thread" }).textContent,
     ).toBe("Branch 2");
   },
 );
