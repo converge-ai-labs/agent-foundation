@@ -49,25 +49,20 @@ export function ContextWindow({
   const details = (
     <div className={styles.details}>
       <div className={styles.heading}>
-        <strong>{t("Context window")}</strong>
-        <span className={styles.used}>
-          <strong>{label}</strong>
-          <span>{t("used")}</span>
-        </span>
+        <span>{t("Context window")}</span>
+        <strong>{label}</strong>
+      </div>
+      <div
+        className={styles.tokens}
+        title={`${exact(used)} / ${exact(capacity)}`}
+      >
+        {t("{{used}} / {{capacity}} tokens", {
+          used: formatTokens(used),
+          capacity: formatTokens(capacity),
+        })}
       </div>
       <div className={styles.track} aria-hidden="true">
         <span style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
-      </div>
-      <div className={styles.footer}>
-        <span
-          className={styles.tokens}
-          title={`${exact(used)} / ${exact(capacity)}`}
-        >
-          {t("{{used}} / {{capacity}} tokens", {
-            used: formatTokens(used),
-            capacity: formatTokens(capacity),
-          })}
-        </span>
       </div>
       {query.isPending && <p className={styles.note}>{t("Loading…")}</p>}
       {!query.isPending && !query.error && used === null && (
@@ -102,7 +97,6 @@ export function ContextWindow({
             transform="rotate(-90 10 10)"
           />
         </svg>
-        <span>{label}</span>
       </PopoverTrigger>
       <PopoverPopup
         side="top"

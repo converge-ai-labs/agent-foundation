@@ -2397,6 +2397,5 @@
   "Context window: {{usage}}": "Context window: {{usage}}",
   "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} tokens",
   "No context usage reported yet.": "No context usage reported yet.",
-  "Context window size is unknown.": "Context window size is unknown.",
-  "used": "used"
+  "Context window size is unknown.": "Context window size is unknown."
 }

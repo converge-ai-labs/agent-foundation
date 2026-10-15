@@ -2397,6 +2397,5 @@
   "Context window: {{usage}}": "上下文窗口：{{usage}}",
   "{{used}} / {{capacity}} tokens": "{{used}} / {{capacity}} token",
   "No context usage reported yet.": "暂无已报告的上下文用量。",
-  "Context window size is unknown.": "上下文窗口大小未知。",
-  "used": "已使用"
+  "Context window size is unknown.": "上下文窗口大小未知。"
 }
