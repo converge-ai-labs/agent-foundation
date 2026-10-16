@@ -73,10 +73,12 @@ def test_installer_runs_only_after_async_terminal_cleanup(
 
 
 @pytest.mark.parametrize("arguments", [["update"], ["--no-update-check", "update"]])
+@pytest.mark.parametrize("platform", ["darwin", "linux", "win32"])
 @pytest.mark.parametrize("exit_code", [0, 7, -15])
 def test_explicit_update_runs_without_terminal_setup_or_cached_detection(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str], exit_code: int
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str], platform: str, exit_code: int
 ) -> None:
+    monkeypatch.setattr(updater.sys, "platform", platform)
     prefix = tmp_path / "tools" / "a13n-harness-ui"
     prefix.mkdir(parents=True)
     (prefix / "uv-receipt.toml").touch()
@@ -104,6 +106,13 @@ def test_explicit_update_runs_without_terminal_setup_or_cached_detection(
     assert f"Tool directory: {prefix.parent}" in result.output
     assert ("Update complete" in result.output) == (exit_code == 0)
     assert ("Update failed" in result.output) == (exit_code != 0)
+    show_permissions = platform == "darwin" and exit_code == 0
+    assert ("macOS computer use:" in result.output) == show_permissions
+    assert ("#restore-macos-permissions-after-an-upgrade" in result.output) == show_permissions
+    if show_permissions:
+        assert "Screen Recording and Accessibility" in result.output
+        assert "remove and re-add the affected entry" in result.output
+        assert "restart Envd" in result.output
 
 
 @pytest.mark.parametrize("recognized", [False, True])
@@ -132,6 +141,7 @@ def test_explicit_update_reports_launch_failure_or_interruption_without_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
 ) -> None:
     monkeypatch.setattr(updater, "update_command", lambda: updater.UpdateCommand("uv", tmp_path))
+    monkeypatch.setattr(updater.sys, "platform", "darwin")
     calls = []
 
     def install(*args, **kwargs):
@@ -143,5 +153,6 @@ def test_explicit_update_reports_launch_failure_or_interruption_without_retry(
     assert result.exit_code == (130 if isinstance(error, KeyboardInterrupt) else 1)
     assert len(calls) == 1
     assert "Update complete" not in result.output
+    assert "macOS computer use:" not in result.output
     message = "Update interrupted" if isinstance(error, KeyboardInterrupt) else "Could not run uv"
     assert message in result.output
