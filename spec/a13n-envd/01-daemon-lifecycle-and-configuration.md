@@ -21,7 +21,7 @@ Bootstrap contains only what the daemon needs to run:
 - installation identity and optional display metadata;
 - installation-state and disposable-runtime directories;
 - stdio, HTTP or reverse-WebSocket transport settings and credentials;
-- optional independent [resource monitoring](11-resource-monitoring.md) listener, dedicated credential and observation targets;
+- [resource monitoring](11-resource-monitoring.md) sampling interval and observation targets, enabled by default for `connect` and opt-in for other daemon launches;
 - `default_working_directory` and `directory_discovery` (default `true`);
 - native execution UID/GID and `allow_sudo` policy;
 - tagged `sandbox` (`disabled` or `restricted` with directory grants) and `egress` (`inherit`, `deny` or `controlled`);

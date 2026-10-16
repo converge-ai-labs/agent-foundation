@@ -6,7 +6,7 @@ Trusted stdio, Host-dialed HTTP(S) and outbound reverse WebSocket carry the same
 
 [EIP](02-eip-protocol.md) owns methods/results and operation evidence. [Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns Session liveness, disconnect grace and collection. This document owns framing, attachment authentication, routing and failure isolation. A Session owns its native resources; ordinary Sessions are not tenant sandboxes. Optional controlled Sessions follow [Execution Isolation](07-execution-isolation.md). A carrier owns delivery only.
 
-Optional [resource monitoring](11-resource-monitoring.md) uses a separate listener and credential alongside any carrier. It has no EIP method, Session or carrier liveness role.
+Optional [resource monitoring](11-resource-monitoring.md) uses Device-scoped EIP methods over the same authenticated carrier. It requires no Session and has no carrier liveness role.
 
 ## Device and Session Admission
 

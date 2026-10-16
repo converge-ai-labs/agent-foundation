@@ -35,6 +35,10 @@ impl Fixture {
     }
 
     fn start_named(&self, target: &str, name: Option<&str>) -> Child {
+        self.command(target, name).spawn().unwrap()
+    }
+
+    fn command(&self, target: &str, name: Option<&str>) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_a13n-envd"));
         for (name, _) in std::env::vars_os() {
             if name.to_string_lossy().starts_with("A13N_ENVD_") {
@@ -64,9 +68,8 @@ impl Fixture {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap()
+            .kill_on_drop(true);
+        command
     }
 }
 
@@ -187,6 +190,106 @@ async fn stop(mut child: Child, credential: &str) {
     assert!(output.stdout.is_empty());
 }
 
+async fn metrics_sample(socket: &mut WebSocketStream<TcpStream>, descriptor: &Value) -> Value {
+    assert!(
+        descriptor["available_methods"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("device.metrics"))
+    );
+    timeout(Duration::from_secs(10), async {
+        loop {
+            let report = call(
+                socket,
+                None,
+                "device.metrics",
+                json!({
+                    "expected_device_id": descriptor["device_id"],
+                    "expected_generation": descriptor["generation"]
+                }),
+            )
+            .await;
+            if report.get("sample").is_some() {
+                return report;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn connect_preserves_monitoring_configuration_and_overlay_precedence() {
+    for (file, overlay, interval, filesystem) in [
+        (json!({"monitoring":null}), None, None, false),
+        (json!({}), Some(json!({"monitoring":null})), None, false),
+        (
+            json!({"monitoring":{"sample_interval_ms":2000}}),
+            Some(json!({"monitoring":null})),
+            None,
+            false,
+        ),
+        (
+            json!({"monitoring":null}),
+            Some(json!({"monitoring":{}})),
+            Some(10000),
+            false,
+        ),
+        (
+            json!({"monitoring":{"sample_interval_ms":2000,"filesystems":{}}}),
+            None,
+            Some(2000),
+            true,
+        ),
+        (
+            json!({"monitoring":{"sample_interval_ms":2000,"filesystems":{}}}),
+            Some(json!({"monitoring":{"sample_interval_ms":1000}})),
+            Some(1000),
+            true,
+        ),
+    ] {
+        let fixture = Fixture::new();
+        let mut file = file;
+        if filesystem {
+            file["monitoring"]["filesystems"]["workspace"] = json!(fixture.0);
+        }
+        let config = fixture.0.join("config.json");
+        fs::write(&config, file.to_string()).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut command = fixture.command(&format!("http://{address}"), None);
+        command.arg("--config").arg(config);
+        if let Some(overlay) = overlay {
+            command.env("A13N_ENVD_CONFIG_JSON", overlay.to_string());
+        }
+        let child = command.spawn().unwrap();
+        let (stream, headers, body) = http_request(&listener).await;
+        let authorization = &headers["authorization"];
+        let request: Value = serde_json::from_slice(&body).unwrap();
+        respond(stream, json!({"status":"approved", "resource_id":"device-test", "websocket_url":format!("ws://{address}/api/devices/device-test/connect")})).await;
+        let mut socket = accept(&listener, authorization).await;
+        let initialized = call(&mut socket, None, "initialize", json!({"supported_protocol_versions":["0.2"], "expected_device_id":request["device_id"], "client":{"name":"monitoring-test", "version":"1"}})).await;
+        let descriptor = &initialized["descriptor"];
+        if let Some(interval) = interval {
+            let report = metrics_sample(&mut socket, descriptor).await;
+            assert_eq!(report["sample_interval_ms"], interval);
+            assert_eq!(
+                report["sample"]["filesystems"].get("workspace").is_some(),
+                filesystem
+            );
+        } else {
+            assert!(
+                !descriptor["available_methods"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("device.metrics"))
+            );
+        }
+        stop(child, authorization.strip_prefix("Bearer ").unwrap()).await;
+    }
+}
+
 #[tokio::test]
 async fn connect_pairs_once_runs_native_shell_and_reuses_credential_after_restart() {
     let fixture = Fixture::new();
@@ -209,6 +312,20 @@ async fn connect_pairs_once_runs_native_shell_and_reuses_credential_after_restar
     let initialize = json!({"supported_protocol_versions":["0.2"], "expected_device_id":device_id, "client":{"name":"pairing-test", "version":"1"}});
     let first = call(&mut socket, None, "initialize", initialize.clone()).await;
     let descriptor = &first["descriptor"];
+    let report = metrics_sample(&mut socket, descriptor).await;
+    assert_eq!(report["sample_interval_ms"], 10000);
+    assert!(
+        report["sample"]["system"]["memory_total_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        report["sample"]["system"]["logical_cpu_count"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
     let opened = call(&mut socket, None, "session.open", json!({"expected_device_id":device_id, "expected_generation":descriptor["generation"], "protocol_version":"0.2", "working_directory":descriptor["default_working_directory"], "required_methods":["shell.exec"]})).await;
     let session = opened["descriptor"]["session_id"].as_str().unwrap();
     assert_eq!(
@@ -250,6 +367,8 @@ async fn connect_pairs_once_runs_native_shell_and_reuses_credential_after_restar
     // No enrollment POST on a saved registration: the next request is WebSocket.
     let mut socket = accept(&listener, authorization).await;
     let restarted = call(&mut socket, None, "initialize", initialize).await;
+    let report = metrics_sample(&mut socket, &restarted["descriptor"]).await;
+    assert_eq!(report["sample_interval_ms"], 10000);
     assert_eq!(
         restarted["descriptor"]["device_id"],
         descriptor["device_id"]

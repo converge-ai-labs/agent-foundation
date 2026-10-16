@@ -91,7 +91,9 @@ Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有�
 
 Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回的 Device descriptor 暴露基础系统信息：操作系统及版本、内核版本、原生架构，以及可取得的 CPU 型号。Envd 自身版本位于 `initialize.server.version`。
 
-在守护进程配置中启用周期采样：
+`a13n-envd connect` 默认每 10 秒采集一次 CPU 和内存，使用已保存的 Host 重新连接时也适用。已有安装需要更新 Envd 二进制并重启守护进程才能使用此默认值；只更新 Harness UI 不会改变正在运行的远程守护进程。
+
+在 `--config` 文件或 `A13N_ENVD_CONFIG_JSON` 中设置 `"monitoring": null` 可关闭采样。其他守护进程启动方式仍需显式开启。在守护进程配置中通过 `monitoring` 启用或自定义采样：
 
 ```json
 {
@@ -102,7 +104,7 @@ Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回�
 }
 ```
 
-使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集 CPU 和内存；省略对象或设为 `null` 时关闭采样，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
+使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集 CPU 和内存。自定义设置遵循通常的配置优先级，`connect` 会保留这些设置。关闭采样后，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
 
 通过已初始化的 Python Device connection 读取，无需创建 Session：
 

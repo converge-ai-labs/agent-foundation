@@ -290,6 +290,9 @@ impl Config {
             merge_config(&mut value, overlay);
         }
         apply_environment(&mut value)?;
+        if connection.is_some() && value.get("monitoring").is_none() {
+            value["monitoring"] = serde_json::json!({});
+        }
         let mut file: FileConfig = serde_json::from_value(value)
             .map_err(|error| ConfigError::new(format!("invalid merged configuration: {error}")))?;
         arguments.apply(&mut file)?;

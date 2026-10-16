@@ -52,6 +52,8 @@ Computer use checks desktop readiness before connecting (macOS permissions, X11 
 Screenshots can be sent to the configured model and retained in conversation history.
 Pairing and working directories do not grant or confine desktop authority.
 Set A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS to change the 120000 ms wait.
+CPU and memory monitoring is enabled by default (every 10 seconds).
+Set monitoring to null in daemon JSON configuration to disable sampling.
 Daemon settings also accept A13N_ENVD_CONFIG_JSON and scalar environment overrides.
 Set A13N_ENVD_ALLOW_SUDO=false to disable sudo/setuid privilege gains on Linux.
 Enabling sudo does not grant sudoers permission or configure passwordless access.
