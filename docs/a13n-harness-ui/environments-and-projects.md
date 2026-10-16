@@ -13,7 +13,7 @@ description: Choose execution permissions, work in Projects, connect Devices, an
 
 In WebUI, **Settings → Environments** selects defaults for new conversations: Direct or envd, Full Control or Sandbox, and optional Computer Use. Saving uses the ordinary configuration draft and does not start envd. Existing conversations and Project overrides retain their selections.
 
-Open **Settings → Runtime** to install or start envd, check Sandbox support, inspect instances, or stop them. You can open Runtime from the first setup step before configuring a Model and return to your saved setup choices.
+Open **Settings → Environments → Local runtime** to install or start envd, check Sandbox support, inspect instances, or stop them. You can open Runtime from the first setup step before configuring a Model and return to your saved setup choices.
 
 **Check** checks Full Control and Sandbox together. **Restart** closes local envd Sessions, starts a fresh Full Control instance, then checks Sandbox automatically. Desktop instances start again on demand. **Reinstall** downloads and verifies the exact release compatible with the installed client, then restarts envd; failed download or verification keeps the old executable and leaves runtimes stopped. Both actions require confirmation. Custom executables must be updated on the Host before restarting here.
 

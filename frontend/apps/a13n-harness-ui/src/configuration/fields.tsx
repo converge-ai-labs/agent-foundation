@@ -1,3 +1,5 @@
+import { useLocation } from "react-router";
+import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
 import {
   Button,
@@ -24,10 +26,13 @@ import { type EnvironmentBinding } from "./environment-bindings";
 export function ResourceFields({
   source,
   onChange,
+  connectionsOnly = false,
 }: {
+  connectionsOnly?: boolean;
   source: string;
   onChange: (value: string) => void;
 }) {
+  const location = useLocation();
   const selectors = useSelectors();
   const sources = useSources();
   const { client } = useTransport();
@@ -170,6 +175,13 @@ export function ResourceFields({
         )}
     </>
   );
+  if (connectionsOnly)
+    return (
+      <SettingsSection description="Used for new conversations.">
+        <ErrorNotice error={selectors.error || sources.error} />
+        {referenceLists(["defaults"])}
+      </SettingsSection>
+    );
   return (
     <div className={styles.stack}>
       <ErrorNotice error={selectors.error || sources.error || catalog.error} />
@@ -324,14 +336,27 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
-            <div id="live">
+            <SettingsSection
+              title="Conversation defaults"
+              description="Used for new conversations."
+            >
+              {scalar("Default agent", ["defaults", "agent"], agentOptions)}
+            </SettingsSection>
+            <details
+              id="live"
+              className={layout.disclosure}
+              open={location.hash === "#live" || undefined}
+            >
+              <summary>
+                Live voice<small>Model, voice and workspace access</small>
+              </summary>
               <SettingsSection
                 title="Live voice"
-                description="A continuous voice conversation with a lightweight task executor. Uses your Codex subscription. Changes apply when you start a new voice session."
+                description="Talk to your agent using your Codex subscription."
               >
                 <SettingsRow
                   label="Live"
-                  description="Your microphone stays off until you start Live. Stopping voice leaves tasks running."
+                  description="Start voice conversations from the workspace."
                 >
                   <ChoiceField
                     label="Live"
@@ -399,7 +424,7 @@ export function ResourceFields({
                 </SettingsRow>
                 <SettingsRow
                   label="Workspace files"
-                  description="File access in Live's own workspace. No shell, skills, plugins or MCP servers."
+                  description="Let Live read and edit files in its workspace."
                 >
                   <ChoiceField
                     label="Live file access"
@@ -428,140 +453,143 @@ export function ResourceFields({
                   />
                 </FormField>
               </SettingsSection>
-            </div>
-            <SettingsSection
-              title="Memory"
-              description="Shared file memory lives beside this configuration: global preferences across conversations, plus separate memory for each Project."
-            >
-              <SettingsRow
-                label="File memory"
-                description="Enabled by default in CLI and WebUI. Disabling keeps existing files and takes effect on future runs."
+            </details>
+            <details className={layout.disclosure}>
+              <summary>
+                Memory<small>Shared knowledge and automatic organization</small>
+              </summary>
+              <SettingsSection
+                title="Memory"
+                description="Remember preferences across conversations and keep separate knowledge for each Project."
               >
-                <ChoiceField
+                <SettingsRow
                   label="File memory"
-                  hideLabel
-                  className={styles.settingControl}
-                  value={
-                    get(["memory", "enabled"]) !== false
-                      ? "enabled"
-                      : "disabled"
-                  }
-                  onValueChange={(value) =>
-                    set(["memory", "enabled"], value === "enabled")
-                  }
-                  options={[
-                    { value: "enabled", label: "Enabled" },
-                    { value: "disabled", label: "Disabled" },
-                  ]}
-                />
-              </SettingsRow>
-              {get(["memory", "enabled"]) !== false && (
-                <>
-                  <SettingsRow
-                    label="Automatic organization"
-                    description="WebUI only. New inputs may start parallel, bounded maintenance of changed memory files. Uses additional model requests; does not read conversation history."
-                  >
-                    <ChoiceField
+                  description="Use saved memory in future runs."
+                >
+                  <ChoiceField
+                    label="File memory"
+                    hideLabel
+                    className={styles.settingControl}
+                    value={
+                      get(["memory", "enabled"]) !== false
+                        ? "enabled"
+                        : "disabled"
+                    }
+                    onValueChange={(value) =>
+                      set(["memory", "enabled"], value === "enabled")
+                    }
+                    options={[
+                      { value: "enabled", label: "Enabled" },
+                      { value: "disabled", label: "Disabled" },
+                    ]}
+                  />
+                </SettingsRow>
+                {get(["memory", "enabled"]) !== false && (
+                  <>
+                    <SettingsRow
                       label="Automatic organization"
-                      hideLabel
-                      className={styles.settingControl}
-                      value={
-                        get(["memory", "auto_organize", "enabled"]) !== false
-                          ? "enabled"
-                          : "disabled"
-                      }
-                      onValueChange={(value) =>
-                        set(
-                          ["memory", "auto_organize", "enabled"],
-                          value === "enabled",
-                        )
-                      }
-                      options={[
-                        { value: "enabled", label: "Enabled" },
-                        { value: "disabled", label: "Disabled" },
-                      ]}
-                    />
-                  </SettingsRow>
-                  {scalar(
-                    "Organization model",
-                    ["memory", "auto_organize", "model"],
-                    models,
-                    "Use global default Agent's model",
-                  )}
-                  <div className={styles.fieldGroup}>
-                    <FormField
-                      label="Organization instructions"
-                      description="Optional guidance for consolidation. The organizer only has memory tools, not your Agent's tools or instructions."
+                      description="Automatically organize updated memory files in WebUI. Uses additional model requests."
                     >
-                      <Textarea
-                        value={text([
-                          "memory",
-                          "auto_organize",
-                          "instructions",
-                        ])}
-                        rows={4}
-                        onChange={(event) =>
+                      <ChoiceField
+                        label="Automatic organization"
+                        hideLabel
+                        className={styles.settingControl}
+                        value={
+                          get(["memory", "auto_organize", "enabled"]) !== false
+                            ? "enabled"
+                            : "disabled"
+                        }
+                        onValueChange={(value) =>
                           set(
-                            ["memory", "auto_organize", "instructions"],
-                            event.target.value,
+                            ["memory", "auto_organize", "enabled"],
+                            value === "enabled",
                           )
                         }
+                        options={[
+                          { value: "enabled", label: "Enabled" },
+                          { value: "disabled", label: "Disabled" },
+                        ]}
                       />
-                    </FormField>
-                  </div>
-                </>
-              )}
-            </SettingsSection>
-            <SettingsSection title="Sidekick">
-              <SettingsRow
-                label="Sidekick"
-                description="Enabled by default. Add instructions for coordination in other conversations. Does not start work automatically. Thread and resource tools remain available when disabled."
-              >
-                <ChoiceField
+                    </SettingsRow>
+                    {scalar(
+                      "Organization model",
+                      ["memory", "auto_organize", "model"],
+                      models,
+                      "Use global default Agent's model",
+                    )}
+                    <div className={styles.fieldGroup}>
+                      <FormField
+                        label="Organization instructions"
+                        description="Instructions for organizing memory."
+                      >
+                        <Textarea
+                          value={text([
+                            "memory",
+                            "auto_organize",
+                            "instructions",
+                          ])}
+                          rows={4}
+                          onChange={(event) =>
+                            set(
+                              ["memory", "auto_organize", "instructions"],
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </FormField>
+                    </div>
+                  </>
+                )}
+              </SettingsSection>
+            </details>
+            <details className={layout.disclosure}>
+              <summary>
+                Sidekick<small>Defaults for delegated conversations</small>
+              </summary>
+              <SettingsSection title="Sidekick">
+                <SettingsRow
                   label="Sidekick"
-                  hideLabel
-                  className={styles.settingControl}
-                  value={
-                    get(["webui", "sidekick"]) !== null ? "enabled" : "disabled"
-                  }
-                  onValueChange={(value) =>
-                    set(["webui", "sidekick"], value === "disabled" ? null : {})
-                  }
-                  options={[
-                    { value: "disabled", label: "Disabled" },
-                    { value: "enabled", label: "Enabled" },
-                  ]}
-                />
-              </SettingsRow>
-              {get(["webui", "sidekick"]) !== null && (
-                <>
-                  {scalar(
-                    "Sidekick agent",
-                    ["webui", "sidekick", "agent"],
-                    agentOptions,
-                    "Inherit current agent",
-                  )}
-                  {scalar(
-                    "Sidekick model",
-                    ["webui", "sidekick", "model"],
-                    models,
-                    "Use agent model",
-                  )}
-                </>
-              )}
-            </SettingsSection>
-            <SettingsSection
-              title="Conversation defaults"
-              description="Defaults are used for new conversations. Use default keeps the inherited selection; None selects no resources."
-            >
-              {scalar("Default agent", ["defaults", "agent"], agentOptions)}
-              {scalar(
-                "Local environment profile",
-                ["defaults", "environment_profile"],
-                environmentOptions,
-              )}
-              {referenceLists(["defaults"])}
-            </SettingsSection>
+                  description="Guide the agent to delegate work to separate conversations."
+                >
+                  <ChoiceField
+                    label="Sidekick"
+                    hideLabel
+                    className={styles.settingControl}
+                    value={
+                      get(["webui", "sidekick"]) !== null
+                        ? "enabled"
+                        : "disabled"
+                    }
+                    onValueChange={(value) =>
+                      set(
+                        ["webui", "sidekick"],
+                        value === "disabled" ? null : {},
+                      )
+                    }
+                    options={[
+                      { value: "disabled", label: "Disabled" },
+                      { value: "enabled", label: "Enabled" },
+                    ]}
+                  />
+                </SettingsRow>
+                {get(["webui", "sidekick"]) !== null && (
+                  <>
+                    {scalar(
+                      "Sidekick agent",
+                      ["webui", "sidekick", "agent"],
+                      agentOptions,
+                      "Inherit current agent",
+                    )}
+                    {scalar(
+                      "Sidekick model",
+                      ["webui", "sidekick", "model"],
+                      models,
+                      "Use agent model",
+                    )}
+                  </>
+                )}
+              </SettingsSection>
+            </details>
           </>
         )}
       {[

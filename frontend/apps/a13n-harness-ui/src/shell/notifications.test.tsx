@@ -265,7 +265,7 @@ it("marks a rejected background test as needing attention instead of claiming en
   vi.spyOn(push, "testPush").mockRejectedValue(
     new Error("Reconnect background notifications"),
   );
-  mount("/settings/notifications", transport);
+  mount("/settings#notifications", transport);
   await screen.findByText("Enabled on this device");
   fireEvent.click(
     screen.getByRole("button", { name: "Send test notification" }),
@@ -291,7 +291,7 @@ it.each([
   (device) => {
     vi.stubGlobal("navigator", device);
     vi.stubGlobal("Notification", undefined);
-    mount("/settings/notifications");
+    mount("/settings#notifications");
     expect(screen.getByText("Open from Home Screen")).toBeTruthy();
     expect(
       screen.getAllByText(/Add Harness UI to your Home Screen/).length,
@@ -321,7 +321,7 @@ it("uses real capabilities in the installed iPad app without blocking permission
     permission = "granted";
     writePreference("notifications.push-subscription", "ipad-subscription");
   });
-  mount("/settings/notifications", transport);
+  mount("/settings#notifications", transport);
   expect(enable).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Allow notifications" }));
   await screen.findByText("Enabled on this device");
@@ -348,7 +348,7 @@ it("keeps installation guidance inline without duplicating a persistent toast in
     maxTouchPoints: 5,
   });
   vi.stubGlobal("Notification", undefined);
-  mount("/settings/notifications");
+  mount("/settings#notifications");
   expect(
     screen.getAllByText(/Add Harness UI to your Home Screen/),
   ).toHaveLength(1);
@@ -394,7 +394,7 @@ it.each(["completed", "failed", "suspended"] as const)(
 );
 
 it("does not synthesize history and deduplicates receipts only within an epoch", () => {
-  mount("/settings/notifications");
+  mount("/settings#notifications");
   expect(screen.queryByText(event.notice!.brief)).toBeNull();
   fireEvent.click(screen.getByText("Emit"));
   fireEvent.click(screen.getByText("Emit"));
@@ -429,7 +429,7 @@ it("pulses visible pages immediately and every minute, coalesces waits, and stop
   vi.spyOn(push, "enablePush").mockResolvedValue();
   const transport = createTransport("fixture-key", vi.fn());
   vi.useFakeTimers();
-  const view = mount("/settings/notifications", transport);
+  const view = mount("/settings#notifications", transport);
   await act(async () => {});
   expect(screen.getByText("Enabled on this device")).toBeTruthy();
   const activity = vi.mocked(push.reportPushActivity);

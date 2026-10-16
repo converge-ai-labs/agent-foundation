@@ -197,13 +197,13 @@ WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** �
 
 设置会打开一个空的首次对话，并聚焦输入框，不会发送提示词或发起模型请求测试。**Set up later** 保留不含秘密的草稿，不会在每次导航时重新打开向导。刷新和在另一标签页认证后仍保留选择，但秘密输入不会持久保存在浏览器中。如果保存响应丢失，先用 **Check saved setup and open conversation** 检查，再重试。部分保存或文件变更会明确提示，不会被当作完整保存。
 
-已有安装保留对话和配置。**General → Setup & diagnostics** 提供针对性的修复，不会重新初始化。**Settings** 包含 General、Notifications、Agents、Models、Capabilities、Environments、Projects、Accounts & API keys、MCP connections 和 Advanced。之后连接 provider，也使用 **Accounts & API keys** 下的同一流程。
+已有安装保留对话和配置。**General → Setup & diagnostics** 提供针对性的修复。**Settings** 分为 General、Agents、Models、Environments、Accounts & API keys 和 Connections，另设次级入口 **Configuration files**。General 内可展开 Live voice、Memory、Sidekick 和 Notifications。Provider 账号和已保存的密钥继续在 **Accounts & API keys** 管理。
 
-**Capabilities** 在 **Save changes** 后为选定 Agent 启用已安装的 Capability，不是全局开关。可复用的 agent 插件配置仍单独管理。**Environments** 展示远程 Device、已配置 profile、内置只读 Environment 和已安装 provider。**Configure** 为可用 provider 打开 profile 草稿；provider 专属的适配器和设置仍放在配置文件中。软件包安装在服务器上完成，不通过这些控件执行。
+打开一个 **Agent** 即可配置指令、Model、Capabilities 和子代理，Agent 列表下方可浏览已安装能力。**Connections** 管理 MCP 服务、可复用 agent 插件和新对话的默认连接。**Environments** 分为 Local execution、Devices、Profiles & extensions 和 Local runtime。通过 **Local runtime** 准备 envd 并检查能力；**Configure** 根据已安装的 provider 创建 profile 草稿。
 
-用 **Advanced** 创建、查看、保存或删除配置。表单和 YAML 共用一份草稿；**Save changes** 同时验证。未保存编辑在标签页内导航时保留，重新加载会丢失。保存替换整个文件，后写覆盖前写；检测到外部变化时保留本地未保存草稿。活动 Run 保留捕获配置。MCP 源文本隐藏，因此替换 MCP 文件也会替换不可见字段和文件中的全部资源。
+用 **Configuration files** 创建、查看、保存或删除配置。表单和 YAML 共用一份草稿；**Save changes** 同时验证。未保存编辑在标签页内导航时保留，重新加载会丢失。保存替换整个文件，后写覆盖前写；检测到外部变化时保留本地未保存草稿。活动 Run 保留捕获配置。MCP 源文本隐藏，因此替换 MCP 文件也会替换不可见字段和文件中的全部资源。
 
-在 **Projects** 编辑服务器目录和创建默认值。**Browse → Use this directory** 修改草稿，保存后生效。使用 `--no-share-computer` 时手动输入路径。新对话使用保存的默认值，已有对话保留根目录，除非明确修改。Default、None 和 Custom 含义不同。预览显示已保存值及来源，不包含未保存修改，也不测试模型。
+从侧栏 Project 菜单打开 **Project settings**，编辑服务器目录和创建默认值。**Browse → Use this directory** 修改草稿，保存后生效。使用 `--no-share-computer` 时手动输入路径。新对话使用保存的默认值，已有对话保留根目录，除非明确修改。Default、None 和 Custom 含义不同。预览显示已保存值及来源，不包含未保存修改，也不测试模型。
 
 首次进入时，右上角会自动显示生成的协作名称；点击修改，**Save name** 会在当前浏览器记住它，并更新实时在线状态和输入框标签。在线指示打开按标签页区分的参与者目录。此显示名称不是 provider 登录，也不是经过认证的身份。
 
@@ -247,7 +247,7 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 **关闭 WebUI 或锁定手机后，后台通知仍可到达 Android Chrome。** 请使用稳定的 HTTPS 地址，包括日常登录使用的同一端口。Harness UI 服务器必须保持运行，并能向外连接浏览器的推送服务。无需单独注册推送账户或手动配置 VAPID key。
 
-1. 在需要接收提醒的设备上，打开 **Settings → Notifications**。
+1. 在需要接收提醒的设备上，打开 **Settings → General → Notifications**。
 2. 选择 **Allow notifications** 或 **Enable background notifications** ，出现浏览器提示时允许。最初的 **Enable task notifications** 提示也可完成设置。升级后，仅有原先的浏览器权限并不会启用后台交付。
 3. 确认 **Background delivery** 显示 **Enabled on this device** ，再选择 **Send test notification** 。
 4. 保持一个 WebUI 页面可见，使设备被标记为活跃。

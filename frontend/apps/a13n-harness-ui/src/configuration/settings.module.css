@@ -1,0 +1,77 @@
+.utilityLink {
+  margin-top: 24px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.formWidth {
+  width: 100%;
+  max-width: 680px;
+}
+.disclosure {
+  width: 100%;
+  max-width: 680px;
+}
+.disclosure > summary {
+  cursor: pointer;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+  font-size: 14px;
+  font-weight: 500;
+}
+.disclosure > summary:hover {
+  background: var(--a13n-hover);
+}
+.disclosure > summary:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+.disclosure[open] > summary {
+  margin-bottom: 20px;
+}
+.disclosure > summary small {
+  margin-left: 12px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.disclosure > :not(summary) {
+  margin-bottom: 16px;
+}
+.tabs {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tabs a {
+  padding: 0 0 12px;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+}
+.tabs a[aria-current="page"] {
+  color: var(--a13n-text);
+  border-color: var(--a13n-text);
+  font-weight: 500;
+}
+.hint {
+  max-width: 680px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+@media (max-width: 1000px) {
+  .utilityLink {
+    margin-top: 0;
+  }
+}
+@media (max-width: 600px) {
+  .disclosure > summary small {
+    display: block;
+    margin: 6px 0 0 16px;
+  }
+  .tabs {
+    gap: 20px;
+  }
+}

@@ -13,7 +13,7 @@ description: 选择执行权限、在 Project 中工作、连接 Device，并定
 
 WebUI 的 **Settings → Environments** 选择新对话的默认值：Direct 或 envd、Full Control 或 Sandbox，以及可选的 Computer Use。保存沿用普通配置草稿流程，不会启动 envd。已有对话和 Project 覆盖保留各自的选择。
 
-打开 **Settings → Runtime** 可安装或启动 envd、检查 Sandbox 支持、查看实例或停止实例。可从设置向导第一步先进入 Runtime，无须先配置 Model；返回时保留已有设置选择。
+打开 **Settings → Environments → Local runtime** 可安装或启动 envd、检查 Sandbox 支持、查看实例或停止实例。可从设置向导第一步先进入 Runtime，无须先配置 Model；返回时保留已有设置选择。
 
 **Check** 一并检查 Full Control 和 Sandbox。**Restart** 关闭本地 envd Session，启动新的 Full Control 实例并自动检查 Sandbox。桌面实例在需要时重新启动。**Reinstall** 下载并验证与已安装客户端匹配的精确版本，然后重启 envd；下载或验证失败会保留原可执行文件，运行时保持停止。两项操作均需确认。自定义可执行文件需先在 Host 上更新，再从这里重启。
 

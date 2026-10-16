@@ -457,9 +457,9 @@ it("retains dirty source fields through navigation and external invalidation", a
   render(<BrowserApp />);
   const name = await screen.findByLabelText("Name");
   fireEvent.change(name, { target: { value: "My draft" } });
-  fireEvent.click(screen.getByRole("link", { name: "Projects" }));
-  await screen.findByRole("heading", { name: "Projects" });
-  fireEvent.click(screen.getByRole("link", { name: "Advanced" }));
+  fireEvent.click(screen.getByRole("link", { name: "Models" }));
+  await screen.findByRole("heading", { name: "Models" });
+  fireEvent.click(screen.getByRole("link", { name: "Configuration files" }));
   fireEvent.click(await screen.findByRole("link", { name: /agent-assistant/ }));
   await waitFor(() =>
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
@@ -514,7 +514,7 @@ it("reopens an unpublished resource draft without treating it as a missing serve
   fireEvent.change(await screen.findByLabelText("Name"), {
     target: { value: "Unpublished model" },
   });
-  fireEvent.click(screen.getByRole("link", { name: "Advanced" }));
+  fireEvent.click(screen.getByRole("link", { name: "Configuration files" }));
   fireEvent.click(
     await screen.findByRole("button", { name: "Add configuration" }),
   );
@@ -780,8 +780,8 @@ it("retains login across navigation, requires switch authorization and respects 
     screen.getByRole("button", { name: "Allow switch and log in" }),
   );
   await screen.findByRole("button", { name: "Cancel login" });
-  fireEvent.click(screen.getByRole("link", { name: "Projects" }));
-  await screen.findByRole("heading", { name: "Projects" });
+  fireEvent.click(screen.getByRole("link", { name: "Models" }));
+  await screen.findByRole("heading", { name: "Models" });
   fireEvent.click(screen.getByRole("link", { name: "Accounts & API keys" }));
   fireEvent.click(await screen.findByRole("button", { name: "Cancel login" }));
   await screen.findByText("Login: succeeded");
@@ -872,9 +872,8 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  const catalog = await screen.findByRole("region", {
-    name: "Installed capabilities",
-  });
+  await user.click(await screen.findByText("Available capabilities"));
+  const catalog = screen.getByText("Available capabilities").parentElement!;
   expect(await within(catalog).findByText("available")).toBeTruthy();
   expect(within(catalog).getByText("Built-in")).toBeTruthy();
   expect(within(catalog).queryByText("pydantic")).toBeNull();
@@ -882,15 +881,15 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   expect(within(catalog).getByText("Unavailable to configure")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   await user.click(
-    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+    await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
   );
   expect(window.location.search).toBe("?path=agents%2Fassistant.yaml");
   fireEvent.change(await screen.findByLabelText("Instructions"), {
     target: { value: "Unfinished instructions" },
   });
-  await user.click(screen.getByRole("link", { name: "Capabilities" }));
+  await user.click(screen.getByRole("link", { name: "Agents" }));
   await user.click(
-    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+    await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
   );
   expect(
     ((await screen.findByLabelText("Instructions")) as HTMLTextAreaElement)
@@ -933,7 +932,7 @@ it("opens the owning agent editor to repair malformed capability YAML", async ()
   );
   render(<BrowserApp />);
   fireEvent.click(
-    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+    await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
   );
   await screen.findByText(/Structured fields are unavailable/);
   fireEvent.click(
@@ -974,14 +973,15 @@ it.each(["read-only", "missing"])(
       }),
     );
     render(<BrowserApp />);
+    fireEvent.click(await screen.findByText("Available capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (availability === "missing") {
-      await screen.findByText(
-        "This agent has no configuration file available here.",
-      );
+      expect(
+        screen.queryByRole("link", { name: /Assistant.*agent-assistant/ }),
+      ).toBeNull();
     } else {
       fireEvent.click(
-        await screen.findByRole("link", { name: "View agent configuration" }),
+        await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
       );
       expect(
         (await screen.findByLabelText("YAML source")).getAttribute(
@@ -989,9 +989,7 @@ it.each(["read-only", "missing"])(
         ),
       ).toBe("false");
     }
-    expect(
-      screen.queryByRole("link", { name: "Edit agent capabilities" }),
-    ).toBeNull();
+
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
     expect(
       vi
@@ -1024,10 +1022,11 @@ it.each([false, true])(
       }),
     );
     render(<BrowserApp />);
+    fireEvent.click(await screen.findByText("Available capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (failed) {
       await screen.findByText("Agent list unavailable");
-      expect(screen.queryByRole("button", { name: "Add agent" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Add agent" })).toBeTruthy();
     } else {
       expect(
         await screen.findByRole("button", { name: "Add agent" }),
@@ -1050,7 +1049,9 @@ it("reopens a one-click agent draft from its own settings list without writing o
     screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
   ).toBe("page");
   expect(
-    screen.getByRole("link", { name: "Advanced" }).getAttribute("aria-current"),
+    screen
+      .getByRole("link", { name: "Configuration files" })
+      .getAttribute("aria-current"),
   ).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "Agents" }));
   fireEvent.click(
@@ -1080,7 +1081,7 @@ it("reopens a one-click agent draft from its own settings list without writing o
 });
 
 it("shows built-in environments as read-only and does not offer configuration for an unavailable provider", async () => {
-  window.history.replaceState(null, "", "/settings/environments");
+  window.history.replaceState(null, "", "/settings/environments?tab=profiles");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
@@ -1595,11 +1596,7 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
   await waitFor(() =>
     expect((nameField as HTMLInputElement).value).toBe("Renamed"),
   );
-  expect(
-    screen
-      .getByRole("button", { name: "Save changes" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
     target: { value: "/changed" },
   });
@@ -1610,4 +1607,113 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
     name: "Renamed",
     roots: [{ path: "/changed" }],
   });
+});
+
+it("shares the root draft across General, execution, runtime and connection settings", async () => {
+  window.history.replaceState(null, "", "/settings#live");
+  const rootSource = {
+    ...source,
+    relative_path: "config.yaml",
+    resource_kind: "root",
+    resource_ids: [],
+  };
+  let content =
+    '# Preserve me\nschema_version: "1"\ndefaults: {environment_profile: environment-native}\nlive: {enabled: false}\n';
+  const writes: string[] = [];
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    const path = decodeURIComponent(new URL(request.url).pathname);
+    if (path === "/api/configuration/sources")
+      return json({ generation_digest: "g", sources: [rootSource] });
+    if (path === "/api/configuration/sources/config.yaml") {
+      if (request.method === "PUT") {
+        content = (await request.json()).content;
+        writes.push(content);
+      }
+      return json({
+        ...rootSource,
+        content,
+        source_digest: String(writes.length),
+      });
+    }
+    if (path === "/api/envd")
+      return json({
+        host: "test-host",
+        readiness: [],
+        instances: [],
+        phase: "idle",
+        cached_versions: [],
+        computer_use: false,
+      });
+    expect(request.method).toBe("GET");
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  const live = await screen.findByRole("combobox", { name: "Live" });
+  expect(live.closest("details")?.open).toBe(true);
+  await user.click(live);
+  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  await user.click(screen.getByRole("link", { name: "Environments" }));
+  await user.click(await screen.findByRole("combobox", { name: "Runtime" }));
+  await user.click(await screen.findByRole("option", { name: "envd" }));
+  await user.click(screen.getByRole("link", { name: "Local runtime" }));
+  await user.click(
+    await screen.findByRole("switch", { name: "Desktop capability" }),
+  );
+  await user.click(screen.getByRole("link", { name: "Connections" }));
+  await user.click(
+    await screen.findByText("Conversation defaults", { selector: "summary" }),
+  );
+  expect(writes).toEqual([]);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(parse(content)).toMatchObject({
+    live: { enabled: true },
+    defaults: { environment_profile: "environment-envd" },
+    envd: { computer_use: true },
+  });
+  expect(content).toContain("# Preserve me");
+  await user.click(screen.getByRole("link", { name: "General" }));
+  expect(
+    (await screen.findByRole("combobox", { name: "Live" })).textContent,
+  ).toContain("Enabled");
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+});
+
+it.each([
+  ["/settings/notifications", "/settings", "#notifications"],
+  ["/settings/capabilities", "/settings/agents", ""],
+  ["/settings/catalog", "/settings/agents", ""],
+  ["/settings/runtime", "/settings/environments", ""],
+  ["/settings/envd", "/settings/environments", ""],
+])("redirects the legacy settings route %s", async (legacy, pathname, hash) => {
+  window.history.replaceState(null, "", legacy);
+  render(<BrowserApp />);
+  await waitFor(() => expect(window.location.pathname).toBe(pathname));
+  expect(window.location.hash).toBe(hash);
+  if (legacy.endsWith("runtime") || legacy.endsWith("envd"))
+    expect(window.location.search).toBe("?tab=runtime");
+  if (hash)
+    await waitFor(() =>
+      expect(
+        document.getElementById("notifications")?.hasAttribute("open"),
+      ).toBe(true),
+    );
+  const navigation = await screen.findByRole("navigation", {
+    name: "Settings sections",
+  });
+  expect(
+    within(navigation)
+      .getAllByRole("link")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "General",
+    "Agents",
+    "Models",
+    "Environments",
+    "Accounts & API keys",
+    "Connections",
+    "Configuration files",
+  ]);
 });

@@ -11,7 +11,7 @@ import {
   ModalFrame,
 } from "a13n-ui";
 import { Plus, ArrowLeft, DotsThree, Trash } from "@phosphor-icons/react";
-import { useSources, useTransport } from "../transport/context";
+import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import { ConfirmAction } from "../shell/confirm-action";
@@ -127,7 +127,7 @@ export function DraftLinks({
 
 export function SourcesPage({
   kinds,
-  title = "Advanced configuration",
+  title = "Configuration files",
   description,
   headingLevel = 1,
 }: {
@@ -137,6 +137,33 @@ export function SourcesPage({
   headingLevel?: 1 | 2;
 }) {
   const sources = useSources();
+  const selectors = useSelectors();
+  const names = new Map([
+    ...(selectors.data?.agents ?? []).map(
+      (item) => [item.agent_id, item.name] as const,
+    ),
+    ...(selectors.data?.models ?? []).map(
+      (item) => [item.model_id, item.name] as const,
+    ),
+    ...(selectors.data?.environments ?? []).map(
+      (item) => [item.profile_id, item.name] as const,
+    ),
+    ...(selectors.data?.harness_plugins ?? []).map(
+      (item) => [item.resource_id, item.name] as const,
+    ),
+    ...(selectors.data?.mcp_servers ?? []).map(
+      (item) => [item.resource_id, item.name] as const,
+    ),
+    ...(selectors.data?.environment_run_extensions ?? []).map(
+      (item) => [item.resource_id, item.name] as const,
+    ),
+  ]);
+  const displayName = (source: {
+    relative_path: string;
+    resource_ids: string[];
+  }) =>
+    source.resource_ids.map((id) => names.get(id) ?? id).join(", ") ||
+    source.relative_path;
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [kind, setKind] = useState<ResourceKind>("model");
@@ -160,7 +187,13 @@ export function SourcesPage({
           )
         }
       />
-      <ErrorNotice error={sources.error} retry={() => void sources.refetch()} />
+      <ErrorNotice
+        error={sources.error || selectors.error}
+        retry={() => {
+          void sources.refetch();
+          void selectors.refetch();
+        }}
+      />
       <div className={styles.search}>
         <TextField
           type="search"
@@ -178,7 +211,7 @@ export function SourcesPage({
               !kinds || kinds.includes(source.resource_kind as ResourceKind),
           )
           .filter((source) =>
-            `${source.relative_path} ${source.resource_ids.join(" ")}`
+            `${displayName(source)} ${source.relative_path} ${source.resource_ids.join(" ")}`
               .toLowerCase()
               .includes(search.toLowerCase()),
           )
@@ -189,19 +222,20 @@ export function SourcesPage({
               to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
             >
               <div>
-                <strong>
-                  {source.resource_ids.join(", ") || source.relative_path}
-                </strong>
-                <small>{source.relative_path}</small>
+                <strong>{displayName(source)}</strong>
+                <small>
+                  {kinds
+                    ? source.resource_ids.join(", ")
+                    : source.relative_path}
+                </small>
               </div>
-              <span>{source.resource_kind.replaceAll("_", " ")}</span>
-              <small>
-                {!source.writable
-                  ? "Read only"
-                  : !source.content_available
-                    ? "Replacement only"
-                    : "Editable"}
-              </small>
+              {!kinds && (
+                <span>{source.resource_kind.replaceAll("_", " ")}</span>
+              )}
+              {!source.writable && <small>Read only</small>}
+              {source.writable && !source.content_available && (
+                <small>Replacement only</small>
+              )}
             </Link>
           ))}
       </div>
@@ -302,7 +336,7 @@ export function SourceDocument({
   title?: string;
   mediaOnly?: boolean;
   embedded?: boolean;
-  section?: "envd" | "execution";
+  section?: "envd" | "execution" | "connections";
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -525,127 +559,129 @@ export function SourceDocument({
             />
           ) : (
             <ResourceFields
+              connectionsOnly={section === "connections"}
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
             />
           )}
-          {!mediaOnly && (
-            <details
-              className={styles.details}
-              open={
-                (!readDocument(draft!.content) && draft!.replacement) ||
-                path.endsWith(".md")
-              }
-            >
-              <summary>Advanced configuration</summary>
-              <div className={styles.stack}>
-                {readDocument(draft!.content)?.has("kind") && (
-                  <TextField
-                    label="Resource ID"
-                    value={String(
-                      readDocument(draft!.content)?.get("id") ?? "",
-                    )}
-                    description="Changing this ID can break references."
-                    onChange={(id) =>
-                      update({
-                        ...draft!,
-                        content: updateDocument(draft!.content, ["id"], id),
-                      })
-                    }
+          {!mediaOnly &&
+            !(
+              embedded &&
+              !section &&
+              source.data?.resource_kind === "root"
+            ) && (
+              <details
+                className={styles.details}
+                open={
+                  (!readDocument(draft!.content) && draft!.replacement) ||
+                  path.endsWith(".md")
+                }
+              >
+                <summary>Advanced configuration</summary>
+                <div className={styles.stack}>
+                  {readDocument(draft!.content)?.has("kind") && (
+                    <TextField
+                      label="Resource ID"
+                      value={String(
+                        readDocument(draft!.content)?.get("id") ?? "",
+                      )}
+                      description="Changing this ID can break references."
+                      onChange={(id) =>
+                        update({
+                          ...draft!,
+                          content: updateDocument(draft!.content, ["id"], id),
+                        })
+                      }
+                    />
+                  )}
+                  <h3>Configuration file</h3>
+                  <p>Use credential references for API keys.</p>
+                  <SourceEditor
+                    value={draft!.content}
+                    onChange={(content) => update({ ...draft!, content })}
                   />
-                )}
-                <h3>Configuration file</h3>
-                <p>
-                  Complete file replacement. Preserve unknown fields and use
-                  credential references, not literal keys.
-                </p>
-                <SourceEditor
-                  value={draft!.content}
-                  onChange={(content) => update({ ...draft!, content })}
-                />
-                <Button
-                  variant="outline"
-                  loading={validate.isPending}
-                  disabled={save.isPending}
-                  onClick={() => validate.mutate(draft!.content)}
-                >
-                  Check configuration
-                </Button>
-              </div>
-            </details>
-          )}
+                  <Button
+                    variant="outline"
+                    loading={validate.isPending}
+                    disabled={save.isPending}
+                    onClick={() => validate.mutate(draft!.content)}
+                  >
+                    Check configuration
+                  </Button>
+                </div>
+              </details>
+            )}
         </div>
       )}
-      {section && !dirty && notice && <p role="status">{notice}</p>}
-      {canEdit && (!section || dirty) && (
-        <footer
-          className={styles.editorActions}
-          aria-label="Configuration actions"
-        >
-          {(validate.error || save.error) && (
-            <div className={styles.editorError}>
-              <ErrorNotice error={validate.error || save.error} />
-            </div>
-          )}
-          <div className={styles.editorState}>
-            <span>
-              {dirty
-                ? "Unsaved changes · lost on reload"
-                : "No unsaved changes"}
-            </span>
-            {notice ? (
-              <small role="status">{notice}</small>
-            ) : (
-              <small>
-                {section === "envd"
-                  ? "Saved envd changes require a Harness UI restart."
-                  : section === "execution"
-                    ? "Defaults apply to new conversations."
-                    : "Saving validates changes for future runs."}
-              </small>
-            )}
-          </div>
-          <div className={styles.actions}>
-            {isNew ? (
-              <ConfirmAction
-                key={path}
-                trigger={
-                  <Button variant="ghost" disabled={save.isPending}>
-                    Cancel
-                  </Button>
-                }
-                title="Discard this unsaved configuration?"
-                description={`Your unsaved configuration for ${path} will be lost.`}
-                confirmLabel="Discard draft"
-                destructive
-                onConfirm={() => {
-                  drafts.delete(path);
-                  navigate("/settings/resources");
-                }}
-              />
-            ) : (
-              <Button
-                variant="ghost"
-                disabled={!dirty || save.isPending}
-                onClick={() => setReplacing(true)}
-              >
-                {mediaOnly ? "Discard" : "Cancel"}
-              </Button>
-            )}
-            <Button
-              loading={save.isPending}
-              disabled={!dirty}
-              onClick={() => save.mutate(draft!.content)}
-            >
-              {isNew
-                ? `Create ${resourceLabel}`
-                : mediaOnly
-                  ? "Save"
-                  : "Save changes"}
-            </Button>
-          </div>
-        </footer>
+      {(embedded || section) && !dirty && notice && (
+        <p role="status">{notice}</p>
       )}
+      {canEdit &&
+        ((!embedded && !section) || dirty || validate.error || save.error) && (
+          <footer
+            className={styles.editorActions}
+            aria-label="Configuration actions"
+          >
+            {(validate.error || save.error) && (
+              <div className={styles.editorError}>
+                <ErrorNotice error={validate.error || save.error} />
+              </div>
+            )}
+            <div className={styles.editorState}>
+              <span>{dirty ? "Unsaved changes" : "No unsaved changes"}</span>
+              {notice ? (
+                <small role="status">{notice}</small>
+              ) : (
+                <small>
+                  {section === "envd"
+                    ? "Saved envd changes require a Harness UI restart."
+                    : section === "execution"
+                      ? "Defaults apply to new conversations."
+                      : "Saving validates changes for future runs."}
+                </small>
+              )}
+            </div>
+            <div className={styles.actions}>
+              {isNew ? (
+                <ConfirmAction
+                  key={path}
+                  trigger={
+                    <Button variant="ghost" disabled={save.isPending}>
+                      Cancel
+                    </Button>
+                  }
+                  title="Discard this unsaved configuration?"
+                  description={`Your unsaved configuration for ${path} will be lost.`}
+                  confirmLabel="Discard draft"
+                  destructive
+                  onConfirm={() => {
+                    drafts.delete(path);
+                    navigate("/settings/resources");
+                  }}
+                />
+              ) : (
+                <Button
+                  variant="ghost"
+                  disabled={!dirty || save.isPending}
+                  onClick={() => setReplacing(true)}
+                >
+                  {mediaOnly ? "Discard" : "Cancel"}
+                </Button>
+              )}
+              <Button
+                loading={save.isPending}
+                disabled={!dirty}
+                onClick={() => save.mutate(draft!.content)}
+              >
+                {isNew
+                  ? `Create ${resourceLabel}`
+                  : mediaOnly
+                    ? "Save"
+                    : "Save changes"}
+              </Button>
+            </div>
+          </footer>
+        )}
       {source.data?.content_available && !writable && (
         <Panel>
           <SourceEditor value={source.data.content ?? ""} readOnly />

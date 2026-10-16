@@ -41,6 +41,21 @@ beforeEach(() => {
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
       requests.push(`${request.method} ${path}`);
+      if (path === "/api/selectors")
+        return json({
+          agents: [],
+          models: [],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+          environments: [
+            {
+              profile_id: "environment-review",
+              name: "Review workspace",
+              release_owned: false,
+            },
+          ],
+        });
       if (path === "/api/envd")
         return json({
           host: "test-host",
@@ -143,8 +158,10 @@ it("saves execution defaults through the source owner without preparing envd", a
   await userEvent.click(runtime);
   await userEvent.click(await screen.findByRole("option", { name: "envd" }));
   expect(
-    screen.getByRole("link", { name: /Open Runtime/ }).getAttribute("href"),
-  ).toBe("/settings/runtime");
+    screen
+      .getByRole("link", { name: /Manage local runtime/ })
+      .getAttribute("href"),
+  ).toBe("/settings/environments?tab=runtime");
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await screen.findByText("Saved", { exact: true });
   expect(content).toContain("environment-envd");
@@ -152,6 +169,20 @@ it("saves execution defaults through the source owner without preparing envd", a
   expect(content).toContain("enable_codeact: false");
   expect(requests.some((item) => item.startsWith("POST"))).toBe(false);
   expect(screen.queryByText("Installation details")).toBeNull();
+});
+it("selects a configured profile as the global execution default", async () => {
+  mount("execution");
+  await userEvent.click(
+    await screen.findByRole("combobox", { name: "Runtime" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Review workspace" }),
+  );
+  expect(screen.queryByRole("combobox", { name: "Permissions" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("Saved", { exact: true });
+  expect(content).toContain("environment-review");
+  expect(requests.some((item) => item.startsWith("POST"))).toBe(false);
 });
 it("saves Host desktop capability without launching or changing execution defaults", async () => {
   mount("envd");

@@ -226,7 +226,7 @@ Guardian 关联不改变审查器、凭据、端点、service tier、风险策�
 
 ### 本地 envd 运行时
 
-根级 `envd` 配置由 App 管理、供 Full Control 和 Sandbox 使用的本地运行时。WebUI 在 **Settings → Runtime** 中提供这些字段。保存后重启 Harness UI 才会生效。保存不会下载、启动进程或请求系统权限。
+根级 `envd` 配置由 App 管理、供 Full Control 和 Sandbox 使用的本地运行时。WebUI 在 **Settings → Environments → Local runtime** 中提供这些字段。保存后重启 Harness UI 才会生效。保存不会下载、启动进程或请求系统权限。
 
 ```yaml
 envd:

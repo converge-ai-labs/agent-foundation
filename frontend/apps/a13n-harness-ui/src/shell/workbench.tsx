@@ -41,11 +41,11 @@ import { SourcesPage, SourcePage } from "../configuration/sources";
 import {
   SettingsLayout,
   GeneralSettings,
-  CapabilitiesPage,
+  ConnectionsPage,
+  AgentsPage,
   EnvironmentsPage,
 } from "../configuration/settings";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
-import { RuntimePage } from "../configuration/envd";
 import { ErrorNotice, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
@@ -472,42 +472,40 @@ function WorkbenchContent({
                 <Route path="/settings" element={<GeneralSettings />} />
                 <Route
                   path="/settings/notifications"
-                  element={<NotificationSettings />}
+                  element={<Navigate to="/settings#notifications" replace />}
                 />
                 <Route path="/settings/models" element={<ModelsPage />} />
-                <Route
-                  path="/settings/agents"
-                  element={<SourcesPage kinds={["agent"]} title="Agents" />}
-                />
+                <Route path="/settings/agents" element={<AgentsPage />} />
                 <Route
                   path="/settings/capabilities"
-                  element={<CapabilitiesPage />}
+                  element={<Navigate to="/settings/agents" replace />}
                 />
                 <Route
                   path="/settings/environments"
                   element={<EnvironmentsPage />}
                 />
-                <Route path="/settings/runtime" element={<RuntimePage />} />
+                <Route
+                  path="/settings/runtime"
+                  element={
+                    <Navigate to="/settings/environments?tab=runtime" replace />
+                  }
+                />
                 <Route
                   path="/settings/envd"
-                  element={<Navigate to="/settings/runtime" replace />}
+                  element={
+                    <Navigate to="/settings/environments?tab=runtime" replace />
+                  }
                 />
                 <Route
                   path="/settings/connections"
-                  element={
-                    <SourcesPage
-                      kinds={["mcp_server"]}
-                      title="MCP connections"
-                      description="Connect tools and data sources, then choose which agents can use them."
-                    />
-                  }
+                  element={<ConnectionsPage />}
                 />
                 <Route path="/settings/resources" element={<SourcesPage />} />
                 <Route path="/settings/source" element={<SourcePage />} />
                 <Route path="/settings/accounts" element={<AccountsPage />} />
                 <Route
                   path="/settings/catalog"
-                  element={<Navigate to="/settings/capabilities" replace />}
+                  element={<Navigate to="/settings/agents" replace />}
                 />
               </Route>
               <Route

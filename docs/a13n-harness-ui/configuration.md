@@ -226,7 +226,7 @@ Use `--no-update-check` for a one-invocation override. See [updates and logs](au
 
 ### Local envd runtime
 
-Root `envd` configures the App-owned local runtime used by Full Control and Sandbox. WebUI exposes these fields in **Settings → Runtime**. Restart Harness UI after saving changes. Saving does not download, launch a process, or request OS permissions.
+Root `envd` configures the App-owned local runtime used by Full Control and Sandbox. WebUI exposes these fields in **Settings → Environments → Local runtime**. Restart Harness UI after saving changes. Saving does not download, launch a process, or request OS permissions.
 
 ```yaml
 envd:

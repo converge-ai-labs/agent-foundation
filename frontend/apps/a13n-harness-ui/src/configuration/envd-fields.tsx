@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChoiceField, SettingsRow, SettingsSection, Switch } from "a13n-ui";
-import { useTransport } from "../transport/context";
+import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
@@ -22,6 +22,9 @@ export function useEnvdStatus() {
 
 export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
   const runtime = useEnvdStatus();
+  const selectors = useSelectors();
+  const profiles =
+    selectors.data?.environments.filter((item) => !item.release_owned) ?? [];
   const selected = String(
     readDocument(source)?.getIn(["defaults", "environment_profile"]) ??
       "environment-native",
@@ -45,8 +48,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
   return (
     <>
       <p>
-        Defaults for new conversations. Projects can override them; existing
-        conversations keep their selection.
+        Default for new conversations. Projects can override this selection.
       </p>
       <SettingsSection>
         <SettingsRow
@@ -56,19 +58,27 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Runtime"
             hideLabel
-            value={custom ? "custom" : direct ? "direct" : "envd"}
+            value={custom ? selected : direct ? "direct" : "envd"}
             options={[
               { value: "direct", label: "Direct" },
               { value: "envd", label: "envd" },
-              ...(custom ? [{ value: "custom", label: "Custom profile" }] : []),
+              ...profiles.map((item) => ({
+                value: item.profile_id,
+                label: item.name,
+              })),
+              ...(custom &&
+              !profiles.some((item) => item.profile_id === selected)
+                ? [{ value: selected, label: selected }]
+                : []),
             ]}
             onValueChange={(value) => {
-              if (value !== "custom")
-                choose(
-                  value === "direct"
-                    ? "environment-native"
-                    : "environment-envd",
-                );
+              choose(
+                value === "direct"
+                  ? "environment-native"
+                  : value === "envd"
+                    ? "environment-envd"
+                    : value,
+              );
             }}
           />
         </SettingsRow>
@@ -122,12 +132,10 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
       {custom ? (
         <p>
           Custom profile: <code>{selected}</code>. Change its configuration in
-          the profiles below.
+          Profiles & extensions.
         </p>
       ) : direct ? (
-        <p className="text-sm text-muted-foreground">
-          Ready to use · no envd download or desktop permissions.
-        </p>
+        <p className="text-sm text-muted-foreground">Ready to use.</p>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/30 p-4 text-sm">
           <div>
@@ -140,18 +148,17 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
               {!runtime.data?.computer_use && !sandbox
                 ? "Desktop access is disabled in Runtime settings. "
                 : ""}
-              Saving this default does not start envd or request OS permissions.
             </p>
           </div>
           <Link
             className="shrink-0 font-medium underline underline-offset-4"
-            to="/settings/runtime"
+            to="/settings/environments?tab=runtime"
           >
-            Open Runtime →
+            Manage local runtime →
           </Link>
         </div>
       )}
-      <ErrorNotice error={runtime.error} />
+      <ErrorNotice error={runtime.error || selectors.error} />
     </>
   );
 }
@@ -229,10 +236,6 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           />
         </SettingsRow>
       </SettingsSection>
-      <p className="text-sm text-muted-foreground">
-        Saving does not launch a process, download a release, or request system
-        permissions.
-      </p>
       <ErrorNotice error={runtime.error} />
     </>
   );

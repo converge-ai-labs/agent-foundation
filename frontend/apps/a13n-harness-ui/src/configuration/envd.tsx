@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -17,17 +16,14 @@ import { useEnvdStatus } from "./envd-fields";
 import styles from "../shell/workbench.module.css";
 import layout from "./runtime.module.css";
 
-export function RuntimePage() {
+export function RuntimePage({ embedded = false }: { embedded?: boolean }) {
   const sources = useSources();
   const root = sources.data?.sources.find(
     (item) => item.resource_kind === "root",
   );
   return (
     <div className={layout.page}>
-      <PageHeader
-        title="Runtime"
-        description="Manage envd and check this Host’s capabilities."
-      />
+      {!embedded && <PageHeader title="Local runtime" />}
       <EnvdRuntime />
       {sources.isPending ? (
         <Skeleton className="h-64 w-full" />
@@ -43,20 +39,6 @@ export function RuntimePage() {
         )
       )}
       <ErrorNotice error={sources.error} />
-      <SettingsSection title="Next steps" variant="plain">
-        <SettingsRow
-          label="Choose agent execution"
-          description="Choose Direct, Sandbox or Computer Use for new conversations."
-        >
-          <Link to="/settings/environments">Environments →</Link>
-        </SettingsRow>
-        <SettingsRow
-          label="Set up your model"
-          description="Continue first-use setup when your runtime is ready."
-        >
-          <Link to="/setup">Continue setup →</Link>
-        </SettingsRow>
-      </SettingsSection>
       <RuntimeDetails />
     </div>
   );
