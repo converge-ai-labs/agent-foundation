@@ -113,7 +113,10 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         return tagged(response, result)
 
     @router.post(
-        item + "/test", response_model=ProviderTest, summary=f"Test {kind} provider", openapi_extra={"x-a13n-mcp": True}
+        item + "/test",
+        response_model=ProviderTest,
+        summary=f"Test {kind} provider",
+        openapi_extra=platform_operation("providers", "write") if kind != "memory" else {"x-a13n-mcp": True},
     )
     async def test_provider(
         workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime

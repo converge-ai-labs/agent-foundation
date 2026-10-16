@@ -19362,7 +19362,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "providers"
+        }
       }
     },
     "/api/v1/environment-providers": {
@@ -19899,7 +19903,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "providers"
+        }
       }
     },
     "/api/v1/environment-templates": {
@@ -25497,7 +25505,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "providers"
+        }
       }
     },
     "/api/v1/models": {
@@ -35137,7 +35149,11 @@
         "tags": [
           "providers"
         ],
-        "x-a13n-mcp": true
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "providers"
+        }
       }
     },
     "/api/v1/workspaces": {
