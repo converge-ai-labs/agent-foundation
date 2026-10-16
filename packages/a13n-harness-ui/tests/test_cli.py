@@ -55,6 +55,8 @@ def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
     profiles = json.loads(result.stdout)["environment_profiles"]
     assert {profile["profile_id"]: profile["mode"] for profile in profiles} == {
         "environment-native": "full-control",
+        "environment-envd": "full-control",
+        "environment-desktop": "full-control",
         "environment-sandbox": "sandbox",
     }
 

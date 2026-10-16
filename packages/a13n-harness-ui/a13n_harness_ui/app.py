@@ -86,6 +86,7 @@ from a13n_harness_ui.configuration_inspection import (
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.device_pairing import DevicePairings
 from a13n_harness_ui.devices import DeviceAttachment, DeviceConnections, DeviceInfo, DeviceSummary
+from a13n_harness_ui.envd_runtime import EnvdRuntimeManager, EnvdStatus
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_monitoring import (
     EnvironmentMonitoring,
@@ -93,7 +94,11 @@ from a13n_harness_ui.environment_monitoring import (
     MonitoringDetail,
     MonitoringSource,
 )
-from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES, built_in_environment_profile
+from a13n_harness_ui.environment_profiles import (
+    BUILT_IN_ENVIRONMENT_PROFILES,
+    LocalProfileId,
+    built_in_environment_profile,
+)
 from a13n_harness_ui.environment_runtime import (
     EnvironmentRunService,
     EnvironmentSnapshotReconstructor,
@@ -102,6 +107,7 @@ from a13n_harness_ui.environment_runtime import (
 from a13n_harness_ui.errors import (
     AppStateError,
     ConfigurationError,
+    EnvironmentLifecycleError,
     HarnessUiError,
     LivePresentationError,
     ThreadError,
@@ -380,6 +386,7 @@ class HarnessUiApp:
             [], Awaitable[tuple[CodexAccountStore | None, GrokAccountStore | None, dict[Provider, AccountStoreError]]]
         ],
         resolve_sandbox_executable: Callable[[], Awaitable[Path]],
+        envd: EnvdRuntimeManager,
         devices: DeviceConnections,
         environment_monitoring: EnvironmentMonitoring,
         grok_account: GrokAccountStore | None,
@@ -443,6 +450,7 @@ class HarnessUiApp:
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
+        self._envd = envd
         self._devices = devices
         self._environment_monitoring = environment_monitoring
         self._device_pairings = DevicePairings()
@@ -2560,11 +2568,69 @@ class HarnessUiApp:
         async with self._operation():
             await attachment.attach(connection)
 
+    async def configure_local_environment(self, profile_id: LocalProfileId) -> EnvironmentReadiness:
+        """Explicitly prepare and publish the default for new Threads only."""
+        import yaml
+
+        readiness = await self.preflight_environment(profile_id)
+        if not readiness.ready:
+            return readiness
+        async with self._operation(), self._configuration_lock:
+            path = self._require_configuration_path()
+            view = source_view(await self._configurations.current(), path, path.name)
+            if not view.writable or not view.content_available:
+                raise ConfigurationError("Root configuration is not editable.", code="configuration_unavailable")
+            document = yaml.safe_load(view.content or "") or {}
+            document.setdefault("defaults", {})["environment_profile"] = profile_id
+            result = await mutate_configuration_source(
+                path,
+                path.name,
+                ResourceMutationRequest(content=yaml.safe_dump(document, sort_keys=False, allow_unicode=True)),
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            await self._accept_mutation(result)
+        return readiness
+
+    async def envd_runtime_status(self) -> EnvdStatus:
+        async with self._operation():
+            status = await self._envd.status()
+            configuration = await self._configurations.current()
+            desired = None if configuration is None else configuration.document.envd
+            return status.model_copy(update={"restart_required": desired != self._envd.configuration})
+
+    async def start_envd(self, *, computer_use: bool = False) -> EnvironmentReadiness:
+        async with self._operation():
+            return await self._envd.start(
+                "environment-desktop" if computer_use else "environment-envd", self._store.layout.staging
+            )
+
+    async def restart_envd(self, *, reinstall: bool = False) -> EnvironmentReadiness:
+        async with self._operation():
+            configuration = await self._configurations.current()
+            desired = None if configuration is None else configuration.document.envd
+            if desired != self._envd.configuration:
+                raise EnvironmentLifecycleError(
+                    "Restart Harness UI to apply saved Runtime configuration first.",
+                    code="envd_configuration_pending",
+                )
+            self._sandbox_ready_paths.clear()
+            return await self._envd.start(
+                "environment-envd", self._store.layout.staging, restart=True, reinstall=reinstall
+            )
+
+    async def stop_envd(self) -> None:
+        async with self._operation():
+            await self._envd.stop()
+            self._sandbox_ready_paths.clear()
+
     async def preflight_environment(
-        self, profile_id: Literal["environment-native", "environment-sandbox"], *, project_path: str
+        self, profile_id: LocalProfileId, *, project_path: str | None = None
     ) -> EnvironmentReadiness:
         async with self._operation():
-            path = Path(project_path).expanduser().resolve()
+            path = self._store.layout.staging if project_path is None else Path(project_path).expanduser().resolve()
+            if profile_id == "environment-desktop":
+                self._envd.require_computer_use()
             self._sandbox_ready_paths.discard(path)
             result = await preflight_environment(
                 profile_id,
@@ -2577,6 +2643,8 @@ class HarnessUiApp:
                 # Projectless setup probes only its exact Host-owned staging directory.
                 owned_probe_root=self._store.layout.staging if path == self._store.layout.staging else None,
             )
+            if profile_id != "environment-native" and project_path is None:
+                self._envd.record_readiness(result)
             if profile_id == "environment-sandbox" and result.ready:
                 self._sandbox_ready_paths.add(path)
             return result
@@ -2978,17 +3046,22 @@ async def open_harness_ui_app(
                 empty = empty_harness_ui_configuration(content_plugins)
                 await configurations.accept(empty, expected_current_digest=None)
 
-            environment_reconstructor = EnvironmentSnapshotReconstructor(
-                catalog=catalog,
-                envd_settings=settings.envd_runtime,
-                local_runtime_parent=store.layout.runtimes,
-                runtime_factories=selected_integrations.provider_runtime_factories,
+            runtime_configuration = await configurations.current()
+            envd = EnvdRuntimeManager(
+                settings=settings.envd_runtime,
+                configuration=None if runtime_configuration is None else runtime_configuration.document.envd,
+                runtime_parent=store.layout.runtimes,
                 protected_roots=(
                     store.layout.root,
                     *((configuration_path.expanduser().resolve().parent,) if configuration_path else ()),
                 ),
             )
-            resources.push_async_callback(environment_reconstructor.close)
+            resources.push_async_callback(envd.close)
+            environment_reconstructor = EnvironmentSnapshotReconstructor(
+                catalog=catalog,
+                envd=envd,
+                runtime_factories=selected_integrations.provider_runtime_factories,
+            )
             thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
             resources.push_async_callback(thread_files.close)
             await thread_files.prune()
@@ -3253,6 +3326,7 @@ async def open_harness_ui_app(
                 codex_account_error=codex_account_error,
                 rediscover_accounts=rediscover_accounts,
                 resolve_sandbox_executable=environment_reconstructor.resolve_sandbox_executable,
+                envd=envd,
                 devices=devices,
                 environment_monitoring=environment_monitoring,
                 grok_account=grok_account,

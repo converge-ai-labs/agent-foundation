@@ -314,6 +314,8 @@ class CodexAccountStore:
             usable=expiry is ExpiryStatus.VALID,
             expiry=expiry,
             expires_at=_expires_at(loaded.credential),
+            account_id=loaded.credential.account_id,
+            shared_with_cli=True,
             required_action=RequiredAction.NONE if expiry is ExpiryStatus.VALID else RequiredAction.REFRESH,
         )
 

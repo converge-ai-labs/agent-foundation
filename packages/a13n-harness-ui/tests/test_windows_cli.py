@@ -83,7 +83,7 @@ async def test_windows_selector_rejects_sandbox_without_changing_saved_selection
     backend.thread_id = "thread-existing"
     backend.environment = "environment-sandbox"
     choices = await backend.choices("environment")
-    assert [choice.value for choice in choices] == ["full-control"]
+    assert [choice.value for choice in choices] == ["full-control", "envd", "desktop"]
     with pytest.raises(ValueError, match="Windows supports Full Control only"):
         await backend.set_environment("sandbox")
     assert backend.environment == "environment-sandbox"

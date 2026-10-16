@@ -83,6 +83,9 @@ class LocalEnvdLaunchConfiguration(BaseModel):
     egress: EnvdNetworkConfiguration = Field(default_factory=lambda: EnvdNetworkConfiguration(mode="inherit"))
     default_working_directory: Path | None = None
     directory_discovery: bool = True
+    full_control: bool = False
+    computer_use: bool = False
+    computer_use_permission_timeout_ms: Annotated[int, Field(gt=0)] = 120000
     monitoring: LocalEnvdMonitoringConfiguration | None = None
     trusted_executable_roots: tuple[Path, ...] = ()
     shell_profiles: tuple[LocalEnvdShellProfile, ...] = ()
@@ -104,6 +107,10 @@ class LocalEnvdLaunchConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def _consistent_configuration(self) -> Self:
+        if self.full_control and (self.trusted_executable_roots or self.shell_profiles):
+            raise ValueError("full_control cannot be combined with executable roots or shell profiles")
+        if self.computer_use and (self.sandbox.mode != "disabled" or self.egress.mode != "inherit"):
+            raise ValueError("computer_use requires disabled sandbox and inherited egress")
         if (self.execution.uid is None) != (self.execution.gid is None):
             raise ValueError("execution.uid and execution.gid must be configured together")
         profile_ids = tuple(profile.profile_id for profile in self.shell_profiles)

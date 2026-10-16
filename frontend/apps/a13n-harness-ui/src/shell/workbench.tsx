@@ -9,7 +9,6 @@ import {
   Routes,
   useLocation,
   useMatch,
-  useNavigate,
 } from "react-router";
 import {
   Button,
@@ -46,6 +45,7 @@ import {
   EnvironmentsPage,
 } from "../configuration/settings";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
+import { RuntimePage } from "../configuration/envd";
 import { ErrorNotice, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
@@ -155,18 +155,14 @@ function WorkbenchContent({
     location.pathname === "/memory" ||
     !!selectedThread.data?.thread.memory_scope;
   const memoryEnabled = !!status.app?.memory_organization?.memory_enabled;
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (
-      location.pathname === "/" &&
-      !location.search &&
-      setup.data?.fresh &&
-      setup.data.draft_scope &&
-      !wizardDismissed(setup.data.draft_scope)
-    ) {
-      navigate("/setup", { replace: true });
-    }
-  }, [setup.data, location.pathname, location.search, navigate]);
+  // Decide first-use routing before mounting the conversation, whose own
+  // effect normalizes the empty root URL to a draft route.
+  const firstUseEntry = location.pathname === "/" && !location.search;
+  const enterSetup =
+    firstUseEntry &&
+    setup.data?.fresh &&
+    setup.data.draft_scope &&
+    !wizardDismissed(setup.data.draft_scope);
   useEffect(() => {
     setMenu(false);
   }, [location.key]);
@@ -438,10 +434,16 @@ function WorkbenchContent({
               <Route
                 path="/"
                 element={
-                  <NewConversationPage
-                    profile={profile}
-                    unauthorized={unauthorized}
-                  />
+                  firstUseEntry && setup.isPending ? (
+                    <p role="status">Checking setup…</p>
+                  ) : enterSetup ? (
+                    <Navigate to="/setup" replace />
+                  ) : (
+                    <NewConversationPage
+                      profile={profile}
+                      unauthorized={unauthorized}
+                    />
+                  )
                 }
               />
               <Route
@@ -484,6 +486,11 @@ function WorkbenchContent({
                 <Route
                   path="/settings/environments"
                   element={<EnvironmentsPage />}
+                />
+                <Route path="/settings/runtime" element={<RuntimePage />} />
+                <Route
+                  path="/settings/envd"
+                  element={<Navigate to="/settings/runtime" replace />}
                 />
                 <Route
                   path="/settings/connections"

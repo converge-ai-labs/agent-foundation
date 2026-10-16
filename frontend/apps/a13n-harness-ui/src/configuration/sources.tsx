@@ -25,6 +25,10 @@ import {
   type ResourceKind,
 } from "./documents";
 import { MediaUnderstandingFields } from "./media-understanding";
+import {
+  EnvdConfigurationFields,
+  ExecutionDefaultsFields,
+} from "./envd-fields";
 import styles from "../shell/workbench.module.css";
 
 export type SourceDraft = {
@@ -291,12 +295,14 @@ export function SourceDocument({
   title,
   mediaOnly = false,
   embedded = false,
+  section,
 }: {
   path: string;
   isNew?: boolean;
   title?: string;
   mediaOnly?: boolean;
   embedded?: boolean;
+  section?: "envd" | "execution";
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -423,9 +429,13 @@ export function SourceDocument({
         </Link>
       )}
       <PageHeader
-        level={mediaOnly ? 2 : 1}
+        level={mediaOnly || section ? 2 : 1}
         description={
-          mediaOnly ? "Used when native input is unavailable." : undefined
+          mediaOnly
+            ? "Used when native input is unavailable."
+            : section === "envd"
+              ? "Host-wide settings. Save changes, then restart Harness UI to apply them."
+              : undefined
         }
         title={
           title ||
@@ -498,7 +508,17 @@ export function SourceDocument({
       )}
       {canEdit && (
         <div className={styles.configurationForm}>
-          {mediaOnly ? (
+          {section === "envd" ? (
+            <EnvdConfigurationFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          ) : section === "execution" ? (
+            <ExecutionDefaultsFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          ) : mediaOnly ? (
             <MediaUnderstandingFields
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
@@ -556,7 +576,8 @@ export function SourceDocument({
           )}
         </div>
       )}
-      {canEdit && (
+      {section && !dirty && notice && <p role="status">{notice}</p>}
+      {canEdit && (!section || dirty) && (
         <footer
           className={styles.editorActions}
           aria-label="Configuration actions"
@@ -575,7 +596,13 @@ export function SourceDocument({
             {notice ? (
               <small role="status">{notice}</small>
             ) : (
-              <small>Saving validates changes for future runs.</small>
+              <small>
+                {section === "envd"
+                  ? "Saved envd changes require a Harness UI restart."
+                  : section === "execution"
+                    ? "Defaults apply to new conversations."
+                    : "Saving validates changes for future runs."}
+              </small>
             )}
           </div>
           <div className={styles.actions}>

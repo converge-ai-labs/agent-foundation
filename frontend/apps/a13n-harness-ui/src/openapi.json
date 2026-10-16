@@ -2626,6 +2626,129 @@
         }
       }
     },
+    "/api/envd": {
+      "get": {
+        "summary": "Envd Runtime Status",
+        "operationId": "envd_runtime_status_api_envd_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvdStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/envd/start": {
+      "post": {
+        "summary": "Start Envd",
+        "operationId": "start_envd_api_envd_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartEnvdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentReadiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/envd/restart": {
+      "post": {
+        "summary": "Restart Envd",
+        "operationId": "restart_envd_api_envd_restart_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopEnvdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentReadiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/envd/reinstall": {
+      "post": {
+        "summary": "Reinstall Envd",
+        "operationId": "reinstall_envd_api_envd_reinstall_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopEnvdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentReadiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/envd/stop": {
+      "post": {
+        "summary": "Stop Envd",
+        "operationId": "stop_envd_api_envd_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopEnvdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/api/environments/preflight": {
       "post": {
         "summary": "Preflight",
@@ -9281,6 +9404,43 @@
         "title": "EnvdEgressConfiguration",
         "type": "object"
       },
+      "EnvdInstanceStatus": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          },
+          "sandbox": {
+            "type": "boolean",
+            "title": "Sandbox"
+          },
+          "computer_use": {
+            "type": "boolean",
+            "title": "Computer Use"
+          },
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Roots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "sandbox",
+          "computer_use",
+          "running",
+          "roots"
+        ],
+        "title": "EnvdInstanceStatus"
+      },
       "EnvdSecretReference": {
         "additionalProperties": false,
         "properties": {
@@ -9310,6 +9470,160 @@
         ],
         "title": "EnvdSecretReference",
         "type": "object"
+      },
+      "EnvdStatus": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "custom"
+            ],
+            "title": "Source"
+          },
+          "required_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Version"
+          },
+          "verified_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Version"
+          },
+          "cached_versions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cached Versions",
+            "default": []
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
+          },
+          "installed": {
+            "type": "boolean",
+            "title": "Installed",
+            "default": false
+          },
+          "running_devices": {
+            "type": "integer",
+            "title": "Running Devices",
+            "default": 0
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "checking",
+              "downloading",
+              "verifying"
+            ],
+            "title": "Phase",
+            "default": "idle"
+          },
+          "downloaded_bytes": {
+            "type": "integer",
+            "title": "Downloaded Bytes",
+            "default": 0
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "computer_use": {
+            "type": "boolean",
+            "title": "Computer Use",
+            "default": false
+          },
+          "configured_executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured Executable"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required",
+            "default": false
+          },
+          "preparing": {
+            "type": "boolean",
+            "title": "Preparing",
+            "default": false
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/EnvdInstanceStatus"
+            },
+            "type": "array",
+            "title": "Instances",
+            "default": []
+          },
+          "readiness": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentReadiness"
+            },
+            "type": "array",
+            "title": "Readiness",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "host",
+          "source"
+        ],
+        "title": "EnvdStatus"
       },
       "EnvironmentAction": {
         "description": "Exact authorization values in the locked first-party catalog.",
@@ -9635,16 +9949,33 @@
       "EnvironmentReadiness": {
         "properties": {
           "profile_id": {
-            "type": "string",
-            "enum": [
-              "environment-native",
-              "environment-sandbox"
-            ],
-            "title": "Profile Id"
+            "$ref": "#/components/schemas/LocalProfileId"
           },
           "ready": {
             "type": "boolean",
             "title": "Ready"
+          },
+          "observe_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observe Ready"
+          },
+          "input_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Ready"
           },
           "code": {
             "type": "string",
@@ -11097,6 +11428,15 @@
         "type": "object",
         "title": "LiveAgentSource",
         "description": "Application-owned voice executor; not a selectable Agent resource."
+      },
+      "LocalProfileId": {
+        "type": "string",
+        "enum": [
+          "environment-native",
+          "environment-envd",
+          "environment-desktop",
+          "environment-sandbox"
+        ]
       },
       "LocalRoots": {
         "items": {
@@ -19682,28 +20022,56 @@
         ],
         "title": "SetupApplyRequest"
       },
+      "StartEnvdRequest": {
+        "properties": {
+          "computer_use": {
+            "type": "boolean",
+            "title": "Computer Use",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StartEnvdRequest"
+      },
+      "StopEnvdRequest": {
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirm"
+        ],
+        "title": "StopEnvdRequest"
+      },
       "PreflightRequest": {
         "properties": {
           "profile_id": {
-            "type": "string",
-            "enum": [
-              "environment-native",
-              "environment-sandbox"
-            ],
-            "title": "Profile Id"
+            "$ref": "#/components/schemas/LocalProfileId"
           },
           "project_path": {
-            "type": "string",
-            "maxLength": 4096,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Project Path"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "profile_id",
-          "project_path"
+          "profile_id"
         ],
         "title": "PreflightRequest"
       },

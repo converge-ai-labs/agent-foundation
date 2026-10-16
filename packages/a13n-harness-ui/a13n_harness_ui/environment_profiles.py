@@ -6,7 +6,11 @@ import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final
+from typing import Final, Literal
+
+from pydantic import JsonValue
+
+type LocalProfileId = Literal["environment-native", "environment-envd", "environment-desktop", "environment-sandbox"]
 
 
 class EnvironmentMode(StrEnum):
@@ -26,6 +30,20 @@ class BuiltInEnvironmentProfile:
     description: str
     provider_key: str
     adapter_key: str
+
+    @property
+    def provider_configuration(self) -> dict[str, JsonValue]:
+        if self.profile_id in {"environment-envd", "environment-desktop"}:
+            return {
+                "launch": {
+                    "sandbox": {"mode": "disabled"},
+                    "egress": {"mode": "inherit"},
+                    "full_control": True,
+                    "computer_use": self.profile_id == "environment-desktop",
+                    "monitoring": {},
+                }
+            }
+        return {}
 
 
 FULL_CONTROL_PROFILE_ID: Final = "environment-native"
@@ -69,15 +87,33 @@ SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",
 )
+ENVD_PROFILE: Final = BuiltInEnvironmentProfile(
+    profile_id="environment-envd",
+    mode=EnvironmentMode.full_control,
+    name="Full Control · envd",
+    description="Runs through local envd as the Host account, without a sandbox. Computer Use is off.",
+    provider_key="local_envd",
+    adapter_key="a13n.local-envd-project-root",
+)
+DESKTOP_PROFILE: Final = BuiltInEnvironmentProfile(
+    profile_id="environment-desktop",
+    mode=EnvironmentMode.full_control,
+    name="Full Control · envd + Computer Use",
+    description="Local envd with access to the Harness Host desktop, including screen observation and input.",
+    provider_key="local_envd",
+    adapter_key="a13n.local-envd-project-root",
+)
 BUILT_IN_ENVIRONMENT_PROFILES: Final = (
     FULL_CONTROL_PROFILE,
+    ENVD_PROFILE,
+    DESKTOP_PROFILE,
     SANDBOX_PROFILE,
 )
 BUILT_IN_ENVIRONMENT_PROFILES_BY_ID: Final = MappingProxyType(
     {profile.profile_id: profile for profile in BUILT_IN_ENVIRONMENT_PROFILES}
 )
 BUILT_IN_ENVIRONMENT_PROFILES_BY_MODE: Final = MappingProxyType(
-    {profile.mode: profile for profile in BUILT_IN_ENVIRONMENT_PROFILES}
+    {profile.mode: profile for profile in (FULL_CONTROL_PROFILE, SANDBOX_PROFILE)}
 )
 
 

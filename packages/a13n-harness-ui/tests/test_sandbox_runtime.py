@@ -100,7 +100,7 @@ async def test_sandbox_profile_host_localhost_access(binary, tmp_path, monkeypat
     async def executable():
         return binary
 
-    monkeypatch.setattr(reconstructor, "resolve_sandbox_executable", executable)
+    monkeypatch.setattr(reconstructor.envd, "resolve_executable", executable)
     profile = ResolvedEnvironmentProfile(
         profile_id="environment-test",
         behavior_digest="a" * 64,
@@ -322,7 +322,7 @@ async def test_runtime_cache_separates_launch_policy_but_not_session_destination
     async def executable():
         return tmp_path / "envd"
 
-    monkeypatch.setattr(reconstructor, "resolve_sandbox_executable", executable)
+    monkeypatch.setattr(reconstructor.envd, "resolve_executable", executable)
 
     def profile(mode, hosts=()):
         return ResolvedEnvironmentProfile(
@@ -380,3 +380,24 @@ async def test_thread_attachment_grant_is_read_only(binary, tmp_path):
             await environment.close()
     assert attachment.read_text() == "submitted input"
     assert (thread / "tmp/result").read_text() == "output"
+
+
+async def test_real_runtime_restart_replaces_device_and_stop_leaves_no_instances(binary, tmp_path):
+    from a13n_harness_ui.envd_runtime import EnvdRuntimeManager
+    from a13n_harness_ui.settings import EnvdRuntimeSettings
+
+    manager = EnvdRuntimeManager(settings=EnvdRuntimeSettings(executable=binary), runtime_parent=tmp_path / "runtimes")
+    try:
+        first = await manager.start("environment-envd", tmp_path)
+        assert first.ready, first.message
+        before = await manager.status()
+        assert before.running_devices == 1
+        second = await manager.start("environment-envd", tmp_path, restart=True)
+        assert second.ready, second.message
+        after = await manager.status()
+        assert after.running_devices == 1
+        assert after.instances[0].device_id != before.instances[0].device_id
+        await manager.stop()
+        assert (await manager.status()).instances == ()
+    finally:
+        await manager.close()

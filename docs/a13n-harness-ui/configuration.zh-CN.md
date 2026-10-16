@@ -224,6 +224,20 @@ Guardian 关联不改变审查器、凭据、端点、service tier、风险策�
 
 单次覆盖使用 `--no-update-check`。见[更新与日志](automation-and-troubleshooting.md#logs-updates-and-exit)。
 
+### 本地 envd 运行时
+
+根级 `envd` 配置由 App 管理、供 Full Control 和 Sandbox 使用的本地运行时。WebUI 在 **Settings → Runtime** 中提供这些字段。保存后重启 Harness UI 才会生效。保存不会下载、启动进程或请求系统权限。
+
+```yaml
+envd:
+  executable: null
+  computer_use: false
+```
+
+`executable: null` 选择已安装客户端要求的确切托管版本。源码运行或自定义构建可填写 `a13n-envd` 的绝对路径（Windows 为 `a13n-envd.exe`）；`~` 在 Host 上展开。自定义可执行文件不会自动下载。省略 `envd` 时保留嵌入应用指定的可执行文件设置，并禁用桌面访问。
+
+`computer_use` 允许在当前 Host 上运行具有桌面能力的本地运行时。Agent 还需显式选择 `environment-desktop` profile；仅开启 Host 能力不会向 Agent 暴露桌面。见[本地运行时管理](environments-and-projects.md#manage-local-envd)。
+
 ### Goal 检查
 
 根级 `max_goal_iterations` 默认 `10`，接受整数，限制 `/goal` 和 WebUI Goal 开关在首次响应后的额外检查。小于或等于零关闭自动后续检查。每个新 Goal 捕获其上限；修改不会重置挂起 Goal 或改变活动 Goal 的预算。原生请求、工具和 token 限制仍适用。完成和恢复行为见[围绕 Goal 持续工作](everyday-use.md#work-toward-a-goal)。

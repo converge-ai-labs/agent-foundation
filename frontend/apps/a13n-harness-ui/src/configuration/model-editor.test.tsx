@@ -113,6 +113,10 @@ vi.mock("../transport/context", () => ({
                         settings: {},
                       },
                     ],
+                    context_choices: [
+                      { value: 128000, label: "Standard" },
+                      { value: 64000, label: "Compact" },
+                    ],
                     native_tools: [],
                     reasoning_mode: { supported: true, state: "default" },
                   },
@@ -217,12 +221,29 @@ it.each([false, true])(
 it("provider defaults remove preset-owned fields without removing custom native settings", async () => {
   mount();
   const user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("combobox", { name: "Settings preset" }),
+  const preset = await screen.findByRole("combobox", {
+    name: "Settings preset",
+  });
+  await waitFor(() =>
+    expect(preset.textContent).toContain("High reasoning (default)"),
   );
+  const budget = screen.getByRole("combobox", { name: "Context preset" });
+  expect(budget.textContent).toContain("128,000 tokens");
+  await user.click(budget);
+  await user.click(
+    await screen.findByRole("option", { name: "Compact · 64,000 tokens" }),
+  );
+  expect(budget.textContent).toContain("64,000 tokens");
+  fireEvent.change(screen.getByLabelText("Working context budget"), {
+    target: { value: "32000" },
+  });
+  expect(budget.textContent).toContain("Custom · 32,000 tokens");
+  await user.click(preset);
+  expect(screen.queryByRole("option", { name: /Keep current/ })).toBeNull();
   await user.click(
     await screen.findByRole("option", { name: "Provider defaults" }),
   );
+  expect(preset.textContent).toContain("Provider defaults");
   expect(parse(source()).settings).toEqual({ temperature: 0.3 });
   expect(source()).toContain("# Keep custom setting");
 });

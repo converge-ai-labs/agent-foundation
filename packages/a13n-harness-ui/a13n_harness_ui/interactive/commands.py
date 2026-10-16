@@ -128,10 +128,10 @@ COMMANDS = (
     ),
     Command(
         "environment",
-        "Show or select the Environment mode (Full Control or Sandbox) for subsequent turns.",
+        "Select local execution for subsequent turns. envd/desktop explicitly prepare the runtime.",
         "[mode]",
         maximum=1,
-        choices=("full-control", "sandbox"),
+        choices=("full-control", "envd", "desktop", "sandbox"),
     ),
     Command("new", "Start a new conversation; keep all saved history."),
     Command(

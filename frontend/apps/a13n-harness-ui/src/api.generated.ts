@@ -1007,6 +1007,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/envd": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Envd Runtime Status */
+        get: operations["envd_runtime_status_api_envd_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/envd/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Envd */
+        post: operations["start_envd_api_envd_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/envd/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart Envd */
+        post: operations["restart_envd_api_envd_restart_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/envd/reinstall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reinstall Envd */
+        post: operations["reinstall_envd_api_envd_reinstall_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/envd/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Envd */
+        post: operations["stop_envd_api_envd_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/environments/preflight": {
         parameters: {
             query?: never;
@@ -3189,6 +3274,19 @@ export interface components {
              */
             secrets?: components["schemas"]["EnvdSecretReference"][];
         };
+        /** EnvdInstanceStatus */
+        EnvdInstanceStatus: {
+            /** Device Id */
+            device_id: string;
+            /** Sandbox */
+            sandbox: boolean;
+            /** Computer Use */
+            computer_use: boolean;
+            /** Running */
+            running: boolean;
+            /** Roots */
+            roots: string[];
+        };
         /** EnvdSecretReference */
         EnvdSecretReference: {
             /** Env */
@@ -3196,6 +3294,79 @@ export interface components {
             source: components["schemas"]["EnvironmentCredentialSource"];
             /** Inject Hosts */
             inject_hosts: string[];
+        };
+        /** EnvdStatus */
+        EnvdStatus: {
+            /** Host */
+            host: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "managed" | "custom";
+            /** Required Version */
+            required_version?: string | null;
+            /** Verified Version */
+            verified_version?: string | null;
+            /**
+             * Cached Versions
+             * @default []
+             */
+            cached_versions?: string[];
+            /** Executable */
+            executable?: string | null;
+            /**
+             * Installed
+             * @default false
+             */
+            installed?: boolean;
+            /**
+             * Running Devices
+             * @default 0
+             */
+            running_devices?: number;
+            /**
+             * Phase
+             * @default idle
+             * @enum {string}
+             */
+            phase?: "idle" | "checking" | "downloading" | "verifying";
+            /**
+             * Downloaded Bytes
+             * @default 0
+             */
+            downloaded_bytes?: number;
+            /** Total Bytes */
+            total_bytes?: number | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Computer Use
+             * @default false
+             */
+            computer_use?: boolean;
+            /** Configured Executable */
+            configured_executable?: string | null;
+            /**
+             * Restart Required
+             * @default false
+             */
+            restart_required?: boolean;
+            /**
+             * Preparing
+             * @default false
+             */
+            preparing?: boolean;
+            /**
+             * Instances
+             * @default []
+             */
+            instances?: components["schemas"]["EnvdInstanceStatus"][];
+            /**
+             * Readiness
+             * @default []
+             */
+            readiness?: components["schemas"]["EnvironmentReadiness"][];
         };
         /**
          * EnvironmentAction
@@ -3300,13 +3471,13 @@ export interface components {
         };
         /** EnvironmentReadiness */
         EnvironmentReadiness: {
-            /**
-             * Profile Id
-             * @enum {string}
-             */
-            profile_id: "environment-native" | "environment-sandbox";
+            profile_id: components["schemas"]["LocalProfileId"];
             /** Ready */
             ready: boolean;
+            /** Observe Ready */
+            observe_ready?: boolean | null;
+            /** Input Ready */
+            input_ready?: boolean | null;
             /** Code */
             code: string;
             /** Message */
@@ -3881,6 +4052,8 @@ export interface components {
              */
             id?: "live";
         };
+        /** @enum {string} */
+        LocalProfileId: "environment-native" | "environment-envd" | "environment-desktop" | "environment-sandbox";
         LocalRoots: string[];
         /** LoginStatus */
         LoginStatus: {
@@ -7090,15 +7263,27 @@ export interface components {
         SetupApplyRequest: {
             selection: components["schemas"]["SetupSelection"];
         };
+        /** StartEnvdRequest */
+        StartEnvdRequest: {
+            /**
+             * Computer Use
+             * @default false
+             */
+            computer_use?: boolean;
+        };
+        /** StopEnvdRequest */
+        StopEnvdRequest: {
+            /**
+             * Confirm
+             * @constant
+             */
+            confirm: true;
+        };
         /** PreflightRequest */
         PreflightRequest: {
-            /**
-             * Profile Id
-             * @enum {string}
-             */
-            profile_id: "environment-native" | "environment-sandbox";
+            profile_id: components["schemas"]["LocalProfileId"];
             /** Project Path */
-            project_path: string;
+            project_path?: string | null;
         };
         /** ApiKeyInput */
         ApiKeyInput: {
@@ -9264,6 +9449,120 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SetupPublication"];
                 };
+            };
+        };
+    };
+    envd_runtime_status_api_envd_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvdStatus"];
+                };
+            };
+        };
+    };
+    start_envd_api_envd_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartEnvdRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentReadiness"];
+                };
+            };
+        };
+    };
+    restart_envd_api_envd_restart_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopEnvdRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentReadiness"];
+                };
+            };
+        };
+    };
+    reinstall_envd_api_envd_reinstall_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopEnvdRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentReadiness"];
+                };
+            };
+        };
+    };
+    stop_envd_api_envd_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopEnvdRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

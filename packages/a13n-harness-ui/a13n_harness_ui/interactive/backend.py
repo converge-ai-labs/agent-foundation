@@ -446,7 +446,16 @@ class SessionBackend:
 
     async def set_environment(self, selected: str | None) -> str:
         if selected is not None:
-            profile = environment_profile_id_for_mode(selected)
+            profile = {"envd": "environment-envd", "desktop": "environment-desktop"}.get(selected)
+            if profile is None:
+                profile = environment_profile_id_for_mode(selected)
+            if selected in {"envd", "desktop"}:
+                readiness = await self.app.preflight_environment(
+                    "environment-desktop" if selected == "desktop" else "environment-envd",
+                    project_path=str(self.directory),
+                )
+                if not readiness.ready:
+                    return readiness.message + " " + " ".join(readiness.instructions)
             require_supported_local_profile(profile)
             if self.thread_id is not None:
                 detail = await self.app.get_thread(self.thread_id)
@@ -757,7 +766,13 @@ class SessionBackend:
             return self.thinking_choices()
         if kind == "environment":
             return (
-                Choice("full-control", "Full Control", "Native host shell and files; no sandbox"),
+                Choice("full-control", "Full Control · Direct", "Ready immediately; no download or sandbox"),
+                Choice("envd", "Full Control · envd", "Download if needed and check; Computer Use off"),
+                Choice(
+                    "desktop",
+                    "Full Control · envd + Computer Use",
+                    "Download/check and request Host screen and input permissions",
+                ),
                 *(
                     (Choice("sandbox", "Sandbox", "Isolation; unavailable configurations fail without fallback"),)
                     if local_sandbox_supported()

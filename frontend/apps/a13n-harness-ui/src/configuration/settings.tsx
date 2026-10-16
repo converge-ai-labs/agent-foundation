@@ -31,6 +31,7 @@ const sections = [
   { path: "/settings/models", label: "Models" },
   { path: "/settings/capabilities", label: "Capabilities" },
   { path: "/settings/environments", label: "Environments" },
+  { path: "/settings/runtime", label: "Runtime" },
   { path: "/projects", label: "Projects" },
   { path: "/settings/accounts", label: "Accounts & API keys" },
   { path: "/settings/connections", label: "MCP connections" },
@@ -254,6 +255,17 @@ export function EnvironmentsPage() {
         individual conversation in its settings.
       </p>
       <ErrorNotice error={selectors.error || sources.error} />
+      {sources.data?.sources
+        .filter((item) => item.resource_kind === "root")
+        .map((root) => (
+          <SourceDocument
+            key={root.relative_path}
+            path={root.relative_path}
+            title="Execution defaults"
+            embedded
+            section="execution"
+          />
+        ))}
       <DevicesSection />
       <section
         className={styles.stack}

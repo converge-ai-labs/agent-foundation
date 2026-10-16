@@ -5,9 +5,25 @@ description: 选择执行权限、在 Project 中工作、连接 Device，并定
 
 ## 执行权限
 
-**Full Control** 使用宿主机账户现有的文件系统和网络权限运行，不下载或启动 `a13n-envd`。Full Control 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。
+**Full Control** 使用宿主机账户现有的文件系统和网络权限运行。默认的 **Direct** 运行时不下载或启动 `a13n-envd`。Direct 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。
 
 **Sandbox** 要求 Envd 使用显式目录授权和继承宿主机网络来准备受限 Session worker，包括访问宿主 localhost 服务。命令可使用宿主机路由和防火墙策略允许的网络，文件系统和进程隔离仍然生效。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查文件系统和进程隔离，以及宿主 localhost 连通性，无须依赖外部互联网服务。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows 不支持生产 Sandbox 隔离。见[外层安全指南](../a13n-envd/isolation.md)。
+
+### 管理本地 envd
+
+WebUI 的 **Settings → Environments** 选择新对话的默认值：Direct 或 envd、Full Control 或 Sandbox，以及可选的 Computer Use。保存沿用普通配置草稿流程，不会启动 envd。已有对话和 Project 覆盖保留各自的选择。
+
+打开 **Settings → Runtime** 可安装或启动 envd、检查 Sandbox 支持、查看实例或停止实例。可从设置向导第一步先进入 Runtime，无须先配置 Model；返回时保留已有设置选择。
+
+**Check** 一并检查 Full Control 和 Sandbox。**Restart** 关闭本地 envd Session，启动新的 Full Control 实例并自动检查 Sandbox。桌面实例在需要时重新启动。**Reinstall** 下载并验证与已安装客户端匹配的精确版本，然后重启 envd；下载或验证失败会保留原可执行文件，运行时保持停止。两项操作均需确认。自定义可执行文件需先在 Host 上更新，再从这里重启。
+
+升级并重启 Harness UI 后，进入 Runtime 点击 **Update & start**，下载当前 Harness UI 要求的配套 envd 版本。目标版本已缓存时直接点击 **Start**；**Reinstall** 用于重新下载同一版本。默认 binary 路径是 `~/.a13n-harness-ui/data/runtimes/managed/<version>/<target>/a13n-envd`（Windows 为 `a13n-envd.exe`）；自定义 data root 会改变路径前缀。旧版本缓存会保留。根级配置变更需要重启 Harness UI，仅重启 envd 不会应用新配置。
+
+兼容的 Full Control 执行共享 App 管理的子进程，各 Session 保留自己的工作目录。Sandbox 目录授权和桌面策略分别管理。停止需确认，因为会中断其他对话在内的活动 Session；文件和默认值保持不变。意外退出后，可显式再次启动以替换已断开的实例。
+
+Computer Use 需要先开启 **Desktop capability**、保存并重启 Harness UI。随后使用 **Check permissions** 在 Host 上检查权限，并为需要的执行默认值显式选择 Computer Use。权限检查不会截屏或注入输入。托管版本和自定义可执行文件通过[根级 envd 设置](configuration.md#local-envd-runtime)配置。
+
+内置 profile 包括 `environment-native`（Direct）、`environment-envd`（通过 envd 执行 Full Control）、`environment-desktop`（Full Control 加 Computer Use）和 `environment-sandbox`。CLI 的 `environment status` 查看运行时状态；`environment check --profile environment-envd` 准备环境但不修改默认值；`environment configure --profile environment-envd` 仅在检查成功后保存默认值。
 
 ### 原生命令环境
 
@@ -54,7 +70,7 @@ a13n-harness-ui --environment-profile environment-team
 
 从 WebUI 对话工具栏打开 **Environment monitor**。选择 Device，查看操作系统、CPU 型号、最新 CPU 和内存观测、文件系统容量，以及 24 小时的分钟平均值和峰值曲线。面板覆盖整个 App；切换对话或编辑下一次 Run 的目录不会改变观测对象。系统指标描述 Envd 可见的系统，cgroup 指标描述操作员指定的 Linux cgroup，均不是单次 Run 的用量。
 
-远程 Device 复用已有的认证连接。在 Envd 启动配置中启用 `monitoring` 后开始采样；禁用采样时仍可查看静态系统信息。内置本地 Sandbox 在 daemon 启动时启用采样。打开监控不会下载或启动 Envd。Full Control 和非 Envd Provider 不提供这些指标。本地运行时获取与已安装 `a13n-envd-client` 完全相同的版本；已发布的 Envd 0.3.0 提供此监控协议。远程 daemon 和客户端应一起升级。
+远程 Device 复用已有的认证连接。在 Envd 启动配置中启用 `monitoring` 后开始采样；禁用采样时仍可查看静态系统信息。内置本地 Sandbox 在 daemon 启动时启用采样。打开监控不会下载或启动 Envd。Direct 和其他非 Envd Provider 不提供这些指标。本地运行时获取与已安装 `a13n-envd-client` 完全相同的版本；已发布的 Envd 0.3.0 提供此监控协议。远程 daemon 和客户端应一起升级。
 
 面板区分等待采样、禁用、样本过期和离线。缺失值显示为 **—**，缺失分钟保留为空白。最新观测详情包含原始单位的压力值和累积计数。历史仅保存在 App 内存中，重启即清空。采集最多覆盖 64 个 Device、同时发起四个请求，每个 Device 保留 1,440 个分钟槽；超出数量会明确提示，不继续扩大 buffer。修改或撤销 Device 会清空其历史。
 

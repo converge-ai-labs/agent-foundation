@@ -7,15 +7,12 @@ import inspect
 import os
 import stat
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
-from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
-from a13n_envd_client import EIPDeviceConnection
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -27,17 +24,23 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.execution import EnvironmentConnector
-from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.models import (
+    COMPUTER_ACTIONS,
+    FILE_EXECUTION_ACTIONS,
+    EnvironmentDescriptor,
+    EnvironmentState,
+)
 from a13n_harness.environment.providers import EnvironmentRuntime
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
-from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime, resolve_a13n_envd_executable
-from anyio import CancelScope, Lock, fail_after, to_thread
+from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime
+from anyio import CancelScope, fail_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
 from a13n_harness_ui.configuration.models import HttpDeviceTransport, canonical_digest
 from a13n_harness_ui.devices import DeviceConnections
+from a13n_harness_ui.envd_runtime import EnvdRuntimeManager, EnvdStatus
 from a13n_harness_ui.environment_monitoring import MonitoringSource
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError
@@ -50,12 +53,9 @@ from a13n_harness_ui.extensions import (
 from a13n_harness_ui.extensions.environment_adapters import (
     LocalEnvdProfileConfiguration,
     LocalEnvdProjectAdapter,
-    LocalEnvdProjectConfiguration,
     NativeProjectAdapter,
     observed_binding_state,
 )
-from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
-from a13n_harness_ui.sandbox import create_sandbox_runtime
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 from a13n_harness_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef, StoredEnvironmentState
 from a13n_harness_ui.storage.objects import ObjectKind
@@ -125,25 +125,17 @@ class EnvironmentSnapshotReconstructor:
         *,
         catalog: HarnessUiExtensionCatalog | None = None,
         envd_settings: EnvdRuntimeSettings | None = None,
+        envd: EnvdRuntimeManager | None = None,
         runtime_factories: Mapping[str, ProviderRuntimeFactory] | None = None,
         local_runtime_parent: Path | None = None,
         protected_roots: tuple[Path, ...] = (),
     ) -> None:
         self._catalog = catalog or HarnessUiExtensionCatalog()
-        self._envd_settings = envd_settings or EnvdRuntimeSettings()
         self._runtime_factories = MappingProxyType(dict(runtime_factories or {}))
-        self._local_runtime_parent = local_runtime_parent
-        self._protected_roots = protected_roots
-        self._local_runtimes: dict[tuple[tuple[Path, ...], str], LocalEnvdProviderRuntime] = {}
-        self._local_lock = Lock()
-        self._managed_envd = (
-            None
-            if local_runtime_parent is None
-            else ManagedEnvdRuntime(
-                cache_root=local_runtime_parent / "managed",
-                staging_root=local_runtime_parent / "staging",
-                settings=self._envd_settings,
-            )
+        self.envd = envd or EnvdRuntimeManager(
+            settings=envd_settings or EnvdRuntimeSettings(),
+            runtime_parent=local_runtime_parent,
+            protected_roots=protected_roots,
         )
 
     def reconstruct(self, profile: ResolvedEnvironmentProfile) -> ReconstructedEnvironmentProfile:
@@ -210,17 +202,11 @@ class EnvironmentSnapshotReconstructor:
             for item in recipes
         )
 
+    async def envd_status(self) -> EnvdStatus:
+        return await self.envd.status()
+
     async def resolve_sandbox_executable(self) -> Path:
-        """Resolve the exact Host-selected runtime for preparation and preflight."""
-        executable = self._envd_settings.executable
-        if executable is not None:
-            return await to_thread.run_sync(partial(resolve_a13n_envd_executable, executable))
-        if self._managed_envd is None:
-            raise EnvironmentLifecycleError(
-                "Local Envd requires the Harness UI runtime cache or an executable override.",
-                code="local_envd_runtime_unavailable",
-            )
-        return await self._managed_envd.resolve()
+        return await self.envd.resolve_executable()
 
     async def sandbox_runtime(
         self,
@@ -229,52 +215,13 @@ class EnvironmentSnapshotReconstructor:
         thread_files_root: Path | None = None,
         profile: ResolvedEnvironmentProfile | None = None,
     ) -> LocalEnvdProviderRuntime:
-        # Each immutable grant set gets its own Device; Sessions share only that
-        # Device, never a union of grants from different Threads or Projects.
-        selected = LocalEnvdProfileConfiguration.model_validate(
-            {} if profile is None else profile.provider_configuration
-        )
-        adapter = LocalEnvdProjectConfiguration.model_validate({} if profile is None else profile.adapter_configuration)
-        roots = tuple(root.resolve(strict=True) for root in roots)
-        # Destinations and credential references are Session inputs, not Device identity.
-        key = (
-            roots,
-            canonical_digest(
-                {"launch": selected.launch.model_dump(mode="json"), "adapter": adapter.model_dump(mode="json")}
-            ),
-        )
-        async with self._local_lock:
-            if key not in self._local_runtimes:
-                executable = await self.resolve_sandbox_executable()
-                self._local_runtimes[key] = await to_thread.run_sync(
-                    partial(
-                        create_sandbox_runtime,
-                        executable,
-                        roots=roots,
-                        runtime_parent=self._local_runtime_parent,
-                        protected_roots=self._protected_roots,
-                        thread_files_root=thread_files_root,
-                        launch=selected.launch,
-                        project_access=adapter.project_access,
-                    )
-                )
-            return self._local_runtimes[key]
+        return await self.envd.runtime(roots, thread_files_root=thread_files_root, profile=profile)
 
     def monitoring_sources(self) -> Iterable[MonitoringSource]:
-        for (roots, revision), runtime in self._local_runtimes.items():
-            yield MonitoringSource(
-                id="local-" + runtime.device_id,
-                name="Local Sandbox",
-                transport="stdio",
-                revision=revision,
-                roots=tuple(str(root) for root in roots[:16]),
-                acquire=partial(_running_local_device, runtime),
-            )
+        return self.envd.monitoring_sources()
 
     async def close(self) -> None:
-        async with AsyncExitStack() as stack:
-            for runtime in self._local_runtimes.values():
-                stack.push_async_callback(runtime.close)
+        await self.envd.close()
 
     async def _runtime_collaborator(self, provider: EnvironmentProviderDefinition) -> object | None:
         if provider.type == NATIVE_PROVIDER_KEY:
@@ -290,8 +237,12 @@ class EnvironmentSnapshotReconstructor:
         return await value if inspect.isawaitable(value) else value
 
 
-async def _running_local_device(runtime: LocalEnvdProviderRuntime) -> EIPDeviceConnection | None:
-    return runtime.running_device()
+def _local_actions(profile: ResolvedEnvironmentProfile) -> frozenset[EnvironmentAction]:
+    if profile.provider_key == LOCAL_ENVD_PROVIDER_KEY:
+        selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
+        if selected.launch.computer_use:
+            return FILE_EXECUTION_ACTIONS | COMPUTER_ACTIONS
+    return FILE_EXECUTION_ACTIONS
 
 
 class EnvironmentRunPlan:
@@ -401,7 +352,7 @@ class EnvironmentRunService:
                     alias="workspace" if index == 1 else f"workspace-{index}",
                     environment=environment,
                     permission_ceiling=EnvironmentPermissionSet(
-                        operations=FILE_ACTIONS if live else FILE_EXECUTION_ACTIONS
+                        operations=FILE_ACTIONS if live else _local_actions(profile)
                     ),
                     mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                     provider_root=root.as_posix()
@@ -537,7 +488,7 @@ class EnvironmentRunService:
             environment = await self._reconstructor.bind(
                 reconstructed, root=root, state=None, local_runtime=local_runtime
             )
-            operations = FILE_EXECUTION_ACTIONS
+            operations = _local_actions(reconstructed.profile)
         else:
             # Host files are not silently interpreted as a remote provider root.
             provider = DIRECT_LOCAL

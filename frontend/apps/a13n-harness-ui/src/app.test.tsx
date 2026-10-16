@@ -1502,7 +1502,9 @@ it("shows one connection notice for server loss and reconciles on retry without 
   expect(screen.queryByText("Failed to fetch")).toBeNull();
   expect(screen.queryByText("0 online")).toBeNull();
   expect(
-    screen.getByRole("heading", { name: "What would you like to build?" }),
+    await screen.findByRole("heading", {
+      name: "What would you like to build?",
+    }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 

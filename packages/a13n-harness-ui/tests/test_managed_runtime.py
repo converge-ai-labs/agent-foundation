@@ -44,6 +44,30 @@ def _executable(version: str) -> bytes:
     return f"#!/bin/sh\nprintf 'a13n-envd {version}\\n'\n".encode()
 
 
+async def test_cancelled_download_removes_staging_and_returns_to_idle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = anyio.Event()
+    runtime = _runtime(tmp_path)
+
+    async def download(*, destination: Path, **kwargs) -> None:
+        destination.write_bytes(b"partial archive")
+        started.set()
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(managed_runtime, "_download_archive", download)
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(runtime.resolve)
+        await started.wait()
+        assert (await runtime.status()).phase == "downloading"
+        tasks.cancel_scope.cancel()
+    assert list((tmp_path / "staging").iterdir()) == []
+    status = await runtime.status()
+    assert status.phase == "idle"
+    assert not status.installed
+    assert status.verified_version is None
+
+
 async def test_unselected_release_fails_before_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(managed_runtime.metadata, "version", lambda name: "0.0.0")
     runtime = _runtime(tmp_path, None)
@@ -278,6 +302,60 @@ async def test_wrong_version_preserves_cache_and_allows_retry(tmp_path: Path, mo
     assert downloads == 2
 
 
+@pytest.mark.skipif(os.name == "nt", reason="fixture executable is a POSIX script")
+async def test_ui_upgrade_acquires_new_client_release_and_preserves_previous_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(managed_runtime.metadata, "version", lambda _: "9.8.6")
+    content = _archive(tmp_path / "archive", _executable("9.8.6"))
+    urls = []
+
+    async def download(*, url, destination, **kwargs):
+        urls.append(url)
+        destination.write_bytes(content)
+
+    monkeypatch.setattr(managed_runtime, "_download_archive", download)
+    previous = await _runtime(tmp_path, None).resolve()
+    monkeypatch.setattr(managed_runtime.metadata, "version", lambda _: "9.8.7")
+    runtime = _runtime(tmp_path, None)
+    status = await runtime.status()
+    assert status.required_version == "9.8.7"
+    assert status.cached_versions == ("9.8.6",)
+    assert not status.installed
+    assert status.verified_version is None
+    assert len(urls) == 1  # Status neither downloads nor reuses the previous release.
+    with pytest.raises(RuntimeResolutionError, match="selected version"):
+        await runtime.resolve()  # A stale release response cannot satisfy the new client.
+    assert previous.read_bytes() == _executable("9.8.6")
+    assert not (await runtime.status()).installed
+    content = _archive(tmp_path / "archive-new", _executable("9.8.7"))
+    selected = await runtime.resolve()
+    assert selected != previous
+    assert selected.read_bytes() == _executable("9.8.7")
+    assert previous.read_bytes() == _executable("9.8.6")
+    status = await runtime.status()
+    assert status.cached_versions == ("9.8.6", "9.8.7")
+    assert status.installed and status.verified_version == "9.8.7"
+    assert "a13n-envd-v9.8.7/" in urls[-1]
+    assert await _runtime(tmp_path, None).resolve() == selected
+    assert len(urls) == 3
+
+
+async def test_cached_release_status_is_target_specific_and_inert(tmp_path, monkeypatch):
+    monkeypatch.setattr(managed_runtime, "current_envd_target", lambda: "aarch64-apple-darwin")
+    for version, target, name in [
+        ("9.8.6", "aarch64-apple-darwin", "a13n-envd"),
+        ("9.8.5", "x86_64-unknown-linux-gnu", "a13n-envd"),
+        ("9.8.4", "aarch64-apple-darwin", "partial.download"),
+        ("invalid", "aarch64-apple-darwin", "a13n-envd"),
+    ]:
+        path = tmp_path / "cache" / version / target / name
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"not an executable")
+    status = await _runtime(tmp_path).status()
+    assert status.cached_versions == ("9.8.6",)
+    assert not status.installed
+    assert status.verified_version is None
+
+
 async def test_failed_download_is_cleaned_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def download(*, destination: Path, **kwargs) -> None:
         destination.write_bytes(b"partial")
@@ -339,3 +417,31 @@ async def test_download_limit_with_and_without_content_length(
             url="https://example.test/asset", destination=tmp_path / "download", timeout_seconds=1, max_bytes=6
         )
     assert captured.value.code == "local_eip_runtime_limit"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fixture executable is a POSIX script")
+async def test_explicit_reinstall_preserves_verified_cache_on_failure_and_replaces_on_success(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+    original = _executable("9.8.7")
+    archive = _archive(tmp_path / "archive", original)
+    downloads = []
+
+    async def download(*, destination, **kwargs):
+        downloads.append(destination)
+        destination.write_bytes(archive)
+
+    monkeypatch.setattr(managed_runtime, "_download_archive", download)
+    path = await runtime.resolve()
+    archive = _archive(tmp_path / "wrong", _executable("9.8.6"))
+    with pytest.raises(RuntimeResolutionError, match="selected version"):
+        await runtime.resolve(reinstall=True)
+    assert path.read_bytes() == original
+    assert (await runtime.status()).phase == "idle"
+    assert not list((tmp_path / "staging").iterdir())
+    replacement = original + b"# replacement\n"
+    archive = _archive(tmp_path / "replacement", replacement)
+    assert await runtime.resolve(reinstall=True) == path
+    assert path.read_bytes() == replacement
+    assert len(downloads) == 3
+    assert await runtime.resolve() == path
+    assert len(downloads) == 3

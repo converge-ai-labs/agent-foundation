@@ -195,7 +195,7 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
       account_id: "other-user",
     }),
   );
-  await screen.findByText("other-user · Host account");
+  await screen.findByText("Account: other-user · Host account");
 });
 
 it("defaults ChatGPT to automatic callback and posts a private full-URL fallback without persistence", async () => {

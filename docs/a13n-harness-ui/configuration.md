@@ -224,6 +224,20 @@ Official model facts and Harness pricing supplements refresh separately from `pr
 
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
 
+### Local envd runtime
+
+Root `envd` configures the App-owned local runtime used by Full Control and Sandbox. WebUI exposes these fields in **Settings → Runtime**. Restart Harness UI after saving changes. Saving does not download, launch a process, or request OS permissions.
+
+```yaml
+envd:
+  executable: null
+  computer_use: false
+```
+
+`executable: null` selects the exact managed release required by the installed client. For a source checkout or custom build, set an absolute path to `a13n-envd` (`a13n-envd.exe` on Windows); `~` expands on the Host. Custom executables are not downloaded automatically. Omitting `envd` retains an embedding application's executable setting and keeps desktop access disabled.
+
+`computer_use` permits desktop-capable local runtimes on this Host. An Agent also needs the explicit `environment-desktop` profile; enabling the Host capability alone does not expose the desktop. See [local runtime management](environments-and-projects.md#manage-local-envd).
+
 ### Goal checks
 
 Root `max_goal_iterations` defaults to `10` and accepts an integer. It limits additional checks after the initial response for `/goal` and the WebUI Goal toggle. Values at or below zero disable automatic follow-ups. Each new Goal captures its limit; changing this setting does not reset a suspended Goal or change an active one's budget. Native request, tool, and token limits still apply. See [Work toward a Goal](everyday-use.md#work-toward-a-goal) for completion and recovery behavior.
