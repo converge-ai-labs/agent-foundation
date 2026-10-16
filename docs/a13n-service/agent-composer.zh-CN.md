@@ -16,6 +16,8 @@ Agent Composer 帮助你在 Console 中创建和修改 agent。描述想要的�
 
 修改 agent 时，Composer 读取所选修订版本，在完整新配置中保留无关字段。写入使用最初读取的资源版本；遇到并发修改时，需要重新读取和审阅。
 
+使用已有 Composer 或 Finding Agent 开始 Console 新会话时，如果你有 `write` 权限，Console 会在发送第一条消息前准备最新配置，包括从**试用 Agent**进入的会话。没有 `write` 权限，或准备操作返回权限不足时，继续使用已有默认版本；启动运行仍需要 `run` 权限。显式指定版本时跳过准备。其他准备错误会显示出来并停止发送。部署本身不会更新已保存的预设；API 客户端需要显式调用准备接口。
+
 ## 配置服务商
 
 1. 让 Composer 添加或更新 Model、Environment、Connector 或 Web Provider。
@@ -67,11 +69,9 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
 
 没有可用模型时，准备操作返回 `409 conflict`，原因为 `model_required`。Console 会提供模型配置入口。[添加模型](models.md)后再次准备即可。
 
-部署完成后，部署更新命令会同步已有 Composer 的配置，保留仍可用的模型。之后按默认版本启动的运行使用新配置，包括从「试用 Agent」进入的会话；已经接受的运行、待处理操作和显式指定的版本保持不变。名称或描述变化不会新增配置修订版本。尚未创建 Composer 的工作空间仍在首次使用时创建。
-
 ## 内置 agent 规则
 
-Composer 的配置和模型选择由准备操作和部署更新管理。编辑、添加修订版本、归档或设置头像会返回 `409 conflict`，原因为 `builtin`。复制 Composer 可创建可修改的自定义 agent。
+Composer 的配置和模型选择由准备操作管理。编辑、添加修订版本、归档或设置头像会返回 `409 conflict`，原因为 `builtin`。复制 Composer 可创建可修改的自定义 agent。
 
 ## 在自己的 agent 中使用工具集
 

@@ -219,8 +219,6 @@ The `a13n-service` image runs every role through the same `a13n-service` entry p
 - The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) runs `run --role all` with PostgreSQL, Redis, the Console and Docker environments through the host Engine.
 - The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) runs control and worker Deployments after a migration Job per release revision, with values for a local kind cluster.
 
-After upgrading all Control and Worker replicas, run `a13n-service --config /app/service.toml refresh-builtin-agents`. Helm installs and upgrades with `--wait` run this automatically, as does `make compose-up`. Direct image updates and custom deployment workflows must run it after both roles finish upgrading. It updates existing Composer and Finding Agents and prints updated, unchanged and failed counts; any failure exits nonzero. Restore model availability in the affected workspace and retry without duplicating already-published revisions.
-
 ## Workspace provisioning
 
 Automatic setup of the Local and Docker environment providers and their templates runs only in the single-host `all` role. Both default off. For example:

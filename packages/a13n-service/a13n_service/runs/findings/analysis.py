@@ -14,12 +14,12 @@ from a13n_service.infra.db import advisory_lock, short_session, transaction, vio
 from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.agents import service as agents
-from a13n_service.resources.agents.finding import RULES
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.rows import audit_row
 from a13n_service.runs import traces
 from a13n_service.runs.accept import Source, accept
 from a13n_service.runs.findings import service as findings
+from a13n_service.runs.findings.preset import RULES
 from a13n_service.runs.findings.schemas import Analysis, AnalysisCreate, AnalysisPage, SelectedTrace
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.inbox import Request, append_message, find_request

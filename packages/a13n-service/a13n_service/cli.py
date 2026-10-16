@@ -22,7 +22,6 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import serve_metrics
 from a13n_service.migrations import run_objects
 from a13n_service.migrations.runner import check, generate, heads, upgrade
-from a13n_service.resources.agents.refresh import refresh
 from a13n_service.settings import ProcessRole, Settings, load_settings
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap
 from a13n_service.tenancy.users import set_account_status
@@ -106,16 +105,6 @@ def _with_storage[T](settings: Settings, operation: Callable[[Storage], Awaitabl
             await storage.close()
 
     return asyncio.run(run())
-
-
-@main.command("refresh-builtin-agents")
-@click.pass_obj
-def refresh_builtin_agents(settings: Settings) -> None:
-    """Refresh existing Composer and Finding Agents after all Service roles have been upgraded."""
-    result = _with_storage(settings, partial(refresh, preferred=settings.composer.models))
-    click.echo(json.dumps(asdict(result)))
-    if result.failed:
-        raise click.ClickException("Builtin Agent refresh incomplete; inspect the per-agent errors and retry")
 
 
 @main.command("migrate-run-objects")

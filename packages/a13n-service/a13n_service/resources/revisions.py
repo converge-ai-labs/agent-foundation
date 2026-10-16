@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Annotated, Any, ClassVar, Protocol, cast
+from typing import Annotated, Any, ClassVar, Protocol
 
 from pydantic import BaseModel, StringConstraints
 from sqlalchemy import (
@@ -44,7 +44,7 @@ _MAX_NUMBER = 2**31 - 1
 Search = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
-class _HeadRow[Editor: str | None](Protocol):
+class HeadRow(Protocol):
     KIND: ClassVar[str]
     __tablename__: str
     id: Mapped[str]
@@ -55,15 +55,12 @@ class _HeadRow[Editor: str | None](Protocol):
     default_revision_id: Mapped[str | None]
     archived_at: Mapped[datetime | None]
     version: Mapped[int]
-    updated_by_id: Mapped[Editor]
+    updated_by_id: Mapped[str]
 
     @property
     def builtin(self) -> bool:
         """A head the deployment owns: it runs and duplicates like any other, but refuses every change."""
         ...
-
-
-type HeadRow = _HeadRow[str] | _HeadRow[str | None]
 
 
 class RevisionColumns(Base):
@@ -86,6 +83,7 @@ class RevisionColumns(Base):
     config: Mapped[dict] = mapped_column(JSONB)
     digest: Mapped[str] = mapped_column(String(64))
     note: Mapped[str | None]
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     @declared_attr.directive
@@ -246,7 +244,7 @@ async def publish[R: RevisionColumns](
     table: type[R],
     config: BaseModel,
     *,
-    actor: Principal | None,
+    actor: Principal,
     note: str | None,
     make_default: bool = True,
     **columns: object,
@@ -259,8 +257,6 @@ async def publish[R: RevisionColumns](
     transaction, so numbers never race. `columns` carries the kind's own revision columns, such as a skill's
     `package_ref`.
     """
-    if actor is None and not head.builtin:
-        raise ValueError("Only deployment-owned revisions may be published without a principal")
     value = config.model_dump(mode="json")
     digest = config_digest(value)
     if head.default_revision_id is not None:
@@ -278,7 +274,7 @@ async def publish[R: RevisionColumns](
         config=value,
         digest=digest,
         note=note,
-        created_by_id=None if actor is None else actor.id,
+        created_by_id=actor.id,
         **{table.HEAD_KEY: head.id},
         **columns,
     )
@@ -286,11 +282,7 @@ async def publish[R: RevisionColumns](
     if make_default or head.default_revision_id is None:
         head.default_revision_id = revision.id
     # A new revision changes the head's ETag even when its default and last editor stay the same.
-    if actor is None:
-        # Only builtin Agent heads allow an operator editor; checked before publication above.
-        cast(_HeadRow[str | None], head).updated_by_id = None
-    else:
-        head.updated_by_id = actor.id
+    head.updated_by_id = actor.id
     flag_modified(head, "updated_by_id")
     return revision, True
 

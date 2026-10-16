@@ -3344,7 +3344,7 @@ export interface components {
        */
       updated_at: string;
       /** Updated By Id */
-      updated_by_id: string | null;
+      updated_by_id: string;
       /** Version */
       version: number;
       /** Workspace Id */
@@ -3725,7 +3725,7 @@ export interface components {
        */
       created_at: string;
       /** Created By Id */
-      created_by_id: string | null;
+      created_by_id: string;
       /** Digest */
       digest: string;
       /** Id */

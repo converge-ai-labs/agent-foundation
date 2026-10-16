@@ -16,6 +16,8 @@ The workspace needs an [enabled model](models.md) you can use. Preparing Compose
 
 To change an agent, Composer reads its selected revision and preserves unrelated fields in a complete new configuration. Writes use the resource version originally read. A concurrent change requires a fresh read and review.
 
+Before sending the first message of a new Console session with an existing Composer or Finding Agent, Console prepares its current definition when you have `write` permission. This includes sessions opened through **Try agent**. Without `write`, or if preparation reports insufficient permission, the session uses the existing default revision; starting the run still requires `run` permission. Explicitly pinned revisions skip preparation. Other preparation errors remain visible and stop submission. Deployment alone does not refresh saved presets; API clients call the preparation endpoint explicitly.
+
 ## Configure a provider
 
 1. Ask Composer to add or update a Model, Environment, Connector or Web Provider.
@@ -67,11 +69,9 @@ Preparation selects an enabled model the caller can use, in this order:
 
 If no model is usable, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
 
-After rollout, the deployment refresh command updates existing Composer definitions and keeps usable model selections. Later default-selected runs use the new configuration, including conversations opened through **Try agent**. Accepted runs, pending operations and explicit revision pins keep their original versions. Metadata-only updates do not create configuration revisions. Workspaces without a Composer still create it on first use.
-
 ## Built-in agent rules
 
-Preparation and deployment refresh own Composer's configuration and model selection. Editing, revising, archiving or setting an avatar returns `409 conflict` with reason `builtin`. Duplicate Composer to create a custom agent you can change.
+Preparation owns Composer's configuration and model selection. Editing, revising, archiving or setting an avatar returns `409 conflict` with reason `builtin`. Duplicate Composer to create a custom agent you can change.
 
 ## Use the toolset in your own agents
 

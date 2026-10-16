@@ -219,8 +219,6 @@ Service 将每次尝试的 Harness span 导出到一个 trace 后端，并从同
 - [单机 Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)运行 `run --role all`，包括 PostgreSQL、Redis、Console，以及通过宿主机 Engine 提供的 Docker 环境。
 - [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes)在每个发布修订的迁移 Job 后启动 control 和 worker Deployment，并提供本地 kind 集群的 values。
 
-升级全部 Control 和 Worker 后，运行 `a13n-service --config /app/service.toml refresh-builtin-agents`。Helm 使用 `--wait` 安装或升级时会自动执行这个步骤；`make compose-up` 也会执行。直接更新镜像或自行编排部署时，需要在两个角色都升级完成后执行该命令。它更新已有 Composer 和 Finding Agent，并输出更新、未变化和失败数量；只要有失败就以非零状态退出。修复对应工作空间的模型问题后可以重试，不会重复创建已更新的版本。
-
 ## 工作空间自动配置
 
 自动配置 Local 和 Docker 环境 provider 及其模板只在单机 `all` 角色执行，两者默认关闭。例如：

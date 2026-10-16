@@ -107,7 +107,6 @@ k8s-smoke: ## Check the running local kind deployment: Console, administrator si
 .PHONY: compose-up
 compose-up: ## Pull images, start the single-host Compose stack and print the Console URL
 	@docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait --pull "$(COMPOSE_PULL)"
-	@docker compose -f deploy/docker/compose/a13n-service.yaml exec -T service a13n-service --config /app/service.toml refresh-builtin-agents
 	@address=$$(docker compose -f deploy/docker/compose/a13n-service.yaml port service 8000) && printf 'Console: http://%s\n' "$$address"
 
 .PHONY: compose-smoke
