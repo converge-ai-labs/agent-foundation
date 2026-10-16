@@ -264,6 +264,7 @@ def test_model_options_describe_agent_tools_without_mutating_model_recipe() -> N
         "configuration": {"kind": "web_search", "external_web_access": True},
     }
     image = next(tool for tool in options.native_tools if tool.value == "image_generation")
+    assert not image.recommended
     assert image.capability["capability"] == "native_image_generation"
     custom = model_options(
         ModelOptionsRequest(connection="openai-responses", model_id="custom", base_url="http://localhost:8080/v1")

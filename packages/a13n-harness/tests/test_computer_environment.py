@@ -69,7 +69,7 @@ class Computer:
         )
 
 
-def mount(actions):
+def mount(actions, *, guard=None):
     computer = Computer()
     binding = _Binding(
         "desktop",
@@ -80,7 +80,9 @@ def mount(actions):
     computer.binding = binding
     runtime = create_environment_runtime(
         mounts={
-            "desktop": EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions))
+            "desktop": EnvironmentMount(
+                source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions), operation_guard=guard
+            )
         },
         default_mount="desktop",
     )
@@ -316,3 +318,39 @@ async def test_eip_computer_transport_loss_requires_inspection_not_new_run_repla
     assert "Do not automatically replay" in projection["details"]["hint"]
     assert "private" not in str(projection)
     assert len(sent) == 1
+
+
+async def test_host_admission_spans_dispatch_and_cannot_broaden_permissions():
+    from contextlib import asynccontextmanager
+
+    events = []
+    deny = False
+
+    @asynccontextmanager
+    async def guard(action):
+        events.append(("enter", action))
+        if deny:
+            raise EnvironmentError("Reserved by Host", code="environment_denied")
+        try:
+            yield
+        finally:
+            events.append(("exit", action))
+
+    runtime, computer = mount(COMPUTER_ACTIONS, guard=guard)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        await environment.computer.describe()
+        assert events == [("enter", EnvironmentAction.COMPUTER_DESCRIBE), ("exit", EnvironmentAction.COMPUTER_DESCRIBE)]
+        deny = True
+        with pytest.raises(EnvironmentError, match="Reserved by Host"):
+            await environment.computer.execute(ComputerTypeText(text="blocked"))
+        assert not computer.inputs
+    events.clear()
+    runtime, _ = mount(frozenset({EnvironmentAction.COMPUTER_OBSERVE}), guard=guard)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        with pytest.raises(EnvironmentError):
+            await environment.computer.execute(ComputerTypeText(text="permission denied first"))
+        assert not events

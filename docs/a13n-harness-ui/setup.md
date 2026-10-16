@@ -46,7 +46,9 @@ See [Model settings](models-and-authentication.md#native-request-settings-and-co
 - **Full Control:** commands run with your host account's filesystem and network authority. No Envd runtime is required.
 - **Sandbox:** setup checks local isolation prerequisites before saving. Failure does not fall back to Full Control. Built-in Windows execution supports Full Control only.
 
-Your selection saves configuration without an additional confirmation step. Read [execution permissions](environments-and-projects.md#execution-permissions) before choosing.
+In the TUI, your selection saves configuration without an additional confirmation step. In WebUI, the Workspace step validates your choices automatically. Selecting Sandbox downloads envd if needed, verifies it, and checks isolation; progress and failures are shown alongside the execution choice and in the footer. You can cancel preparation or retry a failed check. Full Control with Direct needs no download. Choose **Save and start chatting** when ready; reviewing generated files is optional. Saving opens an empty conversation without sending a model request.
+
+Read [execution permissions](environments-and-projects.md#execution-permissions) before choosing.
 
 The TUI uses its launch directory as the working directory; on the first prompt it selects or creates a single-root Project for that directory. Setup does not require a Project file or create a default `project-local` resource.
 

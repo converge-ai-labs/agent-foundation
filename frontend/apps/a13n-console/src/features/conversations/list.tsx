@@ -44,7 +44,7 @@ export function SessionList() {
   return (
     <Page
       title={t("Sessions")}
-      description={t("Every conversation your workspace has run, and why.")}
+      description={t("Sessions started in this workspace.")}
       actions={create}
       toolbar={<SessionFilterBar search={search} setSearch={setSearch} />}
     >
@@ -162,7 +162,7 @@ function SessionResults({
                         <Link to={`${sessionPath(session.id)}?view=chat`} />
                       }
                     >
-                      {t("Continue conversation")}
+                      {t("Continue thread")}
                     </Button>
                   )}
                   <Button

@@ -89,7 +89,7 @@ it("continues the unique root in Chat even when child activity is listed first",
 it("asks which history to open when more than one root exists", async () => {
   const other = fixtureThread({ id: "thr_other", last_run_id: "run_other" });
   show([child, root, other], "/sessions/ses_1?view=chat");
-  await screen.findByText("Choose a conversation");
+  await screen.findByText("Choose a thread");
   await userEvent
     .setup()
     .click(screen.getByRole("link", { name: /thr_other/ }));
@@ -102,7 +102,7 @@ it("asks which history to open when more than one root exists", async () => {
 
 it("offers explicit histories instead of guessing when no root is available", async () => {
   show([child, fork], "/sessions/ses_1?view=chat");
-  await screen.findByText("Choose a conversation");
+  await screen.findByText("Choose a thread");
   expect(
     screen.getByRole("link", { name: /thr_fork/ }).getAttribute("href"),
   ).toBe("/sessions/ses_1/threads/thr_fork?view=chat");

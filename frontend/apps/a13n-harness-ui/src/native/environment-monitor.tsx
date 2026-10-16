@@ -1,11 +1,23 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActivityIcon } from "@phosphor-icons/react";
+import {
+  ActivityIcon,
+  ArrowClockwiseIcon,
+  MagnifyingGlassPlusIcon,
+  MagnifyingGlassMinusIcon,
+} from "@phosphor-icons/react";
 import { Button, ModalFrame } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
-import { Trend, bytes, percent } from "./environment-trend";
+import {
+  Trend,
+  bytes,
+  percent,
+  timeLabel,
+  zoomRange,
+  type TimeRange,
+} from "./environment-trend";
 import styles from "./environment-monitor.module.css";
 
 const states: Record<Schema<"EnvironmentObservation">["status"], string> = {
@@ -47,11 +59,13 @@ export function EnvironmentMonitor() {
 export function MonitorContent() {
   const { client } = useTransport();
   const [selected, select] = useState("");
+  const [refreshInterval, setRefreshInterval] = useState(10000);
   const catalog = useQuery({
     queryKey: ["environment-monitoring"],
     queryFn: ({ signal }) =>
       result(client.GET("/api/environment-monitoring", { signal })),
-    refetchInterval: 10000,
+    refetchInterval: refreshInterval || false,
+    refetchOnWindowFocus: refreshInterval > 0,
     retry: false,
   });
   const environments = catalog.data?.environments ?? [];
@@ -68,7 +82,8 @@ export function MonitorContent() {
         }),
       ),
     enabled: !!id,
-    refetchInterval: 10000,
+    refetchInterval: refreshInterval || false,
+    refetchOnWindowFocus: refreshInterval > 0,
     retry: false,
   });
   const observation = detail.data?.environment;
@@ -96,7 +111,33 @@ export function MonitorContent() {
                 ))}
               </select>
             </label>
-            <span>Last 24 hours · minute averages / peaks</span>
+            <label className={styles.refreshControl}>
+              Auto-refresh
+              <select
+                value={refreshInterval}
+                onChange={(event) =>
+                  setRefreshInterval(Number(event.target.value))
+                }
+              >
+                <option value={10000}>Every 10s</option>
+                <option value={30000}>Every 30s</option>
+                <option value={60000}>Every 1m</option>
+                <option value={0}>Off</option>
+              </select>
+            </label>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Refresh observations"
+              title="Refresh observations"
+              disabled={catalog.isFetching || detail.isFetching}
+              onClick={() => {
+                void catalog.refetch();
+                if (id) void detail.refetch();
+              }}
+            >
+              <ArrowClockwiseIcon />
+            </Button>
           </div>
           {catalog.data.omitted > 0 && (
             <p role="status">
@@ -106,9 +147,8 @@ export function MonitorContent() {
           )}
           {!environments.some((item) => item.transport === "stdio") && (
             <p className={styles.note}>
-              Local Sandbox: not started. Monitoring attaches to existing
-              daemons only. Full Control and non-Envd providers do not report
-              these metrics.
+              Monitoring attaches to running Envd daemons only; it never starts
+              a local runtime. Non-Envd providers do not report these metrics.
             </p>
           )}
         </>
@@ -119,6 +159,8 @@ export function MonitorContent() {
           key={id}
           observation={observation}
           history={detail.data.history}
+          updatedAt={detail.dataUpdatedAt}
+          refreshing={refreshInterval > 0}
         />
       )}
       <p className={styles.note}>
@@ -132,10 +174,29 @@ export function MonitorContent() {
 function Observation({
   observation: env,
   history,
+  updatedAt,
+  refreshing,
 }: {
   observation: Schema<"EnvironmentObservation">;
   history: Schema<"HistoryPoint">[];
+  updatedAt: number;
+  refreshing: boolean;
 }) {
+  const [duration, setDuration] = useState(15);
+  const [fixedRange, setFixedRange] = useState<TimeRange | null>(null);
+  const [cursor, setCursor] = useState<number | null>(null);
+  const latest = updatedAt / 60000;
+  const range = fixedRange ?? { start: latest - duration, end: latest };
+  const selectRange = (next: TimeRange | null) => {
+    setFixedRange(next);
+    setCursor(null);
+  };
+  const chartProps = {
+    range,
+    cursor,
+    onCursor: setCursor,
+    onZoom: selectRange,
+  };
   const sample = env.sample;
   const system = sample?.system;
   const info = env.system_info;
@@ -193,25 +254,86 @@ function Observation({
           <strong>{bytes(memory)}</strong>
           <small>of {bytes(system?.memory_total_bytes)}</small>
         </div>
-        <div>
-          <span>Cgroup memory</span>
-          <strong>{bytes(sample?.cgroup_v2?.memory_current_bytes)}</strong>
-          <small>
-            {sample?.cgroup_v2?.memory_max?.kind === "unlimited"
-              ? "Unlimited"
-              : sample?.cgroup_v2?.memory_max?.kind === "limited"
-                ? `Limit ${bytes(sample.cgroup_v2.memory_max.bytes)}`
-                : "Limit unavailable"}
-          </small>
+        {sample?.cgroup_v2 && (
+          <div>
+            <span>Cgroup memory</span>
+            <strong>{bytes(sample?.cgroup_v2?.memory_current_bytes)}</strong>
+            <small>
+              {sample?.cgroup_v2?.memory_max?.kind === "unlimited"
+                ? "Unlimited"
+                : sample?.cgroup_v2?.memory_max?.kind === "limited"
+                  ? `Limit ${bytes(sample.cgroup_v2.memory_max.bytes)}`
+                  : "Limit unavailable"}
+            </small>
+          </div>
+        )}
+      </div>
+      <div className={styles.chartToolbar}>
+        <div className={styles.rangeControls}>
+          <select
+            aria-label="Time range"
+            value={fixedRange ? "custom" : duration}
+            onChange={(event) => {
+              setDuration(Number(event.target.value));
+              selectRange(null);
+            }}
+          >
+            {fixedRange && <option value="custom">Custom range</option>}
+            <option value={15}>Last 15 minutes</option>
+            <option value={60}>Last 1 hour</option>
+            <option value={360}>Last 6 hours</option>
+            <option value={1440}>Last 24 hours</option>
+          </select>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Zoom in"
+            title="Zoom in"
+            disabled={range.end - range.start <= 2}
+            onClick={() => selectRange(zoomRange(range, 0.5, latest))}
+          >
+            <MagnifyingGlassPlusIcon />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Zoom out"
+            title="Zoom out"
+            disabled={range.end - range.start >= 1440}
+            onClick={() => selectRange(zoomRange(range, 2, latest))}
+          >
+            <MagnifyingGlassMinusIcon />
+          </Button>
+          {fixedRange && (
+            <Button variant="ghost" size="sm" onClick={() => selectRange(null)}>
+              Back to live
+            </Button>
+          )}
         </div>
+        <span className={styles.liveState}>
+          {fixedRange
+            ? "Historical range"
+            : refreshing
+              ? "Live · auto-refreshing"
+              : "Refresh paused"}
+        </span>
+      </div>
+      <div className={styles.chartHint}>
+        <span>
+          {timeLabel(range.start)} – {timeLabel(range.end)} ·{" "}
+          {Intl.DateTimeFormat().resolvedOptions().timeZone}
+        </span>
+        <span>Drag to zoom · 1-minute averages / peaks</span>
       </div>
       <Trend
+        {...chartProps}
         title="System CPU"
         metric="cpu_busy_percent"
         history={history}
         format={percent}
       />
       <Trend
+        {...chartProps}
         title="System memory used"
         metric="memory_used_bytes"
         history={history}
@@ -219,6 +341,7 @@ function Observation({
       />
       {history.some((point) => point.cgroup_memory_bytes != null) && (
         <Trend
+          {...chartProps}
           title="Cgroup memory"
           metric="cgroup_memory_bytes"
           history={history}

@@ -18,6 +18,7 @@ from a13n_harness.providers.environment._runtime import ClosableRuntime, Runtime
 from pydantic import BaseModel
 
 from ._backend import ManagementBackend
+from .desktop_access import Reply, Request
 from .errors import EnvironmentManagementCancelled, EnvironmentManagementError
 from .management import EnvironmentProvider, EnvironmentStatus
 
@@ -176,3 +177,15 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         if self._close_task is None:
             self._close_task = asyncio.create_task(_release(None, self._owned), name="environment-provider-close")
         await asyncio.shield(self._close_task)
+
+    async def desktop_access(
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        operation_id: str,
+        request: Request,
+    ) -> Reply:
+        async with self._operation(environment, environment_id, state, operation_id) as target:
+            return await target.desktop_access(request)

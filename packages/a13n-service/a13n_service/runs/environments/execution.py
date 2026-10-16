@@ -10,6 +10,7 @@ from a13n_harness import RunConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
 from a13n_harness.environment.models import (
+    EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -28,6 +29,8 @@ from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import Lease, lock_lease
+from a13n_service.runs.desktop_assistance import admission as desktop_admission
+from a13n_service.runs.desktop_assistance.service import verify_continuation
 from a13n_service.runs.environments import external
 from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
 from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch
@@ -76,6 +79,9 @@ class Source:
     def environment_id(self) -> str:
         return self.mount.environment_id
 
+    def operation_guard(self, action: EnvironmentAction):
+        return desktop_admission.operation(self.runtime, self.lease, self.environment_id, self.state, action)
+
     async def ensure_ready(self) -> EnvironmentConnector:
         seconds = self.runtime.settings.environments.wait_seconds
         try:
@@ -88,6 +94,7 @@ class Source:
                         self.authority,
                         self.mount,
                     )
+                    await verify_continuation(self.runtime, self.lease, prepared.target)
                     connector = await execution_connector(
                         self.runtime,
                         prepared.target,
@@ -176,6 +183,7 @@ async def _inspect(
         if environment is None:
             raise not_found("environment", environment_id)
         require_usable(environment, principal.id)
+        await desktop_admission.admit_mounts(session, [environment], execution_run_id=lease.run_id)
         if environment.template_id is None:
             # An external target is always ready; it is reached with its own endpoint and token.
             environment.last_used_at = await now(session)
@@ -263,6 +271,7 @@ async def open_mounts(
         yield {
             source.mount.name: HarnessMount(
                 source=source,
+                operation_guard=source.operation_guard,
                 permission_ceiling=source.mount.permission_ceiling,
                 working_directory=source.mount.working_directory,
                 mount_path=None if source.mount.name == PRIMARY else f"/mnt/{source.mount.name}",

@@ -522,7 +522,7 @@ class SetupWizard:
             "grok-4.5": "Previous generation · configurable reasoning",
             "grok-4.20-0309-reasoning": "Earlier reasoning model · long-context work",
             "api": "Choose a provider, base URL, API key, model ID and settings",
-            "full-control": "Run directly as your host account; not a sandbox",
+            "full-control": "Direct · no download. Host account, no sandbox. Enable envd later with /environment.",
             "sandbox": "Isolated execution; prerequisites checked before saving",
             "all": "Package-owned roles; choose individual names later in subagents.include",
             "none": "Keep only explicitly configured children",

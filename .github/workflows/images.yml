@@ -104,6 +104,7 @@ jobs:
               - 'Cargo.toml'
               - 'crates/a13n-envd/**'
               - 'deploy/docker/images/sandbox/**'
+              - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
               - 'LICENSE'
 
       - name: Build image matrix

@@ -841,7 +841,7 @@ class AgentCompositionResolver:
         if built_in is not None:
             behavior = {
                 "provider_key": built_in.provider_key,
-                "provider_configuration": {},
+                "provider_configuration": built_in.provider_configuration,
                 "adapter_key": built_in.adapter_key,
                 "adapter_configuration": {},
             }
@@ -849,7 +849,7 @@ class AgentCompositionResolver:
                 profile_id=profile_id,
                 behavior_digest=canonical_digest(behavior),
                 provider_key=built_in.provider_key,
-                provider_configuration={},
+                provider_configuration=built_in.provider_configuration,
                 adapter_key=built_in.adapter_key,
                 adapter_configuration={},
             )

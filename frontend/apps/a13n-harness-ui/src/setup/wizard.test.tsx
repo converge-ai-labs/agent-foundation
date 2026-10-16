@@ -65,6 +65,10 @@ async function fetcher(request: Request): Promise<Response> {
       usable: true,
       availability: "available",
       required_action: "none",
+      account_id: "account-test",
+      source: "file",
+      expiry: "valid",
+      shared_with_cli: true,
     });
   if (path === "/api/auth/keys") {
     if (request.method === "PUT") {
@@ -134,6 +138,8 @@ async function fetcher(request: Request): Promise<Response> {
       settings: { thinking: "high" },
       model_characteristics: { context_window_tokens: 350000 },
     });
+  if (path === "/api/envd")
+    return json({ installed: false, phase: "idle", source: "managed" });
   if (path === "/api/setup/preview")
     return json({
       files,
@@ -242,23 +248,40 @@ async function continueStep() {
 async function reviewConfiguration() {
   await chooseModel();
   await continueStep();
-  fireEvent.click(screen.getByRole("button", { name: "Review configuration" }));
   await screen.findByText("Generated files (2)");
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start chatting",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
 }
+
+it("keeps a connected account ready when reselecting the current connection", async () => {
+  mount();
+  await screen.findByText(/Account: account-test/);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Model connection" }));
+  await user.click(screen.getByRole("option", { name: "Codex subscription" }));
+  await chooseModel();
+  await continueStep();
+  expect(await screen.findByText("Decide where your agent works")).toBeTruthy();
+});
 
 it("uses server model choices, saves, reconciles and creates exactly one conversation without sending input", async () => {
   mount();
   await reviewConfiguration();
   expect(
-    screen.getByText(
-      /Organization automatically uses the global default Agent's model/,
-    ),
-  ).toBeTruthy();
-  expect(
-    screen.getByText(/no separate model selection is needed/),
+    screen.getByText(/Automatic memory organization uses your model/),
   ).toBeTruthy();
   const identity = readWizardDraft(status.draft_scope!)!.threadId;
   expect(identity).toMatch(/^thread_[0-9a-f]{32}$/);
+  expect(
+    screen.queryByRole("button", { name: "Review configuration" }),
+  ).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Save and start chatting" }),
   );
@@ -343,7 +366,7 @@ it("keeps partial publication pending across reload and never automatically retr
   expect(calls.some((c) => c.path === "/api/threads")).toBe(false);
 });
 
-it("requires a successful explicit Sandbox preflight and never downgrades it", async () => {
+it("automatically checks Sandbox after selection, reports failure and never downgrades it", async () => {
   override = async (request) => {
     if (new URL(request.url).pathname === "/api/environments/preflight")
       return json({
@@ -356,7 +379,6 @@ it("requires a successful explicit Sandbox preflight and never downgrades it", a
   await chooseModel();
   await continueStep();
   fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
-  fireEvent.click(screen.getByRole("button", { name: "Review configuration" }));
   await screen.findByText("Generated files (2)");
   expect(
     (
@@ -365,9 +387,6 @@ it("requires a successful explicit Sandbox preflight and never downgrades it", a
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check Sandbox readiness" }),
-  );
   await screen.findByText("Isolation unavailable");
   expect(
     readWizardDraft(status.draft_scope!)?.selection.environment_profile,
@@ -576,9 +595,6 @@ it.each([null, "custom/reviewer"])(
         name: reviewer ? "Continue" : "Skip shell review",
       }),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Review configuration" }),
-    );
     await waitFor(() =>
       expect(calls.some((call) => call.path === "/api/setup/preview")).toBe(
         true,
@@ -610,5 +626,190 @@ async function chooseModel() {
       ).disabled,
     ).toBe(false),
   );
+  expect(await screen.findByText(/Account: account-test/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
 }
+
+it("shows download, verification and isolation progress; cancels and retries before saving Sandbox", async () => {
+  let complete: ((value: Response) => void) | undefined;
+  let phase = "downloading";
+  let aborted = false;
+  override = async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/envd")
+      return json({
+        phase,
+        installed: phase === "idle",
+        downloaded_bytes: 1048576,
+        total_bytes: 2097152,
+      });
+    if (path === "/api/environments/preflight")
+      return new Promise((resolve, reject) => {
+        complete = resolve;
+        request.signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    if (created && path.startsWith("/api/threads/"))
+      return json({
+        thread: {
+          thread_id: creationId,
+          configuration: {
+            agent_source: { kind: "agent", id: "agent-primary" },
+            environment_profile_id: "environment-sandbox",
+            project_id: null,
+          },
+        },
+      });
+  };
+  mount();
+  await reviewConfiguration();
+  fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+  await screen.findByRole("progressbar", { name: "envd download" });
+  expect(
+    screen.getAllByText("Downloading envd… 1 MB / 2 MB").length,
+  ).toBeGreaterThan(0);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save and start chatting",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel preparation" }));
+  await waitFor(() => expect(aborted).toBe(true));
+  expect(screen.getAllByText(/Preparation cancelled/).length).toBeGreaterThan(
+    0,
+  );
+  phase = "verifying";
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry Sandbox preparation" }),
+  );
+  await waitFor(
+    () =>
+      expect(
+        screen.getAllByText("Verifying envd download…").length,
+      ).toBeGreaterThan(0),
+    { timeout: 3000 },
+  );
+  phase = "idle";
+  await waitFor(
+    () =>
+      expect(
+        screen.getAllByText("Checking Sandbox isolation…").length,
+      ).toBeGreaterThan(0),
+    { timeout: 3000 },
+  );
+  complete!(
+    json({ ready: true, message: "Isolation ready", instructions: [] }),
+  );
+  await screen.findAllByText("Ready to save");
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start chatting",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save and start chatting" }),
+  );
+  await screen.findByText("First conversation");
+  expect(calls.filter((call) => call.path === "/api/setup/apply")).toHaveLength(
+    1,
+  );
+}, 10000);
+
+it("cancels obsolete Sandbox checks when changing roots or returning to Direct", async () => {
+  const aborted: string[] = [];
+  override = async (request) => {
+    if (new URL(request.url).pathname === "/api/setup/preview") {
+      const selection = await request.json();
+      return json({
+        files,
+        project_paths: [selection.project_path || "/tmp/staging"],
+      });
+    }
+    if (new URL(request.url).pathname === "/api/environments/preflight") {
+      const { project_path } = await request.clone().json();
+      return new Promise((_, reject) =>
+        request.signal.addEventListener("abort", () => {
+          aborted.push(project_path);
+          reject(new DOMException("Aborted", "AbortError"));
+        }),
+      );
+    }
+  };
+  mount();
+  await reviewConfiguration();
+  fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+  await screen.findByRole("button", { name: "Cancel preparation" });
+  fireEvent.change(screen.getByLabelText("Project directory (optional)"), {
+    target: { value: "/other" },
+  });
+  await waitFor(() => expect(aborted).toContain("/tmp/staging"));
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.path === "/api/environments/preflight"),
+    ).toHaveLength(2),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Full Control" }));
+  await waitFor(() => expect(aborted).toContain("/other"));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start chatting",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  expect(calls.some((call) => call.path === "/api/setup/apply")).toBe(false);
+});
+
+it("shows configuration validation failures and recovers after correcting the Project directory", async () => {
+  override = async (request) => {
+    if (
+      new URL(request.url).pathname === "/api/setup/preview" &&
+      (await request.json()).project_path === "/missing"
+    )
+      return json(
+        {
+          error: {
+            code: "project_missing",
+            message: "Project directory does not exist",
+          },
+        },
+        400,
+      );
+  };
+  mount();
+  await reviewConfiguration();
+  fireEvent.change(screen.getByLabelText("Project directory (optional)"), {
+    target: { value: "/missing" },
+  });
+  await screen.findByText("Project directory does not exist");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save and start chatting",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByLabelText("Project directory (optional)"), {
+    target: { value: "" },
+  });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start chatting",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  expect(screen.queryByText("Project directory does not exist")).toBeNull();
+});

@@ -111,6 +111,10 @@ We evaluated A13N Harness on Terminal-Bench 4.0 against official Codex using the
 
 [![Terminal-Bench 4.0: A13N Harness 58.06% versus official Codex 58.77% scored pass rate across 62 tasks; inference cost across 61 matched tasks is $98.73 estimated versus $97.70 per round. Click for methodology and full results.](.github/assets/terminal-bench-4-comparison.png)](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
 
+Using the [FrontierHarness Eval task set and methodology](https://github.com/frontier-harness-eval/eval), A13N Harness with Kimi K3 passed 21 of 30 tasks (70.0%) at $2.93 standardized cost per pass. We used our general-purpose instructions, without benchmark-specific instruction tuning to reduce token usage or inference cost. The comparison with published baselines is provisional: local execution conditions differ, and no matched control was run. Click the chart for the full results, accounting, and methodology.
+
+[![FrontierHarness Eval: A13N Harness with Kimi K3 passed 21/30 tasks (70.0%) at $2.93 standardized cost per pass, with a 7m 03s median successful-trial time. Provisional comparison with 12 published baseline configurations. Click for methodology and full results.](.github/assets/frontier-harness-comparison.svg)](https://github.com/converge-ai-labs/agent-foundation/discussions/1064)
+
 Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/overview/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source

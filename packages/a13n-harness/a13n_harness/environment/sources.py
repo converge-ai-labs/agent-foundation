@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import (
     FILE_EXECUTION_ACTIONS,
+    EnvironmentAction,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentPermissionSet,
@@ -58,6 +60,9 @@ class EnvironmentMount:
     mount_path: str | None = None
     provider_root: str = "/"
     observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None = None
+    # Host admission spans the native operation, including failure/cancellation.
+    # It may narrow authority, never broaden the frozen permission ceiling.
+    operation_guard: Callable[[EnvironmentAction], AbstractAsyncContextManager[None]] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, EnvironmentSource):

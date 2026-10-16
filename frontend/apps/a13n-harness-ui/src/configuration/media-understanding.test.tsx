@@ -166,9 +166,7 @@ it("quick actions refresh the clean editor and disable unsupported purposes", as
   expect(drafts.get("custom.yaml")?.content).toBe(
     drafts.get("custom.yaml")?.base,
   );
-  expect(
-    screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
-  ).toBe(true);
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
 });
 
 it("does not quick-save an existing root draft and supports confirmed discard", async () => {

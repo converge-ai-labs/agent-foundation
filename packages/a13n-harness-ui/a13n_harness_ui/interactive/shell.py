@@ -1990,6 +1990,14 @@ class CliShell:
         elif name == "pro":
             self.launch(self.backend.pro(argument), failure_input=invocation.source)
         elif name == "environment":
+            if argument in {"envd", "desktop"}:
+                self.emit(
+                    "Preparing envd · downloads the matching version if needed; current selection stays until ready."
+                )
+                if argument == "desktop":
+                    self.emit(
+                        "Approve screen and input permissions on the Harness Host. Waiting can take up to two minutes."
+                    )
             self.launch(self.backend.set_environment(argument), failure_input=invocation.source)
         elif name == "new":
             self.renderer.clear_process_observations()

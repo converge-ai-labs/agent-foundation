@@ -46,6 +46,8 @@ Windows restricted Sandbox uses the experimental Microsoft eXecution Container (
 
 The default runtime view includes read-only Windows and Program Files directories, the Envd executable, and private writable HOME/USERPROFILE/TEMP/state. `sandbox.full_disk_read: true` adds Codex-style broad reads of available volumes while preserving writes only to read-write grants and private worker state. This permits reading account-accessible Host configuration and credentials on disk; it is a write-confinement policy, not a confidentiality boundary for Host files. Envd explicitly denies its bootstrap configuration, transport credentials and broker runtime directory. The option defaults to false in Envd and is rejected on Linux/macOS; Harness UI enables it by default on Windows. Keep grant ancestor paths stable. Envd retains checked grant directory handles without delete sharing while workers run. It uses a private desktop for PowerShell startup, read-only registry access, and no ACL mutation or elevation. `privilege_gain_blocked` is false; this is not the Linux `no_new_privs` guarantee.
 
+Broad reads exclude mapped network drives. Each worker fixes its volume-root read view at startup; open a new Session to include newly attached local volumes or newly created top-level entries. Existing granted directories retain their normal access rules.
+
 Native runtime compatibility depends on PSEC support in the application. PowerShell, Git and Python have been exercised with broad reads; Node.js 24.21 `fs.realpathSync.native` can fail with `EPERM` under MXC. Validate your build tools on the target host.
 
 For source-checkout acceptance on a native Windows machine with Rust, Python, uv and PowerShell, run from the repository root:

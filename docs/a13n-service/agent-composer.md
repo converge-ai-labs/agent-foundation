@@ -16,6 +16,8 @@ The workspace needs an [enabled model](models.md) you can use. Preparing Compose
 
 To change an agent, Composer reads its selected revision and preserves unrelated fields in a complete new configuration. Writes use the resource version originally read. A concurrent change requires a fresh read and review.
 
+Before sending the first message of a new Console session with an existing Composer or Finding Agent, Console prepares its current definition when you have `write` permission. This includes sessions opened through **Try agent**. Without `write`, or if preparation reports insufficient permission, the session uses the existing default revision; starting the run still requires `run` permission. Explicitly pinned revisions skip preparation. Other preparation errors remain visible and stop submission. Deployment alone does not refresh saved presets; API clients call the preparation endpoint explicitly.
+
 ## Configure a provider
 
 1. Ask Composer to add or update a Model, Environment, Connector or Web Provider.

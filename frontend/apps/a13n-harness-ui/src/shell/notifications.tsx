@@ -84,7 +84,7 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [refreshVersion, refreshSubscription] = useState(0);
   const transport = useContext(TransportContext);
   const navigate = useNavigate();
-  const settings = useMatch("/settings/notifications");
+  const settings = useMatch("/settings");
   const viewedThread = useMatch("/threads/:threadId/*")?.params.threadId;
   const queries = useQueryClient();
   const toast = useToast();
@@ -430,13 +430,18 @@ function PermissionToast() {
     </aside>
   );
 }
-export function NotificationSettings() {
+export function NotificationSettings({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const notifications = useNotifications()!;
   return (
     <>
       <PageHeader
         title="Notifications"
-        description="Applies to this browser only."
+        level={embedded ? 2 : 1}
+        description="This browser"
       />
       <Panel title="Browser notifications">
         <div className={styles.settingRow}>
@@ -469,7 +474,7 @@ export function NotificationSettings() {
           <strong>{backgroundLabels[notifications.background]}</strong>
           <br />
           {notifications.background === "enabled"
-            ? "Connected; delivery is not confirmed. Alerts remain active for six hours after you last view WebUI on this device."
+            ? "Connected. Alerts stay active for six hours after your last visit on this device."
             : notifications.permission !== "granted"
               ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
               : "Without working push delivery, only in-app notices are available while WebUI is open."}
@@ -528,7 +533,7 @@ export function NotificationSettings() {
             system notifications. Force-stopping the browser, battery
             restrictions, or Do Not Disturb can prevent alerts. On iPhone or
             iPad, enable notifications inside the Home Screen app, not a Chrome
-            or Safari tab. Permission alone does not confirm delivery.
+            or Safari tab. Send a test notification to check delivery.
           </p>
           <p>
             In-app notices remain available without notification permission.

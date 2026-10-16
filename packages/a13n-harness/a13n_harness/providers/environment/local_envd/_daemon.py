@@ -100,8 +100,13 @@ class LocalDaemon:
             self.device = await EIPDeviceConnection.initialize(
                 StdioTransport.from_process(process),
                 expected_device_id=device_id,
-                initialization_timeout=10,
-                request_timeout=30,
+                initialization_timeout=10
+                + (configuration.computer_use_permission_timeout_ms / 1000 if configuration.computer_use else 0),
+                # The request coordinator also bounds initialize; allow the OS authorization gate.
+                request_timeout=max(
+                    30,
+                    10 + (configuration.computer_use_permission_timeout_ms / 1000 if configuration.computer_use else 0),
+                ),
             )
             self._stack.push_async_callback(self.device.close)
             execution = configuration.execution
@@ -146,7 +151,7 @@ def _canonical_configuration(configuration: LocalEnvdLaunchConfiguration) -> Loc
         directory = Path.cwd()
     directory = _canonical_directory(directory, "Local Envd default working directory")
     roots = tuple(
-        sorted({_canonical_directory(path, "executable root") for path in configuration.trusted_executable_roots})
+        dict.fromkeys(_canonical_directory(path, "executable root") for path in configuration.trusted_executable_roots)
     )
     profiles = tuple(
         profile.model_copy(
@@ -237,6 +242,9 @@ def _write_private_bootstrap(root: Path, configuration: LocalEnvdLaunchConfigura
         "egress": configuration.egress.model_dump(mode="json"),
         "default_working_directory": str(configuration.default_working_directory),
         "directory_discovery": configuration.directory_discovery,
+        "full_control": configuration.full_control,
+        "computer_use": configuration.computer_use,
+        "computer_use_permission_timeout_ms": configuration.computer_use_permission_timeout_ms,
         "monitoring": None
         if configuration.monitoring is None
         else configuration.monitoring.model_dump(mode="json", exclude_none=True),

@@ -39,6 +39,19 @@ In **System Settings → Privacy & Security**, grant Screen Recording and Access
 
 For a longer wait, set `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`. A stdio parent must drain stderr and set `initialization_timeout` above the permission wait plus startup time: for example, 135 seconds for the default 120-second wait, or 315 seconds for the 300-second setting above. The Python client defaults to ten seconds.
 
+### Restore macOS permissions after an upgrade
+
+Replacing the Envd executable can invalidate an earlier macOS authorization even when the entry in System Settings still appears enabled. If computer use stops working or Envd keeps waiting for permissions after an upgrade, restore authorization manually:
+
+1. Stop the affected Envd process. If a background service manages it, stop that service so it does not restart Envd during recovery.
+2. Confirm the executable path used by your launch command or service. For a command resolved through PATH, use `command -v a13n-envd`; a service may use a different path.
+3. Open **System Settings → Privacy & Security** and check both **Accessibility** and **Screen Recording** (called **Screen & System Audio Recording** on some macOS versions). Use the process or launcher named by macOS, as in the initial authorization.
+4. If an existing entry is enabled but Envd still reports that permission as missing, remove the affected entry and add the current executable or launcher again where the pane provides add/remove controls. In a file picker, press **Command+Shift+G** to enter its full path. If the pane does not offer those controls, restart Envd through the same launcher to request access and follow macOS's instructions.
+5. Enable the required permissions, then restart the launcher if requested and start a fresh Envd process. For a managed service, start that service again. Reuse the same connection command and saved registration.
+6. Confirm that Envd finishes authorization and connects. Verify a screenshot before trying input in a disposable application.
+
+Updating the binary does not restart an already-running daemon or grant desktop permissions. Complete authorization before expecting a computer-use-enabled daemon to connect. Avoid system-wide permission resets; only change the affected entry.
+
 ### Linux X11 readiness
 
 Launch in the intended X11 session with `DISPLAY` and any `XAUTHORITY`. Keep X11 authentication enabled. A lost X server requires a new Session and screenshot.

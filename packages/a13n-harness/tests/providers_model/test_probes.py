@@ -48,9 +48,9 @@ class _AllowEndpoints:
             {"authorization": "Bearer secret"},
         ),
         (
-            definition("openrouter").bind({"base_url": "https://openrouter.ai/api/v1"}, {"api_key": "secret"}),
-            {"data": [{"id": "anthropic/claude-next", "name": "Claude Next"}]},
-            "https://openrouter.ai/api/v1/models",
+            definition("openrouter").bind({}, {"api_key": "secret"}),
+            {"data": {"label": "fixture-key"}},
+            "https://openrouter.ai/api/v1/key",
             {"authorization": "Bearer secret"},
         ),
         (
@@ -124,6 +124,37 @@ async def test_provider_probe_uses_configured_endpoint_and_headers(
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         await definition(provider.type).probe(provider, http_client=client, endpoint_policy=_AllowEndpoints())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", [200, 401, 403, 500])
+async def test_openrouter_probe_checks_key_at_custom_endpoint_not_public_models(status):
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        # A successful public catalog must not conceal rejected authentication.
+        if request.url.path == "/custom/v1/models":
+            return httpx2.Response(200, json={"data": []})
+        assert request.method == "GET" and request.url.path == "/custom/v1/key"
+        assert request.headers["authorization"] == "Bearer fixture-key"
+        assert request.headers["x-routing-key"] == "fixture-routing"
+        return httpx2.Response(status, json={"data": {"label": "private-account-details"}})
+
+    selected = definition("openrouter")
+    provider = selected.bind(
+        {"base_url": "https://gateway.example/custom/v1/"},
+        {"api_key": "fixture-key"},
+        extra_headers={"x-routing-key": "fixture-routing"},
+    )
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        if status == 200:
+            await selected.probe(provider, http_client=client, endpoint_policy=_AllowEndpoints())
+        else:
+            with pytest.raises(ProviderOperationError, match=r"^Provider connection probe failed$"):
+                await selected.probe(provider, http_client=client, endpoint_policy=_AllowEndpoints())
+    assert len(requests) == 1
+    assert str(requests[0].url) == "https://gateway.example/custom/v1/key"
 
 
 @pytest.mark.anyio

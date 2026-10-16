@@ -46,7 +46,9 @@ API 密钥设置多一个可跳过的 **Shell review model** 步骤。选择推�
 - **Full Control：** 命令使用宿主机账户的文件系统和网络权限运行，不需要 Envd 运行时。
 - **Sandbox：** 保存前，向导会检查本地隔离的前置条件。失败不会降级到 Full Control。Windows 内置执行仅支持 Full Control。
 
-选择后即保存配置，不会额外确认。选择前请阅读[执行权限](environments-and-projects.md#execution-permissions)。
+TUI 中选择后即保存配置，不会额外确认。WebUI 的 Workspace 步骤会自动校验当前选择。选择 Sandbox 后，会按需下载 envd、校验可执行文件并检查隔离能力；执行选项旁和页脚都会显示进度与失败状态。可以取消准备或重试失败的检查。Full Control 使用 Direct 时不需要下载。就绪后点击 **Save and start chatting**；查看生成文件是可选操作。保存只会打开空会话，不会发送模型请求。
+
+选择前请阅读[执行权限](environments-and-projects.md#execution-permissions)。
 
 TUI 使用启动目录作为工作目录；首次提示时，会为该目录选择或创建单根 Project。设置不要求 Project 文件，也不会创建默认的 `project-local` 资源。
 

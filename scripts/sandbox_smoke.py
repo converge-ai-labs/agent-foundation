@@ -76,6 +76,62 @@ def check_desktop(image: str) -> None:
         assert docker("wait", name) == "1"
     finally:
         docker("rm", "-f", name)
+    check_desktop_access(image)
+
+
+def check_desktop_access(image: str) -> None:
+    """Check opt-in endpoint supervision without dependencies on the build host."""
+    name = f"a13n-access-smoke-{uuid.uuid4().hex}"
+    probe = textwrap.dedent("""\
+        import base64, json, pathlib, subprocess, time
+        root = '/run/a13n-desktop-access'
+        deadline = time.monotonic() + 30
+        while not pathlib.Path(root, 'control.sock').exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Desktop access endpoint did not start')
+            time.sleep(.1)
+        assert pathlib.Path(root).stat().st_mode & 0o777 == 0o700
+        assert subprocess.run(['runuser', '-u', 'sandbox', '--', 'test', '-r', root + '/control.sock']).returncode != 0
+        def call(request):
+            request['protocol_version'] = 1
+            encoded = base64.b64encode(json.dumps(request).encode()).decode()
+            result = subprocess.run(['python3', '-I', '/opt/a13n-desktop-access.py', 'call',
+                                     '--root', root, '--request', encoded], capture_output=True, timeout=25)
+            assert result.returncode == 0, 'Desktop access administration failed'
+            body = json.loads(result.stdout)
+            assert 'error' not in body, 'Desktop access operation failed'
+            return body['result']
+        generation = call({'operation': 'describe'})['generation']
+        grant = {'id': 'grant_smoke', 'generation': generation, 'epoch': 1}
+        assert call(dict(grant, operation='grant', mode='control', ttl_seconds=30))['state'] == 'active'
+        inspected = call(dict(grant, operation='inspect'))
+        assert 'token' not in inspected and 'password' not in inspected
+        assert call(dict(grant, operation='revoke'))['state'] == 'revoked'
+        assert call(dict(grant, operation='grant', mode='control', ttl_seconds=30))['state'] == 'revoked'
+        """)
+    try:
+        docker(
+            "run",
+            "-d",
+            "--name",
+            name,
+            "--network",
+            "none",
+            "-e",
+            "A13N_DESKTOP_ACCESS=true",
+            "-e",
+            "A13N_ENVD_TRANSPORT=http",
+            "-e",
+            "A13N_ENVD_HTTP_BIND=127.0.0.1:8888",
+            "-e",
+            "A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback",
+            image,
+        )
+        docker("exec", name, "python3", "-c", probe)
+        docker("exec", name, "pkill", "-f", "^python3 -I /opt/a13n-desktop-access.py serve ")
+        assert docker("wait", name) == "1"
+    finally:
+        docker("rm", "-f", name)
 
 
 def check_image(image: str, variant: str) -> None:

@@ -46,6 +46,8 @@ Windows 受限 Sandbox 使用实验性的 Microsoft eXecution Container（MXC）
 
 默认运行时视图包含只读的 Windows、Program Files 目录和 Envd 可执行文件，以及私有可写的 HOME/USERPROFILE/TEMP/state。`sandbox.full_disk_read: true` 增加 Codex 风格的可用卷广泛读取权限，写入仍限制在可读写授权目录和 worker 私有状态内。这允许读取账户可访问的宿主配置和磁盘凭据；该策略约束写入，不为宿主文件提供保密边界。Envd 显式拒绝访问自身的启动配置、传输凭据和 broker 运行目录。该选项在 Envd 中默认为 false，Linux/macOS 拒绝启用；Harness UI 在 Windows 上默认启用。请保持授权目录的祖先路径稳定。worker 运行期间，Envd 保留已验证且不共享删除权限的目录句柄。PowerShell 启动使用私有桌面和只读注册表访问，不修改 ACL 或提权。`privilege_gain_blocked` 为 false，不声明 Linux 的 `no_new_privs` 保证。
 
+广泛读取排除映射网络驱动器。每个 worker 在启动时固定卷根目录的读取视图；新挂载的本地卷或新建的卷顶层条目需要新开 Session 才能纳入。已有授权目录保留原有访问规则。
+
 原生运行时兼容性取决于应用对 PSEC 的支持。已在广泛读取模式下验证 PowerShell、Git 和 Python；Node.js 24.21 的 `fs.realpathSync.native` 在 MXC 中可能报 `EPERM`。请在目标宿主机验证实际构建工具。
 
 在安装了 Rust、Python、uv 和 PowerShell 的原生 Windows 机器上，从仓库根目录运行源码验收：

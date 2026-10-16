@@ -155,3 +155,7 @@ Consumers update Python imports and package requirements to the owning distribut
 5. State is portable target data, not authority; execution does not publish management changes.
 6. Unknown effects never authorize automatic replay, target recreation, or assumed completion.
 7. Closing an execution and retiring its target are independent operations.
+
+## Host Operation Admission
+
+An `EnvironmentMount` may provide an `operation_guard(action)` asynchronous context manager. The coordinator enters it after normal mount, permission and readiness checks and keeps it open across native dispatch, failure and cancellation. Hosts can use this hook for durable mutual exclusion with external operators. The hook never broadens the mount permission ceiling and does not run provider I/O while holding Host storage locks. Provider clients opened outside Harness remain outside this boundary. A missing hook preserves standalone Harness behavior.

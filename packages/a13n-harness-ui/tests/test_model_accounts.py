@@ -132,6 +132,9 @@ async def test_codex_reuses_upstream_store_and_projects_no_tokens(tmp_path: Path
     assert projection.availability is Availability.AVAILABLE
     assert projection.expiry is ExpiryStatus.VALID
     assert projection.usable is True
+    assert projection.account_id == "account-1"
+    assert projection.shared_with_cli is True
+    assert projection.expires_at == expires_at
     assert credentials.access_token == secret["access_token"]
     assert secret["access_token"] not in repr(credentials)
     assert secret["refresh_token"] not in repr(credentials)

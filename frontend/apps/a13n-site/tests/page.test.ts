@@ -8,4 +8,6 @@ test("the heading and structured data name the site a13n", () => {
     html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/) ?? [];
   const graph: { name: string }[] = JSON.parse(data ?? "")["@graph"];
   expect(graph.map((node) => node.name)).toEqual(["a13n", "a13n"]);
+  expect(html).toContain('<meta property="og:site_name" content="a13n" />');
+  expect(html).toContain('<meta name="application-name" content="a13n" />');
 });

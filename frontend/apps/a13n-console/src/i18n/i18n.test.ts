@@ -78,7 +78,9 @@ test("literal translation keys exist in the catalogs", () => {
 test("distinguishes Session, Thread and Run in Chinese product labels", async () => {
   await i18n.changeLanguage("zh-CN");
   expect(i18n.t("Session")).toBe("会话");
-  expect(i18n.t("Thread")).toBe("对话");
+  expect(i18n.t("Thread")).toBe("线程");
+  expect(i18n.t("Main thread")).toBe("主线程");
+  expect(i18n.t("Switch thread")).toBe("切换线程");
   expect(i18n.t("Run")).toBe("运行");
   expect(i18n.t("{{count}} runs", { count: 2 })).toBe("2 次运行");
 });

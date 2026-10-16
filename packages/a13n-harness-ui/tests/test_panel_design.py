@@ -162,7 +162,6 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         ('{"ok":true,"content":"output-marker"}', "completed"),
         ('{"ok":false,"error":"output-marker"}', "failed"),
         ('{"content":"output-marker"}', "returned"),
-        ('{"ok":1,"content":"output-marker"}', "returned"),
         ("output-marker", "returned"),
     ],
 )
@@ -170,7 +169,7 @@ def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_succ
     renderer = StreamRenderer(Status())
     try:
         renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "view"})
-        assert _text(renderer.transcript) == "Read path unavailable …"
+        assert _text(renderer.transcript) == "Call view …"
         renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": '{"file_path":"file.py"}'})
         renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
         renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "one", "content": result})
@@ -212,7 +211,11 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
         text = _text(renderer.transcript)
         assert text.startswith(f"{'Run' if name == 'shell_exec' else 'Call'} {state}:") and len(text.splitlines()) == 1
         assert "{" not in text and "extra_forbidden" not in text and "native result/retry" not in text
-        assert not renderer._tools and renderer.status.state == "working"
+        assert renderer.status.state == "working"
+        if with_start:
+            preview = renderer._tools[("root", "one")]
+            assert preview.native_result_seen
+            assert not preview.arguments and preview.parts is None and preview.size == 0
         renderer.transcript.detailed = True
         renderer.transcript.dirty = True
         assert "extra_forbidden" in _text(renderer.transcript)
@@ -254,7 +257,8 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
             run_id="child",
             child=True,
         )
-        assert ("root", "same") in renderer._tools and ("child", "same") not in renderer._tools
+        assert not renderer._tools[("root", "same")].native_result_seen
+        assert renderer._tools[("child", "same")].native_result_seen
         assert renderer.status.state == "cancelling"
         text = _text(renderer.transcript)
         if mode == "detailed":

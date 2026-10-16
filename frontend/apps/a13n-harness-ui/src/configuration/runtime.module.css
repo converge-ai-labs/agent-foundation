@@ -1,0 +1,62 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+  max-width: 680px;
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 0;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.instructions {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.instructions summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.metadata {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.metadata dt {
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+}
+
+.metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .controls {
+    justify-content: flex-start;
+  }
+}

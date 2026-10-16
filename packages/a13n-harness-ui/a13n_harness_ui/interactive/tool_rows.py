@@ -51,8 +51,14 @@ def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) 
         ) else None
     if name in {"glob", "grep"}:
         return f"{'Find' if name == 'glob' else 'Search'} {string('pattern')} in {string('root', '.')}", None
-    if name.startswith("shell"):
+    if name in {"shell_exec", "shell_start", "shell_wait"}:
         return f"Run {string('command', 'command unavailable')}", None
+    if name == "shell_info":
+        return ("Inspect process" if string("process_id") else "List processes"), None
+    if name == "shell_input":
+        return "Send process input", None
+    if name == "shell_signal":
+        return "Signal process" + (f" · {string('signal')}" if string("signal") else ""), None
     raw_paths = value.get("paths")
     if name == "mkdir" and isinstance(raw_paths, list):
         paths = [path for path in raw_paths if isinstance(path, str)]

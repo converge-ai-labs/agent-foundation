@@ -122,7 +122,7 @@ function CredentialField({
           label="Environment variable"
           value={value?.kind === "api_key" ? (value.env ?? "") : ""}
           onChange={(env) => onChange({ kind: "api_key", env })}
-          description="Resolved on the server at runtime, never in this browser."
+          description="Read from the server environment."
         />
       ) : (
         !selected && (
@@ -164,10 +164,7 @@ function CredentialField({
         )
       )}
       <ErrorNotice error={save.error || keys.error} />
-      <small>
-        Credentials are shared by this server. A saved reference is not proof of
-        model access.
-      </small>
+      <small>API keys are shared by everyone on this server.</small>
     </fieldset>
   );
 }
@@ -273,6 +270,22 @@ function LoadedModelEditor({
       ),
     enabled: !!selected && !!effectiveId,
   });
+  const presets = options.data?.presets ?? [];
+  const presetKeys = [
+    ...new Set(presets.flatMap((preset) => Object.keys(preset.settings))),
+  ];
+  const selectedPreset = presets.find((preset) =>
+    presetKeys.every(
+      (key) =>
+        JSON.stringify(value?.settings?.[key]) ===
+        JSON.stringify(preset.settings[key]),
+    ),
+  );
+  const contextBudget = value?.model_characteristics?.context_window_tokens;
+  const contextChoices = options.data?.context_choices ?? [];
+  const affinityHeader = String(
+    value?.model_configuration?.session_affinity_header ?? "",
+  );
   const matches =
     !!value &&
     connectionId(value, choices.connections ?? []) === connection &&
@@ -415,6 +428,7 @@ function LoadedModelEditor({
           })) ?? []
         }
         onValueChange={(id) => {
+          if (id === connection) return;
           const next = choices.connections!.find((item) => item.id === id)!;
           setConnection(id);
           setModelId(next.default_model);
@@ -482,7 +496,7 @@ function LoadedModelEditor({
         label="Model ID"
         value={effectiveId}
         onChange={setModelId}
-        description="Enter a custom ID if needed. Listed models do not guarantee account access."
+        description="Choose a suggestion or enter a model ID."
       />
       {api && (catalog.isPending || catalog.error) && (
         <small role="status">
@@ -518,7 +532,7 @@ function LoadedModelEditor({
       )}
       {matches && value && (
         <>
-          <p role="status">{value.route} · Access not tested</p>
+          <p role="status">{value.route}</p>
           {!api && !accountReady && (
             <p>
               You can save this Model now. Connect its account before running
@@ -527,12 +541,14 @@ function LoadedModelEditor({
           )}
           <ChoiceField
             label="Settings preset"
-            value=""
+            value={selectedPreset?.value ?? ""}
             options={[
-              { value: "", label: "Keep current settings" },
-              ...(options.data?.presets ?? []).map((item) => ({
+              ...(!selectedPreset
+                ? [{ value: "", label: "Custom settings" }]
+                : []),
+              ...presets.map((item, index) => ({
                 value: item.value,
-                label: item.label,
+                label: `${item.label}${index === 0 ? " (default)" : ""}`,
               })),
             ]}
             onValueChange={(preset) => {
@@ -618,22 +634,30 @@ function LoadedModelEditor({
           {!!options.data?.context_choices?.length && (
             <ChoiceField
               label="Context preset"
-              value=""
+              value={contextBudget == null ? "" : String(contextBudget)}
               options={[
-                { value: "", label: "Keep current budget" },
-                ...options.data.context_choices.map((choice) => ({
+                { value: "", label: "Native default" },
+                ...(contextBudget != null &&
+                !contextChoices.some((choice) => choice.value === contextBudget)
+                  ? [
+                      {
+                        value: String(contextBudget),
+                        label: `Custom · ${contextBudget.toLocaleString()} tokens`,
+                      },
+                    ]
+                  : []),
+                ...contextChoices.map((choice) => ({
                   value: String(choice.value),
                   label: `${choice.label} · ${choice.value.toLocaleString()} tokens`,
                 })),
               ]}
               onValueChange={(context) => {
-                if (context)
-                  update({
-                    model_characteristics: {
-                      ...value.model_characteristics,
-                      context_window_tokens: Number(context),
-                    },
-                  });
+                update({
+                  model_characteristics: {
+                    ...value.model_characteristics,
+                    context_window_tokens: context ? Number(context) : null,
+                  },
+                });
               }}
             />
           )}
@@ -662,22 +686,30 @@ function LoadedModelEditor({
             {selected?.supports_session_affinity && (
               <ChoiceField
                 label="Gateway session affinity"
-                value=""
+                value={affinityHeader}
                 options={[
-                  { value: "", label: "Keep current header" },
+                  { value: "", label: "None" },
+                  ...(affinityHeader &&
+                  !choices.session_affinity_presets?.some(
+                    (preset) => preset.header === affinityHeader,
+                  )
+                    ? [
+                        {
+                          value: affinityHeader,
+                          label: `Custom · ${affinityHeader}`,
+                        },
+                      ]
+                    : []),
                   ...(choices.session_affinity_presets ?? []).map((preset) => ({
                     value: preset.header,
                     label: preset.label,
                   })),
                 ]}
                 onValueChange={(header) => {
-                  if (header)
-                    update({
-                      model_configuration: {
-                        ...value.model_configuration,
-                        session_affinity_header: header,
-                      },
-                    });
+                  const config = { ...value.model_configuration };
+                  if (header) config.session_affinity_header = header;
+                  else delete config.session_affinity_header;
+                  update({ model_configuration: config });
                 }}
               />
             )}

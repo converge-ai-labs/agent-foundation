@@ -290,6 +290,9 @@ impl Config {
             merge_config(&mut value, overlay);
         }
         apply_environment(&mut value)?;
+        if connection.is_some() && value.get("monitoring").is_none() {
+            value["monitoring"] = serde_json::json!({});
+        }
         let mut file: FileConfig = serde_json::from_value(value)
             .map_err(|error| ConfigError::new(format!("invalid merged configuration: {error}")))?;
         arguments.apply(&mut file)?;
@@ -755,8 +758,8 @@ fn prepare_command_config(
     for root in trusted_roots {
         canonical_roots.push(canonical_directory(&root, "trusted executable root")?);
     }
-    canonical_roots.sort();
-    canonical_roots.dedup();
+    let mut seen = BTreeSet::new();
+    canonical_roots.retain(|root| seen.insert(root.clone()));
 
     let mut profile_ids = BTreeSet::new();
     let mut prepared_profiles = Vec::with_capacity(shell_profiles.len());
@@ -787,8 +790,8 @@ fn prepare_command_config(
         for root in profile.executable_search_roots {
             roots.push(canonical_directory(&root, "shell executable search root")?);
         }
-        roots.sort();
-        roots.dedup();
+        let mut seen = BTreeSet::new();
+        roots.retain(|root| seen.insert(root.clone()));
         if roots.is_empty() {
             return Err(ConfigError::new(
                 "shell profiles require at least one executable search root",
@@ -1381,6 +1384,35 @@ mod tests {
         assert!(file.execution.identity().unwrap().is_none());
         assert!(super::FileConfig::default().execution.allow_sudo().unwrap());
         assert!(!super::FileConfig::default().full_control.unwrap_or(false));
+    }
+
+    #[test]
+    fn configured_search_roots_preserve_precedence_and_remove_duplicates() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("a13n-envd-search-roots-{unique}"));
+        let first = directory.join("z-first");
+        let second = directory.join("a-second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let roots = vec![first.clone(), second.clone(), first.clone()];
+        let mut profile = super::full_control_commands()
+            .unwrap()
+            .shell_profiles
+            .remove(0);
+        profile.executable_search_roots = roots.clone();
+        let commands = super::prepare_command_config(roots, vec![profile])
+            .unwrap()
+            .unwrap();
+        let expected = vec![
+            first.canonicalize().unwrap(),
+            second.canonicalize().unwrap(),
+        ];
+        assert_eq!(commands.trusted_executable_roots, expected);
+        assert_eq!(commands.shell_profiles[0].executable_search_roots, expected);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

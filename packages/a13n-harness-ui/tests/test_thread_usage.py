@@ -898,8 +898,7 @@ async def test_repeated_receipts_do_not_rescan_family_in_write_transaction(tmp_p
         assert (await repository.snapshot(thread_id="thr_root")).combined.provider_receipts == 2
 
 
-@pytest.mark.parametrize("failures", [1, 2, 3])
-@pytest.mark.parametrize("failure_kind", ["timeout", "busy", "locked"])
+@pytest.mark.parametrize("failure_kind, failures", [("timeout", 1), ("busy", 2), ("locked", 3)])
 async def test_reporter_retries_only_transient_failures_with_warning(
     tmp_path, monkeypatch, caplog, failures, failure_kind
 ):

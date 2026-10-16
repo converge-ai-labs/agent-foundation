@@ -293,10 +293,15 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
 
     import a13n_harness.models.codex as runtime
     import httpx2
+    import yaml
     from pydantic_ai.models.openai import OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
     path = await _seed(tmp_path, monkeypatch)
+    agent_path = path.parent / "agents" / "codex.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"].append({"capability": "native_image_generation", "configuration": {}})
+    agent_path.write_text(yaml.safe_dump(agent))
     image = BytesIO()
     Image.new("RGB", (2, 2), "green").save(image, format="PNG")
     encoded = base64.b64encode(image.getvalue()).decode()

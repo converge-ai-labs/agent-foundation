@@ -404,6 +404,7 @@ def _commit(root: Path, path: str, subject: str) -> str:
         ("a13n-envd", "packages/a13n-envd-client/api.py"),
         ("a13n-envd", "scripts/install-a13n-envd.ps1"),
         ("a13n-envd", "deploy/docker/images/sandbox/Dockerfile"),
+        ("a13n-envd", "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py"),
     ],
 )
 def test_collects_actual_component_paths_not_title_scopes(git_repository, component, path):

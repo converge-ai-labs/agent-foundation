@@ -322,11 +322,30 @@ class McpConfiguration(ConfigurationModel):
         return values
 
 
+class EnvdConfiguration(StrictModel):
+    """Host-owned local runtime configuration, captured when the App starts."""
+
+    executable: str | None = Field(default=None, min_length=1, max_length=4096)
+    computer_use: bool = False
+
+    @field_validator("executable")
+    @classmethod
+    def _executable_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            from pathlib import Path
+
+            path = Path(value).expanduser()
+            if "\x00" in value or not path.is_absolute() or path.name not in {"a13n-envd", "a13n-envd.exe"}:
+                raise ValueError("envd executable must be an absolute path to a13n-envd or a13n-envd.exe")
+        return value
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
     schema_version: Literal["1"] = "1"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
+    envd: EnvdConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     input: InputConfiguration = Field(default_factory=InputConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)

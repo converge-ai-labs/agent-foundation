@@ -130,6 +130,24 @@ async fn eof(peer: Peer) {
 }
 
 #[tokio::test]
+async fn standalone_daemon_keeps_monitoring_opt_in() {
+    for config in [json!({}), json!({"monitoring":null})] {
+        let fixture = Fixture::new();
+        let mut command = fixture.command(Value::Null);
+        command.env("A13N_ENVD_CONFIG_JSON", config.to_string());
+        let mut peer = Peer::start(command).await;
+        let described = peer.call("device.describe", json!({})).await;
+        assert!(
+            !described["descriptor"]["available_methods"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("device.metrics"))
+        );
+        eof(peer).await;
+    }
+}
+
+#[tokio::test]
 async fn selected_cgroup_is_separate_from_system_and_missing_fields_recover() {
     let fixture = Fixture::new();
     let cgroup = fixture.root.join("cgroup");

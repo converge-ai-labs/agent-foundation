@@ -499,7 +499,7 @@ def _iter_json(value: JsonValue, *, redact: bool) -> Iterator[bytes]:
                 yield b","
             yield from _iter_json_string(key)
             yield b":"
-            if redact and is_sensitive_key(key):
+            if redact and is_sensitive_key(key, value=item):
                 yield b'"[REDACTED]"'
             else:
                 yield from _iter_json(item, redact=redact)

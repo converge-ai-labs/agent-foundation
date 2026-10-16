@@ -15,39 +15,11 @@ from fastmcp.tools import ToolResult
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
+from . import mcp_apps_server
+
 pytestmark = pytest.mark.anyio
 
-_SERVER = """
-import asyncio
-import os
-from fastmcp import FastMCP, Context
-from fastmcp.tools import ToolResult
-from mcp.types import TextContent
-server = FastMCP("Apps fixture")
-count = 0
-@server.tool(meta={"ui": {"resourceUri": "ui://counter/app.html"}})
-async def counter(ctx: Context, delay: float = 0) -> ToolResult:
-    global count
-    await asyncio.sleep(delay)
-    count += 1
-    return ToolResult(
-        content=[TextContent(type="text", text=f"count={count}")],
-        structured_content={"count": count, "pid": os.getpid(), "capabilities": ctx.session.client_capabilities.model_dump(mode="json", by_alias=True, exclude_none=True)},
-        meta={"private": "not-for-the-model"},
-    )
-@server.tool(meta={"ui": {"visibility": ["app"]}})
-def reset() -> str:
-    global count
-    count = 0
-    return "reset"
-@server.resource("ui://counter/app.html", mime_type="text/html;profile=mcp-app")
-def app() -> str:
-    return "<!doctype html><p>Counter</p>"
-@server.resource("data://counter/{name}")
-def item(name: str) -> str:
-    return f"item={name};count={count}"
-server.run(transport="stdio", show_banner=False)
-"""
+_SERVER = Path(mcp_apps_server.__file__).read_text()
 
 
 def _server(tmp_path: Path) -> StdioTransport:

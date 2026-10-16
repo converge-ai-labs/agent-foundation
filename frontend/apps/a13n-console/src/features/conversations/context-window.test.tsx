@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createClient } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import { ContextWindow, contextFigures } from "./context-window";
+import {
+  ContextWindow,
+  contextFigures,
+  formatContextTokens,
+} from "./context-window";
 
 let value: Schema["ContextUsage"] | null;
 let status = 200;
@@ -47,31 +51,22 @@ const receipt = {
   output_tokens: 2000,
   context_window_tokens: 200000,
 };
-function show(compact = true) {
+function show() {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <QueryClientProvider client={cache}>
-      <ContextWindow scope={{ thread_id: "thread" }} compact={compact} />
+      <ContextWindow scope={{ thread_id: "thread" }} />
     </QueryClientProvider>,
   );
 }
-it("shows last-call occupancy and opens details by keyboard without submitting", async () => {
+it("shows last-call occupancy for the requested scope", async () => {
   value = receipt;
   show();
-  const trigger = await screen.findByRole("button", {
-    name: "Context window: 21%",
-  });
+  expect(await screen.findByText("42k / 200k tokens used")).toBeTruthy();
+  expect(screen.getByText("21% used (79% left)")).toBeTruthy();
   expect(scopes).toEqual(["?thread_id=thread"]);
-  trigger.focus();
-  await userEvent.keyboard("{Enter}");
-  expect(await screen.findByText("79% remaining")).toBeTruthy();
-  expect(screen.getByText("42k / 200k tokens")).toBeTruthy();
-  expect(screen.getByText("Last call")).toBeTruthy();
-  expect(screen.getByText("Configured limit")).toBeTruthy();
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 it("preserves unknown usage and unknown capacity separately", async () => {
   expect(contextFigures(null)).toEqual({
@@ -85,7 +80,7 @@ it("preserves unknown usage and unknown capacity separately", async () => {
     percent: null,
   });
   value = { ...receipt, context_window_tokens: null };
-  show(false);
+  show();
   expect(
     await screen.findByText("Context window size is unknown."),
   ).toBeTruthy();
@@ -99,9 +94,18 @@ it("keeps over-capacity counts visible rather than hiding them at 100 percent", 
 it("offers retry when context usage cannot be read", async () => {
   value = receipt;
   status = 500;
-  show(false);
+  show();
   expect(await screen.findByText("Usage unavailable")).toBeTruthy();
   status = 200;
   await userEvent.click(screen.getByRole("button", { name: "Reload" }));
-  expect(await screen.findByText("42k / 200k tokens")).toBeTruthy();
+  expect(await screen.findByText("42k / 200k tokens used")).toBeTruthy();
+});
+
+it("uses k as the minimum context unit and m for millions", () => {
+  expect(formatContextTokens(191)).toBe("0.2k");
+  expect(formatContextTokens(900)).toBe("0.9k");
+  expect(formatContextTokens(318400)).toBe("318.4k");
+  expect(formatContextTokens(1200000)).toBe("1.2m");
+  expect(formatContextTokens(0)).toBe("0k");
+  expect(formatContextTokens(null)).toBe("—");
 });

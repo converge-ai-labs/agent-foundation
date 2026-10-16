@@ -9,14 +9,16 @@ import stat
 import subprocess
 import tarfile
 import zipfile
+from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
-from typing import IO
+from typing import IO, Literal
 from uuid import uuid4
 
 import httpx2
 from a13n_harness.http import outbound_tls_verify
-from anyio import Lock, open_file, to_thread
+from anyio import CancelScope, Lock, open_file, to_thread
+from pydantic import BaseModel, ConfigDict
 
 from a13n_harness_ui.errors import RuntimeResolutionError
 from a13n_harness_ui.settings import EnvdRuntimeSettings
@@ -28,6 +30,23 @@ _VERSION_RECOVERY = (
 )
 _RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v"
 _DOWNLOAD_CHUNK_BYTES = 256 * 1024
+
+
+class EnvdRuntimeStatus(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: str
+    source: Literal["managed", "custom"]
+    required_version: str | None = None
+    verified_version: str | None = None
+    cached_versions: tuple[str, ...] = ()
+    executable: str | None = None
+    installed: bool = False
+    running_devices: int = 0
+    phase: Literal["idle", "checking", "downloading", "verifying"] = "idle"
+    downloaded_bytes: int = 0
+    total_bytes: int | None = None
+    error: str | None = None
 
 
 class ManagedEnvdRuntime:
@@ -48,11 +67,66 @@ class ManagedEnvdRuntime:
         self._version = None if version is None else _validate_version(version)
         self._lock = Lock()
         self._selected: Path | None = None
+        self._phase: Literal["idle", "checking", "downloading", "verifying"] = "idle"
+        self._downloaded_bytes = 0
+        self._total_bytes: int | None = None
+        self._error: str | None = None
 
-    async def resolve(self) -> Path:
+    async def status(self) -> EnvdRuntimeStatus:
+        """Inspect files and metadata only; never execute, download or launch envd."""
+        version = None
+        path = self._settings.executable
+        error = self._error
+        cached_versions: tuple[str, ...] = ()
+        try:
+            version = self._version or await to_thread.run_sync(load_envd_version)
+            if path is None and version != "0.0.0":
+                target = current_envd_target()
+                cached_versions = await to_thread.run_sync(_cached_versions, self._cache_root, target)
+                path = (
+                    self._cache_root
+                    / version
+                    / target
+                    / ("a13n-envd.exe" if target.endswith("windows-msvc") else "a13n-envd")
+                )
+            elif path is None:
+                error = "Source build: choose a locally built envd executable in advanced settings."
+        except RuntimeResolutionError as exc:
+            error = str(exc)
+        return EnvdRuntimeStatus(
+            host=platform.node(),
+            source="custom" if self._settings.executable else "managed",
+            required_version=version,
+            verified_version=version if self._selected is not None else None,
+            cached_versions=cached_versions,
+            executable=None if path is None else str(path),
+            installed=path is not None and await to_thread.run_sync(path.is_file),
+            phase=self._phase,
+            downloaded_bytes=self._downloaded_bytes,
+            total_bytes=self._total_bytes,
+            error=error,
+        )
+
+    def _progress(self, downloaded: int, total: int | None) -> None:
+        self._downloaded_bytes, self._total_bytes = downloaded, total
+
+    async def resolve(self, *, reinstall: bool = False) -> Path:
+        async with self._lock:
+            self._error = None
+            self._phase = "checking"
+            self._progress(0, None)
+            try:
+                return await self._resolve(reinstall=reinstall)
+            except Exception as exc:
+                self._error = str(exc)
+                raise
+            finally:
+                self._phase = "idle"
+
+    async def _resolve(self, *, reinstall: bool = False) -> Path:
         """Return the selected current-target executable without PATH discovery."""
 
-        if self._selected is not None:
+        if self._selected is not None and not reinstall:
             return self._selected
         if self._version is None:
             self._version = await to_thread.run_sync(load_envd_version)
@@ -68,54 +142,72 @@ class ManagedEnvdRuntime:
         extension = "zip" if windows else "tar.gz"
         archive = f"a13n-envd-{self._version}-{target}.{extension}"
         destination = self._cache_root / self._version / target / executable
-        async with self._lock:
-            if self._selected is not None:
-                return self._selected
-            if await to_thread.run_sync(
-                _matches_version, destination, self._version, self._settings.command_timeout_seconds
-            ):
-                self._selected = destination
-                return destination
-
-            await to_thread.run_sync(_prepare_private_directories, self._cache_root, self._staging_root)
-            archive_path = self._staging_root / f"{archive}.{uuid4().hex}.download"
-            candidate_path = self._staging_root / f"{executable}.{uuid4().hex}.candidate"
-            try:
-                await _download_archive(
-                    url=f"{_RELEASE_URL}{self._version}/{archive}",
-                    destination=archive_path,
-                    timeout_seconds=self._settings.download_timeout_seconds,
-                    max_bytes=self._settings.max_archive_bytes,
-                )
-                await to_thread.run_sync(
-                    _extract_executable,
-                    archive_path,
-                    candidate_path,
-                    executable,
-                    self._settings.max_archive_bytes,
-                )
-                if not await to_thread.run_sync(
-                    _matches_version, candidate_path, self._version, self._settings.command_timeout_seconds
-                ):
-                    raise RuntimeResolutionError(
-                        "The acquired a13n-envd executable does not report the selected version.",
-                        code="local_eip_runtime_invalid",
-                        details={"target": target, "release": self._version},
-                    )
-                await to_thread.run_sync(_publish_executable, candidate_path, destination)
-            except RuntimeResolutionError:
-                raise
-            except Exception as exc:
-                raise RuntimeResolutionError(
-                    "The package-selected a13n-envd runtime could not be acquired.",
-                    code="local_eip_runtime_acquisition_failed",
-                    details={"target": target, "release": self._version},
-                ) from exc
-            finally:
-                await to_thread.run_sync(_remove_if_present, archive_path)
-                await to_thread.run_sync(_remove_if_present, candidate_path)
+        if not reinstall and await to_thread.run_sync(
+            _matches_version, destination, self._version, self._settings.command_timeout_seconds
+        ):
             self._selected = destination
             return destination
+
+        await to_thread.run_sync(_prepare_private_directories, self._cache_root, self._staging_root)
+        archive_path = self._staging_root / f"{archive}.{uuid4().hex}.download"
+        candidate_path = self._staging_root / f"{executable}.{uuid4().hex}.candidate"
+        try:
+            self._phase = "downloading"
+            await _download_archive(
+                url=f"{_RELEASE_URL}{self._version}/{archive}",
+                destination=archive_path,
+                timeout_seconds=self._settings.download_timeout_seconds,
+                max_bytes=self._settings.max_archive_bytes,
+                progress=self._progress,
+            )
+            self._phase = "verifying"
+            await to_thread.run_sync(
+                _extract_executable,
+                archive_path,
+                candidate_path,
+                executable,
+                self._settings.max_archive_bytes,
+            )
+            if not await to_thread.run_sync(
+                _matches_version, candidate_path, self._version, self._settings.command_timeout_seconds
+            ):
+                raise RuntimeResolutionError(
+                    "The acquired a13n-envd executable does not report the selected version.",
+                    code="local_eip_runtime_invalid",
+                    details={"target": target, "release": self._version},
+                )
+            await to_thread.run_sync(_publish_executable, candidate_path, destination)
+        except RuntimeResolutionError:
+            raise
+        except Exception as exc:
+            raise RuntimeResolutionError(
+                "The package-selected a13n-envd runtime could not be acquired.",
+                code="local_eip_runtime_acquisition_failed",
+                details={"target": target, "release": self._version},
+            ) from exc
+        finally:
+            with CancelScope(shield=True):
+                await to_thread.run_sync(_remove_if_present, archive_path)
+                await to_thread.run_sync(_remove_if_present, candidate_path)
+        self._selected = destination
+        return destination
+
+
+def _cached_versions(cache_root: Path, target: str) -> tuple[str, ...]:
+    """List target-specific cached releases without executing any binary."""
+    executable = "a13n-envd.exe" if target.endswith("windows-msvc") else "a13n-envd"
+    try:
+        releases = tuple(cache_root.iterdir())
+    except FileNotFoundError:
+        return ()
+    return tuple(
+        sorted(
+            release.name
+            for release in releases
+            if re.fullmatch(rf"{_RELEASE_VERSION_PATTERN}(?:-rc\.[1-9][0-9]*)?", release.name)
+            and (release / target / executable).is_file()
+        )
+    )
 
 
 def _validate_version(version: str) -> str:
@@ -178,7 +270,14 @@ def current_envd_target() -> str:
     return f"{architecture}-{operating_system}"
 
 
-async def _download_archive(*, url: str, destination: Path, timeout_seconds: float, max_bytes: int) -> None:
+async def _download_archive(
+    *,
+    url: str,
+    destination: Path,
+    timeout_seconds: float,
+    max_bytes: int,
+    progress: Callable[[int, int | None], None] | None = None,
+) -> None:
     size = 0
     try:
         async with httpx2.AsyncClient(
@@ -204,6 +303,8 @@ async def _download_archive(*, url: str, destination: Path, timeout_seconds: flo
                                 code="local_eip_runtime_limit",
                             )
                         await output.write(chunk)
+                        if progress is not None:
+                            progress(size, None if content_length is None else int(content_length))
     except RuntimeResolutionError:
         raise
     except (httpx2.HTTPError, OSError, ValueError) as exc:

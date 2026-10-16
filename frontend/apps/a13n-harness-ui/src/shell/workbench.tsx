@@ -9,7 +9,6 @@ import {
   Routes,
   useLocation,
   useMatch,
-  useNavigate,
 } from "react-router";
 import {
   Button,
@@ -42,7 +41,8 @@ import { SourcesPage, SourcePage } from "../configuration/sources";
 import {
   SettingsLayout,
   GeneralSettings,
-  CapabilitiesPage,
+  ConnectionsPage,
+  AgentsPage,
   EnvironmentsPage,
 } from "../configuration/settings";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
@@ -155,18 +155,14 @@ function WorkbenchContent({
     location.pathname === "/memory" ||
     !!selectedThread.data?.thread.memory_scope;
   const memoryEnabled = !!status.app?.memory_organization?.memory_enabled;
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (
-      location.pathname === "/" &&
-      !location.search &&
-      setup.data?.fresh &&
-      setup.data.draft_scope &&
-      !wizardDismissed(setup.data.draft_scope)
-    ) {
-      navigate("/setup", { replace: true });
-    }
-  }, [setup.data, location.pathname, location.search, navigate]);
+  // Decide first-use routing before mounting the conversation, whose own
+  // effect normalizes the empty root URL to a draft route.
+  const firstUseEntry = location.pathname === "/" && !location.search;
+  const enterSetup =
+    firstUseEntry &&
+    setup.data?.fresh &&
+    setup.data.draft_scope &&
+    !wizardDismissed(setup.data.draft_scope);
   useEffect(() => {
     setMenu(false);
   }, [location.key]);
@@ -438,10 +434,16 @@ function WorkbenchContent({
               <Route
                 path="/"
                 element={
-                  <NewConversationPage
-                    profile={profile}
-                    unauthorized={unauthorized}
-                  />
+                  firstUseEntry && setup.isPending ? (
+                    <p role="status">Checking setup…</p>
+                  ) : enterSetup ? (
+                    <Navigate to="/setup" replace />
+                  ) : (
+                    <NewConversationPage
+                      profile={profile}
+                      unauthorized={unauthorized}
+                    />
+                  )
                 }
               />
               <Route
@@ -470,37 +472,40 @@ function WorkbenchContent({
                 <Route path="/settings" element={<GeneralSettings />} />
                 <Route
                   path="/settings/notifications"
-                  element={<NotificationSettings />}
+                  element={<Navigate to="/settings#notifications" replace />}
                 />
                 <Route path="/settings/models" element={<ModelsPage />} />
-                <Route
-                  path="/settings/agents"
-                  element={<SourcesPage kinds={["agent"]} title="Agents" />}
-                />
+                <Route path="/settings/agents" element={<AgentsPage />} />
                 <Route
                   path="/settings/capabilities"
-                  element={<CapabilitiesPage />}
+                  element={<Navigate to="/settings/agents" replace />}
                 />
                 <Route
                   path="/settings/environments"
                   element={<EnvironmentsPage />}
                 />
                 <Route
-                  path="/settings/connections"
+                  path="/settings/runtime"
                   element={
-                    <SourcesPage
-                      kinds={["mcp_server"]}
-                      title="MCP connections"
-                      description="Connect tools and data sources, then choose which agents can use them."
-                    />
+                    <Navigate to="/settings/environments?tab=runtime" replace />
                   }
+                />
+                <Route
+                  path="/settings/envd"
+                  element={
+                    <Navigate to="/settings/environments?tab=runtime" replace />
+                  }
+                />
+                <Route
+                  path="/settings/connections"
+                  element={<ConnectionsPage />}
                 />
                 <Route path="/settings/resources" element={<SourcesPage />} />
                 <Route path="/settings/source" element={<SourcePage />} />
                 <Route path="/settings/accounts" element={<AccountsPage />} />
                 <Route
                   path="/settings/catalog"
-                  element={<Navigate to="/settings/capabilities" replace />}
+                  element={<Navigate to="/settings/agents" replace />}
                 />
               </Route>
               <Route

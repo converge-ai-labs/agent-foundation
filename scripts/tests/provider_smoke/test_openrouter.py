@@ -29,8 +29,8 @@ def smoke(monkeypatch):
         calls.append(request)
         assert request.headers["authorization"] == "Bearer dummy-key"
         if request.method == "GET":
-            assert request.url.path == "/api/v1/models"
-            return httpx2.Response(200, json={"data": [{"id": "vendor/model", "name": "Example"}]})
+            assert request.url.path == "/api/v1/key"
+            return httpx2.Response(200, json={"data": {"label": "fixture-key"}})
         assert request.url.path == "/api/v1/chat/completions"
         body = json.loads(request.content)
         assert body["model"] == args.model

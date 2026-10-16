@@ -451,6 +451,58 @@ def environment_list_command(ctx: click.Context, output_format: str) -> None:
     _execute(_request(ctx, command="environment", action="list", output_format=OutputFormat(output_format)))
 
 
+@environment_group.command("status")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_status_command(ctx: click.Context, output_format: str) -> None:
+    """Inspect envd installation without downloads or desktop permission requests."""
+    _execute(_request(ctx, command="environment", action="status", output_format=OutputFormat(output_format)))
+
+
+@environment_group.command("check")
+@click.option(
+    "--profile",
+    "environment_profile_id",
+    type=click.Choice(("environment-native", "environment-envd", "environment-desktop", "environment-sandbox")),
+    default="environment-envd",
+)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_check_command(ctx: click.Context, environment_profile_id: str, output_format: str) -> None:
+    """Download if needed and check readiness; desktop profile requests Host permissions."""
+    _execute(
+        _request(
+            ctx,
+            command="environment",
+            action="check",
+            environment_profile_id=environment_profile_id,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@environment_group.command("configure")
+@click.option(
+    "--profile",
+    "environment_profile_id",
+    required=True,
+    type=click.Choice(("environment-native", "environment-envd", "environment-desktop", "environment-sandbox")),
+)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_configure_command(ctx: click.Context, environment_profile_id: str, output_format: str) -> None:
+    """Check and save the new-conversation default. Existing Threads stay unchanged."""
+    _execute(
+        _request(
+            ctx,
+            command="environment",
+            action="configure",
+            environment_profile_id=environment_profile_id,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
 @cli.command("doctor")
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context

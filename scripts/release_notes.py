@@ -61,6 +61,7 @@ COMPONENT_PATHS = {
         "Cargo.toml",
         "Cargo.lock",
         "deploy/docker/images/sandbox",
+        "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "scripts/install-a13n-envd.sh",
         "scripts/install-a13n-envd.ps1",
     ),

@@ -1,3 +1,4 @@
+import { SettingsRow, Switch } from "a13n-ui";
 import type { Schema } from "../transport/client";
 
 export function LiveOptIn({
@@ -11,20 +12,15 @@ export function LiveOptIn({
 }) {
   if (model?.authentication.kind !== "codex_subscription") return null;
   return (
-    <div>
-      <label>
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(event) => onChange(event.target.checked)}
-        />{" "}
-        Enable Live voice with this Codex Model
-      </label>
-      <p>
-        Uses your Codex subscription for voice and task execution. Your
-        microphone stays off until you start Live. Existing Live settings remain
-        unchanged.
-      </p>
-    </div>
+    <SettingsRow
+      label="Live voice"
+      description="Use your Codex subscription. Start Live to turn on the microphone."
+    >
+      <Switch
+        aria-label="Enable Live voice"
+        checked={enabled}
+        onCheckedChange={onChange}
+      />
+    </SettingsRow>
   );
 }

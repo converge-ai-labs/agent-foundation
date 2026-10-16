@@ -30,7 +30,7 @@ def _wizard(provider="codex", model="gpt-5.6-sol"):
 
 @pytest.mark.parametrize(
     "provider,model,expected",
-    [("codex", "gpt-5.6-sol", {"web_search", "image_generation"}), ("grok", "grok-4.6", {"web_search"})],
+    [("codex", "gpt-5.6-sol", {"web_search"}), ("grok", "grok-4.6", {"web_search"})],
 )
 def test_subscription_multiselect_defaults_and_explicit_clear(provider, model, expected):
     wizard = _wizard(provider, model)
@@ -168,9 +168,9 @@ async def test_landing_keyboard_toggle_and_clear_preserve_empty_selection():
         async with LandingScreen() as screen:
             task = asyncio.create_task(screen.ask(wizard.question, wizard.selection_prompt()))
             await asyncio.sleep(0)
-            # Clear both checked choices, then confirm. Space must toggle,
-            # not enter a blank answer that re-applies the recommended defaults.
-            pipe.send_text(" \x1b[B \r")
+            # Clear recommended search, toggle optional image generation on/off,
+            # then confirm. Space must not re-apply the recommended defaults.
+            pipe.send_text(" \x1b[B  \r")
             assert await asyncio.wait_for(task, 2) == "none"
 
 

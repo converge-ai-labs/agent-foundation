@@ -9,7 +9,7 @@ import ipaddress
 import json
 import os
 import secrets
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -50,8 +50,10 @@ from a13n_harness_ui.configuration.views import (
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
+from a13n_harness_ui.envd_runtime import EnvdStatus
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_monitoring import MonitoringCatalog, MonitoringDetail
+from a13n_harness_ui.environment_profiles import LocalProfileId
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.extensions import CatalogReference
 from a13n_harness_ui.host_file_transfers import (
@@ -264,9 +266,17 @@ class SetupApplyRequest(SurfaceModel):
     selection: SetupSelection
 
 
+class StartEnvdRequest(SurfaceModel):
+    computer_use: bool = False
+
+
+class StopEnvdRequest(SurfaceModel):
+    confirm: Literal[True]
+
+
 class PreflightRequest(SurfaceModel):
-    profile_id: Literal["environment-native", "environment-sandbox"]
-    project_path: str = Field(min_length=1, max_length=4096)
+    profile_id: LocalProfileId
+    project_path: str | None = Field(default=None, min_length=1, max_length=4096)
 
 
 class FocusSnapshotFrame(SurfaceModel):
@@ -1206,11 +1216,43 @@ def create_webui(
         document = await _document(request, SetupApplyRequest)
         return await app().apply_setup(document.selection)
 
+    @server.get("/api/envd", response_model=EnvdStatus)
+    async def envd_runtime_status() -> EnvdStatus:
+        return await app().envd_runtime_status()
+
+    @server.post("/api/envd/start", response_model=EnvironmentReadiness, openapi_extra=_body(StartEnvdRequest))
+    async def start_envd(request: Request) -> EnvironmentReadiness:
+        document = await _document(request, StartEnvdRequest)
+        return await readiness_while_connected(request, lambda: app().start_envd(computer_use=document.computer_use))
+
+    @server.post("/api/envd/restart", response_model=EnvironmentReadiness, openapi_extra=_body(StopEnvdRequest))
+    async def restart_envd(request: Request) -> EnvironmentReadiness:
+        await _document(request, StopEnvdRequest)
+        return await readiness_while_connected(request, lambda: app().restart_envd())
+
+    @server.post("/api/envd/reinstall", response_model=EnvironmentReadiness, openapi_extra=_body(StopEnvdRequest))
+    async def reinstall_envd(request: Request) -> EnvironmentReadiness:
+        await _document(request, StopEnvdRequest)
+        return await readiness_while_connected(request, lambda: app().restart_envd(reinstall=True))
+
+    @server.post("/api/envd/stop", status_code=204, openapi_extra=_body(StopEnvdRequest))
+    async def stop_envd(request: Request) -> Response:
+        await _document(request, StopEnvdRequest)
+        await app().stop_envd()
+        return Response(status_code=204)
+
     @server.post(
         "/api/environments/preflight", response_model=EnvironmentReadiness, openapi_extra=_body(PreflightRequest)
     )
     async def preflight(request: Request) -> EnvironmentReadiness:
         document = await _document(request, PreflightRequest)
+        return await readiness_while_connected(
+            request, lambda: app().preflight_environment(document.profile_id, project_path=document.project_path)
+        )
+
+    async def readiness_while_connected(
+        request: Request, operation: Callable[[], Awaitable[EnvironmentReadiness]]
+    ) -> EnvironmentReadiness:
         readiness: EnvironmentReadiness | None = None
         async with create_task_group() as tasks:
 
@@ -1222,7 +1264,7 @@ def create_webui(
                         return
 
             tasks.start_soon(disconnected)
-            readiness = await app().preflight_environment(document.profile_id, project_path=document.project_path)
+            readiness = await operation()
             tasks.cancel_scope.cancel()
         if readiness is None:
             raise HarnessUiError("Environment preflight was cancelled.", code="preflight_cancelled")
@@ -1911,6 +1953,8 @@ def create_webui(
             "settings/agents",
             "settings/capabilities",
             "settings/environments",
+            "settings/envd",
+            "settings/runtime",
             "settings/connections",
             "archived",
             "memory",

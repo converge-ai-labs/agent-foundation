@@ -53,5 +53,5 @@ async def test_windows_selector_keeps_both_explicit_modes(tmp_path: Path) -> Non
     backend.thread_id = "thread-existing"
     backend.environment = "environment-sandbox"
     choices = await backend.choices("environment")
-    assert {choice.value for choice in choices} == {"full-control", "sandbox"}
+    assert [choice.value for choice in choices] == ["full-control", "envd", "desktop", "sandbox"]
     assert backend.environment == "environment-sandbox"

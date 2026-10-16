@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from itertools import count
 
 from a13n_logging import get_logger
@@ -11,6 +12,7 @@ from a13n_logging import get_logger
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import (
     ENVIRONMENT_ACTION_DISPATCH,
+    EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -35,8 +37,10 @@ class _MountExecution:
         source: EnvironmentSource,
         scope: EnvironmentScope,
         observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None,
+        operation_guard: Callable[[EnvironmentAction], AbstractAsyncContextManager[None]] | None = None,
     ) -> None:
         self._source, self._scope, self._observer = source, scope, observer
+        self._operation_guard = operation_guard
         descriptor = source.descriptor
         if not isinstance(descriptor, EnvironmentDescriptor):
             raise EnvironmentError("Source returned an invalid descriptor.", code="environment_request_invalid")
@@ -87,6 +91,14 @@ class _MountExecution:
                 self._observer(event, self._scope, error)
             except Exception:
                 get_logger(__name__).exception("Environment lifecycle observation failed")
+
+    @asynccontextmanager
+    async def admit(self, action: EnvironmentAction) -> AsyncIterator[None]:
+        if self._operation_guard is None:
+            yield
+        else:
+            async with self._operation_guard(action):
+                yield
 
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if self._closed:

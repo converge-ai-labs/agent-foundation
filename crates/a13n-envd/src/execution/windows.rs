@@ -212,7 +212,10 @@ pub(crate) fn full_disk_read_roots() -> io::Result<Vec<PathBuf>> {
     use mxc_sdk::mxc_common::filesystem_object::{
         ExistingObjectComparison, compare_existing_filesystem_objects,
     };
-    use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
+    use windows_sys::Win32::{
+        Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives},
+        System::WindowsProgramming::DRIVE_REMOTE,
+    };
     let drives = unsafe { GetLogicalDrives() };
     if drives == 0 {
         return Err(io::Error::last_os_error());
@@ -224,6 +227,12 @@ pub(crate) fn full_disk_read_roots() -> io::Result<Vec<PathBuf>> {
         }
         let letter = char::from(b'A' + index as u8);
         let root = PathBuf::from(format!(r"{letter}:\"));
+        let wide: Vec<u16> = format!("{letter}:\\\0").encode_utf16().collect();
+        // A mapped SMB drive can block directory enumeration for minutes while
+        // disconnected. Broad disk reads do not implicitly grant network shares.
+        if unsafe { GetDriveTypeW(wide.as_ptr()) } == DRIVE_REMOTE {
+            continue;
+        }
         let entries = match std::fs::read_dir(&root) {
             Ok(entries) => entries,
             // Logical drives include disconnected and empty removable volumes.

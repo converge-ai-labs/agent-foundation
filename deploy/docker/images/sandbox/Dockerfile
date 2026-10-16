@@ -58,9 +58,10 @@ ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint"]
 
 FROM standard-runtime AS desktop-runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb openbox xauth x11-utils x11-xkb-utils \
+    && apt-get install -y --no-install-recommends xvfb openbox xauth x11-utils x11-xkb-utils x11vnc websockify \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 deploy/docker/images/sandbox/desktop.py /usr/local/bin/a13n-sandbox-desktop
+COPY --chmod=0755 packages/a13n-service/a13n_service/providers/environment/desktop_guest.py /opt/a13n-desktop-access.py
 ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint", "a13n-sandbox-desktop"]
 
 # All variants use identical daemon bytes, identity and working-directory defaults.

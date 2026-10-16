@@ -373,6 +373,159 @@ it.each(["inherit", "off", "on"])(
   },
 );
 
+it.each(["writer", "runner", "forbidden", "pinned", "unavailable"])(
+  "starts an existing builtin agent from Try agent as %s",
+  async (scenario) => {
+    allowed =
+      scenario === "runner" ? ["read", "run"] : ["read", "run", "write"];
+    const posts: string[] = [];
+    const submissions: { body: unknown; key: string | null }[] = [];
+    let releasePreparation!: () => void;
+    const preparation = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    let threadAttempts = 0;
+    client = createClient({
+      baseUrl: "https://service.example",
+      auth: { type: "session", csrfToken: "csrf" },
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (request.method === "POST") {
+          posts.push(path);
+          if (path.endsWith("/agent-composer")) {
+            await preparation;
+            if (scenario === "forbidden" || scenario === "unavailable")
+              return Response.json(
+                { error: { code: scenario, message: "Preparation failed" } },
+                { status: scenario === "forbidden" ? 403 : 503 },
+              );
+            return Response.json({
+              id: "agt_builtin",
+              default_revision_id: "apr_new",
+            });
+          }
+          if (path.endsWith("/sessions"))
+            return Response.json({ id: "ses_1" }, { status: 201 });
+          if (path.endsWith("/threads")) {
+            submissions.push({
+              body: await request.json(),
+              key: request.headers.get("Idempotency-Key"),
+            });
+            if (scenario === "writer" && threadAttempts++ === 0)
+              return Response.json(
+                {
+                  error: {
+                    code: "unavailable",
+                    message: "Retry the submission",
+                  },
+                },
+                { status: 503 },
+              );
+            return Response.json(
+              {
+                thread: fixtureThread(),
+                entry: {},
+                run: fixtureRun({ id: "run_1" }),
+              },
+              { status: 201 },
+            );
+          }
+          throw new Error(`Unexpected POST ${path}`);
+        }
+        if (path.endsWith("/media-understanding-defaults"))
+          return Response.json({
+            id: "workspace",
+            version: 0,
+            image: null,
+            video: null,
+            audio: null,
+          });
+        return Response.json({
+          items: path.endsWith("/agents")
+            ? [
+                {
+                  id: "agt_builtin",
+                  name: "Agent Composer",
+                  source: "builtin",
+                  preset_kind: "composer",
+                  default_revision_id: "apr_old",
+                  image_url: null,
+                },
+              ]
+            : [],
+          next_cursor: null,
+        });
+      },
+    });
+    const cache = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={["/sessions/new?agent=agt_builtin"]}>
+          <Routes>
+            <Route path="/sessions/new" element={<NewConversation />} />
+            <Route path="*" element={<SelectedDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Agent Composer");
+    if (scenario === "pinned") {
+      await user.click(screen.getByRole("button", { name: "Options" }));
+      await user.click(screen.getByRole("button", { name: "Advanced" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "Pinned agent revision ID" }),
+        "apr_old",
+      );
+      await user.click(screen.getByRole("button", { name: "Apply" }));
+    }
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Configure a provider",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    const shouldPrepare = scenario !== "runner" && scenario !== "pinned";
+    if (shouldPrepare) {
+      await waitFor(() => expect(posts).toEqual(["/api/v1/agent-composer"]));
+      releasePreparation();
+    }
+    if (scenario === "unavailable") {
+      await screen.findByText("Preparation failed");
+      expect(posts).toEqual(["/api/v1/agent-composer"]);
+      expect(submissions).toEqual([]);
+    } else {
+      if (scenario === "writer") {
+        await screen.findByText("Retry the submission");
+        await user.click(screen.getByRole("button", { name: "Send" }));
+      }
+      await screen.findByText(
+        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
+      );
+      expect(posts).toEqual([
+        ...(shouldPrepare ? ["/api/v1/agent-composer"] : []),
+        "/api/v1/sessions",
+        "/api/v1/threads",
+        ...(scenario === "writer" ? ["/api/v1/threads"] : []),
+      ]);
+      expect(submissions[0]!.body).toMatchObject({ agent_id: "agt_builtin" });
+      if (scenario === "pinned")
+        expect(submissions[0]!.body).toHaveProperty(
+          "agent_revision_id",
+          "apr_old",
+        );
+      else expect(submissions[0]!.body).not.toHaveProperty("agent_revision_id");
+      if (scenario === "writer") expect(submissions[1]).toEqual(submissions[0]);
+    }
+    cache.clear();
+  },
+);
+
 it("prefills the first message from the link, leaving sending to the user", async () => {
   allowed = ["run"];
   const posts: string[] = [];

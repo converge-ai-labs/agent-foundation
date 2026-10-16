@@ -11,7 +11,7 @@ Read only the references needed for the current task:
 
 - [Agents](references/agents.md): read before answering whether an Agent can be changed or proposing configuration changes; covers editing restrictions, full configuration revisions and selected resources.
 - [Models](references/models.md): model keys, filtered catalog price lookup, filling model configuration, and shared settings.
-- [Providers](references/providers.md): private credential cards, provider configuration and safe retries.
+- [Providers](references/providers.md): private credential cards, provider configuration, connection tests and safe retries.
 - [Connections](references/connections.md): tools, tests and authorization.
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.
 - [Environment templates](references/environment-templates.md): recipes and instance boundaries.

@@ -21,6 +21,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .mcp_support import call, client, rpc
+from .test_providers import models_endpoint
 
 pytestmark = pytest.mark.anyio
 
@@ -127,6 +128,40 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
         assert event.details["execution_origin"]["run_id"] == lease.run_id
         assert event.details["execution_origin"]["attempt_id"] == lease.attempt_id
         assert event.details["execution_origin"]["request_id"]
+
+
+async def test_run_provider_test_discovery_and_group_scope(service, scripted_model, runs_kit):
+    lease, _, _ = await lease_for(service, scripted_model, runs_kit)
+    token = await issue(service.runtime, lease, frozenset({"providers"}))
+    paths = service.app.openapi()["paths"]
+    async with client(service, {"secret": token}) as http:
+        discovered = (await rpc(http, "tools/list")).json()["result"]["tools"]
+        tools = {tool["name"]: tool for tool in discovered}
+        for kind in ("model", "environment", "connector", "web"):
+            operation = paths[f"/api/v1/{kind}-providers/{{provider_id}}/test"]["post"]
+            tool = tools[tool_name(operation["operationId"])]
+            assert tool["_meta"]["x-a13n-platform"] == {"group": "providers", "effect": "write"}
+            assert tool["annotations"]["readOnlyHint"] is False
+            assert set(tool["inputSchema"]["properties"]) == {"provider_id"}
+            assert tool["inputSchema"]["required"] == ["provider_id"]
+        memory = paths["/api/v1/memory-providers/{provider_id}/test"]["post"]
+        assert tool_name(memory["operationId"]) not in tools
+        rejected = await rpc(
+            http, "tools/call", name=tool_name(memory["operationId"]), arguments={"provider_id": "mp_hidden"}
+        )
+        assert rejected.json()["result"]["isError"]
+        assert (await http.post("/api/v1/memory-providers/mp_hidden/test")).status_code == 403
+
+    token = await issue(service.runtime, lease, frozenset({"models"}))
+    operation = paths["/api/v1/model-providers/{provider_id}/test"]["post"]
+    async with client(service, {"secret": token}) as http:
+        discovered = (await rpc(http, "tools/list")).json()["result"]["tools"]
+        assert tool_name(operation["operationId"]) not in {tool["name"] for tool in discovered}
+        rejected = await rpc(
+            http, "tools/call", name=tool_name(operation["operationId"]), arguments={"provider_id": "mp_hidden"}
+        )
+        assert rejected.json()["result"]["isError"]
+        assert (await http.post("/api/v1/model-providers/mp_hidden/test")).status_code == 403
 
 
 @pytest.mark.parametrize("change", ["cancel", "expire", "revoke", "tamper", "disable", "archive"])
@@ -350,6 +385,72 @@ async def test_native_platform_read_and_write_review_survive_resume(service, scr
         assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
         changed = (await service.client.get(f"/api/v1/agents/{agent['id']}")).json()
         assert changed["description"] == "Reviewed change"
+
+
+async def test_provider_probe_waits_for_review_and_returns_saved_credential_status(
+    service, scripted_model, runs_kit, listen
+):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, platform_tools={"groups": ["providers"]})
+    with models_endpoint() as (base_url, requests, received):
+        created = await service.client.post(
+            "/api/v1/model-providers",
+            json={
+                "type": "openrouter",
+                "name": "Probe target",
+                "config": {"base_url": base_url},
+                "credential": {"api_key": "good"},
+            },
+        )
+        assert created.status_code == 201, created.text
+        provider = created.json()
+        path = "/api/v1/model-providers/{provider_id}"
+        schema = service.app.openapi()["paths"]
+        read_name = tool_name(schema[path]["get"]["operationId"])
+        test_name = tool_name(schema[path + "/test"]["post"]["operationId"])
+        scripted_model.call(read_name, {"provider_id": provider["id"]}, call_id="read")
+        scripted_model.call(test_name, {"provider_id": provider["id"]}, call_id="probe")
+        async with listen(service.app) as url:
+            settings = service.runtime.settings
+            runtime = replace(
+                service.runtime,
+                settings=settings.model_copy(
+                    update={"server": settings.server.model_copy(update={"control_url": url})}
+                ),
+            )
+            submitted = await runs_kit.start_thread(service, agent, "Test the saved provider")
+            await (await runs_kit.attempt(service, runtime=runtime))
+            run = await runs_kit.get_run(service, submitted["run"]["id"])
+            assert run["status"] == "waiting", run
+            assert requests == []
+            scripted_model.say("Connection verified")
+            resumed = await service.client.post(
+                f"/api/v1/runs/{run['id']}/resume",
+                json={"approvals": {"probe": {"action": "approve"}}, "calls": {}},
+                headers=runs_kit.fresh_key(),
+            )
+            assert resumed.status_code == 201, resumed.text
+            await (await runs_kit.attempt(service, runtime=runtime))
+            assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
+        assert requests == ["/v1/key"]
+        assert received[0]["authorization"] == "Bearer good"
+        current = await service.client.get(f"/api/v1/model-providers/{provider['id']}")
+        assert current.json() == provider
+
+    model_requests = [await scripted_model.request() for _ in range(3)]
+    results = {
+        message["tool_call_id"]: json.loads(message["content"])
+        for message in model_requests[-1]["messages"]
+        if message["role"] == "tool"
+    }
+    assert results["read"]["body"]["credential_configured"] is True
+    assert "credential" not in results["read"]["body"]
+    assert results["probe"]["body"] == {
+        "provider_id": provider["id"],
+        "provider_version": provider["version"],
+        "status": "succeeded",
+        "message": None,
+    }
 
 
 async def test_inline_child_reads_builtin_skill_without_parent_skill_or_user_environment(

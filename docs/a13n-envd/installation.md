@@ -72,7 +72,7 @@ PATH opt-in updates only the current user's configuration: Bash `.bashrc` (`.bas
 
 The installers support x86_64 and ARM64 on Linux, macOS, and Windows. They verify the selected archive against the release's `SHA256SUMS` **before extraction**, stage the executable on the destination filesystem, and atomically install or replace it. Download, checksum, archive, or replacement failures leave an existing executable unchanged. SHA256 verifies the archive against the manifest delivered by GitHub; it is not a separate signature or trust source.
 
-Re-run the script with another exact version to replace the binary.
+Re-run the script with another exact version to replace the binary, then restart Envd through the same command or service. The installer does not restart running daemons. On macOS, computer use may require renewed Screen Recording and Accessibility authorization after replacement, even if the existing entries still appear enabled. Follow [Restore macOS permissions after an upgrade](computer-use.md#restore-macos-permissions-after-an-upgrade) if Envd reports missing permissions.
 
 ## Run the sandbox image
 

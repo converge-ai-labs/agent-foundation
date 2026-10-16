@@ -16,6 +16,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.runs.desktop_assistance.admission import admit_mounts
 from a13n_service.runs.environments.lifecycle import require_usable_state, reserve
 from a13n_service.runs.environments.schemas import (
     DEFAULT_MOUNT_PERMISSIONS,
@@ -174,13 +175,16 @@ async def reserve_primary(
     await session.flush()
 
 
-async def freeze_mounts(session: AsyncSession, thread: ThreadRow, *, principal_id: str) -> list[dict]:
+async def freeze_mounts(
+    session: AsyncSession, thread: ThreadRow, *, principal_id: str, resume_run_id: str | None = None
+) -> list[dict]:
     """The mount set a new run uses: the thread's desired mounts, each usable by the run's principal. The caller
     holds the thread lock; environments lock in ID order."""
     mounts = await desired_mounts(session, thread.id)
-    await lock_environments(
+    environments = await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
+    await admit_mounts(session, environments, resume_run_id=resume_run_id)
     return [
         EnvironmentMount(
             name=mount.name,

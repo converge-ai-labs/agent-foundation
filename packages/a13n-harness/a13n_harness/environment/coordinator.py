@@ -1147,7 +1147,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         entered.provider.availability,
                         frozenset({family}),
                     )
-                    yield entered
+                    async with entered.provider.admit(action):
+                        yield entered
             except TimeoutError as exc:
                 raise EnvironmentError(
                     "Environment operation timed out.",
@@ -1612,7 +1613,7 @@ async def _mount_scope(
     requested: _MountRequest,
     scope: EnvironmentScope,
 ) -> AsyncGenerator[_MountExecution]:
-    provider = _MountExecution(requested.mount.source, scope, requested.mount.observer)
+    provider = _MountExecution(requested.mount.source, scope, requested.mount.observer, requested.mount.operation_guard)
     try:
         yield provider
     finally:

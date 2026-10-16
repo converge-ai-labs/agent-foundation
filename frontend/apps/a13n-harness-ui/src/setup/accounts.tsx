@@ -238,16 +238,24 @@ export function ProviderAccount({
                 : ready
                   ? "Account available · refreshes on first use"
                   : "Not connected"}
-            {!inline &&
-              account.data?.availability === "available" &&
+            {account.data?.availability === "available" &&
               ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
           </p>
           {account.data?.account_id && (
             <p>
-              {account.data.account_id} ·{" "}
+              Account: {account.data.account_id} ·{" "}
               {account.data.shared_with_cli
-                ? "Shared Copilot CLI file"
+                ? `Shared with ${label} CLI`
                 : "Host account"}
+            </p>
+          )}
+          {account.data?.expires_at && (
+            <p className={accountStyles.help}>
+              Session expires{" "}
+              {new Date(account.data.expires_at).toLocaleString()}
+              {account.data.required_action === "refresh"
+                ? " · refreshes on first use"
+                : ""}
             </p>
           )}
           {account.data?.message && <p role="status">{account.data.message}</p>}
@@ -332,6 +340,7 @@ export function ProviderAccount({
               )}
             <div className={styles.actions}>
               <Button
+                variant={ready ? "outline" : "default"}
                 loading={start.isPending}
                 disabled={
                   !!activeLogin.data?.session_id || !loginMethods.length
@@ -344,7 +353,7 @@ export function ProviderAccount({
                 Refresh status
               </Button>
               {account.data?.availability === "available" && (
-                <Button variant="outline" onClick={() => setLogoutOpen(true)}>
+                <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
                   Log out account
                 </Button>
               )}
@@ -477,8 +486,7 @@ export function ProviderAccount({
         </section>
       )}
       <p className={accountStyles.help}>
-        Shared by everyone on this server. Connecting does not verify model
-        access.
+        This account is shared by everyone on this server.
       </p>
       <ModalFrame
         open={switchOpen}

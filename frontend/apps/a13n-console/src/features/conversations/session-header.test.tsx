@@ -112,6 +112,14 @@ beforeEach(() => {
         });
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
+      if (url.pathname.endsWith("/usage/context"))
+        return Response.json({
+          run_id: "run_2",
+          record_id: "record",
+          input_tokens: 40000,
+          output_tokens: 2000,
+          context_window_tokens: 200000,
+        });
       if (url.pathname.endsWith("/usage")) return Response.json(usage);
       if (url.pathname.endsWith("/models"))
         return Response.json({
@@ -189,7 +197,7 @@ it("identifies the session and switches the level in the URL", async () => {
   expect(screen.getByRole("link", { name: /Release Bot/ })).toBeTruthy();
   // The identifier stays one action away instead of leading the header.
   expect(screen.queryByText("ses_1")).toBeNull();
-  expect(await screen.findByText("Conversation")).toBeTruthy();
+  expect(await screen.findByText("Thread")).toBeTruthy();
   expect(screen.queryByText("Debug session · 2 runs")).toBeNull();
   // The header reports the followed run's state; stopping belongs to the dock.
   expect(await screen.findByText("state.running")).toBeTruthy();
@@ -282,8 +290,11 @@ it("shows the session's spend and breaks it down by model and by run", async () 
     await screen.findByRole("button", { name: "Session usage: $0.30" }),
   );
   const dialog = await screen.findByRole("dialog", { name: "Session usage" });
+  expect(await within(dialog).findByText("42k / 200k")).toBeTruthy();
+  expect(within(dialog).getByText("21%")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Context window:/ })).toBeNull();
   // Cached input is part of input, so the rate is weighted by input.
-  expect(within(dialog).getAllByText("75.0%")).toHaveLength(1);
+  expect(within(dialog).getByText("3k cached · 75.0% cache hit")).toBeTruthy();
   // The workspace's model decides the logo; an unknown key gets the generic mark.
   const models = within(dialog).getByRole("table", { name: "Usage by model" });
   await waitFor(() =>
@@ -310,6 +321,6 @@ it("shows the session's spend and breaks it down by model and by run", async () 
 
 it("keeps usage out of Chat", async () => {
   show([fixtureThread()], "/sessions/ses_1/threads/thr_1/runs/run_2?view=chat");
-  expect(await screen.findByText("Conversation")).toBeTruthy();
+  expect(await screen.findByText("Thread")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Session usage/ })).toBeNull();
 });

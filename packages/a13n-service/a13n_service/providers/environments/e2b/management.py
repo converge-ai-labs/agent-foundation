@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import shlex
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
@@ -18,6 +19,7 @@ from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_er
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
 
 from a13n_service.providers.environment._backend import ManagementBackend
+from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
 
 if TYPE_CHECKING:
     from e2b import AsyncSandbox
@@ -150,6 +152,30 @@ class E2BManagement(E2BReference, ManagementBackend):
             await desktop.describe()
         finally:
             await desktop.close()
+
+    async def desktop_access(self, request: Request) -> Reply:
+        if not self._configuration.desktop or self._state is None:
+            raise self._unsupported()
+        target = await self._inspect()
+        if target is None or target.state.value != "running":
+            raise provider_error("desktop_target_unavailable", Category.CONFLICT)
+        sandbox = await open_sandbox(target.sandbox_id, self._options(), self._validate_target)
+        try:
+            # A compatible template owns this endpoint. Never start/repair a desktop while granting access.
+            result = await sandbox.commands.run(
+                shlex.join(command(request)),
+                user="root",
+                timeout=25,
+                request_timeout=30,
+            )
+            reply = decode(PROVIDER_KEY, request, result.stdout)
+            if isinstance(reply, Description) and self._configuration.desktop_assistance:
+                return reply.model_copy(
+                    update={"websocket_url": "wss://" + sandbox.get_host(reply.port) + "/websockify"}
+                )
+            return reply
+        finally:
+            await close_sandbox(sandbox)
 
     async def inspect(self) -> Literal["running", "stopped", "absent"]:
         target = await self._inspect()

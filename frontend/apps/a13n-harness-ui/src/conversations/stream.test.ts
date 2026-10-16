@@ -1854,3 +1854,71 @@ it("continues active snapshot text and tool arguments without duplicate blocks a
   ]);
   expect(display.gap).toBe(false);
 });
+
+it.each([false, true])(
+  "preserves tool arguments and process identity across dual results (native first: %s)",
+  (nativeFirst) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    const result = {
+      ok: true,
+      process_id: "process-one",
+      status: { phase: "running" },
+    };
+    const native = {
+      type: "CUSTOM",
+      name: "a13n.pydantic_ai.function_tool_result",
+      value: {
+        event: {
+          part: {
+            tool_call_id: "call",
+            tool_name: "shell_exec",
+            part_kind: "tool-return",
+            outcome: "success",
+            content: result,
+          },
+        },
+      },
+    };
+    const protocol = {
+      type: "TOOL_CALL_RESULT",
+      toolCallId: "call",
+      content: JSON.stringify(result),
+    };
+    const events = [
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "call",
+        toolCallName: "shell_exec",
+      },
+      {
+        type: "TOOL_CALL_ARGS",
+        toolCallId: "call",
+        delta: '{"command":"server"}',
+      },
+      { type: "TOOL_CALL_END", toolCallId: "call" },
+      ...(nativeFirst ? [native, protocol] : [protocol, native]),
+    ];
+    events.forEach((payload, index) =>
+      display.accept(
+        rawFrame(
+          101 + index,
+          index + 1,
+          payload,
+          "tool-item",
+          "tool_call",
+          index >= 3 ? "completed" : "in_progress",
+        ),
+      ),
+    );
+    expect(display.blocks.size).toBe(1);
+    expect(display.blocks.get("tool-item")).toMatchObject({
+      name: "shell_exec",
+      text: '{"command":"server"}',
+    });
+    expect(display.processes.background).toMatchObject([
+      { command: "server", processId: "process-one", phase: "running" },
+    ]);
+  },
+);

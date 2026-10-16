@@ -20,6 +20,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import { AgentAvatar } from "../agents/avatar";
+import { prepareConversationAgent } from "../agents/prepare";
 import { createManagedEnvironment } from "../environments/api";
 import {
   CONSOLE_SESSION_LABELS,
@@ -73,6 +74,7 @@ export function NewConversation() {
   // What the first submission created before its Thread: a retry reuses it,
   // so it replays that submission instead of leaving another one behind.
   const prepared = useRef<{
+    agentId?: string;
     session?: Schema["SessionView"];
     environment?: Schema["EnvironmentView"];
   }>({});
@@ -190,13 +192,35 @@ export function NewConversation() {
           }
           disabled={
             !can("run") ||
-            !agentId ||
+            !selected ||
             (memory !== null && !validSpaceSelection(memory))
           }
           agentName={selected?.name}
           options={<RunOptions options={options} showAgent={false} />}
           submit={async (payload) => {
             const { environment, ...choice } = options.build();
+            if (!selected) return;
+            if (
+              !choice.agent_revision_id &&
+              prepared.current.agentId !== agentId
+            ) {
+              if (
+                await prepareConversationAgent(
+                  client,
+                  workspace.id,
+                  selected,
+                  can("write"),
+                )
+              ) {
+                void cache.invalidateQueries({
+                  queryKey: ["agents", workspace.id],
+                });
+                void cache.invalidateQueries({
+                  queryKey: ["agent-picker", workspace.id],
+                });
+              }
+              prepared.current.agentId = agentId;
+            }
             const body = {
               ...choice,
               agent_id: agentId,
@@ -278,8 +302,8 @@ export function SessionLayout() {
                 <Loading variant="list" rows={3} />
               ) : threads.data?.length ? (
                 <div className="grid gap-3 p-6">
-                  <h2>{t("Choose a conversation")}</h2>
-                  <p>{t("Choose which conversation history to open.")}</p>
+                  <h2>{t("Choose a thread")}</h2>
+                  <p>{t("Choose which thread history to open.")}</p>
                   <ul className="grid gap-2">
                     {threads.data.map((thread) => (
                       <li key={thread.id}>
@@ -324,9 +348,7 @@ export function ThreadLayout() {
   if (thread.data && thread.data.session_id !== sessionId)
     return (
       <ErrorNotice
-        error={
-          new Error(t("This thread does not belong to this conversation."))
-        }
+        error={new Error(t("This thread does not belong to this session."))}
       />
     );
   return (

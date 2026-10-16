@@ -6,6 +6,7 @@ not a successful skip. Run the ignored Rust native_mxc_probe test first.
 
 import asyncio
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -32,13 +33,19 @@ from a13n_harness_ui.extensions import environment_adapters
 def test_windows_sandbox_selects_powershell_without_posix_paths(tmp_path, monkeypatch):
     shell = tmp_path / "pwsh.exe"
     shell.touch()
+    system = tmp_path / "windows" / "System32"
+    tools = tmp_path / "tools"
+    system.mkdir(parents=True)
+    tools.mkdir()
+    monkeypatch.setenv("SystemRoot", str(system.parent))
+    monkeypatch.setenv("PATH", os.pathsep.join((str(tools), ".", str(tmp_path / "missing"), str(tools))))
     monkeypatch.setattr(sandbox, "sys", SimpleNamespace(platform="win32"))
-    monkeypatch.setattr(sandbox.shutil, "which", lambda name: str(shell) if name == "pwsh" else None)
+    monkeypatch.setattr(environment_adapters, "_host_shell", lambda: shell)
     runtime = sandbox.create_sandbox_runtime(tmp_path / "envd.exe", roots=(tmp_path,))
     profile = runtime.configuration.shell_profiles[0]
     assert profile.executable == shell
     assert profile.fixed_arguments == ("-NoLogo", "-NoProfile", "-NonInteractive", "-Command")
-    assert runtime.configuration.trusted_executable_roots == (tmp_path,)
+    assert runtime.configuration.trusted_executable_roots == (tmp_path, system, tools)
     assert runtime.configuration.egress.mode == "inherit"
     assert isinstance(runtime.configuration.sandbox, RestrictedSandbox)
     assert runtime.configuration.sandbox.full_disk_read
@@ -49,6 +56,14 @@ def test_windows_sandbox_selects_powershell_without_posix_paths(tmp_path, monkey
     )
     assert isinstance(strict.configuration.sandbox, RestrictedSandbox)
     assert not strict.configuration.sandbox.full_disk_read
+    explicit = sandbox.create_sandbox_runtime(
+        tmp_path / "envd.exe",
+        roots=(tmp_path,),
+        launch=LocalEnvdLaunchConfiguration(
+            sandbox=RestrictedSandbox(mode="restricted", grants=()), trusted_executable_roots=(tools,)
+        ),
+    )
+    assert explicit.configuration.trusted_executable_roots == (tools,)
 
 
 @pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
@@ -79,6 +94,50 @@ async def test_windows_production_preflight(binary, tmp_path):
     project = tmp_path / "project with 'quotes'"
     project.mkdir()
     await sandbox.validate_sandbox_runtime(binary, project)
+
+
+@pytest.mark.anyio
+async def test_windows_sandbox_resolves_host_tools_without_absolute_commands(binary, tmp_path, monkeypatch):
+    assert shutil.which("git.exe"), "Native tool acceptance requires Git on the Host PATH"
+    # Select the real test interpreter ahead of any Windows Store Python alias.
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    owner = sandbox.create_sandbox_runtime(binary, roots=(tmp_path,))
+    connector = LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(working_directory=local_envd_path(tmp_path)),
+        runtime=owner,
+        environment_id="windows-mxc-host-tools",
+    )
+    async with owner:
+        environment = await connector.open()
+        try:
+            processes = environment.operations.processes
+            assert processes is not None
+            started = await processes.start(
+                CommandRequest(
+                    command=ShellCommand(
+                        profile_id="default",
+                        script=(
+                            "$ErrorActionPreference = 'Stop'; "
+                            "cmd.exe /d /c 'echo cmd-ready>cmd.txt'; if ($LASTEXITCODE -ne 0) { exit 40 }; "
+                            "git.exe --version | Out-File -Encoding utf8 git.txt; "
+                            "if ($LASTEXITCODE -ne 0) { exit 41 }; "
+                            "python.exe -I -c \"from pathlib import Path; Path('python.txt').write_text('python-ready')\"; "
+                            "if ($LASTEXITCODE -ne 0) { exit 42 }; exit 0"
+                        ),
+                    ),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
+                )
+            )
+            result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=15)
+            assert result.status.exit_code == 0, repr(result)
+            await processes.release(started.process.handle)
+            assert (tmp_path / "cmd.txt").read_text().strip() == "cmd-ready"
+            assert (tmp_path / "git.txt").read_text(encoding="utf-8-sig").startswith("git version ")
+            assert (tmp_path / "python.txt").read_text() == "python-ready"
+        finally:
+            await environment.close()
 
 
 @pytest.mark.anyio

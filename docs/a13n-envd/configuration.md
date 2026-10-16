@@ -91,7 +91,9 @@ Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD
 
 Linux, macOS and Windows expose basic system information in the Device descriptor returned by EIP `initialize` and `device.describe`: operating system/version, kernel version, native architecture and CPU model when available. Envd's own version is in `initialize.server.version`.
 
-Enable periodic resource sampling with `monitoring` in your daemon configuration:
+`a13n-envd connect` enables CPU and memory sampling every 10 seconds by default, including when reconnecting with a saved Host. Existing installations need an updated Envd binary and a daemon restart to use this default; updating Harness UI alone does not change a running remote daemon.
+
+Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to disable sampling. Other daemon launches remain opt-in. Enable or customize sampling with `monitoring` in your daemon configuration:
 
 ```json
 {
@@ -102,7 +104,7 @@ Enable periodic resource sampling with `monitoring` in your daemon configuration
 }
 ```
 
-Use absolute native paths, such as `C:\\workspace` in Windows JSON. `monitoring: {}` enables CPU and memory sampling with defaults; omitting the object or setting it to `null` disables sampling while preserving system information. The interval accepts 1000–60000 ms. At most 16 filesystem targets are allowed, with 1–64 character names containing ASCII letters, digits, `_` or `-`. Paths cannot contain `..`.
+Use absolute native paths, such as `C:\\workspace` in Windows JSON. `monitoring: {}` enables CPU and memory sampling with defaults. Custom settings follow the usual configuration precedence and are preserved by `connect`. Disabling sampling preserves system information. The interval accepts 1000–60000 ms. At most 16 filesystem targets are allowed, with 1–64 character names containing ASCII letters, digits, `_` or `-`. Paths cannot contain `..`.
 
 Read through your initialized Python Device connection, with no Session required:
 

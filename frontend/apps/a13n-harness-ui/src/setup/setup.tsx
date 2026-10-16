@@ -114,9 +114,17 @@ export function SetupPage() {
             ? "Full Control runs as your Host account; it is not a sandbox."
             : status?.environment_profile}
         </p>
-        <Button variant="outline" render={<Link to="/settings/environments" />}>
-          Review environment readiness
-        </Button>
+        <div className={styles.actions}>
+          <Button variant="outline" render={<Link to="/settings/runtime" />}>
+            Open Runtime
+          </Button>
+          <Button
+            variant="outline"
+            render={<Link to="/settings/environments" />}
+          >
+            Review execution defaults
+          </Button>
+        </div>
       </Panel>
       <Button render={<Link to="/" />}>Open workbench</Button>
     </>

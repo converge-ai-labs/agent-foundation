@@ -72,7 +72,7 @@ $envdVersion = python -c "from importlib.metadata import version; import re; pri
 
 安装程序支持 Linux、macOS 和 Windows 上的 x86_64 与 ARM64。它们在**解压前** 根据该版本的 `SHA256SUMS` 验证归档，将可执行文件暂存到目标文件系统，再以原子方式安装或替换。下载、校验、解压或替换失败都不会改动已有可执行文件。SHA256 将归档与 GitHub 提供的清单核对；它不是独立的签名或信任来源。
 
-使用另一个精确版本重新运行脚本，即可替换二进制文件。
+使用另一个精确版本重新运行脚本，即可替换二进制文件，然后通过原命令或服务重启 Envd。安装程序不会重启正在运行的守护进程。在 macOS 上，即使已有条目仍显示开启，替换后电脑操作也可能需要重新授予屏幕录制和辅助功能权限。如果 Envd 报告缺少权限，请按[升级后恢复 macOS 权限](computer-use.md#restore-macos-permissions-after-an-upgrade)操作。
 
 ## 运行沙箱镜像
 

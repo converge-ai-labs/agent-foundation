@@ -46,6 +46,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         self._completed: asyncio.Future[None] | None = None
         self._closed = False
         self.staged_length = -1
+        self.wait_for_model = False
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
@@ -134,7 +135,9 @@ class Boundaries(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if ctx.run_id == self.primary:
-            await self._stage(ctx, ctx.messages, "model")
+            completed = await self._stage(ctx, ctx.messages, "model")
+            if self.wait_for_model:
+                await asyncio.shield(completed)
         return request_context
 
     async def before_tool_execute(

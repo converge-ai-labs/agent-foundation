@@ -38,6 +38,7 @@ class EnvironmentMount:
     working_directory: str | None = None
     mount_path: str | None = None
     provider_root: str = "/"
+    operation_guard: Callable[[EnvironmentAction], AbstractAsyncContextManager[None]] | None = None
 ```
 
 `EnvironmentSource` is a trusted Host integration boundary owned by Harness, not a Provider or execution connection. Its inert `provider_key` and `environment_id` fix the logical target for routing and continuation matching before activation; the returned connector and execution retain both values. These values do not assert native allocation or readiness. Its inert descriptor declares configured operation support, limits, and the default directory needed for routing and tool composition. Its inert state property returns the current detached Host-selected reference or authoritative `None`. Neither property performs I/O, activates a target, or claims live readiness. Native identity and execution generation remain absent until observed. The logical environment is fixed for this source's lifetime, although the Host may allocate its first native target during activation; a lost target is never silently replaced.
@@ -45,6 +46,8 @@ class EnvironmentMount:
 `ensure_ready()` completes Host-authorized preparation and required state publication, then returns an inert fixed-target connector. The Host implementation may call management and its own persistence in the same process; no Service RPC or database dependency enters Harness. An already prepared source validates current authority and returns its connector. Sources own no Run execution; Harness opens and closes executions. Hosts coordinate shared management across sources and Runs.
 
 Every mount supplies an `EnvironmentSource`, including mounts whose targets are already ready. Harness does not accept a bare `EnvironmentConnector` or automatically wrap one. An already prepared Host implements the same `ensure_ready()` contract and returns its connector. There is no Harness `lazy` switch; the caller decides when to prepare the target and may call its source before Run entry. Harness always uses the same readiness boundary on first use.
+
+`EnvironmentMount.operation_guard` is an optional trusted Host admission hook spanning native dispatch; see [Host operation admission](08a-environment-execution.md#host-operation-admission). It can narrow but never broaden the frozen ceiling.
 
 `EnvironmentMount` contains a source plus Run-local policy, with no independent durable identity, serialization, or Provider discovery behavior. Its `source` implements `ensure_ready()`; there is no `connector=` compatibility input.
 
