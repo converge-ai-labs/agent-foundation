@@ -5,13 +5,14 @@ description: Pick Service, Harness, or Harness UI by where your agents run and w
 
 Agent Foundation supports managed execution through Service, embedded execution through Harness, and interactive work through Harness UI.
 
-| Your goal                              | What you need                                                   | Start here                                                         |
-| -------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Deploy a shared agent platform         | Docker Compose and a model provider account for the local trial | [Service quickstart](../a13n-service/get-started.md)               |
-| Use your team's agents                 | Console URL, an account, and permission to run an agent         | [Use an existing platform](../a13n-service/use-platform.md)        |
-| Call remote agents from an application | Service URL, workspace API key, and a configured agent          | [Connect your application](../a13n-service/connect-application.md) |
-| Run agents inside your Python process  | Python 3.13+ and uv; the first example uses an offline model    | [Harness quickstart](../a13n-harness/getting-started.md)           |
-| Work interactively in a repository     | Harness UI and a supported model subscription or API key        | [Harness UI setup](../a13n-harness-ui/setup.md)                    |
+| Your goal                              | What you need                                                   | Start here                                                          |
+| -------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Deploy a shared agent platform         | Docker Compose and a model provider account for the local trial | [Service quickstart](../a13n-service/get-started.md)                |
+| Use your team's agents                 | Console URL, an account, and permission to run an agent         | [Use an existing platform](../a13n-service/use-platform.md)         |
+| Call remote agents from an application | Service URL, workspace API key, and a configured agent          | [Connect your application](../a13n-service/connect-application.md)  |
+| Deliver agents in a customer's cloud   | Access to the customer's infrastructure and model accounts      | [Forward deployed engineering](../a13n-service/forward-deployed.md) |
+| Run agents inside your Python process  | Python 3.13+ and uv; the first example uses an offline model    | [Harness quickstart](../a13n-harness/getting-started.md)            |
+| Work interactively in a repository     | Harness UI and a supported model subscription or API key        | [Harness UI setup](../a13n-harness-ui/setup.md)                     |
 
 ## Choose where execution lives
 
