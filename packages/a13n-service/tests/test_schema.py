@@ -5,9 +5,11 @@ from sqlalchemy import ForeignKeyConstraint, String
 
 # Join tables are keyed by what they join, usage facts by the Harness's own record IDs, and a memory's store and
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
-# run's display pages by ordinal and pending answers by tool call. Memory organization state is keyed by Space;
+# run's display pages by ordinal and pending answers by tool call. Desktop targets are keyed by native identity
+# so aliases share the same authority. Memory organization state is keyed by Space;
 # every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
+    "desktop_targets",
     "memory_file_revisions",
     "memory_file_stores",
     "memory_record_sources",
@@ -33,6 +35,7 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert [column.name for column in metadata.tables["desktop_targets"].primary_key.columns] == ["key"]
     assert [column.name for column in metadata.tables["memory_space_organizations"].primary_key.columns] == ["space_id"]
     assert [column.name for column in metadata.tables["memory_record_sources"].primary_key.columns] == [
         "memory_id",
