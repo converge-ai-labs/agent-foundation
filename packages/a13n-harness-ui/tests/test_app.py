@@ -1147,6 +1147,7 @@ async def test_application_retains_failed_and_interrupted_history(
         if not interrupted:
             assert operation.outcome is not None
             assert operation.outcome.execution.failure is not None
+            assert operation.outcome.execution.failure.code != "checkpoint_save_failed"
             message = operation.outcome.execution.failure.message
             report = next(tmp_path.glob("a13n-harness-ui-error-*.json"))
             assert str(report) in message
@@ -1563,10 +1564,23 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
 @pytest.mark.parametrize(
     "failed_kind", [ObjectKind.continuation_state, ObjectKind.continuation_display, ObjectKind.continuation]
 )
-async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path, monkeypatch, failed_kind) -> None:
+@pytest.mark.parametrize("error_type", [OSError, PermissionError])
+async def test_checkpoint_save_failure_preserves_prior_selection(
+    tmp_path: Path, monkeypatch, failed_kind, error_type
+) -> None:
     root = _write_configuration(tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    calls = []
+
+    async def model(messages, info):
+        calls.append(messages)
+        yield "root complete"
+
+    def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+        return _reconstructed(model, root_capabilities)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
-        app._root_runs._executor._agents = _CompletedReconstructor()
         thread = await app.create_thread()
         first = await app.submit_thread(thread_id=thread.thread_id, prompt="first")
         assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
@@ -1575,7 +1589,7 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
 
         async def fail_continuation(**kwargs):
             if kwargs["object_kind"] == failed_kind:
-                raise OSError("checkpoint disk unavailable")
+                raise error_type("private checkpoint path")
             return await publish(**kwargs)
 
         monkeypatch.setattr(app._store.objects, "publish_model", fail_continuation)
@@ -1585,6 +1599,16 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         assert failed.outcome is not None
         # The first request checkpoint fails before dispatching the model.
         assert failed.outcome.execution.status == "failed"
+        failure = failed.outcome.execution.failure
+        assert failure is not None
+        assert failure.code == "checkpoint_save_failed"
+        assert failure.retry_hint == "dependency_change"
+        assert "private checkpoint path" not in failure.message
+        assert "Diagnostic report:" in failure.message
+        assert ("Permission denied" in failure.message) is (error_type is PermissionError)
+        report = next(tmp_path.glob("a13n-harness-ui-error-*.json"))
+        assert "private checkpoint path" in report.read_text()
+        assert len(calls) == 1
         assert failed.outcome.continuation.status == "failed"
         retained = await app.get_thread(thread.thread_id)
         assert retained.continuation_id == prior
@@ -1599,6 +1623,50 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
         async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
             assert watch.root_stream is None
+
+
+@pytest.mark.parametrize("failure_origin", ["checkpoint", "model"])
+async def test_checkpoint_failure_is_identified_by_origin_even_when_final_save_succeeds(
+    tmp_path: Path, monkeypatch, failure_origin
+) -> None:
+    root = _write_configuration(tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    error = PermissionError("private affected path")
+    calls = []
+
+    async def model(messages, info):
+        calls.append(messages)
+        if failure_origin == "model":
+            raise error
+        yield "root complete"
+
+    def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+        return _reconstructed(model, root_capabilities)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        publish = app._store.objects.publish_model
+        rejected = False
+
+        async def fail_first_checkpoint(**kwargs):
+            nonlocal rejected
+            if failure_origin == "checkpoint" and kwargs["object_kind"] == ObjectKind.continuation and not rejected:
+                rejected = True
+                raise error
+            return await publish(**kwargs)
+
+        monkeypatch.setattr(app._store.objects, "publish_model", fail_first_checkpoint)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="retain input")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.failed
+        assert operation.outcome.continuation.status == "selected"
+        failure = operation.outcome.execution.failure
+        assert failure.code == ("checkpoint_save_failed" if failure_origin == "checkpoint" else "agent_run_failed")
+        assert "private affected path" not in failure.message
+        assert "Diagnostic report:" in failure.message
+        assert len(calls) == (0 if failure_origin == "checkpoint" else 1)
+        assert (await app.get_thread(thread.thread_id)).continuation_id is not None
 
 
 async def test_focused_watch_cuts_over_before_snapshot_and_summary_stream_invalidates(tmp_path: Path) -> None:

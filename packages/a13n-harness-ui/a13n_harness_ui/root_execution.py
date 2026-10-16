@@ -335,6 +335,7 @@ class RootRunExecutor:
         thread = admission.thread
         thread_id = thread.thread_id
         run_checkpoint: ObjectRef | None = None
+        checkpoint_error: Exception | None = None
         source, published = admission.source, admission.published
         previous_state, deferred_resume = admission.previous_state, admission.deferred_resume
         prompt = admission.prompt
@@ -370,7 +371,7 @@ class RootRunExecutor:
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
-                nonlocal thread, run_checkpoint
+                nonlocal thread, run_checkpoint, checkpoint_error
                 assert stream is not None
                 frozen = display.capture(state.message_history)
                 excerpt = await to_thread.run_sync(lambda: checkpoint_excerpt(thread.excerpt, state.message_history))
@@ -390,6 +391,7 @@ class RootRunExecutor:
                 )
                 if selected.status != "selected" or selected.reference is None:
                     assert selected.error is not None
+                    checkpoint_error = selected.error
                     raise selected.error
                 run_checkpoint = selected.reference
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
@@ -587,6 +589,19 @@ class RootRunExecutor:
                     and stream is not None
                     and stream.diagnostic_error is not None
                 ):
+                    failure = result.failure
+                    # Before-model hooks execute inside the model request boundary.
+                    # Preserve the Host checkpoint failure instead of blaming the model.
+                    if stream.diagnostic_error is checkpoint_error:
+                        message = (
+                            "Permission denied while saving the conversation checkpoint. "
+                            "Check filesystem permissions on the Harness UI data directory; "
+                            "the diagnostic report identifies the affected path."
+                            if isinstance(checkpoint_error, PermissionError)
+                            else "The conversation checkpoint could not be saved. "
+                            "Review the diagnostic report before continuing."
+                        )
+                        failure = failure.model_copy(update={"code": "checkpoint_save_failed", "message": message})
                     feedback = await to_thread.run_sync(
                         partial(
                             exception_feedback,
@@ -597,7 +612,7 @@ class RootRunExecutor:
                         )
                     )
                     result = result.replace(
-                        failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
+                        failure=failure.model_copy(update={"message": f"{failure.message}\n{feedback}"})
                     )
                 finalization_span.set_attribute("a13n.phase.step", "continuation")
                 paused_state = self._restart.saved_state(thread_id) if self._restart is not None else None
