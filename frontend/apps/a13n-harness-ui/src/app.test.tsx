@@ -1502,9 +1502,7 @@ it("shows one connection notice for server loss and reconciles on retry without 
   expect(screen.queryByText("Failed to fetch")).toBeNull();
   expect(screen.queryByText("0 online")).toBeNull();
   expect(
-    await screen.findByRole("heading", {
-      name: "What would you like to build?",
-    }),
+    screen.getByRole("complementary", { name: "Workbench navigation" }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
@@ -1523,6 +1521,11 @@ it("shows one connection notice for server loss and reconciles on retry without 
     ).toBeNull();
     expect(screen.queryAllByRole("alert")).toHaveLength(0);
   });
+  expect(
+    await screen.findByRole("heading", {
+      name: "What would you like to build?",
+    }),
+  ).toBeTruthy();
   expect(
     fetcher.mock.calls.every(
       ([request]) =>

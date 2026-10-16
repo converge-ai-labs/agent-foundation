@@ -253,7 +253,7 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
     screen.getByRole("combobox", { name: "Default working directory" }),
   );
   await user.click(
-    screen.getByRole("option", { name: "My workstation · /work" }),
+    await screen.findByRole("option", { name: "My workstation · /work" }),
   );
   await user.click(screen.getByRole("button", { name: "Add project" }));
   await waitFor(() => expect(created).toHaveBeenCalled());

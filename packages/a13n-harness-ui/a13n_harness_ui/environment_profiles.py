@@ -6,9 +6,10 @@ import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
-from pydantic import JsonValue
+if TYPE_CHECKING:
+    from pydantic import JsonValue
 
 type LocalProfileId = Literal["environment-native", "environment-envd", "environment-desktop", "environment-sandbox"]
 
