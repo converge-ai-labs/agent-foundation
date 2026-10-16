@@ -88,6 +88,7 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
     let mut worker = super::windows::spawn(
         &config.sandbox,
         &config.grant_sources,
+        &config.bootstrap_files,
         super::boundary::Egress::Deny {},
         state,
         super::windows::Target::Directory,

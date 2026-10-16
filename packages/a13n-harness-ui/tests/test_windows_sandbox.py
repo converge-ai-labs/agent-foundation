@@ -6,6 +6,7 @@ not a successful skip. Run the ignored Rust native_mxc_probe test first.
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +15,10 @@ import pytest
 from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox, SandboxGrant
 from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
+from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.files import FileQueryRequest, FileTextSearchRequest
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
@@ -22,6 +26,7 @@ from a13n_harness.providers.environment.local_envd.configuration import (
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness_ui import sandbox
+from a13n_harness_ui.extensions import environment_adapters
 
 
 def test_windows_sandbox_selects_powershell_without_posix_paths(tmp_path, monkeypatch):
@@ -35,6 +40,28 @@ def test_windows_sandbox_selects_powershell_without_posix_paths(tmp_path, monkey
     assert profile.fixed_arguments == ("-NoLogo", "-NoProfile", "-NonInteractive", "-Command")
     assert runtime.configuration.trusted_executable_roots == (tmp_path,)
     assert runtime.configuration.egress.mode == "inherit"
+    assert isinstance(runtime.configuration.sandbox, RestrictedSandbox)
+    assert runtime.configuration.sandbox.full_disk_read
+    strict = sandbox.create_sandbox_runtime(
+        tmp_path / "envd.exe",
+        roots=(tmp_path,),
+        launch=LocalEnvdLaunchConfiguration(sandbox=RestrictedSandbox(mode="restricted", grants=())),
+    )
+    assert isinstance(strict.configuration.sandbox, RestrictedSandbox)
+    assert not strict.configuration.sandbox.full_disk_read
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_profile_broad_read_default_is_windows_only_and_explicit_launch_stays_strict(monkeypatch, platform):
+    monkeypatch.setattr(environment_adapters, "sys", SimpleNamespace(platform=platform))
+    default = environment_adapters.LocalEnvdProfileConfiguration()
+    assert isinstance(default.launch.sandbox, RestrictedSandbox)
+    assert default.launch.sandbox.full_disk_read is (platform == "win32")
+    explicit = environment_adapters.LocalEnvdProfileConfiguration.model_validate(
+        {"launch": {"sandbox": {"mode": "restricted", "grants": []}}}
+    )
+    assert isinstance(explicit.launch.sandbox, RestrictedSandbox)
+    assert not explicit.launch.sandbox.full_disk_read
 
 
 @pytest.fixture
@@ -63,13 +90,17 @@ async def test_windows_grants_commands_cleanup_and_replaced_root(binary, tmp_pat
     secret = private / "secret"
     secret.write_text("not granted")
     monkeypatch.setenv("HOST_ONLY_SECRET", "must-not-be-inherited")
+    allocations = tmp_path / "allocations"
+    allocations.mkdir()
     owner = sandbox.create_sandbox_runtime(
         binary,
         roots=(project,),
+        runtime_parent=allocations,
         protected_roots=(private,),
         launch=LocalEnvdLaunchConfiguration(
             sandbox=RestrictedSandbox(
                 mode="restricted",
+                full_disk_read=True,
                 grants=(
                     SandboxGrant(
                         path=local_envd_path(readonly),
@@ -93,32 +124,49 @@ async def test_windows_grants_commands_cleanup_and_replaced_root(binary, tmp_pat
             files, processes = environment.operations.files, environment.operations.processes
             assert files is not None and processes is not None
             assert (await files.read_text(local_envd_path(readonly / "input"))).text == "readable"
-            for forbidden in (secret, private):
-                with pytest.raises(EnvironmentError):
-                    await files.read_text(local_envd_path(forbidden))
+            assert (await files.read_text(local_envd_path(secret))).text == "not granted"
+            with pytest.raises(EnvironmentError):
+                await files.write_text(local_envd_path(secret), "forbidden", mode="replace")
             with pytest.raises(EnvironmentError):
                 await files.write_text(local_envd_path(readonly / "output"), "denied", mode="create")
             await files.write_text(local_envd_path(project / "written"), "persisted", mode="create")
+            bootstrap = next(allocations.iterdir()) / "a13n-envd.json"
+            assert bootstrap.is_file()
+            control = bootstrap.parent / "envd-runtime" / "broker-only"
+            control.write_text("private control state")
+            for denied in (bootstrap, control):
+                with pytest.raises(EnvironmentError):
+                    await files.read_text(local_envd_path(denied))
+            bootstrap_quoted = str(bootstrap).replace("'", "''")
             quoted = str(readonly / "output").replace("'", "''")
-            result = await processes.exec(
+            started = await processes.start(
                 CommandRequest(
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
                     command=ShellCommand(
                         profile_id="default",
                         script=(
                             "if ($env:HOST_ONLY_SECRET) { exit 40 }; "
+                            f"try {{ [IO.File]::ReadAllText('{bootstrap_quoted}'); exit 43 }} catch {{}}; "
                             f"try {{ [IO.File]::WriteAllText('{quoted}', 'denied'); exit 41 }} catch {{}}; "
                             "[IO.File]::WriteAllText((Join-Path $env:TEMP 'private'), 'ok'); exit 0"
                         ),
-                    )
+                    ),
                 )
             )
+            result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
             assert result.status.exit_code == 0
+            await processes.release(started.process.handle)
             await processes.start(
                 CommandRequest(
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
                     command=ShellCommand(
                         profile_id="default",
                         script="while ($true) { [IO.File]::AppendAllText('heartbeat', 'x'); Start-Sleep -Milliseconds 50 }",
-                    )
+                    ),
                 )
             )
             async with asyncio.timeout(15):
@@ -134,5 +182,123 @@ async def test_windows_grants_commands_cleanup_and_replaced_root(binary, tmp_pat
         # must not inherit the Device's original authorization.
         project.rename(tmp_path / "original")
         project.mkdir()
-        with pytest.raises(EnvironmentError):
+        with pytest.raises(EnvironmentProviderError):
             await connector.open()
+
+
+@pytest.mark.anyio
+async def test_windows_thread_files_readonly_project_and_file_operations(binary, tmp_path):
+    project, thread = tmp_path / "project", tmp_path / "thread"
+    project.mkdir()
+    thread.mkdir()
+    (project / "source.txt").write_text("project input")
+    owner = sandbox.create_sandbox_runtime(
+        binary,
+        roots=(project, thread),
+        thread_files_root=thread,
+        project_access=GrantAccess.READ_ONLY,
+    )
+    attachment = thread / "attachments" / "input.txt"
+    attachment.write_text("attachment input")
+    work = thread / "tmp"
+    junction = work / "escape"
+    subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(project)], check=True, capture_output=True
+    )
+    connector = LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(working_directory=local_envd_path(work)),
+        runtime=owner,
+        environment_id="windows-mxc-files",
+    )
+    async with owner:
+        environment = await connector.open()
+        try:
+            files = environment.operations.files
+            assert files is not None
+            for readonly in (project / "source.txt", attachment):
+                assert (await files.read_text(local_envd_path(readonly))).text.endswith("input")
+                with pytest.raises(EnvironmentError):
+                    await files.write_text(local_envd_path(readonly), "denied", mode="replace")
+            with pytest.raises(EnvironmentError):
+                await files.write_text(local_envd_path(junction / "source.txt"), "escaped", mode="replace")
+            await files.remove(local_envd_path(junction), recursive=True)
+            assert (project / "source.txt").read_text() == "project input"
+            candidate, published = work / "candidate", work / "published"
+            await files.mkdir(local_envd_path(candidate))
+            await files.mkdir(local_envd_path(published))
+            await files.copy(local_envd_path(attachment), local_envd_path(candidate / "input.txt"))
+            await files.write_text(local_envd_path(published / "obsolete"), "old", mode="create")
+            await files.move(local_envd_path(candidate), local_envd_path(published), replace=True)
+            assert not candidate.exists() and not (published / "obsolete").exists()
+            listing = await files.list(local_envd_path(published), max_results=10)
+            assert [entry.path for entry in listing.entries] == [local_envd_path(published / "input.txt")]
+            query = await files.query(FileQueryRequest(root=local_envd_path(work), pattern="**/*.txt", max_results=10))
+            assert [entry.path for entry in query.entries] == [local_envd_path(published / "input.txt")]
+            search = await files.search_text(
+                FileTextSearchRequest(root=local_envd_path(work), pattern="attachment", max_matches=10)
+            )
+            assert [match.text for match in search.matches] == ["attachment input"]
+            payload = bytes(range(256)) * 100
+
+            async def chunks():
+                yield payload[:123]
+                yield payload[123:]
+
+            await files.write_bytes_stream(local_envd_path(work / "binary.dat"), chunks(), mode="create")
+            assert await files.read_bytes(local_envd_path(work / "binary.dat")) == payload
+            await files.remove(local_envd_path(published), recursive=True)
+            assert not published.exists()
+        finally:
+            await environment.close()
+
+
+@pytest.mark.anyio
+async def test_windows_broker_termination_stops_restricted_commands(binary, tmp_path, monkeypatch):
+    created = []
+    launch = asyncio.create_subprocess_exec
+
+    async def record_broker(*args, **kwargs):
+        process = await launch(*args, **kwargs)
+        if "--config" in args:
+            created.append(process)
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", record_broker)
+    owner = sandbox.create_sandbox_runtime(binary, roots=(tmp_path,))
+    connector = LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(working_directory=local_envd_path(tmp_path)),
+        runtime=owner,
+        environment_id="windows-mxc-broker-loss",
+    )
+    async with owner:
+        environment = await connector.open()
+        try:
+            processes = environment.operations.processes
+            assert processes is not None
+            await processes.start(
+                CommandRequest(
+                    command=ShellCommand(
+                        profile_id="default",
+                        script="while ($true) { [IO.File]::AppendAllText('heartbeat', 'x'); Start-Sleep -Milliseconds 50 }",
+                    ),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
+                )
+            )
+            heartbeat = tmp_path / "heartbeat"
+            async with asyncio.timeout(15):
+                while not heartbeat.exists():
+                    await asyncio.sleep(0.05)
+            assert len(created) == 1
+            created[0].kill()
+            await created[0].wait()
+            # Allow kernel Job teardown, then observe before explicit owner close.
+            await asyncio.sleep(0.3)
+            size = heartbeat.stat().st_size
+            await asyncio.sleep(0.3)
+            assert heartbeat.stat().st_size == size
+        finally:
+            # Carrier loss is surfaced even though the kernel stopped the tree.
+            with pytest.raises(EnvironmentProviderError):
+                await environment.close()

@@ -1649,7 +1649,7 @@ fn resolve_bare_executable(
         } else {
             candidate
         };
-        let Ok(canonical) = std::fs::canonicalize(&candidate) else {
+        let Ok(canonical) = crate::device_path::canonicalize(&candidate) else {
             continue;
         };
         if (!full_control && !canonical.starts_with(root)) || !canonical.is_file() {

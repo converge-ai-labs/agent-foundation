@@ -1,5 +1,9 @@
+#[cfg(windows)]
+use crate::windows_directory::Dir;
 use crate::{config::Config, device_path, eip::EIPPath};
-use cap_std::{ambient_authority, fs::Dir};
+use cap_std::ambient_authority;
+#[cfg(not(windows))]
+use cap_std::fs::Dir;
 #[cfg(unix)]
 use std::ffi::CString;
 #[cfg(unix)]
@@ -393,7 +397,7 @@ impl DeviceFilesystem {
     }
 
     pub(crate) fn resolve_followed(&self, path: &EIPPath) -> Result<PathBuf, PathError> {
-        fs::canonicalize(device_path::to_native(&path.path)?).map_err(PathError::from_io)
+        device_path::canonicalize(device_path::to_native(&path.path)?).map_err(PathError::from_io)
     }
 
     pub(crate) fn resolve_entry(&self, path: &EIPPath) -> Result<PathBuf, PathError> {
@@ -402,7 +406,7 @@ impl DeviceFilesystem {
             return Ok(native);
         };
         let parent = native.parent().ok_or(PathError::Invalid)?;
-        Ok(fs::canonicalize(parent)
+        Ok(device_path::canonicalize(parent)
             .map_err(PathError::from_io)?
             .join(name))
     }
@@ -995,7 +999,7 @@ fn rename_atomic(
             "directory exchange is unsupported",
         ));
     }
-    source_dir.rename(source, destination_dir, destination)
+    source_dir.rename_with_replace(source, destination_dir, destination, false)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]

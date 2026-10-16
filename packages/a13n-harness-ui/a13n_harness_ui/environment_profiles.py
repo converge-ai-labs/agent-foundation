@@ -64,7 +64,8 @@ SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
     mode=EnvironmentMode.sandbox,
     name="Sandbox",
     description=(
-        "Runs commands through local a13n-envd with required filesystem and process isolation and inherited Host networking, including localhost."
+        "Runs through local a13n-envd with explicit write grants and inherited Host networking, including localhost. "
+        "Windows permits broad disk reads; Linux and macOS restrict reads to granted and runtime paths."
     ),
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",

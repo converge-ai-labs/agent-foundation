@@ -206,11 +206,57 @@ pub(crate) fn platform_roots() -> io::Result<Vec<PathBuf>> {
     roots.into_iter().map(std::fs::canonicalize).collect()
 }
 
+/// Materialize Codex-style broad read as available volumes and immediate children.
+/// A volume-root grant alone does not cover descendants on every PSEC version.
+pub(crate) fn full_disk_read_roots() -> io::Result<Vec<PathBuf>> {
+    use mxc_sdk::mxc_common::filesystem_object::{
+        ExistingObjectComparison, compare_existing_filesystem_objects,
+    };
+    use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
+    let drives = unsafe { GetLogicalDrives() };
+    if drives == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut roots = Vec::new();
+    for index in 0..26 {
+        if drives & (1 << index) == 0 {
+            continue;
+        }
+        let letter = char::from(b'A' + index as u8);
+        let root = PathBuf::from(format!(r"{letter}:\"));
+        let entries = match std::fs::read_dir(&root) {
+            Ok(entries) => entries,
+            // Logical drives include disconnected and empty removable volumes.
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+                ) || matches!(error.raw_os_error(), Some(21 | 53 | 1201 | 1167)) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        roots.push(root);
+        for entry in entries {
+            let path = entry?.path();
+            if path.to_str().is_some()
+                && compare_existing_filesystem_objects(&path, &path)
+                    == ExistingObjectComparison::Same
+            {
+                roots.push(path);
+            }
+        }
+    }
+    Ok(roots)
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Launch {
     sandbox: Sandbox,
     sources: Vec<GrantSource>,
+    protected: Vec<PathBuf>,
     egress: Egress,
     state: PathBuf,
     target: Target,
@@ -257,6 +303,7 @@ impl Drop for Worker {
 pub(crate) async fn spawn(
     sandbox: &Sandbox,
     sources: &[GrantSource],
+    protected: &[PathBuf],
     egress: Egress,
     state: super::StateDirectory,
     target: Target,
@@ -266,6 +313,7 @@ pub(crate) async fn spawn(
     let launch = Launch {
         sandbox: sandbox.clone(),
         sources: sources.to_vec(),
+        protected: protected.to_vec(),
         egress,
         state: state.0.clone(),
         target,
@@ -319,7 +367,11 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
     let handle = unsafe { BorrowedHandle::borrow_raw(handle) }.try_clone_to_owned()?;
     let launch: Launch = super::worker::read_bootstrap(&mut File::from(handle))?;
     probe(launch.egress)?;
-    let Sandbox::Restricted { grants } = &launch.sandbox else {
+    let Sandbox::Restricted {
+        grants,
+        full_disk_read,
+    } = &launch.sandbox
+    else {
         return Err(io::Error::other("MXC requires a restricted Sandbox"));
     };
     if grants.len() != launch.sources.len() || launch.egress.controlled() {
@@ -328,6 +380,9 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
     let mut retained = Vec::new();
     let mut read = platform_roots()?;
     let system_root = unicode(&read[0])?;
+    if *full_disk_read {
+        read.extend(full_disk_read_roots()?);
+    }
     let mut write = vec![std::fs::canonicalize(&launch.state)?];
     for (grant, source) in grants.iter().zip(&launch.sources) {
         let file = open_directory(&grant.path)?;
@@ -365,6 +420,11 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
             format!("TMP={}", unicode(&launch.state.join("tmp"))?),
         ]),
         policy: ContainerPolicy {
+            denied_paths: launch
+                .protected
+                .iter()
+                .map(|p| unicode(p))
+                .collect::<io::Result<_>>()?,
             readonly_paths: read.iter().map(|p| unicode(p)).collect::<io::Result<_>>()?,
             readwrite_paths: write
                 .iter()
@@ -444,14 +504,56 @@ mod tests {
         let Ok(payload) = std::env::var("A13N_ENVD_MXC_NETWORK_TEST") else {
             return;
         };
-        let (inherit, addresses, outside): (bool, Vec<std::net::SocketAddr>, PathBuf) =
-            serde_json::from_str(&payload).unwrap();
+        let (inherit, addresses, outside, broad_read): (
+            bool,
+            Vec<std::net::SocketAddr>,
+            PathBuf,
+            bool,
+        ) = serde_json::from_str(&payload).unwrap();
         std::fs::write("allowed.txt", b"allowed").unwrap();
         assert_eq!(std::fs::read("allowed.txt").unwrap(), b"allowed");
-        assert_eq!(
-            std::fs::read(outside).unwrap_err().kind(),
-            io::ErrorKind::PermissionDenied
-        );
+        if broad_read {
+            assert_eq!(std::fs::read(&outside).unwrap(), b"host-only sentinel");
+            let cwd = std::env::current_dir().unwrap();
+            let resolved = crate::windows_path::canonicalize(&cwd).unwrap();
+            let directory = crate::windows_directory::Dir::open_ambient_dir(
+                &resolved,
+                cap_std::ambient_authority(),
+            )
+            .unwrap();
+            directory.create_dir("native-dir").unwrap();
+            std::fs::write("native-source", b"rename").unwrap();
+            directory
+                .rename("native-source", &directory, "native-target")
+                .unwrap();
+            assert_eq!(directory.read("native-target").unwrap(), b"rename");
+            let child = crate::windows_directory::Dir::open_ambient_dir(
+                resolved.join("native-dir"),
+                cap_std::ambient_authority(),
+            )
+            .unwrap();
+            directory.rename("native-target", &child, "moved").unwrap();
+            assert_eq!(child.read("moved").unwrap(), b"rename");
+            child.remove_file("moved").unwrap();
+            drop(child);
+            directory.remove_dir("native-dir").unwrap();
+            std::fs::create_dir_all("recursive/child").unwrap();
+            std::fs::write("recursive/child/file", b"cleanup").unwrap();
+            directory.remove_dir_all("recursive").unwrap();
+            assert_eq!(
+                std::fs::read(resolved.join("allowed.txt")).unwrap(),
+                b"allowed"
+            );
+            assert_eq!(
+                std::fs::write(&outside, b"forbidden").unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied
+            );
+        } else {
+            assert_eq!(
+                std::fs::read(&outside).unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied
+            );
+        }
         for address in addresses {
             let result =
                 std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(2));
@@ -489,8 +591,16 @@ mod tests {
         let mut read = platform_roots().unwrap();
         let system_root = unicode(&read[0]).unwrap();
         read.push(executable.clone());
-        for egress in [Egress::Inherit {}, Egress::Deny {}] {
+        for (egress, broad_read) in [
+            (Egress::Inherit {}, false),
+            (Egress::Deny {}, false),
+            (Egress::Inherit {}, true),
+        ] {
             probe(egress).unwrap();
+            let mut read = read.clone();
+            if broad_read {
+                read.extend(full_disk_read_roots().unwrap());
+            }
             let request = ExecutionRequest {
                 script_code: cmdline_from_argv_for_context(
                     &[
@@ -514,7 +624,8 @@ mod tests {
                         serde_json::to_string(&(
                             egress == (Egress::Inherit {}),
                             &addresses,
-                            &outside
+                            &outside,
+                            broad_read
                         ))
                         .unwrap()
                     ),

@@ -41,14 +41,14 @@ def create_sandbox_runtime(
     launch: LocalEnvdLaunchConfiguration | None = None,
     project_access: GrantAccess = GrantAccess.READ_WRITE,
 ) -> LocalEnvdProviderRuntime:
-    """Build an inert Device owner; broad roots cannot expose Host private state."""
+    """Build an inert Device owner with platform-native filesystem grants."""
     if sys.platform not in {"linux", "darwin", "win32"}:
         raise _unavailable("Local Sandbox is not available on this platform.")
     canonical = tuple(dict.fromkeys(root.resolve(strict=True) for root in roots))
     if not canonical or any(not root.is_dir() for root in canonical):
         raise _unavailable("Sandbox roots must be existing directories.")
     launch = launch or LocalEnvdLaunchConfiguration(
-        sandbox=RestrictedSandbox(mode="restricted", grants=()),
+        sandbox=RestrictedSandbox(mode="restricted", grants=(), full_disk_read=sys.platform == "win32"),
         egress=EnvdNetworkConfiguration(mode="inherit"),
     )
     grants = []
@@ -73,7 +73,7 @@ def create_sandbox_runtime(
                     grants.append(SandboxGrant(path=local_envd_path(child), access=access))
             else:
                 grants.append(SandboxGrant(path=local_envd_path(root), access=project_access))
-        launch = launch.model_copy(update={"sandbox": RestrictedSandbox(mode="restricted", grants=tuple(grants))})
+        launch = launch.model_copy(update={"sandbox": launch.sandbox.model_copy(update={"grants": tuple(grants)})})
     if sys.platform == "win32":
         selected = shutil.which("pwsh") or shutil.which("powershell")
         if selected is None:
@@ -132,12 +132,22 @@ async def validate_sandbox_runtime(
             assert files is not None and processes is not None
             from a13n_harness.environment.models import EnvironmentError
 
-            try:
-                await files.read_text(local_envd_path(sentinel))
-            except EnvironmentError:
-                pass
+            if sys.platform == "win32":
+                if (await files.read_text(local_envd_path(sentinel))).text != "not granted":
+                    raise _unavailable("Sandbox ambient read probe failed.")
+                try:
+                    await files.write_text(local_envd_path(sentinel), "forbidden", mode="replace")
+                except EnvironmentError:
+                    pass
+                else:
+                    raise _unavailable("Sandbox allowed an unrelated Host write.")
             else:
-                raise _unavailable("Sandbox exposed an unrelated Host file.")
+                try:
+                    await files.read_text(local_envd_path(sentinel))
+                except EnvironmentError:
+                    pass
+                else:
+                    raise _unavailable("Sandbox exposed an unrelated Host file.")
             process_check = f"test ! -e /proc/{os.getpid()}/status || exit 42; " if sys.platform == "linux" else ""
             script = (
                 f"test ! -r {shlex.quote(str(sentinel))} || exit 40; "
@@ -147,7 +157,8 @@ async def validate_sandbox_runtime(
             if sys.platform == "win32":
                 path = str(sentinel).replace("'", "''")
                 script = (
-                    f"try {{ [IO.File]::ReadAllText('{path}') | Out-Null; exit 40 }} catch {{}}; "
+                    f"if ([IO.File]::ReadAllText('{path}') -ne 'not granted') {{ exit 40 }}; "
+                    f"try {{ [IO.File]::WriteAllText('{path}', 'forbidden'); exit 42 }} catch {{}}; "
                     "$client = [Net.Sockets.TcpClient]::new(); "
                     f"try {{ $client.Connect('127.0.0.1', {port}) }} "
                     "catch { exit 41 } finally { $client.Dispose() }; Write-Output sandbox-ready; exit 0"

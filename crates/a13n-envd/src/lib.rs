@@ -31,7 +31,11 @@ mod supervisor;
 mod transfer;
 mod websocket;
 #[cfg(windows)]
+mod windows_directory;
+#[cfg(windows)]
 mod windows_job;
+#[cfg(windows)]
+mod windows_path;
 
 /// Runs the private gated command supervisor used by this binary.
 #[doc(hidden)]

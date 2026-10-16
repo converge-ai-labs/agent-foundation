@@ -4798,6 +4798,11 @@
     "RestrictedSandbox": {
       "additionalProperties": false,
       "properties": {
+        "full_disk_read": {
+          "default": false,
+          "title": "Full Disk Read",
+          "type": "boolean"
+        },
         "grants": {
           "default": [],
           "items": {

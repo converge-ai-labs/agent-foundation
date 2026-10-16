@@ -1232,6 +1232,7 @@ class ProcessOutput(EIPModel):
 class RestrictedSandbox(EIPModel):
     mode: Literal["restricted"]
     grants: tuple[SandboxGrant, ...] = ()
+    full_disk_read: StrictBool = False
 
 
 type SandboxPolicy = Annotated[

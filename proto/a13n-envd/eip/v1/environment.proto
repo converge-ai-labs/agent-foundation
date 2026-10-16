@@ -79,6 +79,8 @@ message DisabledSandbox {
 message RestrictedSandbox {
   string mode = 1 [(eip_field).const_string = "restricted"];
   repeated SandboxGrant grants = 2;
+  // Windows MXC: permit ambient disk reads while retaining explicit write grants.
+  optional bool full_disk_read = 3 [(eip_field).default_bool = false];
 }
 
 message SandboxPolicy {

@@ -9,7 +9,11 @@ use std::{
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Sandbox {
     Disabled {},
-    Restricted { grants: Vec<Grant> },
+    Restricted {
+        grants: Vec<Grant>,
+        #[serde(default)]
+        full_disk_read: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -82,14 +86,14 @@ impl GrantSource {
 impl Sandbox {
     pub(crate) fn sources(&self) -> io::Result<Vec<GrantSource>> {
         #[cfg(unix)]
-        if let Self::Restricted { grants } = self {
+        if let Self::Restricted { grants, .. } = self {
             return grants
                 .iter()
                 .map(|grant| Ok(GrantSource::from_metadata(&std::fs::metadata(&grant.path)?)))
                 .collect();
         }
         #[cfg(windows)]
-        if let Self::Restricted { grants } = self {
+        if let Self::Restricted { grants, .. } = self {
             return grants
                 .iter()
                 .map(|grant| {
@@ -107,7 +111,17 @@ impl Sandbox {
     }
 
     pub(crate) fn validate(&mut self, protected: &[PathBuf]) -> io::Result<()> {
-        let Self::Restricted { grants } = self else {
+        if matches!(
+            self,
+            Self::Restricted {
+                full_disk_read: true,
+                ..
+            }
+        ) && !cfg!(windows)
+        {
+            return Err(io::Error::other("full_disk_read requires Windows MXC"));
+        }
+        let Self::Restricted { grants, .. } = self else {
             return Ok(());
         };
         #[cfg(windows)]
@@ -194,8 +208,12 @@ pub(crate) fn descriptor(
         Sandbox::Disabled {} => eip::SandboxPolicy::Disabled(eip::DisabledSandbox {
             mode: "disabled".into(),
         }),
-        Sandbox::Restricted { grants } => eip::SandboxPolicy::Restricted(eip::RestrictedSandbox {
+        Sandbox::Restricted {
+            grants,
+            full_disk_read,
+        } => eip::SandboxPolicy::Restricted(eip::RestrictedSandbox {
             mode: "restricted".into(),
+            full_disk_read: *full_disk_read,
             grants: grants
                 .iter()
                 .map(|grant| {
@@ -283,7 +301,17 @@ mod tests {
             serde_json::from_str::<Egress>(r#"{"mode":"inherit"}"#).unwrap(),
             Egress::Inherit {}
         );
-        assert!(serde_json::from_str::<Sandbox>(r#"{"mode":"restricted","grants":[]}"#).is_ok());
+        assert_eq!(
+            serde_json::from_str::<Sandbox>(r#"{"mode":"restricted","grants":[]}"#).unwrap(),
+            Sandbox::Restricted {
+                grants: vec![],
+                full_disk_read: false,
+            }
+        );
+        let mut broad: Sandbox =
+            serde_json::from_str(r#"{"mode":"restricted","grants":[],"full_disk_read":true}"#)
+                .unwrap();
+        assert_eq!(broad.validate(&[]).is_ok(), cfg!(windows));
     }
 
     #[test]
@@ -298,12 +326,14 @@ mod tests {
             access: Access::ReadWrite,
         };
         let mut sandbox = Sandbox::Restricted {
+            full_disk_read: false,
             grants: vec![grant.clone(), grant.clone()],
         };
         sandbox.validate(&[]).unwrap();
         assert_eq!(
             sandbox,
             Sandbox::Restricted {
+                full_disk_read: false,
                 grants: vec![Grant {
                     path: std::fs::canonicalize(&path).unwrap(),
                     access: Access::ReadWrite,
@@ -318,6 +348,7 @@ mod tests {
                 .is_err()
         );
         let mut conflict = Sandbox::Restricted {
+            full_disk_read: false,
             grants: vec![
                 grant,
                 Grant {
@@ -328,20 +359,24 @@ mod tests {
         };
         assert!(conflict.validate(&[]).is_err());
         let mut parent = Sandbox::Restricted {
+            full_disk_read: false,
             grants: vec![Grant {
                 path: PathBuf::from("/"),
                 access: Access::ReadWrite,
             }],
         };
         assert!(parent.validate(&[]).is_err());
-        if let Sandbox::Restricted { grants } = sandbox {
+        if let Sandbox::Restricted { grants, .. } = sandbox {
             std::fs::remove_dir(&grants[0].path).unwrap();
         }
     }
 
     #[test]
     fn only_network_boundaries_requiring_privilege_use_management() {
-        let restricted = Sandbox::Restricted { grants: vec![] };
+        let restricted = Sandbox::Restricted {
+            grants: vec![],
+            full_disk_read: false,
+        };
         assert!(!managed(&restricted, Egress::Deny {}));
         assert!(!managed(&restricted, Egress::Inherit {}));
         assert!(managed(&restricted, Egress::Controlled {}));

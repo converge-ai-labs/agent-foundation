@@ -13,6 +13,7 @@ from scripts.eip_codegen.__main__ import (
     GENERATED_HEADER,
     MANIFEST_PATH,
     PYTHON_PATH,
+    _write_manifest,
     verify_generated,
 )
 
@@ -45,6 +46,14 @@ def write_generated_tree(root: Path) -> None:
 
 def snapshot(root: Path) -> dict[Path, bytes]:
     return {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+def test_generated_manifest_uses_portable_paths(tmp_path: Path) -> None:
+    relative = PYTHON_PATH / "models.py"
+    _write_manifest(tmp_path, [tmp_path / relative], "descriptor")
+    manifest = json.loads((tmp_path / MANIFEST_PATH).read_text(encoding="utf-8"))
+    assert manifest["files"] == sorted([relative.as_posix(), MANIFEST_PATH.as_posix()])
+    assert all("\\" not in path for path in manifest["files"])
 
 
 def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:

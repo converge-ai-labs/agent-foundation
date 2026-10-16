@@ -47,6 +47,7 @@ impl Runtime {
     #[cfg(windows)]
     pub async fn start(
         mut config: WorkerConfig,
+        protected: &[std::path::PathBuf],
         reservation: crate::daemon::execution::Reservation,
     ) -> io::Result<Self> {
         use tokio::io::AsyncWriteExt;
@@ -75,6 +76,7 @@ impl Runtime {
         let mut worker = super::windows::spawn(
             &config.sandbox,
             &config.grant_sources,
+            protected,
             config.egress,
             state,
             super::windows::Target::Session,

@@ -132,8 +132,10 @@ impl Daemon {
         };
         #[cfg(target_os = "linux")]
         let runtime = Runtime::start(worker, policy, hide, reservation).await;
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         let runtime = Runtime::start(worker, reservation).await;
+        #[cfg(windows)]
+        let runtime = Runtime::start(worker, &self.config.bootstrap_files, reservation).await;
         let runtime = runtime.map_err(|_| {
             protocol_error(
                 ErrorType::Unsupported,
