@@ -211,6 +211,7 @@
   "API key": "API key",
   "Accept invitation": "Accept invitation",
   "Access unavailable": "Access unavailable",
+  "Access cleanup is unconfirmed. The agent remains paused.": "Access cleanup is unconfirmed. The agent remains paused.",
   "Account": "Account",
   "Action": "Action",
   "Actions": "Actions",
