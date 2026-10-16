@@ -13,6 +13,7 @@ import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
 import { fixtureRun, fixtureThread } from "./fixture";
 import { RunDock } from "./run-dock";
+import { useRun } from "../queries";
 
 let client: Client;
 let denied: string[] = [];
@@ -67,6 +68,138 @@ const entry = (id: string, text: string, fields = {}) => ({
 function Location() {
   return <output data-testid="location">{useLocation().pathname}</output>;
 }
+
+it("replaces a racing user takeover panel with the Agent assistance card without stealing control", async () => {
+  const mount = {
+    name: "workspace",
+    environment_id: "env",
+    working_directory: null,
+    permission_ceiling: { operations: ["environment.computer.observe"] },
+  } satisfies Schema["RunView"]["environment_mounts"][number];
+  let current = fixtureRun({
+    ...run,
+    status: "running",
+    environment_mounts: [mount],
+  });
+  const assistance = {
+    id: "agent-help",
+    run_id: "run",
+    tool_call_id: "help",
+    cause: "agent",
+    environment_id: "env",
+    mount: "workspace",
+    reason: "Please select the document",
+    state: "awaiting_user",
+    epoch: 0,
+    controller_id: null,
+    deadline: "2099-01-01",
+    lease_expires_at: null,
+    failure: null,
+    outcome: null,
+  };
+  const posts: string[] = [];
+  let waitingRun: typeof current | null = null;
+  let refreshedBeforeSeal = false;
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session", csrfToken: "csrf" },
+    fetch: async (input, init) => {
+      const req = new Request(input, init),
+        path = new URL(req.url).pathname;
+      if (req.method === "POST") {
+        posts.push(path);
+        waitingRun = fixtureRun({
+          ...current,
+          status: "waiting",
+          wait_reason: "call",
+          pending: {
+            desktop_control_id: null,
+            approvals: [],
+            calls: [
+              {
+                tool_call_id: "help",
+                tool_name: "request_desktop_assistance",
+                arguments: { mount: "workspace", reason: assistance.reason },
+                presentation: null,
+              },
+            ],
+          },
+        });
+        return Response.json(
+          {
+            error: {
+              code: "conflict",
+              message: "Run changed",
+              details: { reason: "desktop_agent_assistance_pending" },
+              request_id: null,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      if (path.endsWith("/desktop-control"))
+        return Response.json({
+          ...assistance,
+          id: "user-control",
+          tool_call_id: null,
+          cause: "user",
+          state: "viewing",
+        });
+      if (path.endsWith("/desktop-assistance/help"))
+        return Response.json(assistance);
+      if (path.endsWith("/inbox"))
+        return Response.json({ items: [], next_cursor: null });
+      if (waitingRun && path.endsWith("/runs/run")) {
+        if (refreshedBeforeSeal) current = waitingRun;
+        refreshedBeforeSeal = true;
+      }
+      return Response.json(current);
+    },
+  });
+  function LiveDock() {
+    const live = useRun("run");
+    if (!live.data) return null;
+    return (
+      <RunDock
+        run={live.data}
+        thread={fixtureThread({
+          id: "thread",
+          session_id: "session",
+          current_run_id: live.data.status === "running" ? "run" : null,
+          last_run_id: "run",
+        })}
+      />
+    );
+  }
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <LiveDock />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Get control" }));
+  await screen.findByText(
+    "The agent has requested desktop assistance. Switching to its assistance card…",
+  );
+  await screen.findByRole(
+    "button",
+    { name: "Take control" },
+    { timeout: 6000 },
+  );
+  expect(screen.queryByRole("button", { name: "Get control" })).toBeNull();
+  expect(screen.queryByText("Desktop control")).toBeNull();
+  expect(screen.queryByText("Run changed")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Take control" })).toHaveLength(
+    1,
+  );
+  expect(posts).toEqual([
+    "/api/v1/desktop-assistance/user-control/request-control",
+  ]);
+});
 function mount({
   status = "completed",
   historical = false,

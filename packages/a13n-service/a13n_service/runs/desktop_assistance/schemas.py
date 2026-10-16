@@ -28,7 +28,8 @@ class View(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     run_id: str
-    tool_call_id: str
+    tool_call_id: str | None
+    cause: Literal["agent", "user"]
     environment_id: str
     mount: str
     reason: str

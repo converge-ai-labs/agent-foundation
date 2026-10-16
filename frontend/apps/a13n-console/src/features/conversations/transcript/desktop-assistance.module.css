@@ -30,3 +30,8 @@
   border-radius: 6px;
   background: #111;
 }
+
+.assistance[data-controlling="true"] .screen {
+  outline: 3px solid var(--primary, #4c6fff);
+  outline-offset: 2px;
+}

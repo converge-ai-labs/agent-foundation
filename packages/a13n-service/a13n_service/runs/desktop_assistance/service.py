@@ -17,7 +17,12 @@ from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import Lease, execution_principals, lock_lease
 from a13n_service.runs.desktop_assistance.admission import aliases, environment_key, target
 from a13n_service.runs.desktop_assistance.schemas import Access, Completion, Control, Request, View, viewer_url
-from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow, DesktopViewerRow
+from a13n_service.runs.desktop_assistance.tables import (
+    DesktopAssistanceRow,
+    DesktopExecutionRow,
+    DesktopTargetRow,
+    DesktopViewerRow,
+)
 from a13n_service.runs.environments.adapters import Target, close, open_provider, provider_identity
 from a13n_service.runs.environments.mounts import require_usable
 from a13n_service.runs.environments.schemas import Handle
@@ -104,9 +109,23 @@ async def verify_continuation(runtime: Runtime, lease: Lease, selected: Target) 
     await dispatch(runtime, selected, wire.Settle(generation=generation), operation_id=new_object_id("dtop"))
 
 
-async def request_assistance(runtime: Runtime, lease: Lease, actor: Principal, call_id: str, body: Request) -> str:
+async def require_no_agent_request(session: AsyncSession, run_id: str) -> None:
+    """The Run lock serializes both origins, even when they select different mounts."""
+    if await session.scalar(
+        select(exists().where(DesktopAssistanceRow.run_id == run_id, DesktopAssistanceRow.cause == "agent"))
+    ):
+        raise conflict("run", run_id, "desktop_agent_assistance_pending")
+
+
+async def request_assistance(
+    runtime: Runtime, lease: Lease, actor: Principal, call_id: str, body: Request
+) -> str | None:
+    from a13n_service.runs.desktop_assistance.execution import request as user_request
+
     async with transaction(runtime.storage) as session:
         run, _, _ = await lock_lease(session, lease)
+        if await user_request(session, run.id) is not None:
+            return None
         frozen = next((mount for mount in run.environment_mounts if mount["name"] == body.mount), None)
         if frozen is None:
             raise not_found("mount", body.mount)
@@ -127,6 +146,10 @@ async def request_assistance(runtime: Runtime, lease: Lease, actor: Principal, c
         raise conflict("environment", selected.environment_id, "desktop_route_unavailable") from error
     async with transaction(runtime.storage) as session:
         run, _, current = await lock_lease(session, lease)
+        # Discovery is outside the transaction: user takeover may win while it runs.
+        # No assistance/grant was created, so this is a known no-op, not uncertain work.
+        if await user_request(session, run.id) is not None:
+            return None
         environment = await lock(session, EnvironmentRow, selected.environment_id)
         if environment is None or environment_key(environment) != key:
             raise conflict("environment", selected.environment_id, "desktop_target_changed")
@@ -185,7 +208,20 @@ async def sealed(session: AsyncSession, run: RunRow, pending: Pending | None) ->
         assert control is not None
         if assistance.state != "preparing":
             continue
-        if assistance.tool_call_id not in calls or control.inflight or control.unmanaged_input:
+        if (
+            assistance.cause == "user"
+            and run.status == "completed"
+            and not control.inflight
+            and not control.unmanaged_input
+        ):
+            assistance.state = "awaiting_user"
+            continue
+        matches = (
+            pending is not None and pending.desktop_control_id == assistance.id
+            if assistance.cause == "user"
+            else assistance.tool_call_id in calls
+        )
+        if not matches or control.inflight or control.unmanaged_input:
             assistance.state, assistance.failure = "blocked", "desktop_execution_unconfirmed"
         else:
             assistance.state = "awaiting_user"
@@ -193,7 +229,18 @@ async def sealed(session: AsyncSession, run: RunRow, pending: Pending | None) ->
 
 async def validate_resume(session: AsyncSession, run: RunRow, answers: Resume) -> list[DesktopAssistanceRow]:
     pending = Pending.model_validate(run.pending)
-    rows = (await session.scalars(select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == run.id))).all()
+    rows = (
+        await session.scalars(
+            select(DesktopAssistanceRow).where(
+                DesktopAssistanceRow.run_id == run.id,
+                or_(DesktopAssistanceRow.cause == "agent", DesktopAssistanceRow.id == pending.desktop_control_id),
+            )
+        )
+    ).all()
+    if pending.desktop_control_id is not None:
+        pause = next((row for row in rows if row.id == pending.desktop_control_id), None)
+        if pause is None or pause.state != "ready_to_resume":
+            raise conflict("run", run.id, "desktop_assistance_not_completed")
     by_call = {row.tool_call_id: row for row in rows}
     for call in pending.calls:
         if call.tool_name != TOOL:
@@ -235,7 +282,14 @@ async def validate_resume(session: AsyncSession, run: RunRow, answers: Resume) -
 
 
 async def authorized(
-    session: AsyncSession, runtime: Runtime, actor: Principal, workspace_id: str, identity: str, *, waiting: bool = True
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    identity: str,
+    *,
+    waiting: bool = True,
+    disconnecting: bool = False,
 ) -> tuple[DesktopAssistanceRow, DesktopTargetRow, Target]:
     await workspace_scope(session, actor, workspace_id, "run")
     initial = await session.get(DesktopAssistanceRow, identity)
@@ -246,13 +300,24 @@ async def authorized(
     thread = await lock(session, ThreadRow, run.thread_id)
     assert thread is not None
     await session.refresh(run)
-    if waiting and (
-        run.status != "waiting"
-        or thread.last_run_id != run.id
-        or thread.current_run_id is not None
-        or thread.archived_at is not None
+    await lock(session, RunRow, run.id)
+    if initial.cause == "user" and not disconnecting:
+        await require_no_agent_request(session, run.id)
+    if (
+        waiting
+        and initial.cause == "agent"
+        and (
+            run.status != "waiting"
+            or thread.last_run_id != run.id
+            or thread.current_run_id is not None
+            or thread.archived_at is not None
+        )
     ):
         raise conflict("run", run.id, "not_idle_waiting_head")
+    if initial.cause == "user" and (
+        thread.archived_at is not None or run.id not in {thread.current_run_id, thread.last_run_id}
+    ):
+        raise conflict("run", run.id, "desktop_run_superseded")
     principals = await execution_principals(session, runtime.access, [run])
     if isinstance(principals.get(run.id), ServiceError):
         raise ServiceError("forbidden", "The waiting run no longer has execution authority")
@@ -264,7 +329,10 @@ async def authorized(
     assert control is not None
     row = await lock(session, DesktopAssistanceRow, identity)
     assert row is not None
-    if control.holder_id != row.id:
+    if control.holder_id != row.id and not (
+        row.cause == "user"
+        and ((row.state == "viewing" and control.holder_id is None) or (disconnecting and row.controller_id is None))
+    ):
         raise conflict("desktop_assistance", identity, "desktop_reservation_lost")
     return row, control, selected
 
@@ -306,9 +374,11 @@ async def access(
         row, control, selected = await authorized(session, runtime, actor, workspace_id, identity)
         current = await now(session)
         available(row, current)
+        if mode == "control" and row.state == "viewing":
+            raise conflict("desktop_assistance", identity, "desktop_pause_required")
         if row.operation_expires_at is not None and row.operation_expires_at > current:
             raise conflict("desktop_assistance", identity, "desktop_transition_pending")
-        if control.inflight or control.unmanaged_input:
+        if mode == "control" and (control.inflight or control.unmanaged_input):
             raise conflict("desktop_assistance", identity, "desktop_execution_unconfirmed")
         assert row.generation is not None
         generation = row.generation
@@ -316,6 +386,12 @@ async def access(
         if ttl < 1:
             raise conflict("desktop_assistance", identity, "desktop_assistance_expired")
         if mode == "control":
+            execution = await session.get(DesktopExecutionRow, row.run_id)
+            if row.cause == "user" and (execution is None or execution.inflight or execution.uncertain):
+                raise conflict("run", row.run_id, "desktop_execution_unconfirmed")
+            run = await session.get(RunRow, row.run_id)
+            if row.cause == "user" and (run is None or run.status not in {"waiting", "completed"}):
+                raise conflict("run", row.run_id, "desktop_pause_required")
             if row.controller_id is not None and (row.controller_id, row.controller_session) != (
                 actor.id,
                 body.session_id,
@@ -439,7 +515,13 @@ async def complete(runtime: Runtime, actor: Principal, workspace_id: str, identi
             raise conflict("desktop_assistance", identity, "desktop_controller_required")
         if row.operation_expires_at is not None and row.operation_expires_at > current:
             raise conflict("desktop_assistance", identity, "desktop_transition_pending")
-        if row.state == "preparing" or control.inflight:
+        execution = await session.get(DesktopExecutionRow, row.run_id)
+        if (
+            (row.cause == "user" and (execution is None or execution.inflight or execution.uncertain))
+            or row.state in {"viewing", "preparing", "blocked"}
+            or control.inflight
+            or control.unmanaged_input
+        ):
             raise conflict("desktop_assistance", identity, "desktop_execution_unconfirmed")
         assert row.generation is not None
         generation = row.generation
@@ -467,7 +549,15 @@ async def complete(runtime: Runtime, actor: Principal, workspace_id: str, identi
             row, _, _ = await authorized(session, runtime, actor, workspace_id, identity)
             if row.operation_id != operation_id:
                 raise conflict("desktop_assistance", identity, "desktop_transition_superseded")
-            row.state, row.failure = "ready_to_resume", None
+            run = await session.get(RunRow, row.run_id)
+            if row.cause == "user" and run is not None and run.status == "completed":
+                control = await lock(session, DesktopTargetRow, row.target_key)
+                assert control is not None
+                control.holder_id = None
+                row.state = "viewing"
+            else:
+                row.state = "ready_to_resume"
+            row.failure = None
             row.outcome = {
                 "assistance_id": row.id,
                 "outcome": body.outcome,
@@ -495,7 +585,7 @@ async def disconnect(runtime: Runtime, actor: Principal, workspace_id: str, iden
     """Closing one browser releases its access, without answering the deferred call."""
     operation_id = new_object_id("dtop")
     async with transaction(runtime.storage) as session:
-        row, _, selected = await authorized(session, runtime, actor, workspace_id, identity)
+        row, _, selected = await authorized(session, runtime, actor, workspace_id, identity, disconnecting=True)
         current = await now(session)
         if row.operation_expires_at is not None and row.operation_expires_at > current:
             raise conflict("desktop_assistance", identity, "desktop_transition_pending")
@@ -533,7 +623,7 @@ async def disconnect(runtime: Runtime, actor: Principal, workspace_id: str, iden
                 operation_id=operation_id,
             )
         async with transaction(runtime.storage) as session:
-            row, _, _ = await authorized(session, runtime, actor, workspace_id, identity)
+            row, _, _ = await authorized(session, runtime, actor, workspace_id, identity, disconnecting=True)
             if row.operation_id != operation_id:
                 raise conflict("desktop_assistance", identity, "desktop_transition_superseded")
             for grant_id, _ in grants:

@@ -63,7 +63,7 @@ class Endpoint:
         return self.grants[request.id]
 
 
-async def waiting(service, scripted_model, runs_kit, monkeypatch):
+async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=False):
     await runs_kit.pause_sweeps(service)
     from a13n_harness.environment.models import EnvironmentAvailability, EnvironmentPermissionSet
     from a13n_service.runs.environments import execution
@@ -117,7 +117,9 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch):
             recipe=recipe,
             state=EnvironmentState(provider_key="e2b", state_version="1", state={"sandbox_id": "test-" + uuid4().hex}),
         ).model_dump(mode="json")
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"computer": {"enabled": True}})
+    agent = await runs_kit.create_agent(
+        service, scripted_model, toolsets={"computer": {"enabled": True}, "configuration": {"enabled": True}}
+    )
     first = await runs_kit.start_thread(
         service,
         agent,
@@ -130,6 +132,8 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch):
             }
         ],
     )
+    if start_only:
+        return first, endpoint
     scripted_model.call(
         "request_desktop_assistance", {"mount": "workspace", "reason": "Please choose the file"}, call_id="help"
     )

@@ -72,6 +72,8 @@ from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.contents import Contents
+from a13n_service.runs.desktop_assistance import execution as desktop_execution
+from a13n_service.runs.desktop_assistance.execution import ExecutionFence
 from a13n_service.runs.desktop_assistance.tools import DesktopAssistanceCapability
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
@@ -323,6 +325,8 @@ def _initial(
         answers = deferred.fork_results(pending)
     if answers is None:
         raise ValueError("A waiting parent requires explicit resume results")
+    if pending.desktop_control_id and not pending.calls and not pending.approvals:
+        return state, None
     return state, deferred.resume(deferred.load(base.deferred), answers)
 
 
@@ -379,6 +383,9 @@ class _Attempt:
         self.usage = UsageBuffer(self.check.calls)
         self.usage_reporter = DeltaReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
         self.yielding = False
+        self.desktop_paused = False
+        self.desktop_enabled = bool(enabled_tools(plan.agent.config.toolsets, "computer"))
+        self.boundaries.wait_for_model = self.desktop_enabled
         self.live: ThreadStream | None = None
 
     async def run(self) -> None:
@@ -411,6 +418,8 @@ class _Attempt:
         """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
         runtime, lease = self.runtime, self.lease
         root = self.plan.agent
+        if self.desktop_enabled:
+            await desktop_execution.prepare(runtime, lease, supported=not root.subagents)
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
         skill_cache = Cache()
@@ -447,6 +456,7 @@ class _Attempt:
                 capabilities=lambda node: (
                     [
                         self.boundaries,
+                        *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
                         *host.capabilities(node),
                         *host.memory,
                         *(
@@ -570,7 +580,12 @@ class _Attempt:
             staged.state,
             cursors=staged.cursors,
             snapshot=staged.display,
+            pause_boundary=staged.at == "model" and self.desktop_enabled,
         )
+        if self.desktop_paused:
+            self.boundaries.stop()
+            stream.cancel()
+            return
         output.stream.boundary(staged.display.tail.position.sequence, resume_after=staged.display.tail.resume_after)
         if staged.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
@@ -588,6 +603,7 @@ class _Attempt:
         *,
         cursors: dict[str, str | None],
         snapshot: Snapshot,
+        pause_boundary: bool = False,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
     ) -> list[Offered]:
@@ -633,6 +649,10 @@ class _Attempt:
                 at=current,
             )
             checkpoints.retire(session, run, self.committed, committed)
+            if pause_boundary or (self.desktop_enabled and outcome is not None and outcome.status == "waiting"):
+                pending = await desktop_execution.pending(session, run, outcome.pending if outcome else None)
+                if pending is not None and pending.desktop_control_id:
+                    outcome = Outcome(status="waiting", pending=pending)
             if outcome is not None:
                 await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
             else:
@@ -645,6 +665,8 @@ class _Attempt:
                     scan=self.runtime.settings.control.inbox_count,
                 )
                 steers = [Offered.of(entry) for entry in entries]
+        if outcome is not None and outcome.pending is not None and outcome.pending.desktop_control_id:
+            self.desktop_paused = True
         CHECKPOINT_DURATION.record(time.monotonic() - started)
         self.committed, self.seq = committed, self.seq + 1
         self.fold.committed(snapshot)
@@ -726,6 +748,8 @@ class _Attempt:
         stream.cancel()
 
     async def _end(self, result: HarnessRunResult) -> None:
+        if self.desktop_paused:
+            return
         self.usage.add(result.usage_records)
         if result.status == "failed":
             assert result.failure is not None

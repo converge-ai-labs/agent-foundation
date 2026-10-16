@@ -167,6 +167,21 @@ async def recover(
     if run.cancel_requested_at is not None:
         await seal(session, runtime, thread, run, attempt, Outcome.cancelled(), at=at)
         return
+    from a13n_service.runs.desktop_assistance.execution import request as desktop_request
+
+    if await desktop_request(session, run.id) is not None:
+        await seal(
+            session,
+            runtime,
+            thread,
+            run,
+            attempt,
+            Outcome.failed(
+                "desktop_pause_attempt_lost", "Desktop suspension could not be confirmed; execution was not retried."
+            ),
+            at=at,
+        )
+        return
     if status == "failed" and run.attempts >= run.max_attempts:
         await seal(session, runtime, thread, run, attempt, Outcome(status="failed", failure=failure), at=at)
         return

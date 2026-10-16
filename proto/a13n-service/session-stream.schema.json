@@ -1939,6 +1939,18 @@
           },
           "title": "Calls",
           "type": "array"
+        },
+        "desktop_control_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Desktop Control Id"
         }
       },
       "required": [
@@ -3297,7 +3309,8 @@
       "enum": [
         "approval",
         "call",
-        "multiple"
+        "multiple",
+        "desktop_control"
       ],
       "type": "string"
     },

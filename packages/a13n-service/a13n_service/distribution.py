@@ -73,7 +73,12 @@ from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
 from a13n_service.runs.desktop_assistance.maintenance import sweep as desktop_assistance_sweep
 from a13n_service.runs.desktop_assistance.routes import router as desktop_assistance_router
-from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow, DesktopViewerRow
+from a13n_service.runs.desktop_assistance.tables import (
+    DesktopAssistanceRow,
+    DesktopExecutionRow,
+    DesktopTargetRow,
+    DesktopViewerRow,
+)
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
@@ -319,6 +324,7 @@ OSS = Distribution(
         SpaceOrganizationRow,
         ThreadRow,
         EnvironmentRow,
+        DesktopExecutionRow,
         DesktopTargetRow,
         DesktopAssistanceRow,
         DesktopViewerRow,

@@ -2416,5 +2416,19 @@
   "Desktop disconnected. Open it again to reconnect.": "桌面连接已断开，请重新打开。",
   "Desktop connection was refused.": "桌面连接未能建立。",
   "Desktop access could not be renewed. Input has been disabled.": "桌面访问续期失败，已停止接收输入。",
-  "Assistance expired or was cancelled. Review the result before continuing.": "协助已过期或取消。请检查结果后再继续。"
+  "Assistance expired or was cancelled. Review the result before continuing.": "协助已过期或取消。请检查结果后再继续。",
+  "Desktop control": "桌面控制权",
+  "Open desktop": "打开桌面",
+  "Get control": "获取控制权",
+  "Return control": "归还控制权",
+  "Return control and continue": "归还控制权并继续",
+  "End control, keep paused": "结束操作，保持暂停",
+  "Continue agent": "继续 Agent",
+  "Pausing agent. Waiting for admitted operations to finish…": "正在暂停 Agent，等待已开始的操作结束…",
+  "Viewing does not pause the agent. Get control to interact.": "观看不会暂停 Agent。获取控制权后可操作桌面。",
+  "Desktop transition blocked": "控制权交接被阻止",
+  "Returning control. Revoking input access…": "正在归还控制权，撤销输入连接…",
+  "Control returned. The task remains paused until continuation is accepted.": "控制权已归还，任务将在恢复请求成功后继续。",
+  "Desktop access cleanup is unconfirmed.": "尚未确认桌面访问清理完成。",
+  "The agent has requested desktop assistance. Switching to its assistance card…": "Agent 已请求桌面协助，正在切换到协助卡片…"
 }

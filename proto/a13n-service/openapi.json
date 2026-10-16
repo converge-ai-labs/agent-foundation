@@ -10077,6 +10077,17 @@
             },
             "title": "Calls",
             "type": "array"
+          },
+          "desktop_control_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desktop Control Id"
           }
         },
         "required": [
@@ -11188,6 +11199,29 @@
           }
         },
         "title": "ProviderUpdate",
+        "type": "object"
+      },
+      "Request": {
+        "additionalProperties": false,
+        "properties": {
+          "mount": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Mount",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mount",
+          "reason"
+        ],
+        "title": "Request",
         "type": "object"
       },
       "Resume": {
@@ -15582,6 +15616,14 @@
       },
       "View": {
         "properties": {
+          "cause": {
+            "enum": [
+              "agent",
+              "user"
+            ],
+            "title": "Cause",
+            "type": "string"
+          },
           "controller_id": {
             "anyOf": [
               {
@@ -15662,14 +15704,22 @@
             "type": "string"
           },
           "tool_call_id": {
-            "title": "Tool Call Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
           }
         },
         "required": [
           "id",
           "run_id",
           "tool_call_id",
+          "cause",
           "environment_id",
           "mount",
           "reason",
@@ -15688,7 +15738,8 @@
         "enum": [
           "approval",
           "call",
-          "multiple"
+          "multiple",
+          "desktop_control"
         ],
         "type": "string"
       },
@@ -19802,6 +19853,73 @@
           }
         ],
         "summary": "Disconnect Desktop",
+        "tags": [
+          "desktop-assistance"
+        ]
+      }
+    },
+    "/api/v1/desktop-assistance/{assistance_id}/request-control": {
+      "post": {
+        "operationId": "request_control_api_v1_desktop_assistance__assistance_id__request_control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assistance_id",
+            "required": true,
+            "schema": {
+              "title": "Assistance Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Request Control",
         "tags": [
           "desktop-assistance"
         ]
@@ -28511,6 +28629,156 @@
           "desktop-assistance"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/runs/{run_id}/desktop-control": {
+      "get": {
+        "operationId": "get_control_api_v1_runs__run_id__desktop_control_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/View"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Control Api V1 Runs  Run Id  Desktop Control Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Control",
+        "tags": [
+          "desktop-assistance"
+        ],
+        "x-a13n-mcp": true
+      },
+      "post": {
+        "operationId": "open_control_api_v1_runs__run_id__desktop_control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Open Control",
+        "tags": [
+          "desktop-assistance"
+        ]
       }
     },
     "/api/v1/runs/{run_id}/fork": {

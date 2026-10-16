@@ -37,7 +37,7 @@ type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
-type WaitReason = Literal["approval", "call", "multiple"]
+type WaitReason = Literal["approval", "call", "multiple", "desktop_control"]
 type Sealed = Literal["waiting", "completed", "failed", "cancelled"]
 
 MAX_FAILURE_MESSAGE_CHARS = 4096
@@ -281,11 +281,12 @@ class Pending(_Frozen):
 
     approvals: tuple[PendingCall, ...]
     calls: tuple[PendingCall, ...]
+    desktop_control_id: str | None = None
 
     @model_validator(mode="after")
     def bounded(self) -> "Pending":
         items = (*self.approvals, *self.calls)
-        if not 1 <= len(items) <= 128:
+        if not (1 <= len(items) <= 128 or (not items and self.desktop_control_id is not None)):
             raise ValueError("Pending requires one to 128 calls")
         if len({item.tool_call_id for item in items}) != len(items):
             raise ValueError("Pending call IDs must be unique across categories")
@@ -293,6 +294,8 @@ class Pending(_Frozen):
 
     @property
     def reason(self) -> WaitReason:
+        if self.desktop_control_id:
+            return "multiple" if self.approvals or self.calls else "desktop_control"
         if self.approvals and self.calls:
             return "multiple"
         return "approval" if self.approvals else "call"

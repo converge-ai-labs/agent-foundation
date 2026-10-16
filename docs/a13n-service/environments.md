@@ -233,6 +233,18 @@ An agent can pause and ask a person to operate its desktop. The Console assistan
 
 An operator must prepare a compatible template and set `desktop: true` and `desktop_assistance: true` in the environment recipe. E2B needs a custom template with the preinstalled desktop-access endpoint; the stock `desktop` template does not include it. Docker also needs `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, with operator routing to each container's port 6081. Docker Engine or Envd connectivity does not provide a browser route. Plain WS is accepted only for loopback development.
 
-Enable the agent's Computer toolset and grant observation on its mount. Assistance is bounded to 15 minutes, with renewable connection leases of at most 60 seconds. Page closure, renewal failure or permission loss stops input and revokes access. Unconfirmed revocation keeps the agent paused. The first version does not support arbitrary takeover of active tasks or simultaneous controllers.
+Enable the agent's Computer toolset and grant observation on its mount. Assistance is bounded to 15 minutes, with renewable connection leases of at most 60 seconds. Page closure, renewal failure or permission loss stops input and revokes access. Unconfirmed revocation keeps the agent paused. Only one controller may operate a desktop at a time.
 
 Targets with previous shell/process-input activity, initialization scripts or untracked execution history cannot enter assistance because background input cannot be excluded. Use a fresh dedicated desktop for this flow. Independent SDK clients, guest root/sudo and infrastructure administrators remain trusted deployment authorities.
+
+### Get and return desktop control
+
+For a supported running task, open **Desktop control** in Console, select its desktop mount if necessary, then choose **Open desktop**. **Open read-only desktop** does not pause the agent. Choose **Get control** to request exclusive input. Service stops admitting new tools, waits for admitted operations to finish, and saves their results before granting control. The panel shows **Pausing agent** until this boundary is confirmed; it cannot accept input during that interval.
+
+If the Agent requests assistance at the same time, the first confirmed request wins. When the Agent wins, Console explains the change and switches to its assistance card; click **Take control** there. When your takeover wins, the Agent joins that pause without opening a second assistance request.
+
+After changing the desktop, choose **Return control and continue**. Service revokes human input and confirms cleanup before accepting a successor Run. The agent keeps its conversation and completed tool results, observes the current desktop, and replans. An optional note explains your changes. If other questions or approvals are pending, return control first, then submit the entire response batch. If continuation fails after handback, **Continue agent** retries it without repeating completed tools.
+
+Closing the page, disconnecting, or choosing **End control, keep paused** does not resume the agent. Reconnect explicitly to complete handback. Uncertain execution, lost worker ownership, unmanaged background commands, and configured subagent graphs block takeover; there is no force-control fallback. Completed tasks allow desktop interaction without starting another Run. Each Run selects one desktop mount for control. The same protocol applies to E2B and Docker with the compatible endpoint and routing described above; remote Docker deployments still require validation of browser reachability and TLS.
+
+Deploy this update to Service control and worker roles together before enabling user takeover. Old workers do not honor the new execution fence or desktop pause checkpoint. Database rollback after user-control history has been created is rejected; use a forward repair.

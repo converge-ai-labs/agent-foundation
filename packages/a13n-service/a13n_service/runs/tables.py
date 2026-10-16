@@ -381,7 +381,7 @@ class RunRow(Stamped, Base):
         CheckConstraint(
             "status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')", name="status"
         ),
-        CheckConstraint("wait_reason IN ('approval', 'call', 'multiple')", name="wait_reason"),
+        CheckConstraint("wait_reason IN ('approval', 'call', 'multiple', 'desktop_control')", name="wait_reason"),
         # A run starts from exactly one source: a queued entry or the answers resuming its parent.
         CheckConstraint("(source_entry_id IS NULL) <> (resume IS NULL)", name="source"),
         CheckConstraint("(resume IS NULL) = (resumed_by_id IS NULL)", name="resumed_by"),

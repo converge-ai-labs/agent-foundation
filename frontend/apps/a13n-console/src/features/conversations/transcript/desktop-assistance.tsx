@@ -1,11 +1,12 @@
-import { Button } from "a13n-ui";
+import { Button, ChoiceField } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
-import { data, type Schema } from "../../../shared/api";
+import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
+import { ApiError } from "../../../service-client";
 import { TextAreaField } from "../../../shared/forms";
 import styles from "./desktop-assistance.module.css";
 import type RFB from "@novnc/novnc/lib/rfb";
@@ -14,18 +15,34 @@ import type RFB from "@novnc/novnc/lib/rfb";
 export function DesktopAssistance({
   runId,
   callId,
-  onResolved,
+  onResolved = () => {},
+  mounts,
+  canContinue = false,
+  onContinued,
+  onRefresh,
 }: {
   runId: string;
-  callId: string;
-  onResolved: (value: Schema["JsonValue"]) => void;
+  callId?: string;
+  mounts?: string[];
+  canContinue?: boolean;
+  onContinued?: (run: Schema["RunView"]) => void;
+  onRefresh?: () => unknown;
+  onResolved?: (value: Schema["JsonValue"]) => void;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
     { workspace } = useWorkspace();
   const api = client.workspace(workspace.id);
+  const [selectedMount, setSelectedMount] = useState(
+    mounts?.[0] ?? "workspace",
+  );
   const [sessionId] = useState(() => crypto.randomUUID());
   const [access, setAccess] = useState<Schema["Access"] | null>(null);
+  const [transition, setTransition] = useState<string | null>(null);
+  const [claimRequested, setClaimRequested] = useState(false);
+  const [agentRequested, setAgentRequested] = useState(false);
+  const refresh = useRef(onRefresh);
+  refresh.current = onRefresh;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null);
   const [connected, setConnected] = useState(false),
@@ -41,11 +58,20 @@ export function DesktopAssistance({
   const query = useQuery({
     queryKey: ["desktop-assistance", workspace.id, runId, callId],
     queryFn: async () =>
-      data(
-        await api.GET("/api/v1/runs/{run_id}/desktop-assistance/{call_id}", {
-          params: { path: { run_id: runId, call_id: callId } },
-        }),
-      ),
+      !callId
+        ? data(
+            await api.GET("/api/v1/runs/{run_id}/desktop-control", {
+              params: { path: { run_id: runId } },
+            }),
+          )
+        : data(
+            await api.GET(
+              "/api/v1/runs/{run_id}/desktop-assistance/{call_id}",
+              {
+                params: { path: { run_id: runId, call_id: callId } },
+              },
+            ),
+          ),
     refetchInterval: 3000,
   });
   const view = query.data;
@@ -87,6 +113,33 @@ export function DesktopAssistance({
       cleanup.current();
     };
   }, []);
+
+  useEffect(() => {
+    if (!agentRequested) return;
+    // The Agent may have reserved the desktop but not sealed its deferred batch yet.
+    // Refresh until RunDock can replace this panel with the authoritative assistance card.
+    const update = () => {
+      void Promise.resolve(refresh.current?.()).catch((cause) => {
+        if (mounted.current) setError(cause);
+      });
+    };
+    update();
+    const timer = setInterval(update, 3000);
+    return () => clearInterval(timer);
+  }, [agentRequested]);
+
+  function failed(cause: unknown) {
+    if (!mounted.current) return;
+    if (
+      !callId &&
+      cause instanceof ApiError &&
+      cause.status === 409 &&
+      cause.details.reason === "desktop_agent_assistance_pending"
+    ) {
+      setClaimRequested(false);
+      setAgentRequested(true);
+    } else setError(cause);
+  }
 
   useEffect(() => {
     if (!access) return;
@@ -175,18 +228,58 @@ export function DesktopAssistance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access]);
 
+  async function continueAgent(identity: string) {
+    const next = data(
+      await api.POST("/api/v1/runs/{run_id}/resume", {
+        params: {
+          path: { run_id: runId },
+          header: commandHeaders(`desktop-return-${identity}`),
+        },
+        body: { approvals: {}, calls: {} },
+      }),
+    );
+    onContinued?.(next);
+  }
+
   async function command(
-    action: "view" | "control" | "disconnect" | "complete",
+    action:
+      "view" | "control" | "disconnect" | "complete" | "request" | "continue",
   ) {
     if (!view || busy) return;
     setBusy(true);
+    setTransition(action);
     setError(null);
     // Stop local input before any transition, including failures and slow requests.
+    const previousAccess = current.current;
     closeLocal();
     try {
       const params = { path: { assistance_id: view.id } };
       const body = { session_id: sessionId, epoch: epoch.current };
-      if (action === "view" || action === "control") {
+      if (action === "request") {
+        if (previousAccess?.mode === "view") {
+          data(
+            await api.POST(
+              "/api/v1/desktop-assistance/{assistance_id}/disconnect",
+              {
+                params,
+                body: {
+                  session_id: sessionId,
+                  epoch: previousAccess.assistance.epoch,
+                },
+              },
+            ),
+          );
+        }
+        data(
+          await api.POST(
+            "/api/v1/desktop-assistance/{assistance_id}/request-control",
+            { params },
+          ),
+        );
+        if (mounted.current) setClaimRequested(true);
+      } else if (action === "continue") {
+        await continueAgent(view.id);
+      } else if (action === "view" || action === "control") {
         const next = data(
           await api.POST(
             action === "view"
@@ -216,6 +309,9 @@ export function DesktopAssistance({
           ),
         );
         if (mounted.current && next.outcome) resolve.current(next.outcome);
+        if (!callId && canContinue) {
+          await continueAgent(view.id);
+        }
       } else
         data(
           await api.POST(
@@ -225,33 +321,121 @@ export function DesktopAssistance({
         );
       if (mounted.current) await query.refetch();
     } catch (cause) {
-      if (mounted.current) setError(cause);
+      failed(cause);
+    } finally {
+      if (mounted.current) {
+        setBusy(false);
+        setTransition(null);
+      }
+    }
+  }
+  useEffect(() => {
+    if (
+      claimRequested &&
+      !agentRequested &&
+      view?.state === "awaiting_user" &&
+      !busy
+    ) {
+      setClaimRequested(false);
+      void command("control");
+    }
+    // Only an explicit click in this browser may acquire a control grant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimRequested, agentRequested, view?.state, busy]);
+
+  async function openDesktop() {
+    setBusy(true);
+    setError(null);
+    try {
+      data(
+        await api.POST("/api/v1/runs/{run_id}/desktop-control", {
+          params: { path: { run_id: runId } },
+          body: {
+            mount: selectedMount,
+            reason: "User-initiated desktop control",
+          },
+        }),
+      );
+      await query.refetch();
+    } catch (cause) {
+      failed(cause);
     } finally {
       if (mounted.current) setBusy(false);
     }
   }
   const done = view && ["ready_to_resume", "abandoned"].includes(view.state);
   const available =
-    view && ["awaiting_user", "human_control"].includes(view.state);
+    view && ["viewing", "awaiting_user", "human_control"].includes(view.state);
+  if (agentRequested)
+    return (
+      <div className={styles.assistance}>
+        <p role="status">
+          {t(
+            "The agent has requested desktop assistance. Switching to its assistance card…",
+          )}
+        </p>
+        <ErrorNotice error={error} />
+      </div>
+    );
   return (
-    <div className={styles.assistance}>
-      <p>{view?.reason ?? t("Loading desktop assistance…")}</p>
+    <div
+      className={styles.assistance}
+      data-controlling={access?.mode === "control" && connected}
+    >
+      <p>
+        {!callId
+          ? t("Desktop control")
+          : (view?.reason ?? t("Loading desktop assistance…"))}
+      </p>
+      {!callId && !view && mounts && mounts.length > 1 && (
+        <ChoiceField
+          label={t("Desktop environment")}
+          value={selectedMount}
+          options={mounts.map((name) => ({ value: name, label: name }))}
+          onValueChange={setSelectedMount}
+          disabled={busy}
+        />
+      )}
+      {!callId && view && <p className={styles.status}>{view.mount}</p>}
+      {!callId && !view && (
+        <Button
+          size="sm"
+          disabled={busy || query.isLoading}
+          onClick={() => void openDesktop()}
+        >
+          {t("Open desktop")}
+        </Button>
+      )}
       <div className={styles.status} role="status">
-        {done
-          ? view?.state === "abandoned"
-            ? t(
-                "Assistance expired or was cancelled. Review the result before continuing.",
-              )
-            : t(
-                "Assistance finished. Submit all responses to resume the agent.",
-              )
-          : access?.mode === "control" && connected
-            ? t("You control this desktop. The agent is paused.")
-            : connected
-              ? t("Read-only desktop")
-              : view?.state === "blocked"
-                ? t("Access cleanup is unconfirmed. The agent remains paused.")
-                : t("The agent is waiting for desktop assistance.")}
+        {transition === "complete"
+          ? t("Returning control. Revoking input access…")
+          : !view && !callId
+            ? t("Viewing does not pause the agent. Get control to interact.")
+            : done
+              ? !callId && view?.state === "ready_to_resume"
+                ? t(
+                    "Control returned. The task remains paused until continuation is accepted.",
+                  )
+                : view?.state === "abandoned"
+                  ? t(
+                      "Assistance expired or was cancelled. Review the result before continuing.",
+                    )
+                  : t(
+                      "Assistance finished. Submit all responses to resume the agent.",
+                    )
+              : view?.state === "preparing"
+                ? t("Pausing agent. Waiting for admitted operations to finish…")
+                : view?.state === "viewing" && !connected
+                  ? t(
+                      "Viewing does not pause the agent. Get control to interact.",
+                    )
+                  : access?.mode === "control" && connected
+                    ? t("You control this desktop. The agent is paused.")
+                    : connected
+                      ? t("Read-only desktop")
+                      : view?.state === "blocked"
+                        ? t("Desktop access cleanup is unconfirmed.")
+                        : t("The agent is waiting for desktop assistance.")}
       </div>
       {access && (
         <div
@@ -260,7 +444,16 @@ export function DesktopAssistance({
           aria-label={t("Desktop viewer")}
         />
       )}
-      {!done && (
+      {done && !callId && canContinue && (
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => void command("continue")}
+        >
+          {t("Continue agent")}
+        </Button>
+      )}
+      {!done && view && (
         <>
           <div className={styles.actions}>
             <Button
@@ -276,9 +469,13 @@ export function DesktopAssistance({
               type="button"
               size="sm"
               disabled={busy || !available || access?.mode === "control"}
-              onClick={() => void command("control")}
+              onClick={() =>
+                void command(
+                  !callId && view.state === "viewing" ? "request" : "control",
+                )
+              }
             >
-              {t("Take control")}
+              {t(callId ? "Take control" : "Get control")}
             </Button>
             {access && (
               <Button
@@ -288,7 +485,11 @@ export function DesktopAssistance({
                 disabled={busy}
                 onClick={() => void command("disconnect")}
               >
-                {t("Disconnect desktop")}
+                {t(
+                  callId || access.mode === "view"
+                    ? "Disconnect desktop"
+                    : "End control, keep paused",
+                )}
               </Button>
             )}
           </div>
@@ -303,16 +504,27 @@ export function DesktopAssistance({
               type="button"
               size="sm"
               variant="outline"
-              disabled={busy || !available}
+              disabled={busy || !available || view.state === "viewing"}
               onClick={() => void command("complete")}
             >
-              {t("Finish assistance")}
+              {t(
+                callId
+                  ? "Finish assistance"
+                  : canContinue
+                    ? "Return control and continue"
+                    : "Return control",
+              )}
             </Button>
             <span>
               {t("Connections are revoked before the agent can continue.")}
             </span>
           </div>
         </>
+      )}
+      {view?.failure && (
+        <p role="alert">
+          {t("Desktop transition blocked")}: {view.failure}
+        </p>
       )}
       <ErrorNotice error={error ?? query.error} />
     </div>

@@ -121,7 +121,16 @@ async def operation(
         await lock_lease(session, lease)
         row = await target(session, key, environment_id=environment_id, run_id=lease.run_id)
         assistance = await session.get(DesktopAssistanceRow, row.holder_id) if row.holder_id else None
-        if row.holder_id is not None:
+        from a13n_service.runs.desktop_assistance.execution import admitted_run
+
+        draining = (
+            assistance is not None
+            and assistance.cause == "user"
+            and assistance.state == "preparing"
+            and assistance.run_id == lease.run_id
+            and admitted_run.get() == lease.run_id
+        )
+        if row.holder_id is not None and not draining:
             if assistance is None or assistance.state != "consumed" or assistance.successor_id != lease.run_id:
                 raise EnvironmentError("Desktop is reserved for human assistance.", code="environment_denied")
             if action not in {EnvironmentAction.COMPUTER_OBSERVE, EnvironmentAction.COMPUTER_DESCRIBE}:

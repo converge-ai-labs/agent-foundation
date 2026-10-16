@@ -33,14 +33,28 @@ class DesktopTargetRow(Base):
     unmanaged_input: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
 
+class DesktopExecutionRow(Base):
+    """A durable tool-dispatch fence; a lost attempt cannot erase unsettled work."""
+
+    __tablename__ = "desktop_executions"
+    __table_args__ = (CheckConstraint("inflight >= 0", name="inflight"),)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("run_attempts.id"))
+    supported: Mapped[bool] = mapped_column(Boolean)
+    inflight: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    uncertain: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+
+
 class DesktopAssistanceRow(Base):
     __tablename__ = "desktop_assistance_requests"
     __table_args__ = (
         ForeignKeyConstraint(["workspace_id", "run_id"], ["runs.workspace_id", "runs.id"]),
         ForeignKeyConstraint(["workspace_id", "environment_id"], ["environments.workspace_id", "environments.id"]),
         UniqueConstraint("run_id", "tool_call_id"),
+        Index("uq_desktop_user_control", "run_id", unique=True, postgresql_where=text("cause = 'user'")),
+        CheckConstraint("cause IN ('agent', 'user')", name="cause"),
         CheckConstraint(
-            "state IN ('preparing', 'awaiting_user', 'claiming', 'human_control', 'revoking', 'ready_to_resume', 'consumed', 'blocked', 'abandoned')",
+            "state IN ('viewing', 'preparing', 'awaiting_user', 'claiming', 'human_control', 'revoking', 'ready_to_resume', 'consumed', 'blocked', 'abandoned')",
             name="state",
         ),
         Index("ix_desktop_assistance_due", "deadline", "state"),
@@ -48,7 +62,8 @@ class DesktopAssistanceRow(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"))
     run_id: Mapped[str]
-    tool_call_id: Mapped[str]
+    tool_call_id: Mapped[str | None]
+    cause: Mapped[str] = mapped_column(String(16), server_default=text("'agent'"))
     environment_id: Mapped[str]
     target_key: Mapped[str] = mapped_column(ForeignKey("desktop_targets.key"))
     mount: Mapped[str]

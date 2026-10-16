@@ -21,7 +21,7 @@ from a13n_service.runs.attachments import asset_fields
 from a13n_service.runs.desktop_assistance.service import validate_resume
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Pending, Resume, Returned, RunView, canonical_json
+from a13n_service.runs.schemas import MessagePayload, Pending, Resume, Returned, RunView, TextPart, canonical_json
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.threads import get_run, get_thread, require_open
 from a13n_service.tenancy.access import workspace_scope
@@ -100,6 +100,22 @@ async def resume(
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
             assistance = await validate_resume(session, waiting, answers)
+            pause = next((item for item in assistance if item.cause == "user"), None)
+            if pause is not None and answers.input is None:
+                note = (pause.outcome or {}).get("note", "")
+                answers = answers.model_copy(
+                    update={
+                        "input": MessagePayload(
+                            content=(
+                                TextPart(
+                                    type="text",
+                                    text="The user returned desktop control. Observe the current desktop first, then replan before further operations. Human note: "
+                                    + str(note),
+                                ),
+                            )
+                        )
+                    }
+                )
             if answers.input is not None:
                 await require_usable(session, scope.workspace_id, asset_fields(answers.input))
             source = await Source.inherited(

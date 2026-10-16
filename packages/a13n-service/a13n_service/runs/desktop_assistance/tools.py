@@ -58,6 +58,8 @@ class DesktopAssistanceCapability(AbstractCapability[AgentContext]):
             identity = await service.request_assistance(
                 self.runtime, self.lease, self.principal, ctx.tool_call_id, Request(mount=mount, reason=reason)
             )
+        if identity is None:
+            return "The user already requested desktop control. This assistance request was not opened; wait for handback, then observe and replan."
         raise CallDeferred(metadata={"desktop_assistance_id": identity})
 
     async def before_model_request(

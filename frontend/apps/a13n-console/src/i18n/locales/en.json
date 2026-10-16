@@ -2404,7 +2404,7 @@
   "Assistance finished. Submit all responses to resume the agent.": "Assistance finished. Submit all responses to resume the agent.",
   "You control this desktop. The agent is paused.": "You control this desktop. The agent is paused.",
   "Read-only desktop": "Read-only desktop",
-  "Access cleanup is unconfirmed. The agent remains paused.": "Access cleanup is unconfirmed. The agent remains paused.",
+  "Desktop access cleanup is unconfirmed.": "Desktop access cleanup is unconfirmed.",
   "Open read-only desktop": "Open read-only desktop",
   "Take control": "Take control",
   "Disconnect desktop": "Disconnect desktop",
@@ -2416,5 +2416,18 @@
   "Desktop disconnected. Open it again to reconnect.": "Desktop disconnected. Open it again to reconnect.",
   "Desktop connection was refused.": "Desktop connection was refused.",
   "Desktop access could not be renewed. Input has been disabled.": "Desktop access could not be renewed. Input has been disabled.",
-  "Assistance expired or was cancelled. Review the result before continuing.": "Assistance expired or was cancelled. Review the result before continuing."
+  "Assistance expired or was cancelled. Review the result before continuing.": "Assistance expired or was cancelled. Review the result before continuing.",
+  "Desktop control": "Desktop control",
+  "Open desktop": "Open desktop",
+  "Get control": "Get control",
+  "Return control": "Return control",
+  "Return control and continue": "Return control and continue",
+  "End control, keep paused": "End control, keep paused",
+  "Continue agent": "Continue agent",
+  "Pausing agent. Waiting for admitted operations to finish…": "Pausing agent. Waiting for admitted operations to finish…",
+  "Viewing does not pause the agent. Get control to interact.": "Viewing does not pause the agent. Get control to interact.",
+  "Desktop transition blocked": "Desktop transition blocked",
+  "Returning control. Revoking input access…": "Returning control. Revoking input access…",
+  "Control returned. The task remains paused until continuation is accepted.": "Control returned. The task remains paused until continuation is accepted.",
+  "The agent has requested desktop assistance. Switching to its assistance card…": "The agent has requested desktop assistance. Switching to its assistance card…"
 }

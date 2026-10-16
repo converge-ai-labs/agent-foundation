@@ -3,14 +3,16 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesktopAssistance } from "./desktop-assistance";
+import { ApiError } from "../../../service-client";
 
-const { get, post, viewers, resolved } = vi.hoisted(() => ({
+const { get, post, viewers, resolved, refresh } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   viewers: [] as Array<
     EventTarget & { viewOnly: boolean; disconnect: ReturnType<typeof vi.fn> }
   >,
   resolved: vi.fn(),
+  refresh: vi.fn(),
 }));
 vi.mock("../../../auth/context", () => ({
   useClient: () => ({ workspace: () => ({ GET: get, POST: post }) }),
@@ -49,15 +51,24 @@ const view = {
   failure: null,
   outcome: null,
 };
-const reply = (value: object) => ({ data: value, response: new Response() });
-function start() {
-  get.mockResolvedValue(reply(view));
+const reply = (value: object | null) => ({
+  data: value,
+  response: new Response(),
+});
+function start(userControl = false, state: string | null = "awaiting_user") {
+  get.mockResolvedValue(reply(state === null ? null : { ...view, state }));
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const component = render(
     <QueryClientProvider client={cache}>
-      <DesktopAssistance runId="run" callId="help" onResolved={resolved} />
+      <DesktopAssistance
+        runId="run"
+        callId={userControl ? undefined : "help"}
+        canContinue={userControl}
+        onResolved={resolved}
+        onRefresh={refresh}
+      />
     </QueryClientProvider>,
   );
   return { cache, ...component };
@@ -66,6 +77,88 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   viewers.length = 0;
+});
+
+it.each(["open", "request"])(
+  "explains an Agent-won race during %s without claiming or resuming",
+  async (action) => {
+    const user = userEvent.setup();
+    start(true, action === "open" ? null : "viewing");
+    post.mockRejectedValueOnce(
+      new ApiError(
+        409,
+        "conflict",
+        "internal identifier",
+        { reason: "desktop_agent_assistance_pending" },
+        null,
+      ),
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: action === "open" ? "Open desktop" : "Get control",
+      }),
+    );
+    await screen.findByText(
+      "The agent has requested desktop assistance. Switching to its assistance card…",
+    );
+    expect(screen.queryByText("internal identifier")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Get control" })).toBeNull();
+    expect(refresh).toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(viewers).toHaveLength(0);
+  },
+);
+
+it("cannot acquire control from a late request response after switching panels", async () => {
+  const user = userEvent.setup();
+  const { unmount } = start(true, "viewing");
+  let respond!: (value: object) => void;
+  post.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        respond = resolve;
+      }),
+  );
+  await user.click(await screen.findByRole("button", { name: "Get control" }));
+  unmount();
+  get.mockResolvedValue(reply(view));
+  respond(reply(view));
+  await Promise.resolve();
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(viewers).toHaveLength(0);
+});
+
+it("revokes its read-only viewer before requesting takeover so a competing card inherits no connection", async () => {
+  const user = userEvent.setup();
+  start(true, "viewing");
+  post.mockResolvedValueOnce(
+    reply({
+      assistance: { ...view, state: "viewing" },
+      mode: "view",
+      websocket_url: "wss://desktop.example/",
+      password: "private",
+      expires_in_seconds: 60,
+    }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Open read-only desktop" }),
+  );
+  await waitFor(() => expect(viewers).toHaveLength(1));
+  post.mockResolvedValueOnce(reply({ ...view, state: "viewing" }));
+  post.mockResolvedValueOnce(reply({ ...view, state: "preparing" }));
+  get.mockResolvedValue(reply({ ...view, state: "preparing" }));
+  await user.click(screen.getByRole("button", { name: "Get control" }));
+  await screen.findByText(
+    "Pausing agent. Waiting for admitted operations to finish…",
+  );
+  expect(post.mock.calls.map(([path]) => path.split("/").at(-1))).toEqual([
+    "view",
+    "disconnect",
+    "request-control",
+  ]);
+  expect(viewers[0].disconnect).toHaveBeenCalled();
+  expect(viewers[0].viewOnly).toBe(true);
+  expect(resolved).not.toHaveBeenCalled();
 });
 
 it("keeps input disabled until a confirmed control grant connects; never caches credentials", async () => {
@@ -147,4 +240,77 @@ it("does not resolve the deferred call when revocation fails", async () => {
   );
   await screen.findByText("Cleanup unconfirmed");
   expect(resolved).not.toHaveBeenCalled();
+});
+
+it("waits for the durable pause before requesting a user control grant", async () => {
+  const user = userEvent.setup();
+  const { cache } = start(true, "viewing");
+  post.mockResolvedValueOnce(reply({ ...view, state: "preparing" }));
+  get.mockResolvedValue(reply({ ...view, state: "preparing" }));
+  await user.click(await screen.findByRole("button", { name: "Get control" }));
+  await screen.findByText(
+    "Pausing agent. Waiting for admitted operations to finish…",
+  );
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[0][0]).toContain("/request-control");
+  expect(viewers).toHaveLength(0);
+  get.mockResolvedValue(reply(view));
+  post.mockResolvedValueOnce(
+    reply({
+      assistance: { ...view, state: "human_control", epoch: 1 },
+      mode: "control",
+      websocket_url: "wss://desktop.example/",
+      password: "private",
+      expires_in_seconds: 60,
+    }),
+  );
+  await cache.invalidateQueries();
+  await waitFor(() => expect(viewers).toHaveLength(1));
+  expect(post.mock.calls[1][0]).toMatch(/\/control$/);
+  expect(viewers[0].viewOnly).toBe(true);
+});
+
+it("resumes only after confirmed handback, and never after failed cleanup", async () => {
+  const user = userEvent.setup();
+  start(true);
+  let finish!: (value: object) => void;
+  post.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Return control and continue" }),
+  );
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[0][0]).toMatch(/\/complete$/);
+  finish(
+    reply({
+      ...view,
+      state: "ready_to_resume",
+      outcome: { outcome: "completed" },
+    }),
+  );
+  post.mockResolvedValueOnce(reply({ id: "next" }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+  expect(post.mock.calls[1][0]).toMatch(/\/resume$/);
+  await screen.findByRole("button", { name: "Return control and continue" });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Return control and continue",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  post.mockRejectedValueOnce(new Error("Cleanup unconfirmed"));
+  await user.click(
+    screen.getByRole("button", { name: "Return control and continue" }),
+  );
+  await screen.findByText("Cleanup unconfirmed");
+  expect(
+    post.mock.calls.filter(([path]) => path.endsWith("/resume")),
+  ).toHaveLength(1);
 });
