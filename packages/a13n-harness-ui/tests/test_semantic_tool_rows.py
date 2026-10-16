@@ -321,3 +321,152 @@ def test_bounded_file_read_remains_successful_and_keeps_recovery_details(rendere
     assert render(renderer) == "Read SKILL.md"
     details = render(renderer, detailed=True)
     assert "bounded source prefix" in details and "Use next_line_offset" in details
+
+
+@pytest.mark.parametrize("delivery", ["raw", "live", "snapshot"])
+@pytest.mark.parametrize("native_first", [False, True])
+@pytest.mark.parametrize(
+    "name,arguments,result,expected",
+    [
+        (
+            "shell_exec",
+            {"command": "pytest -q"},
+            {"ok": True, "process_id": "process-one", "status": {"phase": "running"}},
+            "Run running · pytest -q",
+        ),
+        ("view", {"file_path": "src/a.py"}, {"ok": True, "content": "file contents"}, "Read src/a.py"),
+        ("grep", {"pattern": "needle", "root": "src"}, {"ok": True}, "Search needle in src"),
+        ("ls", {"path": "src"}, {"ok": True}, "List src"),
+        ("write", {"file_path": "src/a.py", "content": "hello"}, {"ok": True}, "Call write src/a.py"),
+        (
+            "note_write",
+            {"key": "plan", "value": "hello"},
+            {"ok": True, "action": "created"},
+            "Call note_write plan · created",
+        ),
+        (
+            "view",
+            {"file_path": "missing.py"},
+            {"ok": False, "error": {"message": "File not found"}},
+            "Read failed: File not found — Read missing.py",
+        ),
+    ],
+)
+def test_tool_result_envelopes_preserve_one_row_and_semantics(
+    renderer, delivery, native_first, name, arguments, result, expected
+):
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("root", full_content=True)
+
+    def emit(event):
+        observation = fold.fold([event])[0]
+        if delivery == "raw":
+            renderer.ingest(event["type"], event)
+        elif delivery == "live":
+            renderer.ingest(event["type"], event, display_position=fold.position, item=observation.item)
+
+    for event in [
+        {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": name},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": json.dumps(arguments)},
+        {"type": "TOOL_CALL_END", "toolCallId": "call"},
+    ]:
+        emit(event)
+    native = {
+        "type": "CUSTOM",
+        "name": "a13n.pydantic_ai.function_tool_result",
+        "value": {
+            "event": {
+                "part": {
+                    "tool_call_id": "call",
+                    "tool_name": name,
+                    "part_kind": "tool-return",
+                    "outcome": "success",
+                    "content": result,
+                }
+            }
+        },
+    }
+    protocol = {"type": "TOOL_CALL_RESULT", "toolCallId": "call", "content": json.dumps(result)}
+    for event in [native, protocol] if native_first else [protocol, native]:
+        emit(event)
+    if delivery == "snapshot":
+        snapshot = {"name": "a13n.display.snapshot", "value": fold.export().model_dump(mode="json")}
+        renderer.ingest("CUSTOM", snapshot)
+        renderer.ingest("CUSTOM", snapshot)
+    assert len(renderer.transcript.blocks) == 1
+    assert render(renderer) == expected
+    details = render(renderer, detailed=True)
+    assert "Arguments | call" in details
+    assert all(str(value) in details for value in arguments.values())
+    if name == "shell_exec":
+        assert renderer.background_hint == "Background 1 observed · /ps"
+        call(renderer, "shell_wait", {"process_id": "process-one"}, call_id="wait")
+        assert render(renderer).splitlines()[-1] == "Run waiting · pytest -q"
+        finish(renderer, "wait", {"process_id": "process-one", "status": {"phase": "exited", "exit_code": 2}})
+        assert render(renderer).splitlines()[-1] == "Run failed · exit 2 · pytest -q"
+
+
+@pytest.mark.parametrize(
+    "name,arguments,result,expected",
+    [
+        ("shell_info", {"process_id": "process-one"}, {"ok": True, "status": {"phase": "running"}}, "Inspect process"),
+        ("shell_info", {"alias": "remote"}, {"ok": True, "processes": [], "has_more": False}, "List processes"),
+        ("shell_input", {"process_id": "process-one", "data": "yes"}, {"ok": True}, "Send process input"),
+        (
+            "shell_signal",
+            {"process_id": "process-one", "signal": "terminate"},
+            {"ok": True},
+            "Signal process · terminate",
+        ),
+    ],
+)
+@pytest.mark.parametrize("known", [False, True])
+def test_process_operations_do_not_require_launch_arguments(renderer, name, arguments, result, expected, known):
+    if known:
+        call(
+            renderer,
+            "shell_exec",
+            {"command": "server"},
+            call_id="launch",
+            result={
+                "ok": True,
+                "process_id": "process-one",
+                "status": {"phase": "running"},
+            },
+        )
+    call(renderer, name, arguments, result=result)
+    if known and "process_id" in arguments:
+        expected += " · server"
+    assert render(renderer).splitlines()[-1] == expected
+    assert "unavailable" not in render(renderer)
+    assert "process-one" not in render(renderer)
+
+
+def test_late_native_failure_updates_the_original_tool_row(renderer):
+    call(renderer, "view", {"file_path": "a.py"}, result={"ok": True})
+    custom(
+        renderer,
+        "a13n.pydantic_ai.function_tool_result",
+        {
+            "part": {
+                "tool_call_id": "call-1",
+                "tool_name": "view",
+                "part_kind": "tool-return",
+                "outcome": "failed",
+                "content": {"error": {"message": "Read failed"}},
+            }
+        },
+    )
+    assert len(renderer.transcript.blocks) == 1
+    assert render(renderer) == "Read failed: Read failed — Read a.py"
+    assert "Arguments | call-1" in render(renderer, detailed=True)
+
+
+def test_completed_tool_correlation_is_bounded_and_releases_argument_budget(renderer):
+    for index in range(140):
+        call(renderer, "write", {"file_path": "a.py", "content": "x" * 2000}, call_id=str(index), result={"ok": True})
+    assert len(renderer._tools) == 128
+    assert all(
+        not preview.arguments and preview.parts is None and preview.size == 0 for preview in renderer._tools.values()
+    )

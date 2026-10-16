@@ -556,3 +556,46 @@ it("shows screenshot retention failure without marking a successful observation 
   );
   expect(screen.queryByText("Failed")).toBeNull();
 });
+
+it.each([
+  ["ls", '{"path":"/actual",', { path: "/actual" }, "/actual"],
+  ["get_thread", '{"thread_id":', { thread_id: "thread-one" }, "thread-one"],
+  [
+    "list_threads",
+    '{"project_id":',
+    { project_id: "project-one" },
+    "project-one",
+  ],
+  ["list_models", '{"query":', { query: "model-one" }, "model-one"],
+])(
+  "does not infer %s default targets from unfinished arguments",
+  (name, input, complete, target) => {
+    const pending = { id: "pending", name, input };
+    expect(describeTool(pending)).toMatchObject({
+      summary: "",
+      phase: "Receiving input",
+    });
+    expect(
+      describeTool({ ...pending, input: complete, inputComplete: true }),
+    ).toMatchObject({ summary: target, phase: "Awaiting result" });
+  },
+);
+
+it("distinguishes process listing from single-process inspection", () => {
+  expect(
+    describeTool({
+      id: "list",
+      name: "shell_info",
+      input: { alias: "remote" },
+      inputComplete: true,
+    }),
+  ).toMatchObject({ label: "List processes", summary: "remote" });
+  expect(
+    describeTool({
+      id: "inspect",
+      name: "shell_info",
+      input: { process_id: "process-one" },
+      inputComplete: true,
+    }),
+  ).toMatchObject({ label: "Inspect process", summary: "process-one" });
+});

@@ -150,9 +150,12 @@ export function describeTool(tool: ToolView) {
       summary = text(args.process_id);
       break;
     case "shell_info":
-      label = "Inspect process";
+      label =
+        record(input) && !text(args.process_id)
+          ? "List processes"
+          : "Inspect process";
       kind = "shell";
-      summary = text(args.process_id);
+      summary = text(args.process_id) || text(args.alias);
       break;
     case "shell_input":
       label = "Send process input";
@@ -301,6 +304,9 @@ export function describeTool(tool: ToolView) {
       }
       break;
   }
+  // An unfinished or omitted argument object cannot establish default targets.
+  if (!record(input) && !hasResult && !tool.edit && !tool.editOmitted)
+    summary = "";
   if (tool.edit || tool.editOmitted) {
     label = "Edit";
     kind = "edit";

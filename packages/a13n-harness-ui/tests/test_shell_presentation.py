@@ -351,7 +351,7 @@ def test_long_capture_cannot_push_coverage_notices_out_of_preview_budget() -> No
 def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
     renderer = StreamRenderer(Status())
     renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "shell_exec"})
-    assert _visible(renderer) == "Run command unavailable …"
+    assert _visible(renderer) == "Call shell_exec …"
     renderer.transcript.close()
 
 

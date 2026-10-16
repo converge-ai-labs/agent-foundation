@@ -491,7 +491,7 @@ class StreamRenderer:
             command = value.get("command")
             return " ".join(command.split())[:500] if isinstance(command, str) else ""
         process_id = value.get("process_id")
-        if name == "shell_wait" and isinstance(process_id, str):
+        if isinstance(process_id, str):
             observation = self._shell_processes.get((run_id, process_id))
             return observation.command if observation else ""
         return ""
@@ -946,12 +946,14 @@ class StreamRenderer:
                 self.transcript.complete(state[0])
             return
         native_state = None
+        native_content: object = None
         if event_type == "CUSTOM" and payload.get("name") == "a13n.pydantic_ai.function_tool_result":
             value = payload.get("value")
             event = value.get("event") if isinstance(value, dict) else None
             part = event.get("part") if isinstance(event, dict) else None
             fields = part if isinstance(part, dict) else {}
             native_state = "returned"
+            native_content = fields.get("content")
             if fields.get("part_kind") == "retry-prompt":
                 native_state = "retry"
             elif fields.get("outcome") in ("failed", "denied"):
@@ -1059,7 +1061,8 @@ class StreamRenderer:
                     preview.block_id = self.transcript.append(
                         header + "\n", collapsed_lines=None if shell else 1, kind="command" if shell else "tool"
                     )
-                    brief = preview.semantic + " …"
+                    # START announces the tool before its arguments arrive.
+                    brief = f"Call {preview.name} …"
                     if preview.name in {"edit", "multi_edit"}:
                         brief = header
                     self.transcript.preview(preview.block_id, brief)
@@ -1094,30 +1097,39 @@ class StreamRenderer:
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
                 name = preview.name if preview else str(payload.get("toolCallName", "tool"))[:60]
-                subagent_receipt = preview is not None and name in {"delegate", "steer_subagent"}
-                if subagent_receipt and preview is not None:
+                if preview is not None and name in {"delegate", "steer_subagent"}:
                     if (native_state is not None and preview.native_result_seen) or (
                         native_state is None and preview.protocol_result_seen
                     ):
                         return
+                result_text = (
+                    (
+                        native_content
+                        if isinstance(native_content, str)
+                        else json.dumps(native_content, ensure_ascii=False)
+                    )
+                    if native_state is not None
+                    else text
+                )
                 if name.startswith("shell"):
-                    command = self._shell_command(name, preview.arguments, run_id) if preview else ""
-                    if preview and name in {"shell_exec", "shell_start", "shell_wait"}:
-                        preview.summary = command
-                    self._observe_shell_result(text, command if name in {"shell_exec", "shell_start"} else "", run_id)
+                    command = preview.summary if preview else ""
+                    self._observe_shell_result(
+                        result_text, command if name in {"shell_exec", "shell_start"} else "", run_id
+                    )
                 if not child or detailed:
                     elapsed = f" | {time.monotonic() - preview.started:.1f}s" if preview else ""
-                    result = tool_result(name, text)
-                    state, _, output = result.partition("\n")
-                    if native_state is not None:
+                    state = tool_result(name, result_text).partition("\n")[0]
+                    if native_state is not None and native_state != "returned":
                         state = native_state
-                        result = f"{state}\n{output}"
+                    # Interpret the value, retaining the native envelope in details.
+                    output = tool_result(name, text).partition("\n")[2]
+                    result = f"{state}\n{output}"
                     header = f"{name} | {state}" + (f" | {identity}" if child else "")
                     summary = preview.summary if preview else ""
                     brief = header + (f" | {' '.join(summary.split())}" if summary else "") + elapsed
                     shell_preview = None
-                    if name.startswith("shell") and native_state is None:
-                        shell_preview = shell_result_preview(text, summary, separator=" · ")
+                    if name in {"shell_exec", "shell_start", "shell_wait"} and native_state in {None, "returned"}:
+                        shell_preview = shell_result_preview(result_text, summary, separator=" · ")
                     if shell_preview is not None:
                         brief = f"{name} | {shell_preview}"
                         if child:
@@ -1130,7 +1142,7 @@ class StreamRenderer:
                         if shell_preview is not None:
                             brief = "Run " + shell_preview
                         elif failed:
-                            brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(text, state)} — {semantic}"
+                            brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(result_text, state)} — {semantic}"
                         else:
                             brief = subagent_result_row(name, semantic, text) or semantic
                             if name in {"note_write", "note_delete"} and state in {
@@ -1172,27 +1184,26 @@ class StreamRenderer:
                         )
                     if not applied_retained:
                         kind = "command" if name.startswith("shell") else "tool"
-                        retained_subagent = (
-                            subagent_receipt
-                            and preview is not None
+                        retained_result = (
+                            preview is not None
                             and (preview.native_result_seen or preview.protocol_result_seen)
                             and block_id is not None
                             and self.transcript.extend(block_id, terminal_text(f"\nAdditional tool result\n{result}\n"))
                         )
-                        if not retained_subagent:
+                        if not retained_result:
                             if block_id is None or not self.transcript.replace(
                                 block_id, terminal_text(body), kind=kind
                             ):
                                 block_id = self.transcript.append(terminal_text(body), collapsed_lines=1, kind=kind)
                         assert block_id is not None
                         if not (
-                            retained_subagent
+                            retained_result
                             and preview is not None
                             and preview.native_result_seen
                             and native_state is None
                         ):
                             self.transcript.preview(block_id, terminal_text(brief), 1)
-                        if subagent_receipt and preview is not None:
+                        if preview is not None:
                             preview.block_id = block_id
                         if name in CONTEXT_TOOLS:
                             self.transcript.blocks[block_id].concise_hidden = not failed
@@ -1205,16 +1216,14 @@ class StreamRenderer:
                             preview.member.failed = failed
                             preview.group.refresh(self.transcript)
                     self.append(header + elapsed + "\n", display=False)
-                if subagent_receipt and preview is not None:
-                    # These receipts have both native and protocol observations;
-                    # keep bounded correlation without treating delivery as completion.
+                if preview is not None:
+                    # Native and protocol results describe the same invocation.
+                    # Retain bounded correlation and semantics after releasing arguments.
                     preview.native_result_seen |= native_state is not None
                     preview.protocol_result_seen |= native_state is None
                     preview.arguments = ""
                     preview.parts = None
                     preview.size = 0
-                else:
-                    self._tools.pop(key, None)
                 if not child and self.status.state != "cancelling":
                     self.status.state = "working"
                 self.boundary = True
@@ -1231,8 +1240,10 @@ class StreamRenderer:
                     preview.summary = tool_preview(
                         preview.arguments, name=preview.name, directory=self.status.directory
                     )
-                    if preview.name in {"shell_exec", "shell_start", "shell_wait"}:
+                    if preview.name.startswith("shell"):
                         preview.summary = self._shell_command(preview.name, preview.arguments, run_id)
+                        if preview.name in {"shell_info", "shell_input", "shell_signal"} and preview.summary:
+                            preview.semantic += f" · {preview.summary}"
                     if preview.name in {"edit", "multi_edit", "summarize", "compact"}:
                         preview.arguments = ""
                     elif preview.arguments:
