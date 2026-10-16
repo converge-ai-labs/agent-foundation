@@ -11,6 +11,7 @@ from mcp.types import ResourceLink
 
 from . import test_mcp_apps_operations as fixtures
 
+app_transport = fixtures.app_transport
 apps = fixtures.apps
 
 
