@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesktopAssistance } from "./desktop-assistance";
@@ -313,4 +313,65 @@ it("resumes only after confirmed handback, and never after failed cleanup", asyn
   expect(
     post.mock.calls.filter(([path]) => path.endsWith("/resume")),
   ).toHaveLength(1);
+});
+
+it("waits for in-flight renewal before handback while disabling input immediately", async () => {
+  const user = userEvent.setup();
+  const timers = vi.spyOn(globalThis, "setTimeout");
+  try {
+    start(true);
+    const grant = {
+      assistance: { ...view, state: "human_control", epoch: 1 },
+      mode: "control",
+      websocket_url: "wss://desktop.example/",
+      password: "private",
+      expires_in_seconds: 60,
+    };
+    post.mockResolvedValueOnce(reply(grant));
+    await user.click(
+      await screen.findByRole("button", { name: "Get control" }),
+    );
+    await waitFor(() => expect(viewers).toHaveLength(1));
+    act(() => viewers[0].dispatchEvent(new Event("connect")));
+    let renewed!: (value: object) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          renewed = resolve;
+        }),
+    );
+    const timer = timers.mock.calls.find(([, delay]) => delay === 15000);
+    expect(timer).toBeDefined();
+    act(() => {
+      (timer![0] as () => void)();
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Return control and continue" }),
+    );
+    expect(viewers[0].viewOnly).toBe(true);
+    expect(viewers[0].disconnect).toHaveBeenCalled();
+    expect(post.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/desktop-assistance/{assistance_id}/control",
+      "/api/v1/desktop-assistance/{assistance_id}/control",
+    ]);
+    post.mockResolvedValueOnce(
+      reply({
+        ...view,
+        state: "ready_to_resume",
+        outcome: { outcome: "completed" },
+      }),
+    );
+    post.mockResolvedValueOnce(reply({ id: "next" }));
+    await act(async () => {
+      renewed(reply(grant));
+    });
+    await waitFor(() =>
+      expect(post.mock.calls.map(([path]) => path).slice(2)).toEqual([
+        "/api/v1/desktop-assistance/{assistance_id}/complete",
+        "/api/v1/runs/{run_id}/resume",
+      ]),
+    );
+  } finally {
+    timers.mockRestore();
+  }
 });

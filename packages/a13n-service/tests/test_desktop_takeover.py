@@ -368,3 +368,43 @@ async def test_task_tree_is_explicitly_refused_without_partial_pause(service, sc
     assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "running"
     gate.set()
     await running
+
+
+async def test_expired_user_control_requires_cleanup_and_explicit_resume(
+    service, scripted_model, runs_kit, monkeypatch
+):
+    from datetime import timedelta
+
+    from a13n_service.infra.db import now
+    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow
+
+    first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
+    gate = asyncio.Event()
+    scripted_model.call("find_resources", {"kind": "model"}, call_id="stale", gate=gate)
+    running = await runs_kit.attempt(service)
+    await scripted_model.request()
+    view = await open_desktop(service, first["run"])
+    assert (await post(service, view, "request-control", {})).status_code == 200
+    gate.set()
+    await asyncio.wait_for(running, 15)
+    claimed = await post(service, view, "control", control(view))
+    assert claimed.status_code == 200
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopAssistanceRow, view["id"])
+        row.deadline = await now(session) - timedelta(seconds=1)
+    endpoint.fail_revoke = True
+    with pytest.raises(RuntimeError):
+        await maintenance.reconcile(service.runtime, view["id"])
+    path = f"{service.api}/runs/{first['run']['id']}/resume"
+    body = {"calls": {}, "approvals": {}}
+    denied = await service.client.post(path, json=body, headers=runs_kit.fresh_key())
+    assert denied.status_code == 409
+    endpoint.fail_revoke = False
+    await maintenance.reconcile(service.runtime, view["id"])
+    assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "waiting"
+    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
+    resumed = await service.client.post(path, json=body, headers=runs_kit.fresh_key())
+    assert resumed.status_code == 201, resumed.text
+    scripted_model.say("Observe the changed desktop before further operations.")
+    await (await runs_kit.attempt(service))
+    assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"

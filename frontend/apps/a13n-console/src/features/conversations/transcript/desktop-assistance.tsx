@@ -49,6 +49,7 @@ export function DesktopAssistance({
     [note, setNote] = useState("");
   const screen = useRef<HTMLDivElement>(null),
     rfb = useRef<RFB | null>(null);
+  const renewal = useRef<Promise<unknown> | null>(null);
   const current = useRef(access);
   current.current = access;
   const epoch = useRef(0);
@@ -82,6 +83,7 @@ export function DesktopAssistance({
   }, [view]);
 
   function closeLocal() {
+    current.current = null;
     if (rfb.current) {
       rfb.current.viewOnly = true;
       rfb.current.disconnect();
@@ -191,26 +193,29 @@ export function DesktopAssistance({
       })
       .catch(() => stop("Desktop connection was refused."));
     async function renew() {
+      if (!active || current.current !== grant) return;
+      const pending = api.POST(
+        grant.mode === "control"
+          ? "/api/v1/desktop-assistance/{assistance_id}/control"
+          : "/api/v1/desktop-assistance/{assistance_id}/view",
+        {
+          params: {
+            path: { assistance_id: grant.assistance.id },
+            query: { renew: true },
+          },
+          body: { session_id: sessionId, epoch: grant.assistance.epoch },
+        },
+      );
+      renewal.current = pending;
       try {
-        const response = data(
-          await api.POST(
-            grant.mode === "control"
-              ? "/api/v1/desktop-assistance/{assistance_id}/control"
-              : "/api/v1/desktop-assistance/{assistance_id}/view",
-            {
-              params: {
-                path: { assistance_id: grant.assistance.id },
-                query: { renew: true },
-              },
-              body: { session_id: sessionId, epoch: grant.assistance.epoch },
-            },
-          ),
-        );
-        if (!active) return;
+        const response = data(await pending);
+        if (!active || current.current !== grant) return;
         armExpiry(response.expires_in_seconds);
         timer = setTimeout(() => void renew(), 15000);
       } catch {
         stop("Desktop access could not be renewed. Input has been disabled.");
+      } finally {
+        if (renewal.current === pending) renewal.current = null;
       }
     }
     timer = setTimeout(() => void renew(), 15000);
@@ -253,6 +258,9 @@ export function DesktopAssistance({
     const previousAccess = current.current;
     closeLocal();
     try {
+      // Local input stops immediately; let an admitted renewal release its server transition first.
+      await renewal.current?.catch(() => {});
+      if (!mounted.current) return;
       const params = { path: { assistance_id: view.id } };
       const body = { session_id: sessionId, epoch: epoch.current };
       if (action === "request") {

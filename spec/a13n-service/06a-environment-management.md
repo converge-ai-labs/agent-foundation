@@ -94,7 +94,7 @@ Worker loss after a takeover request fails the Run with `desktop_pause_attempt_l
 
 Completion revokes connections and confirms held-input cleanup before `ready_to_resume`. Resume validates the exact pending batch and the stored control completion transactionally. A desktop-only wait uses empty `calls` and `approvals`; a mixed wait still requires every native deferred result. With no caller-supplied continuation input, Service supplies the persisted human note and an instruction to observe and replan. The successor must observe the current desktop and reach the following model boundary before other tools or mutations are admitted. Old unexecuted gestures are not replayed.
 
-Disconnect and controller lease expiry revoke access but leave the task paused without an answer. A reconnect has no implicit control. The existing 15-minute context deadline and 60-second independently enforced grant bound apply. Stop/delete, provider expiry and loss of current authority invalidate access; cleanup uncertainty must not permit a competing controller. No force-release API or implicit replacement environment is provided.
+Disconnect and controller lease expiry revoke access but leave the task paused without an answer. After the entire user-control context expires, explicit resume is permitted only after reconciliation confirms revocation and input cleanup; unresolved cleanup still rejects continuation. A reconnect has no implicit control. The existing 15-minute context deadline and 60-second independently enforced grant bound apply. Stop/delete, provider expiry and loss of current authority invalidate access; cleanup uncertainty must not permit a competing controller. No force-release API or implicit replacement environment is provided.
 
 ## Management Operations
 

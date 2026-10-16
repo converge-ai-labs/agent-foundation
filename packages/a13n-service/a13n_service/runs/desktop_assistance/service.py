@@ -239,7 +239,7 @@ async def validate_resume(session: AsyncSession, run: RunRow, answers: Resume) -
     ).all()
     if pending.desktop_control_id is not None:
         pause = next((row for row in rows if row.id == pending.desktop_control_id), None)
-        if pause is None or pause.state != "ready_to_resume":
+        if pause is None or pause.state not in {"ready_to_resume", "abandoned"}:
             raise conflict("run", run.id, "desktop_assistance_not_completed")
     by_call = {row.tool_call_id: row for row in rows}
     for call in pending.calls:
