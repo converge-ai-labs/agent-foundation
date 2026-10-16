@@ -68,7 +68,9 @@ a13n-harness-ui --environment-profile environment-team
 
 ## 监控 Environment 资源
 
-从 WebUI 对话工具栏打开 **Environment monitor**。选择 Device，查看操作系统、CPU 型号、最新 CPU 和内存观测、文件系统容量，以及 24 小时的分钟平均值和峰值曲线。面板覆盖整个 App；切换对话或编辑下一次 Run 的目录不会改变观测对象。系统指标描述 Envd 可见的系统，cgroup 指标描述操作员指定的 Linux cgroup，均不是单次 Run 的用量。
+从 WebUI 对话工具栏打开 **Environment monitor**。选择 Device，查看操作系统、CPU 型号、最新 CPU 和内存观测、文件系统容量，以及最多保留 24 小时历史的分钟平均值和峰值曲线。面板覆盖整个 App；切换对话或编辑下一次 Run 的目录不会改变观测对象。系统指标描述 Envd 可见的系统，cgroup 指标描述操作员指定的 Linux cgroup，均不是单次 Run 的用量。
+
+面板默认显示最近 15 分钟，每 10 秒刷新一次。可以切换时间范围或刷新间隔、关闭自动刷新，或手动刷新。在任一图表上拖拽选区，会将所有图表缩放到同一历史时段；缩放按钮也支持键盘和触摸操作。**Back to live** 恢复滚动时间窗口。悬停或使用图表的左右方向键，可联动查看各图表同一分钟的读数。平滑曲线保留记录值和缺口；缩放不会增加分钟聚合以外的细节。
 
 远程 Device 复用已有的认证连接。在 Envd 启动配置中启用 `monitoring` 后开始采样；禁用采样时仍可查看静态系统信息。内置本地 Sandbox 在 daemon 启动时启用采样。打开监控不会下载或启动 Envd。Direct 和其他非 Envd Provider 不提供这些指标。本地运行时获取与已安装 `a13n-envd-client` 完全相同的版本；已发布的 Envd 0.3.0 提供此监控协议。远程 daemon 和客户端应一起升级。
 
