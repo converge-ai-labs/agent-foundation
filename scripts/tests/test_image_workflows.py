@@ -321,6 +321,7 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
         ("deploy/docker/images/sandbox/Dockerfile", {"sandbox"}),
         ("deploy/docker/images/sandbox/entrypoint.sh", {"sandbox"}),
         ("deploy/docker/images/sandbox/desktop.py", {"sandbox"}),
+        ("packages/a13n-service/a13n_service/providers/environment/desktop_guest.py", {"service", "sandbox"}),
         ("deploy/docker/images/sandbox/init-skills.sh", {"sandbox"}),
         ("crates/a13n-envd/src/main.rs", {"sandbox"}),
         ("uv.lock", {"service"}),
@@ -517,6 +518,7 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
         "deploy/docker/images/sandbox/init-skills.sh",
         "deploy/docker/images/sandbox/entrypoint.sh",
         "deploy/docker/images/sandbox/desktop.py",
+        "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "scripts/sandbox_smoke.py",
     ):
         assert any(Path(name).full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])

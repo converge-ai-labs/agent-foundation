@@ -71,6 +71,9 @@ from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
+from a13n_service.runs.desktop_assistance.maintenance import sweep as desktop_assistance_sweep
+from a13n_service.runs.desktop_assistance.routes import router as desktop_assistance_router
+from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow, DesktopViewerRow
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
@@ -316,6 +319,9 @@ OSS = Distribution(
         SpaceOrganizationRow,
         ThreadRow,
         EnvironmentRow,
+        DesktopTargetRow,
+        DesktopAssistanceRow,
+        DesktopViewerRow,
         ThreadEnvironmentRow,
         ThreadMemoryRow,
         InboxEntryRow,
@@ -343,6 +349,7 @@ OSS = Distribution(
         findings_router,
         environment_templates_router,
         environments_router,
+        desktop_assistance_router,
         memories_router,
         memory_spaces_router,
         thread_memories_router,
@@ -355,6 +362,7 @@ OSS = Distribution(
         _advance_threads,
         organization_sweep,
         _expire_leases,
+        desktop_assistance_sweep,
         _expire_credentials,
         maintenance_sweep,
         renewal_sweep,

@@ -88,6 +88,25 @@ def main() -> int:
         wait_ready(["xdpyinfo"])
         start(["openbox"], desktop=True)
         wait_ready(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"], marker=b"window id")
+        # Operator opt-in: an empty endpoint grants no access. Publishing port 6081
+        # and providing TLS remain separate host duties.
+        if os.environ.get("A13N_DESKTOP_ACCESS") == "true":
+            start(
+                [
+                    "python3",
+                    "-I",
+                    "/opt/a13n-desktop-access.py",
+                    "serve",
+                    "--root",
+                    "/run/a13n-desktop-access",
+                    "--display",
+                    ":99",
+                    "--authority",
+                    str(authority),
+                ],
+                desktop=False,
+            )
+            wait_ready(["test", "-S", "/run/a13n-desktop-access/control.sock"])
         daemon = start(sys.argv[1:] or ["a13n-envd"], desktop=False)
         while all(child.poll() is None for child in children):
             time.sleep(0.1)

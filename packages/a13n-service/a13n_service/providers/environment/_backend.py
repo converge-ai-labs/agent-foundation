@@ -7,9 +7,11 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, pr
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._backend import BackendReference
 
+from .desktop_access import Reply, Request
+
 
 class ManagementBackend(BackendReference):
-    """Lifecycle authority and mutable observations, without execution operations."""
+    """Lifecycle and desktop-access authority, without execution operations."""
 
     def _cache_state(self, state: EnvironmentState | None) -> None:
         self._known_state = state.model_copy(deep=True) if state is not None else None
@@ -47,3 +49,7 @@ class ManagementBackend(BackendReference):
 
     async def close(self) -> None:
         return None
+
+    async def desktop_access(self, request: Request) -> Reply:
+        """Management-only endpoint grants; never part of execution operations."""
+        raise self._unsupported()

@@ -19,6 +19,14 @@ The cloud demos here exercise E2B only. The complete [cloud-provider catalog](..
 
 For Chinese desktop applications, [desktop_template.py](desktop_template.py) builds an operator-owned template derived from E2B's `desktop` with Noto CJK fonts. Set `E2B_API_KEY` securely, run `uv sync --locked` in this directory, then `uv run python desktop_template.py my-desktop-cjk`. The build creates or updates that named template in your E2B account. Select its ID or name under Console's **Desktop environment → Custom template** when creating a new environment. Font installation runs during template build only. See [native E2B desktop](../../docs/environments/providers.md#native-e2b-desktop) for text semantics and the opt-in editor acceptance test.
 
+### Desktop access endpoint development
+
+[desktop_access_template.py](desktop_access_template.py) builds an opt-in E2B template with the internal desktop-access supervisor and CJK fonts. Run `uv run python desktop_access_template.py my-desktop-access` with `E2B_API_KEY` configured securely. The build creates or updates that template in your account. It owns endpoint startup; the official Desktop SDK still initializes and operates the desktop. The supervisor uses Python 3.10+, x11vnc and websockify, installed at build time. No dependency installation happens when issuing a grant.
+
+The Docker desktop image includes the same supervisor. For isolated endpoint development, start it with `A13N_DESKTOP_ACCESS=true` and publish container port 6081 to loopback. The management socket at `/run/a13n-desktop-access/control.sock` is root-private. A remote deployment needs a separate HTTPS/WSS viewer route; the Docker Engine connection is not a browser route. Do not publish the plaintext listener directly to the internet.
+
+Enable `desktop_assistance: true` in a Service desktop recipe to use the Agent-requested assistance flow. E2B needs this compatible custom template. Docker also needs `desktop_viewer_url`, an operator-provided WSS route containing `{container_id}` and reaching container port 6081. Service authorizes the human, reserves the native target and drains managed execution before admitting control. Console displays the assistance card only when the Agent requests it; arbitrary takeover is not supported. A controller grant expires within 60 seconds unless renewed, with an absolute 15-minute lifetime. Observe grants reject input at the server. Revocation disconnects that grant and rejects its old credentials without revoking other observers. Agent SDK/envd input is a separate authority; the Host must keep it excluded until revocation and input cleanup are confirmed. See the [management contract](../../spec/a13n-service/06a-environment-management.md#desktop-access-enforcement).
+
 ## Try remote providers in one command
 
 Build the daemon once, then try both transports without credentials, Docker, or a model:

@@ -1,0 +1,32 @@
+.assistance {
+  display: grid;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+.assistance p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.status {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions span {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.screen {
+  width: 100%;
+  height: clamp(240px, 50vh, 640px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #111;
+}

@@ -53,6 +53,7 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents.service import load_revision
+from a13n_service.resources.agents.toolsets import enabled_tools
 from a13n_service.runs import agent, checkpoints, claim, deferred, inbox, inputs
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
@@ -71,6 +72,7 @@ from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.contents import Contents
+from a13n_service.runs.desktop_assistance.tools import DesktopAssistanceCapability
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
 from a13n_service.runs.environments.mounts import PRIMARY
@@ -443,7 +445,16 @@ class _Attempt:
             executable = agent.build(
                 root,
                 capabilities=lambda node: (
-                    [self.boundaries, *host.capabilities(node), *host.memory]
+                    [
+                        self.boundaries,
+                        *host.capabilities(node),
+                        *host.memory,
+                        *(
+                            [DesktopAssistanceCapability(runtime, lease, self.plan.principal)]
+                            if enabled_tools(root.config.toolsets, "computer")
+                            else []
+                        ),
+                    ]
                     if node is root
                     else host.capabilities(node)
                 ),

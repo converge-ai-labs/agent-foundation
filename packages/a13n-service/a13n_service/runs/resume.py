@@ -18,6 +18,7 @@ from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conf
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.runs.accept import Source, start_run
 from a13n_service.runs.attachments import asset_fields
+from a13n_service.runs.desktop_assistance.service import validate_resume
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Pending, Resume, Returned, RunView, canonical_json
@@ -98,6 +99,7 @@ async def resume(
                     return await run_view(session, found), False
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
+            assistance = await validate_resume(session, waiting, answers)
             if answers.input is not None:
                 await require_usable(session, scope.workspace_id, asset_fields(answers.input))
             source = await Source.inherited(
@@ -111,6 +113,8 @@ async def resume(
                 request_digest=digest,
             )
             successor = await start_run(session, runtime, thread, source)
+            for item in assistance:
+                item.state, item.successor_id, item.observed = "consumed", successor.id, False
             return await run_view(session, successor), True
     except IntegrityError as error:
         if violated_constraint(error) != "uq_runs_resume_request":

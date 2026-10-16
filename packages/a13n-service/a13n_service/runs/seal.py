@@ -20,6 +20,7 @@ from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints, inbox
 from a13n_service.runs.accept import advance
 from a13n_service.runs.attempts import Lease, lock_thread_lease
+from a13n_service.runs.desktop_assistance import service as desktop_assistance
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Failure, Outcome, Sealed
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
@@ -129,6 +130,7 @@ async def seal(
     thread.current_run_id, thread.last_run_id = None, run.id
     await session.flush()
     await inbox.release_assigned(session, thread, run, at=at)
+    await desktop_assistance.sealed(session, run, outcome.pending)
     if thread.origin == "child" and outcome.status != "waiting":
         # One result per sealed child run; the parent's delivery validates and inserts it later.
         await enqueue_once(

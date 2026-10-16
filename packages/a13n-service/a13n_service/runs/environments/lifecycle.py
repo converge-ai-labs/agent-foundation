@@ -29,6 +29,7 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
@@ -79,12 +80,42 @@ _CERTAINTY: dict[EnvironmentProviderOutcomeCertainty, Certainty] = {
 
 def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool]:
     """Whether an accepted or running run's frozen mounts name the instance: the durable active-use evidence."""
-    return exists().where(
-        # Literal, so the partial GIN index on active runs' mounts applies.
-        text("runs.status IN ('accepted', 'running')"),
-        RunRow.environment_mounts.contains(
-            func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
-        ),
+    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
+
+    held = aliased(EnvironmentRow)
+    candidate = aliased(EnvironmentRow)
+    same_target = (held.handle["state"]["provider_key"].astext == candidate.handle["state"]["provider_key"].astext) & (
+        (
+            (held.handle["state"]["provider_key"].astext == "e2b")
+            & (
+                held.handle["state"]["state"]["sandbox_id"].astext
+                == candidate.handle["state"]["state"]["sandbox_id"].astext
+            )
+        )
+        | (
+            (held.handle["state"]["provider_key"].astext == "docker")
+            & (
+                held.handle["state"]["state"]["container_id"].astext
+                == candidate.handle["state"]["state"]["container_id"].astext
+            )
+        )
+    )
+    held_target = exists(
+        select(DesktopAssistanceRow.id)
+        .join(DesktopTargetRow, DesktopTargetRow.holder_id == DesktopAssistanceRow.id)
+        .join(held, held.id == DesktopAssistanceRow.environment_id)
+        .join(candidate, same_target)
+        .where(candidate.id == environment_id)
+        .correlate_except(DesktopAssistanceRow, DesktopTargetRow, held, candidate)
+    )
+    return (
+        exists().where(
+            text("runs.status IN ('accepted', 'running')"),
+            RunRow.environment_mounts.contains(
+                func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
+            ),
+        )
+        | held_target
     )
 
 

@@ -20,6 +20,42 @@
       }
     },
     "schemas": {
+      "Access": {
+        "properties": {
+          "assistance": {
+            "$ref": "#/components/schemas/View"
+          },
+          "expires_in_seconds": {
+            "title": "Expires In Seconds",
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "view",
+              "control"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "websocket_url": {
+            "title": "Websocket Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assistance",
+          "mode",
+          "websocket_url",
+          "password",
+          "expires_in_seconds"
+        ],
+        "title": "Access",
+        "type": "object"
+      },
       "AccountDisable": {
         "additionalProperties": false,
         "properties": {
@@ -2964,6 +3000,42 @@
         "title": "ClientToolDefinition",
         "type": "object"
       },
+      "Completion": {
+        "additionalProperties": false,
+        "properties": {
+          "epoch": {
+            "minimum": 0.0,
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Note",
+            "type": "string"
+          },
+          "outcome": {
+            "default": "completed",
+            "enum": [
+              "completed",
+              "abandoned"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^[a-zA-Z0-9_-]{20,72}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "epoch"
+        ],
+        "title": "Completion",
+        "type": "object"
+      },
       "ComputerCheck": {
         "description": "A point-in-time capability probe, not an Agent or mount permission grant.",
         "properties": {
@@ -3779,6 +3851,27 @@
           "context_window_tokens"
         ],
         "title": "ContextUsage",
+        "type": "object"
+      },
+      "Control": {
+        "additionalProperties": false,
+        "properties": {
+          "epoch": {
+            "minimum": 0.0,
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "session_id": {
+            "pattern": "^[a-zA-Z0-9_-]{20,72}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "epoch"
+        ],
+        "title": "Control",
         "type": "object"
       },
       "CreatedSubscription": {
@@ -15487,6 +15580,110 @@
         "title": "VideoUrlType",
         "type": "string"
       },
+      "View": {
+        "properties": {
+          "controller_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controller Id"
+          },
+          "deadline": {
+            "format": "date-time",
+            "title": "Deadline",
+            "type": "string"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "epoch": {
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Expires At"
+          },
+          "mount": {
+            "title": "Mount",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "title": "Tool Call Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "tool_call_id",
+          "environment_id",
+          "mount",
+          "reason",
+          "state",
+          "epoch",
+          "controller_id",
+          "deadline",
+          "lease_expires_at",
+          "failure",
+          "outcome"
+        ],
+        "title": "View",
+        "type": "object"
+      },
       "WaitReason": {
         "enum": [
           "approval",
@@ -19363,6 +19560,334 @@
           "providers"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/desktop-assistance/{assistance_id}/complete": {
+      "post": {
+        "operationId": "complete_assistance_api_v1_desktop_assistance__assistance_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assistance_id",
+            "required": true,
+            "schema": {
+              "title": "Assistance Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Completion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Complete Assistance",
+        "tags": [
+          "desktop-assistance"
+        ]
+      }
+    },
+    "/api/v1/desktop-assistance/{assistance_id}/control": {
+      "post": {
+        "operationId": "control_desktop_api_v1_desktop_assistance__assistance_id__control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assistance_id",
+            "required": true,
+            "schema": {
+              "title": "Assistance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "renew",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Renew",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Control"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Control Desktop",
+        "tags": [
+          "desktop-assistance"
+        ]
+      }
+    },
+    "/api/v1/desktop-assistance/{assistance_id}/disconnect": {
+      "post": {
+        "operationId": "disconnect_desktop_api_v1_desktop_assistance__assistance_id__disconnect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assistance_id",
+            "required": true,
+            "schema": {
+              "title": "Assistance Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Control"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Disconnect Desktop",
+        "tags": [
+          "desktop-assistance"
+        ]
+      }
+    },
+    "/api/v1/desktop-assistance/{assistance_id}/view": {
+      "post": {
+        "operationId": "view_desktop_api_v1_desktop_assistance__assistance_id__view_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assistance_id",
+            "required": true,
+            "schema": {
+              "title": "Assistance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "renew",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Renew",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Control"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "View Desktop",
+        "tags": [
+          "desktop-assistance"
+        ]
       }
     },
     "/api/v1/environment-providers": {
@@ -27898,6 +28423,82 @@
           "effect": "read",
           "group": "execution"
         }
+      }
+    },
+    "/api/v1/runs/{run_id}/desktop-assistance/{call_id}": {
+      "get": {
+        "operationId": "get_assistance_api_v1_runs__run_id__desktop_assistance__call_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Assistance",
+        "tags": [
+          "desktop-assistance"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/runs/{run_id}/fork": {

@@ -16,6 +16,7 @@ from a13n_harness.providers.environment.docker.http import http_execution
 from a13n_harness.providers.environment.docker.shared import _KEY, DockerReference, _missing
 
 from a13n_service.providers.environment._backend import ManagementBackend
+from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
 
 from .configuration import DockerRecipe
 
@@ -190,6 +191,8 @@ class DockerManagement(DockerReference, ManagementBackend):
             else self.config.user or image.labels.get("ai.a13n.environment.user")
         )
         environment = dict(self.config.environment)
+        if self.config.desktop_assistance:
+            environment["A13N_DESKTOP_ACCESS"] = "true"
         ports = None
         if self.config.execution == "envd_http":
             assert connection is not None
@@ -240,6 +243,31 @@ class DockerManagement(DockerReference, ManagementBackend):
                 return "absent"
             self._remember(container)
             return "running" if container.status == "running" else "stopped"
+
+    async def desktop_access(self, request: Request) -> Reply:
+        if not self.config.desktop or self.target is None:
+            raise self._unsupported()
+        with engine_errors(mutation=True):
+            container = await asyncio.to_thread(self._lookup)
+            if container is None or container.status != "running":
+                raise provider_error(_KEY, "desktop_target_unavailable", EnvironmentProviderErrorCategory.CONFLICT)
+            # Management runs as root independently of the Agent's configured execution user.
+            commands = DockerCommands(
+                self.runtime.engine, self.target.container_id, self.config.model_copy(update={"user": "root"})
+            )
+            try:
+                reply = decode(_KEY, request, await commands.execute(command(request), maximum=16384))
+                if isinstance(reply, Description) and self.config.desktop_assistance and self.config.desktop_viewer_url:
+                    return reply.model_copy(
+                        update={
+                            "websocket_url": self.config.desktop_viewer_url.replace(
+                                "{container_id}", self.target.container_id
+                            )
+                        }
+                    )
+                return reply
+            finally:
+                commands.closed = True
 
     async def stop(self) -> None:
         with engine_errors(mutation=True):

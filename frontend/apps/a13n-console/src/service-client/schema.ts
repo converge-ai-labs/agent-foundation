@@ -661,6 +661,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/desktop-assistance/{assistance_id}/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Assistance */
+    post: operations["complete_assistance_api_v1_desktop_assistance__assistance_id__complete_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/desktop-assistance/{assistance_id}/control": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Control Desktop */
+    post: operations["control_desktop_api_v1_desktop_assistance__assistance_id__control_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/desktop-assistance/{assistance_id}/disconnect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Disconnect Desktop */
+    post: operations["disconnect_desktop_api_v1_desktop_assistance__assistance_id__disconnect_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/desktop-assistance/{assistance_id}/view": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** View Desktop */
+    post: operations["view_desktop_api_v1_desktop_assistance__assistance_id__view_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-providers": {
     parameters: {
       query?: never;
@@ -1865,6 +1933,23 @@ export interface paths {
      * @description The complete value behind a committed display reference.
      */
     get: operations["run_content_api_v1_runs__run_id__contents__content_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/desktop-assistance/{call_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Assistance */
+    get: operations["get_assistance_api_v1_runs__run_id__desktop_assistance__call_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3340,6 +3425,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** Access */
+    Access: {
+      assistance: components["schemas"]["View"];
+      /** Expires In Seconds */
+      expires_in_seconds: number;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "view" | "control";
+      /** Password */
+      password: string;
+      /** Websocket Url */
+      websocket_url: string;
+    };
     /** AccountDisable */
     AccountDisable: {
       /**
@@ -4324,6 +4424,24 @@ export interface components {
        */
       permission?: "inherit" | "allow" | "deny";
     };
+    /** Completion */
+    Completion: {
+      /** Epoch */
+      epoch: number;
+      /**
+       * Note
+       * @default
+       */
+      note?: string;
+      /**
+       * Outcome
+       * @default completed
+       * @enum {string}
+       */
+      outcome?: "completed" | "abandoned";
+      /** Session Id */
+      session_id: string;
+    };
     /**
      * ComputerCheck
      * @description A point-in-time capability probe, not an Agent or mount permission grant.
@@ -4599,6 +4717,13 @@ export interface components {
       record_id: string;
       /** Run Id */
       run_id: string;
+    };
+    /** Control */
+    Control: {
+      /** Epoch */
+      epoch: number;
+      /** Session Id */
+      session_id: string;
     };
     /** CreatedSubscription */
     CreatedSubscription: {
@@ -8664,6 +8789,40 @@ export interface components {
      * @enum {string}
      */
     VideoUrlType: "youtube";
+    /** View */
+    View: {
+      /** Controller Id */
+      controller_id: string | null;
+      /**
+       * Deadline
+       * Format: date-time
+       */
+      deadline: string;
+      /** Environment Id */
+      environment_id: string;
+      /** Epoch */
+      epoch: number;
+      /** Failure */
+      failure: string | null;
+      /** Id */
+      id: string;
+      /** Lease Expires At */
+      lease_expires_at: string | null;
+      /** Mount */
+      mount: string;
+      /** Outcome */
+      outcome: {
+        [key: string]: unknown;
+      } | null;
+      /** Reason */
+      reason: string;
+      /** Run Id */
+      run_id: string;
+      /** State */
+      state: string;
+      /** Tool Call Id */
+      tool_call_id: string;
+    };
     /** @enum {string} */
     WaitReason: "approval" | "call" | "multiple";
     /** @enum {string} */
@@ -10101,6 +10260,134 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  complete_assistance_api_v1_desktop_assistance__assistance_id__complete_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        assistance_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Completion"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["View"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  control_desktop_api_v1_desktop_assistance__assistance_id__control_post: {
+    parameters: {
+      query?: {
+        renew?: boolean;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        assistance_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Control"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Access"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  disconnect_desktop_api_v1_desktop_assistance__assistance_id__disconnect_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        assistance_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Control"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["View"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  view_desktop_api_v1_desktop_assistance__assistance_id__view_post: {
+    parameters: {
+      query?: {
+        renew?: boolean;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        assistance_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Control"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Access"];
         };
       };
       400: components["responses"]["Error"];
@@ -13138,6 +13425,34 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunContent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_assistance_api_v1_runs__run_id__desktop_assistance__call_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        call_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["View"];
         };
       };
       400: components["responses"]["Error"];

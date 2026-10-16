@@ -434,5 +434,10 @@
   "Delete Environment Provider": "删除环境连接",
   "Environment Provider References": "环境连接引用",
   "One reported generation, compared with its currently configured window.": "单次模型生成报告的用量，与当前配置的上下文窗口大小比较。",
-  "Context Usage": "上下文用量"
+  "Context Usage": "上下文用量",
+  "Complete Assistance": "完成桌面协助",
+  "Control Desktop": "获取桌面控制权",
+  "Disconnect Desktop": "断开桌面连接",
+  "Get Assistance": "查看桌面协助状态",
+  "View Desktop": "只读查看桌面"
 }

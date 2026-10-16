@@ -10,6 +10,8 @@ from typing import Literal
 from a13n_harness.environment.models import EnvironmentState
 from pydantic import BaseModel
 
+from .desktop_access import Reply, Request
+
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentStatus:
@@ -18,7 +20,7 @@ class EnvironmentStatus:
 
 
 class EnvironmentProvider[E: BaseModel](ABC):
-    """Account-scoped management authority, used only under Host lifecycle policy.
+    """Account-scoped management authority, used under Host lifecycle and access policy.
 
     The recipe accompanies saved state because existing state codecs deliberately
     exclude execution options and the complete provisioning configuration.
@@ -67,6 +69,18 @@ class EnvironmentProvider[E: BaseModel](ABC):
 
     @abstractmethod
     async def close(self) -> None: ...
+
+    async def desktop_access(
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        operation_id: str,
+        request: Request,
+    ) -> Reply:
+        """Optional management authority, unavailable until the provider implements enforcement."""
+        raise NotImplementedError("Desktop access is unavailable for this provider")
 
     async def __aenter__(self) -> EnvironmentProvider[E]:
         return self

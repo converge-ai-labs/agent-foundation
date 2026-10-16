@@ -240,7 +240,12 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         await reserve_primary(
             session, principal, thread, template_id=template_id, limit=runtime.settings.environments.managed_count
         )
-    mounts = await freeze_mounts(session, thread, principal_id=principal.id)
+    mounts = await freeze_mounts(
+        session,
+        thread,
+        principal_id=principal.id,
+        resume_run_id=parent.id if source.trigger == "resume" and parent else None,
+    )
     payload = source.resume.input if source.resume is not None else None
     if source.entry is not None and source.entry.kind == "message":
         payload = MessagePayload.model_validate(source.entry.payload)

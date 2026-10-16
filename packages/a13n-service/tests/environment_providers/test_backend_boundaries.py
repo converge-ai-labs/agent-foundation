@@ -43,7 +43,7 @@ def test_execution_implementation_has_no_management_authority(implementation):
     assert issubclass(implementation, ExecutionBackend)
     assert not issubclass(implementation, ManagementBackend)
     assert not inspect.isabstract(implementation)
-    for name in ("create", "start", "inspect", "stop", "destroy", "keepalive", "_cache_state"):
+    for name in ("create", "start", "inspect", "stop", "destroy", "keepalive", "desktop_access", "_cache_state"):
         assert not hasattr(implementation, name), (implementation, name)
     assert "operation_id" not in inspect.signature(implementation).parameters
 
