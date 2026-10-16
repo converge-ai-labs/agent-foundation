@@ -23,15 +23,30 @@ from a13n_harness_ui.storage import AgentResourceSource, ObjectKind, ThreadConfi
 from a13n_harness_ui.surfaces import RootRunReceipt
 from mcp.types import TextContent
 
+from .mcp_apps_server import create_server
 from .test_composition import _catalog, _selection, _write_source
 from .test_mcp_apps_connections import _SERVER
 from .test_thread_repository import _initial
+from .test_tool_proxy_integration import _http_mcp
 
 pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def apps(tmp_path: Path, request: pytest.FixtureRequest):
+async def app_transport(tmp_path: Path, request: pytest.FixtureRequest):
+    # Business-rule tests use real MCP over loopback HTTP without a Python startup per case.
+    # Process binding and reconnect tests keep their own stdio subprocess.
+    if getattr(request, "param", "http") == "stdio":
+        script = tmp_path / "apps_server.py"
+        script.write_text(_SERVER)
+        yield {"command": sys.executable, "arguments": [str(script)]}
+    else:
+        async with _http_mcp(create_server()) as url:
+            yield {"url": url}
+
+
+@pytest.fixture
+async def apps(tmp_path: Path, request: pytest.FixtureRequest, app_transport):
     config = _write_source(tmp_path)
     root = yaml.safe_load(config.read_text())
     root["webui"] = {"mcp_apps": {"enabled": True, "servers": ["mcp-docs"]}}
@@ -39,31 +54,9 @@ async def apps(tmp_path: Path, request: pytest.FixtureRequest):
     if with_inputs:
         root["mcp"] = {"protocol_overrides": {"mcp-docs": "2026-07-28"}}
     config.write_text(yaml.safe_dump(root))
-    script = tmp_path / "apps_server.py"
-    script_source = _SERVER
-    if with_inputs:
-        script_source = (
-            script_source.replace(
-                "from mcp.types import TextContent",
-                "from mcp.types import TextContent, InputRequiredResult, ElicitRequest, ElicitRequestFormParams",
-            )
-            .replace(
-                "async def counter(ctx: Context, delay: float = 0) -> ToolResult:",
-                "async def counter(ctx: Context, delay: float = 0, confirm: bool = False) -> ToolResult | InputRequiredResult:",
-            )
-            .replace(
-                "    await asyncio.sleep(delay)",
-                """    if confirm and ctx.input_responses is None:
-        return InputRequiredResult(request_state="counter-confirm", input_requests={"confirm": ElicitRequest(
-            params=ElicitRequestFormParams(message="Confirm count", requested_schema={"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]})
-        )})
-    await asyncio.sleep(delay)""",
-            )
-        )
-    script.write_text(script_source)
     mcp = tmp_path / "mcp/docs.yaml"
     server = yaml.safe_load(mcp.read_text())
-    server["transport"] = {"command": sys.executable, "arguments": [str(script)]}
+    server["transport"] = app_transport
     mcp.write_text(yaml.safe_dump(server))
     source = await load_harness_ui_configuration(config)
     resolver = AgentCompositionResolver(_catalog(), host_mode="webui")
@@ -383,6 +376,7 @@ async def test_app_review_policy_never_resolves_or_calls_a_model(apps, monkeypat
     review.assert_not_called()
 
 
+@pytest.mark.parametrize("app_transport", ["stdio"], indirect=True)
 async def test_explicit_reactivation_does_not_recover_private_state_or_reauthorize_old_views(apps) -> None:
     operations, reference = apps
     first = await operations.activate(reference)
@@ -441,6 +435,7 @@ async def test_retained_operation_data_is_bounded_and_closed_views_release_capac
     assert operations._retained_bytes < retained
 
 
+@pytest.mark.parametrize("app_transport", ["stdio"], indirect=True)
 async def test_effective_credential_change_rejects_existing_view_without_auto_reconnect(
     apps, monkeypatch: pytest.MonkeyPatch
 ) -> None:
