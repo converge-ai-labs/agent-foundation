@@ -1,0 +1,49 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 680px;
+  min-width: 0;
+}
+
+.sectionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionHeader > h2 {
+  margin: 0;
+}
+
+.sectionHeader > button {
+  flex-shrink: 0;
+}
+
+.profileLink {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.profileLink > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .sectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profileLink > :first-child {
+    flex-basis: 100%;
+  }
+}

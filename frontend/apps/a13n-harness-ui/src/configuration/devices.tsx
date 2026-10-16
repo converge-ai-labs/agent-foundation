@@ -10,6 +10,7 @@ import { useDeviceInfo } from "./device-directory";
 import { ConnectDevice, PendingDevice } from "./connect-device";
 import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
+import environmentStyles from "./environments-page.module.css";
 
 export function DevicesSection() {
   const { client } = useTransport();
@@ -27,7 +28,7 @@ export function DevicesSection() {
   });
   return (
     <section className={styles.stack}>
-      <div className="flex items-center justify-between gap-3">
+      <div className={environmentStyles.sectionHeader}>
         <h2>Devices</h2>
         <ConnectDevice />
       </div>

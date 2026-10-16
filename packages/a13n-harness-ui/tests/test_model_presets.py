@@ -718,7 +718,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
 @pytest.mark.parametrize(
     "route,authentication,base_url,kinds",
     [
-        ("openai-codex:gpt-5.6-sol", "codex_subscription", None, ["web_search", "image_generation"]),
+        ("openai-codex:gpt-5.6-sol", "codex_subscription", None, ["web_search"]),
         ("grok:grok-4.6", "grok_subscription", None, ["web_search"]),
         ("grok:grok-4.6", "api_key", None, []),
         ("openai-responses:gpt-5.4", "api_key", None, ["web_search", "image_generation"]),

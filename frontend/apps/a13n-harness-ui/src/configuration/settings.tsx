@@ -22,6 +22,7 @@ import { InstallSettings } from "../shell/install";
 import { DevicesSection } from "./devices";
 import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
+import environmentStyles from "./environments-page.module.css";
 
 const sections = [
   { path: "/settings", label: "General" },
@@ -242,7 +243,7 @@ export function EnvironmentsPage() {
   const selectors = useSelectors();
   const sources = useSources();
   return (
-    <>
+    <div className={environmentStyles.page}>
       <PageHeader
         title="Environments"
         description="Manage where agents can work."
@@ -258,7 +259,7 @@ export function EnvironmentsPage() {
         className={styles.stack}
         aria-labelledby="local-execution-profiles"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className={environmentStyles.sectionHeader}>
           <h2 id="local-execution-profiles">Local execution profiles</h2>
           <NewResourceButton
             kind="environment_profile"
@@ -295,7 +296,7 @@ export function EnvironmentsPage() {
             return source ? (
               <div key={item.profile_id} className={styles.resourceRow}>
                 <Link
-                  className="min-w-0 flex-1"
+                  className={environmentStyles.profileLink}
                   to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
                 >
                   {content}
@@ -333,7 +334,7 @@ export function EnvironmentsPage() {
           description="Optional extensions selected in project or global defaults."
         />
       </details>
-    </>
+    </div>
   );
 }
 
