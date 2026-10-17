@@ -270,12 +270,32 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
     async with transaction(service.runtime.storage) as session:
         target = await session.get(DesktopTargetRow, admission.target_key(state))
         assert target.inflight == 0
+    # Invalid key chords never reached the desktop; they must not prevent handoff.
+    with pytest.raises(EnvironmentError, match="invalid chord"):
+        async with admission.operation(
+            service.runtime, lease, view["environment_id"], state, Action.COMPUTER_PRESS_KEYS
+        ):
+            raise EnvironmentError(
+                "invalid chord", code="environment_request_invalid", details={"dispatch_stage": "pre_dispatch"}
+            )
+    async with transaction(service.runtime.storage) as session:
+        target = await session.get(DesktopTargetRow, admission.target_key(state))
+        assert target.inflight == 0
+    # The same error code without non-dispatch evidence is not proof of safety.
+    with pytest.raises(EnvironmentError):
+        async with admission.operation(
+            service.runtime, lease, view["environment_id"], state, Action.COMPUTER_PRESS_KEYS
+        ):
+            raise EnvironmentError("uncertain chord", code="environment_request_invalid")
+    async with transaction(service.runtime.storage) as session:
+        target = await session.get(DesktopTargetRow, admission.target_key(state))
+        assert target.inflight == 1
     with pytest.raises(ValueError):
         async with admission.operation(service.runtime, lease, view["environment_id"], state, Action.COMPUTER_CLICK):
             raise ValueError("outcome unknown")
     async with transaction(service.runtime.storage) as session:
         target = await session.get(DesktopTargetRow, admission.target_key(state))
-        assert target.inflight == 1
+        assert target.inflight == 2
 
 
 async def test_alias_admission_and_lifecycle_share_native_reservation(service, scripted_model, runs_kit, monkeypatch):

@@ -145,6 +145,7 @@ async def operation(
             row.unmanaged_input = True
         row.inflight += 1
     completed = False
+    rejected_before_dispatch = False
     read_only = action in FILE_READ_ACTIONS | {
         EnvironmentAction.COMPUTER_OBSERVE,
         EnvironmentAction.COMPUTER_DESCRIBE,
@@ -158,10 +159,13 @@ async def operation(
     try:
         yield
         completed = True
+    except EnvironmentError as error:
+        rejected_before_dispatch = error.details.get("dispatch_stage") == "pre_dispatch"
+        raise
     finally:
         # A failed mutating dispatch may still be acting externally. Failed reads
-        # cannot inject input and must not permanently poison a target reservation.
-        if completed or read_only:
+        # and explicit pre-dispatch rejections cannot inject input.
+        if completed or read_only or rejected_before_dispatch:
             with anyio.CancelScope(shield=True):
                 with anyio.fail_after(5):
                     async with transaction(runtime.storage) as session:
