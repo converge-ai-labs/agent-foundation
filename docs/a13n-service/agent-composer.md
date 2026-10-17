@@ -95,3 +95,13 @@ The `platform-operations` skill reads packaged instructions through a read-only 
 Enable `view`, `ls`, `glob` and `grep` to read the skill. Composer enables only these four file tools. Built-in document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
 
 Existing agents can use the legacy `configuration` toolset. Its `create_agent_revision` requires `expected_version` from the original resource read. Calls missing it must read again and submit a new request. Historical runs retain their original tools.
+
+### Computer coordinate mode
+
+For a model that returns relative desktop positions, set the agent configuration to:
+
+```json
+{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
+```
+
+The tools convert relative coordinates from 0 to 1000 on each axis into the observed screenshot's pixels. Ask the model to pass relative positions directly, without multiplying by screen dimensions. Omit this setting or select `pixels` for models that already return pixel positions. The choice applies to pointer positions, including both drag endpoints, but not scroll distances or keyboard input. It works with both E2B and Docker desktop environments. Always verify the resulting application state; a successful click does not prove that a form was submitted.

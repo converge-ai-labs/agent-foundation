@@ -95,3 +95,13 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
 启用 `view`、`ls`、`glob` 和 `grep` 来读取 skill。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
 
 已有 agent 仍可使用旧的 `configuration` 工具集。它的 `create_agent_revision` 要求提供原始读取结果中的 `expected_version`。缺少该值时，需要重新读取并提交新请求。历史运行保留原有工具。
+
+### Computer 坐标模式
+
+如果模型输出相对桌面坐标，可在 agent 配置中设置：
+
+```json
+{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
+```
+
+工具会将每个轴上 0 到 1000 的相对坐标转换为观察截图的像素坐标。让模型直接传入相对坐标，不要自行乘以屏幕尺寸。对于已经输出像素坐标的模型，省略此设置或选择 `pixels`。该设置适用于鼠标位置，包括拖拽的两个端点，不改变滚动距离或键盘输入。E2B 和 Docker 桌面环境均可使用。始终检查应用的实际状态；点击成功不代表表单已提交。

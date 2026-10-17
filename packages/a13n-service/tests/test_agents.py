@@ -1056,3 +1056,18 @@ def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choice
     assert "computer_observe" in projected.computer_tools
     assert "computer_click" not in projected.computer_tools
     assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
+
+
+def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overrides():
+    from pydantic import ValidationError
+
+    assert toolsets.environment_configuration(config().toolsets).computer_coordinate_space == "pixels"
+    selected = config(toolsets={"computer": {"enabled": True, "config": {"coordinate_space": "normalized_1000"}}})
+    assert selected.toolsets["computer"].config == {"coordinate_space": "normalized_1000"}
+    assert toolsets.environment_configuration(selected.toolsets).computer_coordinate_space == "normalized_1000"
+    overrides = toolsets.normalize_toolset_overrides({"computer": selected.toolsets["computer"]})
+    assert overrides["computer"].config == selected.toolsets["computer"].config
+    schema = next(t.config_schema for t in toolsets.catalog(frozenset()).items if t.key == "computer")
+    assert schema["$defs"]["ComputerCoordinateSpace"]["enum"] == ["pixels", "normalized_1000"]
+    with pytest.raises(ValidationError):
+        config(toolsets={"computer": {"config": {"coordinate_space": "auto"}}})

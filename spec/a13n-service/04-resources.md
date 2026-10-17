@@ -89,6 +89,10 @@ Tool permissions live on each selection and compile into one Harness tool-permis
 
 `GET /toolsets` owns the default English `display_name` and short `description` for each built-in toolset and tool. Descriptions default to an empty string when omitted. Tool entries also identify their model-facing `model_name` and permission `execution_id`; presentation text is separate from these identities.
 
+### Computer tool coordinates
+
+Agent `toolsets.computer.config.coordinate_space` selects `pixels` (default) or `normalized_1000`. Service validates and preserves the setting in revisions and toolset overrides and projects it to the Harness dynamic Environment configuration. Historical selections with no setting retain pixel semantics. The Computer toolset catalog publishes the enum for configuration clients; the Environment Provider and template do not choose the model's coordinate convention. [Computer operations](../a13n-harness/08-environment-integration.md#model-facing-coordinate-space) owns conversion and bounds.
+
 ### Validation
 
 Revision creation, `set-default`, duplication and `POST /agents/validate` apply one validation. It pins every skill and subagent edge whose `revision_id` is omitted to that head's current default, and it reports the first failure as `invalid_argument` with the field path relative to the configuration:

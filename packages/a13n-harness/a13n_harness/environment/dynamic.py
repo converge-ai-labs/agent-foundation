@@ -73,7 +73,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self._run_id = run_id
         self._environment = environment
         self._shell_toolset = ShellToolset(environment)
-        self._computer_toolset = ComputerToolset(environment)
+        self._computer_toolset = ComputerToolset(environment, coordinate_space=configuration.computer_coordinate_space)
         self._file_toolset = FileToolset(
             environment.files,
             file_scopes=environment,

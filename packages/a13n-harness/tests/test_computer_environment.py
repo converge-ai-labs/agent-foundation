@@ -354,3 +354,65 @@ async def test_host_admission_spans_dispatch_and_cannot_broaden_permissions():
         with pytest.raises(EnvironmentError):
             await environment.computer.execute(ComputerTypeText(text="permission denied first"))
         assert not events
+
+
+@pytest.mark.parametrize("width,height,x,y", [(1280, 800, 747, 528), (800, 1280, 467, 844), (1, 1, 0, 0)])
+async def test_relative_coordinates_use_observation_geometry_for_all_pointer_actions(width, height, x, y):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    original = computer.observe
+
+    async def observe(**kwargs):
+        screenshot = await original(**kwargs)
+        return ComputerScreenshot(
+            screenshot.observation.model_copy(update={"width": width, "height": height}), screenshot.data
+        )
+
+    computer.observe = observe
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        image = await tools.computer_observe()
+        assert image.return_value["coordinate_space"] == "normalized_1000"
+        assert (await tools.computer_describe())["coordinate_space"] == "normalized_1000"
+        reference = image.return_value["observation_id"]
+        point = ComputerPoint(x=584, y=660)
+        expected = ComputerPoint(x=x, y=y)
+        assert (await tools.computer_click(reference, point))["ok"]
+        assert computer.inputs[-1].point == expected
+        assert (await tools.computer_move(reference, point))["ok"]
+        assert computer.inputs[-1].point == expected
+        assert (await tools.computer_drag(reference, ComputerPoint(x=0, y=0), ComputerPoint(x=1000, y=1000)))["ok"]
+        assert computer.inputs[-1].start == ComputerPoint(x=0, y=0)
+        assert computer.inputs[-1].end == ComputerPoint(x=width - 1, y=height - 1)
+        assert (await tools.computer_scroll(reference, point, delta_y=7, unit="steps"))["ok"]
+        assert computer.inputs[-1].point == expected
+        assert computer.inputs[-1].delta_y == 7 and computer.inputs[-1].unit == "steps"
+
+
+async def test_relative_coordinate_rejection_and_reference_recovery_never_dispatch():
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        invalid = ComputerPoint(x=1001, y=500)
+        for result in (
+            await tools.computer_click(reference, invalid),
+            await tools.computer_move(reference, invalid),
+            await tools.computer_drag(reference, ComputerPoint(x=0, y=0), invalid),
+            await tools.computer_scroll(reference, invalid),
+        ):
+            assert not result["ok"]
+            assert result["error"]["details"]["dispatch_stage"] == "pre_dispatch"
+        assert computer.inputs == []
+        # A new Run cannot reuse an earlier Run's geometry, regardless of coordinate mode.
+        new_tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        assert not (await new_tools.computer_click(reference, ComputerPoint(x=500, y=500)))["ok"]
+        assert computer.inputs == []
+        pixels = ComputerToolset(environment)
+        observed = await pixels.computer_observe()
+        assert observed.return_value["coordinate_space"] == "pixels"
+        assert (await pixels.computer_click(observed.return_value["observation_id"], ComputerPoint(x=500, y=400)))["ok"]
+        assert computer.inputs[-1].point == ComputerPoint(x=500, y=400)

@@ -322,3 +322,18 @@ async def test_replacement_and_new_toolset_cannot_restore_observations_from_text
         assert computer.inputs == replacement_computer.inputs == []
         projection = await env.project_model_context(ModelContextProjectionRequest(kind=ModelContextRequestKind.INPUT))
         assert '"computer"' in projection.blocks[0].content
+
+
+@pytest.mark.parametrize("instructions", [True, False])
+@pytest.mark.parametrize("coordinate_space", ["pixels", "normalized_1000"])
+async def test_configured_coordinate_space_reaches_model_guidance(tmp_path, instructions, coordinate_space):
+    mounts, _ = _example_mounts(tmp_path)
+    captured = await _capture_environment(
+        create_environment_runtime(mounts=mounts, default_mount="desktop-primary"),
+        instructions=instructions,
+        configuration=DynamicEnvironmentConfiguration(
+            computer_enabled=True, computer_coordinate_space=coordinate_space
+        ),
+    )
+    assert (f"Computer coordinate_space is {coordinate_space}." in captured["instructions"]) == instructions
+    assert ("Do NOT multiply" in captured["instructions"]) == (instructions and coordinate_space == "normalized_1000")

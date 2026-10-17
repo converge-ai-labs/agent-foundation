@@ -16,6 +16,7 @@ from a13n_harness.capabilities.web import (
     WebSearchConfiguration,
 )
 from a13n_harness.environment import DynamicEnvironmentConfiguration
+from a13n_harness.environment.configuration import ComputerConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
 from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
@@ -164,6 +165,7 @@ class _Toolset:
     default_enabled: bool
     tools: tuple[_Tool, ...]
     description: str = ""
+    config: type[BaseModel] = EmptyConfiguration
 
     def definition(self, supported_operations: frozenset[str]) -> ToolsetDefinition:
         return ToolsetDefinition(
@@ -171,7 +173,7 @@ class _Toolset:
             display_name=self.display_name,
             description=self.description,
             default_enabled=self.default_enabled,
-            config_schema=EmptyConfiguration.model_json_schema(),
+            config_schema=self.config.model_json_schema(),
             tools=tuple(tool.definition(supported_operations) for tool in self.tools),
         )
 
@@ -290,6 +292,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             ),
         ),
         description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
+        config=ComputerConfiguration,
     ),
     _Toolset(
         "web",
@@ -516,7 +519,7 @@ def normalize_toolset_overrides(value: dict[ToolsetKey, ToolsetSelection]) -> di
 
 def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetSelection:
     selected = selected or ToolsetSelection(enabled=toolset.default_enabled)
-    EmptyConfiguration.model_validate(selected.config)
+    configuration = toolset.config.model_validate(selected.config).model_dump(mode="json", exclude_none=True)
     # Old immutable revisions may contain the retired report tool; never expose it again.
     retired = {"report"} if toolset.key == "findings" else set()
     unknown = selected.tools.keys() - {tool.key for tool in toolset.tools} - retired
@@ -529,7 +532,7 @@ def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetS
         )
         config = tool.config.model_validate(submitted.config).model_dump(mode="json", exclude_none=True)
         tools[tool.key] = submitted.model_copy(update={"config": config})
-    return ToolsetSelection(enabled=selected.enabled, tools=tools)
+    return ToolsetSelection(enabled=selected.enabled, config=configuration, tools=tools)
 
 
 Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolsets)]
@@ -592,6 +595,9 @@ def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> D
         files_enabled=files.enabled,
         shell_enabled=shell.enabled,
         computer_enabled=computer is not None and computer.enabled,
+        computer_coordinate_space=ComputerConfiguration.model_validate(
+            computer.config if computer else {}
+        ).coordinate_space,
         computer_tools=frozenset(
             tool.model_name
             for tool in _BY_KEY["computer"].tools

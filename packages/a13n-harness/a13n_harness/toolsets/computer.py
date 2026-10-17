@@ -23,6 +23,7 @@ from a13n_harness.environment.computer import (
     ComputerScroll,
     ComputerTypeText,
 )
+from a13n_harness.environment.configuration import ComputerConfiguration, ComputerCoordinateSpace
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
@@ -50,7 +51,8 @@ _ObservationReference = Annotated[
 class ComputerToolset:
     """Run-local observation references; never acquire or reserve a desktop."""
 
-    def __init__(self, environment: BoundEnvironment) -> None:
+    def __init__(self, environment: BoundEnvironment, *, coordinate_space: ComputerCoordinateSpace = "pixels") -> None:
+        self._coordinate_space = ComputerConfiguration(coordinate_space=coordinate_space).coordinate_space
         self._environment = environment
         self._observations: OrderedDict[str, ComputerObservation] = OrderedDict()
 
@@ -88,7 +90,7 @@ class ComputerToolset:
                 if action in actions and (allowed_names is None or method.__name__ in allowed_names)
             ],
             id="a13n-computer-tools",
-            instructions=[tool_instruction("environment-computer")],
+            instructions=[tool_instruction("environment-computer"), self._coordinate_instruction()],
         )
 
     async def computer_describe(self, *, alias: _ComputerAlias = None) -> Any:
@@ -96,7 +98,12 @@ class ComputerToolset:
         try:
             selected_alias = alias if alias is not None else self._environment.snapshot.default_mount
             result = await self._environment.computer.describe(alias=selected_alias)
-            return {"ok": True, **result.model_dump(mode="json"), "alias": selected_alias}
+            return {
+                "ok": True,
+                **result.model_dump(mode="json"),
+                "alias": selected_alias,
+                "coordinate_space": self._coordinate_space,
+            }
         except EnvironmentError as error:
             return environment_failure(error)
 
@@ -112,7 +119,7 @@ class ComputerToolset:
         ] = None,
         max_dimension: Annotated[int, Field(ge=256, le=2048)] = 1280,
     ) -> Any:
-        """Capture a desktop image. Use returned observation_id and image pixel coordinates for pointer input.
+        """Capture a desktop image. Use returned observation_id and coordinate_space for pointer input.
 
         A reference binds target geometry, not screen freshness. Other users and agents may change the shared GUI.
         """
@@ -131,6 +138,7 @@ class ComputerToolset:
                     **screenshot.observation.model_dump(mode="json", exclude={"mount_id", "observed_generation"}),
                     "observation_id": reference,
                     "alias": selected_alias,
+                    "coordinate_space": self._coordinate_space,
                 },
                 content=[
                     BinaryContent(
@@ -151,18 +159,22 @@ class ComputerToolset:
         button: ComputerButton = "left",
         count: Annotated[int, Field(ge=1, le=2)] = 1,
     ) -> Any:
-        """Click an image-pixel position on a previously observed target. Never replay an unknown outcome."""
+        """Click a position in the configured coordinate space on a previously observed target. Never replay an unknown outcome."""
         try:
+            observation = self._observation(observation_id)
             return await self._execute(
-                ComputerClick(observation=self._observation(observation_id), point=point, button=button, count=count)
+                ComputerClick(
+                    observation=observation, point=self._point(point, observation), button=button, count=count
+                )
             )
         except EnvironmentError as error:
             return environment_failure(error)
 
     async def computer_move(self, observation_id: _ObservationReference, point: ComputerPoint) -> Any:
-        """Move the pointer to an image-pixel position on the observed target."""
+        """Move the pointer to a position in the configured coordinate space on the observed target."""
         try:
-            return await self._execute(ComputerMove(observation=self._observation(observation_id), point=point))
+            observation = self._observation(observation_id)
+            return await self._execute(ComputerMove(observation=observation, point=self._point(point, observation)))
         except EnvironmentError as error:
             return environment_failure(error)
 
@@ -175,13 +187,14 @@ class ComputerToolset:
         button: ComputerButton = "left",
         duration_ms: Annotated[int, Field(ge=100, le=3000)] = 500,
     ) -> Any:
-        """Perform one bounded drag with automatic button release, using image pixels."""
+        """Perform one bounded drag with automatic button release, using the configured coordinate space."""
         try:
+            observation = self._observation(observation_id)
             return await self._execute(
                 ComputerDrag(
-                    observation=self._observation(observation_id),
-                    start=start,
-                    end=end,
+                    observation=observation,
+                    start=self._point(start, observation),
+                    end=self._point(end, observation),
                     button=button,
                     duration_ms=duration_ms,
                 )
@@ -203,10 +216,11 @@ class ComputerToolset:
         X11 requires steps (at most 100 per axis); pixels remain the default (at most 10000 per axis).
         """
         try:
+            observation = self._observation(observation_id)
             return await self._execute(
                 ComputerScroll(
-                    observation=self._observation(observation_id),
-                    point=point,
+                    observation=observation,
+                    point=self._point(point, observation),
                     delta_x=delta_x,
                     delta_y=delta_y,
                     unit=unit,
@@ -252,6 +266,35 @@ class ComputerToolset:
         and f1 through f12.
         """
         return await self._execute(ComputerPressKeys(keys=keys), alias=alias)
+
+    def _coordinate_instruction(self) -> str:
+        if self._coordinate_space == "normalized_1000":
+            return (
+                "Computer coordinate_space is normalized_1000. For click, move, drag endpoints and scroll pointer "
+                "positions, supply relative integer coordinates from 0 to 1000 on EACH axis: (0,0) is top-left "
+                "and (1000,1000) is bottom-right. The tool converts coordinates to screenshot pixels. "
+                "Do NOT multiply by image width or height yourself. Scroll deltas keep their declared units."
+            )
+        return "Computer coordinate_space is pixels. Supply positions in the returned screenshot's width and height."
+
+    def _point(self, point: ComputerPoint, observation: ComputerObservation) -> ComputerPoint:
+        if self._coordinate_space == "pixels":
+            return point
+        if point.x > 1000 or point.y > 1000:
+            raise EnvironmentError(
+                "Relative pointer coordinates must be between 0 and 1000.",
+                code="environment_request_invalid",
+                details={
+                    "field": "point",
+                    "coordinate_space": self._coordinate_space,
+                    "dispatch_stage": "pre_dispatch",
+                },
+            )
+        # Use this observation's image geometry; providers own the image-to-display mapping.
+        return ComputerPoint(
+            x=min(observation.width - 1, point.x * observation.width // 1000),
+            y=min(observation.height - 1, point.y * observation.height // 1000),
+        )
 
     def _observation(self, reference: str) -> ComputerObservation:
         observation = self._observations.get(reference)
