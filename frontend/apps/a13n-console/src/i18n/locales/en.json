@@ -2430,5 +2430,8 @@
   "Desktop transition blocked": "Desktop transition blocked",
   "Returning control. Revoking input access…": "Returning control. Revoking input access…",
   "Control returned. The task remains paused until continuation is accepted.": "Control returned. The task remains paused until continuation is accepted.",
-  "The agent has requested desktop assistance. Switching to its assistance card…": "The agent has requested desktop assistance. Switching to its assistance card…"
+  "The agent has requested desktop assistance. Switching to its assistance card…": "The agent has requested desktop assistance. Switching to its assistance card…",
+  "Environment lost": "Environment lost",
+  "Environment unavailable": "Environment unavailable",
+  "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.": "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained."
 }

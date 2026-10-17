@@ -19,6 +19,7 @@ import { environmentQuery } from "./api";
 import styles from "./environments.module.css";
 import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
+import { EnvironmentStatus } from "./instance-status";
 import { useEnvironmentTypes } from "./providers";
 
 /**
@@ -154,7 +155,7 @@ export function EnvironmentPanel({
           <strong title={value?.name ?? environment.name}>
             {value?.name ?? environment.name}
           </strong>
-          {value && <StatePill state={value.status} />}
+          {value && <EnvironmentStatus environment={value} />}
         </span>
       }
       actions={
@@ -182,7 +183,12 @@ export function EnvironmentPanel({
                     "This stops the target when it has no active users. A later run can resume it.",
                   )}
                   triggerElement={
-                    <MenuItem closeOnClick={false}>{t("Stop target")}</MenuItem>
+                    <MenuItem
+                      closeOnClick={false}
+                      disabled={!!value?.failure?.permanent}
+                    >
+                      {t("Stop target")}
+                    </MenuItem>
                   }
                   action={() => act("stop")}
                 />
@@ -215,6 +221,16 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
+              {value.failure?.code === "environment_lost" && (
+                <section className={styles.factGroup} role="status">
+                  <h3>{t("Environment lost")}</h3>
+                  <p>
+                    {t(
+                      "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.",
+                    )}
+                  </p>
+                </section>
+              )}
               <section className={styles.factGroup}>
                 <h3>{t("Environment")}</h3>
                 <dl className={styles.facts}>

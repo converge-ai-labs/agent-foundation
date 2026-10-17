@@ -2430,5 +2430,8 @@
   "Returning control. Revoking input access…": "正在归还控制权，撤销输入连接…",
   "Control returned. The task remains paused until continuation is accepted.": "控制权已归还，任务将在恢复请求成功后继续。",
   "Desktop access cleanup is unconfirmed.": "尚未确认桌面访问清理完成。",
-  "The agent has requested desktop assistance. Switching to its assistance card…": "Agent 已请求桌面协助，正在切换到协助卡片…"
+  "The agent has requested desktop assistance. Switching to its assistance card…": "Agent 已请求桌面协助，正在切换到协助卡片…",
+  "Environment lost": "环境已丢失",
+  "Environment unavailable": "环境不可用",
+  "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.": "供应商端的沙箱已不存在，无法恢复运行。请使用新环境继续；旧沙箱中的文件可能无法找回。会话历史仍会保留。"
 }

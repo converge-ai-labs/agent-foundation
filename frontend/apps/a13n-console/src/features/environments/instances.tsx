@@ -32,7 +32,6 @@ import {
   ErrorNotice,
   InlineLoading,
   Loading,
-  StatePill,
   Timestamp,
 } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
@@ -47,6 +46,7 @@ import {
 } from "./api";
 import instanceStyles from "./environments.module.css";
 import { EnvironmentPanel } from "./instance-details";
+import { EnvironmentStatus } from "./instance-status";
 
 const STATUSES = [
   "reserved",
@@ -201,7 +201,7 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Status"),
-                render: (item) => <StatePill state={item.status} />,
+                render: (item) => <EnvironmentStatus environment={item} />,
               },
               {
                 label: t("Activity"),

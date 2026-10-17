@@ -158,3 +158,60 @@ it("registers an external target by its endpoint and token, with no provider to 
   ]);
   cache.clear();
 });
+
+it("distinguishes lost and permanently unavailable targets from ready instances", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: {
+      items:
+        path === "/api/v1/environments"
+          ? [
+              {
+                id: "env_lost",
+                name: "Lost sandbox",
+                status: "ready",
+                failure: { code: "environment_lost", permanent: true },
+              },
+              {
+                id: "env_unavailable",
+                name: "Unavailable sandbox",
+                status: "ready",
+                failure: { code: "provider_invalid", permanent: true },
+              },
+              {
+                id: "env_ready",
+                name: "Healthy sandbox",
+                status: "ready",
+                failure: null,
+              },
+              {
+                id: "env_retrying",
+                name: "Retrying sandbox",
+                status: "ready",
+                failure: {
+                  code: "provider_credential_changed",
+                  permanent: false,
+                },
+              },
+            ]
+          : (collections[path] ?? []),
+      next_cursor: null,
+    },
+  }));
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <Page title="Environment instances">
+          <EnvironmentInstances />
+        </Page>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Lost sandbox");
+  expect(screen.getByText("Environment lost")).toBeTruthy();
+  expect(screen.getByText("Environment unavailable")).toBeTruthy();
+  expect(screen.getAllByText("state.ready")).toHaveLength(2);
+  cache.clear();
+});

@@ -344,9 +344,25 @@ it("shows why a lost sandbox cannot be used, and that deleting it is allowed whi
     },
   };
   serve(() => lost);
+  http.POST.mockClear();
   const { cache, user } = open(lost);
   await user.click(screen.getByRole("button", { name: "Details" }));
   expect(await screen.findByText(lost.failure!.message)).toBeTruthy();
+  expect(screen.getAllByText("Environment lost").length).toBeGreaterThan(0);
+  expect(screen.queryByText("ready")).toBeNull();
+  expect(
+    screen.getByText(
+      /This sandbox no longer exists at its provider and cannot be resumed/,
+    ),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Environment actions" }));
+  const stop = await screen.findByRole("menuitem", { name: "Stop target" });
+  expect(stop.getAttribute("aria-disabled")).toBe("true");
+  await user.click(stop);
+  expect(
+    screen.queryByRole("dialog", { name: "Stop environment target" }),
+  ).toBeNull();
+  expect(http.POST).not.toHaveBeenCalled();
   expect(screen.getByText("Lifecycle command")).toBeTruthy();
   expect(screen.queryByText("Command")).toBeNull();
   await lifecycle(user, "Delete target");
