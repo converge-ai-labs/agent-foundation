@@ -58,7 +58,15 @@ export function McpInputs({ threadId }: { threadId: string }) {
             key={request.request_id}
             threadId={threadId}
             request={request}
-            reconcile={() => void requests.refetch()}
+            reconcile={async () => {
+              const refreshed = await requests.refetch();
+              if (refreshed.error) return undefined;
+              return refreshed.data?.some(
+                (candidate) =>
+                  candidate.request_id === request.request_id &&
+                  candidate.state === "pending",
+              );
+            }}
           />
         ))}
     </>
@@ -72,7 +80,7 @@ function McpInput({
 }: {
   threadId: string;
   request: Request;
-  reconcile: () => void;
+  reconcile: () => Promise<boolean | undefined>;
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -88,6 +96,12 @@ function McpInput({
     ),
   );
   const [submitted, setSubmitted] = useState<Response>();
+  const [confirmedPending, setConfirmedPending] = useState(false);
+  const check = useMutation({
+    mutationFn: reconcile,
+    onMutate: () => setConfirmedPending(false),
+    onSuccess: (pending) => setConfirmedPending(pending === true),
+  });
   const answer = useMutation({
     mutationFn: (response: Response) =>
       result(
@@ -109,7 +123,7 @@ function McpInput({
     onError: (error) => {
       if (error instanceof ApiError && error.code === "mcp_input_invalid")
         setSubmitted(undefined);
-      reconcile();
+      void reconcile();
     },
   });
   function send(response: Response) {
@@ -321,17 +335,26 @@ function McpInput({
                 business tool is never repeated.
               </p>
               <div className={styles.actions}>
-                <Button variant="ghost" onClick={reconcile}>
-                  Check request
+                <Button
+                  variant="ghost"
+                  disabled={check.isPending}
+                  onClick={() => check.mutate()}
+                >
+                  {check.isPending ? "Checking request…" : "Check request"}
                 </Button>
                 <Button
                   variant="ghost"
-                  disabled={answer.isPending || !submitted}
+                  disabled={answer.isPending || check.isPending || !submitted}
                   onClick={() => submitted && answer.mutate(submitted)}
                 >
                   Retry same response
                 </Button>
               </div>
+              {confirmedPending && (
+                <p role="status" className={styles.hint}>
+                  The request is still pending.
+                </p>
+              )}
             </>
           )}
       </div>
