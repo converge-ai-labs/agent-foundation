@@ -13817,6 +13817,11 @@
             },
             "title": "Grants",
             "type": "array"
+          },
+          "full_disk_read": {
+            "default": false,
+            "title": "Full Disk Read",
+            "type": "boolean"
           }
         },
         "required": [

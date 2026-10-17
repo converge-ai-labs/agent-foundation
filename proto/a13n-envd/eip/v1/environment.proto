@@ -79,6 +79,8 @@ message DisabledSandbox {
 message RestrictedSandbox {
   string mode = 1 [(eip_field).const_string = "restricted"];
   repeated SandboxGrant grants = 2;
+  // Windows MXC: permit ambient disk reads while retaining explicit write grants.
+  optional bool full_disk_read = 3 [(eip_field).default_bool = false];
 }
 
 message SandboxPolicy {
@@ -102,6 +104,7 @@ enum ExecutionBackend {
   EXECUTION_BACKEND_LINUX_MANAGED = 2 [(eip_enum_value).json_name = "linux_managed"];
   EXECUTION_BACKEND_LINUX_BUBBLEWRAP = 3 [(eip_enum_value).json_name = "linux_bubblewrap"];
   EXECUTION_BACKEND_MACOS_SEATBELT = 4 [(eip_enum_value).json_name = "macos_seatbelt"];
+  EXECUTION_BACKEND_WINDOWS_MXC = 5 [(eip_enum_value).json_name = "windows_mxc"];
 }
 
 message ExecutionBoundary {

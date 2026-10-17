@@ -50,15 +50,15 @@ class BuiltInEnvironmentProfile:
 FULL_CONTROL_PROFILE_ID: Final = "environment-native"
 SANDBOX_PROFILE_ID: Final = "environment-sandbox"
 WINDOWS_EXECUTION_NOTICE: Final = (
-    "Windows supports Full Control only for built-in local execution. "
-    "Commands run as your Host account with filesystem and network access; this is not a sandbox. "
-    "Windows Sandbox is not available. Choose Full Control explicitly; no automatic fallback."
+    "Local Sandbox requires Linux, macOS, or Windows with native MXC process isolation. "
+    "Readiness is verified by creating and closing an isolation boundary and running production probes. "
+    "If unavailable, choose Full Control explicitly; no automatic fallback."
 )
 
 
 def local_sandbox_supported() -> bool:
-    """Report the release's local Windows limitation, not runtime readiness."""
-    return sys.platform != "win32"
+    """Report implemented platforms; production preflight determines readiness."""
+    return sys.platform in {"linux", "darwin", "win32"}
 
 
 def require_supported_local_profile(profile_id: str | None) -> None:
@@ -83,7 +83,8 @@ SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
     mode=EnvironmentMode.sandbox,
     name="Sandbox",
     description=(
-        "Runs commands through local a13n-envd with required filesystem and process isolation and inherited Host networking, including localhost."
+        "Runs through local a13n-envd with explicit write grants and inherited Host networking, including localhost. "
+        "Windows permits broad disk reads; Linux and macOS restrict reads to granted and runtime paths."
     ),
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",

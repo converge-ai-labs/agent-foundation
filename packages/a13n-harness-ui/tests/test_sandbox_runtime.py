@@ -34,7 +34,7 @@ def binary():
 
 
 def test_unsupported_platform_fails_before_resolving_posix_paths(tmp_path, monkeypatch):
-    monkeypatch.setattr("a13n_harness_ui.sandbox.sys.platform", "win32")
+    monkeypatch.setattr("a13n_harness_ui.sandbox.sys.platform", "unsupported")
     with pytest.raises(EnvironmentLifecycleError, match="not available") as failure:
         create_sandbox_runtime(tmp_path / "envd", roots=(tmp_path / "missing",))
     assert failure.value.code == "sandbox_unavailable"

@@ -100,7 +100,7 @@ def validate_working_directory(value: str | None) -> None:
         or not value.startswith("/")
         or "\x00" in value
         or "//" in value
-        or (value != "/" and value.endswith("/"))
+        or (value.endswith("/") and value != "/" and re.fullmatch(r"/[A-Za-z]:/|/UNC/[^/]+/[^/]+/", value) is None)
         or any(segment in {".", ".."} for segment in value.split("/"))
     ):
         raise ValueError("working_directory must be a canonical absolute path")
@@ -142,7 +142,7 @@ def mount_path_from_provider_path(root: str, provider_path: str, provider_root: 
             return root
         if not provider_path.startswith(provider_root.rstrip("/") + "/"):
             raise ValueError("provider path is outside the mapped root")
-        provider_path = provider_path[len(provider_root) :]
+        provider_path = provider_path[len(provider_root.rstrip("/")) :]
     if provider_path == "/":
         return root
     if provider_path.endswith("/"):

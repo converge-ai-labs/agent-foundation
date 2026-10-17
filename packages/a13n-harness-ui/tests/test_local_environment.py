@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 from a13n_harness.environment.models import COMPUTER_ACTIONS
+from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
 from a13n_harness_ui import setup
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile
@@ -122,12 +123,12 @@ async def test_manager_shares_full_control_but_never_merges_sandbox_grants(tmp_p
         second = await manager.runtime((roots[1],), profile=_profile("environment-envd"))
         assert first is second
         assert first.running_device() is None
-        if sys.platform in {"linux", "darwin"}:
+        if sys.platform in {"linux", "darwin", "win32"}:
             first_sandbox = await manager.runtime((roots[0],), profile=_profile("environment-sandbox"))
             second_sandbox = await manager.runtime((roots[1],), profile=_profile("environment-sandbox"))
             assert first_sandbox is not second_sandbox
-            assert [grant.path for grant in first_sandbox.configuration.sandbox.grants] == [roots[0].as_posix()]
-            assert [grant.path for grant in second_sandbox.configuration.sandbox.grants] == [roots[1].as_posix()]
+            assert [grant.path for grant in first_sandbox.configuration.sandbox.grants] == [local_envd_path(roots[0])]
+            assert [grant.path for grant in second_sandbox.configuration.sandbox.grants] == [local_envd_path(roots[1])]
     finally:
         await manager.close()
     assert not (await manager.status()).instances

@@ -7,7 +7,7 @@ description: 选择执行权限、在 Project 中工作、连接 Device，并定
 
 **Full Control** 使用宿主机账户现有的文件系统和网络权限运行。默认的 **Direct** 运行时不下载或启动 `a13n-envd`。Direct 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。
 
-**Sandbox** 要求 Envd 使用显式目录授权和继承宿主机网络来准备受限 Session worker，包括访问宿主 localhost 服务。命令可使用宿主机路由和防火墙策略允许的网络，文件系统和进程隔离仍然生效。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。设置向导在保存前检查文件系统和进程隔离，以及宿主 localhost 连通性，无须依赖外部互联网服务。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows 不支持生产 Sandbox 隔离。见[外层安全指南](../a13n-envd/isolation.md)。
+**Sandbox** 要求 Envd 使用显式目录授权和继承宿主机网络来准备受限 Session worker，包括访问宿主 localhost 服务。命令可使用宿主机路由和防火墙策略允许的网络，文件系统和进程隔离仍然生效。Envd 负责完整 worker 边界，包括文件 RPC 和命令；Harness UI 不会包裹整个守护进程。Project 根目录可写，Thread 文件 worker 将附件暴露为只读、tmp 暴露为可读写。在 Windows 上，内置 profile 还允许广泛磁盘读取，包括账户可访问的宿主配置和凭据；写入仍限制在授权目录和 worker 私有状态内。Envd 启动和控制文件仍拒绝访问。Linux 和 macOS 的文件读取保持授权范围限制。设置向导在保存前检查文件系统和进程隔离，以及宿主 localhost 连通性，无须依赖外部互联网服务。向导之外，在执行需要时检查，不在初始欢迎页检查。失败会明确报告，不降级到 Full Control。修复前置条件后重试，或发送新提示前有意选择 `/environment full-control`。Harness UI 绝不代你运行 `sudo`、改变 sysctl 或关闭必需隔离。Windows Sandbox 使用实验性的原生 Microsoft eXecution Container（MXC）后端；宿主机必须通过实际创建/关闭探测和生产隔离探测。见[外层安全指南](../a13n-envd/isolation.md)。
 
 ### 管理本地 envd
 
@@ -33,7 +33,9 @@ Full Control 命令继承 Harness UI 进程的完整环境，包括 `PATH`、代
 
 ## Windows 本地执行
 
-Windows 内置本地模式**仅支持 Full Control**。设置向导和 TUI Environment 选择器提供 Full Control，并说明命令使用宿主机账户的文件系统和网络权限运行。Job Object 清理不是 Sandbox 隔离。显式 Sandbox 请求会失败，不下载 Envd、不改变保存选择、不降级。自定义和远程 Provider 保留自己的契约。
+Windows 提供 **Full Control** 和 **Sandbox**。Sandbox 使用 PowerShell，原生 MXC 负责文件系统和网络隔离，Job Object 负责进程所有权。如果原生 MXC 不可用，请更新 Windows 后重试，或明确选择 Full Control。不会自动降级、创建账户、修改 ACL 或提权。WSL 属于 Linux 环境，使用 Linux 后端。自定义和远程 Provider 保留自己的契约。
+
+Windows Sandbox 的默认命令搜索路径包含选定的 PowerShell 目录、Windows System32，以及按原顺序保留的现有绝对 Host PATH 目录。显式配置 `launch.trusted_executable_roots` 会覆盖这些默认值。这允许使用已安装的工具，同时不继承 Host 凭据环境变量。广泛读取排除映射网络驱动器；新挂载的本地卷和新建的卷顶层条目需要新开 Session。详见 [Windows 边界说明](../a13n-envd/isolation.md#native-windows-mxc)。
 
 ## 文件、Project 与恢复
 
@@ -283,7 +285,7 @@ adapter_configuration:
   project_access: read_write
 ```
 
-adapter 将每个捕获的 Project 根按 `project_access` 加入授权集合。其他授权属于 `launch.sandbox.grants`。继承网络与内置 Sandbox 默认值一致。要禁止联网，在自定义 profile 中设置 `launch.egress.mode: deny`，同时保留 `launch.sandbox.mode: restricted`。显式 `deny` 和 `controlled` 策略保持不变；省略 `launch` 的 profile 使用新的继承网络默认值。受控出站使用 `launch.egress.mode: controlled`，并按上述目的地/引用用法提供 `session.egress`；它要求特权 Linux 后端，不是 rootless 桌面默认值。改变 Session 策略不重建兼容守护进程；改变启动边界会重建。
+adapter 将每个捕获的 Project 根按 `project_access` 加入授权集合。其他授权属于 `launch.sandbox.grants`。Windows 上可设置 `launch.sandbox.full_disk_read: true` 使用内置 profile 的广泛读取策略。显式提供 launch 但省略该字段时，保持 Envd 默认值 false；省略 `launch` 的 profile 使用 Windows UI 默认值 true。Linux 和 macOS 拒绝 true。继承网络与内置 Sandbox 默认值一致。要禁止联网，在自定义 profile 中设置 `launch.egress.mode: deny`，同时保留 `launch.sandbox.mode: restricted`。显式 `deny` 和 `controlled` 策略保持不变；省略 `launch` 的 profile 使用新的继承网络默认值。受控出站使用 `launch.egress.mode: controlled`，并按上述目的地/引用用法提供 `session.egress`；它要求特权 Linux 后端，不是 rootless 桌面默认值。改变 Session 策略不重建兼容守护进程；改变启动边界会重建。
 
 ## 从 WebUI 使用 Mac 桌面
 

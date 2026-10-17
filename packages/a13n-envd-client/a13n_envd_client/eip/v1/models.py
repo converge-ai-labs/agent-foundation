@@ -196,6 +196,7 @@ class ExecutionBackend(StrEnum):
     LINUX_MANAGED = "linux_managed"
     LINUX_BUBBLEWRAP = "linux_bubblewrap"
     MACOS_SEATBELT = "macos_seatbelt"
+    WINDOWS_MXC = "windows_mxc"
 
 
 class FileKind(StrEnum):
@@ -1231,6 +1232,7 @@ class ProcessOutput(EIPModel):
 class RestrictedSandbox(EIPModel):
     mode: Literal["restricted"]
     grants: tuple[SandboxGrant, ...] = ()
+    full_disk_read: StrictBool = False
 
 
 type SandboxPolicy = Annotated[

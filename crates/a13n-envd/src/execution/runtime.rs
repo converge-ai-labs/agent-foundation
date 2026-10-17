@@ -4,18 +4,17 @@ use super::namespace::{self, Mounts};
 use super::worker::{WorkerConfig, client::Client};
 #[cfg(target_os = "linux")]
 use crate::egress::{dns::Routes, policy::Policy, proxy::Proxy, tls::Authority};
-use std::{
-    io,
-    os::{fd::OwnedFd, unix::net::UnixStream},
-    process::Stdio,
-    sync::Arc,
-    time::Duration,
-};
+use std::{io, sync::Arc, time::Duration};
 #[cfg(target_os = "linux")]
 use std::{
     io::Write,
     os::unix::process::CommandExt,
     process::{Child, Command},
+};
+#[cfg(unix)]
+use std::{
+    os::{fd::OwnedFd, unix::net::UnixStream},
+    process::Stdio,
 };
 use tokio::sync::{oneshot, watch};
 #[cfg(target_os = "linux")]
@@ -45,6 +44,99 @@ impl Drop for ChildGuard {
 }
 
 impl Runtime {
+    #[cfg(windows)]
+    pub async fn start(
+        mut config: WorkerConfig,
+        protected: &[std::path::PathBuf],
+        reservation: crate::daemon::execution::Reservation,
+    ) -> io::Result<Self> {
+        use tokio::io::AsyncWriteExt;
+        let state = super::StateDirectory::new(None)?;
+        config.runtime_directory = state.0.join("state");
+        let home = state.0.join("home");
+        let temporary = state.0.join("tmp");
+        std::fs::create_dir(&home)?;
+        std::fs::create_dir(&temporary)?;
+        if let Some(command) = &mut config.command {
+            sanitize_environment(command);
+            for (name, path) in [
+                ("HOME", &home),
+                ("USERPROFILE", &home),
+                ("APPDATA", &home),
+                ("LOCALAPPDATA", &home),
+                ("TEMP", &temporary),
+                ("TMP", &temporary),
+            ] {
+                command
+                    .base_environment
+                    .insert(name.into(), path.to_string_lossy().into_owned());
+            }
+        }
+        let clean = reservation.clean.clone();
+        let mut worker = super::windows::spawn(
+            &config.sandbox,
+            &config.grant_sources,
+            protected,
+            config.egress,
+            state,
+            super::windows::Target::Session,
+            Some(reservation),
+        )
+        .await?;
+        let bytes = serde_json::to_vec(&config).map_err(io::Error::other)?;
+        let mut input = worker
+            .child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("missing worker input"))?;
+        let output = worker
+            .child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("missing worker output"))?;
+        let connected = tokio::time::timeout(Duration::from_secs(15), async {
+            input.write_all(&(bytes.len() as u32).to_be_bytes()).await?;
+            input.write_all(&bytes).await?;
+            Client::connect(output, input, &config.limits).await
+        })
+        .await
+        .map_err(io::Error::other)
+        .and_then(|result| result);
+        let client = match connected {
+            Ok(client) => client,
+            Err(error) => {
+                if worker.shutdown().await.is_ok() {
+                    clean.store(true, std::sync::atomic::Ordering::Release);
+                }
+                return Err(error);
+            }
+        };
+        let mut closed = client.closed();
+        let (stop, stopped) = oneshot::channel();
+        let (dead_sender, dead) = watch::channel(false);
+        let observed_clean = clean.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = stopped => {},
+                _ = closed.changed() => {},
+                _ = worker.child.wait() => {},
+            }
+            // Outer Job includes the launcher, MXC worker and all command trees.
+            // Never equate launcher exit with termination of the owned target.
+            if worker.shutdown().await.is_err() {
+                observed_clean.store(false, std::sync::atomic::Ordering::Release);
+            }
+            drop(worker);
+            dead_sender.send_replace(true);
+        });
+        Ok(Self {
+            client,
+            clean,
+            stop: Some(stop),
+            dead,
+        })
+    }
+
     #[cfg(target_os = "linux")]
     pub async fn start(
         mut config: WorkerConfig,
@@ -98,10 +190,13 @@ impl Runtime {
         socket.set_nonblocking(true)?;
         let death = AsyncFd::new(death)?;
         let socket = tokio::net::UnixStream::from_std(socket)?;
-        let client =
-            tokio::time::timeout(Duration::from_secs(15), Client::connect(socket, &limits))
-                .await
-                .map_err(io::Error::other)??;
+        let (reader, writer) = socket.into_split();
+        let client = tokio::time::timeout(
+            Duration::from_secs(15),
+            Client::connect(reader, writer, &limits),
+        )
+        .await
+        .map_err(io::Error::other)??;
         let mut closed = client.closed();
         let mut tasks = JoinSet::new();
         if let Some([tcp, udp, dns]) = network {
@@ -205,7 +300,8 @@ impl Runtime {
                 .write_all(&(bytes.len() as u32).to_be_bytes())
                 .await?;
             socket.write_all(&bytes).await?;
-            Client::connect(socket, &config.limits).await
+            let (reader, writer) = socket.into_split();
+            Client::connect(reader, writer, &config.limits).await
         })
         .await
         .map_err(io::Error::other)
@@ -268,7 +364,7 @@ impl Runtime {
             .update(params.into())
             .map(|snapshot| snapshot.status())
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub fn environment(&self) -> io::Result<std::collections::BTreeMap<String, String>> {
         Ok(Default::default())
     }
@@ -326,10 +422,15 @@ impl Drop for Runtime {
 
 fn sanitize_environment(command: &mut crate::config::CommandConfig) {
     let safe = |name: &String, _: &mut String| {
-        matches!(
-            name.as_str(),
-            "PATH" | "LANG" | "LC_ALL" | "LC_CTYPE" | "TERM" | "COLORTERM"
-        )
+        (cfg!(windows)
+            && matches!(
+                name.to_ascii_uppercase().as_str(),
+                "SYSTEMROOT" | "WINDIR" | "COMSPEC" | "PATHEXT" | "PATH"
+            ))
+            || matches!(
+                name.as_str(),
+                "PATH" | "LANG" | "LC_ALL" | "LC_CTYPE" | "TERM" | "COLORTERM"
+            )
     };
     command.base_environment.retain(safe);
     for profile in &mut command.shell_profiles {

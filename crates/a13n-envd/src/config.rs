@@ -224,7 +224,7 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) computer_use: bool,
     pub(crate) computer_use_permission_timeout: Duration,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[serde(skip)]
     pub(crate) managed: bool,
     pub(crate) execution: Option<crate::execution::Identity>,
@@ -402,13 +402,19 @@ impl Config {
             .validate(&bootstrap_files)
             .map_err(|error| ConfigError::new(error.to_string()))?;
         if !cfg!(target_os = "linux")
-            && ((file.sandbox.restricted() && !cfg!(target_os = "macos"))
+            && ((file.sandbox.restricted()
+                && !cfg!(any(target_os = "macos", target_os = "windows")))
                 || file.egress.controlled()
                 || (!file.sandbox.restricted() && file.egress != Egress::Inherit {}))
         {
             return Err(ConfigError::new(
                 "execution boundary is unavailable on this platform",
             ));
+        }
+        #[cfg(windows)]
+        if file.sandbox.restricted() {
+            crate::execution::windows::probe(file.egress)
+                .map_err(|error| ConfigError::new(error.to_string()))?;
         }
         let grant_sources = file
             .sandbox
@@ -448,7 +454,7 @@ impl Config {
             monitoring: file.monitoring,
             computer_use,
             computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             managed: false,
             execution,
             allow_sudo,
@@ -477,7 +483,7 @@ impl Config {
             monitoring: None,
             computer_use: false,
             computer_use_permission_timeout: Duration::from_secs(120),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
             managed: false,
             execution: None,
             allow_sudo: true,
@@ -752,8 +758,8 @@ fn prepare_command_config(
     for root in trusted_roots {
         canonical_roots.push(canonical_directory(&root, "trusted executable root")?);
     }
-    canonical_roots.sort();
-    canonical_roots.dedup();
+    let mut seen = BTreeSet::new();
+    canonical_roots.retain(|root| seen.insert(root.clone()));
 
     let mut profile_ids = BTreeSet::new();
     let mut prepared_profiles = Vec::with_capacity(shell_profiles.len());
@@ -784,8 +790,8 @@ fn prepare_command_config(
         for root in profile.executable_search_roots {
             roots.push(canonical_directory(&root, "shell executable search root")?);
         }
-        roots.sort();
-        roots.dedup();
+        let mut seen = BTreeSet::new();
+        roots.retain(|root| seen.insert(root.clone()));
         if roots.is_empty() {
             return Err(ConfigError::new(
                 "shell profiles require at least one executable search root",
@@ -1378,6 +1384,35 @@ mod tests {
         assert!(file.execution.identity().unwrap().is_none());
         assert!(super::FileConfig::default().execution.allow_sudo().unwrap());
         assert!(!super::FileConfig::default().full_control.unwrap_or(false));
+    }
+
+    #[test]
+    fn configured_search_roots_preserve_precedence_and_remove_duplicates() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("a13n-envd-search-roots-{unique}"));
+        let first = directory.join("z-first");
+        let second = directory.join("a-second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let roots = vec![first.clone(), second.clone(), first.clone()];
+        let mut profile = super::full_control_commands()
+            .unwrap()
+            .shell_profiles
+            .remove(0);
+        profile.executable_search_roots = roots.clone();
+        let commands = super::prepare_command_config(roots, vec![profile])
+            .unwrap()
+            .unwrap();
+        let expected = vec![
+            first.canonicalize().unwrap(),
+            second.canonicalize().unwrap(),
+        ];
+        assert_eq!(commands.trusted_executable_roots, expected);
+        assert_eq!(commands.shell_profiles[0].executable_search_roots, expected);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

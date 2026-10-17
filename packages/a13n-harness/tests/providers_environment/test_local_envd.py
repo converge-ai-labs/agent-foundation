@@ -32,6 +32,16 @@ from pydantic import ValidationError
 pytestmark = pytest.mark.anyio
 
 
+def test_executable_roots_preserve_search_precedence(tmp_path):
+    first, second = tmp_path / "z-first", tmp_path / "a-second"
+    first.mkdir()
+    second.mkdir()
+    configuration = daemon_module._canonical_configuration(
+        LocalEnvdLaunchConfiguration(default_working_directory=tmp_path, trusted_executable_roots=(first, second))
+    )
+    assert configuration.trusted_executable_roots == (first.resolve(), second.resolve())
+
+
 class BoundEIP:
     def __init__(self, directory, generation):
         self.descriptor = EnvironmentDescriptor(

@@ -4912,6 +4912,11 @@ export interface components {
              * @default []
              */
             grants?: components["schemas"]["SandboxGrant"][];
+            /**
+             * Full Disk Read
+             * @default false
+             */
+            full_disk_read?: boolean;
         };
         /**
          * RootActivityState

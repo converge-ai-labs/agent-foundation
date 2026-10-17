@@ -8,7 +8,7 @@ Envd 会为每个会话 worker 应用可信的设备策略：原生执行身份�
 
 ## 隔离行为
 
-默认禁用 Sandbox，并继承网络配置，保留启动者的原生身份和权限，包括 root。受限 Sandbox 只开放固定授权目录、最小只读系统视图，以及私有可写的 HOME、TMP 和状态目录。它可以与继承、拒绝或[受控出站网络](egress.md)组合使用。选择 cwd 不会扩大授权或改变网络模式。各会话共享获准访问的文件；Envd 不会将会话彼此隔离。
+默认禁用 Sandbox，并继承网络配置，保留启动者的原生身份和权限，包括 root。受限 Sandbox 开放固定授权目录、最小只读系统视图，以及私有可写的 HOME、TMP 和状态目录。Windows 还可通过 `sandbox.full_disk_read: true` 启用广泛磁盘读取。它可以与继承、拒绝或[受控出站网络](egress.md)组合使用。选择 cwd 不会扩大授权或改变网络模式。各会话共享获准访问的文件；Envd 不会将会话彼此隔离。
 
 不能逐条命令覆盖边界，也不会回退到更弱的执行方式。设备和会话描述符公开生效的 `boundary`、后端和不含秘密的策略摘要。只有完成必需的 worker 准备后才会发布会话；这不构成对外层部署的安全证明。
 
@@ -39,6 +39,28 @@ Envd 会为每个会话 worker 应用可信的设备策略：原生执行身份�
 | macOS | 通过 `sandbox-exec` 使用 Seatbelt、规范路径规则和可继承的进程限制 | 支持 inherit 或 deny；不支持 controlled                                                                                                |
 
 macOS 不提供 Linux 挂载/PID 命名空间，也不声明 `no_new_privs`：`privilege_gain_blocked` 为 false。路径解析可能仍可见父目录元数据，原生进程启动也可读取根目录本身；两者都不允许读取未授权文件的内容。worker 运行期间请保持授权路径稳定。Linux 绑定已检查的目录句柄。不支持的组合会在准备阶段失败。
+
+### 原生 Windows MXC
+
+Windows 受限 Sandbox 使用实验性的 Microsoft eXecution Container（MXC）Process Security Environment 后端（`windows_mxc`），支持 inherit 或 deny 网络。Envd 使用所选网络能力和 peer 策略实际探测原生创建、启动信息准备和关闭操作。仅匹配 Windows 版本号不够：操作系统必须提供所选网络模式需要的 PSEC 能力。不支持的宿主机会失败，不自动降级。WSL 使用 Linux 后端。
+
+默认运行时视图包含只读的 Windows、Program Files 目录和 Envd 可执行文件，以及私有可写的 HOME/USERPROFILE/TEMP/state。`sandbox.full_disk_read: true` 增加 Codex 风格的可用卷广泛读取权限，写入仍限制在可读写授权目录和 worker 私有状态内。这允许读取账户可访问的宿主配置和磁盘凭据；该策略约束写入，不为宿主文件提供保密边界。Envd 显式拒绝访问自身的启动配置、传输凭据和 broker 运行目录。该选项在 Envd 中默认为 false，Linux/macOS 拒绝启用；Harness UI 在 Windows 上默认启用。请保持授权目录的祖先路径稳定。worker 运行期间，Envd 保留已验证且不共享删除权限的目录句柄。PowerShell 启动使用私有桌面和只读注册表访问，不修改 ACL 或提权。`privilege_gain_blocked` 为 false，不声明 Linux 的 `no_new_privs` 保证。
+
+广泛读取排除映射网络驱动器。每个 worker 在启动时固定卷根目录的读取视图；新挂载的本地卷或新建的卷顶层条目需要新开 Session 才能纳入。已有授权目录保留原有访问规则。
+
+原生运行时兼容性取决于应用对 PSEC 的支持。已在广泛读取模式下验证 PowerShell、Git 和 Python；Node.js 24.21 的 `fs.realpathSync.native` 在 MXC 中可能报 `EPERM`。请在目标宿主机验证实际构建工具。
+
+在安装了 Rust、Python、uv 和 PowerShell 的原生 Windows 机器上，从仓库根目录运行源码验收：
+
+```powershell
+cargo build -p a13n-envd --locked
+cargo test -p a13n-envd native_mxc_probe --locked -- --ignored --nocapture
+uv sync --locked --all-packages
+$env:A13N_ENVD_TEST_BINARY = (Resolve-Path target/debug/a13n-envd.exe).Path
+uv run --no-sync pytest packages/a13n-harness-ui/tests/test_windows_sandbox.py -v
+```
+
+原生探测测试验证 IPv4 回环、宿主机支持时的 IPv6 回环、inherit/deny 行为和未授权文件读取拒绝。显式启用的 UI 测试覆盖生产就绪状态、广泛读取与外部写入拒绝、broker 文件访问拒绝、只读 Project 和附件、可写 Thread tmp、文件列表/搜索/复制/移动/传输、junction 写入限制和不跟随链接的删除、私有环境、Session 清理、活动命令期间终止 broker 和授权目录替换拒绝。指定 binary 后，缺少 MXC 支持会导致测试失败。还应在目标 Windows 版本上验证取消 Session 打开；交叉编译无法验证这些内核生命周期。清理未确认时，worker 状态和活动进程计费保留至 Device 重启。
 
 ### 原生进程归属
 
