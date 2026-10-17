@@ -216,6 +216,7 @@ def _runtime_mount(
     *,
     working_directory: str | None = "/",
     mount_path: str | None = None,
+    provider_root: str = "/",
     permissions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.FILE_STAT}),
 ) -> EnvironmentMount:
     return EnvironmentMount(
@@ -223,6 +224,7 @@ def _runtime_mount(
         permission_ceiling=EnvironmentPermissionSet(operations=permissions),
         working_directory=working_directory,
         mount_path=mount_path,
+        provider_root=provider_root,
     )
 
 
@@ -764,7 +766,20 @@ async def test_direct_mount_paths_support_drive_and_unc_roots() -> None:
         assert unc_path.path == "/readme.md"
 
 
-async def test_direct_file_results_return_reusable_mount_paths() -> None:
+@pytest.mark.parametrize(
+    ("root", "provider_root"),
+    [
+        ("/Users/example/project", "/"),
+        ("/Users/example/project", "/Users/example/project"),
+        ("/", "/"),
+        ("D:/project", "/D:/project"),
+        ("D:/", "/D:/"),
+        ("//server/share/project", "/UNC/server/share/project"),
+        ("//server/share/", "/UNC/server/share/"),
+    ],
+)
+@pytest.mark.parametrize("directory", ["", "src"])
+async def test_direct_file_results_return_reusable_mount_paths(root: str, provider_root: str, directory: str) -> None:
     class ListingFiles(_Files):
         async def list(self, path: str, **kwargs: Any) -> FileEntriesResult:
             del kwargs
@@ -790,7 +805,9 @@ async def test_direct_file_results_return_reusable_mount_paths() -> None:
         mounts={
             "workspace": _runtime_mount(
                 provider,
-                mount_path="/Users/example/project",
+                mount_path=root,
+                provider_root=provider_root,
+                working_directory=provider_root,
                 permissions=frozenset({EnvironmentAction.FILE_LIST, EnvironmentAction.FILE_STAT}),
             )
         },
@@ -803,13 +820,18 @@ async def test_direct_file_results_return_reusable_mount_paths() -> None:
         instance=_instance(),
         host_refs={},
     ) as environment:
-        result = await environment.files.list("/Users/example/project/src")
+        assert environment.resolve_path(root).path == provider_root
+        assert environment.resolve_path(".").path == provider_root
+        aggregate_directory = f"{root.rstrip('/')}/{directory}" if directory else root
+        result = await environment.files.list(aggregate_directory)
         returned = result.entries[0].path
 
-        assert returned == "/Users/example/project/src/child.txt"
+        assert returned == f"{aggregate_directory.rstrip('/')}/child.txt"
         selected = environment.resolve_path(returned)
         assert selected.mount_id == environment.resolve_path(".").mount_id
-        assert selected.path == "/src/child.txt"
+        suffix = f"{directory}/child.txt" if directory else "child.txt"
+        assert selected.path == f"{provider_root.rstrip('/')}/{suffix}"
+        assert (await environment.files.stat(returned)).path == returned
 
 
 async def test_equivalent_direct_mount_paths_fail_before_provider_entry() -> None:

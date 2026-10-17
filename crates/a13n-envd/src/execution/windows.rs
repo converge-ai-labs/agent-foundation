@@ -233,22 +233,17 @@ pub(crate) fn full_disk_read_roots() -> io::Result<Vec<PathBuf>> {
         if unsafe { GetDriveTypeW(wide.as_ptr()) } == DRIVE_REMOTE {
             continue;
         }
-        let entries = match std::fs::read_dir(&root) {
-            Ok(entries) => entries,
-            // Logical drives include disconnected and empty removable volumes.
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
-                ) || matches!(error.raw_os_error(), Some(21 | 53 | 1201 | 1167)) =>
-            {
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
+        // Collect before adding grants so a disconnect during iteration follows
+        // the same whole-volume skip policy as a failure to open the directory.
+        let entries =
+            match std::fs::read_dir(&root).and_then(Iterator::collect::<io::Result<Vec<_>>>) {
+                Ok(entries) => entries,
+                Err(error) if inaccessible_volume(&error) => continue,
+                Err(error) => return Err(error),
+            };
         roots.push(root);
         for entry in entries {
-            let path = entry?.path();
+            let path = entry.path();
             if path.to_str().is_some()
                 && compare_existing_filesystem_objects(&path, &path)
                     == ExistingObjectComparison::Same
@@ -258,6 +253,27 @@ pub(crate) fn full_disk_read_roots() -> io::Result<Vec<PathBuf>> {
         }
     }
     Ok(roots)
+}
+
+fn inaccessible_volume(error: &io::Error) -> bool {
+    use windows_sys::Win32::Foundation::{
+        ERROR_BAD_NETPATH, ERROR_CONNECTION_UNAVAIL, ERROR_DEVICE_NOT_CONNECTED, ERROR_NOT_READY,
+    };
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound
+            | io::ErrorKind::PermissionDenied
+            | io::ErrorKind::NetworkUnreachable
+            | io::ErrorKind::HostUnreachable
+    ) || matches!(
+        error.raw_os_error().map(|code| code as u32),
+        Some(
+            ERROR_NOT_READY
+                | ERROR_BAD_NETPATH
+                | ERROR_CONNECTION_UNAVAIL
+                | ERROR_DEVICE_NOT_CONNECTED
+        )
+    )
 }
 
 #[derive(Deserialize, Serialize)]
@@ -463,6 +479,25 @@ fn unicode(path: &Path) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inaccessible_volume_errors_match_codex_without_hiding_unknown_failures() {
+        for kind in [
+            io::ErrorKind::NotFound,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::NetworkUnreachable,
+            io::ErrorKind::HostUnreachable,
+        ] {
+            assert!(inaccessible_volume(&io::Error::from(kind)));
+        }
+        for code in [21, 53, 1201, 1167] {
+            assert!(inaccessible_volume(&io::Error::from_raw_os_error(code)));
+        }
+        assert!(!inaccessible_volume(&io::Error::other(
+            "unexpected failure"
+        )));
+        assert!(!inaccessible_volume(&io::Error::from_raw_os_error(87)));
+    }
 
     #[test]
     #[ignore = "requires native MXC/PSEC support on the Windows host"]

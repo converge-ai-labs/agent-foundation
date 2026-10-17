@@ -11,6 +11,7 @@ from a13n_harness.providers.environment.local_envd.configuration import local_en
         (PureWindowsPath("C:/work/project"), "/C:/work/project"),
         (PureWindowsPath("C:/"), "/C:/"),
         (PureWindowsPath("//server/share/project"), "/UNC/server/share/project"),
+        (PureWindowsPath("//server/share/"), "/UNC/server/share/"),
         (PureWindowsPath("//?/C:/work/project"), "/C:/work/project"),
         (PureWindowsPath("//?/UNC/server/share/project"), "/UNC/server/share/project"),
     ],
@@ -28,6 +29,8 @@ def test_local_envd_path_rejects_relative_paths():
     "device,native",
     [
         ("/C:/work/project", PureWindowsPath("C:/work/project")),
+        ("/C:/", PureWindowsPath("C:/")),
+        ("/UNC/server/share/", PureWindowsPath("//server/share/")),
         ("/UNC/server/share/project", PureWindowsPath("//server/share/project")),
     ],
 )
