@@ -85,6 +85,160 @@ def streamed_request(renderer, pending, *, run_id="question-run"):
     renderer.ingest("TOOL_CALL_END", {"toolCallId": pending.request_id}, run_id=run_id)
 
 
+def display_events(renderer, events, *, run_id="response-run", snapshot=False):
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold(run_id, full_content=True)
+    for event in events:
+        observation = fold.fold([event])[0]
+        if not snapshot:
+            renderer.ingest(event["type"], event, run_id=run_id, display_position=fold.position, item=observation.item)
+    if snapshot:
+        renderer.ingest(
+            "CUSTOM",
+            {"name": "a13n.display.snapshot", "value": fold.export().model_dump(mode="json")},
+            run_id=run_id,
+        )
+
+
+def question_result_event(value, *, native=False, outcome="success"):
+    if not native:
+        return {"type": "TOOL_CALL_RESULT", "toolCallId": "question-1", "content": json.dumps(value)}
+    return {
+        "type": "CUSTOM",
+        "name": "a13n.pydantic_ai.function_tool_result",
+        "value": {
+            "event": {
+                "part": {
+                    "part_kind": "tool-return",
+                    "tool_name": "ask_user_question",
+                    "tool_call_id": "question-1",
+                    "content": value,
+                    "outcome": outcome,
+                }
+            }
+        },
+    }
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+@pytest.mark.parametrize("answer", ["Python", ["Python", "Rust"], "Use the existing implementation."])
+def test_display_result_only_response_keeps_question_receipt(renderer, snapshot, answer):
+    pending = request(multiple=isinstance(answer, list))
+    display_events(
+        renderer,
+        [
+            {"type": "TOOL_CALL_START", "toolCallId": pending.request_id, "toolCallName": pending.tool_name},
+            {
+                "type": "TOOL_CALL_ARGS",
+                "toolCallId": pending.request_id,
+                "delta": json.dumps({"questions": [question.model_dump() for question in pending.questions]}),
+            },
+            {"type": "TOOL_CALL_END", "toolCallId": pending.request_id},
+        ],
+        run_id="question-run",
+        snapshot=snapshot,
+    )
+    assert render(renderer) == ""
+    event = question_result_event({"answers": {pending.questions[0].question: answer}})
+    display_events(renderer, [event, event], snapshot=snapshot)
+    concise = render(renderer)
+    assert "Answered · Language" in concise
+    assert "Call " not in concise and "Not answered" not in concise
+    if answer == "Python":
+        assert "[x] Python" in concise and "[ ] Rust" in concise
+    elif isinstance(answer, list):
+        assert "[x] Python" in concise and "[x] Rust" in concise
+    else:
+        assert f"→ {answer}" in concise and "[x]" not in concise
+    assert len(renderer.transcript.blocks) == 1
+    assert not renderer._tools
+    assert '"answers"' in render(renderer, detailed=True)
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+@pytest.mark.parametrize("first_native", [False, True])
+@pytest.mark.parametrize("outcome", ["success", "failed", "denied"])
+def test_display_native_and_protocol_results_share_receipt(renderer, snapshot, first_native, outcome):
+    renderer.register_questions(request())
+    answer = {"answers": {request().questions[0].question: "Python"}}
+    native = question_result_event(answer, native=True, outcome=outcome)
+    protocol = question_result_event(answer)
+    events = [native, protocol] if first_native else [protocol, native]
+    display_events(renderer, [*events, *events], snapshot=snapshot)
+    concise = render(renderer)
+    assert len(renderer.transcript.blocks) == 1
+    assert "Call " not in concise
+    if outcome == "success":
+        assert "Answered · Language" in concise and "[x] Python" in concise
+    else:
+        assert "Not answered · Language" in concise and "[x]" not in concise
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_display_question_timeout_keeps_reason(renderer, snapshot):
+    renderer.register_questions(request())
+    display_events(
+        renderer,
+        [question_result_event("Question timed out; no user answer was received.", native=True, outcome="failed")],
+        snapshot=snapshot,
+    )
+    concise = render(renderer)
+    assert "Not answered · Language" in concise
+    assert "Question timed out" in concise and "[x]" not in concise
+
+
+def test_display_unknown_result_does_not_invent_a_tool_name(renderer):
+    display_events(renderer, [question_result_event({"answers": {"unknown": "Python"}})])
+    assert render(renderer) == "Call tool"
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+@pytest.mark.parametrize(
+    ("ids", "detailed", "notice"),
+    [
+        (["question-1"], False, False),
+        (["question-1"], True, True),
+        (["question-1", "approval-1"], False, True),
+        (["unknown"], False, True),
+        ([], False, True),
+    ],
+)
+def test_question_card_owns_waiting_without_duplicate_notice(renderer, snapshot, ids, detailed, notice):
+    renderer.register_questions(request())
+    renderer.status.mode = "detailed" if detailed else "concise"
+    display_events(
+        renderer,
+        [{"type": "RUN_FINISHED", "outcome": {"type": "interrupt", "interrupts": [{"id": key} for key in ids]}}],
+        run_id="question-run",
+        snapshot=snapshot,
+    )
+    assert ("Execution suspended" in render(renderer, detailed=detailed)) is notice
+    assert "Answered" not in render(renderer)
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_display_response_retry_keeps_attempts_separate(renderer, snapshot):
+    renderer.register_questions(request())
+    display_events(
+        renderer,
+        [question_result_event("Answer rejected.", native=True, outcome="failed")],
+        run_id="first-response",
+        snapshot=snapshot,
+    )
+    display_events(
+        renderer,
+        [question_result_event({"answers": {request().questions[0].question: "Rust"}})],
+        run_id="second-response",
+        snapshot=snapshot,
+    )
+    assert len(renderer.transcript.blocks) == 2
+    concise = render(renderer)
+    assert concise.count("Not answered · Language") == 1
+    assert concise.count("Answered · Language") == 1
+    assert "[x] Rust" in concise and "Call " not in concise
+
+
 def test_registration_and_run_finish_do_not_claim_an_answer(renderer):
     renderer.register_questions(request())
     renderer.ingest("RUN_FINISHED", {}, run_id="question-run")

@@ -716,7 +716,9 @@ class StreamRenderer:
                 if content.get("provider"):
                     call_id = f"native:{content['provider']}:{call_id}"
                 common = {"toolCallId": call_id, "toolCallName": content.get("toolCallName")}
-                if before is None:
+                # Deferred responses can arrive in a new Run with only a result.
+                # Do not invent a running invocation or an unknown-name preview.
+                if before is None and (item.state == "in_progress" or "arguments" in content):
                     self.ingest("TOOL_CALL_START", common, run_id=identity, child=child)
                 args = str(content.get("arguments", ""))
                 old_args = str(before.content.get("arguments", "")) if before is not None else ""
@@ -750,6 +752,12 @@ class StreamRenderer:
                     result = content.get(
                         "value", content.get("result", content.get("result_parts", content.get("failure")))
                     )
+                    if "value" not in content and item.state == "completed":
+                        # Protocol results are already serialized presentation content.
+                        # Wrapping them as native content changes the answer's shape
+                        # and incorrectly consumes the native-result deduplication slot.
+                        self.ingest("TOOL_CALL_RESULT", {**common, "content": result}, run_id=identity, child=child)
+                        continue
                     self.ingest(
                         "CUSTOM",
                         {
@@ -1047,7 +1055,7 @@ class StreamRenderer:
                 if self._exploration is not None and self._exploration.members:
                     if next(reversed(self.transcript.blocks), None) != self._exploration.members[-1].block_id:
                         self._exploration = None
-                preview = _ToolPreview(str(payload.get("toolCallName", "tool"))[:60], time.monotonic())
+                preview = _ToolPreview(str(payload.get("toolCallName") or "tool")[:60], time.monotonic())
                 preview.semantic, preview.read_path = semantic_tool_row(preview.name, "", self.status.directory)
                 if preview.name not in EXPLORATION_TOOLS:
                     self._exploration = None
@@ -1096,7 +1104,7 @@ class StreamRenderer:
                 preview.size += min(len(text), available)
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
-                name = preview.name if preview else str(payload.get("toolCallName", "tool"))[:60]
+                name = preview.name if preview else str(payload.get("toolCallName") or "tool")[:60]
                 if preview is not None and name in {"delegate", "steer_subagent"}:
                     if (native_state is not None and preview.native_result_seen) or (
                         native_state is None and preview.protocol_result_seen
@@ -1280,6 +1288,23 @@ class StreamRenderer:
         if event_type == "RUN_FINISHED":
             outcome = payload.get("outcome")
             if isinstance(outcome, dict) and outcome.get("type") in {"cancelled", "interrupt"}:
+                interrupts = outcome.get("interrupts")
+                if (
+                    outcome["type"] == "interrupt"
+                    and not child
+                    and not detailed
+                    and isinstance(interrupts, list)
+                    and interrupts
+                    and all(
+                        isinstance(interrupt, dict)
+                        and isinstance(interrupt.get("id"), str)
+                        and interrupt["id"] in self._questions
+                        for interrupt in interrupts
+                    )
+                ):
+                    # The Question Card owns waiting; its result receipt owns the
+                    # history. A permanent suspension notice contradicts both.
+                    return
                 self.append(
                     "Execution cancelled.\n"
                     if outcome["type"] == "cancelled"
