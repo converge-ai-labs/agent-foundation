@@ -90,7 +90,12 @@ async def resolve_host(
                 session,
                 principal,
                 scope,
-                config.connection_tools,
+                tuple(
+                    selection.model_copy(update={"defer_loading": False})
+                    if config.tool_proxy is not None and selection.connection_id in config.tool_proxy.connection_ids
+                    else selection
+                    for selection in config.connection_tools
+                ),
                 run.mcp_headers,
                 authority=authority,
             ),
@@ -116,7 +121,7 @@ class Host:
     plan: HostPlan
     models: Mapping[str, Model]
     skill_cache: Cache
-    tools: Mapping[str, tuple[AbstractCapability[AgentContext], ...]]
+    tools: Mapping[str, Mapping[str, AbstractCapability[AgentContext]]]
     webs: Mapping[str, WebBinding]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
@@ -124,7 +129,7 @@ class Host:
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
-        features = list(self.tools[agent.revision_id])
+        features = list(self.sources(agent).values())
         parts = self.plan.parts[agent.revision_id]
         skills = parts.skills
         sync = agent.config.skill_sync
@@ -154,6 +159,10 @@ class Host:
             )
         return features
 
+    def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:
+        """Already-opened connection and platform sources available for explicit grouping."""
+        return self.tools[agent.revision_id]
+
     def bindings(self, agent: ResolvedAgent, given: RunBindings) -> RunBindings:
         """`given` with what the agent binds of its own: its web backends and its media understanding."""
         return replace(
@@ -182,10 +191,10 @@ async def open_host(
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
         platform_mounts = runtime.platform_mounts if any(parts.builtin_skill for parts in plan.parts.values()) else {}
-        tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
+        tools: dict[str, dict[str, AbstractCapability[AgentContext]]] = {}
         webs: dict[str, WebBinding] = {}
         for revision_id, parts in plan.parts.items():
-            tools[revision_id] = await stack.enter_async_context(
+            connections = await stack.enter_async_context(
                 open_connections(
                     parts.connections,
                     check.connection_call,
@@ -197,9 +206,10 @@ async def open_host(
                     settings=runtime.settings.providers,
                 )
             )
+            tools[revision_id] = dict(zip((item.connection.id for item in parts.connections), connections, strict=True))
             if parts.platform.groups:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
-                tools[revision_id] += (platform,)
+                tools[revision_id]["platform"] = platform
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)

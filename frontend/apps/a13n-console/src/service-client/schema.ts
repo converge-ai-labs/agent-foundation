@@ -3595,6 +3595,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
       };
+      tool_proxy?: components["schemas"]["ToolProxy"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -3676,6 +3677,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
       };
+      tool_proxy?: components["schemas"]["ToolProxy"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -3785,6 +3787,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Input"] | null;
       } | null;
+      tool_proxy?: components["schemas"]["ToolProxy"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -3837,6 +3840,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Output"] | null;
       } | null;
+      tool_proxy?: components["schemas"]["ToolProxy"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -8558,6 +8562,68 @@ export interface components {
     ToolPermissionMode: "allow" | "deny" | "ask" | "review";
     ToolPermissionSetting:
       components["schemas"]["ToolPermissionMode"] | "inherit";
+    /**
+     * ToolProxy
+     * @description Presentation of already-selected sources, composed by Harness once per agent.
+     */
+    ToolProxy: {
+      config?: components["schemas"]["ToolProxyConfig"];
+      /** Groups */
+      groups?: {
+        [key: string]: components["schemas"]["ToolProxyGroup"];
+      };
+      /**
+       * Native Search
+       * @default false
+       */
+      native_search?: boolean;
+    };
+    /**
+     * ToolProxyConfig
+     * @description Names and bounded discovery settings for one Agent's proxy surface.
+     */
+    ToolProxyConfig: {
+      /**
+       * Call Name
+       * @default call_proxy_tool
+       */
+      call_name?: string;
+      /**
+       * Max Results
+       * @default 10
+       */
+      max_results?: number;
+      /**
+       * Max Search Bytes
+       * @default 32768
+       */
+      max_search_bytes?: number;
+      /**
+       * Search Name
+       * @default search_proxy_tools
+       */
+      search_name?: string;
+    };
+    /** ToolProxyGroup */
+    ToolProxyGroup: {
+      /**
+       * Connections
+       * @default []
+       */
+      connections?: string[];
+      /** Description */
+      description: string;
+      /**
+       * Platform
+       * @default false
+       */
+      platform?: boolean;
+      /**
+       * Plugins
+       * @default []
+       */
+      plugins?: string[];
+    };
     /**
      * ToolResourceSelector
      * @description The resource a tool needs before it can be enabled.

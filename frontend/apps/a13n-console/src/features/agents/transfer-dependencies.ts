@@ -114,6 +114,26 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         connection_tools: config.connection_tools?.map((item, i) =>
           i === index ? { ...item, connection_id: value } : item,
         ),
+        ...(config.tool_proxy
+          ? {
+              tool_proxy: {
+                ...config.tool_proxy,
+                groups: Object.fromEntries(
+                  Object.entries(config.tool_proxy.groups ?? {}).map(
+                    ([name, group]) => [
+                      name,
+                      {
+                        ...group,
+                        connections: group.connections?.map((id) =>
+                          id === connection.connection_id ? value : id,
+                        ),
+                      },
+                    ],
+                  ),
+                ),
+              },
+            }
+          : {}),
       }),
     });
   for (const [index, mount] of (config.memory_mounts ?? []).entries())

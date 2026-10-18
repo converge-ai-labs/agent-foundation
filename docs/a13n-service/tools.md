@@ -146,11 +146,42 @@ A revision lists connections in `connection_tools`:
 ```
 
 - `tools: null` selects every tool the connection exposes; a list selects up to 128 of them.
-- `defer_loading` (MCP only) lets the model find tools through tool search instead of receiving every definition up front.
+- `defer_loading` (MCP only) offers `load_capability` so the model can load the connection's tools together when needed.
 - `permission` applies to the connection's tools, and `permissions` overrides it per tool.
 - A revision can select up to 128 connections. Saving it checks that each connection is enabled and exposes the selected tools.
 
 At execution, each connection must be `ready`. Before every call the Service checks that the connection is still enabled and authorized and that the run may still spend; otherwise the call is not sent. Calls are bounded by `providers.tool_call_seconds` and are never retried automatically.
+
+### Grouped tool discovery
+
+In Console, open an agent's **Tool discovery** section, choose **Native tool search**, add a named group and select its sources. Use a model that supports native tool search. The same configuration is available through `tool_proxy`:
+
+```json
+{
+  "connection_tools": [
+    {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
+  ],
+  "tool_proxy": {
+    "native_search": true,
+    "groups": {
+      "knowledge": {
+        "description": "Search the team handbook and project documentation",
+        "connections": ["conn_..."]
+      }
+    }
+  }
+}
+```
+
+The model discovers individual tools through its provider's native search, then calls names such as `knowledge__search_docs`. Service executes them through the existing connection, with its credentials, caller headers and tool permissions. An unsupported model fails before a model request with `native_tool_search_unsupported`.
+
+Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's selected platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
+
+- **Native tool search** (`native_search: true`) uses provider-native discovery and ordinary tool calls.
+- **Grouped proxy search** (`native_search: false`) uses Harness's `search_proxy_tools` and `call_proxy_tool`. Optional `config` settings follow [Harness ToolProxy](../a13n-harness/tool-proxy.md).
+- **Source defaults** (omit `tool_proxy`) uses each source's existing loading settings.
+
+Group membership selects presentation for tools the agent already has. A grouped connection uses the group's discovery mode while preserving its saved `defer_loading`; leaving the group restores that setting. Sources outside the groups keep their current behavior. Each child agent uses its own revision's configuration. A run override replaces the whole `tool_proxy` block; `groups: {}` turns grouping off for that run.
 
 ### Caller headers
 

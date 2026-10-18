@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toolSearchConfig, toolSearchDraft } from "../tool-search";
 import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
@@ -67,9 +68,12 @@ export function useAgentDraft(initial: AgentConfig) {
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
+    [toolSearch, setToolSearch] = useState(toolSearchDraft(initial.tool_proxy)),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
     [memory, setMemory] = useState(initial.memory ?? {});
   const dirty =
+    JSON.stringify(toolSearch) !==
+      JSON.stringify(toolSearchDraft(initial.tool_proxy)) ||
     JSON.stringify(reviewer) !== JSON.stringify(initial.reviewer) ||
     mediaKinds.some(
       ({ kind }) =>
@@ -118,6 +122,8 @@ export function useAgentDraft(initial: AgentConfig) {
     setSkills,
     connections,
     setConnections,
+    toolSearch,
+    setToolSearch,
     memoryMounts,
     setMemoryMounts,
     memory,
@@ -128,7 +134,11 @@ export function useAgentDraft(initial: AgentConfig) {
 
 export type DraftBuild =
   | { ok: true; config: AgentConfig }
-  | { ok: false; stage: "model" | "reviewer" | "advanced"; error: Error };
+  | {
+      ok: false;
+      stage: "model" | "reviewer" | "toolSearch" | "advanced";
+      error: Error;
+    };
 
 /** Validates the draft and produces the configuration a save would publish. */
 export function buildDraftConfig(
@@ -184,6 +194,19 @@ export function buildDraftConfig(
         error instanceof Error ? error : new Error(t("Invalid configuration")),
     };
   }
+  let proxy: AgentConfig["tool_proxy"];
+  try {
+    proxy = toolSearchConfig(draft.toolSearch, draft.connections);
+  } catch (error) {
+    return {
+      ok: false,
+      stage: "toolSearch",
+      error:
+        error instanceof Error
+          ? new Error(t(error.message))
+          : new Error(t("Invalid configuration")),
+    };
+  }
   try {
     if (!validSpaceSelection(draft.memory))
       throw new Error(
@@ -207,6 +230,7 @@ export function buildDraftConfig(
             ? { media_understanding: draft.mediaUnderstanding }
             : {}),
           connection_tools: draft.connections,
+          tool_proxy: proxy,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,

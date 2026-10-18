@@ -146,11 +146,42 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```
 
 - `tools: null` 选择连接暴露的全部工具；列表最多选择 128 个。
-- `defer_loading`（仅 MCP）让模型通过工具搜索发现工具，不必预先接收全部定义。
+- `defer_loading`（仅 MCP）提供 `load_capability`，让模型在需要时加载该连接的整组工具。
 - `permission` 应用于连接的所有工具，`permissions` 按工具覆盖。
 - 修订版本最多选择 128 个连接。保存时检查每个连接已启用，并暴露所选工具。
 
 执行时每个连接必须为 `ready`。每次调用前，Service 检查连接仍启用且已授权，以及运行仍有可用额度；否则不会发送调用。调用受 `providers.tool_call_seconds` 限制，永不自动重试。
+
+### 分组工具发现
+
+在 Console 中打开 agent 的**工具发现**区域，选择**原生工具搜索**，添加命名分组并选择来源。模型需要支持原生工具搜索。API 使用相同的 `tool_proxy` 配置：
+
+```json
+{
+  "connection_tools": [
+    {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
+  ],
+  "tool_proxy": {
+    "native_search": true,
+    "groups": {
+      "knowledge": {
+        "description": "Search the team handbook and project documentation",
+        "connections": ["conn_..."]
+      }
+    }
+  }
+}
+```
+
+模型通过提供商的原生搜索发现单个工具，再调用 `knowledge__search_docs` 等名称。Service 沿用已有连接执行，保留凭据、调用方请求头和工具权限。不支持的模型会在发送模型请求前以 `native_tool_search_unsupported` 失败。
+
+分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已选的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
+
+- **原生工具搜索**（`native_search: true`）使用提供商原生发现和普通工具调用。
+- **分组代理搜索**（`native_search: false`）使用 Harness 的 `search_proxy_tools` 和 `call_proxy_tool`。可选的 `config` 设置参阅 [Harness ToolProxy](../a13n-harness/tool-proxy.md)。
+- **使用来源的加载设置**（省略 `tool_proxy`）沿用各来源现有的加载方式。
+
+分组成员关系决定 agent 已有工具的呈现方式。分组内的连接使用分组发现模式，同时保留已保存的 `defer_loading`；移出分组后恢复该设置。未分组的来源保持现有行为。每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_proxy` 块；`groups: {}` 为该次运行关闭分组。
 
 ### 调用方请求头
 

@@ -74,6 +74,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `platform_tools`: selected platform MCP `groups`, with `read_permission` (default `allow`) and `write_permission` (default `ask`), each `allow`, `ask` or `deny`. Groups default empty.
 - `builtin_skills`: independently selected instance-local instructions; currently `platform-operations`, default empty. Neither selection grants tenant permissions.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
+- `tool_proxy`: optional grouped tool discovery with `native_search`, `groups` and Harness `config` ([Tool discovery](#tool-discovery)).
 - `client_tools`, whose results a client supplies through resume, and `user_questions`, which offers `ask_user_question`.
 - `subagent_mode` (`inline` or `async`) and named `subagents`: `{agent_id, revision_id, description, context, usage_limits, environment}`. `environment.mode` is `none`, `shared` or `dedicated`, and `dedicated` names a `template_id`.
 - `reviewer`: a model key and its settings for the `review` tool permission.
@@ -88,6 +89,16 @@ agent_revisions   revision columns; config: AgentConfig
 Tool permissions live on each selection and compile into one Harness tool-permission table.
 
 `GET /toolsets` owns the default English `display_name` and short `description` for each built-in toolset and tool. Descriptions default to an empty string when omitted. Tool entries also identify their model-facing `model_name` and permission `execution_id`; presentation text is separate from these identities.
+
+### Tool discovery
+
+`tool_proxy` selects how already-selected tools reach the model. Each named group has a nonblank `description` of at most 512 characters, `connections` (connection IDs), `plugins` (plugin instance names), and `platform` (whether it includes the selected platform tools). Group names follow the Harness ToolProxy naming contract. A source belongs to at most one group and must already be selected by this Agent. There are at most 128 groups. Sources outside the groups keep their existing presentation.
+
+With `native_search: false` (the default), Harness supplies grouped proxy search and invocation. With `native_search: true`, Harness supplies provider-native tool search and ordinary local calls to discovered tools, named `group__tool`. The actual calling model must support native tool search; otherwise execution fails with `native_tool_search_unsupported` before sending a model request. Harness owns discovery, history restoration and invocation in both modes.
+
+A grouped connection uses the group's discovery mechanism instead of capability-level `defer_loading`. Its stored selection is preserved; removing it from the groups restores that selection's loading behavior. Connection allowlists, original tool permission identities, Host credentials, caller headers and per-call dispatch checks apply in both modes. Platform tools retain their selected groups and read/write permissions. Plugins are constructed once through the installed factory catalog.
+
+The plan belongs to the immutable Agent revision. Each inline or async child uses its own revision's plan. A Run override replaces the whole `tool_proxy` block; omission or null keeps the revision's block, and `groups: {}` disables grouping. Configurations without `tool_proxy` retain their existing serialized shape and direct or capability-deferred behavior.
 
 ### Computer tool coordinates
 
@@ -403,7 +414,7 @@ An operation that may have been sent but has no result is never repeated. An ope
 - `test` always discovers with the current configuration and credential and returns `{connection_id, connection_version, status, message, tested_at, tools}`; a failure is `status: failed` with a safe message, not an HTTP error. It records `last_test {connection_version, status, message, tested_at}` without changing the version, and an outcome for an older version never replaces a newer one. Tests are not audited.
 - Tools report `name`, `description`, `input_schema`, `output_schema` and `annotations` as the server or app declares them. Annotations are hints shown to people, never permissions.
 
-**Selections.** An agent's `connection_tools` entry names an enabled connection of its workspace. `tools` must be a subset of what the connection exposes; `permission` applies to every tool without its own entry in `permissions`, whose keys must be selected tools. `defer_loading` lets the model find an MCP connection's tools through tool search; it applies only to MCP connections, and a connector selection with it is `invalid_argument`. At execution, selected tools the connection no longer exposes are dropped.
+**Selections.** An agent's `connection_tools` entry names an enabled connection of its workspace. `tools` must be a subset of what the connection exposes; `permission` applies to every tool without its own entry in `permissions`, whose keys must be selected tools. `defer_loading` exposes `load_capability` so the model can load an MCP connection's tools together; it applies only to MCP connections, and a connector selection with it is `invalid_argument`. Explicit [tool discovery groups](#tool-discovery) own loading for their member connections. At execution, selected tools the connection no longer exposes are dropped.
 
 The Remote MCP servers suggested for new connections are a catalogue that only prefills a connection ([08](08-providers.md#mcp-server-catalogue)).
 

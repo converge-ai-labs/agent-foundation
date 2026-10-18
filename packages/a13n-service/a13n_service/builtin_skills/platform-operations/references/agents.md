@@ -20,6 +20,12 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 `memory` sets new-session defaults: `enabled` and `spaces[{name, space_id, access}]`, selecting existing workspace Memory Spaces with read or write access. The first accepted business run fills omitted session fields from its Agent Revision; the session then keeps those choices. Each Space owns its organization policy and model. `memory_mounts` selects standalone memories for new threads.
 
+## Configure tool discovery
+
+`tool_proxy` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, and optionally `platform: true` for selected platform tools. Each source belongs to one group. Use `native_search: true` with a model supporting native tool search, or `native_search: false` for Harness proxy search and invocation. The calling model's actual profile is checked at execution.
+
+Grouped connections use the group's discovery mode while retaining their saved `defer_loading` setting. Outside a group, MCP `defer_loading: true` exposes `load_capability` to load the connection's tools together. Keep source selections and permissions intact when changing presentation. A Run override replaces the entire `tool_proxy` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan.
+
 ## Configure desktop coordinates
 
 The Computer toolset requires explicit enablement and an authorized desktop Environment. `toolsets.computer.config.coordinate_space` defaults to `pixels`. Select `normalized_1000` only when the chosen model supplies relative positions on a 0–1000 scale for each axis. The tool converts pointer positions using the referenced screenshot; model instructions must not ask the model to multiply by image dimensions. Scroll distances retain their declared units. Do not infer or change this setting from the Environment Provider or template. Check the deployed toolset catalog for supported configuration before creating a Revision.

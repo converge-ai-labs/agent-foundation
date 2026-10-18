@@ -366,6 +366,16 @@
             "title": "Subagents",
             "type": "object"
           },
+          "tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolProxy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "toolsets": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ToolsetSelection"
@@ -560,6 +570,16 @@
             },
             "title": "Subagents",
             "type": "object"
+          },
+          "tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolProxy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "toolsets": {
             "additionalProperties": {
@@ -950,6 +970,16 @@
             ],
             "title": "Subagents"
           },
+          "tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolProxy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "toolsets": {
             "anyOf": [
               {
@@ -1208,6 +1238,16 @@
               }
             ],
             "title": "Subagents"
+          },
+          "tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolProxy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "toolsets": {
             "anyOf": [
@@ -14938,6 +14978,99 @@
             "type": "string"
           }
         ]
+      },
+      "ToolProxy": {
+        "additionalProperties": false,
+        "description": "Presentation of already-selected sources, composed by Harness once per agent.",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ToolProxyConfig"
+          },
+          "groups": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolProxyGroup"
+            },
+            "maxProperties": 128,
+            "title": "Groups",
+            "type": "object"
+          },
+          "native_search": {
+            "default": false,
+            "title": "Native Search",
+            "type": "boolean"
+          }
+        },
+        "title": "ToolProxy",
+        "type": "object"
+      },
+      "ToolProxyConfig": {
+        "description": "Names and bounded discovery settings for one Agent's proxy surface.",
+        "properties": {
+          "call_name": {
+            "default": "call_proxy_tool",
+            "title": "Call Name",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 10,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "max_search_bytes": {
+            "default": 32768,
+            "title": "Max Search Bytes",
+            "type": "integer"
+          },
+          "search_name": {
+            "default": "search_proxy_tools",
+            "title": "Search Name",
+            "type": "string"
+          }
+        },
+        "title": "ToolProxyConfig",
+        "type": "object"
+      },
+      "ToolProxyGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "connections": {
+            "default": [],
+            "items": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Connections",
+            "type": "array"
+          },
+          "description": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "platform": {
+            "default": false,
+            "title": "Platform",
+            "type": "boolean"
+          },
+          "plugins": {
+            "default": [],
+            "items": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Plugins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "title": "ToolProxyGroup",
+        "type": "object"
       },
       "ToolResourceSelector": {
         "additionalProperties": false,

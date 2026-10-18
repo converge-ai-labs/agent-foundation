@@ -91,3 +91,23 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
+
+.searchGroup {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.searchGroupHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.searchSource {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}

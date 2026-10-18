@@ -22,6 +22,7 @@ import { MemorySection } from "./memory";
 import { ReviewerSection, ReviewerSettings } from "./reviewer";
 import type { ReviewTarget } from "../reviewer";
 import { ModelSection } from "./model";
+import { ToolSearchSection } from "./tool-search";
 
 export interface AgentDraftSummary {
   modelName?: string;
@@ -79,7 +80,8 @@ export function AgentEditor({
     [modelExpanded, setModelExpanded] = useState(false),
     [advancedExpanded, setAdvancedExpanded] = useState(false),
     [validation, setValidation] = useState<Error>(),
-    [modelValidation, setModelValidation] = useState<Error>();
+    [modelValidation, setModelValidation] = useState<Error>(),
+    [toolSearchValidation, setToolSearchValidation] = useState<Error>();
   const [reviewPanel, setReviewPanel] = useState<{
     target?: ReviewTarget;
     validation?: Error;
@@ -129,6 +131,8 @@ export function AgentEditor({
       if (built.stage === "model") {
         setModelValidation(built.error);
         setModelExpanded(true);
+      } else if (built.stage === "toolSearch") {
+        setToolSearchValidation(built.error);
       } else if (built.stage === "reviewer") {
         setReviewPanel({ validation: built.error });
       } else {
@@ -139,6 +143,7 @@ export function AgentEditor({
       return;
     }
     setModelValidation(undefined);
+    setToolSearchValidation(undefined);
     setValidation(undefined);
     submit(built.config, etag, note.trim() || null);
   }
@@ -189,6 +194,13 @@ export function AgentEditor({
             onRequireReviewer={() => {
               if (!draft.reviewer?.model) setReviewPanel({});
             }}
+          />
+          <ToolSearchSection
+            draft={draft}
+            choices={choices}
+            readOnly={readonly}
+            mark={mark("toolSearch")}
+            error={toolSearchValidation}
           />
           <MemorySection draft={draft} readOnly={readonly} />
           <AgentToolsets

@@ -58,7 +58,9 @@ export function ConnectionGroup({
   onRemove,
   onReview,
   onRequireReviewer,
+  discovery,
 }: {
+  discovery?: "proxy" | "native";
   onReview?: (target?: ReviewTarget) => void;
   onRequireReviewer?: () => void;
   connection?: Connection;
@@ -234,24 +236,39 @@ export function ConnectionGroup({
             <div className={styles.connectionOptions}>
               <div className={styles.connectionOption}>
                 <span>
-                  <strong>{t("Load tools on demand")}</strong>
+                  <strong>
+                    {t(
+                      discovery === "native"
+                        ? "Native tool search"
+                        : discovery === "proxy"
+                          ? "Grouped proxy search"
+                          : "Load tools on demand",
+                    )}
+                  </strong>
                   <small>
                     {t(
-                      "Load this Connection's tools only when the agent needs them.",
+                      discovery
+                        ? "This connection uses its tool discovery group. Its saved loading setting applies when it leaves the group."
+                        : "Load this Connection's tools only when the agent needs them.",
                     )}
                   </small>
                 </span>
-                <Checkbox
-                  aria-label={t("Load tools on demand")}
-                  disabled={editingDisabled}
-                  checked={selection.defer_loading ?? false}
-                  onCheckedChange={(checked) =>
-                    onChange((current) => ({
-                      ...current,
-                      defer_loading: checked === true,
-                    }))
-                  }
-                />
+                {!discovery && (
+                  <Checkbox
+                    aria-label={t("Load tools on demand")}
+                    disabled={
+                      editingDisabled ||
+                      (!!connection && "app" in connection.config)
+                    }
+                    checked={selection.defer_loading ?? false}
+                    onCheckedChange={(checked) =>
+                      onChange((current) => ({
+                        ...current,
+                        defer_loading: checked === true,
+                      }))
+                    }
+                  />
+                )}
               </div>
               <div className={styles.connectionOption}>
                 <span>

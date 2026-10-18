@@ -247,6 +247,7 @@ def model_resolver(agent: ResolvedAgent, models: Mapping[str, Model]) -> RunMode
 
 
 type HostCapabilities = Callable[[ResolvedAgent], Sequence[AbstractCapability[AgentContext]]]
+type ToolSources = Callable[[ResolvedAgent], Mapping[str, AbstractCapability[AgentContext]]]
 type ChildBindings = Callable[[ResolvedAgent, RunBindings], RunBindings]
 type Operators = Callable[[ResolvedAgent], SubagentOperator]
 
@@ -255,6 +256,7 @@ def build(
     agent: ResolvedAgent,
     *,
     capabilities: HostCapabilities,
+    tool_sources: ToolSources | None = None,
     child_bindings: ChildBindings | None = None,
     operators: Operators | None = None,
     plugins: HarnessPluginFactoryCatalog,
@@ -267,7 +269,7 @@ def build(
     child binds of its own, such as web backends and media understanding. `operators` returns the operator
     through which one async agent of the graph starts child runs over its own edges.
     """
-    root = _Host(capabilities, child_bindings, operators, plugins).compose(agent)
+    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources).compose(agent)
     # Each call is priced by its selected model's own pricing; inline subagents inherit the root's policy.
     prices = TokenPricingCapability({model.key: model.pricing for model in agent.models() if model.pricing is not None})
     return HarnessBuilder(instrumentation=instrumentation, configured_plugins_enabled=False).build(
@@ -321,6 +323,7 @@ class _Host:
     child_bindings: ChildBindings | None
     operators: Operators | None
     plugins: HarnessPluginFactoryCatalog
+    tool_sources: ToolSources | None = None
 
     def compose(self, agent: ResolvedAgent) -> AgentDefinition[Any]:
         config = agent.config
@@ -358,6 +361,7 @@ class _Host:
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
             definition_id=agent.revision_id,
             capabilities=tuple(features),
+            tool_proxy=definition.tool_proxy(config, self.tool_sources(agent) if self.tool_sources else {}),
             plugins=tuple(
                 self.plugins.create_plugin(
                     HarnessPluginFactoryContext(
