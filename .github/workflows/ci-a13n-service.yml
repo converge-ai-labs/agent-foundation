@@ -48,23 +48,78 @@ env:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Service test inputs
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Bundled Service documentation is a build input, so the checks job (wheel
+      # build and documentation search) always runs. The database-backed test
+      # suite only needs to run when something other than that documentation
+      # changed; this list is the trigger list above without docs/a13n-service/**.
+      - name: Classify Service inputs
+        id: filter
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            tests:
+              - '.github/workflows/ci-a13n-service.yml'
+              - '.github/workflows/release-a13n-service.yml'
+              - 'conftest.py'
+              - 'scripts/tests/test_ci_inputs.py'
+              - 'dev/**'
+              - 'packages/a13n-service/**'
+              - 'packages/a13n-logging/**'
+              - 'pyproject.toml'
+              - 'Makefile'
+              - 'proto/a13n-service/**'
+              - 'scripts/export-a13n-service-openapi.py'
+              - 'scripts/tests/test_service_contract.py'
+              - 'packages/a13n-harness/**'
+              - 'packages/a13n-stream-protocol/**'
+              - 'packages/a13n-envd-client/**'
+              - 'uv.lock'
+
+      - name: Build validation matrix
+        id: matrix
+        env:
+          TESTS_CHANGED: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.tests == 'true' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          matrix = [{"name": "checks", "runner": "ubuntu-latest"}]
+          if os.environ["TESTS_CHANGED"] == "true":
+              matrix.append({"name": "tests", "runner": "ubuntu-24.04"})
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"matrix={json.dumps(matrix, separators=(',', ':'))}\n")
+          PY
+
   validation:
     name: a13n Service Python (${{ matrix.name }})
+    needs: changes
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: checks
-            runner: ubuntu-latest
-          - name: tests
-            runner: ubuntu-24.04
+        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -199,7 +254,7 @@ jobs:
 
   python:
     name: a13n Service Python
-    needs: validation
+    needs: [changes, validation]
     if: >-
       always() &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
@@ -208,5 +263,6 @@ jobs:
     steps:
       - name: Require all a13n Service checks to pass
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           VALIDATION_RESULT: ${{ needs.validation.result }}
-        run: test "$VALIDATION_RESULT" = success
+        run: test "$CHANGES_RESULT" = success && test "$VALIDATION_RESULT" = success

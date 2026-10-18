@@ -242,4 +242,4 @@ def test_service_ci_owns_export_drift_and_tests() -> None:
         required = shlex.split(command)
         step = next(step for step in steps if shlex.split(step.get("run", ""))[: len(required)] == required)
         assert step["if"] == "matrix.name == 'checks'"
-    assert workflow["jobs"]["python"]["needs"] == "validation"
+    assert workflow["jobs"]["python"]["needs"] == ["changes", "validation"]

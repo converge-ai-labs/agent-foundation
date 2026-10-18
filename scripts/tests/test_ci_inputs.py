@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -103,21 +104,45 @@ def test_bundled_service_docs_select_package_and_image_builds(path: str) -> None
             }
 
 
-def test_service_ci_runs_service_tests_and_checks() -> None:
+def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path) -> list[dict[str, str]]:
+    step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
+    output = tmp_path / "output"
+    output.write_text("")
+    subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={**os.environ, "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
+        check=True,
+    )
+    assert output.read_text().startswith("matrix=")
+    return json.loads(output.read_text().removeprefix("matrix="))
+
+
+def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
-    assert {entry["name"] for entry in jobs["validation"]["strategy"]["matrix"]["include"]} == {"checks", "tests"}
-    assert {entry["runner"] for entry in jobs["validation"]["strategy"]["matrix"]["include"]} <= {
-        "ubuntu-latest",
-        "ubuntu-24.04",
-    }
+    matrix = _service_matrix(workflow, "true", tmp_path)
+    assert {entry["name"] for entry in matrix} == {"checks", "tests"}
+    assert {entry["runner"] for entry in matrix} <= {"ubuntu-latest", "ubuntu-24.04"}
+    assert jobs["validation"]["strategy"]["matrix"]["include"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
     steps = jobs["validation"]["steps"]
     test = next(step for step in steps if step["name"] == "Test a13n Service")
     assert "-n 3 --dist loadgroup" in test["run"]
     assert "packages/a13n-service/tests" in test["run"]
     assert any(step.get("run") == "make service-boundaries" for step in steps)
     assert any(step.get("run") == "make dev-state-check" for step in steps)
-    assert jobs["python"]["needs"] == "validation"
+    assert jobs["python"]["needs"] == ["changes", "validation"]
+
+
+def test_service_docs_only_changes_skip_database_tests_but_keep_checks(tmp_path: Path) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    jobs = workflow["jobs"]
+    assert [entry["name"] for entry in _service_matrix(workflow, "false", tmp_path)] == ["checks"]
+    # The tests filter is exactly the trigger list without the bundled documentation.
+    classifier = next(step for step in jobs["changes"]["steps"] if step.get("id") == "filter")
+    tests = yaml.safe_load(classifier["with"]["filters"])["tests"]
+    for event in ("pull_request", "push"):
+        assert tests == [path for path in workflow[True][event]["paths"] if path != "docs/a13n-service/**"]
+    assert not any(Path("docs/a13n-service/mcp.md").full_match(pattern) for pattern in tests)
 
 
 @pytest.mark.parametrize(
@@ -138,14 +163,20 @@ def test_service_tests_reject_empty_or_skipped_execution(tmp_path: Path, cases: 
 
 
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
-def test_service_gate_requires_every_matrix_member(result: str) -> None:
+@pytest.mark.parametrize("changes", ["success", "failure", "cancelled", "skipped"])
+def test_service_gate_requires_detection_and_every_matrix_member(changes: str, result: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     gate = workflow["jobs"]["python"]
     assert "always()" in gate["if"]
     step = gate["steps"][0]
+    assert step["env"]["CHANGES_RESULT"] == "${{ needs.changes.result }}"
     assert step["env"]["VALIDATION_RESULT"] == "${{ needs.validation.result }}"
-    completed = subprocess.run(["bash", "-e", "-c", step["run"]], env={"VALIDATION_RESULT": result}, check=False)
-    assert (completed.returncode == 0) == (result == "success")
+    completed = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"CHANGES_RESULT": changes, "VALIDATION_RESULT": result},
+        check=False,
+    )
+    assert (completed.returncode == 0) == (changes == result == "success")
 
 
 @pytest.mark.parametrize(
