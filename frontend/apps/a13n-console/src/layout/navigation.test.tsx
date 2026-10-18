@@ -147,10 +147,17 @@ it("keeps resource categories in sidebar links and restores the selected categor
   expect(screen.queryByRole("link", { name: "Providers" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "Memory Spaces" }));
+  await user.click(screen.getByRole("link", { name: "Memories" }));
   expect(screen.getByText("Space directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Standalone memories" }));
   expect(screen.getByText("Memory directory")).toBeTruthy();
+  // The group stays open, with its selected child highlighted.
+  expect(screen.getByRole("link", { name: "Spaces" })).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: "Standalone memories" })
+      .getAttribute("aria-current"),
+  ).toBe("page");
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(screen.getByRole("link", { name: "Instances" }));
   expect(screen.getByText("Instance directory")).toBeTruthy();

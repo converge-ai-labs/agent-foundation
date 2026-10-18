@@ -16,7 +16,7 @@ Resources belong to a workspace. Accepted runs keep their selected memory mounts
 
 A **Memory Space** holds shared knowledge and session notes in one versioned file store. Create Spaces for your application's users or projects, then select them in sessions.
 
-1. Open **Memory Spaces → Spaces** and create a named Space. In **Configuration**, set its instructions, always-loaded files and optional organizer model.
+1. Open **Memories → Spaces** and create a named Space. In **Configuration**, set its instructions, always-loaded files and optional organizer model.
 2. In an agent's **Memory** section, enable memory participation and select the Spaces new sessions should use. Give each selection a tool-visible name and read or write access.
 3. When starting a session, inherit the agent defaults or choose an explicit selection. The session header's **Memory** control changes participation and selection for future runs.
 4. Open a Space to browse **Files**, inspect **File history**, review **Organization** rounds and see associated **Sessions**.

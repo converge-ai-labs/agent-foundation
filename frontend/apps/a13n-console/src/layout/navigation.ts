@@ -29,7 +29,7 @@ export const navigationGroups: {
       ["skills", "Skills", PuzzlePieceIcon],
       [
         "memory-spaces",
-        "Memory Spaces",
+        "Memories",
         BrainIcon,
         [
           ["memory-spaces", "Spaces"],

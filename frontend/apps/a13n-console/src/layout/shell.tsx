@@ -193,9 +193,16 @@ function WorkspaceNavigation({
                   ))}
                 <SidebarMenu>
                   {group.entries.map(([path, label, Icon, children]) => {
-                    const active =
-                      pathname === destination(path) ||
-                      pathname.startsWith(`${destination(path)}/`);
+                    // A group stays open on any of its children, not only on
+                    // the page its own link leads to.
+                    const active = [
+                      path,
+                      ...(children ?? []).map(([c]) => c),
+                    ].some(
+                      (p) =>
+                        pathname === destination(p) ||
+                        pathname.startsWith(`${destination(p)}/`),
+                    );
                     return (
                       <SidebarMenuItem key={path}>
                         <NavigationRow
