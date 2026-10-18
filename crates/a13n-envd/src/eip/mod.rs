@@ -42,7 +42,7 @@ mod tests {
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "0.2");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 51);
+        assert_eq!(METHODS.len(), 52);
         assert!(
             METHODS
                 .iter()
@@ -54,7 +54,7 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            21
+            22
         );
         assert_eq!(
             METHODS
@@ -85,7 +85,14 @@ mod tests {
             .iter()
             .filter(|method| method.transfer_action.is_some())
             .collect::<Vec<_>>();
-        assert_eq!(transfer_methods.len(), 7);
+        assert_eq!(transfer_methods.len(), 8);
+        let zoom = METHODS
+            .iter()
+            .find(|method| method.name == "computer.zoom")
+            .expect("computer.zoom is registered");
+        assert_eq!(zoom.replay_class, "active_only");
+        assert_eq!(zoom.transfer_action, Some("open"));
+        assert_eq!(zoom.transfer_direction, Some("server_to_client"));
         assert!(
             transfer_methods
                 .iter()
