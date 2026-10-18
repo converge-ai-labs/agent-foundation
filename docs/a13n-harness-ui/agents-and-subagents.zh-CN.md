@@ -201,7 +201,9 @@ tool_proxy:
     max_search_bytes: 32768
 ```
 
-`native_search` 默认为 `false`，使用 ToolProxy 控件。设置为 `true` 可让同一批来源使用必须受支持的原生工具搜索。当前 Model 必须支持原生工具搜索；不支持时失败，不会回退。工具保留分组名称并在本地执行。`config` 只在 `native_search` 为 `false` 时生效。
+`native_search: false` 为默认值：模型使用 ToolProxy 的搜索和调用工具，通过 `config` 配置。设置 `native_search: true` 后，模型通过原生工具搜索发现同一批分组工具，再直接调用。两种模式均保留分组工具名称，并在本地执行。
+
+使用原生模式时，选择支持原生工具搜索的 Model。不支持的 Model 会在发送模型请求前报错，不会回退。执行细节见[原生工具搜索](../a13n-harness/tool-proxy.md#select-native-tool-search)。
 
 `config` 可选。组名以字母开头，最多 32 个字母、数字、下划线或连字符，不得包含 `__`。描述不得为空，最多 512 字符。选择确切资源 ID，同一插件的多个实例需使用不同 ID。一个来源只能属于一组。同组不同来源必须有不同工具名；冲突会失败，不会编造别名。
 

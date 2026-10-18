@@ -2110,6 +2110,11 @@ export interface components {
         };
         /** AgentToolProxy */
         AgentToolProxy: {
+            /**
+             * Native Search
+             * @default false
+             */
+            native_search?: boolean;
             /** Groups */
             groups?: {
                 [key: string]: components["schemas"]["AgentToolProxyGroup"];

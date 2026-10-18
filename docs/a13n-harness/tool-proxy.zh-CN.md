@@ -5,15 +5,20 @@ description: 通过搜索工具和调用工具提供大型工具集合，让模�
 
 ToolProxy 通过两个面向模型的控制工具提供大型本地工具集合：`search_proxy_tools` 和 `call_proxy_tool`。模型先看到简短的领域列表，需要时发现确切参数 schema，再用参数对象调用所选工具。
 
-ToolProxy 只改变发现和调用的呈现方式。验证、策略、凭据、钩子、结果和用量仍由 Pydantic AI 当前 `ToolManager`、原 Toolset 和普通 Harness 执行边界负责。它不是第二个执行引擎或 MCP 客户端。
+工具通过当前 `ToolManager`、原 Toolset 和 Harness 执行边界执行，由这条路径处理验证、策略、凭据、钩子、结果和用量。
 
 ## 选择原生工具搜索
 
-默认 `native_search=False` 使用 ToolProxy 搜索与调用控件。在 `ToolProxyCapability` 或 `ToolProxyPlan` 设置 `native_search=True`，即可让同一组选定来源使用上游 `ToolSearch`。分组工具保留 `crm__customer_name` 等名称，标记为 `defer_loading=True`，发现后直接调用。来源指令遵循上游行为。此分支不提供代理控件，`ToolProxyConfig` 设置不生效。
+通过 `ToolProxyCapability` 或 `ToolProxyPlan` 的 `native_search` 选择模型发现和调用分组工具的方式：
 
-原生模式要求模型及协议支持原生工具搜索。不支持时明确失败，不会自动回退到 ToolProxy 或本地关键词搜索。工具仍通过本地 ToolManager 和普通权限边界执行。MCP 来源继续使用 `native=False, local=True`。直接调用采用普通用量和审批/恢复语义，而非代理信封的嵌套调用语义。
+- `False`（默认）：使用 `search_proxy_tools` 和 `call_proxy_tool`，通过 `ToolProxyConfig` 自定义这两个控制工具。
+- `True`：通过 `ToolSearch` 使用原生工具搜索。分组工具标记为 `defer_loading=True`，保留 `crm__customer_name` 等名称。模型发现工具后直接调用，采用标准用量统计和审批/恢复流程。来源 Toolset 指令保持原有行为。
 
-以下各节说明默认 ToolProxy 分支。
+原生模式要求模型及协议支持原生工具搜索。不支持的模型会触发 `native_tool_search_unsupported` 错误；Harness 不会回退到其他搜索模式。工具在本地执行，并遵循已有权限。两种模式下，MCP 来源均配置为 `native=False, local=True`。
+
+使用 CodeAct 编排工具调用时，选择默认 ToolProxy 模式。CodeAct 当前会排除延迟加载的工具，包括已经通过原生搜索发现的工具。
+
+以下示例使用默认 ToolProxy 模式。
 
 ## 为 Toolset 分组
 

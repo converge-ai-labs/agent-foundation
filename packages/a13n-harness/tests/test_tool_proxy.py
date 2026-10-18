@@ -1516,3 +1516,44 @@ async def test_native_search_preserves_named_source_permission_identity(mode: st
         assert result.output_or_raise() == "done"
         assert returns[-1].outcome == "failed"
         assert returns[-1].content == "Tool invocation is denied by its permission configuration."
+
+
+@pytest.mark.parametrize("discovered", [False, True])
+async def test_native_search_deferred_tools_remain_excluded_from_codeact(discovered: bool) -> None:
+    from pydantic_ai.profiles.anthropic import anthropic_model_profile
+
+    effects = []
+
+    def lookup() -> str:
+        effects.append(True)
+        return "found"
+
+    source = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([lookup]), CodeActToolPolicy(default=True))])
+
+    def inspect(_step: int, info: AgentInfo) -> None:
+        definitions = {tool.name: tool for tool in info.function_tools}
+        assert definitions["crm__lookup"].defer_loading
+        for runner in ("run_code", "run_program"):
+            assert "crm__lookup" not in (definitions[runner].description or "")
+
+    calls = [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {})] if discovered else []
+    calls.append(("run_code", {"code": "await crm__lookup()"}))
+    result, returns = await _run(
+        (source, CodeActCapability(), ToolSearch(strategy="keywords")),
+        calls,
+        tool_proxy=ToolProxyPlan(
+            groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+        ),
+        profile=anthropic_model_profile("claude-sonnet-4-6"),
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+    assert effects == ([True] if discovered else [])
+    assert returns[-1].tool_name == "run_code"
+    assert returns[-1].outcome == "failed"
+    failure = json.loads(returns[-1].content)
+    assert failure["codeact"]["tool_call_count"] == 0
+    assert failure["codeact"]["side_effect_uncertain"] is False
+    if discovered:
+        assert returns[-2].tool_name == "crm__lookup"
+        assert returns[-2].content == "found"

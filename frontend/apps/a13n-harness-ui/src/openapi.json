@@ -6137,6 +6137,11 @@
       },
       "AgentToolProxy": {
         "properties": {
+          "native_search": {
+            "type": "boolean",
+            "title": "Native Search",
+            "default": false
+          },
           "groups": {
             "additionalProperties": {
               "$ref": "#/components/schemas/AgentToolProxyGroup"
