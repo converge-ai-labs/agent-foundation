@@ -2042,6 +2042,86 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(
     assert not Path(observed_path).exists()
 
 
+@requires_posix_process_groups
+async def test_shell_text_spill_is_readable_through_native_view_and_cleaned(tmp_path: Path) -> None:
+    text = "".join(f"section {i}: a readable line of command output\n" for i in range(900))
+    (tmp_path / "source.txt").write_text(text)
+    paths: list[Path] = []
+    recovered = ""
+    text_path = ""
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal recovered, text_path
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps(
+                        {
+                            "command": "cat source.txt",
+                            "yield_time_seconds": 2,
+                        }
+                    ),
+                    tool_call_id="shell-1",
+                )
+            }
+            return
+        content = returns[-1].content
+        assert isinstance(content, dict) and content["ok"] is True
+        if returns[-1].tool_name == "shell_exec":
+            disclosure = content["disclosure"]
+            assert disclosure["content_complete"] is True
+            text_path = disclosure["text_file_paths"]["/stdout/text"]
+            paths.extend((Path(disclosure["output_file_path"]), Path(text_path)))
+            assert json.loads(paths[0].read_text())["stdout"]["text"] == text
+            offset = 0
+        else:
+            assert not content["truncated_lines"]
+            recovered += content["content"]
+            if not content["has_more"]:
+                assert recovered == text
+                yield "done"
+                return
+            offset = content["next_line_offset"]
+        yield {
+            0: DeltaToolCall(
+                name="view",
+                json_args=json.dumps(
+                    {
+                        "file_path": text_path,
+                        "line_offset": offset,
+                    }
+                ),
+                tool_call_id=f"view-{len(returns)}",
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "Read the command output",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, mount_path=tmp_path.as_posix(), process_output=True),
+            capabilities=(_policy(),),
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(paths) == 2 and all(not path.exists() for path in paths)
+    assert (tmp_path / "source.txt").read_text() == text
+
+
 async def test_unmanaged_large_json_result_uses_default_truncation(tmp_path: Path) -> None:
     def produce() -> dict[str, str]:
         return {"content": "x" * (300 * 1024), "hint": "native-tool"}

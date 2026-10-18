@@ -473,11 +473,14 @@ class ToolOutputDisclosure(TypedDict):
     output_chars: int
     output_bytes: int
     output_file_path: str | None
+    text_file_paths: NotRequired[dict[str, str]]
     content_complete: bool
     hint: str
 ```
 
 `output_chars` and `output_bytes` measure the same strict serialized fullest-available redacted value as Python Unicode characters and UTF-8 bytes, respectively. `content_complete` states whether that value covers the complete producing operation, not merely whether the temporary write succeeded. `output_file_path` names a model-readable file containing that fullest-available value or is `None` when writing was unavailable. Tools with a reliable continuation, such as file pages or retained process output, can prefer that continuation and omit a file. Named Toolset results include `disclosure` only when their ordinary inline projection omits additional content. They do not return a universal model-visible result wrapper.
+
+Text-field disclosure also saves nonempty selected string fields as UTF-8 text when the JSON spill succeeds. Optional `text_file_paths` maps each field's JSON Pointer (for example, `/stdout/text`) to a readable text file with its original line breaks. These files use the same redacted values and Run-private spill owner as the JSON file, allowing ordinary `view` pagination without decoding JSON strings. Only successful text writes appear in the mapping; a failed text write leaves the JSON recovery path available. The serialized JSON counts, completeness flag, and spill eligibility remain unchanged.
 
 The helper returns an ordinary JSON mapping carrying a Harness-owned process-local acknowledgement type. This acknowledgement is not serialized as a flag, grants no authority, and cannot disable validation, redaction, or the finite hard ceiling. It only tells the outer boundary not to replace an already bounded semantic result at the smaller generic inline byte threshold. Acknowledged output remains shape-preserving only while it is at most 20,000 serialized characters and within `max_output_bytes`; otherwise the final safety ceiling returns the bounded generic preview regardless of the ordinary unacknowledged overflow mode. Arbitrary booleans or model-controlled fields never create the acknowledgement.
 

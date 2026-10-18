@@ -467,9 +467,8 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
 
         class SpillDeps(_ToolDeps):
             async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
-                assert suffix == ".json"
                 spilled.append(data)
-                return "/workspace/.a13n/tool-results/quick.json"
+                return f"/workspace/.a13n/tool-results/quick{suffix}"
 
         toolset = ShellToolset(environment)
         ctx = SimpleNamespace(deps=SpillDeps())
@@ -482,8 +481,10 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
         assert result["ok"] is True
         assert "process_id" not in result
         assert result["disclosure"]["output_file_path"] == "/workspace/.a13n/tool-results/quick.json"
-        assert len(spilled) == 1
+        assert result["disclosure"]["text_file_paths"] == {"/stdout/text": "/workspace/.a13n/tool-results/quick.txt"}
+        assert len(spilled) == 2
         assert spilled[0].count(b"x") >= 30_000
+        assert spilled[1] == b"x" * 30_000
         await toolset.close()
 
 
