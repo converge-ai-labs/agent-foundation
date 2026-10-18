@@ -23,10 +23,13 @@ from a13n_harness.environment.computer import (
     ComputerObservation,
     ComputerPoint,
     ComputerPressKeys,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerScroll,
     ComputerTarget,
     ComputerTypeText,
+    ComputerZoom,
+    ComputerZoomImage,
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
@@ -42,11 +45,27 @@ class _Observation:
     expires: float
 
 
-def _image(data: bytes, description: DesktopDescription, maximum: int) -> tuple[bytes, int, int]:
+def _image(
+    data: bytes,
+    description: DesktopDescription,
+    maximum: int,
+    zoom: tuple[ComputerObservation, ComputerRegion] | None = None,
+) -> tuple[bytes, int, int]:
     with Image.open(io.BytesIO(data)) as source:
         if source.size != (description.width, description.height):
             raise EnvironmentError("E2B screenshot geometry changed.", code="environment_stale_mount")
         image = source.convert("RGB")
+        if zoom is not None:
+            observation, region = zoom
+            region.validate_bounds(observation.width, observation.height)
+            image = image.crop(
+                (
+                    region.left * image.width // observation.width,
+                    region.top * image.height // observation.height,
+                    (region.right * image.width + observation.width - 1) // observation.width,
+                    (region.bottom * image.height + observation.height - 1) // observation.height,
+                )
+            )
         image.thumbnail((maximum, maximum))
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=85)
@@ -108,13 +127,48 @@ class E2BComputerOperations:
             self._observations[observation.observation_id] = _Observation(observation, description, now + 120)
             return ComputerScreenshot(observation, encoded)
 
+    def _basis(self, observation: ComputerObservation) -> _Observation:
+        stored = self._observations.get(observation.observation_id)
+        if stored is None or stored.expires <= time.monotonic() or stored.observation != observation:
+            raise EnvironmentError("E2B screenshot reference is stale.", code="environment_stale_mount")
+        return stored
+
+    async def zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int = 1280
+    ) -> ComputerZoom:
+        self._check_open()
+        region.validate_bounds(observation.width, observation.height)
+        if not 256 <= max_dimension <= 2048:
+            raise EnvironmentError("Invalid image dimension.", code="environment_request_invalid")
+        async with self._lock:
+            self._check_open()
+            stored = self._basis(observation)
+            description, data = await self.desktop.observe()
+            if description != stored.desktop:
+                raise EnvironmentError("E2B screenshot reference is stale.", code="environment_stale_mount")
+            encoded, width, height = await to_thread.run_sync(
+                _image, data, description, max_dimension, (observation, region)
+            )
+            return ComputerZoom(
+                ComputerZoomImage(
+                    source_observation_id=observation.observation_id,
+                    target_id=observation.target_id,
+                    source_width=observation.width,
+                    source_height=observation.height,
+                    region=region,
+                    image_width=width,
+                    image_height=height,
+                    mime_type="image/jpeg",
+                    captured_at=datetime.now(UTC),
+                ),
+                encoded,
+            )
+
     def _request(self, request: ComputerInput) -> tuple[ComputerInput, DesktopDescription | None]:
         basis: DesktopDescription | None = None
         points: dict[str, ComputerPoint] = {}
         if isinstance(request, (ComputerClick, ComputerMove, ComputerDrag, ComputerScroll)):
-            stored = self._observations.get(request.observation.observation_id)
-            if stored is None or stored.expires <= time.monotonic() or stored.observation != request.observation:
-                raise EnvironmentError("E2B screenshot reference is stale.", code="environment_stale_mount")
+            stored = self._basis(request.observation)
             basis = stored.desktop
             for name in ("start", "end") if isinstance(request, ComputerDrag) else ("point",):
                 point = getattr(request, name)

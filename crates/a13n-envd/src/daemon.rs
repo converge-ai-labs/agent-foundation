@@ -1402,6 +1402,12 @@ impl EipSessionHandler for Session {
     ) -> Result<eip::ComputerObserveResult, EIPError> {
         self.observe_computer(params).await
     }
+    async fn computer_zoom(
+        &self,
+        params: eip::ComputerZoomParams,
+    ) -> Result<eip::ComputerZoomResult, EIPError> {
+        self.zoom_computer(params).await
+    }
     async fn computer_close_observation(
         &self,
         params: eip::FileReaderCloseParams,

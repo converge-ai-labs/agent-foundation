@@ -166,7 +166,7 @@ async def test_single_desktop_needs_routing_only_without_a_default(default_mount
     assert payload["default_mount"] == default_mount
     assert payload["mounts"][0]["name"] == "desktop"
     assert "type_text" in payload["mounts"][0]["operations"]["computer"]
-    assert len(captured["tools"]) == 8
+    assert len(captured["tools"]) == 9
 
 
 async def test_no_exposed_environment_tools_need_no_routing_guide(tmp_path):

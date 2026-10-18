@@ -29,8 +29,11 @@ from a13n_harness.environment.computer import (
     ComputerDrag,
     ComputerInput,
     ComputerMove,
+    ComputerObservation,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerScroll,
+    ComputerZoom,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import (
@@ -78,20 +81,46 @@ class _ComputerFacade:
             _validate_provider_artifacts(entered, result.observation)
             return result
 
+    async def zoom(
+        self,
+        observation: ComputerObservation,
+        region: ComputerRegion,
+        *,
+        max_dimension: int = 1280,
+        alias: str | None = None,
+    ) -> ComputerZoom:
+        entered = self._for_observation(observation, EnvironmentAction.COMPUTER_ZOOM, alias)
+        async with self._environment._operation_lease(entered, EnvironmentAction.COMPUTER_ZOOM, "computer") as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            region.validate_bounds(observation.width, observation.height)
+            if not 256 <= max_dimension <= 2048:
+                raise EnvironmentError("Invalid image dimension.", code="environment_request_invalid")
+            return await computer.zoom(observation, region, max_dimension=max_dimension)
+
+    def _for_observation(
+        self,
+        observation: ComputerObservation,
+        action: EnvironmentAction,
+        alias: str | None,
+    ) -> _EnteredMount:
+        entered = self._environment.require_action(
+            self._environment._entered_for_execution(observation.execution_id).mount_id, action
+        )
+        if (
+            alias is not None
+            and self._environment._select_entered(alias).provider.execution_id != observation.execution_id
+        ):
+            raise EnvironmentError("Observation belongs to another mount.", code="environment_stale_mount")
+        if observation.observed_generation != entered.public.descriptor.generation:
+            raise EnvironmentError("Computer observation is stale.", code="environment_stale_mount")
+        return entered
+
     async def execute(self, request: ComputerInput, *, alias: str | None = None) -> ComputerActionResult:
         action = COMPUTER_INPUT_ACTIONS[request.kind]
         if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):
-            observation = request.observation
-            entered = self._environment.require_action(
-                self._environment._entered_for_execution(observation.execution_id).mount_id, action
-            )
-            if (
-                alias is not None
-                and self._environment._select_entered(alias).provider.execution_id != observation.execution_id
-            ):
-                raise EnvironmentError("Observation belongs to another mount.", code="environment_stale_mount")
-            if observation.observed_generation != entered.public.descriptor.generation:
-                raise EnvironmentError("Computer observation is stale.", code="environment_stale_mount")
+            entered = self._for_observation(request.observation, action, alias)
         else:
             entered = self._environment._select_entered(alias)
         async with self._environment._operation_lease(entered, action, "computer") as entered:

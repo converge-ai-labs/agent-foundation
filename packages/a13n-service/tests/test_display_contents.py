@@ -430,13 +430,14 @@ def test_screenshot_capture_has_per_image_and_pending_byte_limits() -> None:
     assert tiny.image(b"", "image/png") is None
 
 
+@pytest.mark.parametrize("tool_name", ["computer_observe", "computer_zoom"])
 @pytest.mark.parametrize("marked", [False, True])
-def test_screenshot_collection_requires_the_explicit_marker_and_preserves_child_identity(marked) -> None:
+def test_screenshot_collection_requires_the_explicit_marker_and_preserves_child_identity(marked, tool_name) -> None:
     from a13n_service.runs.images import observe
 
     contents = Contents()
     image = BinaryContent(data=b"image", media_type="image/png")
-    part = ToolReturnPart("computer_observe", [image], "same-call", metadata={"a13n.computer.screenshot": marked})
+    part = ToolReturnPart(tool_name, [image], "same-call", metadata={"a13n.computer.screenshot": marked})
     event = HarnessEvent(
         thread_id="thread", run_id="child", sequence=1, occurred_at=AT, event=FunctionToolResultEvent(part)
     )

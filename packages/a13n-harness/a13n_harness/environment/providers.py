@@ -27,7 +27,10 @@ from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerDescription,
     ComputerInput,
+    ComputerObservation,
+    ComputerRegion,
     ComputerScreenshot,
+    ComputerZoom,
 )
 from a13n_harness.environment.execution import EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
@@ -79,6 +82,15 @@ class BoundComputerOperations(Protocol):
     async def observe(
         self, *, alias: str | None = None, target_id: str | None = None, max_dimension: int = 1280
     ) -> ComputerScreenshot: ...
+
+    async def zoom(
+        self,
+        observation: ComputerObservation,
+        region: ComputerRegion,
+        *,
+        max_dimension: int = 1280,
+        alias: str | None = None,
+    ) -> ComputerZoom: ...
 
     async def execute(self, request: ComputerInput, *, alias: str | None = None) -> ComputerActionResult: ...
 

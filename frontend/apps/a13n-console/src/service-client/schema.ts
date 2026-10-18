@@ -4957,6 +4957,7 @@ export interface components {
       | "environment.state.restore"
       | "environment.computer.describe"
       | "environment.computer.observe"
+      | "environment.computer.zoom"
       | "environment.computer.click"
       | "environment.computer.move"
       | "environment.computer.drag"

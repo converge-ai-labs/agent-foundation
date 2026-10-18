@@ -36,6 +36,16 @@ Observation geometry records the selected display's native origin and size and t
 
 A reference is not a pixel-freshness guarantee. An application, focus or window may change without changing display geometry. There is no desktop-wide effect counter. The agent must observe again when it needs current content; repeated observation does not eliminate shared-desktop races.
 
+## Regional Detail
+
+`computer.zoom` accepts a live source `observation_id`, a `region` with half-open `left`, `top`, `right`, and `bottom` edges in that observation's image pixels, and `max_dimension` (256–2048, default 1280). The rectangle must be nonempty and wholly inside the source image; right and bottom may equal its width and height. Unknown, expired or evicted references and changed target geometry fail rather than selecting a replacement target.
+
+Zoom captures a fresh native-resolution image of the same target, maps the region to the raw image dimensions, crops before downsizing, and returns a bounded JPEG. Lower edges round down and upper edges round up to cover the selected region. Raw image dimensions, rather than logical desktop dimensions, determine this mapping on high-density displays. The output preserves aspect ratio and is not enlarged beyond its native crop dimensions.
+
+The result's `image` contains `source_observation_id`, `target_id`, `source_width`, `source_height`, `region`, `image_width`, `image_height`, MIME type and capture timestamp. It is auxiliary image metadata, not a new pointer observation. Zoom neither inserts a geometry reference nor extends the source reference's lifetime. Pointer input continues to use the original observation and full-frame coordinates. Zoom shows current content within the old geometric frame; it does not guarantee that application content is unchanged.
+
+Zoom uses active-only admission and the same Session-owned capture, staging reservation, byte limits and verified raw-reader lifecycle as observe. Its result also carries `reader`, `size_bytes` and `expires_at`; `computer.close_observation` closes this image reader without invalidating the source geometry. Exact `computer.zoom` and reader-close method availability governs support. Older peers retain their existing observe and input contracts without a thumbnail-enlargement fallback.
+
 ## Input
 
 Each call performs one complete bounded gesture:

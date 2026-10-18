@@ -12,9 +12,12 @@ from a13n_harness.environment.computer import (
     ComputerMove,
     ComputerObservation,
     ComputerPressKeys,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerScroll,
     ComputerTypeText,
+    ComputerZoom,
+    ComputerZoomImage,
 )
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.eip._common import convert_receipt, invoke, new_context, session_client
@@ -50,6 +53,28 @@ class EIPComputerOperations:
             )
             data = b"".join([chunk async for chunk in reader])
             return ComputerScreenshot(observation, data)
+
+    async def zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int = 1280
+    ) -> ComputerZoom:
+        return await invoke(self._zoom(observation, region, max_dimension=max_dimension))
+
+    async def _zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int
+    ) -> ComputerZoom:
+        if (observation.execution_id, observation.observed_generation) != (self._execution_id, self._generation):
+            raise EnvironmentError("Computer observation is stale", code="environment_stale_mount")
+        region.validate_bounds(observation.width, observation.height)
+        async with self._session.zoom_computer(
+            observation_id=observation.observation_id,
+            region=eip.ComputerRegion(**region.model_dump()),
+            max_dimension=max_dimension,
+        ) as reader:
+            if reader.opened.size_bytes > 4 * 1024 * 1024:
+                raise EnvironmentError("Computer image exceeds its size limit", code="environment_too_large")
+            image = ComputerZoomImage.model_validate(reader.opened.image.model_dump())
+            data = b"".join([chunk async for chunk in reader])
+            return ComputerZoom(image, data)
 
     async def execute(self, request: ComputerInput) -> ComputerActionResult:
         try:

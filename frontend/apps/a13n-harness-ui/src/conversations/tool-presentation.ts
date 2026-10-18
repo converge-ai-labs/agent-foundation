@@ -98,6 +98,10 @@ export function describeTool(tool: ToolView) {
       label = "Observe desktop";
       summary = text(result.target_id) || text(args.alias);
       break;
+    case "computer_zoom":
+      label = "Inspect desktop region";
+      summary = text(args.observation_id);
+      break;
     case "computer_describe":
       label = "Inspect desktop";
       summary = text(args.alias);

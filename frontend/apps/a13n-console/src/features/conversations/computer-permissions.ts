@@ -3,6 +3,7 @@ import type { Schema } from "../../shared/api";
 export const computerActions = [
   "environment.computer.describe",
   "environment.computer.observe",
+  "environment.computer.zoom",
   "environment.computer.click",
   "environment.computer.move",
   "environment.computer.drag",
@@ -10,7 +11,11 @@ export const computerActions = [
   "environment.computer.type_text",
   "environment.computer.press_keys",
 ] satisfies Schema["EnvironmentAction"][];
-export const observationActions = computerActions.slice(0, 2);
+export const observationActions = [
+  "environment.computer.describe",
+  "environment.computer.observe",
+  "environment.computer.zoom",
+] satisfies Schema["EnvironmentAction"][];
 export const computerPermissionLabels = {
   off: "Computer permissions: off",
   observe: "Computer permissions: allow observation",

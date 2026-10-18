@@ -26,14 +26,17 @@ from a13n_harness.environment.computer import (
     ComputerObservation,
     ComputerPoint,
     ComputerPressKeys,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerScroll,
     ComputerTarget,
     ComputerTypeText,
+    ComputerZoom,
 )
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
+    EnvironmentAction,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentOperationReceipt,
@@ -75,7 +78,7 @@ class Observation:
 
 
 def with_computer(value: EnvironmentDescriptor) -> EnvironmentDescriptor:
-    actions = value.permissions.operations | COMPUTER_ACTIONS
+    actions = value.permissions.operations | (COMPUTER_ACTIONS - {EnvironmentAction.COMPUTER_ZOOM})
     return value.model_copy(
         update={
             "operation_families": value.operation_families | {"computer"},
@@ -273,6 +276,11 @@ class DaytonaComputer:
         async with self.lock:
             self.commands.closed = True
             self.observations.clear()
+
+    async def zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int = 1280
+    ) -> ComputerZoom:
+        raise EnvironmentError("Daytona does not support computer zoom.", code="environment_unsupported")
 
     async def execute(self, request: ComputerInput) -> ComputerActionResult:
         async with self.lock:

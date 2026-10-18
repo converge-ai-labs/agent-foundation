@@ -99,6 +99,64 @@ impl Session {
         self.await_owned_operation(&id, owned).await
     }
 
+    pub(super) async fn zoom_computer(
+        &self,
+        params: eip::ComputerZoomParams,
+    ) -> Result<eip::ComputerZoomResult, EIPError> {
+        self.ensure_ready()?;
+        let (work, admitted) =
+            self.admit_owned_record("computer.zoom", &params.context, &params)?;
+        let operation = match admitted {
+            BeginOutcome::New(operation) => operation,
+            BeginOutcome::Replay(value) => return self.decode_replay(value),
+            BeginOutcome::ReplayFailure(error) => return Err(*error),
+        };
+        let computer = self.computer.clone();
+        let id = params.context.operation_id.clone();
+        let operation_id = id.clone();
+        let ledger = self.operations.clone();
+        let transfers = self.transfers.clone();
+        let filesystem = self.filesystem.clone();
+        let owned = self.operations.spawn_owned(id.clone(), async move {
+            transfers.expire().await;
+            let staging = filesystem
+                .reserve_staging(crate::computer::MAX_IMAGE_BYTES as u64)
+                .map_err(|error| map_resource_error(map_path_error(error)))?;
+            let (image, bytes, staging) = tokio::task::spawn_blocking(move || {
+                let (image, bytes) = computer.zoom(&params)?;
+                Ok::<_, EIPError>((image, bytes, staging))
+            })
+            .await
+            .map_err(|_| {
+                protocol_error(ErrorType::InternalError, "screen capture worker failed")
+            })??;
+            if let Some(interruption) = ledger.interruption(&operation_id) {
+                return Err(protocol_error(
+                    match interruption {
+                        OperationInterruption::Cancelled => ErrorType::Cancelled,
+                        OperationInterruption::TimedOut => ErrorType::Timeout,
+                    },
+                    "screen capture interrupted",
+                ));
+            }
+            let size_bytes = bytes.len() as u64;
+            let (reader, expires_at) = transfers
+                .open_image_reader(bytes, staging)
+                .await
+                .map_err(map_transfer_error)?;
+            let result = eip::ComputerZoomResult {
+                image,
+                reader,
+                size_bytes,
+                expires_at,
+            };
+            operation.finish(&result, None).map_err(map_ledger_error)?;
+            Ok(result)
+        });
+        drop(work);
+        self.await_owned_operation(&id, owned).await
+    }
+
     pub(super) async fn close_computer_observation(
         &self,
         params: eip::FileReaderCloseParams,

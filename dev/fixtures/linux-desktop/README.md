@@ -23,6 +23,7 @@ The normal Python suite skips `test_computer_x11.py`. The image opts in with `A1
 The test exercises:
 
 - native target discovery and JPEG capture, including actual changed pixels after a click;
+- downsampled full-frame observation, native-resolution regional detail, and a click using the unchanged full-frame coordinates;
 - screenshot bytes in the model request, live image events, saved transcript references and authenticated image retrieval;
 - click, physical key chord, wheel steps and timed drag received by a separate GUI process;
 - swapped pointer and wheel mappings, so logical button/direction semantics do not accidentally depend on the default map;

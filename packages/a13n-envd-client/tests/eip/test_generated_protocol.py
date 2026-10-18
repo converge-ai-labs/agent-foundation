@@ -117,15 +117,16 @@ def test_monitoring_percentages_preserve_fractional_values(value: float) -> None
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.2"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 51
+    assert len(METHODS) == 52
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
     assert all(
-        method.introduced == ("0.2" if method.name == "device.metrics" else "0.1") for method in METHODS.values()
+        method.introduced == ("0.2" if method.name in {"device.metrics", "computer.zoom"} else "0.1")
+        for method in METHODS.values()
     )
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
-    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 21
+    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 22
     assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 21
     assert {method.name for method in METHODS.values() if method.replay_class == "ledger_external"} == {
         "initialize",
@@ -139,7 +140,7 @@ def test_generated_surface_covers_eip_v1() -> None:
         "egress.update",
     }
     transfer_methods = [method for method in METHODS.values() if method.transfer_action is not None]
-    assert len(transfer_methods) == 7
+    assert len(transfer_methods) == 8
     assert all(method.transfer_direction is not None for method in transfer_methods)
 
 

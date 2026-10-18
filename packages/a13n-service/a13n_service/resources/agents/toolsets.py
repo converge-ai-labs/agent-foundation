@@ -253,6 +253,13 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 description="Capture the desktop for the model and conversation",
             ),
             _Tool(
+                "zoom",
+                "Inspect desktop region",
+                "environment.computer.zoom",
+                "computer_zoom",
+                description="Inspect fresh native detail while retaining full-screen action coordinates",
+            ),
+            _Tool(
                 "click",
                 "Click",
                 "environment.computer.click",

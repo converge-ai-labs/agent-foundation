@@ -382,11 +382,30 @@ class ComputerPoint(EIPModel):
     y: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
 
+class ComputerRegion(EIPModel):
+    left: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    top: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    right: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    bottom: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
 class ComputerTarget(EIPModel):
     target_id: Identifier
     name: StrictStr
     width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
     height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+
+
+class ComputerZoomImage(EIPModel):
+    source_observation_id: Identifier
+    target_id: Identifier
+    source_width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    source_height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    region: ComputerRegion
+    image_width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    image_height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    mime_type: StrictStr
+    captured_at: EIPTimestamp
 
 
 class ContentDigest(EIPModel):
@@ -1057,6 +1076,20 @@ class ComputerTypeTextParams(EIPModel):
     text: StrictStr
 
 
+class ComputerZoomParams(EIPModel):
+    context: EIPCallContext
+    observation_id: Identifier
+    region: ComputerRegion
+    max_dimension: Annotated[StrictInt, Field(ge=256, le=2048)] = 1280
+
+
+class ComputerZoomResult(EIPModel):
+    image: ComputerZoomImage
+    reader: FileReaderHandle
+    size_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    expires_at: EIPTimestamp
+
+
 type CpuLimit = Annotated[
     UnlimitedCpuLimit | LimitedCpuLimit,
     Field(discriminator="kind"),
@@ -1446,7 +1479,9 @@ CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
 ComputerObservation.model_rebuild()
 ComputerPoint.model_rebuild()
+ComputerRegion.model_rebuild()
 ComputerTarget.model_rebuild()
+ComputerZoomImage.model_rebuild()
 ContentDigest.model_rebuild()
 CpuTimeSeconds.model_rebuild()
 DeviceDescribeParams.model_rebuild()
@@ -1547,6 +1582,8 @@ ComputerObserveResult.model_rebuild()
 ComputerPressKeysParams.model_rebuild()
 ComputerScrollParams.model_rebuild()
 ComputerTypeTextParams.model_rebuild()
+ComputerZoomParams.model_rebuild()
+ComputerZoomResult.model_rebuild()
 EgressPolicy.model_rebuild()
 EgressStatus.model_rebuild()
 EgressUpdateParams.model_rebuild()
@@ -1622,10 +1659,14 @@ __all__ = [
     "ComputerObserveResult",
     "ComputerPoint",
     "ComputerPressKeysParams",
+    "ComputerRegion",
     "ComputerScrollParams",
     "ComputerScrollUnit",
     "ComputerTarget",
     "ComputerTypeTextParams",
+    "ComputerZoomImage",
+    "ComputerZoomParams",
+    "ComputerZoomResult",
     "ContentDigest",
     "CpuLimit",
     "CpuTimeSeconds",

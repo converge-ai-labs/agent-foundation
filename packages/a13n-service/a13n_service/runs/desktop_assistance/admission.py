@@ -150,6 +150,7 @@ async def operation(
     rejected_before_dispatch = False
     read_only = action in FILE_READ_ACTIONS | {
         EnvironmentAction.COMPUTER_OBSERVE,
+        EnvironmentAction.COMPUTER_ZOOM,
         EnvironmentAction.COMPUTER_DESCRIBE,
         EnvironmentAction.PROCESS_LIST,
         EnvironmentAction.PROCESS_INSPECT,

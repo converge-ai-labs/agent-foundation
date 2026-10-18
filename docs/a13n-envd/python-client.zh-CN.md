@@ -182,6 +182,7 @@ reader 验证连续偏移量、精确引用、单调计数器与完成状态、�
 | ---------------------------- | ---------------------------- | ---------------------------- | ---------------------------- | ------------------- |
 | `computer.describe`          | `computer_describe`          | `ComputerDescribeParams`     | `ComputerDescribeResult`     | `active_only`       |
 | `computer.observe`           | `computer_observe`           | `ComputerObserveParams`      | `ComputerObserveResult`      | `active_only`       |
+| `computer.zoom`              | `computer_zoom`              | `ComputerZoomParams`         | `ComputerZoomResult`         | `active_only`       |
 | `computer.close_observation` | `computer_close_observation` | `FileReaderCloseParams`      | `FileReaderCloseResult`      | `active_only`       |
 | `computer.click`             | `computer_click`             | `ComputerClickParams`        | `ComputerActionResult`       | `terminal_evidence` |
 | `computer.move`              | `computer_move`              | `ComputerMoveParams`         | `ComputerActionResult`       | `terminal_evidence` |

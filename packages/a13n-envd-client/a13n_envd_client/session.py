@@ -9,6 +9,7 @@ from types import TracebackType
 from a13n_envd_client.eip.v1 import (
     EIP_PROTOCOL_VERSION,
     METHODS,
+    ComputerRegion,
     DeviceDescribeParams,
     DeviceDescriptor,
     DeviceMetricsParams,
@@ -37,7 +38,12 @@ from a13n_envd_client.eip.v1 import (
     SessionOpenParams,
 )
 from a13n_envd_client.errors import EIPClientError, EIPMethodError, EIPProtocolError, EIPSessionStateError
-from a13n_envd_client.file_transfer import EIPComputerObservationReader, EIPFileReader, EIPFileWriter
+from a13n_envd_client.file_transfer import (
+    EIPComputerObservationReader,
+    EIPComputerZoomReader,
+    EIPFileReader,
+    EIPFileWriter,
+)
 from a13n_envd_client.output import EIPOutputReader
 from a13n_envd_client.requester import RequestCoordinator, SessionRequester
 from a13n_envd_client.transport import EIPTransport
@@ -364,6 +370,15 @@ class EIPSession:
         self._require_method("computer.close_observation")
         return EIPComputerObservationReader(
             self._requester, self._client, target_id=target_id, max_dimension=max_dimension
+        )
+
+    def zoom_computer(
+        self, *, observation_id: str, region: ComputerRegion, max_dimension: int = 1280
+    ) -> EIPComputerZoomReader:
+        self._require_method("computer.zoom")
+        self._require_method("computer.close_observation")
+        return EIPComputerZoomReader(
+            self._requester, self._client, observation_id=observation_id, region=region, max_dimension=max_dimension
         )
 
     def open_writer(

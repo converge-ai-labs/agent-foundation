@@ -1,6 +1,6 @@
 //! X11-only desktop access. No XWayland fallback, clipboard or keyboard-map mutation.
 use super::*;
-use image::{DynamicImage, RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
+use image::{DynamicImage, RgbImage};
 use std::sync::OnceLock;
 use x11rb::{
     connection::Connection,
@@ -208,6 +208,7 @@ impl Backend {
         &self,
         target: Option<&str>,
         max_dimension: u32,
+        zoom: Option<(&Basis, &ComputerRegion)>,
     ) -> Result<Capture, EIPError> {
         let desktop = self.desktop()?;
         let geometry = desktop.select(target)?;
@@ -267,19 +268,7 @@ impl Backend {
                 "display layout changed during capture",
             ));
         }
-        let image = DynamicImage::ImageRgb8(rgb)
-            .resize(max_dimension, max_dimension, FilterType::Triangle)
-            .to_rgb8();
-        let mut bytes = Vec::new();
-        JpegEncoder::new_with_quality(&mut bytes, 80)
-            .encode_image(&image)
-            .map_err(|_| unavailable())?;
-        Ok(Capture {
-            geometry,
-            width: image.width(),
-            height: image.height(),
-            bytes,
-        })
+        encode_capture(DynamicImage::ImageRgb8(rgb), geometry, max_dimension, zoom)
     }
     pub(super) fn execute(
         &self,

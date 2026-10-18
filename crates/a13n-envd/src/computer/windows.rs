@@ -5,7 +5,7 @@
 )]
 
 use super::*;
-use image::{DynamicImage, RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
+use image::{DynamicImage, RgbImage};
 use std::{
     mem::size_of,
     ptr::{null, null_mut},
@@ -290,13 +290,12 @@ impl Backend {
         &self,
         target: Option<&str>,
         max_dimension: u32,
+        zoom: Option<(&Basis, &ComputerRegion)>,
     ) -> Result<Capture, EIPError> {
         ready()?;
         let _dpi = Dpi::enter()?;
         let geometry = select(target)?;
-        let image = DynamicImage::ImageRgb8(capture_pixels(&geometry)?)
-            .resize(max_dimension, max_dimension, FilterType::Triangle)
-            .to_rgb8();
+        let image = DynamicImage::ImageRgb8(capture_pixels(&geometry)?);
         ready()?;
         if select(Some(&geometry.target_id))? != geometry {
             return Err(error(
@@ -304,16 +303,7 @@ impl Backend {
                 "display layout changed during capture",
             ));
         }
-        let mut bytes = Vec::new();
-        JpegEncoder::new_with_quality(&mut bytes, 80)
-            .encode_image(&image)
-            .map_err(|_| unavailable())?;
-        Ok(Capture {
-            geometry,
-            width: image.width(),
-            height: image.height(),
-            bytes,
-        })
+        encode_capture(image, geometry, max_dimension, zoom)
     }
     pub(super) fn execute(
         &self,

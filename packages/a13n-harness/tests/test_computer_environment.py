@@ -11,8 +11,11 @@ from a13n_harness.environment.computer import (
     ComputerDescription,
     ComputerObservation,
     ComputerPoint,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerTypeText,
+    ComputerZoom,
+    ComputerZoomImage,
 )
 from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
@@ -35,6 +38,7 @@ class Computer:
     def __init__(self) -> None:
         self.binding = None
         self.inputs = []
+        self.zooms = []
 
     async def describe(self):
         return ComputerDescription(targets=(), observe_ready=True, input_ready=True)
@@ -52,6 +56,23 @@ class Computer:
                 captured_at=datetime.now(UTC),
             ),
             b"image",
+        )
+
+    async def zoom(self, observation, region, *, max_dimension=1280):
+        self.zooms.append((observation, region, max_dimension))
+        return ComputerZoom(
+            ComputerZoomImage(
+                source_observation_id=observation.observation_id,
+                target_id=observation.target_id,
+                source_width=observation.width,
+                source_height=observation.height,
+                region=region,
+                image_width=900,
+                image_height=600,
+                mime_type="image/png",
+                captured_at=datetime.now(UTC),
+            ),
+            b"detail-image",
         )
 
     async def execute(self, request):
@@ -416,3 +437,118 @@ async def test_relative_coordinate_rejection_and_reference_recovery_never_dispat
         assert observed.return_value["coordinate_space"] == "pixels"
         assert (await pixels.computer_click(observed.return_value["observation_id"], ComputerPoint(x=500, y=400)))["ok"]
         assert computer.inputs[-1].point == ComputerPoint(x=500, y=400)
+
+
+@pytest.mark.parametrize(
+    "mode,region,expected",
+    [
+        ("pixels", (320, 120, 640, 480), (320, 120, 640, 480)),
+        ("normalized_1000", (501, 251, 1000, 1000), (320, 120, 640, 480)),
+        ("normalized_1000", (0, 0, 1, 1), (0, 0, 1, 1)),
+    ],
+)
+async def test_zoom_keeps_full_frame_reference_and_converts_exclusive_edges(mode, region, expected):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment, coordinate_space=mode)
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        box = ComputerRegion(**dict(zip(("left", "top", "right", "bottom"), region, strict=True)))
+        for _ in range(20):
+            result = await tools.computer_zoom(reference, box)
+            assert isinstance(result, ToolReturn)
+            assert result.return_value["source_observation_id"] == reference
+            assert "observation_id" not in result.return_value
+            assert result.return_value["coordinate_space"] == mode
+            assert tuple(result.return_value["region_pixels"].values()) == expected
+            assert result.metadata == {"a13n.computer.screenshot": True}
+            assert result.content[0].data == b"detail-image"
+        assert len(tools._observations) == 1
+        assert tuple(computer.zooms[-1][1].model_dump().values()) == expected
+        clicked = await tools.computer_click(reference, ComputerPoint(x=100, y=100))
+        assert clicked["ok"]
+        assert computer.inputs[-1].point == (
+            ComputerPoint(x=64, y=48) if mode == "normalized_1000" else ComputerPoint(x=100, y=100)
+        )
+        assert computer.inputs[-1].observation.width == 640
+        assert computer.inputs[-1].observation.height == 480
+
+
+async def test_zoom_permission_binding_and_invalid_regions_reject_before_provider():
+    region = ComputerRegion(left=0, top=0, right=640, bottom=480)
+    runtime, computer = mount(frozenset({EnvironmentAction.COMPUTER_OBSERVE}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        assert "computer_zoom" not in tools.get_toolset().tools
+        assert not (await tools.computer_zoom(reference, region))["ok"]
+        assert not computer.zooms
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        assert not (await tools.computer_zoom(reference, ComputerRegion(left=0, top=0, right=1001, bottom=1)))["ok"]
+        assert not (await tools.computer_zoom(reference, ComputerRegion(left=1, top=0, right=1, bottom=1)))["ok"]
+        observation = tools._observations[reference]
+        for update in ({"execution_id": "missing"}, {"observed_generation": "old"}):
+            with pytest.raises(EnvironmentError):
+                await environment.computer.zoom(observation.model_copy(update=update), region)
+        with pytest.raises(EnvironmentError):
+            await environment.computer.zoom(observation, region, max_dimension=2049)
+        assert not computer.zooms
+        assert not (await ComputerToolset(environment).computer_zoom(reference, region))["ok"]
+
+
+@pytest.mark.parametrize(
+    ("methods", "expected"),
+    [
+        (("computer.observe", "computer.close_observation"), {EnvironmentAction.COMPUTER_OBSERVE}),
+        (("computer.zoom",), set()),
+        (("computer.zoom", "computer.close_observation"), {EnvironmentAction.COMPUTER_ZOOM}),
+        (
+            ("computer.observe", "computer.zoom", "computer.close_observation"),
+            {EnvironmentAction.COMPUTER_OBSERVE, EnvironmentAction.COMPUTER_ZOOM},
+        ),
+    ],
+)
+def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods, expected):
+    from a13n_envd_client.eip import v1 as eip
+    from a13n_harness.providers.environment.eip.binding import _convert_descriptor
+
+    descriptor = eip.SessionDescriptor(
+        boundary=eip.ExecutionBoundary.model_validate(
+            {
+                "sandbox": {"mode": "disabled"},
+                "egress": "inherit",
+                "privilege_gain_blocked": False,
+                "backend": "native",
+                "policy_digest": "a" * 64,
+            }
+        ),
+        device_id="device-zoom",
+        session_id="ses-zoom",
+        generation=1,
+        working_directory="/",
+        lifecycle=eip.SessionLifecyclePolicy(idle_timeout_ms=30000, disconnect_grace_ms=1000),
+        available_methods=methods,
+        limits=eip.EIPLimits(
+            max_request_bytes=1024,
+            max_response_bytes=1024,
+            max_concurrent_operations=4,
+            max_processes=1,
+            max_operation_duration_ms=1000,
+            max_output_preview_bytes=1,
+            max_output_bytes_per_stream=1,
+            max_transfer_frame_bytes=128,
+            max_concurrent_file_transfers=2,
+            max_file_transfer_bytes=1024,
+            max_file_bytes=1024,
+        ),
+        execution_features=eip.ExecutionFeatures(
+            process_count_limit=False,
+            memory_bytes_limit=False,
+            cpu_time_limit=False,
+            signal_interrupt=False,
+            signal_terminate=False,
+        ),
+    )
+    assert _convert_descriptor(descriptor).permissions.operations == expected

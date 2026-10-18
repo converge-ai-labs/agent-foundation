@@ -88,6 +88,7 @@ environment_bindings:
       operations:
         - environment.computer.describe
         - environment.computer.observe
+        - environment.computer.zoom
 default_environment: desktop
 ```
 
@@ -112,19 +113,22 @@ flowchart TB
     class Next app
 ```
 
-| Tool                              | Purpose                                                                    |
-| --------------------------------- | -------------------------------------------------------------------------- |
-| `computer_describe`               | List displays and native readiness                                         |
-| `computer_observe`                | Capture the primary or selected display; maximum dimension 256–2048 pixels |
-| `computer_click`, `computer_move` | Use a returned image position                                              |
-| `computer_drag`                   | Perform a bounded drag and release the button                              |
-| `computer_scroll`                 | Use an advertised unit; positive means right/down                          |
-| `computer_type_text`              | Enter literal Unicode text on macOS or Windows                             |
-| `computer_press_keys`             | Press and release a chord such as `["meta", "a"]`                          |
+| Tool                              | Purpose                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------- |
+| `computer_describe`               | List displays and native readiness                                                       |
+| `computer_observe`                | Capture the primary or selected display; maximum dimension 256–2048 pixels               |
+| `computer_zoom`                   | Inspect fresh native detail in a region; keep using the original full-screen coordinates |
+| `computer_click`, `computer_move` | Use a returned image position                                                            |
+| `computer_drag`                   | Perform a bounded drag and release the button                                            |
+| `computer_scroll`                 | Use an advertised unit; positive means right/down                                        |
+| `computer_type_text`              | Enter literal Unicode text on macOS or Windows                                           |
+| `computer_press_keys`             | Press and release a chord such as `["meta", "a"]`                                        |
 
 Key names include `meta` (Command/Super/Windows), `alt` (Option/Alt), `enter`, `page_up`, and `page_down`. Expired references or display-layout changes require a fresh observation. Input results describe native effects and cleanup, not application success. Inspect the desktop before retrying partial or unknown input, incomplete release, or transport loss.
 
-Expand **Observe desktop** in WebUI to view the screenshot. Temporary image copies can expire. Close screenshot readers promptly to release transfer capacity.
+Use `computer_zoom` when text or a small control is unclear. Pass the original `observation_id` and a `region` with `left`, `top`, `right`, and `bottom` edges in the configured coordinate space. Right and bottom are exclusive; normalized 1000 reaches the full edge. Zoom captures fresh pixels and crops before downsizing. It returns `source_observation_id` and `region_pixels` in the original image's pixels, without creating a new input reference. Click using the original full-screen coordinates, never the zoom image's local coordinates. Zoom requires explicit Provider support and `environment.computer.zoom` permission; it does not extend the source reference's lifetime.
+
+Expand **Observe desktop** or **Inspect desktop region** in WebUI to view the image. Temporary image copies can expire. Close screenshot readers promptly to release transfer capacity.
 
 ## Python client
 
@@ -135,6 +139,15 @@ async with session.observe_computer(max_dimension=1280) as reader:
     screenshot = b"".join([chunk async for chunk in reader])
     observation = reader.opened.observation
 # Closing the reader releases image bytes, not the Session's geometry reference.
+
+from a13n_envd_client.eip.v1 import ComputerRegion
+
+async with session.zoom_computer(
+    observation_id=observation.observation_id,
+    region=ComputerRegion(left=0, top=0, right=observation.width // 2, bottom=observation.height // 2),
+) as reader:
+    detail = b"".join([chunk async for chunk in reader])
+# Pointer input still uses observation and its full-frame image coordinates.
 ```
 
 Use a fresh operation context for each new input action. Reconcile uncertain effects with the original operation identity. Session setup and transfer limits are in [Python EIP client](python-client.md).

@@ -268,7 +268,13 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
             pass
 
     await admission.replan(service.runtime, lease)
-    for action in [Action.COMPUTER_CLICK, Action.SHELL_EXEC, Action.PROCESS_START, Action.FILE_WRITE_TEXT]:
+    for action in [
+        Action.COMPUTER_CLICK,
+        Action.COMPUTER_ZOOM,
+        Action.SHELL_EXEC,
+        Action.PROCESS_START,
+        Action.FILE_WRITE_TEXT,
+    ]:
         with pytest.raises(EnvironmentError, match="Observe the desktop"):
             await execute(action)
     await execute(Action.COMPUTER_DESCRIBE)
@@ -281,9 +287,10 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
     await admission.replan(service.runtime, lease)
     await execute(Action.COMPUTER_CLICK)
     # A failed read is drained; a possibly dispatched mutation remains unknown.
-    with pytest.raises(ValueError):
-        async with admission.operation(service.runtime, lease, view["environment_id"], state, Action.COMPUTER_OBSERVE):
-            raise ValueError("failed screenshot")
+    for action in [Action.COMPUTER_OBSERVE, Action.COMPUTER_ZOOM]:
+        with pytest.raises(ValueError):
+            async with admission.operation(service.runtime, lease, view["environment_id"], state, action):
+                raise ValueError("failed screenshot")
     async with transaction(service.runtime.storage) as session:
         target = await session.get(DesktopTargetRow, admission.target_key(state))
         assert target.inflight == 0

@@ -31,6 +31,7 @@ from a13n_harness.providers.environment.eip.processes import (
 _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
     "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
     "computer.observe": (EnvironmentAction.COMPUTER_OBSERVE,),
+    "computer.zoom": (EnvironmentAction.COMPUTER_ZOOM,),
     "computer.click": (EnvironmentAction.COMPUTER_CLICK,),
     "computer.move": (EnvironmentAction.COMPUTER_MOVE,),
     "computer.drag": (EnvironmentAction.COMPUTER_DRAG,),
@@ -217,6 +218,7 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
         actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
     if "computer.close_observation" not in methods:
         actions.discard(EnvironmentAction.COMPUTER_OBSERVE)
+        actions.discard(EnvironmentAction.COMPUTER_ZOOM)
     families: set[EnvironmentOperationFamily] = set()
     if any(method.startswith("computer.") for method in methods):
         families.add("computer")

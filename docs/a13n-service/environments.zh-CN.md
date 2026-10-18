@@ -219,7 +219,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 3. 发送新消息。Run 接收时会冻结权限；修改不会撤销已接收运行的权限。
 4. 展开 Agent 的工作步骤，在观察步骤点击 **查看截图**。显示的是该步骤保存的画面。运行期间可能要到下一个检查点才能读取截图，尚未保存时可以稍后重试。
 
-API 在初始挂载及新增挂载时接受精确的 `permission_ceiling.operations`。修改已有挂载使用 `PATCH /api/v1/threads/{thread_id}/environments/{name}`，携带线程的 `If-Match`。仅允许电脑观察的请求体为 `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe"]}}`。此操作会替换整个动作集合，需要保留的文件与执行权限也必须包含在内。Console 的预设会自动保留其他权限。
+API 在初始挂载及新增挂载时接受精确的 `permission_ceiling.operations`。修改已有挂载使用 `PATCH /api/v1/threads/{thread_id}/environments/{name}`，携带线程的 `If-Match`。仅允许电脑观察的请求体为 `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe","environment.computer.zoom"]}}`。此操作会替换整个动作集合，需要保留的文件与执行权限也必须包含在内。Console 的预设会自动保留其他权限。
 
 电脑权限默认关闭，不限制终端命令和其他独立工具。截图预览是只读的历史画面，此视图尚不提供交互式远程桌面或人工接管。
 

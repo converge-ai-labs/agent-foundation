@@ -404,6 +404,55 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "computer.zoom",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/context"
+          }
+        },
+        {
+          "name": "observation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/observation_id"
+          }
+        },
+        {
+          "name": "region",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/region"
+          }
+        },
+        {
+          "name": "max_dimension",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/max_dimension"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerZoomResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.2",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerZoomParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": "open",
+      "x-eip-transfer-direction": "server_to_client"
+    },
+    {
       "name": "device.describe",
       "paramStructure": "by-name",
       "params": [],

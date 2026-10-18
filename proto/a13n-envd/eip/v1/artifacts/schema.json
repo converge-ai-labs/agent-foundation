@@ -697,6 +697,43 @@
       "title": "ComputerPressKeysParams",
       "type": "object"
     },
+    "ComputerRegion": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Bottom",
+          "type": "integer"
+        },
+        "left": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Left",
+          "type": "integer"
+        },
+        "right": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Right",
+          "type": "integer"
+        },
+        "top": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Top",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "left",
+        "top",
+        "right",
+        "bottom"
+      ],
+      "title": "ComputerRegion",
+      "type": "object"
+    },
     "ComputerScrollParams": {
       "additionalProperties": false,
       "properties": {
@@ -803,6 +840,130 @@
         "text"
       ],
       "title": "ComputerTypeTextParams",
+      "type": "object"
+    },
+    "ComputerZoomImage": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "image_height": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Image Height",
+          "type": "integer"
+        },
+        "image_width": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Image Width",
+          "type": "integer"
+        },
+        "mime_type": {
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "region": {
+          "$ref": "#/$defs/ComputerRegion"
+        },
+        "source_height": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Source Height",
+          "type": "integer"
+        },
+        "source_observation_id": {
+          "minLength": 1,
+          "title": "Source Observation Id",
+          "type": "string"
+        },
+        "source_width": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Source Width",
+          "type": "integer"
+        },
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_observation_id",
+        "target_id",
+        "source_width",
+        "source_height",
+        "region",
+        "image_width",
+        "image_height",
+        "mime_type",
+        "captured_at"
+      ],
+      "title": "ComputerZoomImage",
+      "type": "object"
+    },
+    "ComputerZoomParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "max_dimension": {
+          "default": 1280,
+          "maximum": 2048,
+          "minimum": 256,
+          "title": "Max Dimension",
+          "type": "integer"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "region": {
+          "$ref": "#/$defs/ComputerRegion"
+        }
+      },
+      "required": [
+        "context",
+        "observation_id",
+        "region"
+      ],
+      "title": "ComputerZoomParams",
+      "type": "object"
+    },
+    "ComputerZoomResult": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "image": {
+          "$ref": "#/$defs/ComputerZoomImage"
+        },
+        "reader": {
+          "$ref": "#/$defs/FileReaderHandle"
+        },
+        "size_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image",
+        "reader",
+        "size_bytes",
+        "expires_at"
+      ],
+      "title": "ComputerZoomResult",
       "type": "object"
     },
     "ContentDigest": {

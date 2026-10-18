@@ -47,6 +47,41 @@ message ComputerObserveResult {
   google.protobuf.Timestamp expires_at = 4;
 }
 
+// Half-open edges in the source observation's image pixels.
+message ComputerRegion {
+  uint32 left = 1;
+  uint32 top = 2;
+  uint32 right = 3;
+  uint32 bottom = 4;
+}
+
+message ComputerZoomParams {
+  EIPCallContext context = 1;
+  string observation_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  ComputerRegion region = 3;
+  optional uint32 max_dimension = 4 [(eip_field).minimum = 256, (eip_field).maximum = 2048, (eip_field).default_uint = 1280];
+}
+
+// An auxiliary image, never a new pointer-coordinate reference.
+message ComputerZoomImage {
+  string source_observation_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string target_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint32 source_width = 3 [(eip_field).minimum = 1];
+  uint32 source_height = 4 [(eip_field).minimum = 1];
+  ComputerRegion region = 5;
+  uint32 image_width = 6 [(eip_field).minimum = 1];
+  uint32 image_height = 7 [(eip_field).minimum = 1];
+  string mime_type = 8;
+  google.protobuf.Timestamp captured_at = 9;
+}
+
+message ComputerZoomResult {
+  ComputerZoomImage image = 1;
+  FileReaderHandle reader = 2;
+  uint64 size_bytes = 3 [(eip_field).minimum = 1];
+  google.protobuf.Timestamp expires_at = 4;
+}
+
 message ComputerPoint {
   uint32 x = 1;
   uint32 y = 2;

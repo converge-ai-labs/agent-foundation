@@ -88,6 +88,7 @@ environment_bindings:
       operations:
         - environment.computer.describe
         - environment.computer.observe
+        - environment.computer.zoom
 default_environment: desktop
 ```
 
@@ -116,6 +117,7 @@ flowchart TB
 | --------------------------------- | ------------------------------------------------ |
 | `computer_describe`               | 列出显示器和原生就绪状态                         |
 | `computer_observe`                | 截取主显示器或所选显示器；最大尺寸 256–2048 像素 |
+| `computer_zoom`                   | 查看区域的新鲜原生细节；继续使用原全屏坐标       |
 | `computer_click`, `computer_move` | 使用返回图像中的位置                             |
 | `computer_drag`                   | 执行有界拖动并释放按钮                           |
 | `computer_scroll`                 | 使用声明的单位；正值表示向右/向下                |
@@ -124,7 +126,9 @@ flowchart TB
 
 键名包含 `meta`（Command/Super/Windows）、`alt`（Option/Alt）、`enter`、`page_up` 和 `page_down`。引用过期或显示布局变化需要新观测。输入结果描述原生效果和清理，不代表应用成功。对部分执行、结果不明、释放不完整或传输丢失，重试前先检查桌面。
 
-在 WebUI 展开**观测桌面**查看截图。临时图像副本可能过期。及时关闭截图 reader，释放传输容量。
+文字或小控件看不清时，使用 `computer_zoom`。传入原 `observation_id`，并用配置的坐标空间指定 `region` 的 `left`、`top`、`right`、`bottom` 边界。右边界和下边界不包含在区域内；归一化值 1000 表示完整边缘。Zoom 重新捕获原生像素，先裁切再缩小。结果返回 `source_observation_id` 和以原图像素表示的 `region_pixels`，不创建新的输入引用。点击仍使用原全屏坐标，不使用局部图坐标。Zoom 需要 Provider 明确支持及 `environment.computer.zoom` 权限，不延长来源引用的有效期。
+
+在 WebUI 展开**观测桌面**或 **Inspect desktop region** 查看图像。临时图像副本可能过期。及时关闭截图 reader，释放传输容量。
 
 ## Python 客户端
 
@@ -135,6 +139,15 @@ async with session.observe_computer(max_dimension=1280) as reader:
     screenshot = b"".join([chunk async for chunk in reader])
     observation = reader.opened.observation
 # Closing the reader releases image bytes, not the Session's geometry reference.
+
+from a13n_envd_client.eip.v1 import ComputerRegion
+
+async with session.zoom_computer(
+    observation_id=observation.observation_id,
+    region=ComputerRegion(left=0, top=0, right=observation.width // 2, bottom=observation.height // 2),
+) as reader:
+    detail = b"".join([chunk async for chunk in reader])
+# Pointer input still uses observation and its full-frame image coordinates.
 ```
 
 每个新输入动作使用新的操作上下文。用原操作身份核对不确定效果。Session 设置和传输限制见 [Python EIP 客户端](python-client.md)。

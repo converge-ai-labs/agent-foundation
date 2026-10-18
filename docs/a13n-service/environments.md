@@ -219,7 +219,7 @@ For an existing compatible desktop, start here. Computer permissions default off
 3. Send a new message. Permissions are frozen when a Run is accepted; changing them does not revoke permissions from an existing Run.
 4. Expand the Agent's work and choose **View screenshot** on an observation step. It shows the saved screen at that step. During execution, a screenshot may become readable only at the next checkpoint; retry if it is not saved yet.
 
-The API accepts exact `permission_ceiling.operations` on initial mounts and mount creation. Update an existing mount with `PATCH /api/v1/threads/{thread_id}/environments/{name}`, using the Thread's `If-Match`. The request body is `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe"]}}` for Computer-only observation. This replaces the entire action set: include any file or execution permissions you want to preserve. Console presets preserve those other permissions automatically.
+The API accepts exact `permission_ceiling.operations` on initial mounts and mount creation. Update an existing mount with `PATCH /api/v1/threads/{thread_id}/environments/{name}`, using the Thread's `If-Match`. The request body is `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe","environment.computer.zoom"]}}` for Computer-only observation. This replaces the entire action set: include any file or execution permissions you want to preserve. Console presets preserve those other permissions automatically.
 
 Computer permissions default off. They do not constrain terminal commands or other independent tools. Screenshot preview is read-only and historical; interactive remote desktop and human takeover are not available in this view.
 

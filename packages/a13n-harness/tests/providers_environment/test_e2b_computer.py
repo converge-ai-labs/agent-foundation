@@ -454,3 +454,48 @@ async def test_cancelled_input_holds_scope_lock_until_sdk_finishes(computer):
     with pytest.raises(EnvironmentError):
         await second
     await closing
+
+
+async def test_zoom_crops_fresh_native_pixels_without_new_geometry(computer):
+    from a13n_harness.environment.computer import ComputerRegion
+
+    screenshot = await computer.observe(max_dimension=640)
+    before = computer._observations.copy()
+    # The overview was white; fresh capture has a black stripe at the selected native location.
+    image = Image.new("RGB", (1280, 800), "white")
+    image.paste("black", (642, 400, 646, 800))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    description = computer.desktop.observe.return_value[0]
+    computer.desktop.observe.return_value = description, buffer.getvalue()
+    region = ComputerRegion(left=320, top=200, right=640, bottom=400)
+    result = await computer.zoom(screenshot.observation, region)
+    assert result.image.source_observation_id == screenshot.observation.observation_id
+    assert (result.image.image_width, result.image.image_height) == (640, 400)
+    with Image.open(io.BytesIO(result.data)) as detail:
+        assert detail.getpixel((3, 100))[0] < 30
+        assert detail.getpixel((30, 100))[0] > 230
+    assert computer._observations == before
+    assert computer.desktop.observe.await_count == 2
+    await computer.execute(ComputerClick(observation=screenshot.observation, point=ComputerPoint(x=321, y=200)))
+    assert computer.desktop.execute.call_args.args[0].point == ComputerPoint(x=642, y=400)
+
+
+async def test_zoom_rejects_stale_layout_and_reference_without_refreshing(computer):
+    from dataclasses import replace
+
+    from a13n_harness.environment.computer import ComputerRegion
+
+    screenshot = await computer.observe(max_dimension=640)
+    region = ComputerRegion(left=0, top=0, right=640, bottom=400)
+    description, data = computer.desktop.observe.return_value
+    computer.desktop.observe.return_value = description.model_copy(update={"generation": "new"}), data
+    with pytest.raises(EnvironmentError, match="stale"):
+        await computer.zoom(screenshot.observation, region)
+    computer.desktop.observe.return_value = description, data
+    stored = computer._observations[screenshot.observation.observation_id]
+    computer._observations[screenshot.observation.observation_id] = replace(stored, expires=time.monotonic() - 1)
+    calls = computer.desktop.observe.await_count
+    with pytest.raises(EnvironmentError, match="stale"):
+        await computer.zoom(screenshot.observation, region)
+    assert computer.desktop.observe.await_count == calls

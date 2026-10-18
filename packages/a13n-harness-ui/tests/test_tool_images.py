@@ -68,11 +68,14 @@ async def test_tool_image_retention_failure_does_not_fail_model_result(tmp_path:
     await files.close()
 
 
-async def test_lowered_native_screenshot_is_retained_and_projects_original_value(tmp_path: Path):
+@pytest.mark.parametrize("tool_name", ["computer_observe", "computer_zoom"])
+async def test_lowered_native_screenshot_is_retained_and_projects_original_value(tmp_path: Path, tool_name):
     from a13n_harness.tools._output import _render_tool_return
     from pydantic_ai import ToolReturn
 
     original = screenshot_event()
+    if tool_name == "computer_zoom":
+        original.event.part.content = {"ok": True, "source_observation_id": "obs-one"}
     rendered = _render_tool_return(
         ToolReturn(
             original.event.part.content,
@@ -80,7 +83,7 @@ async def test_lowered_native_screenshot_is_retained_and_projects_original_value
             metadata=original.event.part.metadata,
         )
     )
-    part = ToolReturnPart("computer_observe", rendered.return_value, "call-one", metadata=rendered.metadata)
+    part = ToolReturnPart(tool_name, rendered.return_value, "call-one", metadata=rendered.metadata)
     item = HarnessEvent(
         thread_id="thread-one",
         run_id="run-one",
@@ -98,7 +101,7 @@ async def test_lowered_native_screenshot_is_retained_and_projects_original_value
             ModelMessagesTypeAdapter.dump_json([ModelRequest(parts=[part])])
         )[0].parts[0]
         projected = _request_parts(restored)[0]
-        assert projected.value == {"ok": True, "observation_id": "obs-one"}
+        assert projected.value == original.event.part.content
         assert projected.tool_images == (image,)
     finally:
         await files.close()

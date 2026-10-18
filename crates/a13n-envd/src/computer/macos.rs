@@ -6,7 +6,7 @@
 )]
 
 use super::*;
-use image::{DynamicImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
+use image::DynamicImage;
 use objc2_core_foundation::CGPoint;
 use objc2_core_graphics::{
     CGEvent, CGEventField, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton,
@@ -26,8 +26,9 @@ impl Backend {
         &self,
         target: Option<&str>,
         max_dimension: u32,
+        zoom: Option<(&Basis, &ComputerRegion)>,
     ) -> Result<Capture, EIPError> {
-        capture(target, max_dimension)
+        capture(target, max_dimension, zoom)
     }
     pub(super) fn execute(
         &self,
@@ -120,20 +121,17 @@ pub(super) fn describe() -> Result<ComputerDescribeResult, EIPError> {
     })
 }
 
-pub(super) fn capture(target: Option<&str>, max_dimension: u32) -> Result<Capture, EIPError> {
+pub(super) fn capture(
+    target: Option<&str>,
+    max_dimension: u32,
+    zoom: Option<(&Basis, &ComputerRegion)>,
+) -> Result<Capture, EIPError> {
     if !CGPreflightScreenCaptureAccess() {
         return Err(denied());
     }
     let monitor = select(target)?;
     let before = geometry(&monitor)?;
     let image = monitor.capture_image().map_err(|_| unavailable())?;
-    let image = DynamicImage::ImageRgba8(image)
-        .resize(max_dimension, max_dimension, FilterType::Triangle)
-        .to_rgb8();
-    let mut bytes = Vec::new();
-    JpegEncoder::new_with_quality(&mut bytes, 80)
-        .encode_image(&image)
-        .map_err(|_| unavailable())?;
     if !CGPreflightScreenCaptureAccess() {
         return Err(denied());
     }
@@ -143,12 +141,7 @@ pub(super) fn capture(target: Option<&str>, max_dimension: u32) -> Result<Captur
             "display layout changed during capture",
         ));
     }
-    Ok(Capture {
-        geometry: before,
-        width: image.width(),
-        height: image.height(),
-        bytes,
-    })
+    encode_capture(DynamicImage::ImageRgba8(image), before, max_dimension, zoom)
 }
 
 struct Input {

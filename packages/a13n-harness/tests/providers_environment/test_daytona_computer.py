@@ -10,7 +10,7 @@ import httpx2
 import pytest
 from a13n_harness.environment.computer import ComputerClick, ComputerPoint, ComputerScroll, ComputerTypeText
 from a13n_harness.environment.errors import EnvironmentProviderError
-from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.providers.environment.daytona.computer import DaytonaComputer
 from a13n_harness.providers.environment.daytona.provider import DAYTONA
 from a13n_harness.providers.environment.daytona.shared import DaytonaEnvironmentConfiguration
@@ -73,7 +73,9 @@ def test_legacy_fingerprint_and_opt_in_capability():
     assert "computer" not in DAYTONA.describe_environment(ordinary).operation_families
     enabled = DaytonaEnvironmentConfiguration(desktop=True)
     assert enabled.fingerprint != ordinary.fingerprint
-    assert "computer" in DAYTONA.describe_environment(enabled).operation_families
+    description = DAYTONA.describe_environment(enabled)
+    assert "computer" in description.operation_families
+    assert EnvironmentAction.COMPUTER_ZOOM not in description.permissions.operations
 
 
 async def test_scaled_coordinates_and_unicode_payload(desktop):

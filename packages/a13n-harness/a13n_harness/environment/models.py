@@ -80,6 +80,7 @@ class EnvironmentAction(StrEnum):
     STATE_RESTORE = "environment.state.restore"
     COMPUTER_DESCRIBE = "environment.computer.describe"
     COMPUTER_OBSERVE = "environment.computer.observe"
+    COMPUTER_ZOOM = "environment.computer.zoom"
     COMPUTER_CLICK = "environment.computer.click"
     COMPUTER_MOVE = "environment.computer.move"
     COMPUTER_DRAG = "environment.computer.drag"
@@ -157,6 +158,7 @@ ENVIRONMENT_ACTION_DISPATCH: Mapping[EnvironmentAction, EnvironmentActionDispatc
         EnvironmentAction.STATE_RESTORE: EnvironmentActionDispatch("state", "state", "restore_state"),
         EnvironmentAction.COMPUTER_DESCRIBE: EnvironmentActionDispatch("computer", "computer", "describe"),
         EnvironmentAction.COMPUTER_OBSERVE: EnvironmentActionDispatch("computer", "computer", "observe"),
+        EnvironmentAction.COMPUTER_ZOOM: EnvironmentActionDispatch("computer", "computer", "zoom"),
         EnvironmentAction.COMPUTER_CLICK: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_MOVE: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_DRAG: EnvironmentActionDispatch("computer", "computer", "execute"),

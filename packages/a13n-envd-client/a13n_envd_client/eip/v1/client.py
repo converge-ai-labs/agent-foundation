@@ -13,6 +13,7 @@ from .methods import (
     COMPUTER_PRESS_KEYS,
     COMPUTER_SCROLL,
     COMPUTER_TYPE_TEXT,
+    COMPUTER_ZOOM,
     DEVICE_DESCRIBE,
     DEVICE_METRICS,
     DIRECTORY_LIST,
@@ -69,6 +70,8 @@ from .models import (
     ComputerPressKeysParams,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerZoomParams,
+    ComputerZoomResult,
     DeviceDescribeParams,
     DeviceDescribeResult,
     DeviceMetricsParams,
@@ -189,6 +192,9 @@ class EIPClient:
 
     async def computer_type_text(self, params: ComputerTypeTextParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_TYPE_TEXT, params)
+
+    async def computer_zoom(self, params: ComputerZoomParams) -> ComputerZoomResult:
+        return await self._requester.request(COMPUTER_ZOOM, params)
 
     async def device_describe(self, params: DeviceDescribeParams) -> DeviceDescribeResult:
         return await self._requester.request(DEVICE_DESCRIBE, params)

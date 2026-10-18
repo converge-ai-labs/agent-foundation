@@ -182,6 +182,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | ---------------------------- | ---------------------------- | ---------------------------- | ---------------------------- | ------------------- |
 | `computer.describe`          | `computer_describe`          | `ComputerDescribeParams`     | `ComputerDescribeResult`     | `active_only`       |
 | `computer.observe`           | `computer_observe`           | `ComputerObserveParams`      | `ComputerObserveResult`      | `active_only`       |
+| `computer.zoom`              | `computer_zoom`              | `ComputerZoomParams`         | `ComputerZoomResult`         | `active_only`       |
 | `computer.close_observation` | `computer_close_observation` | `FileReaderCloseParams`      | `FileReaderCloseResult`      | `active_only`       |
 | `computer.click`             | `computer_click`             | `ComputerClickParams`        | `ComputerActionResult`       | `terminal_evidence` |
 | `computer.move`              | `computer_move`              | `ComputerMoveParams`         | `ComputerActionResult`       | `terminal_evidence` |

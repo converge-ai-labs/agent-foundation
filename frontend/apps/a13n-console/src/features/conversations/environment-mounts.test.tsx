@@ -232,6 +232,7 @@ it("changes only Computer permissions on the primary mount and uses the Thread v
               "environment.file.read_text",
               "environment.computer.describe",
               "environment.computer.observe",
+              "environment.computer.zoom",
             ],
           },
         },
@@ -252,6 +253,7 @@ it("shows Computer permissions without offering edits to a reader", async () => 
         operations: [
           "environment.computer.describe",
           "environment.computer.observe",
+          "environment.computer.zoom",
         ],
       },
     },

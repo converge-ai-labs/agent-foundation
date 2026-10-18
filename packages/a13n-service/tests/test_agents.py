@@ -1054,6 +1054,7 @@ def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choice
     projected = toolsets.environment_configuration(selected.toolsets)
     assert projected.computer_enabled
     assert "computer_observe" in projected.computer_tools
+    assert "computer_zoom" in projected.computer_tools
     assert "computer_click" not in projected.computer_tools
     assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
 

@@ -1,6 +1,6 @@
 {
   "generated": true,
-  "method_count": 51,
+  "method_count": 52,
   "methods": [
     {
       "device_scoped": false,
@@ -118,6 +118,19 @@
       "rpc_name": "ComputerTypeText",
       "transfer_action": null,
       "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "resource",
+      "introduced": "0.2",
+      "jsonrpc_method": "computer.zoom",
+      "kind": "request_response",
+      "params_type": "ComputerZoomParams",
+      "replay_class": "active_only",
+      "result_type": "ComputerZoomResult",
+      "rpc_name": "ComputerZoom",
+      "transfer_action": "open",
+      "transfer_direction": "server_to_client"
     },
     {
       "device_scoped": true,

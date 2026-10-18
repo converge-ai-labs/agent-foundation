@@ -20,6 +20,7 @@ from a13n_harness.environment.computer import (
     ComputerObservation,
     ComputerPoint,
     ComputerPressKeys,
+    ComputerRegion,
     ComputerScroll,
     ComputerTypeText,
 )
@@ -63,6 +64,7 @@ class ComputerToolset:
         methods = (
             (self.computer_describe, EnvironmentAction.COMPUTER_DESCRIBE, True),
             (self.computer_observe, EnvironmentAction.COMPUTER_OBSERVE, True),
+            (self.computer_zoom, EnvironmentAction.COMPUTER_ZOOM, True),
             (self.computer_click, EnvironmentAction.COMPUTER_CLICK, False),
             (self.computer_move, EnvironmentAction.COMPUTER_MOVE, False),
             (self.computer_drag, EnvironmentAction.COMPUTER_DRAG, False),
@@ -146,6 +148,48 @@ class ComputerToolset:
                         media_type=screenshot.observation.mime_type,
                     )
                 ],
+                metadata={"a13n.computer.screenshot": True},
+            )
+        except EnvironmentError as error:
+            return environment_failure(error)
+
+    async def computer_zoom(
+        self,
+        observation_id: _ObservationReference,
+        region: ComputerRegion,
+        *,
+        max_dimension: Annotated[int, Field(ge=256, le=2048)] = 1280,
+    ) -> Any:
+        """Inspect fresh native detail in a region of the original full-screen observation.
+
+        Region edges use the configured coordinate space; right/bottom are exclusive (1000 means the full edge
+        in normalized_1000). The returned image is auxiliary: continue clicking with the source observation
+        and full-screen coordinates, never coordinates local to the zoom image. region_pixels reports the
+        effective crop in source-image pixels. Zoom does not extend the source reference's lifetime.
+        """
+        try:
+            observation = self._observation(observation_id)
+            if self._coordinate_space == "normalized_1000":
+                region.validate_bounds(1000, 1000)
+                pixels = ComputerRegion(
+                    left=region.left * observation.width // 1000,
+                    top=region.top * observation.height // 1000,
+                    right=(region.right * observation.width + 999) // 1000,
+                    bottom=(region.bottom * observation.height + 999) // 1000,
+                )
+            else:
+                region.validate_bounds(observation.width, observation.height)
+                pixels = region
+            result = await self._environment.computer.zoom(observation, pixels, max_dimension=max_dimension)
+            return ToolReturn(
+                return_value={
+                    "ok": True,
+                    **result.image.model_dump(mode="json", exclude={"source_observation_id", "region"}),
+                    "source_observation_id": observation_id,
+                    "coordinate_space": self._coordinate_space,
+                    "region_pixels": result.image.region.model_dump(),
+                },
+                content=[BinaryContent(data=result.data, media_type=result.image.mime_type)],
                 metadata={"a13n.computer.screenshot": True},
             )
         except EnvironmentError as error:

@@ -34,6 +34,9 @@ service EnvironmentInteractionProtocol {
   rpc ComputerObserve(ComputerObserveParams) returns (ComputerObserveResult) {
     option (eip_method) = { jsonrpc_method: "computer.observe" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_OPEN transfer_direction: TRANSFER_DIRECTION_SERVER_TO_CLIENT };
   }
+  rpc ComputerZoom(ComputerZoomParams) returns (ComputerZoomResult) {
+    option (eip_method) = { jsonrpc_method: "computer.zoom" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 2 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_OPEN transfer_direction: TRANSFER_DIRECTION_SERVER_TO_CLIENT };
+  }
   rpc ComputerCloseObservation(FileReaderCloseParams) returns (FileReaderCloseResult) {
     option (eip_method) = { jsonrpc_method: "computer.close_observation" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_CLOSE transfer_direction: TRANSFER_DIRECTION_SERVER_TO_CLIENT };
   }

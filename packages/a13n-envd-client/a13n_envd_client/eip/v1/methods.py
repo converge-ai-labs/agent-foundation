@@ -17,6 +17,8 @@ from .models import (
     ComputerPressKeysParams,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerZoomParams,
+    ComputerZoomResult,
     DeviceDescribeParams,
     DeviceDescribeResult,
     DeviceMetricsParams,
@@ -231,6 +233,19 @@ COMPUTER_TYPE_TEXT = MethodSpec(
     transfer_direction=None,
     params_type=ComputerTypeTextParams,
     result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_ZOOM = MethodSpec(
+    name="computer.zoom",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.2",
+    error_family="resource",
+    transfer_action="open",
+    transfer_direction="server_to_client",
+    params_type=ComputerZoomParams,
+    result_type=ComputerZoomResult,
     device_scoped=False,
 )
 
@@ -791,6 +806,7 @@ METHODS = MappingProxyType(
         COMPUTER_PRESS_KEYS.name: COMPUTER_PRESS_KEYS,
         COMPUTER_SCROLL.name: COMPUTER_SCROLL,
         COMPUTER_TYPE_TEXT.name: COMPUTER_TYPE_TEXT,
+        COMPUTER_ZOOM.name: COMPUTER_ZOOM,
         DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,
         DEVICE_METRICS.name: DEVICE_METRICS,
         DIRECTORY_LIST.name: DIRECTORY_LIST,
