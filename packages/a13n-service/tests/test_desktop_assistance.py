@@ -63,7 +63,7 @@ class Endpoint:
         return self.grants[request.id]
 
 
-async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=False):
+async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=False, provider_key="e2b"):
     await runs_kit.pause_sweeps(service)
     from a13n_harness.environment.models import EnvironmentAvailability, EnvironmentPermissionSet
     from a13n_service.runs.environments import execution
@@ -94,10 +94,19 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
     monkeypatch.setattr(maintenance, "dispatch", endpoint.dispatch)
     response = await service.client.post(
         f"{service.api}/environment-providers",
-        json={"type": "e2b", "name": "Desktop", "credential": {"api_key": "test-unused-key"}},
+        json={
+            "type": provider_key,
+            "name": "Desktop",
+            "credential": {"api_key": "test-unused-key"},
+            "config": {"organization_id": "test-org"} if provider_key == "daytona" else {},
+        },
     )
     assert response.status_code == 201, response.text
-    recipe = {"desktop": True, "desktop_assistance": True, "template": "test-desktop"}
+    recipe = {
+        "desktop": True,
+        "desktop_assistance": True,
+        "snapshot" if provider_key == "daytona" else "template": "test-desktop",
+    }
     response = await service.client.post(
         f"{service.api}/environment-templates",
         json={"name": "Desktop", "provider_id": response.json()["id"], "config": {"recipe": recipe}},
@@ -115,7 +124,13 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
         environment.operation_id = environment.operation_started_at = None
         environment.handle = Handle(
             recipe=recipe,
-            state=EnvironmentState(provider_key="e2b", state_version="1", state={"sandbox_id": "test-" + uuid4().hex}),
+            state=EnvironmentState(
+                provider_key=provider_key,
+                state_version="1",
+                state={
+                    "target_id" if provider_key == "daytona" else "sandbox_id": "test-" + uuid4().hex,
+                },
+            ),
         ).model_dump(mode="json")
     agent = await runs_kit.create_agent(
         service, scripted_model, toolsets={"computer": {"enabled": True}, "configuration": {"enabled": True}}
@@ -155,8 +170,9 @@ async def post(service, view, action, body):
     return await service.client.post(f"{service.api}/desktop-assistance/{view['id']}/{action}", json=body)
 
 
-async def test_human_grants_revoke_before_exact_resume(service, scripted_model, runs_kit, monkeypatch):
-    run, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch)
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+async def test_human_grants_revoke_before_exact_resume(service, scripted_model, runs_kit, monkeypatch, provider_key):
+    run, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     resume = {"approvals": {}, "calls": {"help": {"status": "returned", "value": {"outcome": "completed"}}}}
     response = await service.client.post(
         f"{service.api}/runs/{run['id']}/resume", json=resume, headers=runs_kit.fresh_key()
@@ -208,8 +224,9 @@ async def test_expired_controller_is_revoked_without_answering_wait(service, scr
     assert all(grant.state == "revoked" for grant in endpoint.grants.values())
 
 
-async def test_lost_revoke_blocks_resume_and_reconciles(service, scripted_model, runs_kit, monkeypatch):
-    _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch)
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+async def test_lost_revoke_blocks_resume_and_reconciles(service, scripted_model, runs_kit, monkeypatch, provider_key):
+    _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     claimed = await post(service, view, "control", control(view))
     assert claimed.status_code == 200, claimed.text
     view = claimed.json()["assistance"]
@@ -298,13 +315,16 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
         assert target.inflight == 2
 
 
-async def test_alias_admission_and_lifecycle_share_native_reservation(service, scripted_model, runs_kit, monkeypatch):
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+async def test_alias_admission_and_lifecycle_share_native_reservation(
+    service, scripted_model, runs_kit, monkeypatch, provider_key
+):
     from a13n_service.infra.errors import ServiceError
     from a13n_service.infra.ids import new_object_id
     from a13n_service.runs.desktop_assistance import admission
     from a13n_service.runs.environments.lifecycle import in_use
 
-    _, view, _ = await waiting(service, scripted_model, runs_kit, monkeypatch)
+    _, view, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     async with transaction(service.runtime.storage) as session:
         original = await session.get(EnvironmentRow, view["environment_id"])
         # A second registered alias must not create a second authority domain.

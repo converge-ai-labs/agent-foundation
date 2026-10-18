@@ -2,21 +2,21 @@
 
 import math
 import shlex
-from urllib.parse import urlsplit
+from dataclasses import replace
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
-from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentOperationFamily, EnvironmentState
+from a13n_harness.providers.environment.daytona.computer import DaytonaComputer, with_computer
 from a13n_harness.providers.environment.daytona.shared import (
     DaytonaEnvironmentConfiguration,
     DaytonaReference,
     Execution,
-    Proxy,
 )
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeExecution, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
-from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
+from a13n_harness.providers.environment.native.http import decode_response
 
 
 class DaytonaExecution(DaytonaReference, NativeExecution[DaytonaEnvironmentConfiguration, TargetState]):
@@ -28,14 +28,11 @@ class DaytonaExecution(DaytonaReference, NativeExecution[DaytonaEnvironmentConfi
         runtime: NativeRuntime,
     ):
         super().__init__(config, environment_id, state, runtime)
-        self.toolbox: NativeHTTP | None = None
 
-    async def close_transport(self) -> None:
-        try:
-            if self.toolbox:
-                await self.toolbox.close()
-        finally:
-            await super().close_transport()
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        value = super().descriptor
+        return with_computer(value) if self.config.desktop else value
 
     async def open(self, *, execution_id: str) -> None:
         self.require_target()
@@ -47,32 +44,13 @@ class DaytonaExecution(DaytonaReference, NativeExecution[DaytonaEnvironmentConfi
         # Organization policy may impose a hard TTL even when creation requests none.
         if target.autoDestroyAt is not None:
             raise failure(self.provider_key, "provider_expiry_unsupported", Category.UNSUPPORTED)
-        proxy = target.toolboxProxyUrl
-        if proxy is None:
-            proxy = decode_response(
-                Proxy, await self.transport().request("GET", self.path + "/toolbox-proxy-url"), self.provider_key
-            ).url
-        parsed = urlsplit(proxy)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise failure(
-                self.provider_key, "provider_response_invalid", Category.UNKNOWN_OUTCOME, certainty=Certainty.UNKNOWN
-            )
-        if self.toolbox:
-            await self.toolbox.close()
-        self.toolbox = NativeHTTP(
-            self.provider_key,
-            proxy.rstrip("/") + "/",
-            self.token.get_secret_value(),
-            self.config.request_timeout_seconds + 10,
-        )
+        await self.open_toolbox(target)
         await self.open_operations(self.execute, target.id, execution_id)
+        if self.config.desktop:
+            assert self.commands is not None and self.toolbox is not None
+            computer = DaytonaComputer(self.commands, self.toolbox, target.id)
+            await computer.describe()
+            self._operations = replace(self._operations, computer=computer)
 
     async def execute(self, argv: list[str], timeout: float) -> str:
         assert self.target and self.toolbox
@@ -91,3 +69,14 @@ class DaytonaExecution(DaytonaReference, NativeExecution[DaytonaEnvironmentConfi
                 self.provider_key, "provider_command_failed", Category.PROVIDER_FAILURE, certainty=Certainty.KNOWN
             )
         return result.result
+
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        await super().check_ready(operations)
+        if "computer" in operations and self._operations.computer is not None:
+            await self._operations.computer.describe()
+
+    async def close(self) -> None:
+        computer = self._operations.computer
+        if isinstance(computer, DaytonaComputer):
+            await computer.close()
+        await super().close()

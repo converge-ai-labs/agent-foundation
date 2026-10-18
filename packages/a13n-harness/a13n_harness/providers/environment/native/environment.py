@@ -174,6 +174,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
     environment_model: type[E],
     state_model: type[TargetState],
     execution_type: Callable[[E, str, EnvironmentState | None, NativeRuntime], ExecutionBackend],
+    describe_environment: Callable[[E], EnvironmentDescriptor] | None = None,
 ) -> EnvironmentProviderDefinition[C, K, E, NativeRuntime]:
     async def runtime(*, configuration: C, credential: K | None) -> NativeRuntime:
         if credential is None:
@@ -181,7 +182,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
         return NativeRuntime(configuration, credential)
 
     def describe(configuration: E) -> EnvironmentDescriptor:
-        return descriptor(configuration)
+        return describe_environment(configuration) if describe_environment is not None else descriptor(configuration)
 
     def identity(*, configuration: E, state: EnvironmentState | None) -> str | None:
         value = decode_target_state(type, state, state_model, fingerprint=configuration.fingerprint)

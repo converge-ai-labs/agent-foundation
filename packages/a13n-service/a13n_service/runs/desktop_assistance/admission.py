@@ -19,11 +19,13 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 
+TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id"}
+
 
 def target_key(state: EnvironmentState | None) -> str | None:
     if state is None or not isinstance(state.state, dict):
         return None
-    field = {"e2b": "sandbox_id", "docker": "container_id"}.get(state.provider_key)
+    field = TARGET_FIELDS.get(state.provider_key)
     native = state.state.get(field) if field else None
     if not isinstance(native, str) or not native:
         return None
@@ -59,7 +61,7 @@ async def aliases(session: AsyncSession, environment: EnvironmentRow) -> list[st
     state = handle.state
     if state is None or not isinstance(state.state, dict):
         return [environment.id]
-    field = {"e2b": "sandbox_id", "docker": "container_id"}.get(state.provider_key)
+    field = TARGET_FIELDS.get(state.provider_key)
     if field is None:
         return [environment.id]
     return list(

@@ -27,7 +27,7 @@ from a13n_harness.environment.errors import (
 from a13n_harness.environment.models import EnvironmentError as OperationError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select, text
+from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -84,20 +84,15 @@ def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool
 
     held = aliased(EnvironmentRow)
     candidate = aliased(EnvironmentRow)
-    same_target = (held.handle["state"]["provider_key"].astext == candidate.handle["state"]["provider_key"].astext) & (
-        (
-            (held.handle["state"]["provider_key"].astext == "e2b")
-            & (
-                held.handle["state"]["state"]["sandbox_id"].astext
-                == candidate.handle["state"]["state"]["sandbox_id"].astext
-            )
-        )
-        | (
-            (held.handle["state"]["provider_key"].astext == "docker")
-            & (
-                held.handle["state"]["state"]["container_id"].astext
-                == candidate.handle["state"]["state"]["container_id"].astext
-            )
+    from a13n_service.runs.desktop_assistance.admission import TARGET_FIELDS
+
+    same_target = (
+        held.handle["state"]["provider_key"].astext == candidate.handle["state"]["provider_key"].astext
+    ) & or_(
+        *(
+            (held.handle["state"]["provider_key"].astext == provider)
+            & (held.handle["state"]["state"][field].astext == candidate.handle["state"]["state"][field].astext)
+            for provider, field in TARGET_FIELDS.items()
         )
     )
     held_target = exists(

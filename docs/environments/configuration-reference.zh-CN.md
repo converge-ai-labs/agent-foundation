@@ -267,6 +267,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `max_file_bytes`          | false | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
 | `max_query_entries`       | false | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
 | `max_output_bytes`        | false | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `desktop`                 | false | boolean        | default=false                                          |
 | `snapshot`                | false | string 或 null | maxLength=256; default=null                            |
 
 ## `ModalEnvironmentConfiguration`

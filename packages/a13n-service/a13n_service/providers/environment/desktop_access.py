@@ -76,7 +76,7 @@ class Description(Model):
     max_ttl_seconds: Literal[60]
     read_only_enforced: Literal[True]
     revocation_fences_grants: bool = False
-    websocket_url: str | None = Field(default=None, max_length=2048)
+    websocket_url: str | None = Field(default=None, max_length=2048, repr=False)
 
 
 class AccessGrant(Model):

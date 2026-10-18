@@ -13,15 +13,18 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("winner", ["user_before_dispatch", "user_during_discovery", "agent"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
 async def test_simultaneous_assistance_and_takeover_keep_one_resumable_wait(
-    service, scripted_model, runs_kit, monkeypatch, winner
+    service, scripted_model, runs_kit, monkeypatch, winner, provider_key
 ):
     from a13n_service.providers.environment import desktop_access as wire
     from a13n_service.runs.desktop_assistance import service as assistance
     from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
     from sqlalchemy import select
 
-    first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
+    first, endpoint = await waiting(
+        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
+    )
     generate, entered, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
     scripted_model.call(
         "request_desktop_assistance", {"mount": "workspace", "reason": "Choose the file"}, call_id="help", gate=generate
@@ -124,8 +127,13 @@ async def open_desktop(service, run):
     return result.json()
 
 
-async def test_takeover_during_generation_skips_stale_tool_then_resumes(service, scripted_model, runs_kit, monkeypatch):
-    first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+async def test_takeover_during_generation_skips_stale_tool_then_resumes(
+    service, scripted_model, runs_kit, monkeypatch, provider_key
+):
+    first, endpoint = await waiting(
+        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
+    )
     gate = asyncio.Event()
     scripted_model.call("find_resources", {"kind": "model"}, call_id="stale", gate=gate)
     running = await runs_kit.attempt(service)
@@ -190,8 +198,9 @@ async def test_takeover_during_generation_skips_stale_tool_then_resumes(service,
         assert row.state == "consumed" and row.outcome == outcome
 
 
-async def test_unknown_tool_work_prevents_takeover(service, scripted_model, runs_kit, monkeypatch):
-    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+async def test_unknown_tool_work_prevents_takeover(service, scripted_model, runs_kit, monkeypatch, provider_key):
+    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key)
     gate = asyncio.Event()
     scripted_model.say("done", gate=gate)
     running = await runs_kit.attempt(service)

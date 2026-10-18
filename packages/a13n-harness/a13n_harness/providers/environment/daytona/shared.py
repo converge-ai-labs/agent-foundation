@@ -1,7 +1,8 @@
 """Daytona shared implementation."""
 
+import hashlib
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,14 +21,27 @@ class DaytonaConnectionConfiguration(BaseModel):
 
 
 class DaytonaEnvironmentConfiguration(CommandConfiguration):
-    model_config = ConfigDict(frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["snapshot"]})
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["desktop", "snapshot"]}
+    )
     root: str = "/home/daytona"
+    desktop: bool = Field(
+        default=False,
+        title="Desktop environment",
+        description="Use Daytona Computer Use. Custom snapshots must include desktop packages. Human control is not enabled by this option.",
+    )
     # Daytona sizes a sandbox by its snapshot and refuses resources requested alongside one.
     snapshot: str | None = Field(
         default=None,
         max_length=256,
         description="Existing Daytona snapshot, which sets the sandbox's resources; empty uses the default Python sandbox.",
     )
+
+    @property
+    def fingerprint(self) -> str:
+        # Adding an opt-in capability must not invalidate saved headless targets.
+        exclude = {"desktop"} if not self.desktop else set()
+        return hashlib.sha256(self.model_dump_json(exclude=exclude).encode()).hexdigest()
 
 
 class Sandbox(BaseModel):
@@ -64,6 +78,7 @@ class DaytonaReference(NativeReference[DaytonaEnvironmentConfiguration, TargetSt
         self.backend = runtime.configuration
         self.token = runtime.credential.api_key
         self.http: NativeHTTP | None = None
+        self.toolbox: NativeHTTP | None = None
 
     def transport(self) -> NativeHTTP:
         if self.http is None:
@@ -107,6 +122,36 @@ class DaytonaReference(NativeReference[DaytonaEnvironmentConfiguration, TargetSt
             return "stopped"
         raise failure(self.provider_key, "provider_unavailable", Category.UNAVAILABLE)
 
+    async def open_toolbox(self, target: Sandbox) -> NativeHTTP:
+        proxy = target.toolboxProxyUrl
+        if proxy is None:
+            proxy = decode_response(
+                Proxy, await self.transport().request("GET", self.path + "/toolbox-proxy-url"), self.provider_key
+            ).url
+        parsed = urlsplit(proxy)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise failure(self.provider_key, "provider_response_invalid", Category.UNAVAILABLE)
+        if self.toolbox is not None:
+            await self.toolbox.close()
+        self.toolbox = NativeHTTP(
+            self.provider_key,
+            proxy.rstrip("/") + "/",
+            self.token.get_secret_value(),
+            self.config.request_timeout_seconds + 10,
+        )
+        return self.toolbox
+
     async def close_transport(self) -> None:
-        if self.http:
-            await self.http.close()
+        try:
+            if self.toolbox is not None:
+                await self.toolbox.close()
+        finally:
+            if self.http is not None:
+                await self.http.close()

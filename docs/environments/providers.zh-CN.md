@@ -248,6 +248,25 @@ uv run python desktop_template.py my-desktop-cjk
 
 默认文件根目录：`/home/daytona`。标准沙箱提供 Python；命令选择客体 PATH 上的 `python3`。自定义快照必须提供所选根目录和可执行文件。停止要求确认已禁用自动删除；删除等待最终销毁，不只接受初始确认。参见 [Daytona 沙箱示例](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/)和[删除语义](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)。
 
+在 Daytona 环境配置中设置 `desktop: true`，即可启用共享 Computer 操作。默认 snapshot 包含桌面运行环境；自定义 snapshot 必须提供[所需桌面软件包](https://www.daytona.io/docs/en/vnc-access/)。Service 在创建或启动环境时初始化桌面，连接已有环境仅检查就绪状态。该实现使用 Daytona 官方 Computer Use HTTP API，不需要 `a13n-envd` 或额外的 Python SDK。
+
+支持截图、点击、移动、拖拽、键盘输入和双轴步进滚动。Agent 的 Computer 工具集与挂载权限仍需分别配置。要显示中文，请在 snapshot 中预装 `fonts-noto-cjk` 等中文字库；输入操作不会安装字体。输入中断可能留下部分结果，必须核对后再继续。这个选项不启用 Console 桌面查看或人工接管。
+
+要启用 Console 查看、Agent 请求人工协助和用户主动接管，先构建预装现有桌面访问 supervisor 和中文字体的 snapshot：
+
+```bash
+# 通过私有环境提供具有 snapshot 创建权限的 DAYTONA_API_KEY。
+uv run --locked python examples/environment-provider/daytona_desktop_snapshot.py my-desktop-access --region us
+```
+
+然后将 Service 环境配置设为 `{"snapshot": "my-desktop-access", "desktop": true, "desktop_assistance": true}`。snapshot 在启动时运行 supervisor；连接或授权访问时不会安装或启动它。构建 snapshot 需要额外权限，仅能管理沙箱的 Key 不够；普通 Service 运行过程不构建 snapshot。
+
+Daytona 的签名预览域名仅开放 6081 端口，supervisor 另行强制执行只读权限、单一控制者、可续租的 60 秒授权，以及归还时断开已有连接。仅撤销 Daytona 原生签名链接不足以断开已建立的输入连接。Console 复用现有查看、获取控制权和归还控制权交互。Agent 必须到达已确认的安全边界才能交接；输入结果未知或后台工作未经确认时，会阻止接管。
+
+新建的 Daytona 组织需要先在 Daytona 控制台设置默认区域，才能创建沙箱；连接中的区域字段不能替代这个账号初始化步骤。
+
+要运行真实桌面验收，请通过私有环境提供 `A13N_TEST_DAYTONA_BACKEND_JSON` 和 `A13N_TEST_DAYTONA_CREDENTIAL_JSON`，设置 `A13N_TEST_DAYTONA_DESKTOP=1`，然后执行 `uv run --locked pytest packages/a13n-service/tests/environment_providers/test_daytona_desktop_live.py`。测试会创建计费沙箱，检查原生输入和停止／恢复，最后清理目标。 将 `A13N_TEST_DAYTONA_SNAPSHOT` 指向自定义 snapshot，并额外运行 `packages/a13n-service/tests/environment_providers/test_daytona_access_live.py`，可验证服务端只读限制、已有连接撤销、租约到期和重启后旧代际失效。这些 Provider 检查与完整的 Console／Agent 交接验收分别进行。
+
 ### Modal
 
 默认镜像：`python:3.13-slim`，包含 `/usr/local/bin/python3`；根目录 `/` 对镜像 root 用户可写。使用已部署的现有 App。托管停止在终止前对文件创建快照；恢复替换原生沙箱，就绪成功后允许清理快照。运行沙箱 TTL 不能延长到已知期限之外。

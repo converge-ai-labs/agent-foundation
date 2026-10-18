@@ -55,7 +55,7 @@ async def provider_target(
     )
     if environment.provider_identity != provider_identity(runtime.registry, provider):
         raise conflict("environment", environment.id, "provider_identity_changed")
-    if provider.type not in {"docker", "e2b"}:
+    if provider.type not in {"docker", "e2b", "daytona"}:
         raise conflict("environment", environment.id, "desktop_assistance_unsupported")
     if handle.recipe.get("init_script"):
         raise conflict("environment", environment.id, "desktop_background_work_unconfirmed")

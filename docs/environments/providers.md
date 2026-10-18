@@ -248,6 +248,25 @@ In Console, enable **Desktop environment**, choose **Custom template**, and ente
 
 Default file root: `/home/daytona`. The standard sandbox supplies Python; commands select `python3` on the guest PATH. Custom snapshots must supply the selected root and executables. Stop requires confirmed disabled auto-delete; delete waits for terminal destruction rather than accepting the initial acknowledgement. See [Daytona's sandbox example](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/) and [delete semantics](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/).
 
+Set `desktop: true` in a Daytona environment recipe to enable the shared Computer operations. The default snapshot includes the desktop runtime; custom snapshots must supply the [required desktop packages](https://www.daytona.io/docs/en/vnc-access/). Service initializes the desktop when creating or starting the environment. Connecting to an existing environment only checks readiness. This uses Daytona's official Computer Use HTTP API and does not require `a13n-envd` or an additional Python SDK.
+
+Screenshots, clicks, movement, dragging, keyboard input and step scrolling on both axes are available. Enable the Agent's Computer toolset and grant the matching mount permissions separately. For Chinese display, build a snapshot with CJK fonts, such as `fonts-noto-cjk`; input never installs fonts. Interrupted input may be partial and must be reconciled before continuing. This option does not enable Console viewing or human takeover.
+
+For Console viewing, Agent-requested assistance and user takeover, build a custom snapshot with the existing desktop access supervisor and CJK fonts:
+
+```bash
+# Supply DAYTONA_API_KEY privately with permission to create snapshots.
+uv run --locked python examples/environment-provider/daytona_desktop_snapshot.py my-desktop-access --region us
+```
+
+Then use `{"snapshot": "my-desktop-access", "desktop": true, "desktop_assistance": true}` in the Service environment recipe. The snapshot starts the supervisor at boot; attaching or granting access does not install or start it. Snapshot creation needs additional permission beyond a sandbox-management-only Key; ordinary Service runtime does not build snapshots.
+
+Daytona's signed preview host opens only port 6081. The supervisor separately enforces read-only viewing, a single controller, 60-second renewable grants and forced disconnect on return. Revoking a native signed preview URL alone is insufficient to close an established input connection. The Console reuses its existing viewing, acquire-control and return-control interactions. Agent execution must reach a confirmed safe boundary before control is granted; uncertain input or unmanaged background work blocks takeover.
+
+New Daytona organizations must choose a default region in the Daytona dashboard before creating sandboxes. The connection's region does not replace that account setup requirement.
+
+For opt-in desktop acceptance, provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` privately, set `A13N_TEST_DAYTONA_DESKTOP=1`, and run `uv run --locked pytest packages/a13n-service/tests/environment_providers/test_daytona_desktop_live.py`. The test creates a billable sandbox, checks native input and stop/resume, then deletes its target in cleanup. Set `A13N_TEST_DAYTONA_SNAPSHOT` to the custom snapshot and also run `packages/a13n-service/tests/environment_providers/test_daytona_access_live.py` to verify server-side read-only enforcement, established-connection revocation, lease expiry and generation invalidation after restart. These provider checks are separate from a full Console/Agent handoff acceptance.
+
 ### Modal
 
 Default image: `python:3.13-slim`, with `/usr/local/bin/python3`; root `/` is writable by that image's root user. Use an existing deployed App. Managed stop snapshots files before termination; resume replaces the native sandbox, and successful readiness permits snapshot cleanup. Running sandbox TTL cannot be extended beyond its known deadline.
