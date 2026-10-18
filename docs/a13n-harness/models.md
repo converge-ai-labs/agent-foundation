@@ -97,7 +97,11 @@ a13n-harness-ui
 
 An HTTP proxy URL is also valid for HTTPS destinations: the client uses a CONNECT tunnel. Proxy selection and bypass matching follow `httpx2`; the same bounded HTTP retry policy applies to direct and proxied requests. An explicitly supplied `transport` keeps its own routing rather than adopting environment proxies, and `retry=None` disables retries without disabling proxy discovery.
 
-Provider endpoint validation still applies, including local DNS checks where required. SDK-owned transports that do not use this helper retain their SDK's proxy behavior.
+With `httpx2` 2.14.0 or later, `NO_PROXY` also matches IPv4 and IPv6 CIDR ranges. For example, `NO_PROXY=localhost,127.0.0.0/8,10.0.0.0/8,[::1],fd00::/8,.internal.example` keeps matching destinations direct while other destinations use the configured proxy. CIDR rules match IP literals in the request URL; they do not resolve hostnames to check the resulting address. List internal hostnames or domain suffixes separately.
+
+That dependency version also accepts bracketed IPv6 entries with optional ports, such as `[::1]:8080`, and ignores unparseable `NO_PROXY` entries. Valid entries in the same list still apply. When upgrading an existing deployment, review CIDR entries: addresses inside those ranges now bypass the proxy, whereas older versions could send them through it.
+
+Provider endpoint validation and Run `allowed_hosts` checks still apply to both direct and proxied requests. `NO_PROXY` selects a route; it does not grant access to a destination. SDK-owned transports that do not use this helper retain their SDK's proxy behavior.
 
 ## Outbound TLS verification
 
