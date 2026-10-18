@@ -1196,7 +1196,10 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
         await environment.close()
 
 
-async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(tmp_path: Path) -> None:
+@pytest.mark.parametrize("native_search", [False, True])
+async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(
+    tmp_path: Path, native_search: bool
+) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent_path.write_text(
@@ -1210,6 +1213,7 @@ tool_proxy:
       harness_plugins: [plugin-memory]
   config: {max_results: 5}
 """
+        + ("  native_search: true\n" if native_search else "")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
@@ -1218,6 +1222,10 @@ tool_proxy:
     proxy = composition.root.tool_proxy
     assert proxy is not None
     assert proxy.config.max_results == 5
+    assert proxy.native_search is native_search
+    payload = composition.model_dump_json()
+    assert ('"native_search"' in payload) is native_search
+    assert type(composition).model_validate_json(payload).model_dump_json() == payload
     assert proxy.groups["knowledge"].mcp_servers == ()
     assert proxy.groups["knowledge"].harness_plugins == ("plugin-memory",)
     assert composition.root.children[0].definition.tool_proxy == proxy

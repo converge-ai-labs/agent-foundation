@@ -21,6 +21,7 @@ from pydantic_ai import RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
@@ -65,6 +66,7 @@ async def _run(
     toolset_instructions: bool = True,
     tool_proxy: ToolProxyPlan | None = None,
     plugins: tuple[AbstractHarnessPlugin, ...] = (),
+    profile: ModelProfile | None = None,
 ):
     requests = 0
     returns: list[ToolReturnPart] = []
@@ -85,7 +87,7 @@ async def _run(
     executable = HarnessBuilder().build(
         AgentSpec(usage_limits=usage_limits or UsageLimits(), toolset_instructions=toolset_instructions),
         output_type=str,
-        model=FunctionModel(stream_function=model),
+        model=FunctionModel(stream_function=model, profile=profile),
         capabilities=capabilities,
         tool_proxy=tool_proxy,
         plugins=plugins,
@@ -1349,3 +1351,168 @@ async def test_proxy_and_codeact_use_capability_approval_override(codeact: bool,
     result, _ = await _run(capabilities, [call])
     assert result.status == "completed"
     assert effects == ([False] if mode == "allow" else [])
+
+
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_native_search_requires_support_without_local_fallback(use_plan: bool) -> None:
+    def hidden() -> str:
+        raise AssertionError("unsupported model must never execute tools")
+
+    source = Capability(toolsets=[FunctionToolset([hidden])])
+    plan = ToolProxyPlan(
+        groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+    )
+    capability = ToolProxyCapability(groups={"crm": ToolProxyGroup(source, "Customer data")}, native_search=True)
+    requests = []
+    from a13n_harness.errors import DefinitionError
+
+    with pytest.raises(DefinitionError, match="native tool search") as exc:
+        await _run(
+            (source,) if use_plan else (capability,),
+            [],
+            tool_proxy=plan if use_plan else None,
+            inspect=lambda step, info: requests.append(step),
+            profile=ModelProfile(supported_native_tools=frozenset()),
+        )
+    assert exc.value.code == "native_tool_search_unsupported"
+    assert requests == []
+
+
+async def test_native_search_preserves_group_names_and_direct_local_dispatch() -> None:
+    from pydantic_ai.profiles.anthropic import anthropic_model_profile
+
+    calls = []
+
+    def lookup(ctx: RunContext, value: int) -> int:
+        calls.append(ctx.tool_name)
+        return value * 2
+
+    def direct() -> str:
+        return "direct"
+
+    source = Capability(toolsets=[FunctionToolset([lookup])])
+
+    def inspect(step: int, info: AgentInfo) -> None:
+        tools = {tool.name: tool for tool in info.function_tools}
+        assert "search_proxy_tools" not in tools
+        assert "call_proxy_tool" not in tools
+        assert tools["crm__lookup"].defer_loading
+        assert tools["crm__lookup"].with_native == "tool_search"
+        assert not tools["direct"].defer_loading
+
+    result, returns = await _run(
+        (source, Capability(tools=[direct]), ToolSearch(strategy="keywords")),
+        [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {"value": 4})],
+        tool_proxy=ToolProxyPlan(
+            groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+        ),
+        profile=anthropic_model_profile("claude-sonnet-4-6"),
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+    assert calls == ["lookup"]
+    assert returns[-1].content == 8
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai-responses", "openai-chat"])
+async def test_native_server_search_profile_and_history_restore(provider: str) -> None:
+    from a13n_harness.errors import DefinitionError
+    from pydantic_ai.messages import NativeToolSearchCallPart, NativeToolSearchReturnPart
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    if provider == "anthropic":
+        adapter = AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(api_key="test"))
+    elif provider == "openai-responses":
+        adapter = OpenAIResponsesModel("gpt-5.4", provider=OpenAIProvider(api_key="test"))
+    else:
+        adapter = OpenAIChatModel("gpt-5.4", provider=OpenAIProvider(api_key="test"))
+    effects = []
+    phase = "discover"
+    step = 0
+
+    def lookup() -> str:
+        effects.append("called")
+        return "found"
+
+    async def model(messages, info):
+        nonlocal step
+        parameters = info.model_request_parameters
+        _, prepared = adapter.prepare_request(None, parameters)
+        assert {tool.name for tool in prepared.function_tools} == {"crm__lookup"}
+        assert len(prepared.native_tools) == 1
+        assert prepared.native_tools[0].kind == "tool_search"
+        assert prepared.native_tools[0].optional is False
+        if phase == "discover":
+            yield {0: NativeToolSearchCallPart(args={"queries": ["lookup"]}, tool_call_id="search-1")}
+            yield {
+                1: NativeToolSearchReturnPart(
+                    content={"discovered_tools": [{"name": "crm__lookup"}]}, tool_call_id="search-1"
+                )
+            }
+            yield "discovered"
+        elif step == 0:
+            step += 1
+            yield {0: DeltaToolCall(name="crm__lookup", json_args="{}", tool_call_id="lookup-1")}
+        else:
+            yield "done"
+
+    source = Capability(tools=[lookup])
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model, profile=adapter.profile),
+        capabilities=(source,),
+        tool_proxy=ToolProxyPlan(
+            groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+        ),
+    )
+    if provider == "openai-chat":
+        with pytest.raises(DefinitionError, match="native tool search"):
+            await executable.run("find", bindings=RunBindings.embedded())
+        assert effects == []
+        return
+    discovered = await executable.run("find", bindings=RunBindings.embedded())
+    assert discovered.output_or_raise() == "discovered"
+    state = type(discovered.state).model_validate_json(discovered.state.model_dump_json())
+    phase = "invoke"
+    resumed = await executable.run("invoke", previous_state=state, bindings=RunBindings.embedded())
+    assert resumed.output_or_raise() == "done"
+    assert effects == ["called"]
+    assert _returns(resumed.all_messages())[-1].content == "found"
+
+
+@pytest.mark.parametrize("mode", ["deny", "ask"])
+async def test_native_search_preserves_named_source_permission_identity(mode: str) -> None:
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+    from pydantic_ai.profiles.anthropic import anthropic_model_profile
+
+    effects = []
+
+    def forbidden() -> str:
+        effects.append(True)
+        return "must not run"
+
+    source = Capability(toolsets=[FunctionToolset([forbidden], id="secure")])
+    result, returns = await _run(
+        (
+            source,
+            ToolSearch(strategy="keywords"),
+            ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/secure/forbidden": mode})),
+        ),
+        [("search_tools", {"queries": ["forbidden"]}), ("crm__forbidden", {})],
+        tool_proxy=ToolProxyPlan(
+            groups={"crm": ToolProxySelection("Secure tools", capabilities=(source,))}, native_search=True
+        ),
+        profile=anthropic_model_profile("claude-sonnet-4-6"),
+    )
+    assert effects == []
+    if mode == "ask":
+        assert result.status == "suspended"
+        assert result.deferred is not None
+    else:
+        assert result.output_or_raise() == "done"
+        assert returns[-1].outcome == "failed"
+        assert returns[-1].content == "Tool invocation is denied by its permission configuration."

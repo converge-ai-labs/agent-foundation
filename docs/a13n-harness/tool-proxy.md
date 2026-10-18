@@ -7,6 +7,14 @@ ToolProxy exposes large collections of local tools through two model-facing cont
 
 ToolProxy changes discovery and call presentation only. Pydantic AI's current `ToolManager`, the original Toolset, and the normal Harness execution boundary still own validation, policy, credentials, hooks, results, and usage. It is not a second execution engine or an MCP client.
 
+## Select native tool search
+
+The default `native_search=False` uses ToolProxy's search and call controls. Set `native_search=True` on `ToolProxyCapability` or `ToolProxyPlan` to use upstream `ToolSearch` for the same selected sources. Grouped tools keep names such as `crm__customer_name`, carry `defer_loading=True`, and are called directly after discovery. Source instructions follow upstream behavior. Proxy controls and `ToolProxyConfig` settings are absent from this branch.
+
+Native mode requires a model and protocol that support native tool search. An unsupported model fails explicitly; there is no automatic fallback to ToolProxy or local keyword search. Native discovery still executes tools through the local ToolManager and the normal permission boundary. Keep MCP sources configured with `native=False, local=True`. Direct calls use ordinary usage and approval/resume semantics instead of a nested proxy envelope.
+
+The remaining sections describe the default ToolProxy branch.
+
 ## Group a Toolset
 
 Install one `ToolProxyCapability` with an explicit mapping of domain names to sources. Each `ToolProxyGroup` is a passive configuration value, not a separately installed Capability:

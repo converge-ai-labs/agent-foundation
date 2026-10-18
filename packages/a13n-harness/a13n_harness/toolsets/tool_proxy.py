@@ -72,6 +72,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     group: str
     group_description: str
     source_label: str
+    native_search: bool = False
 
     @property
     def label(self) -> str:
@@ -91,7 +92,8 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
 
             tool = identify_tool(tool)
             definition = tool.tool_def
-            validate_proxy_target(definition)
+            if not self.native_search:
+                validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolProxy group; wrap each source only once.")
             canonical = f"{self.group}__{name}"
@@ -100,9 +102,16 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                 tool_def=replace(
                     definition,
                     name=canonical,
+                    defer_loading=True if self.native_search else definition.defer_loading,
                     metadata={
                         **(definition.metadata or {}),
-                        PROXY_MEMBERSHIP_KEY: ToolProxyMembership(self.group, self.group_description, name),
+                        **(
+                            {}
+                            if self.native_search
+                            else {
+                                PROXY_MEMBERSHIP_KEY: ToolProxyMembership(self.group, self.group_description, name),
+                            }
+                        ),
                     },
                 ),
                 max_retries=tool.max_retries,
@@ -115,8 +124,12 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
             )
         return result
 
-    async def get_instructions(self, ctx: RunContext[AgentContext]) -> None:
-        # Source guidance is returned with discovery, not eagerly for every tool.
+    async def get_instructions(
+        self, ctx: RunContext[AgentContext]
+    ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
+        if self.native_search:
+            return await self.wrapped.get_instructions(ctx)
+        # Proxy source guidance is returned with discovery, not eagerly for every tool.
         return None
 
     async def call_tool(

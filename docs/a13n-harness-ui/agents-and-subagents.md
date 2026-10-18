@@ -188,6 +188,7 @@ Group large MCP and Harness Plugin tool collections without loading every tool s
 ```yaml
 # In agents/coder.yaml; referenced resources must already exist.
 tool_proxy:
+  native_search: false
   groups:
     knowledge:
       description: Search project documents and organizational memory
@@ -199,6 +200,8 @@ tool_proxy:
     max_results: 10
     max_search_bytes: 32768
 ```
+
+`native_search` defaults to `false`, using ToolProxy controls. Set it to `true` to use required native tool search for the same sources. The current Model must support native tool search; unsupported Models fail without fallback. Tools retain their grouped names and execute locally. `config` applies only when `native_search` is `false`.
 
 `config` is optional. Group names start with a letter, contain up to 32 letters, digits, underscores or hyphens, and cannot contain `__`. Descriptions must be nonblank and at most 512 characters. Select exact resource IDs, including distinct IDs for multiple instances of the same plugin. A source belongs to one group only. Different sources in a group must have distinct tool names; collisions fail rather than inventing aliases.
 

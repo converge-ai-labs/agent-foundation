@@ -391,6 +391,7 @@ class AgentReconstructor:
                     for name, group in node.tool_proxy.groups.items()
                 },
                 config=node.tool_proxy.config,
+                native_search=node.tool_proxy.native_search,
             )
             if node.tool_proxy is not None
             else None
@@ -407,7 +408,7 @@ class AgentReconstructor:
             # Filter the actual canonical target directory before generating them.
             controls = (
                 frozenset({tool_proxy.config.search_name, tool_proxy.config.call_name})
-                if tool_proxy is not None
+                if tool_proxy is not None and not tool_proxy.native_search
                 else frozenset()
             )
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))

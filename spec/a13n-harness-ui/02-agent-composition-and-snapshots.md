@@ -237,6 +237,8 @@ Once initialized, a Thread stores exact lists. Later Agent or global-default sel
 
 ### Tool Proxy Groups
 
+`tool_proxy.native_search` is a boolean, defaulting to `False`. It selects the Harness build branch for the captured groups: default ToolProxy controls or required upstream native tool search. The selection is captured, inherited by Markdown children, and reconstructed with the groups. Existing configurations without the field keep ToolProxy behavior. Native mode retains canonical target allowlists and local MCP execution; `tool_proxy.config` only configures the default ToolProxy branch. Unsupported native models fail explicitly without fallback.
+
 An Agent may declare `tool_proxy.groups`, a mapping from group names to `description`, `mcp_servers`, and `harness_plugins`, plus optional `tool_proxy.config` matching Harness `ToolProxyConfig`. These are presentation selections, not reusable resource definitions or source activation. There is no global, Project, or Thread grouping override. Content Plugins contribute skills/subagents, not Harness Plugin tool sources.
 
 Each referenced source must exist in the configured catalog with the specified kind and may belong to at most one group. At capture time, membership intersects the node's enabled source IDs. Configured but disabled sources remain dormant and are never enabled by grouping. Unlisted enabled sources remain direct. A group can mix MCP sources and several exact Harness Plugin instances. An absent or empty mapping preserves direct behavior; groups with no surviving prepared tools expose no controls. Duplicate local tools in a group fail rather than gaining implicit aliases.

@@ -188,6 +188,7 @@ subagents:
 ```yaml
 # In agents/coder.yaml; referenced resources must already exist.
 tool_proxy:
+  native_search: false
   groups:
     knowledge:
       description: Search project documents and organizational memory
@@ -199,6 +200,8 @@ tool_proxy:
     max_results: 10
     max_search_bytes: 32768
 ```
+
+`native_search` 默认为 `false`，使用 ToolProxy 控件。设置为 `true` 可让同一批来源使用必须受支持的原生工具搜索。当前 Model 必须支持原生工具搜索；不支持时失败，不会回退。工具保留分组名称并在本地执行。`config` 只在 `native_search` 为 `false` 时生效。
 
 `config` 可选。组名以字母开头，最多 32 个字母、数字、下划线或连字符，不得包含 `__`。描述不得为空，最多 512 字符。选择确切资源 ID，同一插件的多个实例需使用不同 ID。一个来源只能属于一组。同组不同来源必须有不同工具名；冲突会失败，不会编造别名。
 

@@ -24,7 +24,7 @@ from a13n_harness_ui.configuration.views import agent_tool_proxy_view
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from fastmcp import FastMCP
-from pydantic_ai.capabilities import Capability
+from pydantic_ai.capabilities import Capability, ToolSearch
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
@@ -60,8 +60,9 @@ async def _http_mcp(server: FastMCP):
                 await task
 
 
+@pytest.mark.parametrize("native_search", [False, True])
 async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_search: bool
 ) -> None:
     server = FastMCP("ui-proxy")
     calls: list[str] = []
@@ -108,13 +109,14 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
     agent = yaml.safe_load(agent_path.read_text())
     agent.update(subagents=[], capabilities=[], tools=["knowledge__lookup", "knowledge__remember", "status"])
     agent["tool_proxy"] = {
+        "native_search": native_search,
         "groups": {
             "knowledge": {
                 "description": "Documents and memory",
                 "mcp_servers": ["mcp-docs"],
                 "harness_plugins": ["plugin-memory"],
             }
-        }
+        },
     }
     agent_path.write_text(yaml.safe_dump(agent))
     path.write_text(path.read_text() + "tools: {enable_codeact: false, enable_ask_user_question: false}\n")
@@ -132,7 +134,7 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
         reconstructed = AgentReconstructor(catalog, configuration_root=tmp_path).reconstruct(
             composition,
             subagent_operator=None,
-            root_capabilities=(Capability(toolsets=[FunctionToolset([status])]),),
+            root_capabilities=(Capability(toolsets=[FunctionToolset([status])]), ToolSearch(strategy="keywords")),
         )
         assert binds == []
         assert plugin_events == ["agent", "collect"]
@@ -142,17 +144,24 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
 
             async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
                 nonlocal step
-                assert {tool.name for tool in info.function_tools} == {
-                    "status",
-                    "search_proxy_tools",
-                    "call_proxy_tool",
-                }
+                assert {tool.name for tool in info.function_tools} == (
+                    {"status", "search_tools", "knowledge__lookup", "knowledge__remember"}
+                    if native_search
+                    else {"status", "search_proxy_tools", "call_proxy_tool"}
+                )
                 commands = [
                     ("search_proxy_tools", {"query": "", "group": "knowledge"}),
                     ("call_proxy_tool", {"group": "knowledge", "tool": "lookup", "arguments": {}}),
                     ("call_proxy_tool", {"group": "knowledge", "tool": "remember", "arguments": {}}),
                     ("status", {}),
                 ]
+                if native_search:
+                    commands = [
+                        ("search_tools", {"queries": ["lookup remember"]}),
+                        ("knowledge__lookup", {}),
+                        ("knowledge__remember", {}),
+                        ("status", {}),
+                    ]
                 current = step
                 step += 1
                 if current < len(commands):
@@ -162,7 +171,9 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
                     yield "done"
 
             async def resolve(ctx, model_id):
-                return FunctionModel(stream_function=model)
+                from pydantic_ai.profiles.anthropic import anthropic_model_profile
+
+                return FunctionModel(stream_function=model, profile=anthropic_model_profile("claude-sonnet-4-6"))
 
             return await reconstructed.executable.run("test", bindings=RunBindings.embedded(model_resolver=resolve))
 
@@ -180,7 +191,8 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
             if isinstance(part, ToolReturnPart)
         ]
         assert returns[1:] == ["document", "memory", "ready"]
-        assert {item["tool"] for item in returns[0]["tools"]} == {"lookup", "remember"}
+        if not native_search:
+            assert {item["tool"] for item in returns[0]["tools"]} == {"lookup", "remember"}
 
 
 @pytest.mark.parametrize(

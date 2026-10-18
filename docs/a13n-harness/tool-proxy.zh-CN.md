@@ -7,6 +7,14 @@ ToolProxy 通过两个面向模型的控制工具提供大型本地工具集合�
 
 ToolProxy 只改变发现和调用的呈现方式。验证、策略、凭据、钩子、结果和用量仍由 Pydantic AI 当前 `ToolManager`、原 Toolset 和普通 Harness 执行边界负责。它不是第二个执行引擎或 MCP 客户端。
 
+## 选择原生工具搜索
+
+默认 `native_search=False` 使用 ToolProxy 搜索与调用控件。在 `ToolProxyCapability` 或 `ToolProxyPlan` 设置 `native_search=True`，即可让同一组选定来源使用上游 `ToolSearch`。分组工具保留 `crm__customer_name` 等名称，标记为 `defer_loading=True`，发现后直接调用。来源指令遵循上游行为。此分支不提供代理控件，`ToolProxyConfig` 设置不生效。
+
+原生模式要求模型及协议支持原生工具搜索。不支持时明确失败，不会自动回退到 ToolProxy 或本地关键词搜索。工具仍通过本地 ToolManager 和普通权限边界执行。MCP 来源继续使用 `native=False, local=True`。直接调用采用普通用量和审批/恢复语义，而非代理信封的嵌套调用语义。
+
+以下各节说明默认 ToolProxy 分支。
+
 ## 为 Toolset 分组
 
 添加一个 `ToolProxyCapability`，显式将领域名称映射到来源。每个 `ToolProxyGroup` 是被动配置值，不是独立安装的 Capability：

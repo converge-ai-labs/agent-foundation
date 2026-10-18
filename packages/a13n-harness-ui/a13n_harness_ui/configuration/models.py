@@ -674,6 +674,7 @@ class AgentToolProxyGroup(ConfigurationModel):
 
 
 class AgentToolProxy(ConfigurationModel):
+    native_search: bool = Field(default=False, exclude_if=lambda value: not value)
     groups: dict[str, AgentToolProxyGroup] = Field(default_factory=dict)
     config: ToolProxyConfig = Field(default_factory=ToolProxyConfig)
 
@@ -717,6 +718,7 @@ class AgentToolProxy(ConfigurationModel):
                 or any(source in harness_plugins for source in group.harness_plugins)
             },
             config=self.config,
+            native_search=self.native_search,
         )
 
 
