@@ -12,7 +12,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import RunBindings
+from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentError,
@@ -35,6 +35,11 @@ from a13n_harness.toolsets.process_manager import (
     _validate_stream,
 )
 from a13n_harness.toolsets.shell import ShellToolset
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.toolsets import FunctionToolset
 
 from .environment_helpers import DirectLocalSource
 
@@ -61,6 +66,9 @@ class _Steering:
         self.notifications.append((message, source, references))
         self.notified.set()
         return f"notification-{len(self.notifications)}"
+
+    async def discard_notifications(self, *, source: str, references: tuple[str, ...]) -> None:
+        self.notifications[:] = [notice for notice in self.notifications if notice[1:] != (source, references)]
 
 
 class _ToolDeps:
@@ -262,6 +270,231 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
             )
         ]
         await toolset.close()
+
+
+@pytest.mark.parametrize("notice_first", [False, True])
+async def test_final_wait_withdraws_completion_notice_in_either_order(tmp_path: Path, notice_first: bool) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        ctx = _ctx()
+        callback_started = asyncio.Event()
+        release_callback = asyncio.Event()
+
+        async def emit(event: Any) -> None:
+            ctx.events.append(event)
+            if event.callback:
+                callback_started.set()
+                await release_callback.wait()
+
+        ctx.emit = emit
+        async with controller.active_run(ctx):
+            request = ShellToolset._command_request(
+                "read value; printf done",
+                cwd=None,
+                environment=None,
+                execution_timeout_seconds=None,
+                keep_stdin_open=True,
+            )
+            started = await controller.start(request, alias=None, yield_time_seconds=0)
+            process_id = started["process_id"]
+            await controller.write_input(process_id, data="go\n", close_stdin=True)
+            await asyncio.wait_for(callback_started.wait(), timeout=3)
+            if notice_first:
+                release_callback.set()
+                await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=2)
+                assert len(ctx.deps._steering.notifications) == 1
+            result = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=2)
+            assert result["stdout"]["text"] == "done"
+            release_callback.set()
+            await controller._entries[process_id].watcher
+            assert ctx.deps._steering.notifications == []
+            repeated = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert repeated == result
+            assert len([event for event in ctx.events if event.callback]) == 1
+        await controller.close()
+
+
+async def test_partial_wait_keeps_notice_until_last_available_page(tmp_path: Path) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        ctx = _ctx()
+        async with controller.active_run(ctx):
+            request = ShellToolset._command_request(
+                "read value; head -c 20000 /dev/zero | tr '\\0' x",
+                cwd=None,
+                environment=None,
+                execution_timeout_seconds=None,
+                keep_stdin_open=True,
+            )
+            started = await controller.start(request, alias=None, yield_time_seconds=0)
+            process_id = started["process_id"]
+            await controller.write_input(process_id, data="go\n", close_stdin=True)
+            await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=3)
+            page = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert page["stdout"]["next_offset"] < page["stdout"]["available_end"]
+            assert len(ctx.deps._steering.notifications) == 1
+            text = page["stdout"]["text"]
+            while page["stdout"]["next_offset"] < page["stdout"]["available_end"]:
+                page = await controller.wait(
+                    process_id,
+                    stdout_offset=page["stdout"]["next_offset"],
+                    stderr_offset=0,
+                    timeout_seconds=0,
+                )
+                text += page["stdout"]["text"]
+            assert text == "x" * 20000
+            assert ctx.deps._steering.notifications == []
+        await controller.close()
+
+
+@pytest.mark.parametrize("open_stream", ["stdout", "stderr"])
+async def test_terminal_wait_keeps_notice_while_output_observation_is_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    open_stream: str,
+) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        ctx = _ctx()
+        async with controller.active_run(ctx):
+            started = await controller.start(
+                ShellToolset._command_request(
+                    "read value; printf done",
+                    cwd=None,
+                    environment=None,
+                    execution_timeout_seconds=None,
+                    keep_stdin_open=True,
+                ),
+                alias=None,
+                yield_time_seconds=0,
+            )
+            process_id = started["process_id"]
+            await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert not controller._entries[process_id].completion_observed
+            await controller.write_input(process_id, "go\n", close_stdin=True)
+            await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=3)
+            observed, output = await controller._observe(
+                controller._entries[process_id],
+                stdout_offset=0,
+                stderr_offset=0,
+                wait_seconds=0,
+            )
+            stream = output.stdout if open_stream == "stdout" else output.stderr
+            stream = stream.model_copy(
+                update={
+                    "capture": stream.capture.model_copy(
+                        update={
+                            "observation_closed": False,
+                            "producer_complete": False,
+                            "content_complete": False,
+                        }
+                    )
+                }
+            )
+            monkeypatch.setattr(
+                controller,
+                "_observe",
+                AsyncMock(
+                    return_value=(
+                        observed,
+                        output.model_copy(update={open_stream: stream}),
+                    )
+                ),
+            )
+            await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert len(ctx.deps._steering.notifications) == 1
+            assert not controller._entries[process_id].completion_observed
+        await controller.close()
+
+
+async def test_final_wait_prevents_native_final_drain_followup(tmp_path: Path) -> None:
+    calls = 0
+    native_context: RunContext[AgentContext] | None = None
+    process_id = ""
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+
+        async def start(ctx: RunContext[AgentContext]) -> str:
+            nonlocal native_context, process_id
+            native_context = ctx
+            async with controller.active_run(ctx):
+                result = await controller.start(
+                    ShellToolset._command_request(
+                        "read value; printf done",
+                        cwd=None,
+                        environment=None,
+                        execution_timeout_seconds=None,
+                        keep_stdin_open=True,
+                    ),
+                    alias=None,
+                    yield_time_seconds=0,
+                )
+            process_id = result["process_id"]
+            return process_id
+
+        async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+            nonlocal calls
+            del messages, info
+            calls += 1
+            if calls == 1:
+                yield {0: DeltaToolCall(name="start", json_args="{}")}
+                return
+            assert native_context is not None
+            if calls == 2:
+                async with controller.active_run(native_context):
+                    await controller.write_input(process_id, "go\n", close_stdin=True)
+                    await asyncio.wait_for(controller._entries[process_id].watcher, timeout=3)
+                    assert native_context.pending_messages
+                    result = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+                    assert result["stdout"]["text"] == "done"
+            yield "done"
+
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(Capability(toolsets=[FunctionToolset([start])]),),
+        )
+        result = await executable.run("run the command", bindings=RunBindings.embedded())
+        assert result.output_or_raise() == "done"
+        assert calls == 2
+        assert "Background process" not in str(result.all_messages())
+        await controller.close()
+
+
+@pytest.mark.parametrize("discard_between_attempts", [False, True])
+async def test_withdrawal_preserves_other_inputs_across_attempt_rebind(discard_between_attempts: bool) -> None:
+    from a13n_harness.capabilities.steering import SteeringBridge
+    from a13n_harness.state import AgentContextState
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.usage import RunUsage
+
+    bridge = SteeringBridge(AgentContextState(), run_id="run-test", retain_inputs=False, events=AsyncMock())
+    first = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
+    await bridge.bind(first)
+    await bridge.notify("observed", source="background_process", references=("process-one",))
+    await bridge.notify("other process", source="background_process", references=("process-two",))
+    await bridge.notify("other source", source="async_subagent", references=("process-one",))
+    await bridge.steer("user input", input_id="user-one")
+    bridge.unbind(first, owned=True)
+    if discard_between_attempts:
+        await bridge.discard_notifications(source="background_process", references=("process-one",))
+    second = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
+    await bridge.bind(second)
+    await bridge.discard_notifications(source="background_process", references=("process-one",))
+    assert second.pending_messages is not None
+    assert len(second.pending_messages) == 3
+    assert "observed" not in str(second.pending_messages)
+    assert "other process" in str(second.pending_messages)
+    assert "other source" in str(second.pending_messages)
+    assert "user input" in str(second.pending_messages)
+    # Delivery is immutable: withdrawal only changes pending lifecycle notices.
+    delivered = [message for pending in second.pending_messages for message in pending.messages]
+    second.pending_messages.clear()
+    await bridge.resolve_delivered(delivered)
+    await bridge.discard_notifications(source="background_process", references=("process-two",))
+    assert "other process" in str(delivered)
+    assert not bridge._pending_requests
 
 
 async def test_cancellation_after_publication_releases_observation_without_killing_process(

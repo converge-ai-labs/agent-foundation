@@ -425,6 +425,8 @@ An active watcher polls status without reconnecting streams. After native termin
 Background process process-<ref> has exited. Call shell_wait for available output.
 ```
 
+A terminal `shell_wait` page that reaches the available end of both closed output observations makes this hint redundant. Harness suppresses a later hint or withdraws one still pending in the native queue, including across model-attempt recovery. Partial pages and open output observations keep the hint eligible. Already-delivered messages and advisory status events remain unchanged.
+
 The hint contains no output, secret, native handle or durable-delivery promise. The same active-attempt boundary can emit the native advisory `ShellStatusEvent` described by [Events and Usage](12-events-observability-and-usage.md); that event carries observed process status, not captured output or a new process-control authority. Missing/unknown status does not emit an exit hint. Notification loss or cancellation does not change process truth. Published terminal references remain readable until local release or Run close; completion alone does not retire them.
 
 ### Run cleanup and recovery ownership

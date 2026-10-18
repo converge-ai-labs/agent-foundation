@@ -32,6 +32,7 @@ _SOURCE_RUN_METADATA_KEY = "a13n.steering-run"
 _INPUT_ID_METADATA_KEY = "a13n.steering-input"
 _NOTIFICATION_SOURCE_METADATA_KEY = "a13n.steering-source"
 _NOTIFICATION_ID_METADATA_KEY = "a13n.notification-input"
+_NOTIFICATION_REFERENCES_METADATA_KEY = "a13n.notification-references"
 
 type SteeringInputSource = Literal["external", "async_subagent", "background_process"]
 
@@ -166,6 +167,7 @@ class SteeringBridge:
                 _SOURCE_RUN_METADATA_KEY: self._run_id,
                 _NOTIFICATION_SOURCE_METADATA_KEY: source,
                 _NOTIFICATION_ID_METADATA_KEY: uuid4().hex,
+                _NOTIFICATION_REFERENCES_METADATA_KEY: list(references),
             },
         )
         try:
@@ -178,6 +180,34 @@ class SteeringBridge:
             self._pending_requests[enqueue_id] = deepcopy(request)
         await self._emit_enqueued(enqueue_id, source=source, references=tuple(references))
         return enqueue_id
+
+    async def discard_notifications(
+        self,
+        *,
+        source: Literal["async_subagent", "background_process"],
+        references: Sequence[str],
+    ) -> None:
+        """Withdraw matching lifecycle hints that have not entered native history."""
+        async with self._lock:
+            matching = {
+                enqueue_id
+                for enqueue_id, request in self._pending_requests.items()
+                if (metadata := request.metadata) is not None
+                and metadata.get(_NOTIFICATION_SOURCE_METADATA_KEY) == source
+                and metadata.get(_NOTIFICATION_REFERENCES_METADATA_KEY) == list(references)
+            }
+            active = self._active_context
+            if active is None:
+                # Between attempts there is no live queue; remove the replay candidates.
+                for enqueue_id in matching:
+                    self._pending_requests.pop(enqueue_id)
+            elif active.pending_messages is not None:
+                # The native drain runs on this event loop. Remove individual entries without
+                # replacing the shared queue or losing concurrent sync-tool appends.
+                for pending in tuple(active.pending_messages):
+                    if pending.enqueue_id in matching:
+                        active.pending_messages.remove(pending)
+                        self._pending_requests.pop(pending.enqueue_id)
 
     async def resolve_delivered(self, messages: Sequence[ModelMessage]) -> None:
         """Resolve pending public inputs already present in canonical history."""

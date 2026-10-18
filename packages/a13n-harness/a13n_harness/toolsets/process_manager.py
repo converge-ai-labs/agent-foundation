@@ -71,6 +71,8 @@ class _ProcessEntry:
     watcher: asyncio.Task[None] | None = None
     model_visible: asyncio.Event = field(default_factory=asyncio.Event)
     discovered: bool = False
+    completion_observed: bool = False
+    notification_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class _ProcessController:
@@ -209,12 +211,23 @@ class _ProcessController:
             stderr_offset=stderr_offset,
             wait_seconds=timeout_seconds,
         )
-        return _process_observation(
+        result = _process_observation(
             entry.process_id,
             observation,
             stdout_offset=stdout_offset,
             stderr_offset=stderr_offset,
         )
+        if _is_final(observation[0]) and all(
+            page["observation_closed"] and page["next_offset"] == page["available_end"]
+            for page in (result["stdout"], result["stderr"])
+        ):
+            async with entry.notification_lock:
+                entry.completion_observed = True
+                if self._context is not None:
+                    await self._context._steering.discard_notifications(
+                        source="background_process", references=(entry.process_id,)
+                    )
+        return result
 
     async def info(
         self, process_id: str | None, *, alias: str | None, limit: int
@@ -391,12 +404,13 @@ class _ProcessController:
             if self._entries.get(entry.process_id) is not entry or self._closed:
                 return
             await self._emit_status(entry, callback=True)
-            if self._context is not None:
-                await self._context._steering.notify(
-                    f"Background process {entry.process_id} has exited. Call shell_wait for available output.",
-                    source="background_process",
-                    references=(entry.process_id,),
-                )
+            async with entry.notification_lock:
+                if self._context is not None and not entry.completion_observed:
+                    await self._context._steering.notify(
+                        f"Background process {entry.process_id} has exited. Call shell_wait for available output.",
+                        source="background_process",
+                        references=(entry.process_id,),
+                    )
         except asyncio.CancelledError:
             raise
         except Exception:
