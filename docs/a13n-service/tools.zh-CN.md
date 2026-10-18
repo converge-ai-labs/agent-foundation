@@ -154,15 +154,15 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 ### 分组工具发现
 
-在 Console 中打开 agent 的**工具发现**区域，选择**原生工具搜索**，添加命名分组并选择来源。模型需要支持原生工具搜索。API 使用相同的 `tool_proxy` 配置：
+在 Console 中打开 agent 的**工具发现**区域，选择**原生工具搜索**，添加命名分组并选择来源。模型需要支持原生工具搜索。API 使用相同的 `tool_search` 配置：
 
 ```json
 {
   "connection_tools": [
     {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
   ],
-  "tool_proxy": {
-    "native_search": true,
+  "tool_search": {
+    "config": {"mode": "native", "strategy": "bm25"},
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",
@@ -177,11 +177,11 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已选的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
 
-- **原生工具搜索**（`native_search: true`）使用提供商原生发现和普通工具调用。
-- **分组代理搜索**（`native_search: false`）使用 Harness 的 `search_proxy_tools` 和 `call_proxy_tool`。可选的 `config` 设置参阅 [Harness ToolProxy](../a13n-harness/tool-proxy.md)。
-- **使用来源的加载设置**（省略 `tool_proxy`）沿用各来源现有的加载方式。
+- **原生工具搜索**（`config.mode: native`）使用提供商原生发现和普通工具调用。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。
+- **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `search_proxy_tools` 和 `call_proxy_tool`。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
+- **使用来源的加载设置**（省略 `tool_search`）沿用各来源现有的加载方式。
 
-分组成员关系决定 agent 已有工具的呈现方式。分组内的连接使用分组发现模式，同时保留已保存的 `defer_loading`；移出分组后恢复该设置。未分组的来源保持现有行为。每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_proxy` 块；`groups: {}` 为该次运行关闭分组。
+分组成员关系决定 agent 已有工具的呈现方式。分组内的连接使用分组发现模式，同时保留已保存的 `defer_loading`；移出分组后恢复该设置。未分组的来源保持现有行为。每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。
 
 ### 调用方请求头
 

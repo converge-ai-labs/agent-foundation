@@ -295,21 +295,31 @@ it("edits native discovery while preserving source loading and proxy settings", 
   const id = "con_0123456789abcdef0123";
   const draft = draftFor({
     connection_tools: [{ connection_id: id, defer_loading: true }],
-    tool_proxy: {
-      native_search: true,
+    tool_search: {
       groups: { knowledge: { description: "Lookup", connections: [id] } },
-      config: { max_results: 3 },
+      config: { mode: "proxy", max_results: 3 },
     },
   });
   expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.setToolSearch((current) => ({
+      ...current,
+      mode: "native",
+      strategy: "regex",
+    })),
+  );
+  const native = buildDraftConfig(draft.current, undefined, asIs);
+  expect(native.ok && native.config.tool_search?.config).toEqual({
+    mode: "native",
+    strategy: "regex",
+  });
   act(() =>
     draft.current.setToolSearch((current) => ({ ...current, mode: "proxy" })),
   );
   expect(draft.current.dirty).toBe(true);
   const built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok && built.config.tool_proxy).toMatchObject({
-    native_search: false,
-    config: { max_results: 3 },
+  expect(built.ok && built.config.tool_search).toMatchObject({
+    config: { mode: "proxy", max_results: 3 },
   });
   expect(built.ok && built.config.connection_tools?.[0].defer_loading).toBe(
     true,
@@ -317,13 +327,13 @@ it("edits native discovery while preserving source loading and proxy settings", 
   act(() => draft.current.setConnections([]));
   const removed = buildDraftConfig(draft.current, undefined, asIs);
   expect(
-    removed.ok && removed.config.tool_proxy?.groups?.knowledge.connections,
+    removed.ok && removed.config.tool_search?.groups?.knowledge.connections,
   ).toEqual([]);
   act(() =>
     draft.current.setToolSearch((current) => ({ ...current, mode: "direct" })),
   );
   const direct = buildDraftConfig(draft.current, undefined, asIs);
-  expect(direct.ok && direct.config.tool_proxy).toBeUndefined();
+  expect(direct.ok && direct.config.tool_search).toBeUndefined();
 });
 
 it("reports invalid group names in the discovery section", () => {

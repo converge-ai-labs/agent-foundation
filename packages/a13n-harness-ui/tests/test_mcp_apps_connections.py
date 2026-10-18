@@ -71,7 +71,7 @@ async def test_http_session_preserves_original_capture_and_stays_usable_between_
     from fastmcp.client.transports import StreamableHttpTransport
     from mcp.types import TextContent
 
-    from .test_tool_proxy_integration import _http_mcp
+    from .test_tool_search_integration import _http_mcp
 
     server = FastMCP("HTTP Apps")
     count = 0
@@ -237,7 +237,7 @@ async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Pa
     import json
     from dataclasses import dataclass
 
-    from a13n_harness.capabilities import CodeActCapability, ToolProxyCapability, ToolProxyGroup
+    from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
     from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
     from pydantic_ai.capabilities import WrapperCapability
 
@@ -281,7 +281,7 @@ async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Pa
             }
 
     capabilities = [
-        ToolProxyCapability(groups={"apps": ToolProxyGroup(Eligible(HarnessUiMCP(recipe, apps=connections)), "Apps")})
+        ToolSearchCapability(groups={"apps": ToolSearchGroup(Eligible(HarnessUiMCP(recipe, apps=connections)), "Apps")})
     ]
     if codeact:
         capabilities.append(CodeActCapability())

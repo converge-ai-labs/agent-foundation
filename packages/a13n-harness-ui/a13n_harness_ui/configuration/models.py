@@ -12,7 +12,6 @@ from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
 from a13n_harness import RunConfiguration
-from a13n_harness.capabilities import ToolProxyConfig
 from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -20,7 +19,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
 )
 from a13n_harness.spec import HarnessModelCharacteristics
-from a13n_harness.tools.tool_proxy import validate_group
+from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import (
     AliasChoices,
@@ -663,30 +662,18 @@ class _MissingModelReferenceError(ValueError):
         super().__init__(f"{path}: {field} references unavailable Model {model_id!r}.")
 
 
-class _ToolProxyConfigurationError(ValueError):
+class _ToolSearchConfigurationError(ValueError):
     """Authored source/group diagnostic safe to expose without resource inputs."""
 
 
-class AgentToolProxyGroup(ConfigurationModel):
+class AgentToolSearchGroup(ConfigurationModel):
     description: str = Field(min_length=1, max_length=512)
     mcp_servers: tuple[ResourceId, ...] = ()
     harness_plugins: tuple[ResourceId, ...] = ()
 
 
-class AgentToolProxy(ConfigurationModel):
-    native_search: bool = Field(default=False, exclude_if=lambda value: not value)
-    groups: dict[str, AgentToolProxyGroup] = Field(default_factory=dict)
-    config: ToolProxyConfig = Field(default_factory=ToolProxyConfig)
-
-    @field_validator("config", mode="before")
-    @classmethod
-    def _parse_config(cls, value: object) -> object:
-        if isinstance(value, dict):
-            try:
-                return ToolProxyConfig(**value)
-            except (TypeError, ValueError) as exc:
-                raise _ToolProxyConfigurationError(f"Invalid tool_proxy.config: {exc}") from exc
-        return value
+class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
+    groups: dict[str, AgentToolSearchGroup] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _valid_groups(self) -> Self:
@@ -695,20 +682,20 @@ class AgentToolProxy(ConfigurationModel):
             try:
                 validate_group(name, group.description)
             except ValueError as exc:
-                raise _ToolProxyConfigurationError(f"Invalid tool_proxy group {name!r}: {exc}") from exc
+                raise _ToolSearchConfigurationError(f"Invalid tool_search group {name!r}: {exc}") from exc
             for source in (*group.mcp_servers, *group.harness_plugins):
                 if source in owners:
-                    raise _ToolProxyConfigurationError(
-                        f"ToolProxy source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
+                    raise _ToolSearchConfigurationError(
+                        f"ToolSearch source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
                     )
                 owners[source] = name
         return self
 
-    def selected(self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...]) -> AgentToolProxy:
+    def selected(self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...]) -> AgentToolSearch:
         """Capture only enabled membership, without activating dormant references."""
-        return AgentToolProxy(
+        return AgentToolSearch(
             groups={
-                name: AgentToolProxyGroup(
+                name: AgentToolSearchGroup(
                     description=group.description,
                     mcp_servers=tuple(source for source in group.mcp_servers if source in mcp_servers),
                     harness_plugins=tuple(source for source in group.harness_plugins if source in harness_plugins),
@@ -718,7 +705,6 @@ class AgentToolProxy(ConfigurationModel):
                 or any(source in harness_plugins for source in group.harness_plugins)
             },
             config=self.config,
-            native_search=self.native_search,
         )
 
 
@@ -733,7 +719,7 @@ class AgentResource(ConfigurationModel):
     harness_plugins: tuple[ResourceId, ...] | None = None
     mcp_servers: tuple[ResourceId, ...] | None = None
     tools: tuple[ToolName, ...] | None = None
-    tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
+    tool_search: AgentToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     subagents: tuple[SubagentSelection, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="after")
@@ -961,16 +947,16 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():
                 _require_reference(item, self.mcp_servers, f"{agent.id}.mcp_servers")
-            if agent.tool_proxy is not None:
-                for name, group in agent.tool_proxy.groups.items():
+            if agent.tool_search is not None:
+                for name, group in agent.tool_search.groups.items():
                     for values, resources, kind in (
                         (group.mcp_servers, self.mcp_servers, "mcp_servers"),
                         (group.harness_plugins, self.harness_plugins, "harness_plugins"),
                     ):
                         for item in values:
                             if item not in resources:
-                                raise _ToolProxyConfigurationError(
-                                    f"{agent.id}.tool_proxy.groups.{name}.{kind} references unknown source {item!r}"
+                                raise _ToolSearchConfigurationError(
+                                    f"{agent.id}.tool_search.groups.{name}.{kind} references unknown source {item!r}"
                                 )
             roster_names: list[str] = []
             for selection in agent.subagents:

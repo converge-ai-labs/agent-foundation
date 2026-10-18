@@ -27,7 +27,7 @@ from .mcp_apps_server import create_server
 from .test_composition import _catalog, _selection, _write_source
 from .test_mcp_apps_connections import _SERVER
 from .test_thread_repository import _initial
-from .test_tool_proxy_integration import _http_mcp
+from .test_tool_search_integration import _http_mcp
 
 pytestmark = pytest.mark.anyio
 

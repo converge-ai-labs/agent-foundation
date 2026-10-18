@@ -1,32 +1,40 @@
 ---
-title: Grouped ToolProxy
+title: Grouped ToolSearch
 description: Expose large tool collections through search and call tools so the model sees a compact list of tool groups.
 ---
 
-ToolProxy exposes large collections of local tools through two model-facing control tools: `search_proxy_tools` and `call_proxy_tool`. The model sees a compact list of domains, discovers exact argument schemas when needed, and invokes the selected tool with an arguments object.
+ToolSearch groups local tools for native or proxy discovery. In proxy mode, it exposes two model-facing control tools: `search_proxy_tools` and `call_proxy_tool`. The model sees a compact list of domains, discovers exact argument schemas when needed, and invokes the selected tool with an arguments object.
 
 Tools execute through the current `ToolManager`, their original Toolset, and the Harness execution boundary. This path handles validation, policy, credentials, hooks, results, and usage.
 
 ## Select native tool search
 
-Choose how the model discovers and calls grouped tools with `native_search` on `ToolProxyCapability` or `ToolProxyPlan`:
+Choose how the model discovers and calls grouped tools through `config` on `ToolSearchCapability` or `ToolSearchPlan`:
 
-- `False` (default): use `search_proxy_tools` and `call_proxy_tool`. Customize these controls with `ToolProxyConfig`.
-- `True`: use native tool search through `ToolSearch`. Grouped tools have `defer_loading=True` and names such as `crm__customer_name`. The model calls each tool directly after discovery, using the standard usage accounting and approval/resume flow. Source Toolset instructions retain their normal behavior.
+- `ProxyToolSearchConfig()` (default): use `search_proxy_tools` and `call_proxy_tool`. Configure the control names and discovery limits on this branch.
+- `NativeToolSearchConfig(strategy=None)`: use provider-native tool search. Omit `strategy` or set it to `None` for the provider default, or select `"bm25"` or `"regex"`. Provider adapters validate support for the selected strategy. Grouped tools have `defer_loading=True` and names such as `crm__customer_name`. The model calls each tool directly after discovery, using standard usage accounting and approval/resume. Source Toolset instructions retain their normal behavior.
+
+```python
+from a13n_harness.capabilities import NativeToolSearchConfig, ToolSearchCapability
+
+search = ToolSearchCapability(groups=groups, config=NativeToolSearchConfig(strategy="bm25"))
+```
+
+Host configuration uses `tool_search.config.mode: native|proxy`. Each branch accepts only its own settings.
 
 Native mode requires a model and protocol that support native tool search. Unsupported models raise `native_tool_search_unsupported`; Harness does not fall back to another search mode. Tools execute locally with their existing permissions. Configure MCP sources with `native=False, local=True` in either mode.
 
-Use the default ToolProxy mode for CodeAct orchestration. CodeAct currently excludes deferred tools, including those already discovered through native search.
+Use the default proxy mode for CodeAct orchestration. CodeAct currently excludes deferred tools, including those already discovered through native search.
 
-The examples below use the default ToolProxy mode.
+The examples below use the default proxy mode.
 
 ## Group a Toolset
 
-Install one `ToolProxyCapability` with an explicit mapping of domain names to sources. Each `ToolProxyGroup` is a passive configuration value, not a separately installed Capability:
+Install one `ToolSearchCapability` with an explicit mapping of domain names to sources. Each `ToolSearchGroup` is a passive configuration value, not a separately installed Capability:
 
 ```python
 from a13n_harness import AgentSpec, HarnessBuilder
-from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
+from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
 from pydantic_ai.toolsets import FunctionToolset
 
 
@@ -39,9 +47,9 @@ source = FunctionToolset(
     [customer_name],
     instructions="Use numeric customer IDs, not display names.",
 )
-proxy = ToolProxyCapability(
+proxy = ToolSearchCapability(
     groups={
-        "crm": ToolProxyGroup(
+        "crm": ToolSearchGroup(
             source=source,
             description="Customer records and account operations",
         )
@@ -94,11 +102,11 @@ An empty query browses a group or all groups. Keyword matching uses group names,
 ## Configure names and discovery limits
 
 ```python
-from a13n_harness.capabilities import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup
+from a13n_harness.capabilities import ToolSearchCapability, ProxyToolSearchConfig, ToolSearchGroup
 
-proxy = ToolProxyCapability(
-    groups={"crm": ToolProxyGroup(source=source, description="Customer records")},
-    config=ToolProxyConfig(
+proxy = ToolSearchCapability(
+    groups={"crm": ToolSearchGroup(source=source, description="Customer records")},
+    config=ProxyToolSearchConfig(
         search_name="find_operations",
         call_name="invoke_operation",
         max_results=10,
@@ -118,7 +126,7 @@ When no grouped tools survive preparation, neither proxy control tool nor genera
 Pass the Capability instance as the group's `source`, especially when it replaces itself during Run binding. Do not extract a `ContextualMCP` Toolset at definition time:
 
 ```python
-from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
+from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
 from a13n_harness.mcp import (
     ContextualMCP,
     MCPContextHeaderBinding,
@@ -126,7 +134,7 @@ from a13n_harness.mcp import (
     MCPContextHeadersConfig,
 )
 
-knowledge = ToolProxyGroup(
+knowledge = ToolSearchGroup(
     source=ContextualMCP(
         "https://mcp.example.com/mcp",
         id="knowledge-server",
@@ -143,7 +151,7 @@ knowledge = ToolProxyGroup(
     ),
     description="Search and read the tenant's knowledge base",
 )
-capabilities = (ToolProxyCapability(groups={"knowledge": knowledge}),)
+capabilities = (ToolSearchCapability(groups={"knowledge": knowledge}),)
 ```
 
 The Host supplies the `tenant_id` Identity claim. Headers are resolved once per logical Run; model-recovery attempts reuse that Run's upstream MCP, while concurrent Runs get separate replacements. Grouping preserves the original native MCP transport and lifecycle. See [MCP tools](mcp.md) for header and execution-selection details.
@@ -155,7 +163,7 @@ Select `native=False, local=True`. Provider-native execution, including automati
 Publish the source's typed CodeAct policy before grouping it:
 
 ```python
-from a13n_harness.capabilities import CodeActCapability, ToolProxyCapability, ToolProxyGroup
+from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -164,8 +172,8 @@ source = CodeActPolicyToolset(
     policy=CodeActToolPolicy(tools={"customer_name": True}),
     reject_unknown_tools=True,
 )
-proxy = ToolProxyCapability(
-    groups={"crm": ToolProxyGroup(source=source, description="Customer records")},
+proxy = ToolSearchCapability(
+    groups={"crm": ToolSearchGroup(source=source, description="Customer records")},
 )
 capabilities = (proxy, CodeActCapability())
 ```
@@ -200,11 +208,11 @@ Grouping does not grant CodeAct eligibility. The bridge resolves the target and 
 
 ## Host integration
 
-The Host decides presentation when constructing the Agent definition. For already constructed sources, use `ToolProxyCapability`. To group ordinary Harness plugin contributions alongside selected Capabilities, pass a typed `ToolProxyPlan` to `AgentDefinition.tool_proxy` or `HarnessBuilder.build(tool_proxy=...)`. Harness retains plugin ownership during its normal once-only binding; no plugin scan or special source factory API is needed.
+The Host decides presentation when constructing the Agent definition. For already constructed sources, use `ToolSearchCapability`. To group ordinary Harness plugin contributions alongside selected Capabilities, pass a typed `ToolSearchPlan` to `AgentDefinition.tool_search` or `HarnessBuilder.build(tool_search=...)`. Harness retains plugin ownership during its normal once-only binding; no plugin scan or special source factory API is needed.
 
 ```python
 from a13n_harness import AgentDefinition, AgentSpec
-from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 from pydantic_ai.capabilities import MCP
 
 source = MCP("https://mcp.example.com/mcp", native=False, local=True)
@@ -212,9 +220,9 @@ definition = AgentDefinition(
     agent=AgentSpec(model="openai:gpt-5"),
     output_type=str,
     capabilities=(source,),
-    tool_proxy=ToolProxyPlan(
+    tool_search=ToolSearchPlan(
         groups={
-            "knowledge": ToolProxySelection(
+            "knowledge": ToolSearchSelection(
                 description="Find project documentation",
                 capabilities=(source,),
             )
@@ -229,12 +237,12 @@ Grouping retains native sibling ordering, explicit IDs, state, hooks, and custom
 
 A Host that exposes JSON, YAML, an API, or a configuration UI should provide:
 
-| Host input                            | Host responsibility                                                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Source ID and source-specific options | Resolve the ID through trusted source factories; construct each selected source once per executable.                                       |
-| Direct or grouped presentation        | Install each source either directly or inside a group, not both. Keep unrelated sources direct.                                            |
-| Group name and description            | Collect selected sources into one `ToolProxyCapability(groups=...)` per Agent. Use native composition when several sources share a domain. |
-| Optional discovery settings           | Validate and construct `ToolProxyConfig`; use defaults when no customization is needed.                                                    |
+| Host input                            | Host responsibility                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source ID and source-specific options | Resolve the ID through trusted source factories; construct each selected source once per executable.                                        |
+| Direct or grouped presentation        | Install each source either directly or inside a group, not both. Keep unrelated sources direct.                                             |
+| Group name and description            | Collect selected sources into one `ToolSearchCapability(groups=...)` per Agent. Use native composition when several sources share a domain. |
+| Optional discovery settings           | Validate and construct `ProxyToolSearchConfig`; use defaults when no customization is needed.                                               |
 
 For example, a Host-owned document could contain:
 
@@ -250,15 +258,15 @@ tool_sources:
 
 This is an **illustrative Host schema**, not a built-in Harness or Harness UI resource. Store stable IDs and validated options, not serialized Python objects, import targets, or literal credentials. Source factories and credential resolution remain trusted Host/plugin code. Group descriptions guide discovery; they do not grant authorization or CodeAct eligibility.
 
-Construct a source once, then choose where to put that instance. A third-party `AbstractCapability` works as `ToolProxyGroup(source=capability, description=...)` without a ToolProxy-specific implementation. Native composition preserves its Agent/Run binding, hooks, and Capability-level instructions. Supply the Capability itself for Run-bound sources such as `ContextualMCP`, rather than calling `get_toolset()` early.
+Construct a source once, then choose where to put that instance. A third-party `AbstractCapability` works as `ToolSearchGroup(source=capability, description=...)` without a ToolSearch-specific implementation. Native composition preserves its Agent/Run binding, hooks, and Capability-level instructions. Supply the Capability itself for Run-bound sources such as `ContextualMCP`, rather than calling `get_toolset()` early.
 
 The groups mapping is consumed at construction. To change presentation, build a replacement executable; changing the original mapping does not reconfigure an existing Agent. An empty mapping exposes no proxy control tools and leaves direct tools unchanged.
 
 ### Plugin-contributed sources
 
-`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. Prefer `ToolProxyPlan` to group existing plugins without changing them. Harness calls each plugin's `for_agent()` and `get_capabilities()` exactly once and validates the original source before grouping. Middleware remains installed, and grouping never authorizes reserved Capabilities.
+`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. Prefer `ToolSearchPlan` to group existing plugins without changing them. Harness calls each plugin's `for_agent()` and `get_capabilities()` exactly once and validates the original source before grouping. Middleware remains installed, and grouping never authorizes reserved Capabilities.
 
-A plugin can alternatively own its presentation using `ToolProxyCapability`, as below. Aggregate groups at one composition point rather than installing competing proxy surfaces.
+A plugin can alternatively own its presentation using `ToolSearchCapability`, as below. Aggregate groups at one composition point rather than installing competing proxy surfaces.
 
 The following Host-owned plugin illustrates that boundary. Its `source_factory` callable constructs the source Capabilities once per executable in `for_agent()`; `get_capabilities()` selects direct versus grouped presentation. Source Run binding remains native:
 
@@ -267,7 +275,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
 from a13n_harness import AbstractHarnessPlugin, AgentContext
-from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
+from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
 from pydantic_ai.capabilities import AbstractCapability
 
 
@@ -289,13 +297,13 @@ class HostToolsPlugin(AbstractHarnessPlugin):
         groups = {}
         for name, source in self.sources.items():
             if name in self.group_descriptions:
-                groups[name] = ToolProxyGroup(
+                groups[name] = ToolSearchGroup(
                     source=source, description=self.group_descriptions[name]
                 )
             else:
                 direct.append(source)
         if groups:
-            direct.append(ToolProxyCapability(groups=groups))
+            direct.append(ToolSearchCapability(groups=groups))
         return tuple(direct)
 ```
 
@@ -303,13 +311,13 @@ Here source names also serve as group names; a Host with separate source IDs and
 
 Pass `HostToolsPlugin(source_factory=build_sources, group_descriptions={"crm": "Customer records"})` through `HarnessBuilder.build(plugins=(plugin,))`, where `build_sources` is your trusted factory returning the named Capabilities. Passing an empty `group_descriptions` keeps every source direct. Do not also pass those sources through `capabilities=`.
 
-For an existing third-party middleware plugin, a `ToolProxyPlan` selects its ordinary contributions by exact plugin ID. Do not call its `get_capabilities()` manually, instantiate its sources a second time, or remove the plugin when its middleware is still needed. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [hosting](hosting.md#reconstruct-trusted-definitions). Harness UI exposes this build plan through [Agent tool proxy groups](../a13n-harness-ui/agents-and-subagents.md#tool-proxy-groups).
+For an existing third-party middleware plugin, a `ToolSearchPlan` selects its ordinary contributions by exact plugin ID. Do not call its `get_capabilities()` manually, instantiate its sources a second time, or remove the plugin when its middleware is still needed. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [hosting](hosting.md#reconstruct-trusted-definitions). Harness UI exposes this build plan through [Agent tool proxy groups](../a13n-harness-ui/agents-and-subagents.md#tool-search-groups).
 
 ## Execution, usage, and limitations
 
 - **One execution path:** target validation, Capability hooks, managed authorization, credentials, timeouts, result bounds, and Toolset dispatch remain native. Search is discovery, not authorization.
 - **Native accounting:** a successful ordinary proxy invocation counts the `call_proxy_tool` call and the target, for two successful tool calls. CodeAct resolves the `call_proxy_tool` call without executing an extra proxy layer: a runner plus one target also counts two; one additional search makes three. Usage limits are checked before target dispatch.
-- **Retries:** ordinary target validation and `ModelRetry` retain the target's native retry state. ToolProxy does not replay effects or maintain a retry engine. CodeAct retains its bounded runner-failure semantics.
+- **Retries:** ordinary target validation and `ModelRetry` retain the target's native retry state. ToolSearch does not replay effects or maintain a retry engine. CodeAct retains its bounded runner-failure semantics.
 - **Inline approval only:** native handlers can approve or deny within the current invocation. Unresolved approval or external deferral fails the proxy call rather than suspending a nested continuation. Expose tools requiring cross-turn Host interaction directly.
 - **Supported targets:** local function tools, including locally executed MCP tools and inline approval-gated tools. External/client tools, provider-native tools, control/output tools, CodeAct runners, and deferred-loading tools are not supported as grouped targets.
 - **Uncertain effects:** cancellation and unexpected failures do not roll back work. Check provider state before retrying a mutation.

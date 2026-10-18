@@ -203,7 +203,7 @@ webui:
 
 设置 `security.shell_review.guardian_credits: true`，可为实际启用的 shell 审查请求 Guardian 额度关联。默认值为 `false`。首次设置时，Codex 订阅连接写入 `true`，API 密钥和其他连接写入 `false`；选择已有 Model 时也遵循此规则。设置向导和 Add Agent 保留现有 shell 审查配置，Add Model 不修改它。
 
-两个 Model 都必须使用 `openai-codex:` 或 `openai-responses:`。关联使用请求执行命令的调用所对应的提供方响应 ID，包括经由 CodeAct 或 ToolProxy 发起的命令。不支持的协议或缺少 ID 时，保留普通审查和诊断。
+两个 Model 都必须使用 `openai-codex:` 或 `openai-responses:`。关联使用请求执行命令的调用所对应的提供方响应 ID，包括经由 CodeAct 或 ToolSearch 发起的命令。不支持的协议或缺少 ID 时，保留普通审查和诊断。
 
 Guardian 关联不改变审查器、凭据、端点、service tier、风险策略或用量记录。提供方拒绝请求时遵循 `on_error`，不移除关联后重试；超时拒绝执行。API 密钥的 Responses 连接也可主动开启，但资格和实际费用由提供方决定。
 

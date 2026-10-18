@@ -361,7 +361,7 @@ class _Host:
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
             definition_id=agent.revision_id,
             capabilities=tuple(features),
-            tool_proxy=definition.tool_proxy(config, self.tool_sources(agent) if self.tool_sources else {}),
+            tool_search=definition.tool_search(config, self.tool_sources(agent) if self.tool_sources else {}),
             plugins=tuple(
                 self.plugins.create_plugin(
                     HarnessPluginFactoryContext(

@@ -42,11 +42,11 @@ from a13n_harness.capabilities.subagents import (
     _AsyncSubagentCapability,
     _InlineSubagentCapability,
 )
-from a13n_harness.capabilities.tool_proxy import (
-    TOOL_PROXY_CAPABILITY_ID,
-    ToolProxyCapability,
-    _ToolProxyGroupCapability,
-    _ToolProxySurfaceCapability,
+from a13n_harness.capabilities.tool_search import (
+    TOOL_SEARCH_CAPABILITY_ID,
+    ToolSearchCapability,
+    _ToolSearchGroupCapability,
+    _ToolSearchSurfaceCapability,
 )
 from a13n_harness.capabilities.video_url import VIDEO_URL_CAPABILITY_ID, VideoUrlCapability
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID, WebCapability
@@ -80,7 +80,7 @@ from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _RunUsageCa
 
 _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]] = {
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
-    TOOL_PROXY_CAPABILITY_ID: (_ToolProxySurfaceCapability,),
+    TOOL_SEARCH_CAPABILITY_ID: (_ToolSearchSurfaceCapability,),
     CODEACT_CAPABILITY_ID: (CodeActCapability,),
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID: (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
     TOOL_PERMISSIONS_CAPABILITY_ID: (ToolPermissionsCapability,),
@@ -152,8 +152,8 @@ def _reserved_harness_capability_contract() -> tuple[
         AbstractModelCostCapability,
         ClientToolsCapability,
         CodeActCapability,
-        ToolProxyCapability,
-        _ToolProxySurfaceCapability,
+        ToolSearchCapability,
+        _ToolSearchSurfaceCapability,
         DynamicEnvironmentCapability,
         SubagentCapability,
     )
@@ -262,15 +262,15 @@ def _validate_built_capability_tree(
         for capability in leaves[:surface_index]:
             # Membership adds no global wrapper; its original nodes are visited
             # separately below and retain the same surface-order validation.
-            if type(capability) is _ToolProxyGroupCapability:
+            if type(capability) is _ToolSearchGroupCapability:
                 continue
             if isinstance(
-                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
+                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolSearchSurfaceCapability
             ):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
-                    "Only ToolProxy, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
+                    "Only ToolSearch, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
                     code="tool_surface_order_invalid",
                     details={"capability_type": type(capability).__name__},
                 )
@@ -353,7 +353,7 @@ def _validate_capability_source(
                 source == "definition"
                 and (isinstance(capability, AbstractModelCostCapability) or type(capability) in _DEFINITION_TYPES)
             )
-            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
+            or (source == "plugin" and type(capability) is _ToolSearchSurfaceCapability)
             or (source == "run" and type(capability) in _RUN_TYPES)
         )
         reserved_type = isinstance(capability, _SOURCE_RESERVED_TYPES)

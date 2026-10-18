@@ -256,7 +256,7 @@ Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `
 | `POST /api/threads/{thread_id}/saved-output`                        | 读取选定的原始 assistant 文本，有大小限制                         |
 | `GET /api/threads/{thread_id}/children/{execution_id}/saved-output` | 读取限定到父线程的已保存子文本块及类型化目标                      |
 | `GET /api/catalog`                                                  | 已发现的实现引用，不是已配置选择项                                |
-| `GET /api/agents/{agent_id}/tool-proxy`                             | 静态 Agent 默认来源分组                                           |
+| `GET /api/agents/{agent_id}/tool-search`                            | 静态 Agent 默认来源分组                                           |
 | `GET /api/auth/accounts/{provider}`                                 | 不含凭据的账号和来源检查（`codex`、`grok`、`copilot`、`chatgpt`） |
 | `GET /api/auth/accounts/{provider}/sources`                         | 支持的已保存账号和来源选择，目前为 Copilot                        |
 | `PUT /api/auth/accounts/{provider}/selection`                       | 显式选择 `{source, account_id}`，不接受客户端文件路径             |
@@ -378,7 +378,7 @@ Git Changes 只读，使用与 Files 相同的计算机共享开关。路径指�
 
 `POST /api/threads/configuration-preview` 接受 `NewThreadDefaults`，返回解析后的创建选择及各配置维度的 `provenance`。最终来源为 `explicit`、`project`、`agent`、`global` 或 `builtin`；显式 null Project 和空列表保留原有含义。`GET /api/threads/{thread_id}/configuration` 中，`next_run` 包含来源为 `thread` 的已保存选择；这些 ID 不保留历史继承来源。当前值等于默认值，不证明已有 Thread 曾从该来源继承。
 
-检查结果包含当前已接受配置代次、下次 Agent 的 Model 和 Capability ID，以及基于 Thread 所选 MCP、插件 ID 的静态 Tool Proxy 视图。这是配置检查，不是执行就绪检查。`/api/agents/{agent_id}/tool-proxy` 单独显示 **Agent 默认** 成员。`/api/catalog` 列出已发现实现 key，`/api/selectors` 列出已配置可选资源。闲置分组不会激活配置源，两种视图都不会连接 MCP。
+检查结果包含当前已接受配置代次、下次 Agent 的 Model 和 Capability ID，以及基于 Thread 所选 MCP、插件 ID 的静态 Tool Proxy 视图。这是配置检查，不是执行就绪检查。`/api/agents/{agent_id}/tool-search` 单独显示 **Agent 默认** 成员。`/api/catalog` 列出已发现实现 key，`/api/selectors` 列出已配置可选资源。闲置分组不会激活配置源，两种视图都不会连接 MCP。
 
 `captured` 是实际已发布 Run 组合的白名单视图。`capture_source: active_operation` 指定精确回执和 Run；null 捕获表示该操作尚未发布组合，不表示前一个 Run 捕获适用。没有活跃工作时，`selected_continuation` 读取保存 continuation 的组合，并包含 continuation ID。资源内容或已保存选择的变化不会改变早先捕获。指令、凭据、模型和原生配置载荷、MCP 传输及依赖导入路径均省略，`omitted_fields` 指明这些类别。最多返回 100 个直接子选择摘要，另有 `omitted_children`；它不是可执行配置，也不是递归子图。
 

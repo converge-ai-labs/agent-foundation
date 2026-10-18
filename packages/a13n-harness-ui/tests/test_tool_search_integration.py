@@ -12,7 +12,7 @@ import pytest
 import uvicorn
 import yaml
 from a13n_harness import RunBindings
-from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 from a13n_harness_ui.composition import AgentCompositionResolver, AgentReconstructor
 from a13n_harness_ui.composition.reconstruction import _ToolAllowlistCapability
 from a13n_harness_ui.configuration import (
@@ -20,7 +20,7 @@ from a13n_harness_ui.configuration import (
     load_harness_ui_configuration,
     mutate_configuration_source,
 )
-from a13n_harness_ui.configuration.views import agent_tool_proxy_view
+from a13n_harness_ui.configuration.views import agent_tool_search_view
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from fastmcp import FastMCP
@@ -108,8 +108,8 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent.update(subagents=[], capabilities=[], tools=["knowledge__lookup", "knowledge__remember", "status"])
-    agent["tool_proxy"] = {
-        "native_search": native_search,
+    agent["tool_search"] = {
+        "config": {"mode": "native" if native_search else "proxy"},
         "groups": {
             "knowledge": {
                 "description": "Documents and memory",
@@ -221,7 +221,7 @@ async def test_exact_target_allowlist_never_grants_all_group_members(names: froz
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(source, allowlist),
-        tool_proxy=ToolProxyPlan(groups={"group": ToolProxySelection("Selected tools", capabilities=(source,))}),
+        tool_search=ToolSearchPlan(groups={"group": ToolSearchSelection("Selected tools", capabilities=(source,))}),
     )
     assert (await executable.run("test", bindings=RunBindings.embedded())).output_or_raise() == "done"
 
@@ -231,15 +231,15 @@ async def test_configuration_mutation_reads_back_static_active_dormant_direct_so
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent["mcp_servers"] = []
-    agent["tool_proxy"] = {"groups": {"knowledge": {"description": "Documents", "mcp_servers": ["mcp-docs"]}}}
+    agent["tool_search"] = {"groups": {"knowledge": {"description": "Documents", "mcp_servers": ["mcp-docs"]}}}
     result = await mutate_configuration_source(
         path, "agents/assistant.yaml", ResourceMutationRequest(content=yaml.safe_dump(agent))
     )
     saved_agent = result.configuration.agents["agent-assistant"]
-    preview = agent_tool_proxy_view(result.configuration, saved_agent)
+    preview = agent_tool_search_view(result.configuration, saved_agent)
     states = {item.resource_id: item.presentation for item in preview.sources}
     assert states == {"mcp-docs": "dormant", "plugin-memory": "direct"}
-    assert saved_agent.tool_proxy is not None
+    assert saved_agent.tool_search is not None
     assert saved_agent.instructions == "Root authored instructions."
 
 
@@ -249,9 +249,9 @@ async def test_inactive_plan_preserves_direct_tool_matching_control_name(tmp_pat
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent.update(subagents=[], capabilities=[], mcp_servers=[], harness_plugins=[], tools=["search"])
-    agent["tool_proxy"] = {
+    agent["tool_search"] = {
         "groups": {"docs": {"description": "Documents", "mcp_servers": ["mcp-docs"]}} if dormant else {},
-        "config": {"search_name": "search"},
+        "config": {"mode": "proxy", "search_name": "search"},
     }
     agent_path.write_text(yaml.safe_dump(agent))
     path.write_text(path.read_text() + "tools: {enable_codeact: false, enable_ask_user_question: false}\n")

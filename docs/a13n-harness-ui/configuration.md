@@ -203,7 +203,7 @@ Enabled review applies only to `environment.shell_exec` in roots and children. E
 
 Set `security.shell_review.guardian_credits: true` to request Guardian credit linking for effective shell review. The default is `false`. New setup writes `true` for Codex subscription connections and `false` for API-key and other connections, including when selecting an existing Model. Setup and Add Agent preserve existing shell-review settings; Add Model does not change them.
 
-Both Models must use `openai-codex:` or `openai-responses:`. Linking uses the provider response ID of the call requesting the command, including through CodeAct or ToolProxy. Unsupported protocols or missing IDs retain ordinary review and diagnostics.
+Both Models must use `openai-codex:` or `openai-responses:`. Linking uses the provider response ID of the call requesting the command, including through CodeAct or ToolSearch. Unsupported protocols or missing IDs retain ordinary review and diagnostics.
 
 Guardian linking leaves the reviewer, credentials, endpoint, service tier, risk policy, and usage accounting unchanged. Provider rejection follows `on_error`, without retrying unlinked; timeouts deny execution. API-key Responses connections may opt in, but the provider determines eligibility and actual charges.
 

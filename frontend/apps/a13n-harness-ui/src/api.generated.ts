@@ -1195,15 +1195,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{agent_id}/tool-proxy": {
+    "/api/agents/{agent_id}/tool-search": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Agent Tool Proxy */
-        get: operations["agent_tool_proxy_api_agents__agent_id__tool_proxy_get"];
+        /** Agent Tool Search */
+        get: operations["agent_tool_search_api_agents__agent_id__tool_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2108,23 +2108,18 @@ export interface components {
             /** Source Path */
             source_path: string;
         };
-        /** AgentToolProxy */
-        AgentToolProxy: {
-            /**
-             * Native Search
-             * @default false
-             */
-            native_search?: boolean;
+        /** AgentToolSearch */
+        AgentToolSearch: {
+            config?: components["schemas"]["ToolSearchConfig"];
             /** Groups */
             groups?: {
-                [key: string]: components["schemas"]["AgentToolProxyGroup"];
+                [key: string]: components["schemas"]["AgentToolSearchGroup"];
             };
-            config?: components["schemas"]["ToolProxyConfig"];
         } & {
             [key: string]: components["schemas"]["JsonValue"];
         };
-        /** AgentToolProxyGroup */
-        AgentToolProxyGroup: {
+        /** AgentToolSearchGroup */
+        AgentToolSearchGroup: {
             /** Description */
             description: string;
             /**
@@ -2141,15 +2136,15 @@ export interface components {
             [key: string]: components["schemas"]["JsonValue"];
         };
         /**
-         * AgentToolProxyView
+         * AgentToolSearchView
          * @description Static source membership; never connects to MCP or discovers tools.
          */
-        AgentToolProxyView: {
+        AgentToolSearchView: {
             /** Agent Id */
             agent_id: string;
-            tool_proxy: components["schemas"]["AgentToolProxy"];
+            tool_search: components["schemas"]["AgentToolSearch"];
             /** Sources */
-            sources: components["schemas"]["ToolProxySourceView"][];
+            sources: components["schemas"]["ToolSearchSourceView"][];
         };
         /** AllowlistDestinations */
         AllowlistDestinations: {
@@ -2540,7 +2535,7 @@ export interface components {
             environment_run_extension_ids: string[];
             /** Tools */
             tools: string[] | null;
-            tool_proxy: components["schemas"]["AgentToolProxy"] | null;
+            tool_search: components["schemas"]["AgentToolSearch"] | null;
             /** Children */
             children: components["schemas"]["CapturedAgentSelection"][];
             /** Omitted Children */
@@ -4516,6 +4511,19 @@ export interface components {
         };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
+        /**
+         * NativeToolSearchConfig
+         * @description Provider-native discovery; omitted strategy uses the provider default.
+         */
+        NativeToolSearchConfig: {
+            /** Strategy */
+            strategy?: ("bm25" | "regex") | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "native";
+        };
         /** NotePage */
         NotePage: {
             /** Continuation Id */
@@ -4830,6 +4838,37 @@ export interface components {
          * @enum {string}
          */
         Provider: "codex" | "grok" | "copilot" | "chatgpt";
+        /**
+         * ProxyToolSearchConfig
+         * @description Names and bounded discovery settings for one Agent's proxy surface.
+         */
+        ProxyToolSearchConfig: {
+            /**
+             * Search Name
+             * @default search_proxy_tools
+             */
+            search_name?: string;
+            /**
+             * Call Name
+             * @default call_proxy_tool
+             */
+            call_name?: string;
+            /**
+             * Max Results
+             * @default 10
+             */
+            max_results?: number;
+            /**
+             * Max Search Bytes
+             * @default 32768
+             */
+            max_search_bytes?: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "proxy";
+        };
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -5755,7 +5794,7 @@ export interface components {
             next_model_id: string | null;
             /** Next Capability Ids */
             next_capability_ids: string[];
-            next_tool_proxy: components["schemas"]["AgentToolProxyView"] | null;
+            next_tool_search: components["schemas"]["AgentToolSearchView"] | null;
             captured: components["schemas"]["CapturedConfiguration"] | null;
             /**
              * Capture Source
@@ -6070,34 +6109,9 @@ export interface components {
             thread_id: string;
             attachment: components["schemas"]["ThreadAttachment"];
         };
-        /**
-         * ToolProxyConfig
-         * @description Names and bounded discovery settings for one Agent's proxy surface.
-         */
-        ToolProxyConfig: {
-            /**
-             * Search Name
-             * @default search_proxy_tools
-             */
-            search_name?: string;
-            /**
-             * Call Name
-             * @default call_proxy_tool
-             */
-            call_name?: string;
-            /**
-             * Max Results
-             * @default 10
-             */
-            max_results?: number;
-            /**
-             * Max Search Bytes
-             * @default 32768
-             */
-            max_search_bytes?: number;
-        };
-        /** ToolProxySourceView */
-        ToolProxySourceView: {
+        ToolSearchConfig: components["schemas"]["ProxyToolSearchConfig"] | components["schemas"]["NativeToolSearchConfig"];
+        /** ToolSearchSourceView */
+        ToolSearchSourceView: {
             /** Resource Id */
             resource_id: string;
             /** Name */
@@ -9779,7 +9793,7 @@ export interface operations {
             };
         };
     };
-    agent_tool_proxy_api_agents__agent_id__tool_proxy_get: {
+    agent_tool_search_api_agents__agent_id__tool_search_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -9796,7 +9810,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentToolProxyView"];
+                    "application/json": components["schemas"]["AgentToolSearchView"];
                 };
             };
             /** @description Validation Error */

@@ -269,7 +269,7 @@ Host 管理包安装、兼容性与回滚。
 
 在 `for_agent()` 返回的 Agent 绑定实例中，通过 `get_capabilities()` 贡献 Capabilities。
 
-工具分组见[ToolProxy 插件贡献来源](tool-proxy.md#plugin-contributed-sources)。
+工具分组见[ToolSearch 插件贡献来源](tool-search.md#plugin-contributed-sources)。
 
 ## Provider 插件
 

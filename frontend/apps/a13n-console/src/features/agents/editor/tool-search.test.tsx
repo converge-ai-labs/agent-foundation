@@ -45,6 +45,10 @@ it("selects native discovery, edits a group, and preserves the connection's load
   await user.click(
     await screen.findByRole("option", { name: "Native tool search" }),
   );
+  await user.click(
+    screen.getByRole("combobox", { name: "Native search strategy" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "BM25" }));
   await user.click(screen.getByRole("button", { name: "Add group" }));
   await user.clear(screen.getByLabelText("Group name"));
   await user.type(screen.getByLabelText("Group name"), "knowledge");
@@ -57,8 +61,8 @@ it("selects native discovery, edits a group, and preserves the connection's load
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
       connection_tools: [{ connection_id: id, defer_loading: true }],
-      tool_proxy: {
-        native_search: true,
+      tool_search: {
+        config: { mode: "native", strategy: "bm25" },
         groups: {
           knowledge: {
             description: "Search team knowledge",

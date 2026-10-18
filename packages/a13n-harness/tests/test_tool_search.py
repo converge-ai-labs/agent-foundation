@@ -10,11 +10,12 @@ import pytest
 from a13n_harness import AbstractHarnessPlugin, AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
-    ToolProxyCapability,
-    ToolProxyConfig,
-    ToolProxyGroup,
-    ToolProxyPlan,
-    ToolProxySelection,
+    NativeToolSearchConfig,
+    ProxyToolSearchConfig,
+    ToolSearchCapability,
+    ToolSearchGroup,
+    ToolSearchPlan,
+    ToolSearchSelection,
 )
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from pydantic_ai import RunContext, Tool, ToolDefinition, ToolReturn
@@ -43,12 +44,12 @@ def _group(
     group: str = "crm",
     eligible: bool = True,
     instructions: str = "Use exact customer IDs.",
-    config: ToolProxyConfig | None = None,
-) -> ToolProxyCapability:
+    config: ProxyToolSearchConfig | None = None,
+) -> ToolSearchCapability:
     source = FunctionToolset(list(tools), instructions=instructions)
-    return ToolProxyCapability(
+    return ToolSearchCapability(
         groups={
-            group: ToolProxyGroup(
+            group: ToolSearchGroup(
                 CodeActPolicyToolset(source, CodeActToolPolicy(default=eligible)), f"{group} operations"
             )
         },
@@ -64,7 +65,7 @@ async def _run(
     bindings: RunBindings | None = None,
     usage_limits: UsageLimits | None = None,
     toolset_instructions: bool = True,
-    tool_proxy: ToolProxyPlan | None = None,
+    tool_search: ToolSearchPlan | None = None,
     plugins: tuple[AbstractHarnessPlugin, ...] = (),
     profile: ModelProfile | None = None,
 ):
@@ -89,7 +90,7 @@ async def _run(
         output_type=str,
         model=FunctionModel(stream_function=model, profile=profile),
         capabilities=capabilities,
-        tool_proxy=tool_proxy,
+        tool_search=tool_search,
         plugins=plugins,
     )
     result = await executable.run("test", bindings=bindings or RunBindings.embedded())
@@ -151,13 +152,13 @@ async def test_groups_support_same_local_name_and_configurable_control_names() -
     def other() -> str:
         return "docs"
 
-    config = ToolProxyConfig(search_name="find_ops", call_name="invoke_op", max_results=1)
+    config = ProxyToolSearchConfig(search_name="find_ops", call_name="invoke_op", max_results=1)
     result, returns = await _run(
         (
-            ToolProxyCapability(
+            ToolSearchCapability(
                 groups={
-                    "crm": ToolProxyGroup(FunctionToolset([lookup], id="crm"), "Customer operations"),
-                    "docs": ToolProxyGroup(
+                    "crm": ToolSearchGroup(FunctionToolset([lookup], id="crm"), "Customer operations"),
+                    "docs": ToolSearchGroup(
                         FunctionToolset([Tool(other, name="lookup")], id="docs"), "Document operations"
                     ),
                 },
@@ -200,7 +201,7 @@ await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'valu
         (CodeActCapability(), capability if use_plan else _group(double)),
         [("run_code", {"code": source})],
         inspect=inspect,
-        tool_proxy=ToolProxyPlan(groups={"crm": ToolProxySelection("CRM operations", capabilities=(capability,))})
+        tool_search=ToolSearchPlan(groups={"crm": ToolSearchSelection("CRM operations", capabilities=(capability,))})
         if use_plan
         else None,
     )
@@ -273,7 +274,7 @@ async def test_capability_group_wraps_a_fresh_run_replacement() -> None:
             return Capability(tools=[identify], id="fresh")
 
     result, returns = await _run(
-        (ToolProxyCapability(groups={"identity": ToolProxyGroup(Source(id="fresh"), "Current run")}),),
+        (ToolSearchCapability(groups={"identity": ToolSearchGroup(Source(id="fresh"), "Current run")}),),
         [("call_proxy_tool", {"group": "identity", "tool": "identify", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
@@ -285,7 +286,7 @@ async def test_search_budget_never_returns_partial_schema() -> None:
         return value
 
     result, returns = await _run(
-        (_group(Tool(giant, description="x" * 2000), config=ToolProxyConfig(max_search_bytes=1024)),),
+        (_group(Tool(giant, description="x" * 2000), config=ProxyToolSearchConfig(max_search_bytes=1024)),),
         [("search_proxy_tools", {"query": "giant"})],
     )
     assert result.output_or_raise() == "done"
@@ -529,8 +530,8 @@ async def test_proxy_keeps_target_retry_context_and_does_not_charge_envelope_bud
 
 
 async def test_final_directory_rejects_deferral_added_by_outer_capability() -> None:
-    from a13n_harness.capabilities.tool_proxy import _ToolProxySurfaceCapability
-    from a13n_harness.toolsets.tool_proxy import _GroupedToolset
+    from a13n_harness.capabilities.tool_search import _ToolSearchSurfaceCapability
+    from a13n_harness.toolsets.tool_search import _GroupedToolset
 
     def hidden() -> str:
         return "not loaded"
@@ -540,7 +541,7 @@ async def test_final_directory_rejects_deferral_added_by_outer_capability() -> N
         id="late-source",
         defer_loading=True,
     )
-    result, returns = await _run((_ToolProxySurfaceCapability(), source), [])
+    result, returns = await _run((_ToolSearchSurfaceCapability(), source), [])
     assert result.status == "failed"
     assert returns == []
 
@@ -553,7 +554,7 @@ async def test_outer_prefix_preserves_group_identity_source_guidance_and_codeact
         FunctionToolset([value], instructions="Source-specific requirement"), CodeActToolPolicy(default=True)
     ).prefixed("outer")
     result, returns = await _run(
-        (ToolProxyCapability(groups={"crm": ToolProxyGroup(source, "Customer data")}),),
+        (ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Customer data")}),),
         [
             ("search_proxy_tools", {"query": "value"}),
             ("call_proxy_tool", {"group": "crm", "tool": "outer_value", "arguments": {}}),
@@ -605,7 +606,7 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
         caps = (
             _group(
                 *(Tool(value, name=f"operation_{index:04}") for index in range(count)),
-                config=ToolProxyConfig(max_results=2),
+                config=ProxyToolSearchConfig(max_results=2),
             ),
         )
         if codeact:
@@ -687,7 +688,7 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> Non
     def value() -> int:
         return 1
 
-    config = ToolProxyConfig(search_name="find_ops", call_name="invoke_op")
+    config = ProxyToolSearchConfig(search_name="find_ops", call_name="invoke_op")
     for enabled in (True, False):
 
         def inspect(_step: int, info: AgentInfo, enabled: bool = enabled) -> None:
@@ -735,7 +736,7 @@ async def test_group_wraps_combined_capabilities_without_duplicate_tools_or_hook
 
     source = CombinedCapability([Source(id="first"), CombinedCapability([Source(id="second")])])
     result, returns = await _run(
-        (ToolProxyCapability(groups={"combined": ToolProxyGroup(source, "Combined source")}),),
+        (ToolSearchCapability(groups={"combined": ToolSearchGroup(source, "Combined source")}),),
         [
             ("search_proxy_tools", {"query": ""}),
             ("call_proxy_tool", {"group": "combined", "tool": "second", "arguments": {}}),
@@ -749,13 +750,13 @@ async def test_group_wraps_combined_capabilities_without_duplicate_tools_or_hook
 
 
 def test_proxy_configuration_errors_explain_how_to_fix_the_source() -> None:
-    from a13n_harness.tools.tool_proxy import validate_proxy_target
+    from a13n_harness.tools.tool_search import validate_proxy_target
     from pydantic_ai.exceptions import UserError
 
     with pytest.raises(ValueError, match="start with a letter"):
-        ToolProxyConfig(search_name="bad name")
-    with pytest.raises(ValueError, match=r"ToolProxyGroup\.description must be non-blank"):
-        ToolProxyCapability(groups={"crm": ToolProxyGroup(FunctionToolset(), " ")})
+        ProxyToolSearchConfig(search_name="bad name")
+    with pytest.raises(ValueError, match=r"ToolSearchGroup\.description must be non-blank"):
+        ToolSearchCapability(groups={"crm": ToolSearchGroup(FunctionToolset(), " ")})
     with pytest.raises(UserError, match="remove defer_loading=True"):
         validate_proxy_target(ToolDefinition(name="lookup", defer_loading=True))
     with pytest.raises(UserError, match="native=False, local=True"):
@@ -793,7 +794,7 @@ async def test_empty_groups_leave_direct_tools_unchanged() -> None:
         assert "Grouped tool discovery" not in (info.instructions or "")
 
     result, returns = await _run(
-        (ToolProxyCapability(groups={}), Capability(toolsets=[FunctionToolset([status])])),
+        (ToolSearchCapability(groups={}), Capability(toolsets=[FunctionToolset([status])])),
         [("status", {})],
         inspect=inspect,
     )
@@ -805,10 +806,10 @@ async def test_group_mapping_is_consumed_at_construction() -> None:
     def value() -> int:
         return 42
 
-    descriptor = ToolProxyGroup(source=FunctionToolset([value]), description="Customer records")
+    descriptor = ToolSearchGroup(source=FunctionToolset([value]), description="Customer records")
     assert not isinstance(descriptor, AbstractCapability)
     groups = {"crm": descriptor}
-    proxy = ToolProxyCapability(groups=groups)
+    proxy = ToolSearchCapability(groups=groups)
     groups.clear()
     result, returns = await _run((proxy,), [("call_proxy_tool", {"group": "crm", "tool": "value", "arguments": {}})])
     assert result.output_or_raise() == "done"
@@ -817,9 +818,9 @@ async def test_group_mapping_is_consumed_at_construction() -> None:
 
 def test_group_configuration_requires_resolved_sources_and_descriptors() -> None:
     with pytest.raises(TypeError, match="resolve Host configuration"):
-        ToolProxyGroup(source="customer-plugin", description="Customer records")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match=r"groups\['crm'\] must be ToolProxyGroup"):
-        ToolProxyCapability(groups={"crm": FunctionToolset()})  # type: ignore[dict-item]
+        ToolSearchGroup(source="customer-plugin", description="Customer records")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match=r"groups\['crm'\] must be ToolSearchGroup"):
+        ToolSearchCapability(groups={"crm": FunctionToolset()})  # type: ignore[dict-item]
 
 
 @pytest.mark.parametrize("grouped", [False, True])
@@ -887,11 +888,11 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
             groups = {}
             for name, source in self.sources.items():
                 if name in self.group_descriptions:
-                    groups[name] = ToolProxyGroup(source=source, description=self.group_descriptions[name])
+                    groups[name] = ToolSearchGroup(source=source, description=self.group_descriptions[name])
                 else:
                     direct.append(source)
             if groups:
-                direct.append(ToolProxyCapability(groups=groups))
+                direct.append(ToolSearchCapability(groups=groups))
             return tuple(direct)
 
         async def for_run(self, context: AgentContext):
@@ -963,7 +964,7 @@ def test_grouping_does_not_authorize_reserved_source_capabilities(plugin_source:
     # A plugin cannot contribute definition-only CodeAct; neither source can
     # contribute mandatory surface infrastructure, even behind a group wrapper.
     source = CodeActCapability() if plugin_source else ToolSurfaceCapability()
-    proxy = ToolProxyCapability(groups={"restricted": ToolProxyGroup(source, "Restricted source")})
+    proxy = ToolSearchCapability(groups={"restricted": ToolSearchGroup(source, "Restricted source")})
 
     class Plugin(AbstractHarnessPlugin):
         @property
@@ -1009,7 +1010,7 @@ async def test_grouped_combined_preserves_independent_native_ordering_and_instru
             return "Custom container instructions."
 
     source = Container([Outer(id="outer"), Inner(id="inner")])
-    proxy = ToolProxyCapability(groups={"ordered": ToolProxyGroup(source, "Ordered tools")})
+    proxy = ToolSearchCapability(groups={"ordered": ToolSearchGroup(source, "Ordered tools")})
 
     def inspect(_step, info):
         assert "Custom container instructions." in info.instructions
@@ -1021,7 +1022,7 @@ async def test_grouped_combined_preserves_independent_native_ordering_and_instru
 
 @pytest.mark.parametrize("instance_ordering", [False, True])
 async def test_build_plan_preserves_cross_group_order_and_plugin_binding(instance_ordering: bool) -> None:
-    from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+    from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
     from pydantic_ai.capabilities import CapabilityOrdering
 
     events: list[str] = []
@@ -1069,9 +1070,9 @@ async def test_build_plan_preserves_cross_group_order_and_plugin_binding(instanc
         model=FunctionModel(stream_function=lambda messages, info: _text_stream()),
         capabilities=(middle, first),
         plugins=(Plugin(),),
-        tool_proxy=ToolProxyPlan(
+        tool_search=ToolSearchPlan(
             groups={
-                "ordered": ToolProxySelection("Ordered tools", capabilities=(first,), plugins=("ordered-plugin",)),
+                "ordered": ToolSearchSelection("Ordered tools", capabilities=(first,), plugins=("ordered-plugin",)),
             }
         ),
     )
@@ -1120,10 +1121,10 @@ async def test_plan_groups_exact_plugin_instances_and_keeps_unlisted_sources_dir
             ("identify", {}),
         ],
         plugins=(Plugin("plugin-one"), Plugin("plugin-two"), Plugin("plugin-direct")),
-        tool_proxy=ToolProxyPlan(
+        tool_search=ToolSearchPlan(
             groups={
-                "second": ToolProxySelection("Second account", plugins=("plugin-two",)),
-                "first": ToolProxySelection(
+                "second": ToolSearchSelection("Second account", plugins=("plugin-two",)),
+                "first": ToolSearchSelection(
                     "First account and Host tools", capabilities=(source,), plugins=("plugin-one",)
                 ),
             }
@@ -1163,9 +1164,9 @@ async def test_plan_duplicate_tool_error_names_group_and_both_plugin_instances()
 
     _, contributions = bind_agent_plugins((Plugin("plugin-one"), Plugin("plugin-two")))
     sources = tuple(source for values in contributions.values() for source in values)
-    plan = ToolProxyPlan(
+    plan = ToolSearchPlan(
         groups={
-            "account": ToolProxySelection("Account tools", plugins=("plugin-one", "plugin-two")),
+            "account": ToolSearchSelection("Account tools", plugins=("plugin-one", "plugin-two")),
         }
     )
     agent = Agent(
@@ -1180,9 +1181,9 @@ async def test_plan_duplicate_tool_error_names_group_and_both_plugin_instances()
 
 def test_plan_is_immutable_and_rejects_unselected_or_duplicate_sources() -> None:
     source = Capability()
-    selection = ToolProxySelection("Host tools", capabilities=(source,))
+    selection = ToolSearchSelection("Host tools", capabilities=(source,))
     groups = {"host": selection}
-    plan = ToolProxyPlan(groups=groups)
+    plan = ToolSearchPlan(groups=groups)
     groups.clear()
     assert "host" in plan.groups
     with pytest.raises(TypeError):
@@ -1190,16 +1191,16 @@ def test_plan_is_immutable_and_rejects_unselected_or_duplicate_sources() -> None
     with pytest.raises(ValueError, match="not selected"):
         plan._compose((), {})
     with pytest.raises(ValueError, match="multiple groups"):
-        ToolProxyPlan(groups={"first": selection, "second": selection})._compose((source,), {})
+        ToolSearchPlan(groups={"first": selection, "second": selection})._compose((source,), {})
     with pytest.raises(ValueError, match="unavailable plugin"):
-        ToolProxyPlan(groups={"host": ToolProxySelection("Host tools", plugins=("plugin-missing",))})._compose((), {})
+        ToolSearchPlan(groups={"host": ToolSearchSelection("Host tools", plugins=("plugin-missing",))})._compose((), {})
 
 
 @pytest.mark.parametrize("use_plan", [False, True])
 async def test_grouped_custom_container_retains_native_binding_hooks_and_state(use_plan: bool) -> None:
     from copy import copy
 
-    from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+    from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
     from pydantic_ai.capabilities import CombinedCapability
 
     events: list[str] = []
@@ -1247,8 +1248,8 @@ async def test_grouped_custom_container_retains_native_binding_hooks_and_state(u
         model=FunctionModel(stream_function=model),
         capabilities=(source,)
         if use_plan
-        else (ToolProxyCapability(groups={"group": ToolProxyGroup(source, "Tools")}),),
-        tool_proxy=ToolProxyPlan(groups={"group": ToolProxySelection("Tools", capabilities=(source,))})
+        else (ToolSearchCapability(groups={"group": ToolSearchGroup(source, "Tools")}),),
+        tool_search=ToolSearchPlan(groups={"group": ToolSearchSelection("Tools", capabilities=(source,))})
         if use_plan
         else None,
     )
@@ -1294,7 +1295,7 @@ async def test_build_plan_survives_model_recovery_without_replaying_completed_ta
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(source,),
-        tool_proxy=ToolProxyPlan(groups={"storage": ToolProxySelection("Storage tools", capabilities=(source,))}),
+        tool_search=ToolSearchPlan(groups={"storage": ToolSearchSelection("Storage tools", capabilities=(source,))}),
         model_recovery=ModelRecoveryPolicy(
             enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
         ),
@@ -1359,10 +1360,12 @@ async def test_native_search_requires_support_without_local_fallback(use_plan: b
         raise AssertionError("unsupported model must never execute tools")
 
     source = Capability(toolsets=[FunctionToolset([hidden])])
-    plan = ToolProxyPlan(
-        groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+    plan = ToolSearchPlan(
+        groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))}, config=NativeToolSearchConfig()
     )
-    capability = ToolProxyCapability(groups={"crm": ToolProxyGroup(source, "Customer data")}, native_search=True)
+    capability = ToolSearchCapability(
+        groups={"crm": ToolSearchGroup(source, "Customer data")}, config=NativeToolSearchConfig()
+    )
     requests = []
     from a13n_harness.errors import DefinitionError
 
@@ -1370,7 +1373,7 @@ async def test_native_search_requires_support_without_local_fallback(use_plan: b
         await _run(
             (source,) if use_plan else (capability,),
             [],
-            tool_proxy=plan if use_plan else None,
+            tool_search=plan if use_plan else None,
             inspect=lambda step, info: requests.append(step),
             profile=ModelProfile(supported_native_tools=frozenset()),
         )
@@ -1403,8 +1406,9 @@ async def test_native_search_preserves_group_names_and_direct_local_dispatch() -
     result, returns = await _run(
         (source, Capability(tools=[direct]), ToolSearch(strategy="keywords")),
         [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {"value": 4})],
-        tool_proxy=ToolProxyPlan(
-            groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+        tool_search=ToolSearchPlan(
+            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
+            config=NativeToolSearchConfig(),
         ),
         profile=anthropic_model_profile("claude-sonnet-4-6"),
         inspect=inspect,
@@ -1465,8 +1469,9 @@ async def test_native_server_search_profile_and_history_restore(provider: str) -
         output_type=str,
         model=FunctionModel(stream_function=model, profile=adapter.profile),
         capabilities=(source,),
-        tool_proxy=ToolProxyPlan(
-            groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+        tool_search=ToolSearchPlan(
+            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
+            config=NativeToolSearchConfig(),
         ),
     )
     if provider == "openai-chat":
@@ -1503,8 +1508,8 @@ async def test_native_search_preserves_named_source_permission_identity(mode: st
             ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/secure/forbidden": mode})),
         ),
         [("search_tools", {"queries": ["forbidden"]}), ("crm__forbidden", {})],
-        tool_proxy=ToolProxyPlan(
-            groups={"crm": ToolProxySelection("Secure tools", capabilities=(source,))}, native_search=True
+        tool_search=ToolSearchPlan(
+            groups={"crm": ToolSearchSelection("Secure tools", capabilities=(source,))}, config=NativeToolSearchConfig()
         ),
         profile=anthropic_model_profile("claude-sonnet-4-6"),
     )
@@ -1541,8 +1546,9 @@ async def test_native_search_deferred_tools_remain_excluded_from_codeact(discove
     result, returns = await _run(
         (source, CodeActCapability(), ToolSearch(strategy="keywords")),
         calls,
-        tool_proxy=ToolProxyPlan(
-            groups={"crm": ToolProxySelection("Customer data", capabilities=(source,))}, native_search=True
+        tool_search=ToolSearchPlan(
+            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
+            config=NativeToolSearchConfig(),
         ),
         profile=anthropic_model_profile("claude-sonnet-4-6"),
         inspect=inspect,
@@ -1557,3 +1563,71 @@ async def test_native_search_deferred_tools_remain_excluded_from_codeact(discove
     if discovered:
         assert returns[-2].tool_name == "crm__lookup"
         assert returns[-2].content == "found"
+
+
+@pytest.mark.parametrize("strategy", [None, "bm25", "regex"])
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_native_strategy_reaches_required_provider_tool(strategy, use_plan: bool) -> None:
+    from pydantic_ai.native_tools._tool_search import ToolSearchTool
+    from pydantic_ai.profiles.anthropic import anthropic_model_profile
+
+    source = Capability(tools=[lambda: "found"])
+    config = NativeToolSearchConfig(strategy=strategy)
+    plan = ToolSearchPlan(groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))}, config=config)
+    grouped = ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Customer data")}, config=config)
+    requests = []
+
+    def inspect(step: int, info: AgentInfo) -> None:
+        tools = info.model_request_parameters.native_tools
+        assert len(tools) == 1
+        tool = tools[0]
+        assert isinstance(tool, ToolSearchTool)
+        assert tool.strategy == strategy
+        assert tool.optional is False
+        assert all(item.unless_native != "tool_search" for item in info.function_tools)
+        requests.append(step)
+
+    result, _ = await _run(
+        (source,) if use_plan else (grouped,),
+        [],
+        tool_search=plan if use_plan else None,
+        profile=anthropic_model_profile("claude-sonnet-4-6"),
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+    assert requests
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"mode": "native", "max_results": 5},
+        {"mode": "native", "search_name": "search"},
+        {"mode": "proxy", "strategy": "bm25"},
+        {"mode": "native", "strategy": "keywords"},
+        {"mode": "unknown"},
+        {"mode": "proxy", "max_results": True},
+    ],
+)
+def test_search_configuration_rejects_inapplicable_settings(value) -> None:
+    from a13n_harness.tools.tool_search import ToolSearchConfig
+    from pydantic import TypeAdapter, ValidationError
+
+    with pytest.raises(ValidationError):
+        TypeAdapter(ToolSearchConfig).validate_python(value)
+
+
+@pytest.mark.parametrize("value", [{}, {"strategy": "regex"}, {"max_results": 5}])
+def test_search_configuration_requires_mode_in_runtime_and_schema(value) -> None:
+    from a13n_harness.tools.tool_search import ToolSearchConfig
+    from jsonschema import Draft202012Validator
+    from pydantic import TypeAdapter, ValidationError
+
+    adapter = TypeAdapter(ToolSearchConfig)
+    assert not Draft202012Validator(adapter.json_schema()).is_valid(value)
+    with pytest.raises(ValidationError, match="union_tag_not_found"):
+        adapter.validate_python(value)
+    for config in (NativeToolSearchConfig(), ProxyToolSearchConfig()):
+        encoded = adapter.dump_python(config, mode="json")
+        Draft202012Validator(adapter.json_schema()).validate(encoded)
+        assert adapter.validate_python(encoded) == config

@@ -269,7 +269,7 @@ Return one valid result from `wrap_run()`. Clean plugin resources in `finally` a
 
 Contribute Capabilities through `get_capabilities()` on the Agent-bound instance returned by `for_agent()`.
 
-For grouped tools, see [ToolProxy plugin-contributed sources](tool-proxy.md#plugin-contributed-sources).
+For grouped tools, see [ToolSearch plugin-contributed sources](tool-search.md#plugin-contributed-sources).
 
 ## Provider Plugins
 

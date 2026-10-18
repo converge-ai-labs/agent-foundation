@@ -18,7 +18,13 @@ from a13n_harness import (
     RunConfiguration,
     SubagentDefinition,
 )
-from a13n_harness.capabilities import SubagentCapability, SubagentOperator, ToolProxyPlan, ToolProxySelection
+from a13n_harness.capabilities import (
+    ProxyToolSearchConfig,
+    SubagentCapability,
+    SubagentOperator,
+    ToolSearchPlan,
+    ToolSearchSelection,
+)
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
@@ -380,20 +386,19 @@ class AgentReconstructor:
             for item in node.mcp_servers
         }
         capabilities.extend(mcp_sources.values())
-        tool_proxy = (
-            ToolProxyPlan(
+        tool_search = (
+            ToolSearchPlan(
                 groups={
-                    name: ToolProxySelection(
+                    name: ToolSearchSelection(
                         description=group.description,
                         capabilities=tuple(mcp_sources[source] for source in group.mcp_servers),
                         plugins=group.harness_plugins,
                     )
-                    for name, group in node.tool_proxy.groups.items()
+                    for name, group in node.tool_search.groups.items()
                 },
-                config=node.tool_proxy.config,
-                native_search=node.tool_proxy.native_search,
+                config=node.tool_search.config,
             )
-            if node.tool_proxy is not None
+            if node.tool_search is not None
             else None
         )
         if node.children:
@@ -407,8 +412,8 @@ class AgentReconstructor:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
             controls = (
-                frozenset({tool_proxy.config.search_name, tool_proxy.config.call_name})
-                if tool_proxy is not None and not tool_proxy.native_search
+                frozenset({tool_search.config.search_name, tool_search.config.call_name})
+                if tool_search is not None and isinstance(tool_search.config, ProxyToolSearchConfig)
                 else frozenset()
             )
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
@@ -460,7 +465,7 @@ class AgentReconstructor:
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,
-            tool_proxy=tool_proxy,
+            tool_search=tool_search,
             subagents=children,
             model_recovery=ModelRecoveryPolicy(
                 enabled=True,

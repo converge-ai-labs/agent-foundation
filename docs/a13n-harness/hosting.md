@@ -30,7 +30,7 @@ Harness executes one Run; the Host decides which result becomes durable.
 
 Store a Host-owned schema for model selection, output type, tools, Capabilities, plugins, and child topology. Trusted code resolves those choices into Python objects before calling `HarnessBuilder`; do not deserialize a Python callable or plugin from untrusted input. Harness UI YAML is one Host format, not a universal SDK schema.
 
-For large tool catalogs, a Host can assemble `ToolProxyCapability(groups=...)` from selected sources. See [ToolProxy Host integration](tool-proxy.md#host-integration).
+For large tool catalogs, a Host can assemble `ToolSearchCapability(groups=...)` from selected sources. See [ToolSearch Host integration](tool-search.md#host-integration).
 
 ## Build and Reuse
 

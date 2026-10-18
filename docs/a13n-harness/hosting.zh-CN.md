@@ -30,7 +30,7 @@ Harness 负责执行一次 Run；哪些结果最终持久化，由 Host 决定�
 
 由 Host 定义并保存配置 schema，涵盖模型选择、输出类型、工具、Capabilities、插件和子 Agent 拓扑。可信代码先将这些配置解析为 Python 对象，再调用 `HarnessBuilder`；不要从不可信输入中反序列化 Python callable 或插件。Harness UI 的 YAML 是一种 Host 配置格式，并不是通用的 SDK schema。
 
-如果工具目录较大，Host 可以从选定来源组装 `ToolProxyCapability(groups=...)`。参阅 [ToolProxy 的 Host 集成](tool-proxy.md#host-integration)。
+如果工具目录较大，Host 可以从选定来源组装 `ToolSearchCapability(groups=...)`。参阅 [ToolSearch 的 Host 集成](tool-search.md#host-integration)。
 
 ## 构建与复用
 

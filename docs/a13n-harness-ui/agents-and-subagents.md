@@ -181,29 +181,29 @@ subagents:
 
 A referenced Agent can have its own explicit children. Cycles such as `agent-coder → agent-reviewer → agent-coder` are invalid. The same immediate roster name cannot appear twice. Child work stays within the application's existing Project, Environment, lifecycle, and authorization rules; an Agent reference is not an escalation mechanism.
 
-## Tool proxy groups
+## Tool search groups
 
 Group large MCP and Harness Plugin tool collections without loading every tool schema into the model context. Edit **the Agent file**, not root defaults or a separate group resource:
 
 ```yaml
 # In agents/coder.yaml; referenced resources must already exist.
-tool_proxy:
-  native_search: false
+tool_search:
   groups:
     knowledge:
       description: Search project documents and organizational memory
       mcp_servers: [mcp-docs]
       harness_plugins: [plugin-memory]
   config:
+    mode: proxy
     search_name: search_proxy_tools
     call_name: call_proxy_tool
     max_results: 10
     max_search_bytes: 32768
 ```
 
-`native_search: false` is the default: the model uses ToolProxy's search and call tools, configured through `config`. Set `native_search: true` to let the model discover the same grouped tools through native tool search and call them directly. Both modes retain grouped tool names and local execution.
+`config.mode: proxy` is the default and uses Harness search and call tools. To use native discovery and direct local calls, replace `config` with `{mode: native, strategy: bm25}`. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default. Native mode rejects proxy control names and limits; proxy mode rejects native strategy settings. Both modes retain grouped tool names and local execution.
 
-For native mode, select a Model that supports native tool search. Unsupported Models fail before the model request, without fallback. See [native tool search](../a13n-harness/tool-proxy.md#select-native-tool-search) for execution details.
+For native mode, select a Model that supports native tool search. Unsupported Models fail before the model request, without fallback. See [native tool search](../a13n-harness/tool-search.md#select-native-tool-search) for execution details.
 
 `config` is optional. Group names start with a letter, contain up to 32 letters, digits, underscores or hyphens, and cannot contain `__`. Descriptions must be nonblank and at most 512 characters. Select exact resource IDs, including distinct IDs for multiple instances of the same plugin. A source belongs to one group only. Different sources in a group must have distinct tool names; collisions fail rather than inventing aliases.
 
@@ -216,9 +216,9 @@ a13n-harness-ui config validate
 a13n-harness-ui config show --format json
 ```
 
-`config show` includes `tool_proxy_previews` for configured Agents. Preview and validation do not connect to MCP or discover tools.
+`config show` includes `tool_search_previews` for configured Agents. Preview and validation do not connect to MCP or discover tools.
 
-When using an exact `tools` allowlist, list the canonical target names such as `knowledge__lookup`, not just `call_proxy_tool`. Proxy controls do not authorize every member. Renaming a group changes those canonical names, so update any affected allowlists. Existing CodeAct policy is preserved; grouping does not make an ineligible tool CodeAct-callable. See [ToolProxy discovery and execution](../a13n-harness/tool-proxy.md).
+When using an exact `tools` allowlist, list the canonical target names such as `knowledge__lookup`, not just `call_proxy_tool`. Proxy controls do not authorize every member. Renaming a group changes those canonical names, so update any affected allowlists. Existing CodeAct policy is preserved; grouping does not make an ineligible tool CodeAct-callable. See [ToolSearch discovery and execution](../a13n-harness/tool-search.md).
 
 Independent Agent children use their own groups. Markdown subagents inherit the parent's grouping plan and their existing source/tool restrictions. Older saved Runs without a grouping plan retain direct presentation.
 

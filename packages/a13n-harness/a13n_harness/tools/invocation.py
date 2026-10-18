@@ -730,16 +730,16 @@ async def _emit_best_effort(
 def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]) -> None:
     from a13n_harness.tools.surface import ToolSurfaceToolset
     from a13n_harness.toolsets.codeact import CodeActToolset
-    from a13n_harness.toolsets.tool_proxy import ToolProxySurfaceToolset
+    from a13n_harness.toolsets.tool_search import ToolSearchSurfaceToolset
 
     current = toolset
     if isinstance(current, CodeActToolset):
         current = current.wrapped
-    if isinstance(current, ToolProxySurfaceToolset):
+    if isinstance(current, ToolSearchSurfaceToolset):
         current = current.wrapped
     if not isinstance(current, ToolSurfaceToolset):
         raise DefinitionError(
-            "Only CodeAct and ToolProxy may wrap the mandatory tool surface inside the execution boundary.",
+            "Only CodeAct and ToolSearch may wrap the mandatory tool surface inside the execution boundary.",
             code="tool_surface_order_invalid",
             details={"toolset_type": type(current).__name__},
         )

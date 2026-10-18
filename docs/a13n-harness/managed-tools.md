@@ -28,7 +28,7 @@ permissions = ToolPermissionsCapability(
 )
 ```
 
-Match stable IDs: managed tools use their declared IDs, ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP uses `mcp/<source-id>/<original-name>`. Segments are percent-encoded; renaming, ToolProxy, and CodeAct preserve these IDs. Custom naming wrappers can use `ToolIdentityToolset`.
+Match stable IDs: managed tools use their declared IDs, ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP uses `mcp/<source-id>/<original-name>`. Segments are percent-encoded; renaming, ToolSearch, and CodeAct preserve these IDs. Custom naming wrappers can use `ToolIdentityToolset`.
 
 Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `inherit` uses the tool default, which is `allow` without review unless trusted code explicitly declares otherwise. External/provider-native tools retain their separate boundaries. A reviewer and its risk rules do not enable review by themselves; select permission `review` for the tools you want assessed. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
 

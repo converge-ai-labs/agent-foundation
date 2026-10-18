@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import pytest
 import uvicorn
 from a13n_harness import AgentSpec, HarnessBuilder, ModelRecoveryPolicy, RunBindings
-from a13n_harness.capabilities import CodeActCapability, ToolProxyCapability, ToolProxyGroup
+from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
 from a13n_harness.mcp import ContextualMCP
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from fastmcp import FastMCP
@@ -160,7 +160,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             local=True,
         )
         source = MCPCodeActPolicy(capability) if codeact else capability
-        capabilities = (ToolProxyCapability(groups={"context": ToolProxyGroup(source, "Current identity")}),)
+        capabilities = (ToolSearchCapability(groups={"context": ToolSearchGroup(source, "Current identity")}),)
         if codeact:
             capabilities += (CodeActCapability(),)
         executable = HarnessBuilder().build(
@@ -192,10 +192,10 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
 
 
 async def test_contextual_mcp_native_path_is_rejected_by_proxy() -> None:
-    from .test_tool_proxy import _run
+    from .test_tool_search import _run
 
     contextual = ContextualMCP(
         "https://example.invalid/mcp", id="native", headers_factory=lambda ctx: {}, native=True, local=False
     )
     with pytest.raises(ValueError, match="provider-native"):
-        await _run((ToolProxyCapability(groups={"native": ToolProxyGroup(contextual, "Native MCP")}),), [])
+        await _run((ToolSearchCapability(groups={"native": ToolSearchGroup(contextual, "Native MCP")}),), [])

@@ -74,7 +74,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `platform_tools`: selected platform MCP `groups`, with `read_permission` (default `allow`) and `write_permission` (default `ask`), each `allow`, `ask` or `deny`. Groups default empty.
 - `builtin_skills`: independently selected instance-local instructions; currently `platform-operations`, default empty. Neither selection grants tenant permissions.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
-- `tool_proxy`: optional grouped tool discovery with `native_search`, `groups` and Harness `config` ([Tool discovery](#tool-discovery)).
+- `tool_search`: optional grouped tool discovery with `groups` and mode-discriminated Harness `config` ([Tool discovery](#tool-discovery)).
 - `client_tools`, whose results a client supplies through resume, and `user_questions`, which offers `ask_user_question`.
 - `subagent_mode` (`inline` or `async`) and named `subagents`: `{agent_id, revision_id, description, context, usage_limits, environment}`. `environment.mode` is `none`, `shared` or `dedicated`, and `dedicated` names a `template_id`.
 - `reviewer`: a model key and its settings for the `review` tool permission.
@@ -92,13 +92,15 @@ Tool permissions live on each selection and compile into one Harness tool-permis
 
 ### Tool discovery
 
-`tool_proxy` selects how already-selected tools reach the model. Each named group has a nonblank `description` of at most 512 characters, `connections` (connection IDs), `plugins` (plugin instance names), and `platform` (whether it includes the selected platform tools). Group names follow the Harness ToolProxy naming contract. A source belongs to at most one group and must already be selected by this Agent. There are at most 128 groups. Sources outside the groups keep their existing presentation.
+`tool_search` selects how already-selected tools reach the model. Each named group has a nonblank `description` of at most 512 characters, `connections` (connection IDs), `plugins` (plugin instance names), and `platform` (whether it includes the selected platform tools). Group names follow the Harness ToolSearch naming contract. A source belongs to at most one group and must already be selected by this Agent. There are at most 128 groups. Sources outside the groups keep their existing presentation.
 
-With `native_search: false` (the default), Harness supplies grouped proxy search and invocation. With `native_search: true`, Harness supplies provider-native tool search and ordinary local calls to discovered tools, named `group__tool`. The actual calling model must support native tool search; otherwise execution fails with `native_tool_search_unsupported` before sending a model request. Harness owns discovery, history restoration and invocation in both modes.
+With `config.mode: proxy` (the default), Harness supplies grouped proxy search and invocation. With `config.mode: native`, Harness supplies provider-native tool search and ordinary local calls to discovered tools, named `group__tool`. Native `strategy` is omitted/null for the provider default, or `bm25` or `regex`; provider adapters own support validation. Proxy control names and limits are accepted only in proxy mode. The actual calling model must support native tool search; otherwise execution fails with `native_tool_search_unsupported` before sending a model request. Harness owns discovery, history restoration and invocation in both modes.
+
+Revisions and Run overrides use `tool_search` with a discriminated `config`. The selected mode accepts only its own fields.
 
 A grouped connection uses the group's discovery mechanism instead of capability-level `defer_loading`. Its stored selection is preserved; removing it from the groups restores that selection's loading behavior. Connection allowlists, original tool permission identities, Host credentials, caller headers and per-call dispatch checks apply in both modes. Platform tools retain their selected groups and read/write permissions. Plugins are constructed once through the installed factory catalog.
 
-The plan belongs to the immutable Agent revision. Each inline or async child uses its own revision's plan. A Run override replaces the whole `tool_proxy` block; omission or null keeps the revision's block, and `groups: {}` disables grouping. Configurations without `tool_proxy` retain their existing serialized shape and direct or capability-deferred behavior.
+The plan belongs to the immutable Agent revision. Each inline or async child uses its own revision's plan. A Run override replaces the whole `tool_search` block; omission or null keeps the revision's block, and `groups: {}` disables grouping. Configurations without `tool_search` retain their existing serialized shape and direct or capability-deferred behavior.
 
 ### Computer tool coordinates
 

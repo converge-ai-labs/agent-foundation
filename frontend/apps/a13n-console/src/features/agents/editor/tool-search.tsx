@@ -109,6 +109,30 @@ export function ToolSearchSection({
                 : "Each source keeps its own loading settings.",
           )}
         />
+        {value.mode === "native" && (
+          <ChoiceField
+            label={t("Native search strategy")}
+            readOnly={readOnly}
+            value={value.strategy ?? "default"}
+            options={[
+              { value: "default", label: t("Provider default") },
+              { value: "bm25", label: "BM25" },
+              { value: "regex", label: t("Regex") },
+            ]}
+            onValueChange={(strategy) =>
+              draft.setToolSearch((current) => ({
+                ...current,
+                strategy:
+                  strategy === "default"
+                    ? undefined
+                    : (strategy as "bm25" | "regex"),
+              }))
+            }
+            description={t(
+              "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.",
+            )}
+          />
+        )}
         {value.mode !== "direct" && (
           <>
             {groups.map((group, index) => (

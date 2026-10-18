@@ -26,8 +26,8 @@ CONNECTION = new_object_id("con")
 def selection(**changes: Any) -> AgentConfig:
     return config(
         connection_tools=[{"connection_id": CONNECTION, "defer_loading": True}],
-        tool_proxy={
-            "native_search": True,
+        tool_search={
+            "config": {"mode": "native"},
             "groups": {"knowledge": {"description": "Knowledge lookup", "connections": [CONNECTION]}},
         },
         **changes,
@@ -35,14 +35,14 @@ def selection(**changes: Any) -> AgentConfig:
 
 
 def test_configuration_preserves_defaults_and_validates_membership() -> None:
-    assert "tool_proxy" not in config().model_dump(mode="json")
+    assert "tool_search" not in config().model_dump(mode="json")
     selected = selection()
     assert AgentConfig.model_validate_json(selected.model_dump_json()) == selected
     assert selected.connection_tools[0].defer_loading
-    assert selected.tool_proxy is not None
-    assert selected.tool_proxy.connection_ids == {CONNECTION}
+    assert selected.tool_search is not None
+    assert selected.tool_search.connection_ids == {CONNECTION}
     for groups, message in (
-        ({"bad__name": {"description": "Tools"}}, "ToolProxy group"),
+        ({"bad__name": {"description": "Tools"}}, "ToolSearch group"),
         ({"tools": {"description": " "}}, "non-blank"),
         ({"tools": {"description": "Tools", "connections": [new_object_id("con")]}}, "unselected connection"),
         ({"tools": {"description": "Tools", "plugins": ["missing"]}}, "unselected plugin"),
@@ -53,18 +53,18 @@ def test_configuration_preserves_defaults_and_validates_membership() -> None:
         ),
     ):
         with pytest.raises(ValidationError, match=message):
-            AgentConfig.model_validate({**selected.model_dump(), "tool_proxy": {"groups": groups}})
+            AgentConfig.model_validate({**selected.model_dump(), "tool_search": {"groups": groups}})
 
 
 def test_override_replaces_the_plan_and_validates_the_result() -> None:
     selected = selection()
-    for override in ({}, {"tool_proxy": None}):
-        assert apply_override(selected, AgentOverride.model_validate(override)).tool_proxy == selected.tool_proxy
-    disabled = apply_override(selected, AgentOverride.model_validate({"tool_proxy": {"groups": {}}}))
-    assert disabled.tool_proxy is not None and not disabled.tool_proxy.groups
+    for override in ({}, {"tool_search": None}):
+        assert apply_override(selected, AgentOverride.model_validate(override)).tool_search == selected.tool_search
+    disabled = apply_override(selected, AgentOverride.model_validate({"tool_search": {"groups": {}}}))
+    assert disabled.tool_search is not None and not disabled.tool_search.groups
     with pytest.raises(ValidationError, match="unselected connection"):
         apply_override(selected, AgentOverride(connection_tools=()))
-    cleared = apply_override(selected, AgentOverride.model_validate({"connection_tools": [], "tool_proxy": {}}))
+    cleared = apply_override(selected, AgentOverride.model_validate({"connection_tools": [], "tool_search": {}}))
     assert not cleared.connection_tools
 
 
@@ -77,8 +77,8 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
         connection_tools=[{"connection_id": CONNECTION}],
         plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
         platform_tools={"groups": ["agents"]},
-        tool_proxy={
-            "native_search": True,
+        tool_search={
+            "config": {"mode": "native"},
             "groups": {
                 "tools": {
                     "description": "Selected tools",
@@ -91,8 +91,8 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
         subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
     )
     sources = {CONNECTION: connection, "platform": platform}
-    plan = definition.tool_proxy(selected, sources)
-    assert plan is not None and plan.native_search
+    plan = definition.tool_search(selected, sources)
+    assert plan is not None and plan.config.mode == "native"
     assert plan.groups["tools"].capabilities == (connection, platform)
     assert plan.groups["tools"].plugins == ("audit",)
     child = resolved(HELPER, HELPER_REVISION, config())
@@ -110,8 +110,8 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
         plugins=PLUGINS,
         instrumentation=None,
     )
-    assert executable.definition.tool_proxy == plan
-    assert executable.definition.subagents[0].agent.tool_proxy is None
+    assert executable.definition.tool_search == plan
+    assert executable.definition.subagents[0].agent.tool_search is None
 
 
 @pytest.mark.parametrize("permission", ["allow", "ask", "deny"])
@@ -126,7 +126,7 @@ async def test_native_discovery_restores_history_and_keeps_connection_permission
     selected = config(
         toolsets={},
         connection_tools=[{"connection_id": CONNECTION, "permission": permission}],
-        tool_proxy=selection().tool_proxy,
+        tool_search=selection().tool_search,
     )
     root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={CONNECTION: "connector"})
     phase = "discover"
@@ -225,8 +225,8 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
             model_key,
             toolsets={},
             connection_tools=[{"connection_id": connection_id, "defer_loading": True, "permission": "allow"}],
-            tool_proxy={
-                "native_search": True,
+            tool_search={
+                "config": {"mode": "native"},
                 "groups": {
                     "knowledge": {
                         "description": "Knowledge tools",
@@ -334,8 +334,8 @@ async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeyp
     selected = config(
         toolsets={},
         plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
-        tool_proxy={
-            "native_search": native,
+        tool_search={
+            "config": {"mode": "native" if native else "proxy"},
             "groups": {
                 "knowledge": {
                     "description": "Knowledge",
@@ -378,3 +378,25 @@ async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeyp
     result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
     assert result.output_or_raise() == "done"
     assert contributions == ["audit"] and effects == ["called"]
+
+
+@pytest.mark.parametrize("strategy", [None, "bm25", "regex"])
+def test_native_config_roundtrip_and_plan_strategy(strategy) -> None:
+    selected = config(tool_search={"config": {"mode": "native", "strategy": strategy}, "groups": {}})
+    restored = AgentConfig.model_validate_json(selected.model_dump_json())
+    assert restored.tool_search.config.strategy == strategy
+    plan = definition.tool_search(restored, {})
+    assert plan is not None and plan.config.strategy == strategy
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"native_search": False, "config": {"mode": "native"}},
+        {"config": {"mode": "native", "max_search_bytes": 4096}},
+        {"config": {"mode": "proxy", "strategy": "regex"}},
+    ],
+)
+def test_search_config_rejects_conflicting_branches(value) -> None:
+    with pytest.raises(ValidationError):
+        config(tool_search=value)

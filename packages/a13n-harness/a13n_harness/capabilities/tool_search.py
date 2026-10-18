@@ -1,4 +1,4 @@
-"""Native Capability composition for grouped ToolProxy discovery."""
+"""Native Capability composition for grouped ToolSearch discovery."""
 
 from __future__ import annotations
 
@@ -23,14 +23,19 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
 from a13n_harness.tools.surface import ToolSurfaceCapability
-from a13n_harness.tools.tool_proxy import ToolProxyConfig, proxy_membership, validate_group
-from a13n_harness.toolsets.tool_proxy import ToolProxySurfaceToolset, _GroupedToolset
+from a13n_harness.tools.tool_search import (
+    NativeToolSearchConfig,
+    ProxyToolSearchConfig,
+    proxy_membership,
+    validate_group,
+)
+from a13n_harness.toolsets.tool_search import ToolSearchSurfaceToolset, _GroupedToolset
 
-TOOL_PROXY_CAPABILITY_ID = "a13n.tool-proxy"
+TOOL_SEARCH_CAPABILITY_ID = "a13n.tool-search"
 
 
 @dataclass(frozen=True, slots=True)
-class ToolProxyGroup:
+class ToolSearchGroup:
     """One explicit source and its model-facing domain description."""
 
     source: AbstractToolset[AgentContext] | AbstractCapability[AgentContext]
@@ -39,11 +44,11 @@ class ToolProxyGroup:
     def __post_init__(self) -> None:
         if not isinstance(self.source, AbstractToolset | AbstractCapability):
             raise TypeError(
-                "ToolProxyGroup.source must be a Toolset or Capability instance; resolve Host configuration before constructing the group."
+                "ToolSearchGroup.source must be a Toolset or Capability instance; resolve Host configuration before constructing the group."
             )
 
 
-class ToolProxyCapability(CombinedCapability[AgentContext]):
+class ToolSearchCapability(CombinedCapability[AgentContext]):
     """Compose grouped sources and one discovery surface using native Capabilities.
 
     The Host selects and constructs sources once. Native composition owns their
@@ -53,25 +58,22 @@ class ToolProxyCapability(CombinedCapability[AgentContext]):
     def __init__(
         self,
         *,
-        groups: Mapping[str, ToolProxyGroup],
-        config: ToolProxyConfig | None = None,
-        native_search: bool = False,
+        groups: Mapping[str, ToolSearchGroup],
+        config: ProxyToolSearchConfig | NativeToolSearchConfig | None = None,
     ) -> None:
+        config = config or ProxyToolSearchConfig()
+        native_search = isinstance(config, NativeToolSearchConfig)
         sources: list[AbstractCapability[AgentContext]] = []
         for name, group in groups.items():
-            if not isinstance(group, ToolProxyGroup):
+            if not isinstance(group, ToolSearchGroup):
                 raise TypeError(
-                    f"ToolProxyCapability.groups[{name!r}] must be ToolProxyGroup(source=..., description=...)."
+                    f"ToolSearchCapability.groups[{name!r}] must be ToolSearchGroup(source=..., description=...)."
                 )
             source = group.source
             if isinstance(source, AbstractToolset):
                 source = Capability(toolsets=[source])
             sources.append(_group_source(source, name, group.description, native_search=native_search))
-        surface = (
-            CombinedCapability([ToolSearch(), _RequireNativeToolSearch()])
-            if native_search
-            else _ToolProxySurfaceCapability(config or ToolProxyConfig())
-        )
+        surface = _search_surface(config)
         super().__init__([surface, *sources])
 
 
@@ -91,11 +93,11 @@ def _group_source(
     to native ordering instead of replacing a leaf's registered identity.
     """
     validate_group(name, description)
-    group_type = _NativeSearchGroupCapability if native_search else _ToolProxyGroupCapability
+    group_type = _NativeSearchGroupCapability if native_search else _ToolSearchGroupCapability
 
     def mark(node: AbstractCapability[AgentContext]) -> AbstractCapability[AgentContext]:
         if node.defer_loading and not native_search:
-            raise ValueError(f"ToolProxy group {name!r} uses deferred source {node.id or type(node).__name__!r}.")
+            raise ValueError(f"ToolSearch group {name!r} uses deferred source {node.id or type(node).__name__!r}.")
         return group_type(
             CombinedCapability([node]), name, description, source_label or source.id or type(source).__name__
         )
@@ -122,7 +124,7 @@ def _group_source(
 
 
 @dataclass(frozen=True, slots=True)
-class ToolProxySelection:
+class ToolSearchSelection:
     """Build-time membership of concrete sources and exact Harness plugin IDs."""
 
     description: str
@@ -133,29 +135,28 @@ class ToolProxySelection:
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "plugins", tuple(self.plugins))
         if not all(isinstance(source, AbstractCapability) for source in self.capabilities):
-            raise TypeError("ToolProxySelection.capabilities must contain Capability instances")
+            raise TypeError("ToolSearchSelection.capabilities must contain Capability instances")
         if not all(isinstance(plugin, str) and plugin.strip() for plugin in self.plugins):
-            raise TypeError("ToolProxySelection.plugins must contain nonblank plugin IDs")
+            raise TypeError("ToolSearchSelection.plugins must contain nonblank plugin IDs")
 
 
 @dataclass(frozen=True, slots=True)
-class ToolProxyPlan:
+class ToolSearchPlan:
     """Immutable per-Agent presentation plan; never activates or constructs sources."""
 
-    groups: Mapping[str, ToolProxySelection]
-    config: ToolProxyConfig = field(default_factory=ToolProxyConfig)
-    native_search: bool = False
+    groups: Mapping[str, ToolSearchSelection]
+    config: ProxyToolSearchConfig | NativeToolSearchConfig = field(default_factory=ProxyToolSearchConfig)
 
     def __post_init__(self) -> None:
         from types import MappingProxyType
 
         groups = dict(self.groups)
         for name, selection in groups.items():
-            if not isinstance(selection, ToolProxySelection):
-                raise TypeError(f"ToolProxyPlan.groups[{name!r}] must be ToolProxySelection")
+            if not isinstance(selection, ToolSearchSelection):
+                raise TypeError(f"ToolSearchPlan.groups[{name!r}] must be ToolSearchSelection")
             validate_group(name, selection.description)
-        if not isinstance(self.config, ToolProxyConfig):
-            raise TypeError("ToolProxyPlan.config must be ToolProxyConfig")
+        if not isinstance(self.config, ProxyToolSearchConfig | NativeToolSearchConfig):
+            raise TypeError("ToolSearchPlan.config must be ProxyToolSearchConfig or NativeToolSearchConfig")
         object.__setattr__(self, "groups", MappingProxyType(groups))
 
     def _compose(
@@ -172,18 +173,18 @@ class ToolProxyPlan:
             for plugin_id in selection.plugins:
                 if plugin_id in plugin_memberships:
                     raise ValueError(
-                        f"ToolProxy plugin {plugin_id!r} belongs to both {plugin_memberships[plugin_id]!r} and {name!r}"
+                        f"ToolSearch plugin {plugin_id!r} belongs to both {plugin_memberships[plugin_id]!r} and {name!r}"
                     )
                 if plugin_id not in contributions:
-                    raise ValueError(f"ToolProxy group {name!r} references unavailable plugin {plugin_id!r}")
+                    raise ValueError(f"ToolSearch group {name!r} references unavailable plugin {plugin_id!r}")
                 plugin_memberships[plugin_id] = name
                 sources.extend(contributions[plugin_id])
             for source in sources:
                 if id(source) not in available:
-                    raise ValueError(f"ToolProxy group {name!r} references a Capability not selected by this Agent")
+                    raise ValueError(f"ToolSearch group {name!r} references a Capability not selected by this Agent")
                 if id(source) in memberships:
                     raise ValueError(
-                        f"ToolProxy source {source.id or type(source).__name__!r} belongs to multiple groups"
+                        f"ToolSearch source {source.id or type(source).__name__!r} belongs to multiple groups"
                     )
                 memberships[id(source)] = (
                     name,
@@ -193,11 +194,11 @@ class ToolProxyPlan:
         if not memberships:
             return tuple(capabilities)
         return (
-            CombinedCapability([ToolSearch(), _RequireNativeToolSearch()])
-            if self.native_search
-            else _ToolProxySurfaceCapability(self.config),
+            _search_surface(self.config),
             *(
-                _group_source(source, *memberships[id(source)], native_search=self.native_search)
+                _group_source(
+                    source, *memberships[id(source)], native_search=isinstance(self.config, NativeToolSearchConfig)
+                )
                 if id(source) in memberships
                 else source
                 for source in capabilities
@@ -205,18 +206,28 @@ class ToolProxyPlan:
         )
 
 
+def _search_surface(config: ProxyToolSearchConfig | NativeToolSearchConfig) -> AbstractCapability[AgentContext]:
+    if isinstance(config, NativeToolSearchConfig):
+        search = ToolSearch[AgentContext](strategy=config.strategy)
+        return CombinedCapability([search, _RequireNativeToolSearch(search=search)])
+    return _ToolSearchSurfaceCapability(config)
+
+
+@dataclass
 class _RequireNativeToolSearch(AbstractCapability[AgentContext]):
     """Use upstream discovery while requiring the current model's native surface."""
+
+    search: ToolSearch[AgentContext]
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         supported = tuple(request_context.model.profile.get("supported_native_tools", ()))
-        for tool in ToolSearch().get_native_tools():
+        for tool in self.search.get_native_tools():
             if isinstance(tool, AbstractNativeTool) and not isinstance(tool, supported):
                 raise DefinitionError(
-                    "tool_proxy.native_search=True requires a model with native tool search; "
-                    "select a supported model or set native_search=False.",
+                    "tool_search.config.mode='native' requires a model with native tool search; "
+                    "select a supported model or use mode='proxy'.",
                     code="native_tool_search_unsupported",
                 )
         parameters = request_context.model_request_parameters
@@ -256,17 +267,17 @@ class _NativeSearchGroupCapability(WrapperCapability[AgentContext]):
 
 
 @dataclass
-class _ToolProxySurfaceCapability(AbstractCapability[AgentContext]):
+class _ToolSearchSurfaceCapability(AbstractCapability[AgentContext]):
     """Expose one grouped search/call surface without replacing ToolManager."""
 
-    config: ToolProxyConfig = field(default_factory=ToolProxyConfig)
-    id: str | None = field(default=TOOL_PROXY_CAPABILITY_ID, kw_only=True)
+    config: ProxyToolSearchConfig = field(default_factory=ProxyToolSearchConfig)
+    id: str | None = field(default=TOOL_SEARCH_CAPABILITY_ID, kw_only=True)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.config, ToolProxyConfig):
-            raise TypeError("ToolProxyCapability config must be ToolProxyConfig")
-        if self.id != TOOL_PROXY_CAPABILITY_ID:
-            raise ValueError(f"ToolProxyCapability.id must be {TOOL_PROXY_CAPABILITY_ID!r}")
+        if not isinstance(self.config, ProxyToolSearchConfig):
+            raise TypeError("ToolSearchCapability config must be ProxyToolSearchConfig")
+        if self.id != TOOL_SEARCH_CAPABILITY_ID:
+            raise ValueError(f"ToolSearchCapability.id must be {TOOL_SEARCH_CAPABILITY_ID!r}")
 
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.capabilities.codeact import CodeActCapability
@@ -278,7 +289,7 @@ class _ToolProxySurfaceCapability(AbstractCapability[AgentContext]):
         )
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
-        return ToolProxySurfaceToolset(toolset, self.config)
+        return ToolSearchSurfaceToolset(toolset, self.config)
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -293,7 +304,7 @@ class _ToolProxySurfaceCapability(AbstractCapability[AgentContext]):
 
 
 @dataclass
-class _ToolProxyGroupCapability(WrapperCapability[AgentContext]):
+class _ToolSearchGroupCapability(WrapperCapability[AgentContext]):
     """Assign a Capability's run-bound local Toolset to one proxy group.
 
     WrapperCapability owns for_agent/for_run rebinding, including ContextualMCP's
@@ -309,7 +320,7 @@ class _ToolProxyGroupCapability(WrapperCapability[AgentContext]):
         validate_group(self.group, self.group_description)
         if self.defer_loading:
             raise ValueError(
-                f"ToolProxy group {self.group!r} uses a deferred-loading source; remove defer_loading=True or leave it directly exposed."
+                f"ToolSearch group {self.group!r} uses a deferred-loading source; remove defer_loading=True or leave it directly exposed."
             )
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
@@ -317,22 +328,23 @@ class _ToolProxyGroupCapability(WrapperCapability[AgentContext]):
         if toolset is None:
             return None
         if not isinstance(toolset, AbstractToolset):
-            raise TypeError(f"ToolProxy group {self.group!r} requires a concrete local Toolset contribution.")
+            raise TypeError(f"ToolSearch group {self.group!r} requires a concrete local Toolset contribution.")
         return _GroupedToolset(toolset, self.group, self.group_description, self.source_label)
 
     def get_native_tools(self) -> Sequence[AgentNativeTool[AgentContext]]:
         if self.wrapped.get_native_tools():
             raise ValueError(
-                f"ToolProxy group {self.group!r} includes provider-native tools; use local=True, native=False for MCP."
+                f"ToolSearch group {self.group!r} includes provider-native tools; use local=True, native=False for MCP."
             )
         return []
 
 
 __all__ = [
-    "TOOL_PROXY_CAPABILITY_ID",
-    "ToolProxyCapability",
-    "ToolProxyConfig",
-    "ToolProxyGroup",
-    "ToolProxyPlan",
-    "ToolProxySelection",
+    "TOOL_SEARCH_CAPABILITY_ID",
+    "NativeToolSearchConfig",
+    "ProxyToolSearchConfig",
+    "ToolSearchCapability",
+    "ToolSearchGroup",
+    "ToolSearchPlan",
+    "ToolSearchSelection",
 ]

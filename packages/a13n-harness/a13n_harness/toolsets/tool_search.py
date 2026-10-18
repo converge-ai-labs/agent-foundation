@@ -30,11 +30,11 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from a13n_harness._review_context import record_approval_denials
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
-from a13n_harness.tools.tool_proxy import (
+from a13n_harness.tools.tool_search import (
     PROXY_CONTROL_KEY,
     PROXY_MEMBERSHIP_KEY,
-    ToolProxyConfig,
-    ToolProxyMembership,
+    ProxyToolSearchConfig,
+    ToolSearchMembership,
     active_proxy_tools,
     proxy_control,
     proxy_directory,
@@ -63,9 +63,9 @@ class _GroupTool(ToolsetTool[AgentContext]):
 
 @dataclass
 class _GroupedToolset(WrapperToolset[AgentContext]):
-    """Assign an arbitrary local Toolset to a flat ToolProxy group.
+    """Assign an arbitrary local Toolset to a flat ToolSearch group.
 
-    Compose with ToolProxyCapability. Native lifecycle and dispatch stay on the
+    Compose with ToolSearchCapability. Native lifecycle and dispatch stay on the
     wrapped Toolset; only names and model-facing discovery are changed.
     """
 
@@ -76,11 +76,11 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
 
     @property
     def label(self) -> str:
-        return f"ToolProxy group {self.group!r} source {self.source_label!r}"
+        return f"ToolSearch group {self.group!r} source {self.source_label!r}"
 
     @property
     def tool_name_conflict_hint(self) -> str:
-        return "Give the source tools distinct names or select separate ToolProxy groups."
+        return "Give the source tools distinct names or select separate ToolSearch groups."
 
     def __post_init__(self) -> None:
         validate_group(self.group, self.group_description)
@@ -95,7 +95,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
             if not self.native_search:
                 validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
-                raise UserError(f"Tool {name!r} already belongs to a ToolProxy group; wrap each source only once.")
+                raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
             canonical = f"{self.group}__{name}"
             result[canonical] = _GroupTool(
                 toolset=self,
@@ -109,7 +109,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                             {}
                             if self.native_search
                             else {
-                                PROXY_MEMBERSHIP_KEY: ToolProxyMembership(self.group, self.group_description, name),
+                                PROXY_MEMBERSHIP_KEY: ToolSearchMembership(self.group, self.group_description, name),
                             }
                         ),
                     },
@@ -143,10 +143,10 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
 
 
 @dataclass
-class ToolProxySurfaceToolset(WrapperToolset[AgentContext]):
+class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
     """Contribute the proxy controls after mandatory surface resolution."""
 
-    config: ToolProxyConfig
+    config: ProxyToolSearchConfig
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
@@ -156,7 +156,7 @@ class ToolProxySurfaceToolset(WrapperToolset[AgentContext]):
         for name in (self.config.search_name, self.config.call_name):
             if name in tools:
                 raise UserError(
-                    f"ToolProxy entry name {name!r} conflicts with an existing tool; configure another name"
+                    f"ToolSearch entry name {name!r} conflicts with an existing tool; configure another name"
                 )
         summary = _group_summary(tools)
         search = Tool(
@@ -181,7 +181,7 @@ class ToolProxySurfaceToolset(WrapperToolset[AgentContext]):
             metadata={PROXY_CONTROL_KEY: "call"},
         )
         controls = await CodeActPolicyToolset(
-            FunctionToolset([search, call], id="tool-proxy-controls"), CodeActToolPolicy(default=True)
+            FunctionToolset([search, call], id="tool-search-controls"), CodeActToolPolicy(default=True)
         ).get_tools(ctx)
         groups = sorted({group for group, _tool in directory})
         for name, prepared in controls.items():
@@ -212,7 +212,7 @@ class ToolProxySurfaceToolset(WrapperToolset[AgentContext]):
         elif wrapped is not None:
             parts.extend(wrapped)
         parts.append(
-            tool_instruction("tool_proxy").format(search_name=self.config.search_name, call_name=self.config.call_name)
+            tool_instruction("tool_search").format(search_name=self.config.search_name, call_name=self.config.call_name)
         )
         return parts
 

@@ -1,4 +1,7 @@
 {
+  "Native search strategy": "原生搜索策略",
+  "Regex": "正则表达式",
+  "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.": "指定策略需要提供商支持。选择提供商默认策略，由提供商决定搜索方式。",
   "Tool discovery": "工具发现",
   "Group selected tools and choose how the model discovers them.": "为已选工具分组，并选择模型发现工具的方式。",
   "Discovery mode": "发现方式",

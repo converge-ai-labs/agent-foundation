@@ -3006,10 +3006,10 @@
         }
       }
     },
-    "/api/agents/{agent_id}/tool-proxy": {
+    "/api/agents/{agent_id}/tool-search": {
       "get": {
-        "summary": "Agent Tool Proxy",
-        "operationId": "agent_tool_proxy_api_agents__agent_id__tool_proxy_get",
+        "summary": "Agent Tool Search",
+        "operationId": "agent_tool_search_api_agents__agent_id__tool_search_get",
         "parameters": [
           {
             "name": "agent_id",
@@ -3027,7 +3027,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentToolProxyView"
+                  "$ref": "#/components/schemas/AgentToolSearchView"
                 }
               }
             }
@@ -6135,31 +6135,26 @@
         ],
         "title": "AgentSummary"
       },
-      "AgentToolProxy": {
+      "AgentToolSearch": {
         "properties": {
-          "native_search": {
-            "type": "boolean",
-            "title": "Native Search",
-            "default": false
+          "config": {
+            "$ref": "#/components/schemas/ToolSearchConfig"
           },
           "groups": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/AgentToolProxyGroup"
+              "$ref": "#/components/schemas/AgentToolSearchGroup"
             },
             "type": "object",
             "title": "Groups"
-          },
-          "config": {
-            "$ref": "#/components/schemas/ToolProxyConfig"
           }
         },
         "additionalProperties": {
           "$ref": "#/components/schemas/JsonValue"
         },
         "type": "object",
-        "title": "AgentToolProxy"
+        "title": "AgentToolSearch"
       },
-      "AgentToolProxyGroup": {
+      "AgentToolSearchGroup": {
         "properties": {
           "description": {
             "type": "string",
@@ -6191,20 +6186,20 @@
         "required": [
           "description"
         ],
-        "title": "AgentToolProxyGroup"
+        "title": "AgentToolSearchGroup"
       },
-      "AgentToolProxyView": {
+      "AgentToolSearchView": {
         "properties": {
           "agent_id": {
             "type": "string",
             "title": "Agent Id"
           },
-          "tool_proxy": {
-            "$ref": "#/components/schemas/AgentToolProxy"
+          "tool_search": {
+            "$ref": "#/components/schemas/AgentToolSearch"
           },
           "sources": {
             "items": {
-              "$ref": "#/components/schemas/ToolProxySourceView"
+              "$ref": "#/components/schemas/ToolSearchSourceView"
             },
             "type": "array",
             "title": "Sources"
@@ -6214,10 +6209,10 @@
         "type": "object",
         "required": [
           "agent_id",
-          "tool_proxy",
+          "tool_search",
           "sources"
         ],
-        "title": "AgentToolProxyView",
+        "title": "AgentToolSearchView",
         "description": "Static source membership; never connects to MCP or discovers tools."
       },
       "AllowlistDestinations": {
@@ -7303,10 +7298,10 @@
             ],
             "title": "Tools"
           },
-          "tool_proxy": {
+          "tool_search": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AgentToolProxy"
+                "$ref": "#/components/schemas/AgentToolSearch"
               },
               {
                 "type": "null"
@@ -7365,7 +7360,7 @@
           "environment_adapter",
           "environment_run_extension_ids",
           "tools",
-          "tool_proxy",
+          "tool_search",
           "children",
           "omitted_children"
         ],
@@ -12658,6 +12653,38 @@
           "audio"
         ]
       },
+      "NativeToolSearchConfig": {
+        "properties": {
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bm25",
+                  "regex"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          },
+          "mode": {
+            "type": "string",
+            "const": "native",
+            "title": "Mode",
+            "default": "native"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "NativeToolSearchConfig",
+        "description": "Provider-native discovery; omitted strategy uses the provider default."
+      },
       "NotePage": {
         "properties": {
           "continuation_id": {
@@ -13600,6 +13627,43 @@
           "chatgpt"
         ],
         "title": "Provider"
+      },
+      "ProxyToolSearchConfig": {
+        "properties": {
+          "search_name": {
+            "type": "string",
+            "title": "Search Name",
+            "default": "search_proxy_tools"
+          },
+          "call_name": {
+            "type": "string",
+            "title": "Call Name",
+            "default": "call_proxy_tool"
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10
+          },
+          "max_search_bytes": {
+            "type": "integer",
+            "title": "Max Search Bytes",
+            "default": 32768
+          },
+          "mode": {
+            "type": "string",
+            "const": "proxy",
+            "title": "Mode",
+            "default": "proxy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "ProxyToolSearchConfig",
+        "description": "Names and bounded discovery settings for one Agent's proxy surface."
       },
       "PublicDestinations": {
         "additionalProperties": false,
@@ -16061,10 +16125,10 @@
             "type": "array",
             "title": "Next Capability Ids"
           },
-          "next_tool_proxy": {
+          "next_tool_search": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AgentToolProxyView"
+                "$ref": "#/components/schemas/AgentToolSearchView"
               },
               {
                 "type": "null"
@@ -16132,7 +16196,7 @@
           "next_generation_digest",
           "next_model_id",
           "next_capability_ids",
-          "next_tool_proxy",
+          "next_tool_search",
           "captured",
           "capture_source"
         ],
@@ -16947,34 +17011,24 @@
         "title": "ToolImageView",
         "description": "Host-retained tool image, served through authenticated Thread attachment access."
       },
-      "ToolProxyConfig": {
-        "properties": {
-          "search_name": {
-            "type": "string",
-            "title": "Search Name",
-            "default": "search_proxy_tools"
+      "ToolSearchConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ProxyToolSearchConfig"
           },
-          "call_name": {
-            "type": "string",
-            "title": "Call Name",
-            "default": "call_proxy_tool"
-          },
-          "max_results": {
-            "type": "integer",
-            "title": "Max Results",
-            "default": 10
-          },
-          "max_search_bytes": {
-            "type": "integer",
-            "title": "Max Search Bytes",
-            "default": 32768
+          {
+            "$ref": "#/components/schemas/NativeToolSearchConfig"
           }
-        },
-        "type": "object",
-        "title": "ToolProxyConfig",
-        "description": "Names and bounded discovery settings for one Agent's proxy surface."
+        ],
+        "discriminator": {
+          "propertyName": "mode",
+          "mapping": {
+            "native": "#/components/schemas/NativeToolSearchConfig",
+            "proxy": "#/components/schemas/ProxyToolSearchConfig"
+          }
+        }
       },
-      "ToolProxySourceView": {
+      "ToolSearchSourceView": {
         "properties": {
           "resource_id": {
             "type": "string",
@@ -17028,7 +17082,7 @@
           "group",
           "presentation"
         ],
-        "title": "ToolProxySourceView"
+        "title": "ToolSearchSourceView"
       },
       "TranscriptEntry": {
         "properties": {

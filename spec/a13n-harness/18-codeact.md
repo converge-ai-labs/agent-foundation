@@ -126,9 +126,9 @@ This path preserves the current prepared tool, custom validators, Capability val
 
 `max_concurrency` covers conversion, validation hooks, and execution for admitted callbacks. A nested tool marked sequential is a barrier with respect to other nested calls in that execution, and a parent run-wide sequential execution policy remains authoritative.
 
-### ToolProxy Composition
+### ToolSearch Composition
 
-[Grouped ToolProxy discovery](07-tool-execution.md#grouped-toolproxy-discovery) can precede CodeAct without expanding its model-facing directory into every grouped schema. Only the two proxy controls are exported as sandbox callables for grouped sources; grouped canonical names are not separately exported. Ungrouped eligible tools keep their ordinary declarations. Search returns exact current schemas and target eligibility on demand, including when search and call happen within one runner execution.
+[Grouped ToolSearch discovery](07-tool-execution.md#grouped-toolsearch-discovery) can precede CodeAct without expanding its model-facing directory into every grouped schema. Only the two proxy controls are exported as sandbox callables for grouped sources; grouped canonical names are not separately exported. Ungrouped eligible tools keep their ordinary declarations. Search returns exact current schemas and target eligibility on demand, including when search and call happen within one runner execution.
 
 For a proxy call callback, the existing CodeAct bridge resolves the exact `(group, tool, arguments)` envelope against the same prepared manager, independently checks the target's typed CodeAct eligibility and fixed exclusions, and invokes that original target through the normal nested path. A true policy on the call control does not grant eligibility to its targets. The proxy envelope is syntax in this path, not an additional dispatched tool: validation/execution hooks, managed policy, events, and native successful-call usage apply to the actual target. One successful runner with one target consumes two successful calls, or three if the program also searches once. Each search or target callback consumes one admitted CodeAct tool attempt.
 

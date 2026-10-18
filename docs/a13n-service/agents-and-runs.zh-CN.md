@@ -72,7 +72,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
 | `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
 | `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
-| `tool_proxy`                      | 为已选连接、插件和平台工具配置分组代理搜索或原生工具搜索。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                               |
+| `tool_search`                     | 为已选连接、插件和平台工具配置分组代理搜索或原生工具搜索。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                               |
 | `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
 | `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
 | `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                                                               |
@@ -279,7 +279,7 @@ def history_json(messages: list[ModelMessage]) -> list[dict]:
 
 - `labels` 成为运行标签，之后可用 `PATCH …/runs/{run_id}` 修改。
 - `max_usage.requests`（1–10,000）限制运行模型请求数；需要更多时以 `usage_limit_exceeded` 失败。
-- `overrides` 只覆盖本次运行的修订配置。`toolsets` 替换整个工具集；`retries` 和每条 `subagents` 调用边只修改指定字段，`null` 调用边会移除；`model`、`model_settings`、`model_characteristics`、`instructions`、`lazy_environment`、`skills`、`connection_tools`、`tool_proxy`、`client_tools`、`plugins`、`reviewer`、`media_understanding` 和 `output_spec` 替换修订版本值。提交时和运行启动时按保存配置的规则验证结果，再固定到运行中。
+- `overrides` 只覆盖本次运行的修订配置。`toolsets` 替换整个工具集；`retries` 和每条 `subagents` 调用边只修改指定字段，`null` 调用边会移除；`model`、`model_settings`、`model_characteristics`、`instructions`、`lazy_environment`、`skills`、`connection_tools`、`tool_search`、`client_tools`、`plugins`、`reviewer`、`media_understanding` 和 `output_spec` 替换修订版本值。提交时和运行启动时按保存配置的规则验证结果，再固定到运行中。
 
 ```json
 {"options": {"max_usage": {"requests": 40},

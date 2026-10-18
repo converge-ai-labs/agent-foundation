@@ -114,12 +114,12 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         connection_tools: config.connection_tools?.map((item, i) =>
           i === index ? { ...item, connection_id: value } : item,
         ),
-        ...(config.tool_proxy
+        ...(config.tool_search
           ? {
-              tool_proxy: {
-                ...config.tool_proxy,
+              tool_search: {
+                ...config.tool_search,
                 groups: Object.fromEntries(
-                  Object.entries(config.tool_proxy.groups ?? {}).map(
+                  Object.entries(config.tool_search.groups ?? {}).map(
                     ([name, group]) => [
                       name,
                       {

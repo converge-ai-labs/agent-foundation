@@ -154,15 +154,15 @@ At execution, each connection must be `ready`. Before every call the Service che
 
 ### Grouped tool discovery
 
-In Console, open an agent's **Tool discovery** section, choose **Native tool search**, add a named group and select its sources. Use a model that supports native tool search. The same configuration is available through `tool_proxy`:
+In Console, open an agent's **Tool discovery** section, choose **Native tool search**, add a named group and select its sources. Use a model that supports native tool search. The same configuration is available through `tool_search`:
 
 ```json
 {
   "connection_tools": [
     {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
   ],
-  "tool_proxy": {
-    "native_search": true,
+  "tool_search": {
+    "config": {"mode": "native", "strategy": "bm25"},
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",
@@ -177,11 +177,11 @@ The model discovers individual tools through its provider's native search, then 
 
 Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's selected platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
 
-- **Native tool search** (`native_search: true`) uses provider-native discovery and ordinary tool calls.
-- **Grouped proxy search** (`native_search: false`) uses Harness's `search_proxy_tools` and `call_proxy_tool`. Optional `config` settings follow [Harness ToolProxy](../a13n-harness/tool-proxy.md).
-- **Source defaults** (omit `tool_proxy`) uses each source's existing loading settings.
+- **Native tool search** (`config.mode: native`) uses provider-native discovery and ordinary tool calls. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default.
+- **Grouped proxy search** (`config.mode: proxy`) uses Harness's `search_proxy_tools` and `call_proxy_tool`. Optional `config` settings follow [Harness ToolSearch](../a13n-harness/tool-search.md).
+- **Source defaults** (omit `tool_search`) uses each source's existing loading settings.
 
-Group membership selects presentation for tools the agent already has. A grouped connection uses the group's discovery mode while preserving its saved `defer_loading`; leaving the group restores that setting. Sources outside the groups keep their current behavior. Each child agent uses its own revision's configuration. A run override replaces the whole `tool_proxy` block; `groups: {}` turns grouping off for that run.
+Group membership selects presentation for tools the agent already has. A grouped connection uses the group's discovery mode while preserving its saved `defer_loading`; leaving the group restores that setting. Sources outside the groups keep their current behavior. Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` turns grouping off for that run.
 
 ### Caller headers
 

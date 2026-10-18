@@ -12,7 +12,7 @@ const sectionFields = {
   instructions: ["instructions"],
   skills: ["skills"],
   connections: ["connection_tools"],
-  toolSearch: ["tool_proxy"],
+  toolSearch: ["tool_search"],
   memory: ["memory_mounts", "memory"],
   toolsets: ["toolsets"],
   reviewer: ["reviewer"],
@@ -64,7 +64,7 @@ export function buildConfig(
     | "instructions"
     | "skills"
     | "connection_tools"
-    | "tool_proxy"
+    | "tool_search"
     | "memory_mounts"
     | "memory"
     | "toolsets"

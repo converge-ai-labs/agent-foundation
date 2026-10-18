@@ -9,7 +9,7 @@ from copy import deepcopy
 from typing import Any
 
 from a13n_harness import AgentContext
-from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 from a13n_harness.output_schema import structured_output_type
 from a13n_harness.tools import ToolPermissions, ToolPermissionSetting, source_tool_id, source_tool_prefix
 from a13n_harness.tools.client import ClientToolsetDefinition
@@ -119,16 +119,15 @@ def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -
     return ToolPermissions(rules=rules)
 
 
-def tool_proxy(config: AgentConfig, sources: Mapping[str, AbstractCapability[AgentContext]]) -> ToolProxyPlan | None:
+def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[AgentContext]]) -> ToolSearchPlan | None:
     """Bind presentation to the same source instances the host contributes to this agent."""
-    selected = config.tool_proxy
+    selected = config.tool_search
     if selected is None:
         return None
-    return ToolProxyPlan(
-        native_search=selected.native_search,
+    return ToolSearchPlan(
         config=selected.config,
         groups={
-            name: ToolProxySelection(
+            name: ToolSearchSelection(
                 description=group.description,
                 capabilities=tuple(sources[source] for source in group.connections)
                 + ((sources["platform"],) if group.platform else ()),

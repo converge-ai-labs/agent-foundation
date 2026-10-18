@@ -166,9 +166,9 @@ Source validation, unavailable functions, sandbox execution errors, and resource
 
 A nested call that may have reached an external side effect is never reported as safely retryable merely because the Python program failed later. Failure metadata marks side effects as uncertain only after a nested call has started; completed work is not rolled back or automatically replayed.
 
-### Large Tool Collections with ToolProxy
+### Large Tool Collections with ToolSearch
 
-[Grouped ToolProxy](tool-proxy.md#use-with-codeact) keeps large collections out of the runner's eager directory. CodeAct receives the proxy search/call functions, discovers exact schemas on demand, and dispatches the resolved target through its existing `ToolManager` bridge. Grouping never grants CodeAct eligibility: publish a typed policy on the source tools first. Both `run_code` and `run_program` support this path; proxy calls are conservatively sequential even inside `asyncio.gather`.
+[Grouped ToolSearch](tool-search.md#use-with-codeact) keeps large collections out of the runner's eager directory. CodeAct receives the proxy search/call functions, discovers exact schemas on demand, and dispatches the resolved target through its existing `ToolManager` bridge. Grouping never grants CodeAct eligibility: publish a typed policy on the source tools first. Both `run_code` and `run_program` support this path; proxy calls are conservatively sequential even inside `asyncio.gather`.
 
 ### Runtime State
 

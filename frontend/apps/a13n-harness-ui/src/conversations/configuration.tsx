@@ -217,7 +217,7 @@ export function ConversationConfiguration({
                   {JSON.stringify(
                     {
                       provenance: data.next_run.provenance,
-                      tool_proxy: data.next_tool_proxy,
+                      tool_search: data.next_tool_search,
                     },
                     null,
                     2,

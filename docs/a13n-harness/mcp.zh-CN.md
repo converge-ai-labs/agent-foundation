@@ -262,7 +262,7 @@ Host 可以通过自身的可信配置模型暴露同一条 URL 接入路径。�
 
 ## 将大型本地 MCP server 的工具分组
 
-在 `ToolProxyCapability(groups=...)` 中，将本地 `MCP` 或 `ContextualMCP` Capability 作为 [ToolProxyGroup 来源](tool-proxy.md#group-a-run-bound-mcp-capability)，可以暴露分组发现接口，而不是所有工具 schema。选择 `native=False, local=True`；provider 原生工具和延后加载来源不能作为代理目标。原生组合保留新的 Run 绑定和上下文请求头，调用仍使用原 MCP Toolset 和传输。这减少的是模型上下文，不减少 MCP 初始化或工具列表读取工作。
+在 `ToolSearchCapability(groups=...)` 中，将本地 `MCP` 或 `ContextualMCP` Capability 作为 [ToolSearchGroup 来源](tool-search.md#group-a-run-bound-mcp-capability)，可以暴露分组发现接口，而不是所有工具 schema。选择 `native=False, local=True`；provider 原生工具和延后加载来源不能作为代理目标。原生组合保留新的 Run 绑定和上下文请求头，调用仍使用原 MCP Toolset 和传输。这减少的是模型上下文，不减少 MCP 初始化或工具列表读取工作。
 
 ## 结果边界
 

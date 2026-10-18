@@ -68,12 +68,14 @@ export function useAgentDraft(initial: AgentConfig) {
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
-    [toolSearch, setToolSearch] = useState(toolSearchDraft(initial.tool_proxy)),
+    [toolSearch, setToolSearch] = useState(
+      toolSearchDraft(initial.tool_search),
+    ),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
     [memory, setMemory] = useState(initial.memory ?? {});
   const dirty =
     JSON.stringify(toolSearch) !==
-      JSON.stringify(toolSearchDraft(initial.tool_proxy)) ||
+      JSON.stringify(toolSearchDraft(initial.tool_search)) ||
     JSON.stringify(reviewer) !== JSON.stringify(initial.reviewer) ||
     mediaKinds.some(
       ({ kind }) =>
@@ -194,7 +196,7 @@ export function buildDraftConfig(
         error instanceof Error ? error : new Error(t("Invalid configuration")),
     };
   }
-  let proxy: AgentConfig["tool_proxy"];
+  let proxy: AgentConfig["tool_search"];
   try {
     proxy = toolSearchConfig(draft.toolSearch, draft.connections);
   } catch (error) {
@@ -230,7 +232,7 @@ export function buildDraftConfig(
             ? { media_understanding: draft.mediaUnderstanding }
             : {}),
           connection_tools: draft.connections,
-          tool_proxy: proxy,
+          tool_search: proxy,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,

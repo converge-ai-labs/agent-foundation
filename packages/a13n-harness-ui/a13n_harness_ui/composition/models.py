@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
-    AgentToolProxy,
+    AgentToolSearch,
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
@@ -132,7 +132,7 @@ class ResolvedAgentNode(CompositionModel):
     # Up to 128 generic servers plus 128 independently selected WebUI Apps.
     mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
     tools: tuple[str, ...] | None = Field(default=None, max_length=256)
-    tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
+    tool_search: AgentToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="before")

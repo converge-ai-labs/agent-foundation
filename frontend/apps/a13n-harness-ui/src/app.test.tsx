@@ -77,10 +77,10 @@ function fixture(request: Request): Response | Promise<Response> {
         },
       ],
     });
-  if (path === "/api/agents/agent-assistant/tool-proxy")
+  if (path === "/api/agents/agent-assistant/tool-search")
     return json({
       agent_id: "agent-assistant",
-      tool_proxy: { groups: {} },
+      tool_search: { groups: {} },
       sources: [],
     });
   if (path === "/api/selectors")

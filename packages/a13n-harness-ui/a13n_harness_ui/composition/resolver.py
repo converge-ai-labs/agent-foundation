@@ -417,11 +417,11 @@ class AgentCompositionResolver:
             harness_plugins=plugins,
             mcp_servers=mcp,
             tools=agent.tools,
-            tool_proxy=(
-                agent.tool_proxy.selected(
+            tool_search=(
+                agent.tool_search.selected(
                     mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
                 )
-                if agent.tool_proxy is not None
+                if agent.tool_search is not None
                 else None
             ),
             children=(),
@@ -536,11 +536,11 @@ class AgentCompositionResolver:
             ),
             mcp_servers=self._mcp_recipes(source, mcp_ids),
             tools=parent.tools if child.tools is None else child.tools,
-            tool_proxy=(
-                parent.tool_proxy.selected(
+            tool_search=(
+                parent.tool_search.selected(
                     mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
                 )
-                if parent.tool_proxy is not None
+                if parent.tool_search is not None
                 else None
             ),
             children=(),

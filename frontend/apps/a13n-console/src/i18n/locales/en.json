@@ -1,4 +1,7 @@
 {
+  "Native search strategy": "Native search strategy",
+  "Regex": "Regex",
+  "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.": "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.",
   "Tool discovery": "Tool discovery",
   "Group selected tools and choose how the model discovers them.": "Group selected tools and choose how the model discovers them.",
   "Discovery mode": "Discovery mode",

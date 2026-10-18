@@ -10,8 +10,8 @@ from typing import Annotated, Literal, Self
 
 from a13n_harness.capabilities import ToolReviewConfig
 from a13n_harness.tools.client import ClientToolDefinition
-from a13n_harness.tools.tool_proxy import ToolProxyConfig, validate_group
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, field_validator, model_validator
+from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.infra.ids import Key, ObjectId
@@ -166,29 +166,17 @@ class PlatformSelection(_Frozen):
     write_permission: Literal["allow", "ask", "deny"] = "ask"
 
 
-class ToolProxyGroup(_Frozen):
+class ToolSearchGroup(_Frozen):
     description: str = Field(min_length=1, max_length=512)
     connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
     plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
     platform: bool = False
 
 
-class ToolProxy(_Frozen):
+class ToolSearch(ToolSearchConfiguration):
     """Presentation of already-selected sources, composed by Harness once per agent."""
 
-    native_search: bool = False
-    groups: dict[str, ToolProxyGroup] = Field(default_factory=dict, max_length=128)
-    config: ToolProxyConfig = Field(default_factory=ToolProxyConfig)
-
-    @field_validator("config", mode="before")
-    @classmethod
-    def parse_config(cls, value: object) -> object:
-        if isinstance(value, dict):
-            try:
-                return ToolProxyConfig(**value)
-            except (TypeError, ValueError) as error:
-                raise ValueError(f"Invalid tool_proxy.config: {error}") from error
-        return value
+    groups: dict[str, ToolSearchGroup] = Field(default_factory=dict, max_length=128)
 
     @model_validator(mode="after")
     def unique_sources(self) -> Self:
@@ -202,7 +190,7 @@ class ToolProxy(_Frozen):
             ]
             for source in sources:
                 if source in owners:
-                    raise ValueError(f"ToolProxy source {source[0]} {source[1]!r} belongs to multiple groups")
+                    raise ValueError(f"ToolSearch source {source[0]} {source[1]!r} belongs to multiple groups")
                 owners.add(source)
         return self
 
@@ -222,7 +210,7 @@ class AgentConfig(_Frozen):
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
     platform_tools: PlatformSelection = Field(default_factory=PlatformSelection)
-    tool_proxy: ToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
+    tool_search: ToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     builtin_skills: frozenset[Literal["platform-operations"]] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
@@ -254,16 +242,16 @@ class AgentConfig(_Frozen):
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
-        if self.tool_proxy is not None:
+        if self.tool_search is not None:
             connections = {item.connection_id for item in self.connection_tools}
             plugins = {item.instance_name for item in self.plugins}
-            for name, group in self.tool_proxy.groups.items():
+            for name, group in self.tool_search.groups.items():
                 if set(group.connections) - connections:
-                    raise ValueError(f"ToolProxy group {name!r} references an unselected connection")
+                    raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
                 if set(group.plugins) - plugins:
-                    raise ValueError(f"ToolProxy group {name!r} references an unselected plugin instance")
+                    raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
                 if group.platform and not self.platform_tools.groups:
-                    raise ValueError(f"ToolProxy group {name!r} requires selected platform tools")
+                    raise ValueError(f"ToolSearch group {name!r} requires selected platform tools")
         return self
 
 
@@ -303,7 +291,7 @@ class AgentOverride(_Frozen):
     skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
     platform_tools: PlatformSelection | None = None
-    tool_proxy: ToolProxy | None = None
+    tool_search: ToolSearch | None = None
     builtin_skills: frozenset[Literal["platform-operations"]] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
@@ -324,7 +312,7 @@ _REPLACED = (
     "skill_sync",
     "connection_tools",
     "platform_tools",
-    "tool_proxy",
+    "tool_search",
     "builtin_skills",
     "client_tools",
     "output_spec",

@@ -1205,34 +1205,34 @@ async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(
     agent_path.write_text(
         agent_path.read_text()
         + """
-tool_proxy:
+tool_search:
   groups:
     knowledge:
       description: Search documents and memory.
       mcp_servers: [mcp-docs]
       harness_plugins: [plugin-memory]
-  config: {max_results: 5}
 """
-        + ("  native_search: true\n" if native_search else "")
+        + ("  config: {mode: native}\n" if native_search else "  config: {mode: proxy, max_results: 5}\n")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     selection = replace(_selection(), mcp_server_ids=())
     composition = resolver.resolve_run(source, selection)
-    proxy = composition.root.tool_proxy
+    proxy = composition.root.tool_search
     assert proxy is not None
-    assert proxy.config.max_results == 5
-    assert proxy.native_search is native_search
+    if not native_search:
+        assert proxy.config.max_results == 5
+    assert (proxy.config.mode == "native") is native_search
     payload = composition.model_dump_json()
-    assert ('"native_search"' in payload) is native_search
+    assert '"native_search"' not in payload
     assert type(composition).model_validate_json(payload).model_dump_json() == payload
     assert proxy.groups["knowledge"].mcp_servers == ()
     assert proxy.groups["knowledge"].harness_plugins == ("plugin-memory",)
-    assert composition.root.children[0].definition.tool_proxy == proxy
-    assert composition.root.children[1].definition.tool_proxy is None
+    assert composition.root.children[0].definition.tool_search == proxy
+    assert composition.root.children[1].definition.tool_search is None
     assert type(composition).model_validate_json(composition.model_dump_json()) == composition
     AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
-    assert source.agents["agent-assistant"].tool_proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+    assert source.agents["agent-assistant"].tool_search.groups["knowledge"].mcp_servers == ("mcp-docs",)
 
 
 @pytest.mark.parametrize("host_mode", ["local", "webui"])
@@ -1255,7 +1255,7 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     agent_path = tmp_path / "agents/assistant.yaml"
     agent_path.write_text(
         agent_path.read_text()
-        + "tool_proxy:\n  groups:\n    apps:\n      description: App tools\n      mcp_servers: [mcp-app]\n"
+        + "tool_search:\n  groups:\n    apps:\n      description: App tools\n      mcp_servers: [mcp-app]\n"
     )
     # Exercise nested Agent-resource children as well as root Markdown inheritance.
     reviewer_path = tmp_path / "agents/reviewer.yaml"
@@ -1271,12 +1271,12 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     assert tuple(item.server_id for item in root.mcp_servers) == expected
     assert tuple(item.server_id for item in root.mcp_servers if item.generic_selected) == generic_ids
     assert all(item.apps_enabled == injected for item in root.mcp_servers)
-    assert root.tool_proxy is not None
+    assert root.tool_search is not None
     if injected:
-        assert root.tool_proxy.groups["apps"].mcp_servers == ("mcp-app",)
+        assert root.tool_search.groups["apps"].mcp_servers == ("mcp-app",)
     else:
-        assert root.tool_proxy.groups == {}
-    assert root.children[0].definition.tool_proxy == root.tool_proxy
+        assert root.tool_search.groups == {}
+    assert root.children[0].definition.tool_search == root.tool_search
     assert root.children[0].definition.tools == ("glob", "grep")
     assert source.agents["agent-assistant"].mcp_servers is None
     assert source.agents["agent-reviewer"].mcp_servers == ()
@@ -1354,9 +1354,9 @@ async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payl
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
     payload = composition.model_dump_json()
-    assert '"tool_proxy"' not in payload
+    assert '"tool_search"' not in payload
     restored = type(composition).model_validate_json(payload)
-    assert restored.root.tool_proxy is None
+    assert restored.root.tool_search is None
     assert restored.model_dump_json() == payload
 
 

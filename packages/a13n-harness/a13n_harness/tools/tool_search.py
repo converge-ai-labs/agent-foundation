@@ -1,55 +1,90 @@
-"""Passive ToolProxy membership and resolution against the native tool directory."""
+"""Passive ToolSearch membership and resolution against the native tool directory."""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import ModelRetry, RunContext, ToolDefinition
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness.context import AgentContext
 
-PROXY_MEMBERSHIP_KEY = "a13n.tool_proxy.member"
-PROXY_CONTROL_KEY = "a13n.tool_proxy.control"
+PROXY_MEMBERSHIP_KEY = "a13n.tool_search.member"
+PROXY_CONTROL_KEY = "a13n.tool_search.control"
 
 
 @dataclass(frozen=True, slots=True)
-class ToolProxyConfig:
+class ProxyToolSearchConfig:
     """Names and bounded discovery settings for one Agent's proxy surface."""
 
+    # Serialized union inputs require the tag; Python constructors supply it.
+    __pydantic_config__ = ConfigDict(extra="forbid", json_schema_extra={"required": ["mode"]})
+
+    mode: Literal["proxy"] = field(default="proxy", kw_only=True)
     search_name: str = "search_proxy_tools"
     call_name: str = "call_proxy_tool"
-    max_results: int = 10
-    max_search_bytes: int = 32_768
+    max_results: Annotated[int, Field(strict=True)] = 10
+    max_search_bytes: Annotated[int, Field(strict=True)] = 32_768
 
     def __post_init__(self) -> None:
+        if self.mode != "proxy":
+            raise ValueError("ProxyToolSearchConfig.mode must be 'proxy'")
         for name in (self.search_name, self.call_name):
             if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", name) is None:
                 raise ValueError(
-                    "ToolProxy entry names must start with a letter or underscore and contain 1-64 letters, digits, underscores, or hyphens."
+                    "ToolSearch entry names must start with a letter or underscore and contain 1-64 letters, digits, underscores, or hyphens."
                 )
         if self.search_name == self.call_name:
-            raise ValueError("ToolProxy search and call names must differ")
+            raise ValueError("ToolSearch search and call names must differ")
         if (
             isinstance(self.max_results, bool)
             or not isinstance(self.max_results, int)
             or not 1 <= self.max_results <= 100
         ):
-            raise ValueError("ToolProxy max_results must be an integer between 1 and 100")
+            raise ValueError("ToolSearch max_results must be an integer between 1 and 100")
         if (
             isinstance(self.max_search_bytes, bool)
             or not isinstance(self.max_search_bytes, int)
             or not 1024 <= self.max_search_bytes <= 32_768
         ):
-            raise ValueError("ToolProxy max_search_bytes must be an integer between 1024 and 32768")
+            raise ValueError("ToolSearch max_search_bytes must be an integer between 1024 and 32768")
 
 
 @dataclass(frozen=True, slots=True)
-class ToolProxyMembership:
+class NativeToolSearchConfig:
+    """Provider-native discovery; omitted strategy uses the provider default."""
+
+    # Serialized union inputs require the tag; Python constructors supply it.
+    __pydantic_config__ = ConfigDict(extra="forbid", json_schema_extra={"required": ["mode"]})
+
+    mode: Literal["native"] = field(default="native", kw_only=True)
+    strategy: Literal["bm25", "regex"] | None = None
+
+    def __post_init__(self) -> None:
+        if self.mode != "native":
+            raise ValueError("NativeToolSearchConfig.mode must be 'native'")
+        if self.strategy not in (None, "bm25", "regex"):
+            raise ValueError("Native tool search strategy must be bm25, regex, or omitted")
+
+
+type ToolSearchConfig = Annotated[ProxyToolSearchConfig | NativeToolSearchConfig, Field(discriminator="mode")]
+
+
+class ToolSearchConfiguration(BaseModel):
+    """Shared mode-specific settings for host tool search configuration."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    config: ToolSearchConfig = Field(default_factory=ProxyToolSearchConfig)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolSearchMembership:
     """One prepared tool's presentation identity, not a dispatch binding."""
 
     group: str
@@ -60,19 +95,19 @@ class ToolProxyMembership:
 def validate_group(group: str, description: str) -> None:
     if not isinstance(group, str) or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,31}", group) is None or "__" in group:
         raise ValueError(
-            "ToolProxy group must start with a letter and contain 1-32 letters, digits, underscores, or hyphens, without '__'."
+            "ToolSearch group must start with a letter and contain 1-32 letters, digits, underscores, or hyphens, without '__'."
         )
     if not isinstance(description, str) or not description.strip() or len(description) > 512:
-        raise ValueError("ToolProxyGroup.description must be non-blank and at most 512 characters.")
+        raise ValueError("ToolSearchGroup.description must be non-blank and at most 512 characters.")
 
 
-def proxy_membership(definition: ToolDefinition) -> ToolProxyMembership | None:
+def proxy_membership(definition: ToolDefinition) -> ToolSearchMembership | None:
     value = (definition.metadata or {}).get(PROXY_MEMBERSHIP_KEY)
     if value is None:
         return None
-    if not isinstance(value, ToolProxyMembership):
+    if not isinstance(value, ToolSearchMembership):
         raise TypeError(
-            f"Invalid ToolProxy membership on {definition.name!r}; configure ToolProxyCapability.groups instead of writing reserved metadata."
+            f"Invalid ToolSearch membership on {definition.name!r}; configure ToolSearchCapability.groups instead of writing reserved metadata."
         )
     return value
 
@@ -86,7 +121,7 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
     """Validate after preparation too: native wrappers can add deferral flags later."""
     if definition.defer_loading:
         raise UserError(
-            f"Tool {definition.name!r} uses deferred loading; remove defer_loading=True from the grouped source or leave it outside ToolProxy."
+            f"Tool {definition.name!r} uses deferred loading; remove defer_loading=True from the grouped source or leave it outside ToolSearch."
         )
     if definition.unless_native:
         raise UserError(
@@ -99,7 +134,7 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
         or (definition.metadata or {}).get("a13n.codeact.runner") is True
     ):
         raise UserError(
-            f"Tool {definition.name!r} is not a local function tool supported by ToolProxy. Leave control, output, external, and provider-native tools directly exposed."
+            f"Tool {definition.name!r} is not a local function tool supported by ToolSearch. Leave control, output, external, and provider-native tools directly exposed."
         )
 
 
@@ -117,11 +152,11 @@ def proxy_directory(
         key = (member.group, member.tool)
         if key in directory:
             raise ValueError(
-                f"Duplicate ToolProxy tool {member.group}/{member.tool}; rename one source tool or assign it to another group."
+                f"Duplicate ToolSearch tool {member.group}/{member.tool}; rename one source tool or assign it to another group."
             )
         if member.group in descriptions and descriptions[member.group] != member.description:
             raise ValueError(
-                f"Conflicting descriptions for ToolProxy group {member.group!r}; use the same group_description for all sources in this group."
+                f"Conflicting descriptions for ToolSearch group {member.group!r}; use the same group_description for all sources in this group."
             )
         descriptions[member.group] = member.description
         directory[key] = name
@@ -153,5 +188,5 @@ def resolve_proxy_call(
 def active_proxy_tools(ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
     manager = ctx.tool_manager
     if manager is None or manager.tools is None:
-        raise RuntimeError("ToolProxy requires the current prepared ToolManager")
+        raise RuntimeError("ToolSearch requires the current prepared ToolManager")
     return manager.tools

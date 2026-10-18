@@ -3595,7 +3595,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
       };
-      tool_proxy?: components["schemas"]["ToolProxy"] | null;
+      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -3677,7 +3677,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
       };
-      tool_proxy?: components["schemas"]["ToolProxy"] | null;
+      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -3787,7 +3787,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Input"] | null;
       } | null;
-      tool_proxy?: components["schemas"]["ToolProxy"] | null;
+      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -3840,7 +3840,7 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Output"] | null;
       } | null;
-      tool_proxy?: components["schemas"]["ToolProxy"] | null;
+      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -6749,6 +6749,19 @@ export interface components {
       /** Working Directory */
       working_directory: string | null;
     };
+    /**
+     * NativeToolSearchConfig
+     * @description Provider-native discovery; omitted strategy uses the provider default.
+     */
+    NativeToolSearchConfig: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "native";
+      /** Strategy */
+      strategy?: ("bm25" | "regex") | null;
+    };
     /** NewThread */
     NewThread: {
       /** Agent Id */
@@ -7327,6 +7340,37 @@ export interface components {
       };
       /** Name */
       name?: string | null;
+    };
+    /**
+     * ProxyToolSearchConfig
+     * @description Names and bounded discovery settings for one Agent's proxy surface.
+     */
+    ProxyToolSearchConfig: {
+      /**
+       * Call Name
+       * @default call_proxy_tool
+       */
+      call_name?: string;
+      /**
+       * Max Results
+       * @default 10
+       */
+      max_results?: number;
+      /**
+       * Max Search Bytes
+       * @default 32768
+       */
+      max_search_bytes?: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "proxy";
+      /**
+       * Search Name
+       * @default search_proxy_tools
+       */
+      search_name?: string;
     };
     /** Request */
     Request: {
@@ -8563,68 +8607,6 @@ export interface components {
     ToolPermissionSetting:
       components["schemas"]["ToolPermissionMode"] | "inherit";
     /**
-     * ToolProxy
-     * @description Presentation of already-selected sources, composed by Harness once per agent.
-     */
-    ToolProxy: {
-      config?: components["schemas"]["ToolProxyConfig"];
-      /** Groups */
-      groups?: {
-        [key: string]: components["schemas"]["ToolProxyGroup"];
-      };
-      /**
-       * Native Search
-       * @default false
-       */
-      native_search?: boolean;
-    };
-    /**
-     * ToolProxyConfig
-     * @description Names and bounded discovery settings for one Agent's proxy surface.
-     */
-    ToolProxyConfig: {
-      /**
-       * Call Name
-       * @default call_proxy_tool
-       */
-      call_name?: string;
-      /**
-       * Max Results
-       * @default 10
-       */
-      max_results?: number;
-      /**
-       * Max Search Bytes
-       * @default 32768
-       */
-      max_search_bytes?: number;
-      /**
-       * Search Name
-       * @default search_proxy_tools
-       */
-      search_name?: string;
-    };
-    /** ToolProxyGroup */
-    ToolProxyGroup: {
-      /**
-       * Connections
-       * @default []
-       */
-      connections?: string[];
-      /** Description */
-      description: string;
-      /**
-       * Platform
-       * @default false
-       */
-      platform?: boolean;
-      /**
-       * Plugins
-       * @default []
-       */
-      plugins?: string[];
-    };
-    /**
      * ToolResourceSelector
      * @description The resource a tool needs before it can be enabled.
      */
@@ -8650,6 +8632,40 @@ export interface components {
      * @enum {string}
      */
     ToolRiskLevel: "low" | "medium" | "high" | "extra_high";
+    /**
+     * ToolSearch
+     * @description Presentation of already-selected sources, composed by Harness once per agent.
+     */
+    ToolSearch: {
+      config?: components["schemas"]["ToolSearchConfig"];
+      /** Groups */
+      groups?: {
+        [key: string]: components["schemas"]["ToolSearchGroup"];
+      };
+    };
+    ToolSearchConfig:
+      | components["schemas"]["ProxyToolSearchConfig"]
+      | components["schemas"]["NativeToolSearchConfig"];
+    /** ToolSearchGroup */
+    ToolSearchGroup: {
+      /**
+       * Connections
+       * @default []
+       */
+      connections?: string[];
+      /** Description */
+      description: string;
+      /**
+       * Platform
+       * @default false
+       */
+      platform?: boolean;
+      /**
+       * Plugins
+       * @default []
+       */
+      plugins?: string[];
+    };
     /** ToolSelection */
     ToolSelection: {
       /** Config */

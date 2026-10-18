@@ -1,32 +1,42 @@
 import type { AgentConfig } from "./configuration";
 
-type ToolProxy = NonNullable<AgentConfig["tool_proxy"]>;
-export type SearchGroup = NonNullable<ToolProxy["groups"]>[string] & {
+type ToolSearch = NonNullable<AgentConfig["tool_search"]>;
+export type SearchGroup = NonNullable<ToolSearch["groups"]>[string] & {
   name: string;
 };
 export interface ToolSearchDraft {
   mode: "direct" | "proxy" | "native";
   groups: SearchGroup[];
-  config?: ToolProxy["config"];
+  config?: ToolSearch["config"];
+  strategy?: "bm25" | "regex";
 }
 
 export function toolSearchDraft(
-  value: AgentConfig["tool_proxy"],
+  value: AgentConfig["tool_search"],
 ): ToolSearchDraft {
   return {
-    mode: value == null ? "direct" : value.native_search ? "native" : "proxy",
+    mode:
+      value == null
+        ? "direct"
+        : value.config?.mode === "native"
+          ? "native"
+          : "proxy",
     groups: Object.entries(value?.groups ?? {}).map(([name, group]) => ({
       name,
       ...group,
     })),
     config: value?.config,
+    strategy:
+      value?.config?.mode === "native"
+        ? (value.config.strategy ?? undefined)
+        : undefined,
   };
 }
 
 export function toolSearchConfig(
   draft: ToolSearchDraft,
   connections: NonNullable<AgentConfig["connection_tools"]>,
-): AgentConfig["tool_proxy"] {
+): AgentConfig["tool_search"] {
   if (draft.mode === "direct") return undefined;
   const selected = new Set(connections.map((item) => item.connection_id));
   const names = new Set<string>();
@@ -45,7 +55,16 @@ export function toolSearchConfig(
     names.add(group.name);
   }
   return {
-    native_search: draft.mode === "native",
+    config:
+      draft.mode === "native"
+        ? {
+            mode: "native",
+            ...(draft.strategy ? { strategy: draft.strategy } : {}),
+          }
+        : {
+            ...(draft.config?.mode !== "native" ? draft.config : {}),
+            mode: "proxy",
+          },
     groups: Object.fromEntries(
       draft.groups.map(({ name, ...group }) => [
         name,
@@ -58,6 +77,5 @@ export function toolSearchConfig(
         },
       ]),
     ),
-    ...(draft.config ? { config: draft.config } : {}),
   };
 }

@@ -167,3 +167,21 @@ it("remaps Web search and scrape independently while retaining complete toolset 
     "wprov_scrape",
   );
 });
+
+it("rejects mixed search selectors when importing", () => {
+  for (const search of [
+    { config: { mode: "native" }, native_search: true },
+    { config: { mode: "native", max_results: 3 } },
+    { config: { mode: "proxy", strategy: "bm25" } },
+  ]) {
+    expect(() =>
+      parseAgentFile(
+        JSON.stringify({
+          schema_version: 1,
+          name: "Invalid agent",
+          config: { model: "test", tool_search: search },
+        }),
+      ),
+    ).toThrow();
+  }
+});

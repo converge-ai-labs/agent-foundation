@@ -86,12 +86,12 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
         ):
             thread = await app.create_thread()
             assert thread.configuration.mcp_server_ids == ()
-            proxy = await app.inspect_agent_tool_proxy(thread.configuration.agent_source.id)
+            proxy = await app.inspect_agent_tool_search(thread.configuration.agent_source.id)
             assert next(item for item in proxy.sources if item.resource_id == "mcp-counter").enabled
             inspection = await app.inspect_thread_configuration(thread.thread_id)
             assert inspection.next_run.configuration.mcp_server_ids == ()
             assert next(
-                item for item in inspection.next_tool_proxy.sources if item.resource_id == "mcp-counter"
+                item for item in inspection.next_tool_search.sources if item.resource_id == "mcp-counter"
             ).enabled
             receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Open a counter")
             result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=20)
@@ -294,6 +294,6 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
             inspection = await app.inspect_thread_configuration(thread.thread_id)
             assert inspection.next_run.configuration.mcp_server_ids == ()
             assert not next(
-                item for item in inspection.next_tool_proxy.sources if item.resource_id == "mcp-counter"
+                item for item in inspection.next_tool_search.sources if item.resource_id == "mcp-counter"
             ).enabled
             assert inspection.captured.mcp_server_ids == ("mcp-counter",)

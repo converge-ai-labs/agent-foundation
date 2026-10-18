@@ -181,29 +181,29 @@ subagents:
 
 被引用 Agent 可有自己的显式子级。`agent-coder → agent-reviewer → agent-coder` 等循环无效。同一直接角色清单名称不能重复。子级工作仍遵循应用已有 Project、Environment、生命周期和授权规则；Agent 引用不能提升权限。
 
-## 工具代理分组
+## 工具搜索分组
 
 将大型 MCP 和 Harness Plugin 工具集合分组，无须把全部工具 schema 加载到模型上下文。编辑 **Agent 文件**，不要编辑根默认值或另建分组资源：
 
 ```yaml
 # In agents/coder.yaml; referenced resources must already exist.
-tool_proxy:
-  native_search: false
+tool_search:
   groups:
     knowledge:
       description: Search project documents and organizational memory
       mcp_servers: [mcp-docs]
       harness_plugins: [plugin-memory]
   config:
+    mode: proxy
     search_name: search_proxy_tools
     call_name: call_proxy_tool
     max_results: 10
     max_search_bytes: 32768
 ```
 
-`native_search: false` 为默认值：模型使用 ToolProxy 的搜索和调用工具，通过 `config` 配置。设置 `native_search: true` 后，模型通过原生工具搜索发现同一批分组工具，再直接调用。两种模式均保留分组工具名称，并在本地执行。
+`config.mode: proxy` 为默认模式，使用 Harness 的搜索和调用工具。要使用原生发现和直接本地调用，将 `config` 替换为 `{mode: native, strategy: bm25}`。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。原生模式不接受代理控制工具名称和限制；代理模式不接受原生策略设置。两种模式均保留分组工具名称，并在本地执行。
 
-使用原生模式时，选择支持原生工具搜索的 Model。不支持的 Model 会在发送模型请求前报错，不会回退。执行细节见[原生工具搜索](../a13n-harness/tool-proxy.md#select-native-tool-search)。
+使用原生模式时，选择支持原生工具搜索的 Model。不支持的 Model 会在发送模型请求前报错，不会回退。执行细节见[原生工具搜索](../a13n-harness/tool-search.md#select-native-tool-search)。
 
 `config` 可选。组名以字母开头，最多 32 个字母、数字、下划线或连字符，不得包含 `__`。描述不得为空，最多 512 字符。选择确切资源 ID，同一插件的多个实例需使用不同 ID。一个来源只能属于一组。同组不同来源必须有不同工具名；冲突会失败，不会编造别名。
 
@@ -216,9 +216,9 @@ a13n-harness-ui config validate
 a13n-harness-ui config show --format json
 ```
 
-`config show` 为已配置 Agent 提供 `tool_proxy_previews`。预览和验证不连接 MCP，也不发现工具。
+`config show` 为已配置 Agent 提供 `tool_search_previews`。预览和验证不连接 MCP，也不发现工具。
 
-使用精确 `tools` 允许列表时，列出 `knowledge__lookup` 等规范目标名，不能只列 `call_proxy_tool`。代理控件不授权所有成员。重命名组会改变规范名称，需更新受影响允许列表。已有 CodeAct 策略保留；分组不会让不符合条件的工具可被 CodeAct 调用。见 [ToolProxy 发现与执行](../a13n-harness/tool-proxy.md)。
+使用精确 `tools` 允许列表时，列出 `knowledge__lookup` 等规范目标名，不能只列 `call_proxy_tool`。代理控件不授权所有成员。重命名组会改变规范名称，需更新受影响允许列表。已有 CodeAct 策略保留；分组不会让不符合条件的工具可被 CodeAct 调用。见 [ToolSearch 发现与执行](../a13n-harness/tool-search.md)。
 
 独立 Agent 子级使用自己的分组。Markdown subagent 继承父级分组方案和已有来源/工具限制。没有分组方案的旧 Run 保留直接展示。
 

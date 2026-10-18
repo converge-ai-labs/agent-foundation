@@ -47,11 +47,11 @@ export function AgentFields({
       item.resource_kind === "agent" && item.resource_ids.includes(raw.id),
   );
   const proxy = useQuery({
-    queryKey: ["agent-tool-proxy", raw.id],
+    queryKey: ["agent-tool-search", raw.id],
     enabled: !!accepted,
     queryFn: ({ signal }) =>
       result(
-        client.GET("/api/agents/{agent_id}/tool-proxy", {
+        client.GET("/api/agents/{agent_id}/tool-search", {
           params: { path: { agent_id: raw.id } },
           signal,
         }),

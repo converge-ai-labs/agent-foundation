@@ -28,7 +28,7 @@ permissions = ToolPermissionsCapability(
 )
 ```
 
-按稳定 ID 匹配：托管工具使用声明的 ID，普通工具使用 `tool/<toolset-id>/<original-name>`，本地 MCP 使用 `mcp/<source-id>/<original-name>`。段使用百分号编码；重命名、ToolProxy 和 CodeAct 保留 ID。自定义命名包装可使用 `ToolIdentityToolset`。
+按稳定 ID 匹配：托管工具使用声明的 ID，普通工具使用 `tool/<toolset-id>/<original-name>`，本地 MCP 使用 `mcp/<source-id>/<original-name>`。段使用百分号编码；重命名、ToolSearch 和 CodeAct 保留 ID。自定义命名包装可使用 `ToolIdentityToolset`。
 
 规则优先级依次为确切匹配、最长 `.*` 或 `/*` 前缀、`*`、`default`。`inherit` 使用工具默认值；可信代码未显式声明时为不审查的 `allow`。外部/提供方原生工具保留独立边界。仅有审查器和风险规则不会开启审查；需为待评估工具选择 `review`。`allow` 继续，`deny` 在自定义验证前失败，`ask` 请求人工审批，`review` 咨询匹配审查器。未配置或没有匹配审查器时，review 不增加限制。所有模式都不提供凭据，也不绕过 Host/Environment 策略。
 

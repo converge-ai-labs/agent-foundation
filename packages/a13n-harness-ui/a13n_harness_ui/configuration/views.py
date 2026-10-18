@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from a13n_harness_ui.errors import ConfigurationError
 
-from .models import AgentResource, AgentToolProxy, LoadedHarnessUiConfiguration
+from .models import AgentResource, AgentToolSearch, LoadedHarnessUiConfiguration
 from .mutation import ConfigurationMutationResult, _select_target
 
 
@@ -29,7 +29,7 @@ class ConfigurationSourceCatalog(BaseModel):
     sources: tuple[ConfigurationSourceInfo, ...]
 
 
-class ToolProxySourceView(BaseModel):
+class ToolSearchSourceView(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     resource_id: str
@@ -40,14 +40,14 @@ class ToolProxySourceView(BaseModel):
     presentation: Literal["active", "dormant", "direct", "disabled"]
 
 
-class AgentToolProxyView(BaseModel):
+class AgentToolSearchView(BaseModel):
     """Static source membership; never connects to MCP or discovers tools."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     agent_id: str
-    tool_proxy: AgentToolProxy
-    sources: tuple[ToolProxySourceView, ...]
+    tool_search: AgentToolSearch
+    sources: tuple[ToolSearchSourceView, ...]
 
 
 class ConfigurationSourceView(ConfigurationSourceInfo):
@@ -117,14 +117,14 @@ def source_view(
     raise ConfigurationError("The accepted configuration source does not exist.", code="configuration_source_not_found")
 
 
-def agent_tool_proxy_view(
+def agent_tool_search_view(
     source: LoadedHarnessUiConfiguration,
     agent: AgentResource,
     *,
     mcp_server_ids: tuple[str, ...] | None = None,
     harness_plugin_ids: tuple[str, ...] | None = None,
-) -> AgentToolProxyView:
-    proxy = agent.tool_proxy or AgentToolProxy()
+) -> AgentToolSearchView:
+    proxy = agent.tool_search or AgentToolSearch()
     owners = {
         resource_id: name
         for name, group in proxy.groups.items()
@@ -139,7 +139,7 @@ def agent_tool_proxy_view(
         group = owners.get(resource.id)
         enabled = resource.id in selected
         sources.append(
-            ToolProxySourceView(
+            ToolSearchSourceView(
                 resource_id=resource.id,
                 name=resource.name,
                 kind=resource.kind,
@@ -148,4 +148,4 @@ def agent_tool_proxy_view(
                 presentation=("active" if enabled else "dormant") if group else ("direct" if enabled else "disabled"),
             )
         )
-    return AgentToolProxyView(agent_id=agent.id, tool_proxy=proxy, sources=tuple(sources))
+    return AgentToolSearchView(agent_id=agent.id, tool_search=proxy, sources=tuple(sources))

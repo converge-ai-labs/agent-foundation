@@ -51,7 +51,7 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.tools.tool_proxy import proxy_control, proxy_membership, resolve_proxy_call
+from a13n_harness.tools.tool_search import proxy_control, proxy_membership, resolve_proxy_call
 
 from ._instructions import tool_instruction
 

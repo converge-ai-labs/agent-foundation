@@ -397,7 +397,7 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
         async def after_model_request(self, ctx, *, request_context, response):
             return replace(response, provider_response_id="resp_nested_parent")
 
-    from .test_tool_proxy import _group, _run
+    from .test_tool_search import _group, _run
 
     def double(value: int) -> int:
         return value * 2

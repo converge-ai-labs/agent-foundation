@@ -94,7 +94,6 @@ if TYPE_CHECKING:
         SubagentWaitRequest,
         SubagentWaitResult,
     )
-    from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
     from .tool_review import (
         AgentToolReviewer,
         ToolCallSource,
@@ -107,6 +106,14 @@ if TYPE_CHECKING:
         ToolReviewResult,
         ToolReviewRule,
         ToolRiskLevel,
+    )
+    from .tool_search import (
+        NativeToolSearchConfig,
+        ProxyToolSearchConfig,
+        ToolSearchCapability,
+        ToolSearchGroup,
+        ToolSearchPlan,
+        ToolSearchSelection,
     )
     from .video_url import VideoUrlCapability
     from .web import (
@@ -252,12 +259,13 @@ _EXPORTS = {
         "SubagentWaitRequest",
         "SubagentWaitResult",
     ),
-    "a13n_harness.capabilities.tool_proxy": (
-        "ToolProxyCapability",
-        "ToolProxyConfig",
-        "ToolProxyGroup",
-        "ToolProxyPlan",
-        "ToolProxySelection",
+    "a13n_harness.capabilities.tool_search": (
+        "ToolSearchCapability",
+        "ProxyToolSearchConfig",
+        "NativeToolSearchConfig",
+        "ToolSearchGroup",
+        "ToolSearchPlan",
+        "ToolSearchSelection",
     ),
     "a13n_harness.capabilities.tool_review": (
         "AgentToolReviewer",

@@ -1,4 +1,5 @@
 {
+  "Provider-native discovery; omitted strategy uses the provider default.": "提供商原生工具发现；省略策略时使用提供商默认值。",
   "Presentation of already-selected sources, composed by Harness once per agent.": "已选工具源的展示配置，由 Harness 为每个 agent 统一组合。",
   "Names and bounded discovery settings for one Agent's proxy surface.": "单个 Agent 的代理工具命名及有界发现设置。",
   "Derived from the current model contribution.": "根据当前模型用量记录计算。",
