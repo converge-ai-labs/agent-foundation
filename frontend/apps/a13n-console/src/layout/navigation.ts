@@ -33,7 +33,7 @@ export const navigationGroups: {
         BrainIcon,
         [
           ["memory-spaces", "Spaces"],
-          ["memories", "Standalone memories"],
+          ["memories", "Standalone"],
         ],
       ],
       [
