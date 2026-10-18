@@ -24,7 +24,7 @@ Host 配置使用 `tool_search.config.mode: native|proxy`。每个分支只接�
 
 原生模式要求模型及协议支持原生工具搜索。不支持的模型会触发 `native_tool_search_unsupported` 错误；Harness 不会回退到其他搜索模式。工具在本地执行，并遵循已有权限。两种模式下，MCP 来源均配置为 `native=False, local=True`。
 
-使用 CodeAct 编排工具调用时，选择默认代理模式。CodeAct 当前会排除延迟加载的工具，包括已经通过原生搜索发现的工具。
+两种模式均支持 [CodeAct 编排](#use-with-codeact)。原生模式的工具在发现后可调用；代理模式还允许在一次 runner 调用中完成搜索和调用。两种模式都要求来源声明类型化 CodeAct 策略。
 
 以下示例使用默认代理模式。
 
@@ -159,6 +159,10 @@ Host 提供 `tenant_id` 身份声明。每次逻辑 Run 解析一次 headers；�
 选择 `native=False, local=True`。提供方原生执行，包括自动原生回退，不是代理目标。不要将分组来源与 `defer_loading=True` 组合；代理发现和原生延迟加载是不同接口。
 
 ## 与 CodeAct 配合
+
+原生模式下，先在 CodeAct 外发现工具。具有使用资格且已发现的工具随后会出现在两个 runner 的目录中，可直接调用，例如 `await crm__customer_name(customer_id=42)`。尚未发现的工具保持隐藏且不可调用。来源必须声明类型化 CodeAct 策略；发现本身不会授予使用资格。
+
+以下示例使用代理模式。
 
 分组前发布来源的类型化 CodeAct 策略：
 

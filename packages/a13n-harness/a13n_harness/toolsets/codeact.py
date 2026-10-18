@@ -403,7 +403,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             for name, tool in manager.tools.items()
             if name not in _RESERVED_TOOL_NAMES
         }
-        catalog = _build_catalog(active_tools)
+        catalog = _build_catalog(active_tools, ctx=ctx)
         execution_id = f"codeact-{uuid4().hex}"
         outer_call_id = ctx.tool_call_id or execution_id
         kind = "program" if source_path is not None else "inline"
@@ -653,19 +653,25 @@ def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool
         resolve_codeact_eligibility(name, tool)
         and definition.kind in {None, "function", "unapproved"}
         and definition.tool_kind is None
-        and not definition.defer_loading
         and not definition.unless_native
         and (definition.metadata or {}).get("a13n.codeact.runner") is not True
     )
 
 
-def _build_catalog(tools: dict[str, ToolsetTool[AgentContext]]) -> _Catalog:
+def _build_catalog(
+    tools: dict[str, ToolsetTool[AgentContext]], *, ctx: RunContext[AgentContext] | None = None
+) -> _Catalog:
+    # Preparation checks names across all eligible tools. Presentation and execution
+    # additionally require current discovery/capability availability, not a cleared
+    # defer_loading flag: Pydantic retains that flag after discovery.
     definitions: dict[str, ToolDefinition] = {}
     sandbox_to_canonical: dict[str, str] = {}
     prepared_tools: dict[str, ToolsetTool[AgentContext]] = {}
     for canonical_name, tool in tools.items():
         definition = tool.tool_def
         if not is_codeact_tool_eligible(canonical_name, tool) or proxy_membership(definition) is not None:
+            continue
+        if ctx is not None and not ctx.is_tool_available(definition):
             continue
         sandbox_name = _sanitize_name(canonical_name)
         if sandbox_name in _RESERVED_TOOL_NAMES:
@@ -698,9 +704,10 @@ def render_codeact_runner_description(
     tools: dict[str, ToolsetTool[AgentContext]],
     *,
     program: bool,
+    ctx: RunContext[AgentContext],
 ) -> str:
     base = _RUN_PROGRAM_DESCRIPTION if program else _RUN_CODE_DESCRIPTION
-    catalog = _build_catalog(tools)
+    catalog = _build_catalog(tools, ctx=ctx)
     if not catalog.definitions:
         return base + "\n\nNo host tools are callable from CodeAct in this run step."
 

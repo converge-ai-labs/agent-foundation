@@ -24,7 +24,7 @@ Host configuration uses `tool_search.config.mode: native|proxy`. Each branch acc
 
 Native mode requires a model and protocol that support native tool search. Unsupported models raise `native_tool_search_unsupported`; Harness does not fall back to another search mode. Tools execute locally with their existing permissions. Configure MCP sources with `native=False, local=True` in either mode.
 
-Use the default proxy mode for CodeAct orchestration. CodeAct currently excludes deferred tools, including those already discovered through native search.
+Both modes support [CodeAct orchestration](#use-with-codeact). Native tools become callable after discovery; proxy mode also allows search and call within one runner invocation. Both require the source's typed CodeAct policy.
 
 The examples below use the default proxy mode.
 
@@ -160,7 +160,9 @@ Select `native=False, local=True`. Provider-native execution, including automati
 
 ## Use with CodeAct
 
-Publish the source's typed CodeAct policy before grouping it:
+In native mode, discover the tool outside CodeAct first. Eligible discovered tools then appear in both runner directories and can be called directly, for example `await crm__customer_name(customer_id=42)`. Undiscovered tools remain hidden and unavailable. The source must publish a typed CodeAct policy; discovery alone does not grant eligibility.
+
+In proxy mode, publish the source's typed CodeAct policy before grouping it:
 
 ```python
 from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup

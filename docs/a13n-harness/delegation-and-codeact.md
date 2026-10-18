@@ -158,6 +158,8 @@ capabilities = (
 
 Eligibility is not inferred from arbitrary metadata, model visibility, or a tool name. The owner must publish it explicitly.
 
+Eligible tools marked `defer_loading=True` become callable from both runners after discovery or loading their deferred Capability. Search or load outside the runner first. Until then, their schemas stay out of the runner directory and CodeAct cannot invoke them. Discovery does not grant owner eligibility or bypass permissions and approval. If discovery or loading evidence is removed from the current context, the tools must be discovered or loaded again.
+
 ### Nested Dispatch
 
 Restricted code receives generated typed host functions. A nested call validates and executes through the active final Pydantic AI `ToolManager`, not through a second dispatcher. Therefore ordinary Capability hooks, Harness managed-tool policy, provider enforcement, events, usage, and deferred behavior still apply. A deferred handler of the root Run that resolves the request before the nested call returns can supply the nested result. A child denial or unresolved root request fails only the current CodeAct runner invocation; CodeAct never persists or resumes an interpreter frame.

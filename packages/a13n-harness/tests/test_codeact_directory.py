@@ -9,10 +9,12 @@ import pytest
 from a13n_harness.toolsets.codeact import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
+    _build_catalog,
     _render_tool_declaration,
     render_codeact_runner_description,
 )
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RunUsage
 
@@ -141,8 +143,8 @@ async def test_runner_directory_uses_current_prepared_schemas_and_eligibility() 
     }
     updated = replace(original, tool_def=replace(original.tool_def, parameters_json_schema=updated_schema))
     for program in (False, True):
-        before = render_codeact_runner_description(tools, program=program)
-        after = render_codeact_runner_description({**tools, "lookup-items": updated}, program=program)
+        before = render_codeact_runner_description(tools, ctx=ctx, program=program)
+        after = render_codeact_runner_description({**tools, "lookup-items": updated}, ctx=ctx, program=program)
         assert "async def lookup_items(*, count: int)" in before
         assert "async def lookup_items(*, query: str)" in after
         assert "count: int" not in after
@@ -151,3 +153,37 @@ async def test_runner_directory_uses_current_prepared_schemas_and_eligibility() 
         encoded_schema = after.split("Arguments JSON Schema: ", 1)[1].splitlines()[0]
         assert json.loads(encoded_schema) == updated_schema
     assert original.tool_def.parameters_json_schema != updated_schema
+
+
+@pytest.mark.anyio
+async def test_deferred_catalog_tracks_current_discovery_and_prepared_membership() -> None:
+    def lookup() -> int:
+        return 42
+
+    tools = await CodeActPolicyToolset(
+        FunctionToolset([Tool(lookup, defer_loading=True)]), CodeActToolPolicy(default=True)
+    ).get_tools(ctx := RunContext(deps=None, model=FunctionModel(lambda messages, info: "unused"), usage=RunUsage()))
+    assert set(_build_catalog(tools).definitions) == {"lookup"}
+    for discovered in (False, True, False):
+        ctx.discovered_tool_names = {"lookup"} if discovered else set()
+        assert bool(_build_catalog(tools, ctx=ctx).definitions) is discovered
+        for program in (False, True):
+            description = render_codeact_runner_description(tools, ctx=ctx, program=program)
+            assert ("async def lookup" in description) is discovered
+        assert tools["lookup"].tool_def.defer_loading
+    ctx.discovered_tool_names = {"lookup"}
+    assert not _build_catalog({}, ctx=ctx).definitions  # Stale discovery cannot restore a removed tool.
+
+
+@pytest.mark.anyio
+async def test_deferred_tools_participate_in_preparation_name_collision_checks() -> None:
+    def lookup() -> int:
+        return 42
+
+    ctx = RunContext(deps=None, model=FunctionModel(lambda messages, info: "unused"), usage=RunUsage())
+    tools = await CodeActPolicyToolset(
+        FunctionToolset([Tool(lookup, name="look-up", defer_loading=True), Tool(lookup, name="look_up")]),
+        CodeActToolPolicy(default=True),
+    ).get_tools(ctx)
+    with pytest.raises(UserError, match="CodeAct tool-name collision"):
+        _build_catalog(tools)

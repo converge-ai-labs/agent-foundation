@@ -1524,7 +1524,8 @@ async def test_native_search_preserves_named_source_permission_identity(mode: st
 
 
 @pytest.mark.parametrize("discovered", [False, True])
-async def test_native_search_deferred_tools_remain_excluded_from_codeact(discovered: bool) -> None:
+@pytest.mark.parametrize("eligible", [False, True])
+async def test_codeact_native_search_requires_discovery_and_owner_policy(discovered: bool, eligible: bool) -> None:
     from pydantic_ai.profiles.anthropic import anthropic_model_profile
 
     effects = []
@@ -1533,13 +1534,13 @@ async def test_native_search_deferred_tools_remain_excluded_from_codeact(discove
         effects.append(True)
         return "found"
 
-    source = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([lookup]), CodeActToolPolicy(default=True))])
+    source = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([lookup]), CodeActToolPolicy(default=eligible))])
 
-    def inspect(_step: int, info: AgentInfo) -> None:
+    def inspect(step: int, info: AgentInfo) -> None:
         definitions = {tool.name: tool for tool in info.function_tools}
         assert definitions["crm__lookup"].defer_loading
         for runner in ("run_code", "run_program"):
-            assert "crm__lookup" not in (definitions[runner].description or "")
+            assert ("crm__lookup" in (definitions[runner].description or "")) is (discovered and eligible and step > 0)
 
     calls = [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {})] if discovered else []
     calls.append(("run_code", {"code": "await crm__lookup()"}))
@@ -1554,15 +1555,67 @@ async def test_native_search_deferred_tools_remain_excluded_from_codeact(discove
         inspect=inspect,
     )
     assert result.output_or_raise() == "done"
-    assert effects == ([True] if discovered else [])
+    assert effects == [True] * (int(discovered) + int(discovered and eligible))
     assert returns[-1].tool_name == "run_code"
-    assert returns[-1].outcome == "failed"
-    failure = json.loads(returns[-1].content)
-    assert failure["codeact"]["tool_call_count"] == 0
-    assert failure["codeact"]["side_effect_uncertain"] is False
+    if discovered and eligible:
+        assert returns[-1].content == "found"
+    else:
+        assert returns[-1].outcome == "failed"
+        failure = json.loads(returns[-1].content)
+        assert failure["codeact"]["tool_call_count"] == 0
+        assert failure["codeact"]["side_effect_uncertain"] is False
     if discovered:
         assert returns[-2].tool_name == "crm__lookup"
         assert returns[-2].content == "found"
+
+
+@pytest.mark.parametrize("resolution", ["approve", "deny", "permission-deny"])
+async def test_discovered_codeact_tool_preserves_permissions_and_inline_approval(resolution: str) -> None:
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+    from pydantic_ai.capabilities import HandleDeferredToolCalls
+    from pydantic_ai.tools import DeferredToolResults, ToolDenied
+
+    effects: list[int] = []
+    approvals: list[str] = []
+
+    def change(value: int) -> int:
+        effects.append(value)
+        return value
+
+    async def handler(ctx, requests):
+        assert len(requests.approvals) == 1
+        request = requests.approvals[0]
+        approvals.append(request.tool_name)
+        return DeferredToolResults(
+            approvals={request.tool_call_id: True if resolution == "approve" else ToolDenied("No")}
+        )
+
+    source = Capability(
+        toolsets=[
+            CodeActPolicyToolset(
+                FunctionToolset([Tool(change, defer_loading=True, requires_approval=True)], id="secure"),
+                CodeActToolPolicy(default=True),
+            )
+        ]
+    )
+    capabilities = (
+        source,
+        CodeActCapability(),
+        ToolSearch(strategy="keywords"),
+        HandleDeferredToolCalls(handler=handler),
+    )
+    if resolution == "permission-deny":
+        capabilities += (
+            ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/secure/change": "deny"})),
+        )
+    result, returns = await _run(
+        capabilities,
+        [("search_tools", {"queries": ["change"]}), ("run_code", {"code": "await change(value='3')"})],
+    )
+    assert result.output_or_raise() == "done"
+    assert effects == ([3] if resolution == "approve" else [])
+    assert approvals == ([] if resolution == "permission-deny" else ["change"])
+    assert returns[-1].outcome == ("success" if resolution == "approve" else "failed")
 
 
 @pytest.mark.parametrize("strategy", [None, "bm25", "regex"])

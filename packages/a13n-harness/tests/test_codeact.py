@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from a13n_harness import (
@@ -42,11 +44,13 @@ from a13n_harness.toolsets import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
 )
+from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import Capability, HandleDeferredToolCalls
+from pydantic_ai.capabilities import AbstractCapability, Capability, HandleDeferredToolCalls, ToolSearch
 from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.realtime import RealtimeModel
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -219,6 +223,85 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     assert payload_types.count("codeact_execution_completed") == 4
     assert payload_types.count("codeact_tool_call_started") == 1
     assert payload_types.count("codeact_tool_call_completed") == 1
+
+
+@pytest.mark.parametrize("gate", ["search", "capability"])
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+async def test_codeact_deferred_tools_follow_discovery_and_loading(tmp_path: Path, gate: str, runner: str) -> None:
+    effects: list[int] = []
+    validated: list[int] = []
+    requests = 0
+
+    def double(value: int) -> int:
+        effects.append(value)
+        return value * 2
+
+    def validate(ctx, value: int) -> None:
+        assert ctx.tool_name == "double"
+        validated.append(value)
+
+    class ObserveDirectory(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            # Exercise the realtime instruction projection with the same prepared
+            # manager and discovery state as the ordinary request.
+            codeact = next(cap for cap in ctx.capabilities.values() if isinstance(cap, CodeActCapability))
+            assert ctx.tools["double"].defer_loading  # Discovery never clears the authored flag.
+            live = await codeact._live_instructions(replace(ctx, model=Mock(spec=RealtimeModel)))
+            assert ("async def double" in live) is (requests >= 2)
+            assert "async def load_capability" not in live
+            return request_context
+
+    source = Capability(
+        id="arithmetic",
+        description="Double an integer",
+        defer_loading=gate == "capability",
+        toolsets=[
+            CodeActPolicyToolset(
+                FunctionToolset([Tool(double, defer_loading=gate == "search", args_validator=validate)]),
+                CodeActToolPolicy(default=True),
+            )
+        ],
+    )
+    program = tmp_path / "double.codeact.py"
+    program.write_text("async def main(inputs):\n    return await double(value=inputs['value'])\n")
+
+    def invocation(value: str) -> dict[str, Any]:
+        if runner == "run_code":
+            return {"code": f"await double(value={value!r})"}
+        return {"path": "/workspace/double.codeact.py", "inputs": {"value": value}}
+
+    discover = (
+        ("search_tools", {"queries": ["double"]}) if gate == "search" else ("load_capability", {"id": "arithmetic"})
+    )
+    calls = [(runner, invocation("21")), discover, (runner, invocation("invalid")), (runner, invocation("21"))]
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        definitions = {tool.name: tool for tool in info.function_tools}
+        for name in ("run_code", "run_program"):
+            assert ("async def double" in (definitions[name].description or "")) is (requests >= 2)
+        index = requests
+        requests += 1
+        if index == len(calls):
+            yield "done"
+            return
+        name, args = calls[index]
+        yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"step-{index}")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(source, CodeActCapability(), ObserveDirectory(), ToolSearch(strategy="keywords")),
+    )
+    result = await executable.run("test", bindings=RunBindings.embedded(environment=_local_environment(tmp_path)))
+    assert result.output_or_raise() == "done"
+    returns = _tool_returns(result.all_messages(), runner)
+    assert [part.outcome for part in returns] == ["failed", "failed", "success"]
+    assert returns[-1].content == 42
+    assert effects == [21]
+    assert validated == [21]  # Invalid arguments never reach the custom validator or body.
+    assert result.usage.tool_calls == 3  # Discovery, the successful nested tool, and its runner.
 
 
 async def test_codeact_nested_deferral_uses_child_denial_and_root_handler() -> None:

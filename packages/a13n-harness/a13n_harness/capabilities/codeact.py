@@ -119,6 +119,7 @@ class CodeActCapability(AbstractModelContextCapability):
             blocks.append(
                 render_codeact_runner_description(
                     manager.tools,
+                    ctx=ctx,
                     program=metadata.get("a13n.codeact.program") is True,
                 )
             )
@@ -144,6 +145,7 @@ class CodeActCapability(AbstractModelContextCapability):
                     definition,
                     description=render_codeact_runner_description(
                         manager.tools,
+                        ctx=ctx,
                         program=metadata.get("a13n.codeact.program") is True,
                     ),
                 )
