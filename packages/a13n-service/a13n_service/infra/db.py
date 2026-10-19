@@ -122,7 +122,7 @@ def schema_rules(rows: Iterable[type[Base]]) -> list[str]:
 
 
 class Storage:
-    def __init__(self, url: str, *, pool_size: int = 5, connect_timeout: int = 5, statement_timeout: int = 10):
+    def __init__(self, url: str, *, pool_size: int = 32, connect_timeout: int = 5, statement_timeout: int = 10):
         self.engine: AsyncEngine = create_async_engine(
             url,
             pool_size=pool_size,

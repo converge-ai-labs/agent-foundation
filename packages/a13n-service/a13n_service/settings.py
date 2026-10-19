@@ -103,7 +103,7 @@ class Server(Section):
 class Database(Section):
     url: SecretStr = SecretStr("postgresql+psycopg://localhost/a13n_service")
     auto_migrate: bool = True
-    pool_size: int = Field(default=5, ge=1, le=100)
+    pool_size: int = Field(default=32, ge=1, le=1024)
     connect_timeout: int = Field(default=5, ge=1, le=60)
     statement_timeout: int = Field(default=10, ge=1, le=300)
     migration_advisory_lock_timeout: int = Field(default=900, ge=1, le=3600)
