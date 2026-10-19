@@ -24,6 +24,9 @@ vi.mock("react-i18next", () => ({
 }));
 
 const collections: Record<string, unknown[]> = {
+  "/api/v1/metrics-data-sources": [
+    { id: "mds_local", name: "Local Cache", enabled: true, builtin: true },
+  ],
   "/api/v1/environment-providers": [
     { id: "eprov_docker", name: "Docker host", type: "docker", enabled: true },
   ],
@@ -112,23 +115,40 @@ it.each([
   },
 );
 
-it("allocates a managed environment from an enabled template", async () => {
-  const { cache, user } = await openCreate();
-  await user.type(screen.getByRole("textbox", { name: "Name" }), "Scratch");
-  await user.click(screen.getByRole("combobox", { name: "Template" }));
-  const python = await screen.findByRole("option", { name: /Python/ });
-  expect(screen.queryByRole("option", { name: /Retired/ })).toBeNull();
-  await user.click(python);
-  await user.click(screen.getByRole("button", { name: "Create environment" }));
-  await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
-  expect(http.POST.mock.calls[0]).toEqual([
-    "/api/v1/environments",
-    {
-      body: { template_id: "envtpl_python", name: "Scratch" },
-    },
-  ]);
-  cache.clear();
-});
+it.each([null, "mds_local"])(
+  "allocates a managed environment with monitoring selection %s",
+  async (sourceId) => {
+    const { cache, user } = await openCreate();
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Scratch");
+    await user.click(screen.getByRole("combobox", { name: "Template" }));
+    const python = await screen.findByRole("option", { name: /Python/ });
+    expect(screen.queryByRole("option", { name: /Retired/ })).toBeNull();
+    await user.click(python);
+    if (sourceId) {
+      await user.click(
+        screen.getByRole("combobox", { name: "Metrics data source" }),
+      );
+      await user.click(
+        await screen.findByRole("option", { name: "Local Cache" }),
+      );
+    }
+    await user.click(
+      screen.getByRole("button", { name: "Create environment" }),
+    );
+    await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
+    expect(http.POST.mock.calls[0]).toEqual([
+      "/api/v1/environments",
+      {
+        body: {
+          template_id: "envtpl_python",
+          name: "Scratch",
+          metrics_data_source_id: sourceId,
+        },
+      },
+    ]);
+    cache.clear();
+  },
+);
 
 it("registers an external target by its endpoint and token, with no provider to pick", async () => {
   const { cache, user } = await openCreate();
@@ -153,6 +173,7 @@ it("registers an external target by its endpoint and token, with no provider to 
       body: {
         endpoint: "https://laptop.example.com:8443",
         token: "daemon-token",
+        metrics_data_source_id: null,
       },
     }),
   ]);
