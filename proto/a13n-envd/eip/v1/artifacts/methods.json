@@ -681,6 +681,6 @@
   ],
   "protocol": {
     "package": "a13n.agent_envd.eip.v1",
-    "version": "0.2"
+    "version": "0.3"
   }
 }

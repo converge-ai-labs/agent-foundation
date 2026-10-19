@@ -27,7 +27,7 @@ controlled 模式在接收工作前准备私有管理运行时。每个会话使
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "protocol_version": "0.2",
+  "protocol_version": "0.3",
   "working_directory": "/workspace",
   "egress": {
     "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},

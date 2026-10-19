@@ -15,7 +15,7 @@ uv add a13n-envd-client
 
 Python 3.13 or later is required. The Python client and native daemon publish at the same Envd release version; EIP's negotiated wire version is a separate identity. Source examples should use the repository lockfile, not a published client against a source-version daemon.
 
-Envd `0.3.0` and its co-versioned client use EIP `0.2`; the Envd `0.2.0` release uses EIP `0.1`. Upgrade the daemon and client together: EIP `0.1` peers fail version negotiation. Harness `0.13.x` and its consumers require client `>=0.3.0,<0.4.0`; custom images and remote endpoints must provide a compatible daemon. Existing Service environments retain their stored image, so recreate them with the upgraded image before using EIP `0.2` clients. The generated `eip.v1` namespace and binary data-frame profile `1` remain unchanged.
+The expanded resource overview uses EIP `0.3`, planned for the co-versioned Envd/client `0.5.0` line. Upgrade the daemon and client together; EIP `0.1` and `0.2` peers fail version negotiation. Harness and Harness UI require client `>=0.5.0,<0.6.0` on this line. Custom images and remote endpoints must carry the matching daemon. Recreate environments that retain an older image before connecting an upgraded client. Earlier Envd `0.3.x` and `0.4.x` releases use EIP `0.2`; Envd `0.2.0` uses EIP `0.1`. The generated `eip.v1` namespace and binary data-frame profile `1` remain unchanged.
 
 ## Connect to an existing HTTP daemon
 

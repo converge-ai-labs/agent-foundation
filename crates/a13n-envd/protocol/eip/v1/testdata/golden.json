@@ -30,7 +30,7 @@
       "value": {
         "client": {"name": "fixture-client", "version": "1.2.3"},
         "expected_device_id": "device-fixture",
-        "supported_protocol_versions": ["0.2"]
+        "supported_protocol_versions": ["0.3"]
       }
     },
     {

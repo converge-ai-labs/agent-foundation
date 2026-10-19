@@ -123,9 +123,35 @@ pub(crate) struct Daemon {
     sessions: Mutex<BTreeMap<String, Arc<Session>>>,
     ids: ShortIdAllocator,
     next_carrier: AtomicU64,
+    connections: Arc<AtomicU64>,
     next_attempt: AtomicU64,
     draining: AtomicBool,
     last_diagnostics: Mutex<Option<Instant>>,
+}
+
+/// Accepted public carrier lifetime, independent of Session ownership and worker IPC.
+pub(crate) struct ConnectionGuard(Arc<AtomicU64>);
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Default, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SessionResources {
+    processes: u64,
+    transfers: u64,
+    retained_output_bytes: u64,
+}
+
+impl SessionResources {
+    fn add(&mut self, other: Self) {
+        self.processes += other.processes;
+        self.transfers += other.transfers;
+        self.retained_output_bytes += other.retained_output_bytes;
+    }
 }
 
 pub(crate) struct Carrier {
@@ -176,11 +202,17 @@ fn session_methods(config: &Config) -> Vec<String> {
 
 impl Daemon {
     pub(crate) fn start_monitoring(
-        &self,
+        self: &Arc<Self>,
     ) -> Result<Option<crate::monitoring::Runtime>, crate::config::ConfigError> {
         self.monitoring
             .as_ref()
-            .map(|state| state.start(&self.descriptor.device_id, self.descriptor.generation))
+            .map(|state| {
+                state.start(
+                    &self.descriptor.device_id,
+                    self.descriptor.generation,
+                    Arc::downgrade(self),
+                )
+            })
             .transpose()
     }
 
@@ -248,10 +280,75 @@ impl Daemon {
             sessions: Mutex::new(BTreeMap::new()),
             ids: ShortIdAllocator::for_generation(generation),
             next_carrier: AtomicU64::new(1),
+            connections: Arc::new(AtomicU64::new(0)),
             next_attempt: AtomicU64::new(1),
             draining: AtomicBool::new(false),
             last_diagnostics: Mutex::new(None),
         })
+    }
+
+    pub(crate) fn connection_guard(&self) -> ConnectionGuard {
+        self.connections.fetch_add(1, Ordering::Relaxed);
+        ConnectionGuard(self.connections.clone())
+    }
+
+    /// Worker-local snapshot; the worker has no nested remote Sessions.
+    pub(crate) fn local_resources(&self) -> SessionResources {
+        let mut total = SessionResources::default();
+        for session in self.sessions().values() {
+            total.add(session.local_resources());
+        }
+        total
+    }
+
+    pub(crate) async fn resource_metrics(&self) -> eip::DaemonMetrics {
+        let sessions: Vec<_> = self.sessions().values().cloned().collect();
+        let mut metrics = eip::DaemonMetrics {
+            sessions: sessions
+                .iter()
+                .filter(|session| session.session.state().lifecycle != SessionState::Closed)
+                .count() as u64,
+            connections: self.connections.load(Ordering::Relaxed),
+            processes: None,
+            transfers: None,
+            retained_output_bytes: None,
+        };
+        let mut total = SessionResources::default();
+        let mut pending = tokio::task::JoinSet::new();
+        for session in sessions {
+            if session.remote.is_some() {
+                pending.spawn(async move {
+                    session
+                        .remote
+                        .as_ref()
+                        .expect("remote Session")
+                        .client
+                        .resources()
+                        .await
+                });
+            } else {
+                total.add(session.local_resources());
+            }
+        }
+        // One deadline for the entire worker fleet, not one timeout per Session.
+        let complete = tokio::time::timeout(Duration::from_millis(500), async {
+            while let Some(result) = pending.join_next().await {
+                match result {
+                    Ok(Ok(resources)) => total.add(resources),
+                    _ => return false,
+                }
+            }
+            true
+        })
+        .await
+            == Ok(true);
+        // Dropping JoinSet cancels outstanding observation calls and removes their tickets.
+        if complete {
+            metrics.processes = Some(total.processes);
+            metrics.transfers = Some(total.transfers);
+            metrics.retained_output_bytes = Some(total.retained_output_bytes);
+        }
+        metrics
     }
 
     pub(crate) fn carrier(&self, outbound: mpsc::Sender<eip::DataFrame>) -> Arc<Carrier> {
@@ -1032,6 +1129,19 @@ pub(crate) struct Session {
     retention: RetentionStore,
     execution: Option<ExecutionManager>,
     transfers: TransferRegistry,
+}
+
+impl Session {
+    fn local_resources(&self) -> SessionResources {
+        SessionResources {
+            processes: self
+                .execution
+                .as_ref()
+                .map_or(0, ExecutionManager::active_count),
+            transfers: self.transfers.active_count(),
+            retained_output_bytes: self.retention.retained_bytes(),
+        }
+    }
 }
 
 impl SessionAdmission {
@@ -3526,7 +3636,7 @@ mod tests {
         fn open_params(&self, required_methods: Value) -> Value {
             json!({"expected_device_id": self.device.descriptor.device_id,
                 "expected_generation": self.device.descriptor.generation,
-                "protocol_version": "0.2",
+                "protocol_version": "0.3",
                 "working_directory": self.device.descriptor.default_working_directory,
                 "required_methods": required_methods})
         }
@@ -3582,7 +3692,7 @@ mod tests {
 
     fn initialize_params() -> Value {
         json!({
-            "supported_protocol_versions": ["0.2"],
+            "supported_protocol_versions": ["0.3"],
             "client": {"name": "test", "version": "1"},
             "expected_device_id": "env-test"
         })
@@ -3629,15 +3739,17 @@ mod tests {
     #[tokio::test]
     async fn old_protocol_is_rejected_before_returning_a_device_descriptor() {
         let config = Config::for_test("env-test");
-        let fixture = Fixture::new(&config, 7);
-        let mut params = initialize_params();
-        params["supported_protocol_versions"] = json!(["0.1"]);
-        let response = fixture.call("initialize", params).await;
-        assert_eq!(
-            response["error"]["data"]["error_type"],
-            "protocol_incompatible"
-        );
-        assert!(response.get("result").is_none());
+        for version in ["0.1", "0.2"] {
+            let fixture = Fixture::new(&config, 7);
+            let mut params = initialize_params();
+            params["supported_protocol_versions"] = json!([version]);
+            let response = fixture.call("initialize", params).await;
+            assert_eq!(
+                response["error"]["data"]["error_type"],
+                "protocol_incompatible"
+            );
+            assert!(response.get("result").is_none());
+        }
     }
 
     #[tokio::test]
@@ -3647,7 +3759,7 @@ mod tests {
         config.description = Some("Build artifacts".into());
         let fixture = Fixture::new(&config, 7);
         let initialized = initialize(&fixture).await;
-        assert_eq!(initialized["result"]["protocol_version"], "0.2");
+        assert_eq!(initialized["result"]["protocol_version"], "0.3");
         let device = fixture.call("device.describe", json!({})).await;
         assert_eq!(
             device["result"]["descriptor"],
@@ -4088,6 +4200,43 @@ mod tests {
         assert_eq!(response["error"]["code"], -32001);
         assert!(!fixture.carrier.initialized());
         assert!(fixture.device.sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn monitoring_counts_observed_resources_not_reserved_allowances() {
+        let tree = TempTree::new();
+        let mut config = Config::for_test("env-test");
+        config.runtime =
+            Some(crate::runtime::RuntimeState::prepare(&tree.child("runtime")).unwrap());
+        let fixture = Fixture::new(&config, 8);
+        let empty = fixture.device.resource_metrics().await;
+        assert_eq!(
+            (
+                empty.sessions,
+                empty.connections,
+                empty.processes,
+                empty.transfers
+            ),
+            (0, 0, Some(0), Some(0))
+        );
+        let connection = fixture.device.connection_guard();
+        initialize(&fixture).await;
+        let (output, other) = fixture.retention.create_live_pair().await.unwrap();
+        output.append(b"hello").await;
+        let usage = fixture.device.resource_metrics().await;
+        assert_eq!((usage.sessions, usage.connections), (1, 1));
+        assert_eq!(usage.retained_output_bytes, Some(5));
+        assert!(fixture.device.retention_quota.usage().0 > 5);
+        fixture.session.state().owner = None;
+        assert_eq!(fixture.device.resource_metrics().await.sessions, 1);
+        drop(connection);
+        assert_eq!(fixture.device.resource_metrics().await.connections, 0);
+        output.complete().await;
+        other.complete().await;
+        assert!(fixture.close(Duration::from_secs(1)).await);
+        let closed = fixture.device.resource_metrics().await;
+        assert_eq!(closed.sessions, 0);
+        assert_eq!(closed.retained_output_bytes, Some(0));
     }
 
     #[tokio::test]

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
@@ -159,6 +159,8 @@ export function MonitorContent() {
           key={id}
           observation={observation}
           history={detail.data.history}
+          resources={detail.data.resources ?? []}
+          omittedRateSources={detail.data.omitted_rate_sources ?? 0}
           updatedAt={detail.dataUpdatedAt}
           refreshing={refreshInterval > 0}
         />
@@ -174,14 +176,19 @@ export function MonitorContent() {
 function Observation({
   observation: env,
   history,
+  resources,
+  omittedRateSources,
   updatedAt,
   refreshing,
 }: {
   observation: Schema<"EnvironmentObservation">;
   history: Schema<"HistoryPoint">[];
+  resources: Schema<"ResourceHistory">[];
+  omittedRateSources: number;
   updatedAt: number;
   refreshing: boolean;
 }) {
+  const [view, setView] = useState("overview");
   const [duration, setDuration] = useState(15);
   const [fixedRange, setFixedRange] = useState<TimeRange | null>(null);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -201,7 +208,12 @@ function Observation({
   const system = sample?.system;
   const info = env.system_info;
   const roots = env.roots ?? [];
-  const filesystems = Object.entries(sample?.filesystems ?? {});
+  const filesystems = [
+    ...Object.entries(sample?.filesystems ?? {}),
+    ...Object.entries(sample?.local_filesystems?.filesystems ?? {}).map(
+      ([name, value]) => [`auto:${name}`, value] as const,
+    ),
+  ];
   const memory =
     system?.memory_total_bytes != null && system.memory_available_bytes != null
       ? system.memory_total_bytes - system.memory_available_bytes
@@ -271,6 +283,16 @@ function Observation({
       <div className={styles.chartToolbar}>
         <div className={styles.rangeControls}>
           <select
+            aria-label="Resource view"
+            value={view}
+            onChange={(event) => setView(event.target.value)}
+          >
+            <option value="overview">System overview</option>
+            <option value="network">Network & sockets</option>
+            <option value="storage">Storage & filesystems</option>
+            <option value="daemon">Envd usage</option>
+          </select>
+          <select
             aria-label="Time range"
             value={fixedRange ? "custom" : duration}
             onChange={(event) => {
@@ -325,44 +347,142 @@ function Observation({
         </span>
         <span>Drag to zoom · 1-minute averages / peaks</span>
       </div>
-      <Trend
-        {...chartProps}
-        title="System CPU"
-        metric="cpu_busy_percent"
-        history={history}
-        format={percent}
-      />
-      <Trend
-        {...chartProps}
-        title="System memory used"
-        metric="memory_used_bytes"
-        history={history}
-        format={bytes}
-      />
-      {history.some((point) => point.cgroup_memory_bytes != null) && (
-        <Trend
-          {...chartProps}
-          title="Cgroup memory"
-          metric="cgroup_memory_bytes"
-          history={history}
-          format={bytes}
-        />
+      {view === "overview" && (
+        <>
+          <Trend
+            {...chartProps}
+            title="System CPU"
+            metric="cpu_busy_percent"
+            history={history}
+            format={percent}
+          />
+          <Trend
+            {...chartProps}
+            title="System memory used"
+            metric="memory_used_bytes"
+            history={history}
+            format={bytes}
+          />
+          {history.some((point) => point.cgroup_memory_bytes != null) && (
+            <Trend
+              {...chartProps}
+              title="Cgroup memory"
+              metric="cgroup_memory_bytes"
+              history={history}
+              format={bytes}
+            />
+          )}
+          <MetricList
+            title="Native memory"
+            values={[
+              ["Wired", bytes(system?.memory_wired_bytes)],
+              ["Compressed", bytes(system?.memory_compressed_bytes)],
+              ["Swap used", bytes(system?.swap_used_bytes)],
+              ["Swap capacity", bytes(system?.swap_total_bytes)],
+              ["Committed", bytes(system?.commit_total_bytes)],
+              ["Commit limit", bytes(system?.commit_limit_bytes)],
+              ["System cache", bytes(system?.memory_cache_bytes)],
+            ].filter(([, value]) => value !== "—")}
+          />
+          <MetricList
+            title="System counts"
+            values={[
+              ["Processes", count(system?.process_count)],
+              ["Threads", count(system?.thread_count)],
+              ["Handles", count(system?.handle_count)],
+              ["Cgroup tasks", count(sample?.cgroup_v2?.pids_current)],
+            ].filter(([, value]) => value !== "—")}
+          />
+        </>
       )}
-      {filesystems.length > 0 && (
-        <section>
-          <h3>Filesystems</h3>
-          <div className={styles.filesystems}>
-            {filesystems.map(([name, fs]) => (
-              <div key={name}>
-                <strong>{name}</strong>
-                <span>
-                  {bytes(fs.metrics?.available_bytes)} available /{" "}
-                  {bytes(fs.metrics?.total_bytes)}
-                </span>
+      {view === "network" && (
+        <>
+          <MetricList
+            title="Sockets"
+            values={[
+              ["TCP", count(sample?.connections?.tcp_total)],
+              ["UDP", count(sample?.connections?.udp_sockets)],
+              ...Object.entries(sample?.connections?.tcp_states ?? {}).map(
+                ([state, value]) => [state.replaceAll("_", " "), count(value)],
+              ),
+            ]}
+          />
+          <Trend
+            {...chartProps}
+            title="TCP sockets"
+            metric="tcp_connections"
+            history={history}
+            format={count}
+          />
+          <ResourceRates
+            kind="network"
+            resources={resources}
+            chartProps={chartProps}
+          />
+          <CounterTable sample={sample} kind="network" />
+        </>
+      )}
+      {view === "storage" && (
+        <>
+          <ResourceRates
+            kind="disk"
+            resources={resources}
+            chartProps={chartProps}
+          />
+          <CounterTable sample={sample} kind="disk" />
+          {filesystems.length > 0 && (
+            <section>
+              <h3>Filesystems</h3>
+              <p className={styles.note}>
+                Whole-filesystem capacity. Bind mounts and shared APFS space
+                must not be summed.
+              </p>
+              {sample?.local_filesystems?.truncated && (
+                <p role="status">
+                  Local filesystem discovery reached its 16-volume limit.
+                </p>
+              )}
+              <div className={styles.filesystems}>
+                {filesystems.map(([name, fs]) => (
+                  <div key={name}>
+                    <strong>{name}</strong>
+                    <span>
+                      {bytes(fs.metrics?.available_bytes)} available /{" "}
+                      {bytes(fs.metrics?.total_bytes)}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
+          )}
+        </>
+      )}
+      {view === "daemon" && (
+        <>
+          <MetricList
+            title="Envd-owned resources"
+            values={[
+              ["Sessions", count(sample?.daemon?.sessions)],
+              ["Command groups", count(sample?.daemon?.processes)],
+              ["File transfers", count(sample?.daemon?.transfers)],
+              ["Carrier connections", count(sample?.daemon?.connections)],
+              ["Retained output", bytes(sample?.daemon?.retained_output_bytes)],
+            ]}
+          />
+          <p className={styles.note}>
+            Live and detached Sessions, started command groups including
+            residual cleanup, nonterminal transfers, public carrier connections,
+            and actual retained output bytes. Worker observations that time out
+            remain unavailable.
+          </p>
+        </>
+      )}
+      {omittedRateSources > 0 && (view === "network" || view === "storage") && (
+        <p role="status" className={styles.note}>
+          {omittedRateSources} sources exceed the history limit of four
+          interfaces and four disks per Device. Latest counters remain available
+          below.
+        </p>
       )}
       {sample && (
         <details>
@@ -376,6 +496,10 @@ function Observation({
               {
                 system: sample.system,
                 cgroup_v2: sample.cgroup_v2,
+                network: sample.network,
+                disks: sample.disks,
+                connections: sample.connections,
+                daemon: sample.daemon,
                 collection_duration_ms: sample.collection_duration_ms,
               },
               null,
@@ -385,5 +509,192 @@ function Observation({
         </details>
       )}
     </>
+  );
+}
+
+const count = (value: number | null | undefined) =>
+  value == null
+    ? "—"
+    : new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(
+        value,
+      );
+
+function MetricList({ title, values }: { title: string; values: string[][] }) {
+  if (!values.length) return null;
+  return (
+    <section className={styles.resourceSection}>
+      <h3>{title}</h3>
+      <dl className={styles.metricList}>
+        {values.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+type ChartControls = Pick<
+  ComponentProps<typeof Trend>,
+  "range" | "cursor" | "onCursor" | "onZoom"
+>;
+const rateFields = {
+  network: [
+    ["received_bytes_per_second", "Receive"],
+    ["transmitted_bytes_per_second", "Transmit"],
+  ],
+  disk: [
+    ["read_bytes_per_second", "Read throughput"],
+    ["written_bytes_per_second", "Write throughput"],
+    ["read_operations_per_second", "Read operations"],
+    ["write_operations_per_second", "Write operations"],
+  ],
+} as const;
+
+function ResourceRates({
+  kind,
+  resources,
+  chartProps,
+}: {
+  kind: "network" | "disk";
+  resources: Schema<"ResourceHistory">[];
+  chartProps: ChartControls;
+}) {
+  const [selected, select] = useState("");
+  const [metric, setMetric] = useState("");
+  const candidates = resources.filter((item) => item.kind === kind);
+  const source =
+    candidates.find((item) => item.name === selected) ?? candidates[0];
+  const fields = rateFields[kind];
+  const field = fields.find(([key]) => key === metric) ?? fields[0];
+  const operations = field[0].includes("operations");
+  return (
+    <section className={styles.resourceSection}>
+      <div className={styles.toolbar}>
+        <label>
+          {kind === "network" ? "Interface" : "Disk"}
+          <select
+            aria-label={
+              kind === "network" ? "History interface" : "History disk"
+            }
+            value={source?.name ?? ""}
+            onChange={(event) => select(event.target.value)}
+            disabled={!source}
+          >
+            {!source && <option value="">No observations</option>}
+            {candidates.map((item) => (
+              <option key={item.name} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Metric
+          <select
+            aria-label={`${kind} rate metric`}
+            value={field[0]}
+            onChange={(event) => setMetric(event.target.value)}
+          >
+            {fields.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <Trend
+        {...chartProps}
+        title={`${kind === "network" ? "Interface" : "Disk"} ${source?.name ?? "activity"} · ${field[1]}`}
+        metric="value"
+        history={(source?.history ?? []).map((point) => ({
+          minute: point.minute,
+          segment: point.segment,
+          value: point.rates[field[0]],
+        }))}
+        format={(value) =>
+          value == null ? "—" : `${operations ? count(value) : bytes(value)}/s`
+        }
+      />
+      <p className={styles.note}>
+        Rates use distinct samples from one source. First samples, resets and
+        missing observations remain gaps. Interfaces and stacked disks are never
+        summed.
+      </p>
+    </section>
+  );
+}
+
+function CounterTable({
+  sample,
+  kind,
+}: {
+  sample: Schema<"MetricsSample"> | null | undefined;
+  kind: "network" | "disk";
+}) {
+  const network = kind === "network";
+  const rows = network
+    ? Object.entries(sample?.network?.interfaces ?? {}).map(
+        ([name, value]) => ({
+          name,
+          first: value.received_bytes,
+          second: value.transmitted_bytes,
+          count1: value.received_packets,
+          count2: value.transmitted_packets,
+        }),
+      )
+    : Object.entries(sample?.disks?.devices ?? {}).map(([name, value]) => ({
+        name,
+        first: value.read_bytes,
+        second: value.written_bytes,
+        count1: value.read_operations,
+        count2: value.write_operations,
+      }));
+  const truncated = network
+    ? sample?.network?.truncated
+    : sample?.disks?.truncated;
+  return (
+    <section className={styles.resourceSection}>
+      <h3>{network ? "Interface counters" : "Disk counters"}</h3>
+      <p className={styles.note}>
+        Cumulative native counters, not current rates.
+      </p>
+      {truncated && (
+        <p role="status">Collection reached its 64-source limit.</p>
+      )}
+      {rows.length ? (
+        <div className={styles.counterTable}>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{network ? "Interface" : "Disk"}</th>
+                <th scope="col">{network ? "Received" : "Read"}</th>
+                <th scope="col">{network ? "Transmitted" : "Written"}</th>
+                <th scope="col">{network ? "RX packets" : "Read ops"}</th>
+                <th scope="col">{network ? "TX packets" : "Write ops"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.name}>
+                  <th scope="row">{row.name}</th>
+                  <td>{bytes(row.first)}</td>
+                  <td>{bytes(row.second)}</td>
+                  <td>{count(row.count1)}</td>
+                  <td>{count(row.count2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className={styles.note}>
+          No {network ? "interface" : "disk"} counters available.
+        </p>
+      )}
+    </section>
   );
 }

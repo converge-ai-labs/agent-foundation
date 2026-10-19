@@ -2,15 +2,17 @@ import { useId, useState, type PointerEvent } from "react";
 import type { Schema } from "../transport/client";
 import styles from "./environment-monitor.module.css";
 
-type Point = Schema<"HistoryPoint">;
-type Metric = "cpu_busy_percent" | "memory_used_bytes" | "cgroup_memory_bytes";
+type Point = Schema<"HistoryPoint"> & { value?: Schema<"Gauge"> | null };
+type Metric = Exclude<keyof Point, "minute" | "segment">;
 export type TimeRange = { start: number; end: number };
 export const percent = (value: number | null | undefined) =>
   value == null ? "—" : `${value.toFixed(1)}%`;
 export function bytes(value: number | null | undefined): string {
   if (value == null) return "—";
   const unit =
-    value > 0 ? Math.min(4, Math.floor(Math.log(value) / Math.log(1024))) : 0;
+    value > 0
+      ? Math.max(0, Math.min(4, Math.floor(Math.log(value) / Math.log(1024))))
+      : 0;
   return `${(value / 1024 ** unit).toFixed(unit ? 1 : 0)} ${["B", "KiB", "MiB", "GiB", "TiB"][unit]}`;
 }
 export const timeLabel = (minute: number) =>

@@ -40,6 +40,11 @@ message MetricsSample {
   SystemMetrics system = 5;
   optional CgroupMetrics cgroup_v2 = 6;
   map<string, FilesystemObservation> filesystems = 7;
+  optional NetworkMetrics network = 8;
+  optional DiskMetrics disks = 9;
+  optional ConnectionMetrics connections = 10;
+  optional DaemonMetrics daemon = 11;
+  optional FilesystemInventory local_filesystems = 12;
 }
 
 message SystemMetrics {
@@ -49,6 +54,16 @@ message SystemMetrics {
   optional uint64 memory_total_bytes = 4;
   optional uint64 memory_available_bytes = 5;
   optional Pressures pressure = 6;
+  optional uint64 memory_wired_bytes = 7;
+  optional uint64 memory_compressed_bytes = 8;
+  optional uint64 swap_used_bytes = 9;
+  optional uint64 swap_total_bytes = 10;
+  optional uint64 commit_total_bytes = 11;
+  optional uint64 commit_limit_bytes = 12;
+  optional uint64 memory_cache_bytes = 13;
+  optional uint64 process_count = 14;
+  optional uint64 thread_count = 15;
+  optional uint64 handle_count = 16;
 }
 
 message CpuTimeSeconds {
@@ -92,6 +107,10 @@ message CgroupMetrics {
   optional MemoryLimit memory_max = 9;
   MemoryEvents memory_events = 10;
   Pressures pressure = 11;
+  optional uint64 pids_current = 12;
+  optional uint64 pids_limit = 13;
+  optional bool pids_unlimited = 14;
+  optional DiskMetrics io = 15;
 }
 
 message MemoryEvents {
@@ -140,6 +159,62 @@ message MemoryLimit {
 
 message FilesystemObservation {
   optional FilesystemMetrics metrics = 1;
+}
+
+message FilesystemInventory {
+  map<string, FilesystemObservation> filesystems = 1 [(eip_field).max_length = 16];
+  bool truncated = 2;
+}
+
+// Collection cardinality is capped at 64. Absence means unavailable, empty means observed empty.
+message NetworkMetrics {
+  map<string, NetworkInterfaceMetrics> interfaces = 1 [(eip_field).max_length = 64];
+  bool truncated = 2;
+}
+
+message NetworkInterfaceMetrics {
+  string identity = 1 [(eip_field).max_length = 128];
+  optional uint64 received_bytes = 2;
+  optional uint64 transmitted_bytes = 3;
+  optional uint64 received_packets = 4;
+  optional uint64 transmitted_packets = 5;
+  optional uint64 receive_errors = 6;
+  optional uint64 transmit_errors = 7;
+  optional uint64 receive_drops = 8;
+  optional uint64 transmit_drops = 9;
+}
+
+message DiskMetrics {
+  map<string, DiskIoMetrics> devices = 1 [(eip_field).max_length = 64];
+  bool truncated = 2;
+}
+
+message DiskIoMetrics {
+  string identity = 1 [(eip_field).max_length = 128];
+  optional uint64 read_bytes = 2;
+  optional uint64 written_bytes = 3;
+  optional uint64 read_operations = 4;
+  optional uint64 write_operations = 5;
+  optional uint64 read_time_ms = 6;
+  optional uint64 write_time_ms = 7;
+  optional uint64 busy_time_ms = 8;
+  optional uint64 weighted_time_ms = 9;
+  optional uint64 in_progress = 10;
+}
+
+// Counts only: no addresses, ports, process owners or connection records.
+message ConnectionMetrics {
+  optional uint64 tcp_total = 1;
+  map<string, uint64> tcp_states = 2 [(eip_field).max_length = 16];
+  optional uint64 udp_sockets = 3;
+}
+
+message DaemonMetrics {
+  uint64 sessions = 1;
+  optional uint64 processes = 2;
+  optional uint64 transfers = 3;
+  uint64 connections = 4;
+  optional uint64 retained_output_bytes = 5;
 }
 
 message FilesystemMetrics {

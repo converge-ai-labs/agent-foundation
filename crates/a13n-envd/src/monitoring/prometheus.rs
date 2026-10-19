@@ -183,6 +183,48 @@ mod tests {
     }
 
     #[test]
+    fn overview_projection_keeps_source_identity_units_and_incomplete_totals() {
+        let mut report = report();
+        let sample = report.sample.as_mut().unwrap();
+        sample.network = Some(serde_json::from_value(json!({"interfaces":{"eth0":{"identity":"if-1", "received_bytes":0, "transmitted_bytes":500, "receive_errors":0}},"truncated":false})).unwrap());
+        sample.disks = Some(serde_json::from_value(json!({"devices":{"disk0":{"identity":"disk-1", "read_bytes":1024,"read_time_ms":1500,"in_progress":0}},"truncated":true})).unwrap());
+        sample.connections = Some(
+            serde_json::from_value(
+                json!({"tcp_total":3,"tcp_states":{"listen":1,"established":2},"udp_sockets":0}),
+            )
+            .unwrap(),
+        );
+        sample.daemon =
+            Some(serde_json::from_value(json!({"sessions":0,"connections":1})).unwrap());
+        sample.local_filesystems = Some(serde_json::from_value(json!({"filesystems":{"8:1":{"metrics":{"total_bytes":100,"free_bytes":50,"available_bytes":40}}},"truncated":false})).unwrap());
+        let text = encode(&report);
+        for (name, labels, expected) in [
+            ("network_received_bytes_total", "identity=\"if-1\"", "0"),
+            ("disk_read_time_seconds_total", "identity=\"disk-1\"", "1.5"),
+            ("disk_in_progress", "", "0"),
+            ("disk_truncated", "", "1"),
+            ("tcp_state_connections", "state=\"established\"", "2"),
+            ("udp_sockets", "", "0"),
+            ("daemon_sessions", "", "0"),
+            (
+                "filesystem_available_bytes",
+                "filesystem=\"auto:8:1\"",
+                "40",
+            ),
+        ] {
+            assert_eq!(value(&text, name, labels), Some(expected), "{name}");
+        }
+        assert_eq!(value(&text, "daemon_processes", ""), None);
+        assert_eq!(value(&text, "network_receive_drops_total", ""), None);
+        assert!(text.contains("# TYPE envd_network_received_bytes_total counter"));
+        report.sample.as_mut().unwrap().sample_age_ms = 3000;
+        let stale = encode(&report);
+        for prefix in ["envd_network_", "envd_disk_", "envd_daemon_", "envd_tcp_"] {
+            assert!(!stale.contains(prefix));
+        }
+    }
+
+    #[test]
     fn counter_resets_and_limit_changes_are_not_hidden() {
         let mut report = report();
         let group = report.sample.as_mut().unwrap().cgroup_v2.as_mut().unwrap();

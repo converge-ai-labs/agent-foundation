@@ -43,6 +43,10 @@ impl Collector {
                 )
             })
             .collect();
+        let network = platform::network();
+        let disks = platform::disks();
+        let connections = platform::connections();
+        let local_filesystems = platform::local_filesystems();
         self.sequence += 1;
         MetricsSample {
             sequence: self.sequence,
@@ -52,6 +56,11 @@ impl Collector {
             system,
             cgroup_v2,
             filesystems,
+            network,
+            disks,
+            connections,
+            local_filesystems,
+            daemon: None,
         }
     }
 }

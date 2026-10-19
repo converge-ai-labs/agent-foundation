@@ -115,7 +115,7 @@ def test_monitoring_percentages_preserve_fractional_values(value: float) -> None
 
 
 def test_generated_surface_covers_eip_v1() -> None:
-    assert EIP_PROTOCOL_VERSION == "0.2"
+    assert EIP_PROTOCOL_VERSION == "0.3"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
     assert len(METHODS) == 52
     assert len(set(METHODS)) == len(METHODS)
@@ -147,7 +147,7 @@ def test_generated_surface_covers_eip_v1() -> None:
 def test_shared_golden_values_round_trip_canonically() -> None:
     fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     initialize = next(case for case in fixture["cases"] if case["type"] == "InitializeParams")
-    assert initialize["value"]["supported_protocol_versions"] == ["0.2"]
+    assert initialize["value"]["supported_protocol_versions"] == ["0.3"]
     for case in fixture["cases"]:
         model_type = MODEL_TYPES[case["type"]]
         encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True)

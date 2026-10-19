@@ -195,3 +195,93 @@ it("shares zoom and cursor across charts, pins history through refresh and retur
   ).toBe("15");
   vi.unstubAllGlobals();
 });
+
+it("switches resource views and keeps rates per source with unavailable daemon totals", async () => {
+  const { queries } = setup();
+  await screen.findByText("Monitoring disabled");
+  const minute = Math.floor(Date.now() / 60000) - 1;
+  const data: Schema<"MonitoringDetail"> = {
+    environment: {
+      ...environment("Build", "ready"),
+      sample: {
+        sequence: 2,
+        sampled_at: new Date().toISOString(),
+        sample_age_ms: 0,
+        collection_duration_ms: 1,
+        system: { memory_wired_bytes: 1024 },
+        network: {
+          interfaces: {
+            eth0: { identity: "if-1", received_bytes: 1234 },
+            eth1: { identity: "if-2", received_bytes: 5678 },
+          },
+          truncated: false,
+        },
+        daemon: { sessions: 2, connections: 1 },
+        local_filesystems: {
+          filesystems: {
+            volume1: {
+              metrics: {
+                total_bytes: 2048,
+                free_bytes: 1024,
+                available_bytes: 512,
+              },
+            },
+          },
+          truncated: true,
+        },
+      },
+    },
+    history: [],
+    resources: [
+      {
+        kind: "network",
+        name: "eth0",
+        identity: "if-1",
+        history: [
+          {
+            minute,
+            segment: 1,
+            rates: { received_bytes_per_second: { average: 512, peak: 1024 } },
+          },
+        ],
+      },
+      {
+        kind: "network",
+        name: "eth1",
+        identity: "if-2",
+        history: [
+          {
+            minute,
+            segment: 1,
+            rates: { received_bytes_per_second: { average: 2048, peak: 4096 } },
+          },
+        ],
+      },
+    ],
+    omitted_rate_sources: 2,
+  };
+  await act(async () => {
+    queries.setQueryData(["environment-metrics", "Build"], data);
+  });
+  await screen.findByText("Sampling");
+  const view = screen.getByRole("combobox", { name: "Resource view" });
+  fireEvent.change(view, { target: { value: "network" } });
+  expect(screen.getByText("512 B/s")).toBeTruthy();
+  fireEvent.change(
+    screen.getByRole("combobox", { name: "History interface" }),
+    { target: { value: "eth1" } },
+  );
+  expect(screen.getByText("2.0 KiB/s")).toBeTruthy();
+  expect(screen.queryByText("512 B/s")).toBeNull();
+  expect(screen.getByText(/2 sources exceed the history limit/)).toBeTruthy();
+  fireEvent.change(view, { target: { value: "storage" } });
+  expect(screen.getByText("auto:volume1")).toBeTruthy();
+  expect(screen.getByText(/16-volume limit/)).toBeTruthy();
+  fireEvent.change(view, { target: { value: "daemon" } });
+  expect(
+    screen.getByText("Command groups").nextElementSibling?.textContent,
+  ).toBe("—");
+  expect(screen.getByText("Sessions").nextElementSibling?.textContent).toBe(
+    "2",
+  );
+});

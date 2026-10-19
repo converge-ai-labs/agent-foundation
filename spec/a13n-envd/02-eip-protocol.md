@@ -2,7 +2,7 @@
 
 ## Design Position
 
-EIP 0.2 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
+EIP 0.3 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
 
 The [canonical IDL](08-protocol-source-client-and-generation.md) generates Rust/Python wire types and fixtures.
 
@@ -198,6 +198,6 @@ Expired/collected selectors return invalid/not-found or Session-expired errors; 
 
 The client never automatically replays possibly dispatched work after carrier loss, recreates it in another Session or chooses another operation ID to hide ambiguity. Exact retained same-Session replay is the only replay facility. Process inspect/wait, receipt lookup and output reads provide explicit bounded observation.
 
-EIP 0.2 requires binary profile 1 and Session addressing. Other protocol versions and profiles fail negotiation.
+EIP 0.3 requires binary profile 1 and Session addressing. Other protocol versions and profiles fail negotiation.
 
 `egress.update` is the ledger-external Session control for atomic policy and secret updates. The [egress contract](07-execution-isolation.md#controlled-session-egress) owns revision, injection and isolation semantics; generated IDL owns its wire fields.

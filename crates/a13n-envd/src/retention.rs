@@ -221,6 +221,21 @@ impl RetentionQuota {
 }
 
 impl RetentionStore {
+    /// Actual retained bytes, excluding unused output allowances.
+    pub(crate) fn retained_bytes(&self) -> u64 {
+        let objects: Vec<_> = self.objects().values().cloned().collect();
+        objects
+            .iter()
+            .map(|object| {
+                object
+                    .state
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .retained_bytes
+            })
+            .sum()
+    }
+
     pub(crate) fn new(
         config: &crate::config::Config,
         selector_ids: ShortIdAllocator,

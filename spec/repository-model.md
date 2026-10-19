@@ -121,10 +121,10 @@ The current cross-group requirements are:
 
 | Consumer                     | Dependency               | Published requirement                  |
 | ---------------------------- | ------------------------ | -------------------------------------- |
-| Harness UI                   | Harness, Stream Protocol | `>=0.15.0,<0.16.0`, identical for both |
+| Harness UI                   | Harness, Stream Protocol | `>=0.16.0,<0.17.0`, identical for both |
 | Service                      | Harness, Stream Protocol | `>=0.13.0,<0.14.0`, identical for both |
 | Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                       |
-| Harness, Harness UI          | `a13n-envd-client`       | `>=0.4.1,<0.5.0`                       |
+| Harness, Harness UI          | `a13n-envd-client`       | `>=0.5.0,<0.6.0`                       |
 
 Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 

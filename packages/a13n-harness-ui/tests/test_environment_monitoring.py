@@ -51,7 +51,7 @@ def setup_monitor(*, generation=1, observed=None):
 def test_minute_history_is_fixed_size_and_expires_and_segments():
     history = MinuteHistory()
     allocated = history.values.buffer_info()[1] * history.values.itemsize
-    assert allocated < 128 * 1024
+    assert allocated < 200 * 1024
     for minute in range(10_000, 10_000 + HISTORY_MINUTES * 2):
         history.add(minute, 1, (10.0, None, None))
         history.add(minute, 1, (30.0, 0.0, None))
@@ -237,3 +237,123 @@ async def test_oversized_observations_are_not_retained_and_deadlines_end_collect
     await monitor.collect()
     assert (await monitor.detail("build")).environment.status == "offline"
     assert acquire.await_count == 1
+
+
+def test_resource_rates_preserve_zero_reset_and_missing_observations():
+    from a13n_harness_ui.environment_monitoring import _ResourceRates
+
+    resource = _ResourceRates(kind="network", name="eth0", identity="if-1", ring=MinuteHistory(2))
+    resource.add((100, 200), 10, 10000, 30)
+    assert resource.view(10000 * 60).history[-1].rates == {}
+    resource.add((200, 200), 20, 10001, 30)
+    point = resource.view(10001 * 60).history[-1]
+    assert point.rates["received_bytes_per_second"].average == 10
+    assert point.rates["transmitted_bytes_per_second"].average == 0
+    resource.add((None, 300), 30, 10002, 30)
+    resource.add((400, 400), 40, 10003, 30)
+    assert "received_bytes_per_second" not in resource.view(10003 * 60).history[-1].rates
+    resource.add((1, 1), 50, 10004, 30)
+    reset = resource.view(10004 * 60).history[-1]
+    assert reset.segment != point.segment
+    assert reset.rates == {}
+    resource.add((100, 100), 100, 10005, 30)
+    assert resource.view(10005 * 60).history[-1].rates == {}
+    resource.invalidate()
+    resource.add((200, 200), 110, 10006, 30)
+    assert resource.view(10006 * 60).history[-1].rates == {}
+
+
+def test_rate_source_churn_is_bounded_and_identity_change_discards_old_history():
+    from a13n_envd_client.eip.v1 import DiskIoMetrics, DiskMetrics, NetworkInterfaceMetrics, NetworkMetrics
+    from a13n_harness_ui.environment_monitoring import MAX_RATE_SOURCES, _Observation
+
+    source = MonitoringSource(id="x", name="x", transport="http", revision="x", acquire=AsyncMock())
+    item = _Observation(source=source, interval_ms=10000, received_at=100)
+    first = sample().model_copy(
+        update={
+            "network": NetworkMetrics(
+                interfaces={
+                    f"eth{i}": NetworkInterfaceMetrics(identity=f"if-{i}", received_bytes=100) for i in range(64)
+                },
+                truncated=False,
+            ),
+            "disks": DiskMetrics(
+                devices={f"disk{i}": DiskIoMetrics(identity=f"disk-{i}", read_bytes=100) for i in range(64)},
+                truncated=False,
+            ),
+        }
+    )
+    item.add_rates(first, 10000)
+    assert len(item.resources) == 2 * MAX_RATE_SOURCES
+    assert item.omitted_rate_sources == 128 - 2 * MAX_RATE_SOURCES
+    assert sum(len(r.ring.values) * r.ring.values.itemsize for r in item.resources.values()) < 1024 * 1024
+    changed = first.model_copy(
+        update={
+            "network": NetworkMetrics(
+                interfaces={"eth0": NetworkInterfaceMetrics(identity="replacement", received_bytes=200)},
+                truncated=False,
+            )
+        }
+    )
+    item.received_at += 10
+    item.add_rates(changed, 10001)
+    replacement = item.resources[("network", "eth0")].view(10001 * 60)
+    assert replacement.identity == "replacement"
+    assert len(replacement.history) == 1
+    assert replacement.history[0].rates == {}
+    for i in range(20):
+        item.received_at += 10
+        item.add_rates(
+            first.model_copy(
+                update={
+                    "network": NetworkMetrics(
+                        interfaces={f"new{i}": NetworkInterfaceMetrics(identity=str(i), received_bytes=0)},
+                        truncated=False,
+                    )
+                }
+            ),
+            10002 + i,
+        )
+        assert len(item.resources) <= 2 * MAX_RATE_SOURCES
+
+
+@pytest.mark.anyio
+async def test_rate_collection_deduplicates_and_breaks_across_offline_and_generation(monkeypatch):
+    from a13n_envd_client.eip.v1 import NetworkInterfaceMetrics, NetworkMetrics
+
+    clock = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "time", lambda: 1_800_000_000 + clock[0])
+
+    def observed(sequence, received):
+        return sample(sequence).model_copy(
+            update={
+                "network": NetworkMetrics(
+                    interfaces={"eth0": NetworkInterfaceMetrics(identity="if-1", received_bytes=received)},
+                    truncated=False,
+                )
+            }
+        )
+
+    monitor, _, device, acquire = setup_monitor(observed=observed(1, 100))
+    await monitor.collect()
+    clock[0] += 10
+    device.metrics.return_value = device.metrics.return_value.model_copy(update={"sample": observed(2, 200)})
+    await monitor.collect()
+    before = (await monitor.detail("build")).resources
+    assert before[0].history[-1].rates["received_bytes_per_second"].average == 10
+    await monitor.collect()
+    assert (await monitor.detail("build")).resources == before
+    acquire.side_effect = TimeoutError
+    await monitor.collect()
+    acquire.side_effect = None
+    clock[0] += 10
+    device.metrics.return_value = device.metrics.return_value.model_copy(update={"sample": observed(3, 300)})
+    await monitor.collect()
+    assert (await monitor.detail("build")).resources[0].history[-1].rates == {}
+    device.metrics.return_value = device.metrics.return_value.model_copy(
+        update={"generation": 2, "sample": observed(1, 400)}
+    )
+    clock[0] += 10
+    await monitor.collect()
+    assert (await monitor.detail("build")).resources[0].history[-1].rates == {}

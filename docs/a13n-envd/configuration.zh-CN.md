@@ -91,7 +91,7 @@ Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有�
 
 Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回的 Device descriptor 暴露基础系统信息：操作系统及版本、内核版本、原生架构，以及可取得的 CPU 型号。Envd 自身版本位于 `initialize.server.version`。
 
-`a13n-envd connect` 默认每 10 秒采集一次 CPU 和内存，使用已保存的 Host 重新连接时也适用。已有安装需要更新 Envd 二进制并重启守护进程才能使用此默认值；只更新 Harness UI 不会改变正在运行的远程守护进程。
+`a13n-envd connect` 默认每 10 秒采集一次系统、网络、磁盘、套接字、本地文件系统和守护进程用量，使用已保存的 Host 重新连接时也适用。已有安装需要更新 Envd 二进制并重启守护进程才能使用此默认值；只更新 Harness UI 不会改变正在运行的远程守护进程。
 
 在 `--config` 文件或 `A13N_ENVD_CONFIG_JSON` 中设置 `"monitoring": null` 可关闭采样。其他守护进程启动方式仍需显式开启；选择原生 OTLP 导出时，省略 `monitoring` 也会启用默认采样。在守护进程配置中通过 `monitoring` 启用或自定义采样：
 
@@ -104,7 +104,7 @@ Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回�
 }
 ```
 
-使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集 CPU 和内存。自定义设置遵循通常的配置优先级，`connect` 会保留这些设置。关闭采样后，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
+使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集资源概览，包括自动发现的本地文件系统。自定义设置遵循通常的配置优先级，`connect` 会保留这些设置。关闭采样后，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
 
 通过已初始化的 Python Device connection 读取，无需创建 Session：
 
@@ -117,7 +117,7 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-调用使用现有认证 HTTP、反向 WebSocket 或 stdio 连接上的 EIP `device.metrics`，不需要额外端口、令牌或 TLS 配置。只有启用采样才会声明该方法。Envd 与 `a13n-envd-client` 使用 EIP 0.2；从 0.1 部署迁移时一起升级。`eip.v1` 命名空间和传输帧保持不变。
+调用使用现有认证 HTTP、反向 WebSocket 或 stdio 连接上的 EIP `device.metrics`，不需要额外端口、令牌或 TLS 配置。只有启用采样才会声明该方法。Envd 与 `a13n-envd-client` 使用 EIP 0.3；从 0.1 或 0.2 部署迁移时一起升级。`eip.v1` 命名空间和传输帧保持不变。
 
 | 观测                                                         | 含义                                                                                                                                                                      |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +129,20 @@ if report.sample is not None:
 | `sample.system.pressure`                                     | 可选的 Linux CPU、内存、I/O PSI。                                                                                                                                         |
 | `sample.cgroup_v2`                                           | 可选的显式指定 Linux cgroup v2 观测。                                                                                                                                     |
 
-Linux 可在 `monitoring` 内添加 `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"`，观察该组及其后代；其他平台拒绝该 Linux 专用配置。数据包含 CPU 用户态/系统态/总微秒数、带宽周期和限流、内存用量及事件、本地 CPU/内存限制和 PSI。限制使用 `unlimited` 或 `limited` 标签，不代表考虑祖先限制和亲和性后的有效容量。
+资源概览还包括：
+
+| 观测                        | 含义                                                                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sample.system` 平台字段    | Linux/macOS 的交换空间用量和容量；macOS 的 wired/compressed 内存；Windows 的提交量、提交限制、缓存及全局进程、线程、句柄数。Windows 提交量不是交换空间用量。 |
+| `sample.network.interfaces` | 最多 64 个接口，包含原生身份及可用的累计字节、包、错误和丢弃计数。                                                                                           |
+| `sample.disks.devices`      | 最多 64 个磁盘，包含累计字节和操作计数，以及可选的原生耗时和队列值。Linux 排除分区及 loop/RAM 设备。                                                         |
+| `sample.connections`        | TCP 状态和 UDP 套接字的聚合计数，不包含地址或逐连接记录。macOS 提供总数，不提供 TCP 状态明细。                                                               |
+| `sample.local_filesystems`  | 最多 16 个自动发现的本地文件系统，与命名目标分开报告。使用不透明的原生身份，不暴露路径。                                                                     |
+| `sample.daemon`             | Envd Session、活动命令组、传输、公共传输连接数及实际保留输出字节数。采集不完整时，依赖 worker 的总量缺失。                                                   |
+
+清单会明确报告截断。原生数据源不可用时保留缺失值。接口和磁盘身份区分计数器生命周期；不能将堆叠设备相加作为整机总量。文件系统发现会过滤伪文件系统和远程文件系统，可能包含已挂载的可移动本地卷，不扫描目录内容。可用字段取决于平台和原生 API 权限。
+
+Linux 可在 `monitoring` 内添加 `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"`，观察该组及其后代；其他平台拒绝该 Linux 专用配置。数据包含 CPU 用户态/系统态/总微秒数、带宽周期和限流、内存用量及事件、本地 CPU/内存限制、任务数及限制、逐设备 I/O 字节和操作计数，以及 PSI。限制使用 `unlimited` 或 `limited` 标签，不代表考虑祖先限制和亲和性后的有效容量。
 
 PSI 提供可选 `some`、`full` 记录，包含 `avg10_percent`、`avg60_percent`、`avg300_percent` 与累计 `total_usec`。平均值采用内核窗口，与采样间隔无关。系统级 CPU `full` 未定义，因此缺失。不可用值在线上省略，在 Python 中为 `None`，不填充为零。
 
