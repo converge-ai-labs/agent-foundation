@@ -278,7 +278,9 @@ fn capture_pixels(g: &Geometry) -> Result<RgbImage, EIPError> {
         let pixels =
             std::slice::from_raw_parts(bits.cast::<u8>(), width as usize * height as usize * 4);
         let rgb = pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| [p[2], p[1], p[0]])
             .collect();
         RgbImage::from_raw(width, height, rgb).ok_or_else(unavailable)

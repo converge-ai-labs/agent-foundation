@@ -87,6 +87,9 @@ prost = "0.14.1"
 opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "metrics"] }
 opentelemetry_sdk = { version = "0.33", default-features = false, features = ["metrics", "testing"] }
 
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Controls"] }
+
 [build-dependencies]
 heck = "0.5.0"
 prost = "0.14.1"

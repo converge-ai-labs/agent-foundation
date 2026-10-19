@@ -121,7 +121,7 @@ pub(super) fn read(
             if bytes > MAX_NATIVE_BYTES {
                 return Err(oversize());
             }
-            if bytes < 2 || bytes % 2 != 0 {
+            if bytes < 2 || !bytes.is_multiple_of(2) {
                 return Err(invalid_text());
             }
             let pointer = GlobalLock(handle).cast::<u16>();
@@ -181,4 +181,256 @@ pub(super) fn write(value: &str, interrupted: &dyn Fn() -> bool) -> Result<Effec
         cleanup_complete: opened.close(),
         ..result
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    };
+    use windows_sys::Win32::UI::Controls::{EM_GETSEL, EM_SETSEL};
+
+    // Publish independent native data, including values the public write API rejects.
+    fn publish(format: u32, data: &[u16]) {
+        let window = Window::new().unwrap();
+        let mut opened = Open::new(window.0, &|| false).unwrap();
+        unsafe {
+            assert_ne!(EmptyClipboard(), 0);
+            let mut memory = Memory(GlobalAlloc(GMEM_MOVEABLE, std::mem::size_of_val(data)));
+            assert!(!memory.0.is_null());
+            let pointer = GlobalLock(memory.0).cast::<u16>();
+            assert!(!pointer.is_null());
+            std::ptr::copy_nonoverlapping(data.as_ptr(), pointer, data.len());
+            GlobalUnlock(memory.0);
+            assert!(!SetClipboardData(format, memory.0).is_null());
+            memory.0 = null_mut();
+        }
+        assert!(opened.close());
+    }
+
+    #[test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop with --test-threads=1"]
+    fn windows_clipboard_native_editor_roundtrip() {
+        let value = "café 中文 🦀\nsecond line\n";
+        // Eager data must remain usable after the publishing window and thread exit.
+        std::thread::spawn(move || {
+            let result = write(value, &|| false).unwrap();
+            assert_eq!(result.effect, ComputerEffect::Executed);
+            assert!(result.cleanup_complete);
+        })
+        .join()
+        .unwrap();
+        assert_eq!(
+            read(MAX_TEXT_BYTES as u32, &|| false)
+                .unwrap()
+                .text
+                .as_deref(),
+            Some(value)
+        );
+        unsafe {
+            let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+            let parent = Window(CreateWindowExW(
+                0,
+                class.as_ptr(),
+                null(),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                640,
+                480,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null(),
+            ));
+            assert!(!parent.0.is_null());
+            let class: Vec<u16> = "EDIT\0".encode_utf16().collect();
+            let editor = Window(CreateWindowExW(
+                0,
+                class.as_ptr(),
+                null(),
+                WS_CHILD | (ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL) as u32,
+                0,
+                0,
+                320,
+                200,
+                parent.0,
+                null_mut(),
+                null_mut(),
+                null(),
+            ));
+            assert!(!editor.0.is_null());
+            // Exercise a real Windows edit control without stealing foreground focus.
+            SendMessageW(editor.0, WM_PASTE, 0, 0);
+            let mut buffer = vec![0_u16; GetWindowTextLengthW(editor.0) as usize + 1];
+            let length = GetWindowTextW(editor.0, buffer.as_mut_ptr(), buffer.len() as i32);
+            assert_eq!(
+                String::from_utf16(&buffer[..length as usize]).unwrap(),
+                value.replace('\n', "\r\n")
+            );
+            let copied = "from native editor: café 中文 🦀\r\nnext line";
+            let text: Vec<u16> = copied.encode_utf16().chain(std::iter::once(0)).collect();
+            assert_ne!(SetWindowTextW(editor.0, text.as_ptr()), 0);
+            assert_eq!(GetWindowTextLengthW(editor.0) as usize, text.len() - 1);
+            SendMessageW(editor.0, EM_SETSEL, 0, -1);
+            let mut end = 0_u32;
+            SendMessageW(editor.0, EM_GETSEL, 0, (&mut end as *mut u32) as isize);
+            assert_eq!(end as usize, text.len() - 1);
+            SendMessageW(editor.0, WM_COPY, 0, 0);
+            assert_eq!(
+                read(MAX_TEXT_BYTES as u32, &|| false).unwrap().text,
+                Some(copied.replace("\r\n", "\n"))
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop with --test-threads=1"]
+    fn windows_clipboard_formats_unicode_and_limits() {
+        {
+            let window = Window::new().unwrap();
+            let mut opened = Open::new(window.0, &|| false).unwrap();
+            assert_ne!(unsafe { EmptyClipboard() }, 0);
+            assert!(opened.close());
+        }
+        let result = read(MAX_TEXT_BYTES as u32, &|| false).unwrap();
+        assert_eq!(result.status, ComputerClipboardStatus::NoContent);
+        assert_eq!(result.text, None);
+        let name: Vec<u16> = "a13n-envd-test-non-text\0".encode_utf16().collect();
+        let format = unsafe { RegisterClipboardFormatW(name.as_ptr()) };
+        assert_ne!(format, 0);
+        publish(format, &[1, 2, 0]);
+        let result = read(MAX_TEXT_BYTES as u32, &|| false).unwrap();
+        assert_eq!(result.status, ComputerClipboardStatus::NoText);
+        assert_eq!(result.text, None);
+
+        for value in ["".to_string(), "a\nb\rc\n".to_string(), "é".repeat(8192)] {
+            let result = write(&value, &|| false).unwrap();
+            assert_eq!(result.effect, ComputerEffect::Executed);
+            assert!(result.cleanup_complete);
+            let result = read(MAX_TEXT_BYTES as u32, &|| false).unwrap();
+            assert_eq!(result.status, ComputerClipboardStatus::Text);
+            assert_eq!(result.text.as_deref(), Some(value.as_str()));
+        }
+        assert_eq!(
+            read(1, &|| false).unwrap_err().data.error_type,
+            ErrorType::QuotaExceeded
+        );
+        publish(UNICODE_TEXT, &[0xd800, 0]);
+        assert_eq!(
+            read(MAX_TEXT_BYTES as u32, &|| false)
+                .unwrap_err()
+                .data
+                .error_type,
+            ErrorType::ProviderUnavailable
+        );
+        publish(UNICODE_TEXT, &vec![0; MAX_NATIVE_BYTES / 2 + 1]);
+        assert_eq!(
+            read(MAX_TEXT_BYTES as u32, &|| false)
+                .unwrap_err()
+                .data
+                .error_type,
+            ErrorType::QuotaExceeded
+        );
+        // Errors must release the clipboard lock so another native publication can succeed.
+        assert!(write("after error", &|| false).unwrap().cleanup_complete);
+    }
+
+    #[test]
+    #[ignore = "requires an interactive Windows session; run with --test-threads=1"]
+    fn windows_clipboard_rejects_a_non_input_desktop() {
+        use windows_sys::Win32::System::{StationsAndDesktops::*, Threading::GetCurrentThreadId};
+
+        // Change only a new worker thread's desktop, never the user's input desktop.
+        let (read_error, write_error) = std::thread::spawn(|| unsafe {
+            let previous = GetThreadDesktop(GetCurrentThreadId());
+            let name: Vec<u16> = format!("a13n-clipboard-test-{}\0", GetCurrentThreadId())
+                .encode_utf16()
+                .collect();
+            let desktop = CreateDesktopW(
+                name.as_ptr(),
+                null(),
+                null(),
+                0,
+                DESKTOP_CREATEWINDOW | DESKTOP_READOBJECTS | DESKTOP_WRITEOBJECTS,
+                null(),
+            );
+            assert!(!desktop.is_null());
+            let entered = SetThreadDesktop(desktop);
+            if entered == 0 {
+                CloseDesktop(desktop);
+                panic!("cannot enter test desktop");
+            }
+            let read_error = read(MAX_TEXT_BYTES as u32, &|| false).err();
+            let write_error = write("must not publish", &|| false).err();
+            assert_ne!(SetThreadDesktop(previous), 0);
+            assert_ne!(CloseDesktop(desktop), 0);
+            (read_error.unwrap(), write_error.unwrap())
+        })
+        .join()
+        .unwrap();
+        for error in [read_error, write_error] {
+            assert_eq!(error.data.error_type, ErrorType::ProviderUnavailable);
+            assert_eq!(
+                error.data.safe_detail.as_deref(),
+                Some("computer_windows_desktop_unavailable")
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop with --test-threads=1"]
+    fn windows_clipboard_contention_retry_cancel_and_timeout() {
+        write("unchanged", &|| false).unwrap();
+        let window = Window::new().unwrap();
+        let mut opened = Open::new(window.0, &|| false).unwrap();
+        let (waiting, observed_wait) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let attempts = AtomicUsize::new(0);
+            read(MAX_TEXT_BYTES as u32, &|| {
+                if attempts.fetch_add(1, Ordering::Relaxed) == 1 {
+                    waiting.send(()).unwrap();
+                }
+                false
+            })
+        });
+        observed_wait.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(opened.close());
+        assert_eq!(
+            reader.join().unwrap().unwrap().text.as_deref(),
+            Some("unchanged")
+        );
+
+        let mut opened = Open::new(window.0, &|| false).unwrap();
+        let cancelled = std::thread::spawn(|| {
+            let deadline = Instant::now() + Duration::from_millis(50);
+            write("cancelled write", &|| Instant::now() >= deadline)
+                .err()
+                .unwrap()
+        })
+        .join()
+        .unwrap();
+        assert_eq!(cancelled.data.error_type, ErrorType::Cancelled);
+        let started = Instant::now();
+        let timed_out = std::thread::spawn(|| write("timed out write", &|| false).err().unwrap())
+            .join()
+            .unwrap();
+        assert_eq!(timed_out.data.error_type, ErrorType::Timeout);
+        assert!(started.elapsed() >= Duration::from_secs(5));
+        assert!(opened.close());
+        assert_eq!(
+            read(MAX_TEXT_BYTES as u32, &|| false)
+                .unwrap()
+                .text
+                .as_deref(),
+            Some("unchanged")
+        );
+        assert!(
+            write("after contention", &|| false)
+                .unwrap()
+                .cleanup_complete
+        );
+    }
 }
