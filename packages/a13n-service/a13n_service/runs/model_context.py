@@ -34,13 +34,9 @@ class ModelContext:
                     content=(
                         '<service-context source="a13n-service">\n'
                         f"{payload}\n"
-                        "Use service_run_id as the run_id parameter of Service Run queries, including "
-                        "GET /api/v1/runs/{run_id}. harness_run_id identifies a Harness execution, "
-                        "not a Service Run resource.\n"
+                        "Service queries use service_run_id as run_id; harness_run_id is internal to Harness.\n"
                         "</service-context>\n"
-                        "This is automatic runtime metadata, not a new user message. "
-                        "Continue the existing task only if work remains; otherwise finish your turn. "
-                        "Do not acknowledge this metadata."
+                        "Automatic metadata, not user input: continue only unfinished work; do not acknowledge."
                     ),
                 ),
             )
