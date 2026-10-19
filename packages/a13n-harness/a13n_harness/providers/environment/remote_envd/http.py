@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import ssl
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from a13n_envd_client import EIPDeviceConnection, EIPSession, HttpTransport
@@ -24,6 +24,7 @@ from a13n_harness.environment.envd_policy import (
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
@@ -41,7 +42,6 @@ from a13n_harness.providers.environment.remote_envd.environment import (
     describe_environment,
     target_identity,
 )
-from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery
 
 HTTP_PROVIDER_KEY = "http_envd"
 
@@ -55,8 +55,6 @@ class HttpEnvdProviderRuntime:
     verify: ssl.SSLContext | str | bool = field(default_factory=outbound_tls_verify, repr=False)
 
     credential_resolver: EnvdCredentialResolver = field(default_factory=EnvironmentEnvdCredentialResolver, repr=False)
-
-    session_recovery: HttpEnvdSessionRecovery | None = field(default=None, repr=False)
 
     _device: EIPDeviceConnection | None = field(default=None, init=False, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
@@ -124,43 +122,19 @@ class HttpEnvdProviderRuntime:
         working_directory: str | None = None,
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> AsyncIterator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
-        recovery = self.session_recovery
-        if recovery is not None and egress is not None:
-            recovery.state = None
-            recovery = None
-        async with AsyncExitStack() as stack:
-            restored = (
-                await recovery.attach(
-                    device,
-                    endpoint=self.configuration.endpoint,
-                    expected_device_id=expected_device_id,
-                    working_directory=working_directory,
-                    required_methods=required_methods,
-                    expected_boundary=expected_boundary,
-                )
-                if recovery is not None
-                else None
-            )
-            session = await stack.enter_async_context(
-                restored
-                if restored is not None
-                else DeviceEIPSessionSource(device).open_session(
-                    expected_device_id=expected_device_id,
-                    required_methods=required_methods,
-                    working_directory=working_directory,
-                    egress=await resolve_egress(egress, self.credential_resolver),
-                    expected_boundary=expected_boundary,
-                )
-            )
-            if recovery is not None:
-                recovery.observe(self.configuration.endpoint, working_directory, session)
-            try:
-                yield session
-            finally:
-                if recovery is not None:
-                    recovery.closed(session)
+        async with DeviceEIPSessionSource(
+            device, target=self.configuration.endpoint, session_recovery=session_recovery
+        ).open_session(
+            expected_device_id=expected_device_id,
+            required_methods=required_methods,
+            working_directory=working_directory,
+            egress=await resolve_egress(egress, self.credential_resolver),
+            expected_boundary=expected_boundary,
+        ) as session:
+            yield session
 
     async def close(self) -> None:
         if self._close_task is None:
@@ -206,6 +180,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
@@ -218,6 +193,7 @@ def _construct(
         state=state,
         session_context=runtime.open_session(
             expected_device_id=data.device_id,
+            session_recovery=session_recovery,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             egress=configuration.egress,

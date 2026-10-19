@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
-from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionState
+from a13n_harness.environment.session_recovery import EnvdSessionState
 from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
@@ -123,7 +123,7 @@ class RunState(_Frozen):
     # turn reminder. Every other run's input reaches its first request before its first checkpoint.
     resume_input_consumed: bool = False
     # Private same-Run attachment hints, never inherited by a successor Run.
-    envd_sessions: dict[str, HttpEnvdSessionState] = Field(default_factory=dict, repr=False)
+    envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
 
 def run_prefix(organization_id: str, run_id: str) -> str:

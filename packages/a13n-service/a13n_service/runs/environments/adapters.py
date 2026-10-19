@@ -1,17 +1,16 @@
 """Detached Host inputs for explicit management and fixed-target execution."""
 
 from collections.abc import Mapping
-from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
 import anyio
 from a13n_harness import RunConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
-from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -81,8 +80,7 @@ async def execution_connector(
     target: Target,
     *,
     configuration: RunConfiguration | None = None,
-    stack: AsyncExitStack | None = None,
-    session_recovery: HttpEnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
     """Check Host endpoint policy, then construct an inert connector to the published target."""
     policy = runtime.endpoint_policy.for_run(configuration or RunConfiguration())
@@ -94,7 +92,6 @@ async def execution_connector(
             environment_id=target.environment_id,
             device_id=account.device_id,
             policy=policy,
-            stack=stack,
             session_recovery=session_recovery,
         )
     await runtime.registry.check_environment_endpoint(account.type, account.config, policy)
@@ -110,6 +107,7 @@ async def execution_connector(
         credential=account.reveal_credential(runtime.keys),
         environment_id=target.environment_id,
         state=target.state,
+        session_recovery=session_recovery,
     )
 
 

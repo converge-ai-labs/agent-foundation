@@ -116,11 +116,10 @@ async def daemon(binary, tmp_path, transport, address):
 async def http_runtime():
     runtimes = []
 
-    def create(endpoint, token=TOKEN, *, recovery=None):
+    def create(endpoint, token=TOKEN):
         runtime = HttpEnvdProviderRuntime(
             HttpEnvdConnectionConfiguration(endpoint=endpoint, request_timeout=5),
             HttpEnvdCredential(token=SecretStr(token)),
-            session_recovery=recovery,
         )
         runtimes.append(runtime)
         return runtime
@@ -512,7 +511,7 @@ async def test_websocket_host_sdk_real_daemon_operations_and_reconnection(binary
 @pytest.mark.parametrize("closed", [False, True])
 async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary, tmp_path, http_runtime, closed):
     from a13n_envd_client import EIPClientError
-    from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     address = f"127.0.0.1:{free_port()}"
     endpoint = f"http://{address}"
@@ -520,13 +519,15 @@ async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary
         first = http_runtime(endpoint)
         device = await first.acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        saved = HttpEnvdSessionState(endpoint=endpoint, descriptor=original.descriptor)
+        saved = EnvdSessionState(target=endpoint, descriptor=original.descriptor)
         # Round-trip the exact value a Host stores, without keeping a client object.
-        recovery = HttpEnvdSessionRecovery(HttpEnvdSessionState.model_validate_json(saved.model_dump_json()))
+        recovery = EnvdSessionRecovery(EnvdSessionState.model_validate_json(saved.model_dump_json()))
         if closed:
             await original.close()
-        restored = http_runtime(endpoint, recovery=recovery)
-        async with restored.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+        restored = http_runtime(endpoint)
+        async with restored.open_session(
+            expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+        ) as session:
             assert (session.session_id == original.session_id) is not closed
             assert (await session.readiness()).ready
             assert recovery.state is not None and recovery.state.descriptor == session.descriptor
@@ -539,17 +540,19 @@ async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary
 
 async def test_http_recovery_late_close_fails_without_reopening_or_replaying(binary, tmp_path, http_runtime):
     from a13n_envd_client import EIPClientError
-    from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     address = f"127.0.0.1:{free_port()}"
     endpoint = f"http://{address}"
     async with daemon(binary, tmp_path, "http", address) as (_, workspace):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        recovery = HttpEnvdSessionRecovery(HttpEnvdSessionState(endpoint=endpoint, descriptor=original.descriptor))
-        restored = http_runtime(endpoint, recovery=recovery)
+        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        restored = http_runtime(endpoint)
         with pytest.raises(EIPClientError):
-            async with restored.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+            async with restored.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+            ) as session:
                 assert session.session_id == original.session_id
                 await original.close()
                 async with session.open_writer(
@@ -561,7 +564,7 @@ async def test_http_recovery_late_close_fails_without_reopening_or_replaying(bin
 
 
 async def test_http_recovery_after_daemon_restart_opens_new_generation(binary, tmp_path, http_runtime):
-    from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     address = f"127.0.0.1:{free_port()}"
     endpoint = f"http://{address}"
@@ -571,11 +574,13 @@ async def test_http_recovery_after_daemon_restart_opens_new_generation(binary, t
     async with daemon(binary, first_root, "http", address):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        saved = HttpEnvdSessionState(endpoint=endpoint, descriptor=original.descriptor)
+        saved = EnvdSessionState(target=endpoint, descriptor=original.descriptor)
     async with daemon(binary, second_root, "http", address):
-        recovery = HttpEnvdSessionRecovery(saved)
-        restored = http_runtime(endpoint, recovery=recovery)
-        async with restored.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+        recovery = EnvdSessionRecovery(saved)
+        restored = http_runtime(endpoint)
+        async with restored.open_session(
+            expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+        ) as session:
             assert session.descriptor.generation != saved.descriptor.generation
             assert session.session_id != saved.descriptor.session_id
             assert (await session.readiness()).ready
@@ -588,38 +593,177 @@ async def test_http_recovery_does_not_open_fresh_session_after_uncertain_attach(
     from unittest.mock import AsyncMock
 
     from a13n_envd_client import EIPProtocolError, EIPTransportError
-    from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     address = f"127.0.0.1:{free_port()}"
     endpoint = f"http://{address}"
     async with daemon(binary, tmp_path, "http", address):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        recovery = HttpEnvdSessionRecovery(HttpEnvdSessionState(endpoint=endpoint, descriptor=original.descriptor))
-        restored = http_runtime(endpoint, recovery=recovery)
+        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        restored = http_runtime(endpoint)
         next_device = await restored.acquire_device(expected_device_id=NATIVE_ID)
         error = (EIPTransportError if failure == "transport" else EIPProtocolError)("attachment failed")
         opened = AsyncMock(wraps=next_device.open_session)
         monkeypatch.setattr(next_device, "attach_session", AsyncMock(side_effect=error))
         monkeypatch.setattr(next_device, "open_session", opened)
         with pytest.raises(type(error), match="attachment failed"):
-            async with restored.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()):
+            async with restored.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+            ):
                 pytest.fail("An uncertain attach must fail")
         opened.assert_not_awaited()
         assert (await original.readiness()).ready
 
 
 async def test_http_recovery_uses_current_credentials(binary, tmp_path, http_runtime):
-    from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     address = f"127.0.0.1:{free_port()}"
     endpoint = f"http://{address}"
     async with daemon(binary, tmp_path, "http", address):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        recovery = HttpEnvdSessionRecovery(HttpEnvdSessionState(endpoint=endpoint, descriptor=original.descriptor))
-        restored = http_runtime(endpoint, token="invalid-current-token", recovery=recovery)
+        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        restored = http_runtime(endpoint, token="invalid-current-token")
         with pytest.raises(EnvironmentProviderError):
-            async with restored.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()):
+            async with restored.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+            ):
                 pytest.fail("Checkpoint state must not bypass authentication")
         assert (await original.readiness()).ready
+
+
+@pytest.mark.parametrize("closed", [False, True])
+async def test_reverse_websocket_recovers_session_after_carrier_reconnect(binary, tmp_path, closed):
+    from a13n_envd_client import EIPMethodError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+
+    async with WebSocketEnvdConnections() as hub:
+        sockets = asyncio.Queue()
+
+        async def handler(connection):
+            await sockets.put(connection)
+            await hub.attach(NATIVE_ID, connection)
+
+        async with serve(handler, "127.0.0.1", 0, subprotocols=["eip.v1"], compression=None) as server:
+            port = server.sockets[0].getsockname()[1]
+            async with daemon(binary, tmp_path, "reverse_websocket", f"ws://127.0.0.1:{port}/envd"):
+                socket = await asyncio.wait_for(sockets.get(), 5)
+                original_device = await hub.acquire_device(expected_device_id=NATIVE_ID)
+                original = await original_device.open_session()
+                saved = EnvdSessionState(target=NATIVE_ID, descriptor=original.descriptor)
+                if closed:
+                    await original.close()
+                await socket.close()
+                await asyncio.wait_for(sockets.get(), 10)
+                async with asyncio.timeout(10):
+                    while True:
+                        device = await hub.acquire_device(expected_device_id=NATIVE_ID)
+                        if device is not original_device:
+                            break
+                        await asyncio.sleep(0.01)
+                recovery = EnvdSessionRecovery(EnvdSessionState.model_validate_json(saved.model_dump_json()))
+                execution = await WEBSOCKET_ENVD.execution_connector(
+                    {},
+                    state=state(WEBSOCKET_ENVD),
+                    runtime=WebSocketEnvdProviderRuntime(hub),
+                    session_recovery=recovery,
+                ).open()
+                try:
+                    assert recovery.state is not None
+                    descriptor = recovery.state.descriptor
+                    assert descriptor.generation == saved.descriptor.generation
+                    assert (descriptor.session_id == original.session_id) is not closed
+                    assert execution.operations.files is not None
+                    await execution.operations.files.write_text(str(tmp_path / "once"), "once", mode="create")
+                finally:
+                    await execution.close()
+                assert recovery.state is None
+                assert (tmp_path / "once").read_text() == "once"
+                with pytest.raises(EIPMethodError):
+                    await device.attach_session(descriptor)
+
+
+@pytest.mark.parametrize("changed", ["target", "device", "generation", "directory", "methods", "boundary"])
+async def test_session_recovery_checks_current_binding_before_attach(
+    binary, tmp_path, http_runtime, monkeypatch, changed
+):
+    from unittest.mock import AsyncMock
+
+    from a13n_envd_client import EIPSessionStateError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+
+    address = f"127.0.0.1:{free_port()}"
+    endpoint = f"http://{address}"
+    async with daemon(binary, tmp_path, "http", address):
+        original = await (await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)).open_session()
+        saved = EnvdSessionState(target=endpoint, descriptor=original.descriptor)
+        if changed == "target":
+            saved = saved.model_copy(update={"target": "another-target"})
+        elif changed == "directory":
+            saved = saved.model_copy(update={"working_directory": "/another-directory"})
+        else:
+            changes = {
+                "device": {"device_id": "another-device"},
+                "generation": {"generation": "another-generation"},
+                "methods": {"available_methods": []},
+                "boundary": {"boundary": original.descriptor.boundary.model_copy(update={"policy_digest": "0" * 64})},
+            }
+            saved = saved.model_copy(update={"descriptor": original.descriptor.model_copy(update=changes[changed])})
+        recovery = EnvdSessionRecovery(saved)
+        runtime = http_runtime(endpoint)
+        device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
+        attach = AsyncMock(wraps=device.attach_session)
+        opened = AsyncMock(wraps=device.open_session)
+        monkeypatch.setattr(device, "attach_session", attach)
+        monkeypatch.setattr(device, "open_session", opened)
+        scope = runtime.open_session(
+            expected_device_id=NATIVE_ID, required_methods=frozenset({"file.read_text"}), session_recovery=recovery
+        )
+        if changed == "boundary":
+            with pytest.raises(EIPSessionStateError, match="boundary changed"):
+                async with scope:
+                    pytest.fail("Changed boundary must fail")
+            opened.assert_not_awaited()
+        else:
+            async with scope as session:
+                assert session.session_id != original.session_id
+            opened.assert_awaited_once()
+        attach.assert_not_awaited()
+        assert recovery.state is None
+        assert (await original.readiness()).ready
+
+
+async def test_session_recovery_unavailable_carrier_leaves_old_session_alone(
+    binary, tmp_path, http_runtime, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from a13n_envd_client import EIPMethodError
+    from a13n_envd_client.eip.v1 import EIPError, EIPErrorData
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+
+    address = f"127.0.0.1:{free_port()}"
+    endpoint = f"http://{address}"
+    async with daemon(binary, tmp_path, "http", address):
+        original = await (await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)).open_session()
+        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        runtime = http_runtime(endpoint)
+        device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
+        # The framed-carrier gate uses this typed refusal while another carrier
+        # still owns the Session. It does not imply the old Session is dead.
+        error = EIPMethodError(
+            EIPError(
+                code=-32001,
+                message="session is not attached to this carrier",
+                data=EIPErrorData(error_type="not_initialized", retry_hint="never", dispatch_stage="pre_dispatch"),
+            )
+        )
+        monkeypatch.setattr(device, "attach_session", AsyncMock(side_effect=error))
+        async with runtime.open_session(
+            expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+        ) as fresh:
+            assert fresh.session_id != original.session_id
+        assert (await original.readiness()).ready
+        assert recovery.state is None

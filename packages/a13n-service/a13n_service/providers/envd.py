@@ -5,10 +5,9 @@ the endpoint against the outbound policy. First contact reads the device identit
 connection expects that identity, so an endpoint that now reaches another daemon is refused.
 """
 
-from contextlib import AsyncExitStack
-
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -16,7 +15,6 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     RemoteEnvdStateData,
 )
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
-from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from a13n_service.providers.endpoints import check_endpoint
@@ -58,29 +56,17 @@ async def connect(
     environment_id: str,
     device_id: str,
     policy: EndpointPolicy,
-    stack: AsyncExitStack | None = None,
-    session_recovery: HttpEnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
     """A fresh, unentered adapter that expects `device_id`, refused as `provider_device_mismatch` by another
     device; it never creates or changes anything there."""
     await check_endpoint(TYPE, endpoint, policy)
     state = RemoteEnvdStateData(device_id=device_id).model_dump()
-    runtime = None
-    if session_recovery is not None:
-        if stack is None:
-            raise ValueError("Session recovery requires a Host-owned runtime scope")
-        runtime = await stack.enter_async_context(
-            HttpEnvdProviderRuntime(
-                HttpEnvdConnectionConfiguration(endpoint=endpoint),
-                HttpEnvdCredential(token=SecretStr(token)),
-                session_recovery=session_recovery,
-            )
-        )
     return HTTP_ENVD.execution_connector(
         {},
         configuration={"endpoint": endpoint},
-        credential={"token": token} if runtime is None else None,
-        runtime=runtime,
+        credential={"token": token},
+        session_recovery=session_recovery,
         environment_id=environment_id,
         state=EnvironmentState(provider_key=TYPE, state_version="1", state=state),
     )

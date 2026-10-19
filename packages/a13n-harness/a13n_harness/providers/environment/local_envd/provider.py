@@ -19,6 +19,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment._local_identity import local_backing_identity
@@ -52,6 +53,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: LocalEnvdProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Local Envd requires LocalEnvdEnvironmentConfiguration")
@@ -59,7 +61,7 @@ def _construct(
         raise provider_error(_PROVIDER_KEY, "provider_state_invalid", Category.INVALID)
     if runtime is None:
         raise provider_error(_PROVIDER_KEY, "provider_runtime_required", Category.INVALID)
-    return LocalEnvdExecution(configuration, runtime, environment_id=environment_id)
+    return LocalEnvdExecution(configuration, runtime, environment_id=environment_id, session_recovery=session_recovery)
 
 
 _factory = BackendFactory(
@@ -87,11 +89,13 @@ class LocalEnvdExecution(ExecutionBackend):
         runtime: LocalEnvdProviderRuntime,
         *,
         environment_id: str,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> None:
         super().__init__(None)
         self._environment_id = environment_id
         self._configuration = configuration.model_copy(deep=True)
         self._runtime = runtime
+        self._session_recovery = session_recovery
         self._descriptor = configured_descriptor(working_directory=configuration.working_directory)
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
@@ -128,7 +132,7 @@ class LocalEnvdExecution(ExecutionBackend):
             scope = open_eip_environment(
                 provider_key=self.provider_key,
                 environment_id=self.environment_id,
-                session_source=DeviceEIPSessionSource(device),
+                session_source=DeviceEIPSessionSource(device, session_recovery=self._session_recovery),
                 execution_id=execution_id,
                 device_id=device.descriptor.device_id,
                 working_directory=self._configuration.working_directory,

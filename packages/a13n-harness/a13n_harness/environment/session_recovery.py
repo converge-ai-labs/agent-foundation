@@ -1,4 +1,4 @@
-"""Host-private, best-effort HTTP Session attachment; never operation replay."""
+"""Host-private, best-effort Envd Session attachment; never operation replay."""
 
 from dataclasses import dataclass, field
 
@@ -10,18 +10,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
 
 
-class HttpEnvdSessionState(BaseModel):
+class EnvdSessionState(BaseModel):
     """An internal Host checkpoint hint, not portable EnvironmentState or a credential."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    endpoint: str
+    target: str
     descriptor: SessionDescriptor = Field(repr=False)
     working_directory: str | None = None
 
 
 @dataclass(slots=True)
-class HttpEnvdSessionRecovery:
+class EnvdSessionRecovery:
     """One Host execution scope's saved hint and current checkpoint snapshot.
 
     The Host restores this only within the original logical execution scope.
@@ -29,13 +29,13 @@ class HttpEnvdSessionRecovery:
     Normal execution close still closes the Session, including after attachment.
     """
 
-    state: HttpEnvdSessionState | None = field(default=None, repr=False)
+    state: EnvdSessionState | None = field(default=None, repr=False)
 
     async def attach(
         self,
         device: EIPDeviceConnection,
         *,
-        endpoint: str,
+        target: str,
         expected_device_id: str,
         working_directory: str | None,
         required_methods: frozenset[str],
@@ -50,7 +50,7 @@ class HttpEnvdSessionRecovery:
             return None
         descriptor = previous.descriptor
         if (
-            previous.endpoint != endpoint
+            previous.target != target
             or descriptor.device_id != expected_device_id
             or descriptor.generation != device.descriptor.generation
             or previous.working_directory != working_directory
@@ -66,17 +66,15 @@ class HttpEnvdSessionRecovery:
         try:
             return await device.attach_session(descriptor)
         except EIPMethodError as error:
-            # For HTTP, attachment has no per-connection owner: this means the
-            # Session is closed/expired. Transport and compatibility failures
-            # remain failures, not evidence that allocating another is safe.
+            # The saved Session is unavailable to this acquisition (including
+            # another framed carrier still owning it). Leave that owner alone.
+            # Transport and compatibility failures propagate without a fresh open.
             if error.error.data.error_type != ErrorType.NOT_INITIALIZED:
                 raise
             return None
 
-    def observe(self, endpoint: str, working_directory: str | None, session: EIPSession) -> None:
-        self.state = HttpEnvdSessionState(
-            endpoint=endpoint, descriptor=session.descriptor, working_directory=working_directory
-        )
+    def observe(self, target: str, working_directory: str | None, session: EIPSession) -> None:
+        self.state = EnvdSessionState(target=target, descriptor=session.descriptor, working_directory=working_directory)
 
     def closed(self, session: EIPSession) -> None:
         if self.state is not None and self.state.descriptor.session_id == session.session_id:

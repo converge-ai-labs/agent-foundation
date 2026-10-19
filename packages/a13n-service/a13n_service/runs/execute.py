@@ -40,9 +40,9 @@ from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -126,7 +126,7 @@ class _Plan:
     # Entries assigned to the run and not yet consumed, in position order: this attempt's input.
     assigned: list[Offered]
     state: HarnessState
-    envd_sessions: dict[str, HttpEnvdSessionState]
+    envd_sessions: dict[str, EnvdSessionState]
     resume: DeferredToolResume | None
     resume_input: Offered | None
     # What changed since the run whose history this one continues; it precedes the input, or is the input of a resume
@@ -384,7 +384,7 @@ class _Attempt:
     def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan):
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
-        self.envd_sessions = {name: HttpEnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
+        self.envd_sessions = {name: EnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         assert plan.tail.search is not None
         self.search = Index(plan.tail.search, runtime.settings.run_search)
