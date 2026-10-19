@@ -1,0 +1,219 @@
+/* ---- blog index: the newest post leads with its plate; the rest follow in a grid ---- */
+.head {
+  padding-top: clamp(150px, 15vw, 210px);
+}
+.head .statement {
+  text-wrap: balance;
+}
+.lead {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 56px;
+  align-items: end;
+  margin-top: clamp(64px, 8vw, 104px);
+}
+.l-text {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 6px;
+}
+.l-title {
+  margin: 0;
+  font: 500 clamp(30px, 3.3vw, 46px) / 1.06 var(--display);
+  letter-spacing: -0.034em;
+  text-wrap: balance;
+}
+.l-dek {
+  margin: 18px 0 0;
+  font: 400 18px/1.55 var(--text);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.lead .meta {
+  margin-top: 28px;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font: 400 12px/1.4 var(--mono);
+  color: var(--muted);
+}
+.meta i {
+  width: 3px;
+  height: 3px;
+  margin: 0 10px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 72px 32px;
+  margin: clamp(96px, 10vw, 140px) auto 0;
+  list-style: none;
+}
+.item a {
+  display: flex;
+  flex-direction: column;
+}
+.item .plate {
+  margin-bottom: 24px;
+}
+.i-title {
+  margin: 0;
+  font: 500 22px/1.2 var(--display);
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+.i-dek {
+  margin: 10px 0 0;
+  font: 400 15px/1.55 var(--text);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.item .meta {
+  margin-top: 16px;
+}
+:is(.item a, .lead):hover .plate {
+  background-color: rgba(11, 11, 12, 0.045);
+}
+:is(.i-title, .l-title) {
+  text-decoration: underline 1px transparent;
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color 0.25s;
+}
+.item a:hover .i-title,
+.lead:hover .l-title {
+  text-decoration-color: currentColor;
+}
+
+/* ---- post: one centered column; the cover and figures break out ---- */
+.progress {
+  position: fixed;
+  top: 59px;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+.ph {
+  padding-top: clamp(130px, 12vw, 168px);
+}
+.back {
+  font-size: 15px;
+}
+.arr-l {
+  display: inline-block;
+  margin-right: 0.45em;
+  transition: transform 0.4s var(--out);
+}
+.back:hover .arr-l {
+  transform: translateX(-3px);
+}
+.p-title {
+  max-width: 13em;
+  margin: clamp(40px, 5vw, 64px) 0 0;
+  font: 500 clamp(40px, 6vw, 88px) / 1 var(--display);
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.p-dek {
+  max-width: 30em;
+  margin: 28px 0 0;
+  font: 400 clamp(19px, 1.6vw, 22px) / 1.5 var(--text);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 0;
+  margin-top: clamp(48px, 5vw, 72px);
+  padding: 14px 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+  font: 400 12.5px/1.4 var(--mono);
+  color: var(--muted);
+}
+.strip > * + *::before {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 11px;
+  margin: 0 16px;
+  vertical-align: -1px;
+  background: var(--rule-2);
+}
+.cover {
+  margin-top: 32px;
+}
+.cover .plate {
+  aspect-ratio: 2.4 / 1;
+}
+/* the cover crops to its drawing and lets the strokes scale with it */
+.cover .plate svg {
+  padding: 7% 12%;
+}
+.cover .plate :is(.pf, .pl, .pa) {
+  vector-effect: none;
+}
+.col {
+  max-width: calc(680px + 2 * var(--pad));
+  margin: clamp(64px, 7vw, 96px) auto 0;
+  padding: 0 var(--pad);
+}
+.keep {
+  margin-top: clamp(120px, 12vw, 168px);
+}
+.keep-head {
+  margin: 0;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--ink);
+  font: 500 21px/30px var(--display);
+  letter-spacing: -0.02em;
+}
+.keep .grid {
+  margin-top: 48px;
+  padding: 0;
+}
+main + .foot {
+  margin-top: clamp(120px, 12vw, 168px);
+}
+
+@media (max-width: 1000px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lead {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+@media (max-width: 620px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 56px;
+  }
+}
+@media (max-width: 600px) {
+  .cover .plate {
+    aspect-ratio: 8 / 5;
+  }
+  .strip {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    gap: 8px 28px;
+  }
+  .strip > * + *::before {
+    display: none;
+  }
+  .strip > :last-child {
+    grid-column: span 2;
+  }
+}

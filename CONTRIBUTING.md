@@ -12,6 +12,7 @@ For suspected security vulnerabilities, follow [SECURITY.md](SECURITY.md) and re
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
 | Report a bug                             | Search existing issues; include the component, version or commit, reproduction, expected result, and actual result | Remove credentials and private content from logs and diagnostic reports |
 | Improve user documentation               | Edit `docs/` and preview with `make docs-serve`; see [Documentation Changes](#documentation-changes)               | `make docs-build` and formatting for changed Markdown                   |
+| Write a blog post                        | Add `blog/<slug>/` and preview `/blog/` with `make site-serve`; see [Blog Posts](#blog-posts)                      | Site tests, `make site-build`, and formatting for changed Markdown      |
 | Improve Harness                          | [Harness quickstart](docs/a13n-harness/getting-started.md) and [local scenarios](dev/harness/README.md)            | Focused package tests and affected consumers                            |
 | Improve Harness UI                       | [Local UI development](dev/harness-ui/README.md); `make cli` or `make webui`                                       | Checks for the affected App, terminal, or browser behavior              |
 | Improve Service or Console               | [Local Service development](dev/service/README.md); `make dev`                                                     | Relevant Service/Console checks; migration checks when applicable       |
@@ -123,8 +124,8 @@ Use the Makefile as the stable development interface:
 | `make typecheck`                 | Type-check Python package sources with Pyright                     |
 | `make docs-serve`                | Serve the documentation site at `/docs` with live reload           |
 | `make docs-build`                | Test localization, build the documentation site, and check links   |
-| `make site-serve`                | Serve the landing page with live reload                            |
-| `make site-build`                | Build the landing page with the documentation under `/docs`        |
+| `make site-serve`                | Serve the landing page and blog with live reload                   |
+| `make site-build`                | Build the landing page and blog, with the docs under `/docs`       |
 | `make service-e2e`               | Run Service end-to-end scenarios with disposable stores (Docker)   |
 | `make service-e2e-check`         | Check E2E code, fixtures and selection without Docker              |
 | `make service-e2e-docker`        | Build and test the native Docker environment provider              |
@@ -292,6 +293,15 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 - Run `make docs-build` after documentation or site changes. It runs localization tests before building, then checks exported pages and links; missing API translations fail before the build.
 - The canonical documentation site is [a13n.dev/docs](https://a13n.dev/docs/). The landing page in `frontend/apps/a13n-site` owns the site root.
 - The `Site` GitHub Actions workflow builds both applications, publishes build artifacts for pull requests, and deploys `main` to the `a13n-site` Cloudflare Pages project.
+
+## Blog Posts
+
+- `blog/` holds one folder per post, named by its slug, which is also its address: `blog/<slug>/index.md` publishes at `https://a13n.dev/blog/<slug>/`. Write the slug as lowercase words joined by hyphens, and keep a published folder's name.
+- Start `index.md` with front matter: `title`; `description`, the line under the title that also describes the page to search and social previews; `date` as `YYYY-MM-DD`; and `authors` as a list of names. The build rejects a post with a missing or invalid field.
+- Write plain Markdown that also reads well on GitHub: one source line per paragraph, `##` sections, GFM tables, and footnotes for notes. The first paragraph is the lede, and a blockquote is set as a pull quote. A fence `title="path/to/file.py"` names a code block; untitled blocks show their language as on the documentation site and use its code palette.
+- An image alone in its paragraph becomes a figure captioned by the image title; a leading `Figure 1.` is the caption's label, as in `![Timeline of a session moving between workers](timeline.svg "Figure 1. Worker A stops.")`. Keep images beside `index.md`.
+- Draw diagrams and the optional `cover.svg` as SVG with the site's drawing classes instead of colors, so they take the page's faces and lines: `pf` faint, `pl` ink, and `pa` indigo lines; `fa` indigo, `fi` ink, and `ff` gray fills; `band` for an indigo tint; and `pt` for mono labels, with `ink` or `acc` for emphasis. `dash`, `thin`, and `thick` modify a line. The post page shows the cover's drawing alone, cropped to its lines; the index shows its labels where they stay readable. Diagrams keep their drawn width on phones and scroll sideways.
+- Preview with `make site-serve` at `/blog/`; edits reload the page. Run the site tests and `make site-build`, which also adds the posts to `/sitemap.xml`.
 
 ## Specification Changes
 
