@@ -47,7 +47,7 @@ from a13n_service.runs import inbox
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
 from a13n_service.runs.attempts import AttemptControl, Lease, lock_lease, lock_thread_lease
-from a13n_service.runs.environments.mounts import adopt_mounts, reserve_primary
+from a13n_service.runs.environments.mounts import adopt_mounts
 from a13n_service.runs.memories.mounts import adopt_memory_mounts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
@@ -63,8 +63,7 @@ from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import new_thread
 from a13n_service.runs.tools import tool_failures
-from a13n_service.tenancy.access import principal_for
-from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
+from a13n_service.tenancy.authorize import ExecutionAuthority
 
 _STATUS: dict[str, SubagentStatus] = {
     "accepted": "running",
@@ -143,7 +142,10 @@ class ChildRuns(SubagentOperator):
             )
             session.add(child)
             await session.flush()
-            await self._environments(session, child, run, edge)
+            # A child's environments come from its edge, never its agent's template: a shared child mounts what the
+            # parent run froze, and acceptance reserves a dedicated child's primary from the edge's template.
+            if edge.selection.environment.mode == "shared":
+                await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
             await adopt_memory_mounts(session, child, run.memory_mounts)
             # A run's `max_usage` bounds model requests only, so the edge's request limit is all a child run
             # carries; the edge's token and tool-call limits apply to inline delegation.
@@ -278,22 +280,6 @@ class ChildRuns(SubagentOperator):
         """The parent must stop, or its worker is draining: a wait returns what it has, so the attempt can end
         or yield at its next boundary instead of outwaiting the drain."""
         return self.control.stopped.is_set() or self.control.handoff.is_set()
-
-    async def _environments(self, session: AsyncSession, child: ThreadRow, run: RunRow, edge: ResolvedSubagent) -> None:
-        """A child's environments are decided here, by its edge; its agent's own template never applies."""
-        policy = edge.selection.environment
-        if policy.mode == "shared":
-            await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
-        elif policy.template_id is not None:  # Exactly a dedicated policy names its template.
-            scope = WorkspaceScope(run.organization_id, run.workspace_id)
-            principal = await principal_for(session, self.runtime.access, run.principal_id, confinement=scope)
-            await reserve_primary(
-                session,
-                principal,
-                child,
-                template_id=policy.template_id,
-                limit=self.runtime.settings.environments.managed_count,
-            )
 
     async def _child(self, session: AsyncSession, run_id: str) -> tuple[ThreadRow, RunRow]:
         """Prove the parent's lease, then lock the child thread and its run; only this thread's children."""

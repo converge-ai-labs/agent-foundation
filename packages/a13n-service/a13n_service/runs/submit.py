@@ -19,7 +19,7 @@ from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.connections.service import validate_caller_headers
 from a13n_service.runs import checkpoints
-from a13n_service.runs.accept import Source, accept, primary_template, run_revision
+from a13n_service.runs.accept import Source, accept, primary_source, run_revision
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import mount_environments, shared_mounts, thread_has_primary
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
@@ -73,7 +73,9 @@ async def validate_message(
         authority=authority,
     )
     await require_usable(session, scope.workspace_id, asset_fields(message.payload))
-    primary = await thread_has_primary(session, thread) or primary_template(thread, revision.config) is not None
+    primary = (
+        await thread_has_primary(session, thread) or await primary_source(session, thread, revision.config) is not None
+    )
     await require_readable(
         session, principal, scope, revision, overrides, message.payload, authority=authority, primary=primary
     )

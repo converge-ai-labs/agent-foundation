@@ -467,6 +467,62 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
     assert dedicated["name"] == "workspace" and dedicated["environment_id"] != primary["environment_id"]
 
 
+async def test_a_child_without_a_primary_gets_one_from_its_edge(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    """A dedicated child reserves a new primary from its edge's template; a shared child mounts its parent thread's
+    current one, and none while the parent has none."""
+    model = await runs_kit.create_model(env, scripted_model)
+    worker = await runs_kit.add_agent(env, "worker", model, instructions="Role: worker")
+    pinned = {"agent_id": worker["id"], "revision_id": worker["default_revision_id"]}
+    coordinator = await runs_kit.add_agent(
+        env,
+        "coordinator",
+        model,
+        instructions="Role: coordinator",
+        default_environment_template_id=env.template["id"],
+        subagent_mode="async",
+        subagents={
+            "builder": {**pinned, "environment": {"mode": "shared"}},
+            "tester": {**pinned, "environment": {"mode": "dedicated", "template_id": env.template["id"]}},
+        },
+    )
+    for name in ("builder", "tester"):
+        delegate = {"subagent_name": name, "prompt": "go"}
+        scripted_model.call("delegate", delegate, call_id=f"call_{name}", to="Role: coordinator")
+    scripted_model.say("Delegated", to="Role: coordinator")
+    submitted = await runs_kit.start_thread(env, coordinator, "split the work")
+    parent = submitted["thread"]["id"]
+    [primary] = submitted["run"]["environment_mounts"]
+    await advance(env.runtime, primary["environment_id"], owner="test")
+    await (await runs_kit.attempt(env))
+    async with transaction(env.runtime.storage) as session:
+        spawned = await session.scalars(select(ThreadRow).where(ThreadRow.origin_run_id == submitted["run"]["id"]))
+        children = {child.subagent: (child.id, child.current_run_id) for child in spawned}
+    for _, run_id in children.values():
+        await interrupt(env, run_id)
+
+    async def next_mounts(thread_id: str, agent: dict) -> list[dict]:
+        """The mounts the thread's next run freezes; the run is then stopped."""
+        response = await runs_kit.submit(env, thread_id, runs_kit.message(agent, "again"))
+        assert response.status_code == 201, response.text
+        await interrupt(env, response.json()["run"]["id"])
+        return response.json()["run"]["environment_mounts"]
+
+    tester, _ = children["tester"]
+    [lost] = (await env.client.get(f"{env.api}/threads/{tester}/environments")).json()["items"]
+    await unmount(env, tester)
+    [restored] = await next_mounts(tester, worker)
+    assert restored["name"] == "workspace"
+    assert restored["environment_id"] not in {lost["environment_id"], primary["environment_id"]}
+
+    builder, _ = children["builder"]
+    await unmount(env, parent)
+    await unmount(env, builder)
+    assert await next_mounts(builder, worker) == [], "its parent has no primary to share yet"
+    [renewed] = await next_mounts(parent, coordinator)
+    assert renewed["environment_id"] != primary["environment_id"]
+    assert await next_mounts(builder, worker) == [renewed]
+
+
 async def advance(runtime, environment_id: str, *, owner: str) -> None:
     """Explicitly prepare the reservation used by these lifecycle tests."""
     async with transaction(runtime.storage) as session:

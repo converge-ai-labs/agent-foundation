@@ -18,16 +18,28 @@ from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import meter
-from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
-from a13n_service.resources.agents.service import SelectedRevision, select_revision, validate_override
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
+from a13n_service.resources.agents.service import (
+    SelectedRevision,
+    load_revision,
+    select_revision,
+    validate_override,
+)
 from a13n_service.runs import inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
-from a13n_service.runs.environments.mounts import freeze_mounts, has_primary, reserve_primary
+from a13n_service.runs.environments.mounts import (
+    adopt_mounts,
+    freeze_mounts,
+    has_primary,
+    primary_mount,
+    reserve_primary,
+    thread_has_primary,
+)
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Failure, MessagePayload, Resume, RunOptions, Trigger
+from a13n_service.runs.schemas import EnvironmentMount, Failure, MessagePayload, Resume, RunOptions, Trigger
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
@@ -218,10 +230,24 @@ async def delegation(session: AsyncSession, thread: ThreadRow, run_id: str) -> D
     return Delegation(root_run_id=run_id, depth=depth)
 
 
-def primary_template(thread: ThreadRow, config: AgentConfig) -> str | None:
-    """The template acceptance reserves a primary sandbox from when the thread mounts none: the agent's, except on
-    a child thread, whose environments the edge that delegates it decides when it is spawned."""
-    return None if thread.origin == "child" else config.default_environment_template_id
+async def primary_source(
+    session: AsyncSession, thread: ThreadRow, config: AgentConfig
+) -> str | EnvironmentMount | None:
+    """Where acceptance gets a primary sandbox for a thread that mounts none: a template to reserve it from, or a
+    mount to share. It is the agent's default template, except on a child thread, whose spawning edge decides, never
+    the child agent: the edge's template when dedicated, and when shared the parent thread's primary, which a parent
+    without one cannot give until its own acceptance reserves one."""
+    if thread.origin != "child":
+        return config.default_environment_template_id
+    origin = await session.get(RunRow, thread.origin_run_id)
+    assert origin is not None and thread.origin_thread_id is not None and thread.subagent is not None
+    revision = await load_revision(session, origin.agent_id, origin.agent_revision_id)
+    override = RunOptions.model_validate(origin.options).overrides
+    spawning = revision.config if override is None else apply_override(revision.config, override)
+    policy = spawning.subagents[thread.subagent].environment
+    if policy.mode == "shared":
+        return await primary_mount(session, thread.origin_thread_id)
+    return policy.template_id
 
 
 async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, source: Source) -> RunRow:
@@ -235,11 +261,14 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     principal, revision, options = source.principal, source.revision, source.options
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
-    template_id = primary_template(thread, revision.config)
-    if template_id is not None:
-        await reserve_primary(
-            session, principal, thread, template_id=template_id, limit=runtime.settings.environments.managed_count
-        )
+    if not await thread_has_primary(session, thread):
+        primary = await primary_source(session, thread, revision.config)
+        if isinstance(primary, EnvironmentMount):
+            await adopt_mounts(session, thread, [primary])
+        elif primary is not None:
+            await reserve_primary(
+                session, principal, thread, template_id=primary, limit=runtime.settings.environments.managed_count
+            )
     mounts = await freeze_mounts(
         session,
         thread,
