@@ -85,6 +85,7 @@ def prepare_config(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
 async def open_listener(
     *,
     tls: bool,
+    certificate: str = "server.pem",
     authorize: Callable[[ServerConnection, Request], Awaitable[Response | None] | Response | None],
 ) -> tuple[object, asyncio.Queue[ServerConnection], str]:
     accepted: asyncio.Queue[ServerConnection] = asyncio.Queue()
@@ -99,7 +100,7 @@ async def open_listener(
     if tls:
         tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls_context.load_cert_chain(
-            _TLS_FIXTURES / "server.pem",
+            _TLS_FIXTURES / certificate,
             _TLS_FIXTURES / "server-key.pem",
         )
     server = await serve(
@@ -118,7 +119,8 @@ async def open_listener(
     return server, accepted, f"{scheme}://127.0.0.1:{port}/eip"
 
 
-def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path) -> None:
+@pytest.mark.parametrize("tls", [False, True], ids=["ws", "wss"])
+def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path, tls: bool) -> None:
     async def scenario() -> None:
         observed_authorization: list[str | None] = []
 
@@ -129,7 +131,7 @@ def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path) -> N
                 return connection.respond(401, "unauthorized")
             return None
 
-        server, accepted, endpoint = await open_listener(tls=False, authorize=authorize)
+        server, accepted, endpoint = await open_listener(tls=tls, authorize=authorize)
         runtime, workspace, credential, config = prepare_config(tmp_path)
         process = await start_daemon(
             a13n_envd_binary(),
@@ -137,6 +139,7 @@ def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path) -> N
             credential_file=credential,
             config_file=config,
             runtime_dir=runtime,
+            ca_file=_TLS_FIXTURES / "ca.pem" if tls else None,
         )
         try:
             first_connection = await asyncio.wait_for(accepted.get(), timeout=5)
@@ -184,14 +187,23 @@ def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path) -> N
     asyncio.run(scenario())
 
 
-def test_real_daemon_validates_tls_and_hostname(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("certificate", "ca_file"),
+    [
+        pytest.param("server.pem", None, id="untrusted-ca"),
+        # This self-signed fixture is trusted, but only covers localhost, not 127.0.0.1.
+        pytest.param("server-localhost.pem", _TLS_FIXTURES / "server-localhost.pem", id="hostname-mismatch"),
+    ],
+)
+def test_invalid_tls_stops_daemon_without_leaking_token(tmp_path: Path, certificate: str, ca_file: Path | None) -> None:
     async def scenario() -> None:
+        observed_requests: list[Request] = []
+
         async def authorize(connection: ServerConnection, request: Request) -> Response | None:
-            if request.headers.get("Authorization") != f"Bearer {_TOKEN}":
-                return connection.respond(401, "unauthorized")
+            observed_requests.append(request)
             return None
 
-        server, accepted, endpoint = await open_listener(tls=True, authorize=authorize)
+        server, accepted, endpoint = await open_listener(tls=True, certificate=certificate, authorize=authorize)
         runtime, _workspace, credential, config = prepare_config(tmp_path)
         process = await start_daemon(
             a13n_envd_binary(),
@@ -199,19 +211,21 @@ def test_real_daemon_validates_tls_and_hostname(tmp_path: Path) -> None:
             credential_file=credential,
             config_file=config,
             runtime_dir=runtime,
-            ca_file=_TLS_FIXTURES / "ca.pem",
+            ca_file=ca_file,
         )
         try:
-            connection = await asyncio.wait_for(accepted.get(), timeout=5)
-            session_device = await EIPDeviceConnection.initialize(
-                AcceptedWebSocketTransport(connection), expected_device_id=_DEVICE_ID, request_timeout=5
-            )
-            session = await session_device.open_session(required_methods=())
-            assert (await session.describe()).generation == session.generation
-            await session.abort()
-            await session_device.close()
+            returncode = await asyncio.wait_for(process.wait(), timeout=5)
+            assert process.stderr is not None
+            stderr = await process.stderr.read()
+            assert returncode != 0
+            assert b"reverse WebSocket TLS validation failed" in stderr
+            assert _TOKEN.encode() not in stderr
+            assert not observed_requests
+            assert accepted.empty()
         finally:
-            await stop_daemon(process)
+            if process.returncode is None:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5)
             server.close()
             await server.wait_closed()
 
