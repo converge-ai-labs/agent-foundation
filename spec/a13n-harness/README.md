@@ -20,7 +20,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
 | [08-environment-integration.md](08-environment-integration.md)                           | Environment sources, first-use readiness, routes, Run Extensions, mutation, model projection, state, and cleanup                 |
 | [08a: Environment Execution](08a-environment-execution.md)                               | Fixed-target connectors, execution scopes, shared state, operations, errors, and database-free ownership                         |
-| [08b: Environment Providers](08b-environment-providers.md)                               | Native and Envd execution, local/remote Device support, and backend-specific guarantees                                          |
+| [08b: Environment Providers](08b-environment-providers.md)                               | Native execution exceptions, required Envd routes, local/remote Device support, and backend-specific guarantees                  |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, and compaction                                   |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, Harness-private inline execution, standard async Toolsets, and the Host operator boundary                        |
@@ -53,7 +53,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Servic
 
 ### Author or Select a Provider
 
-Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, [Environment Execution](08a-environment-execution.md) for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, [Environment Execution](08a-environment-execution.md) and the [execution backend boundary](08b-environment-providers.md#execution-backend-boundary) for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
 
 ### Understand Models and Recovery
 
