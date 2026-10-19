@@ -8,6 +8,8 @@ from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerObservation,
     ComputerPoint,
@@ -39,6 +41,26 @@ class Computer:
         self.binding = None
         self.inputs = []
         self.zooms = []
+        self.clipboard = ""
+        self.reads = 0
+
+    async def read_clipboard(self, *, max_bytes=16384):
+        self.reads += 1
+        return ComputerClipboard(status="text", text=self.clipboard)
+
+    async def write_clipboard(self, text):
+        self.clipboard = text
+        return ComputerClipboardWriteResult(
+            receipt=EnvironmentOperationReceipt(
+                execution_id=self.binding.bound.execution_id,
+                observed_generation=self.binding.bound.descriptor.generation,
+                operation_id="op-write",
+                stage="completed",
+                outcome="succeeded",
+            ),
+            effect="executed",
+            cleanup_complete=True,
+        )
 
     async def describe(self):
         return ComputerDescription(targets=(), observe_ready=True, input_ready=True)
@@ -503,6 +525,12 @@ async def test_zoom_permission_binding_and_invalid_regions_reject_before_provide
     [
         (("computer.observe", "computer.close_observation"), {EnvironmentAction.COMPUTER_OBSERVE}),
         (("computer.zoom",), set()),
+        (("computer.read_clipboard",), {EnvironmentAction.COMPUTER_READ_CLIPBOARD}),
+        (("computer.write_clipboard",), {EnvironmentAction.COMPUTER_WRITE_CLIPBOARD}),
+        (
+            ("computer.read_clipboard", "computer.write_clipboard"),
+            {EnvironmentAction.COMPUTER_READ_CLIPBOARD, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD},
+        ),
         (("computer.zoom", "computer.close_observation"), {EnvironmentAction.COMPUTER_ZOOM}),
         (
             ("computer.observe", "computer.zoom", "computer.close_observation"),
@@ -510,7 +538,7 @@ async def test_zoom_permission_binding_and_invalid_regions_reject_before_provide
         ),
     ],
 )
-def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods, expected):
+def test_eip_computer_advertisement_requires_exact_methods_and_image_cleanup(methods, expected):
     from a13n_envd_client.eip import v1 as eip
     from a13n_harness.providers.environment.eip.binding import _convert_descriptor
 
@@ -552,3 +580,55 @@ def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods
         ),
     )
     assert _convert_descriptor(descriptor).permissions.operations == expected
+
+
+async def test_clipboard_permissions_are_independent_and_write_never_reads():
+    runtime, computer = mount(frozenset({EnvironmentAction.COMPUTER_WRITE_CLIPBOARD}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        assert "computer_write_clipboard" in tools.get_toolset().tools
+        assert "computer_read_clipboard" not in tools.get_toolset().tools
+        value = "中文🙂\n第二行\n"
+        assert (await tools.computer_write_clipboard(value, alias="desktop"))["ok"]
+        assert computer.clipboard == value
+        assert computer.reads == 0
+        await tools.computer_write_clipboard("中" * 6000)
+        await tools.computer_write_clipboard("bad\0text")
+        assert computer.clipboard == value
+        with pytest.raises(EnvironmentError):
+            await environment.computer.read_clipboard()
+        assert computer.reads == 0
+        await tools.computer_write_clipboard("")
+        assert computer.clipboard == ""
+    runtime, computer = mount(frozenset({EnvironmentAction.COMPUTER_READ_CLIPBOARD}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        assert (await environment.computer.read_clipboard()).text == ""
+        with pytest.raises(EnvironmentError):
+            await environment.computer.write_clipboard("denied")
+        assert computer.clipboard == ""
+
+
+async def test_clipboard_write_transport_loss_never_replays_or_reads(monkeypatch):
+    from a13n_envd_client import EIPTransportClosedError
+    from a13n_harness.providers.environment.eip import computer as adapter
+
+    sent = []
+
+    class Client:
+        async def computer_write_clipboard(self, request):
+            sent.append(request)
+            raise EIPTransportClosedError("private connection detail")
+
+        async def computer_read_clipboard(self, request):
+            pytest.fail("Write must not inspect clipboard to reconcile automatically")
+
+    monkeypatch.setattr(adapter, "session_client", lambda _: Client())
+    provider = adapter.EIPComputerOperations(None, execution_id="desktop", generation="one")
+    with pytest.raises(EnvironmentError) as caught:
+        await provider.write_clipboard("private clipboard content")
+    projection = caught.value.safe_projection()
+    assert projection["retry_hint"] == "reconcile_first"
+    assert projection["details"]["dispatch_stage"] == "unknown"
+    assert "Do not automatically replay" in projection["details"]["hint"]
+    assert "private" not in str(projection)
+    assert len(sent) == 1

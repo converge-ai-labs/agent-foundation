@@ -1,6 +1,15 @@
 {
   "cases": [
     {
+      "type": "ComputerWriteClipboardParams",
+      "value": {
+        "context": {
+          "operation_id": "op-clipboard"
+        },
+        "text": "中文🙂\n第二行\n"
+      }
+    },
+    {
       "type": "SystemInfo",
       "value": {"os": "linux", "architecture": "aarch64", "os_version": "Example Linux"}
     },

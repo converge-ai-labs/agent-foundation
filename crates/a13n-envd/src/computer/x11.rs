@@ -1,7 +1,8 @@
-//! X11-only desktop access. No XWayland fallback, clipboard or keyboard-map mutation.
+//! X11-only desktop access. No XWayland fallback or keyboard-map mutation.
 use super::*;
 use image::{DynamicImage, RgbImage};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+mod clipboard;
 use x11rb::{
     connection::Connection,
     protocol::{
@@ -16,7 +17,8 @@ use x11rb::{
 #[derive(Default)]
 pub(super) struct Backend {
     // Never reconnect within a Session: old geometry must not authorize a new X server.
-    desktop: OnceLock<Result<Desktop, EIPError>>,
+    desktop: OnceLock<Result<Arc<Desktop>, EIPError>>,
+    clipboard: OnceLock<Result<clipboard::Worker, EIPError>>,
 }
 
 struct Desktop {
@@ -180,11 +182,37 @@ impl Desktop {
 }
 
 impl Backend {
-    fn desktop(&self) -> Result<&Desktop, EIPError> {
+    fn desktop(&self) -> Result<&Arc<Desktop>, EIPError> {
         self.desktop
-            .get_or_init(Desktop::connect)
+            .get_or_init(|| Desktop::connect().map(Arc::new))
             .as_ref()
             .map_err(Clone::clone)
+    }
+    fn clipboard(&self) -> Result<&clipboard::Worker, EIPError> {
+        self.clipboard
+            .get_or_init(|| clipboard::Worker::start(self.desktop()?.clone()))
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+    pub(super) fn read_clipboard(
+        &self,
+        max: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        self.clipboard()?.read(max, interrupted)
+    }
+    pub(super) fn write_clipboard(
+        &self,
+        text: String,
+        reservation: crate::filesystem::StagingReservation,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        self.clipboard()?.write(text, reservation, interrupted)
+    }
+    pub(super) fn close(&self) -> bool {
+        self.clipboard
+            .get()
+            .is_none_or(|worker| worker.as_ref().is_ok_and(clipboard::Worker::close))
     }
     pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         let desktop = self.desktop()?;

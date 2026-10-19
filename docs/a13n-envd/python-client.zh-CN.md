@@ -252,3 +252,5 @@ uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
 客户端套件通过协议 fixture 覆盖消息帧、会话、错误、传输和输出。原生进程清理和守护进程可用性需要独立的 Envd 集成检查。外层沙箱由 Host 建立，而非 Envd。Host 管理进程启动和运行时初始化时，使用 [Local Envd](index.md#try-local-envd)；应用工具使用[环境操作](../environments/operations.md)。
+
+Linux X11 剪贴板：`computer_read_clipboard(ComputerReadClipboardParams)` 和 `computer_write_clipboard(ComputerWriteClipboardParams)`。写入与粘贴按键是两次显式调用，需分别授权。

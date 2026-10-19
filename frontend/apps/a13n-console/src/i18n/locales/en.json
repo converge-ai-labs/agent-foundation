@@ -1,4 +1,5 @@
 {
+  "Clipboard write is available; paste requires a separate key chord. Literal typing is unavailable.": "Clipboard write is available; paste requires a separate key chord. Literal typing is unavailable.",
   "Native search strategy": "Native search strategy",
   "Regex": "Regex",
   "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.": "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.",

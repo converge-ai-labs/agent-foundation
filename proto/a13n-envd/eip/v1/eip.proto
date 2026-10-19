@@ -55,6 +55,12 @@ service EnvironmentInteractionProtocol {
   rpc ComputerTypeText(ComputerTypeTextParams) returns (ComputerActionResult) {
     option (eip_method) = { jsonrpc_method: "computer.type_text" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
   }
+  rpc ComputerReadClipboard(ComputerReadClipboardParams) returns (ComputerReadClipboardResult) {
+    option (eip_method) = { jsonrpc_method: "computer.read_clipboard" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 3 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerWriteClipboard(ComputerWriteClipboardParams) returns (ComputerWriteClipboardResult) {
+    option (eip_method) = { jsonrpc_method: "computer.write_clipboard" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 3 error_family: ERROR_FAMILY_RESOURCE };
+  }
   rpc ComputerPressKeys(ComputerPressKeysParams) returns (ComputerActionResult) {
     option (eip_method) = { jsonrpc_method: "computer.press_keys" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
   }

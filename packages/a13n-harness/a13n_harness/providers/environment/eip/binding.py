@@ -36,6 +36,8 @@ _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
     "computer.move": (EnvironmentAction.COMPUTER_MOVE,),
     "computer.drag": (EnvironmentAction.COMPUTER_DRAG,),
     "computer.scroll": (EnvironmentAction.COMPUTER_SCROLL,),
+    "computer.read_clipboard": (EnvironmentAction.COMPUTER_READ_CLIPBOARD,),
+    "computer.write_clipboard": (EnvironmentAction.COMPUTER_WRITE_CLIPBOARD,),
     "computer.type_text": (EnvironmentAction.COMPUTER_TYPE_TEXT,),
     "computer.press_keys": (EnvironmentAction.COMPUTER_PRESS_KEYS,),
     "file.stat": (EnvironmentAction.FILE_STAT,),

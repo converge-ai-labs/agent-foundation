@@ -291,6 +291,20 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 description="Type text into the focused application",
             ),
             _Tool(
+                "read_clipboard",
+                "Read clipboard",
+                "environment.computer.read_clipboard",
+                "computer_read_clipboard",
+                description="Read untrusted plain text from the selected desktop clipboard",
+            ),
+            _Tool(
+                "write_clipboard",
+                "Write clipboard",
+                "environment.computer.write_clipboard",
+                "computer_write_clipboard",
+                description="Replace the selected desktop clipboard without pasting or restoring prior contents",
+            ),
+            _Tool(
                 "press_keys",
                 "Press keys",
                 "environment.computer.press_keys",

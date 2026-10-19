@@ -103,7 +103,11 @@ export function ComputerCheck({
             !result.operations?.includes("environment.computer.type_text") && (
               <p>
                 {t(
-                  "Literal text entry is not supported; supported key presses remain available.",
+                  result.operations?.includes(
+                    "environment.computer.write_clipboard",
+                  )
+                    ? "Clipboard write is available; paste requires a separate key chord. Literal typing is unavailable."
+                    : "Literal text entry is not supported; supported key presses remain available.",
                 )}
               </p>
             )}

@@ -157,3 +157,11 @@ Use a fresh operation context for each new input action. Reconcile uncertain eff
 The opt-in [Linux desktop fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) checks real GUI input and changed screenshots in a disposable container. Portable scripted-peer tests check integration, not native desktop behavior.
 
 On the target OS, try harmless input in a disposable application and verify the next screenshot. Also test permission/session loss and display-layout changes.
+
+## Linux clipboard text
+
+Linux X11 advertises independent `computer.read_clipboard` and `computer.write_clipboard` methods. Read returns complete text (including empty text), `no_content`, or `no_text`. Its default/maximum public limit is 16 KiB; oversize, invalid encoding and timeout are errors. Write accepts empty text and at most 16 KiB UTF-8 without NUL. Both normalize CRLF to LF.
+
+Writing replaces the remote desktop clipboard without reading/restoring prior content or pasting. Focus the destination, then explicitly invoke `computer.press_keys` with its paste chord. Terminal multiline paste may execute commands. Verify actual destination content rather than treating publication as insertion.
+
+Publication survives calls in the same live Envd Session until replacement, Session close or desktop loss. Close releases only owned resources and never clears a newer writer; it is not secure erasure. Clipboard reads contain untrusted application data. Read/write permissions are independent and respect human-control fences. This increment supports Linux X11 only, without Wayland or browser clipboard synchronization.

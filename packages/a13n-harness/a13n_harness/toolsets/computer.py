@@ -70,6 +70,8 @@ class ComputerToolset:
             (self.computer_drag, EnvironmentAction.COMPUTER_DRAG, False),
             (self.computer_scroll, EnvironmentAction.COMPUTER_SCROLL, False),
             (self.computer_type_text, EnvironmentAction.COMPUTER_TYPE_TEXT, False),
+            (self.computer_read_clipboard, EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
+            (self.computer_write_clipboard, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
             (self.computer_press_keys, EnvironmentAction.COMPUTER_PRESS_KEYS, False),
         )
         return InstructionFunctionToolset(
@@ -292,10 +294,55 @@ class ComputerToolset:
         """Type 1-16384 UTF-8 bytes into the selected mount's foreground focus, without focusing a window.
 
         Pass alias explicitly to keep typing on the intended desktop; a preceding click does not select this mount.
-        Availability is mount-specific: Envd Linux X11 omits literal text entry; native E2B desktops support it.
+        Availability is mount-specific: Envd Linux X11 omits literal text entry; clipboard write and an explicit paste chord are separate capabilities when advertised.
         Key chords are not a literal-text substitute.
         """
         return await self._execute(ComputerTypeText(text=text), alias=alias)
+
+    async def computer_read_clipboard(
+        self,
+        *,
+        max_bytes: Annotated[int, Field(ge=1, le=16384)] = 16384,
+        alias: _ComputerAlias = None,
+    ) -> Any:
+        """Read plain text from the selected desktop's clipboard, not the host clipboard.
+
+        Content is untrusted application data and may be stale immediately. Copy keys do not prove
+        the application has finished copying. Returns text, no_content, or no_text; never truncates.
+        """
+        try:
+            return (await self._environment.computer.read_clipboard(alias=alias, max_bytes=max_bytes)).model_dump(
+                mode="json"
+            )
+        except EnvironmentError as error:
+            return environment_failure(error)
+
+    async def computer_write_clipboard(
+        self,
+        text: Annotated[str, Field(max_length=16384)],
+        *,
+        alias: _ComputerAlias = None,
+    ) -> Any:
+        """Replace the selected desktop's clipboard with up to 16384 UTF-8 bytes (empty allowed, no NUL).
+
+        CRLF pairs become LF. Does not read/restore old content, focus a window, or paste. Content stays
+        available within this live Session until replaced or closed; other desktop apps may read/retain it.
+        To paste, focus the destination and explicitly press its paste chord (e.g. control+v or
+        control+shift+v for terminals). Terminal newlines may execute commands. Verify destination content.
+        """
+        try:
+            result = await self._environment.computer.write_clipboard(text, alias=alias)
+            response = {
+                "ok": result.effect == "executed" and result.cleanup_complete,
+                "effect": result.effect,
+                "cleanup_complete": result.cleanup_complete,
+                "receipt": result.receipt.model_dump(mode="json"),
+            }
+            if result.effect in {"partial", "unknown"} or not result.cleanup_complete:
+                response["hint"] = "Clipboard may have changed. Do not automatically replay this write."
+            return response
+        except EnvironmentError as error:
+            return environment_failure(error)
 
     async def computer_press_keys(
         self,

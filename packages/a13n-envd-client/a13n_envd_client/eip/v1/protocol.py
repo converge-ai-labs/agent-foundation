@@ -11,7 +11,7 @@ EIP_PROTOCOL_VERSION: Final = "0.3"
 EIP_PROTOCOL_MAJOR: Final = 0
 EIP_PROTOCOL_MINOR: Final = 2
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
-EIP_DESCRIPTOR_SHA256: Final = "f29462e7aaed689570ceac33bbbf57f1c92ab439ec3d9a6f88d8f2f6fbbd404e"
+EIP_DESCRIPTOR_SHA256: Final = "40478c1b32eba17eb066ee585abd9f1244f95b7b0ed3c14aea015a2a8c09f809"
 
 type JsonRpcId = StrictStr | Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)]
 

@@ -41,6 +41,7 @@ use crate::{
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
 mod computer;
+mod computer_clipboard;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod execution;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -193,6 +194,10 @@ fn session_methods(config: &Config) -> Vec<String> {
                             target_os = "linux",
                             target_os = "windows"
                         ))
+                        && (!matches!(
+                            method.name,
+                            "computer.read_clipboard" | "computer.write_clipboard"
+                        ) || cfg!(target_os = "linux"))
                         && (method.name != "computer.type_text"
                             || cfg!(any(target_os = "macos", target_os = "windows")))))
         })
@@ -1370,7 +1375,11 @@ impl Session {
             let candidates_closed = tokio::task::spawn_blocking(move || filesystem.retry_cleanup())
                 .await
                 .unwrap_or(false);
-            transfers_closed && outputs_closed && candidates_closed
+            let computer = self.computer.clone();
+            let computer_closed = tokio::task::spawn_blocking(move || computer.close())
+                .await
+                .unwrap_or(false);
+            transfers_closed && outputs_closed && candidates_closed && computer_closed
         })
         .await
         .unwrap_or(false)
@@ -1593,6 +1602,18 @@ impl EipSessionHandler for Session {
             crate::computer::Action::TypeText(params.clone()),
         )
         .await
+    }
+    async fn computer_read_clipboard(
+        &self,
+        params: eip::ComputerReadClipboardParams,
+    ) -> Result<eip::ComputerReadClipboardResult, EIPError> {
+        self.read_clipboard(params).await
+    }
+    async fn computer_write_clipboard(
+        &self,
+        params: eip::ComputerWriteClipboardParams,
+    ) -> Result<eip::ComputerWriteClipboardResult, EIPError> {
+        self.write_clipboard(params).await
     }
     async fn computer_press_keys(
         &self,
@@ -5058,6 +5079,12 @@ mod tests {
             methods.iter().any(|m| m == "computer.type_text"),
             cfg!(any(target_os = "macos", target_os = "windows"))
         );
+        for method in ["computer.read_clipboard", "computer.write_clipboard"] {
+            assert_eq!(
+                methods.iter().any(|m| m == method),
+                cfg!(target_os = "linux")
+            );
+        }
     }
 
     #[tokio::test]

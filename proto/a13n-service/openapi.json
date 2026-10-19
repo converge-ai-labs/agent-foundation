@@ -4909,6 +4909,8 @@
           "environment.computer.move",
           "environment.computer.drag",
           "environment.computer.scroll",
+          "environment.computer.read_clipboard",
+          "environment.computer.write_clipboard",
           "environment.computer.type_text",
           "environment.computer.press_keys"
         ],

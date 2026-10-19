@@ -85,6 +85,8 @@ class EnvironmentAction(StrEnum):
     COMPUTER_MOVE = "environment.computer.move"
     COMPUTER_DRAG = "environment.computer.drag"
     COMPUTER_SCROLL = "environment.computer.scroll"
+    COMPUTER_READ_CLIPBOARD = "environment.computer.read_clipboard"
+    COMPUTER_WRITE_CLIPBOARD = "environment.computer.write_clipboard"
     COMPUTER_TYPE_TEXT = "environment.computer.type_text"
     COMPUTER_PRESS_KEYS = "environment.computer.press_keys"
 
@@ -163,6 +165,10 @@ ENVIRONMENT_ACTION_DISPATCH: Mapping[EnvironmentAction, EnvironmentActionDispatc
         EnvironmentAction.COMPUTER_MOVE: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_DRAG: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_SCROLL: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_READ_CLIPBOARD: EnvironmentActionDispatch("computer", "computer", "read_clipboard"),
+        EnvironmentAction.COMPUTER_WRITE_CLIPBOARD: EnvironmentActionDispatch(
+            "computer", "computer", "write_clipboard"
+        ),
         EnvironmentAction.COMPUTER_TYPE_TEXT: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_PRESS_KEYS: EnvironmentActionDispatch("computer", "computer", "execute"),
     }

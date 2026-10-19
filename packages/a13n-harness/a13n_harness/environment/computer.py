@@ -133,6 +133,19 @@ class ComputerTypeText(BaseModel):
     text: str = Field(min_length=1, max_length=16384)
 
 
+class ComputerClipboard(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    status: Literal["text", "no_content", "no_text"]
+    text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ComputerClipboardWriteResult:
+    receipt: EnvironmentOperationReceipt
+    effect: Literal["not_executed", "executed", "partial", "unknown"]
+    cleanup_complete: bool
+
+
 class ComputerPressKeys(BaseModel):
     model_config = ConfigDict(frozen=True)
     kind: Literal["press_keys"] = "press_keys"
@@ -159,6 +172,10 @@ class ComputerActionResult:
 
 
 class ProviderComputerOperations(Protocol):
+    async def read_clipboard(self, *, max_bytes: int = 16384) -> ComputerClipboard: ...
+
+    async def write_clipboard(self, text: str) -> ComputerClipboardWriteResult: ...
+
     async def describe(self) -> ComputerDescription: ...
 
     async def observe(self, *, target_id: str | None = None, max_dimension: int = 1280) -> ComputerScreenshot: ...

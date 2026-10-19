@@ -157,3 +157,11 @@ async with session.zoom_computer(
 可选 [Linux 桌面 fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) 在临时容器中检查真实 GUI 输入和截图变化。可移植脚本化对端测试检查集成，不验证原生桌面行为。
 
 在目标 OS 的临时应用中尝试无害输入，检查下一张截图。也要测试权限/会话丢失和显示布局变化。
+
+## Linux 剪贴板文字
+
+Linux X11 提供独立的 `computer.read_clipboard` 和 `computer.write_clipboard`。读取返回完整文本（可以为空）、无内容或无文本格式；默认最多 16 KiB，超限、无效编码和超时均报错。写入允许空文本，最多 16 KiB UTF-8，不允许 NUL；读写把 CRLF 转成 LF。
+
+写入只替换远端桌面的剪贴板，不读取或恢复原内容，也不会自动粘贴。Agent 需要聚焦目标应用，再用 `computer.press_keys` 发送应用的粘贴快捷键。终端中的多行粘贴可能执行命令；应核对目标应用实际内容。
+
+文字在同一个 Envd Session 内跨调用可用，直到被其他程序替换、Session 关闭或桌面失效。关闭只释放自己的资源，不清空其他程序的剪贴板，也不保证安全擦除。读取内容是不可信的应用数据。两项权限分别授权，均遵守人工接管限制。首期仅 Linux X11；不支持 Wayland，也不启用浏览器剪贴板同步。

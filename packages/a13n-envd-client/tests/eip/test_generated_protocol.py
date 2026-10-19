@@ -23,6 +23,7 @@ from a13n_envd_client.eip.v1 import (
 )
 from a13n_envd_client.eip.v1.models import (
     CommandEnvironment,
+    ComputerWriteClipboardParams,
     ContentDigest,
     CpuTimeSeconds,
     DeviceMetricsParams,
@@ -74,6 +75,7 @@ def valid_eip_limits() -> dict[str, int]:
 
 
 MODEL_TYPES: dict[str, type[BaseModel]] = {
+    "ComputerWriteClipboardParams": ComputerWriteClipboardParams,
     "SystemInfo": SystemInfo,
     "DeviceMetricsParams": DeviceMetricsParams,
     "DeviceMetricsResult": DeviceMetricsResult,
@@ -117,17 +119,24 @@ def test_monitoring_percentages_preserve_fractional_values(value: float) -> None
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.3"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 52
+    assert len(METHODS) == 54
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
     assert all(
-        method.introduced == ("0.2" if method.name in {"device.metrics", "computer.zoom"} else "0.1")
+        method.introduced
+        == (
+            "0.3"
+            if method.name in {"computer.read_clipboard", "computer.write_clipboard"}
+            else "0.2"
+            if method.name in {"device.metrics", "computer.zoom"}
+            else "0.1"
+        )
         for method in METHODS.values()
     )
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
-    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 22
-    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 21
+    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 23
+    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 22
     assert {method.name for method in METHODS.values() if method.replay_class == "ledger_external"} == {
         "initialize",
         "device.describe",
@@ -150,7 +159,7 @@ def test_shared_golden_values_round_trip_canonically() -> None:
     assert initialize["value"]["supported_protocol_versions"] == ["0.3"]
     for case in fixture["cases"]:
         model_type = MODEL_TYPES[case["type"]]
-        encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True)
+        encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True, ensure_ascii=False)
         model = decode_model(encoded_fixture, model_type)
         encoded_model = encode_model(model)
         assert encoded_model == encoded_fixture.encode()
@@ -468,3 +477,9 @@ def test_egress_presence_bounds_and_secret_repr() -> None:
     secret = EgressSecret(env="TEST_TOKEN", value="private-test-value", inject_hosts=("example.com",))
     assert "private-test-value" not in repr(secret)
     assert "private-test-value" not in repr(EgressPolicy(destinations=public.destinations, secrets=(secret,)))
+
+
+def test_clipboard_write_requires_payload_but_allows_empty_text():
+    with pytest.raises(ValidationError):
+        ComputerWriteClipboardParams.model_validate({"context": {"operation_id": "write"}})
+    assert ComputerWriteClipboardParams.model_validate({"context": {"operation_id": "write"}, "text": ""}).text == ""

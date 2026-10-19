@@ -252,3 +252,5 @@ uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
 The client suite covers framing, Sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not Envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#try-local-envd); for application tools, use [Environment operations](../environments/operations.md).
+
+Linux X11 clipboard: `computer_read_clipboard(ComputerReadClipboardParams)` and `computer_write_clipboard(ComputerWriteClipboardParams)`. Publication and paste keys are separate explicitly authorized calls.

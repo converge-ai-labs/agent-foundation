@@ -274,6 +274,60 @@ impl Computer {
         }
     }
 
+    pub(crate) fn read_clipboard(
+        &self,
+        max: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        if !(1..=16384).contains(&max) {
+            return Err(error(
+                ErrorType::InvalidParams,
+                "max_bytes must be 1 to 16384",
+            ));
+        }
+        #[cfg(target_os = "linux")]
+        return self.native.read_clipboard(max, interrupted);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = interrupted;
+            Err(error(
+                ErrorType::Unsupported,
+                "clipboard requires Linux X11",
+            ))
+        }
+    }
+    pub(crate) fn write_clipboard(
+        &self,
+        text: String,
+        reservation: crate::filesystem::StagingReservation,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        if text.len() > 16384 || text.contains('\0') {
+            return Err(error(
+                ErrorType::InvalidParams,
+                "clipboard text must be at most 16384 UTF-8 bytes without NUL",
+            ));
+        }
+        #[cfg(target_os = "linux")]
+        return self
+            .native
+            .write_clipboard(text.replace("\r\n", "\n"), reservation, interrupted);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (reservation, interrupted);
+            Err(error(
+                ErrorType::Unsupported,
+                "clipboard requires Linux X11",
+            ))
+        }
+    }
+    pub(crate) fn close(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.native.close();
+        #[cfg(not(target_os = "linux"))]
+        true
+    }
+
     pub(crate) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         self.native.describe()
     }
@@ -473,6 +527,27 @@ fn error(kind: ErrorType, message: &str) -> EIPError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clipboard_invalid_payloads_fail_before_native_access() {
+        let computer = Computer::new(ShortIdAllocator::for_generation(1));
+        let filesystem = crate::filesystem::DeviceFilesystem::new(
+            &crate::config::Config::for_test("clipboard-validation"),
+        )
+        .unwrap();
+        for text in ["a\0b".to_string(), "中".repeat(6000), "x".repeat(16385)] {
+            let reservation = filesystem.reserve_staging(32768).unwrap();
+            let result = computer.write_clipboard(text, reservation, &|| false);
+            assert!(
+                matches!(result, Err(error) if error.data.error_type == ErrorType::InvalidParams)
+            );
+        }
+        for max in [0, 16385] {
+            assert!(
+                matches!(computer.read_clipboard(max, &|| false), Err(error) if error.data.error_type == ErrorType::InvalidParams)
+            );
+        }
+    }
+
     fn basis() -> Basis {
         Basis {
             observation: ComputerObservation {

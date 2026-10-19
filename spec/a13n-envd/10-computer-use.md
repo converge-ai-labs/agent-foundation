@@ -61,13 +61,37 @@ Each call performs one complete bounded gesture:
 
 Text and keys act on current foreground focus and do not select a window or require an observation. Key names include lowercase ANSI letters/digits, punctuation, `meta` (Command/Super/Windows), `alt` (Option/Alt), `control`, `shift`, `enter`, `tab`, `escape`, `space`, `backspace`, `delete`, arrows, `home`, `end`, `page_up`, `page_down`, and `f1`–`f12`. Literal text uses Unicode rather than a keyboard-layout guess.
 
-X11 does not advertise `computer.type_text`: temporary Unicode keyboard-map changes race application-side translation. It neither mutates the keymap nor substitutes clipboard paste. `computer.press_keys` resolves physical names through XKB, not layout-dependent keysyms or assumed numeric keycodes. A physical chord is not a literal-text substitute. Missing physical keys fail before dispatch.
+X11 does not advertise `computer.type_text`: temporary Unicode keyboard-map changes race application-side translation. It neither mutates the keymap nor implicitly substitutes clipboard paste. `computer.press_keys` resolves physical names through XKB, not layout-dependent keysyms or assumed numeric keycodes. A physical chord is not a literal-text substitute. Missing physical keys fail before dispatch.
 
 X11 scrolling uses XTEST wheel button pairs (4/5 vertical, 6/7 horizontal); steps are discrete wheel increments, not pixel distances. macOS retains pixel scrolling only. Unsupported units fail before pointer movement. New clients send `steps` only when the daemon explicitly advertises it; omission preserves older macOS pixel requests.
 
 Windows uses physical scan-code chords, UTF-16 Unicode text events and discrete wheel steps (positive right/down), without a clipboard fallback. A CRLF pair produces one carriage-return event rather than two line-break events; standalone control characters and Unicode surrogate pairs are preserved. Unicode entry depends on the application's text-message handling; native insertion does not prove literal text reached a raw-input application. Required keys/buttons already held, or held modifiers during text entry, reject input before dispatch rather than clearing someone else's input state. Pointer buttons follow the system's primary/secondary button mapping. Coordinate conversion and capture use a scoped physical-pixel DPI context that is restored after each operation.
 
 There are no persistent key-down or button-down methods. An operation attempts to release only its own pressed keys/buttons on every exit, including interruption. This cleanup is not desktop ownership and cannot promise isolation from concurrent physical input.
+
+## Clipboard
+
+`computer.read_clipboard(context, max_bytes=16384)` and `computer.write_clipboard(context, text)` are independent optional methods on the selected Session's native desktop. The current backend advertises them only on Linux X11. They do not select a monitor, focus an application, send a key chord, or access the Host/browser clipboard. Native `type_text` and physical `press_keys` retain their separate semantics. Neither method implicitly enables the other.
+
+Read is active-only and returns `status: text` with complete `text` (including the empty string), `no_content` when there is no owner, or `no_text` when advertised content has no supported plain-text representation. `max_bytes` is 1–16384. Unsupported conversion, invalid encoding, detected replacement, oversize content, cancellation and timeout are errors, never empty text or truncation. Observed content can become stale immediately and is untrusted application data.
+
+Write accepts 0–16384 UTF-8 bytes, rejects NUL, and validates the original byte length before normalization. Both directions normalize CRLF pairs to LF, preserving standalone CR, tabs, combining sequences and trailing lines. The X11 backend negotiates UTF8_STRING or text/plain;charset=utf-8, with Latin-1 STRING accepted on read; it does not extract text from HTML, URIs or arbitrary side-effect targets. Writes replace all prior content with the text representation and native aliases; they neither read nor restore previous contents. Empty text is distinct from clearing ownership.
+
+A write publishes text without pasting. Agents compose publication, destination focus and the application's physical paste chord in separate calls. Publication and key posting do not prove application insertion; application readback remains necessary when correctness matters. There is no atomic write/paste or copy/read transaction, and no automatic gesture retry. Terminal multiline paste can execute commands.
+
+### Lifetime and bounded work
+
+The Session owns a lazy X11 event worker using its existing X connection. A published payload remains available across calls until another writer replaces it, its Session closes or the desktop becomes unavailable. No new connection, display fallback, clipboard manager or SAVE_TARGETS persistence is introduced. The worker continues serving selection requests while performing reads, including self-read. Active clipboard API calls serialize within the native worker process; this does not reserve the desktop or provide cross-worker/application exclusion.
+
+Publication is passive Session state, not an indefinitely active operation. Session close cancels reads, joins the worker, releases buffers and destroys only its own windows. It never clears a newer writer's selection. Other X11 clients or clipboard managers may retain data; closing a Session is not secure erasure. There is no cross-Session, daemon-restart or human-later-paste persistence guarantee. Browser/VNC synchronization remains disabled.
+
+Read acquisition has a five-second absolute deadline, shortened by operation cancellation/deadline. INCR chunks cannot extend it. Native text is capped at 128 KiB before decoding, TARGETS metadata at 4 KiB, and public text at 16 KiB. Only one acquisition runs per worker at a time; incoming events are serviced in bounded batches. Retained publications and in-flight buffers reserve existing Session/Device staging byte and object budgets, including replacement overlap. Payload buffers and native resources stay owned through interruption and cleanup; native X connection loss is not recovered within a Session. These bounds govern Envd-managed data and protocol work, not hard termination of an unresponsive native X transport.
+
+### Write evidence and handoff
+
+Write returns `receipt`, `effect` and `cleanup_complete`. Cleanup describes transient native work, not erasure or the end of the retained publication. `not_executed` proves no publication mutation; `executed` proves confirmed native publication; `partial` denotes a known incomplete mutation; `unknown` denotes uncertain native dispatch. After the ownership request, failures must preserve mutation evidence rather than become pre-dispatch errors. Receipt cancellation/timeout is independent of effect. Retained operation replay returns evidence without republishing text.
+
+Service admits reads as observations and writes as mutations. Both obey the active human-control fence; read-only access does not bypass it. Uncertain writes require reconciliation before handoff. Passive publication does not prevent takeover or imply a clipboard-survival guarantee. After handback the existing fresh-observation/replanning gate still applies before new clipboard operations or input.
 
 ## Completion, Interruption and Retry
 
