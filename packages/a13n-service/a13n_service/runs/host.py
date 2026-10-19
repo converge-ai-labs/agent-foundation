@@ -43,6 +43,7 @@ from a13n_service.runs.memories.execution import (
     record_memory_capability,
     resolve_memories,
 )
+from a13n_service.runs.model_context import ModelContext
 from a13n_service.runs.platform_files import SOURCE
 from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
@@ -167,6 +168,7 @@ class Host:
         """`given` with what the agent binds of its own: its web backends and its media understanding."""
         return replace(
             given,
+            model_context=ModelContext(self.lease.run_id),
             web=self.webs.get(agent.revision_id),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
         )

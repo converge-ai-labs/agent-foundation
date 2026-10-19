@@ -545,7 +545,7 @@ class AgentContext:
 
         environment = await self.environment.project_model_context(request)
         payload: dict[str, JsonValue] = {
-            "run_id": self.run_id,
+            "harness_run_id": self.run_id,
             "thread_id": self.thread_id,
         }
         if request.kind is ModelContextRequestKind.TOOL_RESULTS:

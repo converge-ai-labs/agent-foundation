@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from copy import deepcopy
 from itertools import pairwise
@@ -232,8 +233,14 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     assert text[0].startswith("Current Environment mounts")
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
-    assert any(isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">') for value in text)
+    agent_context = next(
+        value for value in text if isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">')
+    )
     assert result.state is not None
+    assert json.loads(agent_context.splitlines()[1]) == {
+        "harness_run_id": result.run_id,
+        "thread_id": result.state.thread_id,
+    }
     persisted_request = result.state.message_history[0]
     assert isinstance(persisted_request, ModelRequest)
     persisted_text = [
@@ -310,6 +317,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
             item.value for item in request_input_content(final) if item.metadata.source_id == "a13n.agent-context"
         ]
         assert len(runtime_context) == 1
+        assert json.loads(runtime_context[0].splitlines()[1]) == {"harness_run_id": result.run_id}
         assert "automatic runtime metadata, not a new user message" in runtime_context[0]
         assert "Continue the existing task only if work remains" in runtime_context[0]
     assert seen_instructions == [seen_instructions[0]] * 3
