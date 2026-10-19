@@ -1,11 +1,3 @@
-import "@fontsource-variable/space-grotesk";
-import "@fontsource-variable/inter";
-import "@fontsource-variable/jetbrains-mono";
-import "./styles/base.css";
-import "./styles/nav.css";
-import "./styles/foot.css";
-import "./styles/plate.css";
-import "./styles/prose.css";
 import "./styles/blog.css";
 import { $$ } from "./dom";
 import { mountMarks } from "./mark";
