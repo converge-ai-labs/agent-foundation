@@ -86,12 +86,16 @@ it("reads a failed request as an error and keeps an unknown model unknown", () =
   const { entries } = timeline(
     lifecycle("model_request_started"),
     lifecycle("model_request_failed", "model-request-1", {
-      error_code: "provider_timeout",
+      error_code: "model_request_failed",
+      status_code: 400,
+      detail: "prompt is too long: 1006745 tokens > 1000000 maximum",
     }),
   );
   expect(models(entries)[0]).toMatchObject({
     stopReason: "error",
-    errorCode: "provider_timeout",
+    errorCode: "model_request_failed",
+    errorStatus: 400,
+    errorDetail: "prompt is too long: 1006745 tokens > 1000000 maximum",
     model: null,
     usage: null,
   });

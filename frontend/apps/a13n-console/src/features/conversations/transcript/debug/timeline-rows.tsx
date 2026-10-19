@@ -260,7 +260,7 @@ function modelText(entry: ModelEntry, t: TFunction): RowText {
   );
   const asked = actions.find((child) => child.hitl);
   const outcome = entry.errorCode
-    ? t("failed · {{code}}", { code: entry.errorCode })
+    ? t("failed · {{reason}}", { reason: failureReason(entry, t) })
     : entry.state === "failed"
       ? t("state.failed")
       : asked
@@ -293,6 +293,17 @@ function modelText(entry: ModelEntry, t: TFunction): RowText {
     cache: figures.rate,
     cacheTitle: figures.cacheTitle,
   };
+}
+
+/** The provider's status and message name a failure better than the generic code they replace. */
+function failureReason(entry: ModelEntry, t: TFunction) {
+  return [
+    entry.errorStatus !== null &&
+      t("HTTP {{status}}", { status: entry.errorStatus }),
+    entry.errorDetail ?? entry.errorCode,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function actionText(
