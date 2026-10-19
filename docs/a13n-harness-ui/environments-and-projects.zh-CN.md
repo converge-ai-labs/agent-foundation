@@ -3,6 +3,8 @@ title: 环境与 Project
 description: 选择执行权限、在 Project 中工作、连接 Device，并定义自定义 Environment profile。
 ---
 
+Harness UI 使用[共享执行模型](../environments/index.md#choose-a-backend)。Direct 是适合快速搭建的 Native Local Files & Shell。Envd 是通用路径，提供 OS sandbox 和 Egress 策略控制、Computer use 和设备指标。自定义 Docker 与 E2B Native profile 同样限定为 Files & Shell；供应商资源管理仍由 Host 负责。
+
 ## 执行权限
 
 **Full Control** 使用宿主机账户现有的文件系统和网络权限运行。默认的 **Direct** 运行时不下载或启动 `a13n-envd`。Direct 使用 Direct Local Provider，在 Linux、macOS 和 Windows 上原生执行，不需要 WSL。Windows 使用 PowerShell（先 `pwsh`，再 Windows PowerShell）、UTF-8 文本流和管理命令子进程的 Job Object。取消、超时和退出会清理所管理的进程树。Windows 不提供可移植中断信号，取消使用进程树终止。Full Control 仍是宿主机账户执行，不是沙箱。

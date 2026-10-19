@@ -24,21 +24,27 @@ description: 独立的环境管理、连接和执行接口，支持本地、容�
 
 ## 选择后端
 
-agent 只需要普通工具或远程 API 时，不使用环境。否则选择 Native 或 Envd 路线：
+**Native Execution** 面向快速部署和只需要基础能力的应用，提供 **Files & Shell**。它有三种方式：**Local 本地直连**、**Docker 本地容器化**和 **E2B 远程沙箱**。Shell 包括命令执行、进程控制、标准输入和输出处理。
 
-| 路线           | Provider         | 适用场景                 | 操作与归属边界                                      |
-| -------------- | ---------------- | ------------------------ | --------------------------------------------------- |
-| Native         | `direct_local`   | 可信本地自动化           | 宿主 OS 操作；已有目录，不承诺沙箱隔离              |
-| Native         | `e2b`            | 原生托管云沙箱           | E2B SDK；创建、暂停、恢复、续期和销毁沙箱           |
-| Native         | `daytona`        | 云沙箱                   | 原生停止/启动并保留文件                             |
-| Native         | `modal`          | 云沙箱                   | 基于快照停止/恢复；固定运行寿命                     |
-| Native         | `vercel`         | 云沙箱                   | 具有原生会话的命名持久沙箱                          |
-| Native         | `sprites`        | 云沙箱                   | 持久磁盘与自动休眠/唤醒                             |
-| Native         | `runloop`        | 云沙箱                   | Devbox 挂起/恢复和空闲保活                          |
-| Envd           | `local_envd`     | CLI 和本地 agent         | 私有 stdio 守护进程；关闭后保留文件                 |
-| Native 或 Envd | `docker`         | 单机服务                 | Docker exec 或 HTTP EIP，可支持桌面；关闭后保留容器 |
-| Envd           | `http_envd`      | 网络可达的外部守护进程   | HTTP(S) EIP；仅连接                                 |
-| Envd           | `websocket_envd` | 主动连接 Host 的守护进程 | 反向 WebSocket EIP；与 Host 集成的 SDK，仅连接      |
+**Envd Execution** 是通用执行路径，提供 Files & Shell、通过 **OS sandbox** 和 **Egress** 实施的执行策略控制，以及 **Computer use**、**metrics 采集**等进阶能力。Host 选择策略，Envd 在目标可用的操作系统边界内实施策略。设备指标通过 Host 的 Device 连接读取，而不是 agent 工具。
+
+**Environment Provider** 独立承担资源管理。每个托管基础设施供应商保留自己的 `EnvironmentProvider` 子类，负责资源分配、检查、启停、销毁、续期和连接准备。Service 或嵌入 Harness 的 Host 编排这些 provider；Harness 打开指向固定目标的 execution。
+
+| 执行路径      | Provider         | 执行能力                                             | 资源管理              |
+| ------------- | ---------------- | ---------------------------------------------------- | --------------------- |
+| Native        | `direct_local`   | 本地 Host 上的 Files & Shell                         | Host 管理的已有目录   |
+| Native / Envd | `docker`         | Native Files & Shell；显式选择 HTTP EIP 使用通用执行 | Docker provider       |
+| Native        | `e2b`            | 远程沙箱中的 Files & Shell                           | E2B provider          |
+| Envd          | `local_envd`     | 通过 stdio 连接本地守护进程                          | Host 管理的守护进程   |
+| Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
+| Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
+| Envd          | `vercel`         | 通过 EIP 连接兼容的沙箱守护进程                      | Vercel provider       |
+| Envd          | `sprites`        | 通过 EIP 连接兼容的沙箱守护进程                      | Sprites provider      |
+| Envd          | `runloop`        | 通过 EIP 连接兼容的沙箱守护进程                      | Runloop provider      |
+| Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
+| Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
+
+> 实现状态：本文定义统一后的执行模型。部分云 provider 和 E2B/Daytona 桌面适配器仍需迁移；需要通用能力时，请显式连接兼容的 Envd 目标。已有配置字段详见[配置参考](configuration-reference.md)。
 
 [在本地试用远程示例](remote-envd.md)，无需模型、Docker 或云账号。
 

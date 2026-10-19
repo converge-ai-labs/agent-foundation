@@ -8,6 +8,8 @@ description: 环境提供的结构化文件与命令操作、路径规则和限�
 
 ## 操作类别
 
+Native Files & Shell 包括支持命令执行的进程和输出操作。Ports 等独立能力属于通用 Envd 路径。
+
 | 类别      | 用途                                   | 主要边界                                   |
 | --------- | -------------------------------------- | ------------------------------------------ |
 | Files     | 读写、元数据、列表、查询、搜索和修改   | 逻辑路径及 provider 实施的访问限制         |
@@ -20,7 +22,7 @@ description: 环境提供的结构化文件与命令操作、路径规则和限�
 
 ## 路径遵循所调用边界的规则
 
-单环境 API 遵循各 provider 的路径契约。Direct Local 和六个云 provider 使用配置根目录内的路径，例如 `/hello.txt`；Docker 使用原生容器路径。Envd provider 使用设备绝对文件系统路径：`/home/user/hello.txt`、`/C:/Users/example/hello.txt` 或 `/UNC/server/share/hello.txt`。固定工作目录不限制文件访问。
+单环境 API 遵循各 provider 的路径契约。Native Local 和 E2B 使用配置根目录内的路径，例如 `/hello.txt`；Native Docker 使用容器路径。Envd provider 使用设备绝对文件系统路径：`/home/user/hello.txt`、`/C:/Users/example/hello.txt` 或 `/UNC/server/share/hello.txt`。固定工作目录不限制文件访问。
 
 Harness 添加挂载选择和相对路径解析。除非聚合 Harness 路径也是该 provider 的有效路径，否则不要直接传给底层 provider 文件操作接口。根映射不为获准命令提供 OS 隔离。Envd 实施设备的启动 Sandbox 和出站网络模式；外层 Host 边界仍决定可用权限。
 
@@ -55,7 +57,7 @@ Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合
 
 写入模式为 `create`（新文件）、`replace`（已有文件）、`upsert`（创建或替换）和 `append`，没有隐式默认值。回执报告所属操作结果，不代表多个文件操作组成通用事务。跨挂载复制由 Host/聚合层负责，不能给 `FileOperator.copy()` 虚构第二个别名参数。
 
-`batch` 接受 `FileStatOperation`、`FileMkdirOperation`、`FileWriteTextOperation` 和 `FileRemoveOperation`，每批最多 128 项，JSON 请求最多 64 KiB。所有路径必须属于同一文件作用域。批量文本写入使用 `create`、`replace` 或 `upsert`；追加写入仍使用单独的 `write_text`。stat 和 remove 可设置 `missing_ok=True`。操作按顺序执行，遇到首个错误即停止；失败或取消不会回滚已经完成的操作，也不会自动重放。原生远程 provider 将整批操作合并为一次客体命令。
+`batch` 接受 `FileStatOperation`、`FileMkdirOperation`、`FileWriteTextOperation` 和 `FileRemoveOperation`，每批最多 128 项，JSON 请求最多 64 KiB。所有路径必须属于同一文件作用域。批量文本写入使用 `create`、`replace` 或 `upsert`；追加写入仍使用单独的 `write_text`。stat 和 remove 可设置 `missing_ok=True`。操作按顺序执行，遇到首个错误即停止；失败或取消不会回滚已经完成的操作，也不会自动重放。Native Docker 和 E2B 将整批操作合并为一次客体命令；Envd 执行使用 EIP 文件操作。
 
 `FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` 指定 ZIP 字节、相对文件路径及解压后大小，可选 `root` 选择压缩包内的目录。`write_archive` 只创建新目录；使用单独的 `move` 发布完整候选目录。它不恢复归档中的链接或权限。自定义 `FileOperator` 必须实现 `batch` 和 `write_archive`；无逐文件兼容分支。
 
@@ -69,7 +71,7 @@ Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合
 
 ## 文件搜索模式
 
-Direct Local、Docker、六个云 provider 和 Envd provider 的文件查询模式与文本搜索 `include` 过滤使用相同路径语法：
+Native Local/Docker/E2B 与 Envd 执行 的文件查询模式与文本搜索 `include` 过滤使用相同路径语法：
 
 | 模式                       | 选择范围                         |
 | -------------------------- | -------------------------------- |
@@ -80,7 +82,7 @@ Direct Local、Docker、六个云 provider 和 Envd provider 的文件查询模�
 
 花括号组不能嵌套，至少包含两个非空选项，最多展开为 256 个模式。模式最多 16 KiB。反斜杠转义和数字范围不会按 shell 方式展开。递归匹配使用完整 `**` 路径段。
 
-环境 API 的文本搜索默认字面匹配。面向模型的 Harness `grep` 工具默认 `regex=true`，也提供 `regex=false` 和 `case_sensitive=false`。包含标点的代码片段优先使用字面模式。可移植正则表达式使用字面量、字符类、分组、选择、锚点和量词。Direct Local、Docker 和六个云 provider 使用 Python `re`；Envd 使用 Rust `regex`，拒绝前后查找和反向引用。引擎专属扩展和 Unicode 边界情况可能不同。
+环境 API 的文本搜索默认字面匹配。面向模型的 Harness `grep` 工具默认 `regex=true`，也提供 `regex=false` 和 `case_sensitive=false`。包含标点的代码片段优先使用字面模式。可移植正则表达式使用字面量、字符类、分组、选择、锚点和量词。Native Local、Docker 和 E2B 使用 Python `re`；Envd 使用 Rust `regex`，拒绝前后查找和反向引用。引擎专属扩展和 Unicode 边界情况可能不同。
 
 无效模式产生 `environment_request_invalid` 错误，携带可安全公开的字段、原因和修正提示。零结果仍为成功。使用返回偏移量继续有界分页，保持过滤条件和文件系统稳定。逐文件匹配上限限制该文件返回的匹配数；符合条件文件的扫描上限触发限制错误，不会悄悄声称结果完整。提高限制前，先收窄根目录和 include 过滤。
 

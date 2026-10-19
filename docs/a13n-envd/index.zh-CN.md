@@ -1,10 +1,10 @@
 ---
 title: Envd
 sidebarTitle: 概览
-description: 通过 EIP 提供文件、命令、进程、端口和可选桌面操作的原生守护进程。
+description: 通过 EIP 提供通用执行、OS sandbox 与 Egress 策略控制、Computer use 和设备指标。
 ---
 
-Envd（`a13n-envd`）通过 stdio、HTTP(S) 或向外建立的反向 WebSocket 连接提供**环境交互协议（EIP）**。
+Envd（`a13n-envd`）是通用执行路径，提供 Files & Shell、**OS sandbox** 与 **Egress** 策略控制、**Computer use** 和 **metrics 采集**。它通过 stdio、HTTP(S) 或向外建立的反向 WebSocket 连接提供**环境交互协议（EIP）**。Host 选择执行策略并负责产品授权；Envd 实施所选边界并报告设备观测。各供应商的 Environment Provider 继续管理目标资源和准备连接。
 
 通过 [Harness 环境 provider](../environments/index.md) 连接 agent，也可以直接使用 [Python EIP 客户端](python-client.md)。
 

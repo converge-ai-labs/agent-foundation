@@ -8,6 +8,8 @@ Environment operations are typed Python interfaces usable without an Agent. The 
 
 ## Operation families
 
+Native Files & Shell includes the process and output operations that support command execution. Separate capabilities such as Ports belong to the general Envd path.
+
 | Family    | Purpose                                                       | Important boundary                                                          |
 | --------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Files     | Read/write, metadata, listing, queries, search, and mutations | Logical paths and Provider-enforced access                                  |
@@ -20,7 +22,7 @@ Use [Getting started](getting-started.md) for a complete file example. Connector
 
 ## Paths belong to the boundary you are calling
 
-The single-Environment API follows each Provider's path contract. Direct Local and the six cloud Providers use paths within their configured root, such as `/hello.txt`; Docker uses native container paths. Envd Providers use Device-absolute filesystem paths: `/home/user/hello.txt`, `/C:/Users/example/hello.txt`, or `/UNC/server/share/hello.txt`. Their fixed working directory does not restrict file access.
+The single-Environment API follows each Provider's path contract. Native Local and E2B use paths within their configured root, such as `/hello.txt`; Native Docker uses container paths. Envd Providers use Device-absolute filesystem paths: `/home/user/hello.txt`, `/C:/Users/example/hello.txt`, or `/UNC/server/share/hello.txt`. Their fixed working directory does not restrict file access.
 
 Harness adds mount selection and relative-path resolution. Do not send an aggregate Harness path directly to a low-level Provider file operator unless it is also a valid path for that Provider. Root mapping is not OS isolation for an allowed command. Envd enforces the Device's launch Sandbox and egress mode; the outer Host boundary still sets available authority.
 
@@ -55,7 +57,7 @@ After opening an execution, use its optional `execution.operations.files` facet.
 
 Write modes are `create` (new file), `replace` (existing file), `upsert` (create or replace), and `append`. There is no implicit default. A receipt reports the owning operation's outcome, not a general transaction across several file operations. Cross-mount copy is a Host/aggregate responsibility, not an invented second alias argument to `FileOperator.copy()`.
 
-`batch` accepts `FileStatOperation`, `FileMkdirOperation`, `FileWriteTextOperation`, and `FileRemoveOperation`, with at most 128 operations and a 64 KiB JSON request. Every path must belong to the same file scope. Batch text writes use `create`, `replace`, or `upsert`; append remains an individual `write_text` call. Stat and remove support `missing_ok=True`. Operations run in order and stop at the first error. Failure or cancellation does not roll back completed operations or replay the batch. Native remote Providers execute the batch in one guest command.
+`batch` accepts `FileStatOperation`, `FileMkdirOperation`, `FileWriteTextOperation`, and `FileRemoveOperation`, with at most 128 operations and a 64 KiB JSON request. Every path must belong to the same file scope. Batch text writes use `create`, `replace`, or `upsert`; append remains an individual `write_text` call. Stat and remove support `missing_ok=True`. Operations run in order and stop at the first error. Failure or cancellation does not roll back completed operations or replay the batch. Native Docker and E2B execute the batch in one guest command; Envd-backed execution uses EIP file operations.
 
 `FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` specifies the ZIP bytes, relative file paths and expanded sizes, and an optional archive directory prefix. `write_archive` creates a new directory; publish the complete candidate with a separate `move`. It does not restore archive links or permissions. Custom `FileOperator` implementations must implement `batch` and `write_archive`; there is no compatibility dispatch to individual file methods.
 
@@ -69,7 +71,7 @@ For commands and process observation, follow the complete [command example and t
 
 ## File search patterns
 
-File query patterns and text-search `include` filters use the same path syntax on Direct Local, Docker, all six cloud Providers, and Envd-backed Providers:
+File query patterns and text-search `include` filters use the same path syntax on Native Local/Docker/E2B and Envd-backed execution:
 
 | Pattern                    | Selection                                        |
 | -------------------------- | ------------------------------------------------ |
@@ -80,7 +82,7 @@ File query patterns and text-search `include` filters use the same path syntax o
 
 Brace groups are non-nested, with at least two nonempty alternatives and at most 256 expanded patterns. Patterns accept at most 16 KiB. Backslash escapes and numeric ranges are not shell-expanded. Use a complete `**` path segment for recursive matching.
 
-Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Direct Local, Docker, and all six cloud Providers use Python `re`; Envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
+Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Native Local, Docker, and E2B use Python `re`; Envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
 
 Invalid patterns produce an `environment_request_invalid` error with a safe field, reason, and correction hint. Zero results are successful. Continue bounded pages using the returned offset while keeping filters and filesystem stable. A per-file match limit caps returned matches from that file; an eligible-file scan ceiling raises a limit error rather than silently claiming a complete result. Narrow the root and include filter before increasing limits.
 

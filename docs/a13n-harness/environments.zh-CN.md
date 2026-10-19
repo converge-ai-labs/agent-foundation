@@ -5,6 +5,8 @@ description: 通过 Host 提供的来源，在首次使用时准备环境。
 
 Harness 负责环境执行与共享类型，Service 负责目标管理。Host 提供 `EnvironmentSource`，通过 `ensure_ready()` 完成管理并返回固定目标的 `EnvironmentConnector`。Harness 负责 Run 内的挂载、权限、路由和执行清理。
 
+快速部署、只需要 Files & Shell 时，选择 **Native Execution**：Local 本地直连、Docker 本地容器化或 E2B 远程沙箱。需要通用执行、OS sandbox 和 Egress 策略控制、Computer use 或设备指标时，选择 **Envd Execution**。每个托管供应商保留自己的资源管理 provider。路径选择和迁移状态见[执行模型](../environments/index.md#choose-a-backend)。
+
 ## 不使用环境
 
 ```python

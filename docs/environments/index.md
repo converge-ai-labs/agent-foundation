@@ -24,21 +24,27 @@ description: Independent target management and portable execution across local, 
 
 ## Choose a backend
 
-Use no Environment when the Agent needs only ordinary tools or remote APIs. Otherwise select a Native or Envd route:
+**Native Execution** is the lightweight path for quick deployment and applications that need only **Files & Shell**. It has three forms: **Local** for direct local access, **Docker** for local containerization, and **E2B** for a remote sandbox. Shell includes command execution, process control, stdin, and output handling.
 
-| Route          | Provider         | Use it for                          | Operation and ownership boundary                                       |
-| -------------- | ---------------- | ----------------------------------- | ---------------------------------------------------------------------- |
-| Native         | `direct_local`   | Trusted local automation            | Host OS operations; existing directory, no sandbox claim               |
-| Native         | `e2b`            | Native managed cloud sandbox        | E2B SDK; sandbox create/pause/resume/renew/destroy                     |
-| Native         | `daytona`        | Cloud sandbox                       | Native stop/start and preserved files                                  |
-| Native         | `modal`          | Cloud sandbox                       | Snapshot-backed stop/resume; fixed running lifetime                    |
-| Native         | `vercel`         | Cloud sandbox                       | Named persistent sandbox with native sessions                          |
-| Native         | `sprites`        | Cloud sandbox                       | Persistent disk and automatic sleep/wake                               |
-| Native         | `runloop`        | Cloud sandbox                       | Devbox suspend/resume and idle keepalive                               |
-| Envd           | `local_envd`     | CLI and local Agents                | Private stdio daemon; close preserves files                            |
-| Native or Envd | `docker`         | Single-host services                | Docker exec or HTTP EIP, including desktops; close preserves container |
-| Envd           | `http_envd`      | Network-reachable external daemons  | HTTP(S) EIP; connect-only                                              |
-| Envd           | `websocket_envd` | Daemons that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only               |
+**Envd Execution** is the general execution path. It provides Files & Shell, execution policy enforcement through **OS sandbox** and **Egress**, and advanced capabilities such as **Computer use** and **metrics collection**. The Host selects policy; Envd enforces it within the target's available OS boundary. Device metrics use the Host's Device connection rather than Agent tools.
+
+**Environment Providers** manage resources independently of the execution path. Each managed infrastructure vendor retains its own `EnvironmentProvider` subclass for allocation, inspection, start/stop, destruction, renewal, and connection preparation. Service or the embedding Host orchestrates these providers; Harness opens fixed-target executions.
+
+| Execution path | Provider         | Execution scope                                               | Resource management             |
+| -------------- | ---------------- | ------------------------------------------------------------- | ------------------------------- |
+| Native         | `direct_local`   | Files & Shell on the local Host                               | Host-owned directory            |
+| Native / Envd  | `docker`         | Native Files & Shell; explicit HTTP EIP for general execution | Docker provider                 |
+| Native         | `e2b`            | Files & Shell in a remote sandbox                             | E2B provider                    |
+| Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
+| Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
+| Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
+| Envd           | `vercel`         | EIP to a compatible sandbox daemon                            | Vercel provider                 |
+| Envd           | `sprites`        | EIP to a compatible sandbox daemon                            | Sprites provider                |
+| Envd           | `runloop`        | EIP to a compatible sandbox daemon                            | Runloop provider                |
+| Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
+| Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
+
+> Implementation status: this page defines the consolidated execution model. Some cloud providers and E2B/Daytona desktop adapters still need migration. Use an explicit connection to a compatible Envd target for general capabilities. Existing configuration fields are documented in the [configuration reference](configuration-reference.md).
 
 [Try the remote examples locally](remote-envd.md) without a model, Docker or cloud account.
 

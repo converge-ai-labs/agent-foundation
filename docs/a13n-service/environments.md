@@ -8,6 +8,8 @@ An environment is the computer an agent works on: its files and terminal tools a
 - **Managed environments**, which the Service creates, starts, stops and deletes from a **template**, such as a Docker container per thread.
 - **External targets**, computers you run yourself with the `a13n-envd` daemon, which the Service only connects to.
 
+Each managed vendor retains a resource management provider for creation, inspection, start/stop, destruction, renewal, and connection preparation. Execution follows the [shared model](../environments/index.md#choose-a-backend): Native Local/Docker/E2B provide Files & Shell for quick setup; Envd provides general execution with OS sandbox, Egress, Computer use, and Device metrics.
+
 Threads **mount** environments. Each run freezes the thread's mounts when it is accepted and uses them until it ends. Without a mounted environment, an agent has no file or terminal tools.
 
 In Console, **Environments → Templates** manages templates and **Environments → Instances** lists environments, and providers are under **Workspace settings → Providers → Environment**. All API paths below are under `/api/v1`.
@@ -212,7 +214,7 @@ Use loopback or an explicitly trusted private link for the plain-HTTP operation 
 
 ### Enable observation and interaction
 
-For an existing compatible desktop, start here. Computer permissions default off and are independent of desktop readiness.
+For an existing Envd-backed desktop with compatible Computer methods, start here. Computer permissions default off and are independent of desktop readiness.
 
 1. Enable **Computer** in the Agent's tools and save its configuration. Per-tool approval settings still apply.
 2. Open the conversation's **Environments and memory** settings. Add the environment if needed, then open its **Computer permissions**. Choose **Observe** for screenshots and display information, or **Interact** to also allow mouse and keyboard actions. The primary `workspace` mount uses the same settings.
@@ -235,7 +237,7 @@ An operator must prepare a compatible desktop environment and set `desktop: true
 
 | Provider | Desktop access prerequisites                                                                                                                                                                                                                                                                  |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2B      | A custom template with the preinstalled desktop-access endpoint. The stock `desktop` template supports Computer operations but does not include that endpoint.                                                                                                                                |
+| E2B      | A custom template with the preinstalled desktop-access endpoint. The stock `desktop` template needs the viewer endpoint added; Agent Computer use also requires compatible Envd execution.                                                                                                    |
 | Docker   | A compatible desktop image and `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Docker Engine or Envd connectivity does not provide a browser route; plain WS is accepted only on loopback.                             |
 | Daytona  | An operator-built `snapshot` with the desktop access supervisor started at boot. Service uses a signed preview route to port 6081; the supervisor enforces read-only access and disconnects revoked controllers. See the [snapshot build instructions](../environments/providers.md#daytona). |
 

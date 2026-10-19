@@ -19,6 +19,8 @@ A definition owns exactly one model of each kind. There is no configuration sche
 
 The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts, and shell profiles.
 
+The [execution model](index.md#choose-a-backend) defines Native Files & Shell and general Envd execution. The [configuration reference](configuration-reference.md) is generated from current models and still includes pre-migration fields. Choose capabilities by execution path and migrate existing configuration explicitly.
+
 ## Host outbound connections
 
 Set `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, or their lowercase forms in the Host process environment. These trusted settings route Host-owned HTTP connections, not traffic from Device commands.
@@ -29,7 +31,7 @@ See [Remote Envd](remote-envd.md#connect-to-an-existing-http-daemon) for endpoin
 
 ## Direct Local
 
-`DirectLocalEnvironmentConfiguration` requires an absolute `root.path`. The root is always writable; a reference-only mount withholds write actions through the Harness permission ceiling instead. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
+`DirectLocalEnvironmentConfiguration` requires an absolute `root.path`. The root is always writable; a reference-only mount withholds write actions through the Harness permission ceiling instead. The basic configuration is file-only: shell profiles and allowed executables are empty by default.
 
 To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. PowerShell profiles cannot enable login mode.
 
@@ -51,7 +53,7 @@ The Host owns one shared `LocalEnvdProviderRuntime`, its binary/bootstrap and sh
 
 For native execution, when `user` is omitted, the provider uses the image label `ai.a13n.environment.user`, falling back to the image USER for unlabeled custom images. `a13n-sandbox` selects `sandbox` (UID/GID 1000); an explicit recipe `user` takes precedence.
 
-Service’s `DockerRecipe` defaults to `execution="native"`, which uses Docker exec. Select `execution="envd_http"` to use the image-managed Envd daemon over HTTP EIP. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
+Service’s `DockerRecipe` defaults to `execution="native"`, which provides Files & Shell through Docker exec. Select `execution="envd_http"` to use the image-managed Envd daemon over HTTP EIP. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
 
 The private container filesystem supplies `/workspace`. Optional bind mounts have an existing absolute `source` on the Docker Engine's machine, a container `target`, and a `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a recipe option; external data is preserved on destruction.
 

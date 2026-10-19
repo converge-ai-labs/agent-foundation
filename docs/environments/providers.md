@@ -60,25 +60,25 @@ For complete Host-side built-in lifecycles, including Docker state re-entry and 
 
 ## Built-in Providers
 
-There are two operation routes: **Native** uses the Host OS or vendor APIs directly; **Envd** uses one shared EIP operation implementation over different deployment and connection arrangements.
+Execution uses a Native basic path or the general Envd path; resource management retains a separate implementation for each vendor. See the [execution model](index.md#choose-a-backend).
 
-| Route  | Provider         | Use it for                          | Operation and ownership boundary                            |
-| ------ | ---------------- | ----------------------------------- | ----------------------------------------------------------- |
-| Native | `direct_local`   | Trusted local automation            | Host OS operations; existing directory, no sandbox claim    |
-| Native | `e2b`            | Native managed cloud sandbox        | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Native | `daytona`        | Cloud sandbox                       | Native stop/start and preserved files                       |
-| Native | `modal`          | Cloud sandbox                       | Snapshot-backed stop/resume; fixed running lifetime         |
-| Native | `vercel`         | Cloud sandbox                       | Named persistent sandbox with native sessions               |
-| Native | `sprites`        | Cloud sandbox                       | Persistent disk and automatic sleep/wake                    |
-| Native | `runloop`        | Cloud sandbox                       | Devbox suspend/resume and idle keepalive                    |
-| Envd   | `local_envd`     | CLI and local Agents                | Shared Host Device; adapter close ends its Session          |
-| Native | `docker`         | Local or remote Engines             | Docker Engine lifecycle and exec; close preserves container |
-| Envd   | `http_envd`      | Network-reachable external daemons  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `websocket_envd` | Daemons that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Execution path | Provider         | Execution scope                                               | Resource management             |
+| -------------- | ---------------- | ------------------------------------------------------------- | ------------------------------- |
+| Native         | `direct_local`   | Files & Shell on the local Host                               | Host-owned directory            |
+| Native / Envd  | `docker`         | Native Files & Shell; explicit HTTP EIP for general execution | Docker provider                 |
+| Native         | `e2b`            | Files & Shell in a remote sandbox                             | E2B provider                    |
+| Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
+| Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
+| Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
+| Envd           | `vercel`         | EIP to a compatible sandbox daemon                            | Vercel provider                 |
+| Envd           | `sprites`        | EIP to a compatible sandbox daemon                            | Sprites provider                |
+| Envd           | `runloop`        | EIP to a compatible sandbox daemon                            | Runloop provider                |
+| Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
+| Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-Direct Local shares the Host account. Docker uses native Engine operations; all six cloud Providers use native vendor transports. Native Docker mode and the six cloud Providers require no Envd; Docker desktop mode uses the image-managed daemon. Local and remote Envd Providers use EIP for Agent operations.
+Native Local, Docker, and E2B provide Files & Shell directly. General execution on Daytona, Modal, Vercel, Sprites, and Runloop uses Envd/EIP, while their resource management providers continue to use vendor APIs. Docker retains explicit Native and Envd paths.
 
-For separately deployed Envd, see the [sandbox validation record](../a13n-envd/egress.md#cloud-platform-validation-record) for E2B, Runloop, Vercel, Daytona and both Modal runtimes. It records the tested binary, launch identities, egress coverage and platform limits; it does not imply that these native Providers bootstrap Envd or configure its egress policy.
+Before deploying Envd, check the [sandbox validation record](../a13n-envd/egress.md#cloud-platform-validation-record) for launch identities, egress coverage, and platform limits. Available execution capabilities follow daemon negotiation and Host policy.
 
 Multi-tenant authorization and container allocation remain Host responsibilities. One Device supports concurrent independent Sessions; Sessions are not tenant partitions. Hosts share the Device connection and select a fixed cwd for each adapter, closing the shared runtime only at Host shutdown.
 
@@ -129,7 +129,7 @@ With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the 
 
 ## Cloud Providers
 
-E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fly.io Sprites (`sprites`), and Runloop (`runloop`) provide cloud execution without installing Envd. All support files and shell commands; E2B additionally supports process observations, stdin, retained SDK text output, and loopback ports. The Service offers all six as environment provider types; its E2B accounts select the E2B cloud or another E2B-compatible service by domain ([Service environments](../a13n-service/environments.md#providers)).
+E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. E2B supplies Native Files & Shell; the other five use the general Envd execution path. Advanced capabilities on an E2B target also use a compatible Envd connection. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
 
 | Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                         |
 | -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------ |
@@ -142,7 +142,7 @@ E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fl
 
 Use the organization, team, or Modal `workspace` that owns the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a recipe or reconnect state.
 
-Daytona, Modal, Vercel, Sprites, and Runloop recipes accept `root`, `python`, `shell`, and bounded request/file/output settings. `python` names an executable on the guest PATH or an absolute guest path; it never discovers a Host executable. Custom images and snapshots must include Linux, Python 3 with the standard library, and the selected shell. The root maps file paths such as `/notes.txt` into that guest directory; shell execution retains the authority of the native guest user. The default Modal image uses `/usr/local/bin/python3`; Vercel defaults to `/vercel/sandbox` as its root. Those five Providers do not advertise process handles, ports, retained output, interactive stdin, per-command network denial, or resource limits other than wall time. Unsupported requests fail before command execution.
+Daytona, Modal, Vercel, Sprites, and Runloop management providers prepare the target, compatible Envd runtime, and authorized connection. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
 
 ### Reconnection and lifecycle
 
@@ -159,11 +159,11 @@ The Host saves the latest `EnvironmentState` and supplies it to a fixed-target c
 
 Modal stop first saves a filesystem snapshot. Explicit `start()` restores from that snapshot and returns the resulting reference; `open()` performs neither restoration nor snapshot cleanup. Snapshot deletion requires matching native ownership tags. External registration supplies a connector only; destruction authority belongs to management and cannot be inferred from a state reference.
 
-An interrupted create is reconciled through the native name or ownership metadata. Unknown dispatched commands are not replayed. For Daytona, Modal, Vercel, Sprites, and Runloop, each foreground command has a bounded guest-side deadline; losing or cancelling its transport does not prove the command stopped immediately. Cancellation closes local transport resources; the guest command runner bounds the foreground command and kills its process group. This is not sandbox-wide process containment: descendants that deliberately detach into a new session require native target lifecycle cleanup. Timeout output is partial and has no invented producer total. Modal's SDK retries native commands with a stable exec ID and filesystem snapshots with a stable snapshot request ID.
+Management providers reconcile interrupted creation through native names or ownership metadata. Unknown command dispatch is not replayed. Envd execution uses the shared EIP deadline, cancellation, output, and Session cleanup semantics; each vendor management provider retains target stop and destruction.
 
 ### E2B runtime
 
-E2B executes commands directly through its native asynchronous SDK. Bounded Python helpers implement files and port checks only. The default `base` template works without installing `a13n-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+, Bash and the configured account/root; Git-ignore queries also need Git.
+E2B executes commands directly through its native asynchronous SDK. Bounded Python helpers implement file operations. The default `base` template works without installing `a13n-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+, Bash and the configured account/root; Git-ignore queries also need Git.
 
 Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
 
@@ -202,7 +202,7 @@ Discovery alone allocates no output buffer or active slot. A separate 100,000-re
 
 E2B uses native login Bash, so direct argv, explicit non-login mode and environment unsets are unsupported. Native stdin has a per-request size bound, not a cross-Run quota. Native kill is supported; interrupt/terminate, process-tree verification and per-command hard deadlines are not. A per-command wall-time limit (`limits.wall_time_seconds`, or the shell tool's `execution_timeout_seconds`) is rejected before command launch. SDK connection/request waits, Harness tool waits and sandbox expiry are different limits. Sandbox TTL still applies while commands run without an observer.
 
-The isolation boundary is the E2B sandbox. File-root mapping does not confine allowed shell commands. Per-command CPU, memory and process-count limits are unsupported. Per-command network denial requires sandbox-wide `allow_internet_access=False`; it cannot be added to an internet-enabled sandbox. Port inspection supports loopback TCP only. Append and patch do not provide concurrent compare-and-swap guarantees.
+The isolation boundary is the E2B sandbox. File-root mapping does not confine allowed shell commands. Per-command CPU, memory and process-count limits are unsupported. Per-command network denial requires sandbox-wide `allow_internet_access=False`; it cannot be added to an internet-enabled sandbox. Append and patch do not provide concurrent compare-and-swap guarantees.
 
 Run the example with `E2B_API_KEY` set in the Host process environment:
 
@@ -217,21 +217,11 @@ The example explicitly destroys its sandbox in `finally`. Live integration tests
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
 
-### Native E2B desktop
+### E2B desktop preparation
 
-Use the existing E2B connection and enable **Desktop environment** when creating a template. The built-in desktop choice uses E2B's `desktop` template. Compatible custom templates can be selected explicitly. The equivalent recipe is:
+The E2B provider creates and resumes desktop resources. Native Execution remains Files & Shell; Agent Computer use runs through the general Envd path.
 
-```json
-{"desktop": true, "template": "desktop", "desktop_width": 1280, "desktop_height": 800}
-```
-
-Service uses the official `e2b-desktop` SDK to create the desktop and perform screenshots, clicks, typing and mouse gestures. Ordinary commands and files continue to use the base asynchronous E2B SDK. Configure Agent Computer tools and the mount's exact Computer permissions separately; no a13n-envd installation or public desktop endpoint is needed. Desktop initialization failure follows the official SDK's cleanup behavior: it attempts to destroy the new sandbox. Start/resume checks the existing desktop without replacing it.
-
-Desktop scrolling supports vertical steps only (up to 100 per action); horizontal and pixel scrolling are rejected before input. Drag button and duration are preserved through the SDK's mouse methods. Input failures are not replayed automatically. Existing ordinary E2B templates are unchanged.
-
-Screenshots, clicks, moves, drag gestures, step scrolling, literal text and key chords are supported. Key chords accept the Desktop SDK's named keys and lowercase ASCII letters/digits; text delivery depends on the target application and keyboard environment. Observe before acting, and do not repeat an input after an uncertain result. This integration does not start VNC streaming or implement human takeover.
-
-Text uses the Desktop SDK's default typing pace and sends each non-ASCII character in a separate SDK call to avoid dropped or repeated Unicode characters. LF, CRLF and CR line endings become Enter keystrokes, including empty and trailing lines. Enter can submit a form or execute a terminal command; check focus before typing multiline text. The adapter checks `request_timeout_seconds` between text chunks and stops dispatching when the budget expires. An in-flight SDK command retains its own timeout. A timed-out input may be partial and is not replayed. Split long text into smaller actions, observe the result, or use file operations for large documents.
+Select a template containing compatible Envd and desktop runtimes, establish an explicit [Envd connection](remote-envd.md), then configure the Agent's Computer tools and mount permissions separately. `desktop=true` manages desktop resources; EIP method negotiation determines screenshot and input capabilities. The template and management provider prepare fonts, desktop initialization, and human-viewer endpoints. See [Envd Computer use](../a13n-envd/computer-use.md) for input behavior.
 
 Fonts belong to the sandbox template. E2B's default `desktop` template may lack Chinese glyphs even when input reaches the application correctly. Build a compatible template with `fonts-noto-cjk` using the [desktop template example](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py):
 
@@ -242,15 +232,15 @@ uv sync --locked
 uv run python desktop_template.py my-desktop-cjk
 ```
 
-In Console, enable **Desktop environment**, choose **Custom template**, and enter the resulting template ID or `my-desktop-cjk`. Create a new environment from that configuration. Existing sandboxes are unchanged. Font installation happens once during the E2B template build, not during attachment or each input. The operator owns this custom template; Service does not replace E2B's official default. To run the opt-in editor acceptance test, set `A13N_TEST_E2B_API_KEY` and `A13N_TEST_E2B_DESKTOP_CJK_TEMPLATE` to that template before running `make e2b-provider-test`.
+Select the custom desktop template in Console and create a new environment; existing sandboxes stay unchanged. This template example prepares fonts; configure Envd installation, startup, and connection separately. The operator owns the template, and fonts are installed at build time.
 
 ### Daytona
 
 Default file root: `/home/daytona`. The standard sandbox supplies Python; commands select `python3` on the guest PATH. Custom snapshots must supply the selected root and executables. Stop requires confirmed disabled auto-delete; delete waits for terminal destruction rather than accepting the initial acknowledgement. See [Daytona's sandbox example](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/) and [delete semantics](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/).
 
-Set `desktop: true` in a Daytona environment recipe to enable the shared Computer operations. The default snapshot includes the desktop runtime; custom snapshots must supply the [required desktop packages](https://www.daytona.io/docs/en/vnc-access/). Service initializes the desktop when creating or starting the environment. Connecting to an existing environment only checks readiness. This uses Daytona's official Computer Use HTTP API and does not require `a13n-envd` or an additional Python SDK.
+The Daytona management provider prepares a snapshot with Envd and desktop dependencies and checks the selected target during creation or start. Agent Computer operations use EIP. Attaching to an existing target checks readiness; tools are enabled from negotiated Envd capabilities.
 
-Screenshots, clicks, movement, dragging, keyboard input and step scrolling on both axes are available. Enable the Agent's Computer toolset and grant the matching mount permissions separately. For Chinese display, build a snapshot with CJK fonts, such as `fonts-noto-cjk`; input never installs fonts. Interrupted input may be partial and must be reconciled before continuing. This option does not enable Console viewing or human takeover.
+Configure the Agent Computer toolset and mount permissions separately. Preinstall CJK fonts in the snapshot and reconcile interrupted input before continuing. Console viewing and human takeover use a separate desktop-access endpoint.
 
 For Console viewing, Agent-requested assistance and user takeover, build a custom snapshot with the existing desktop access supervisor and CJK fonts:
 
@@ -265,7 +255,7 @@ Daytona's signed preview host opens only port 6081. The supervisor separately en
 
 New Daytona organizations must choose a default region in the Daytona dashboard before creating sandboxes. The connection's region does not replace that account setup requirement.
 
-For opt-in desktop acceptance, provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` privately, set `A13N_TEST_DAYTONA_DESKTOP=1`, and run `uv run --locked pytest packages/a13n-service/tests/environment_providers/test_daytona_desktop_live.py`. The test creates a billable sandbox, checks native input and stop/resume, then deletes its target in cleanup. Set `A13N_TEST_DAYTONA_SNAPSHOT` to the custom snapshot and also run `packages/a13n-service/tests/environment_providers/test_daytona_access_live.py` to verify server-side read-only enforcement, established-connection revocation, lease expiry and generation invalidation after restart. These provider checks are separate from a full Console/Agent handoff acceptance.
+The existing `test_daytona_desktop_live.py` covers the legacy vendor-native Computer adapter and needs Envd execution coverage during migration. `test_daytona_access_live.py` checks the human-viewer endpoint for read-only enforcement, connection revocation, and lease expiry. These billable-target tests are separate from full Console/Agent handoff acceptance.
 
 ### Modal
 

@@ -60,25 +60,25 @@ manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 
 ## 内置 provider
 
-操作有两条路线：**Native** 直接使用宿主 OS 或厂商 API；**Envd** 在不同部署和连接方式下复用同一套 EIP 操作实现。
+执行能力分为 Native 基础路径和 Envd 通用路径，资源管理按供应商保留独立实现。完整模型见[选择后端](index.md#choose-a-backend)。
 
-| 路线   | Provider         | 适用场景                 | 操作与归属边界                                 |
-| ------ | ---------------- | ------------------------ | ---------------------------------------------- |
-| Native | `direct_local`   | 可信本地自动化           | 宿主 OS 操作；已有目录，不承诺沙箱隔离         |
-| Native | `e2b`            | 原生托管云沙箱           | E2B SDK；创建、暂停、恢复、续期和销毁沙箱      |
-| Native | `daytona`        | 云沙箱                   | 原生停止/启动并保留文件                        |
-| Native | `modal`          | 云沙箱                   | 基于快照停止/恢复；固定运行寿命                |
-| Native | `vercel`         | 云沙箱                   | 具有原生会话的命名持久沙箱                     |
-| Native | `sprites`        | 云沙箱                   | 持久磁盘与自动休眠/唤醒                        |
-| Native | `runloop`        | 云沙箱                   | Devbox 挂起/恢复和空闲保活                     |
-| Envd   | `local_envd`     | CLI 和本地 agent         | 共享 Host 设备；关闭适配器结束自身会话         |
-| Native | `docker`         | 单机服务                 | Docker Engine 生命周期和 exec；关闭后保留容器  |
-| Envd   | `http_envd`      | 网络可达的外部守护进程   | HTTP(S) EIP；仅连接                            |
-| Envd   | `websocket_envd` | 主动连接 Host 的守护进程 | 反向 WebSocket EIP；与 Host 集成的 SDK，仅连接 |
+| 执行路径      | Provider         | 执行能力                                             | 资源管理              |
+| ------------- | ---------------- | ---------------------------------------------------- | --------------------- |
+| Native        | `direct_local`   | 本地 Host 上的 Files & Shell                         | Host 管理的已有目录   |
+| Native / Envd | `docker`         | Native Files & Shell；显式选择 HTTP EIP 使用通用执行 | Docker provider       |
+| Native        | `e2b`            | 远程沙箱中的 Files & Shell                           | E2B provider          |
+| Envd          | `local_envd`     | 通过 stdio 连接本地守护进程                          | Host 管理的守护进程   |
+| Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
+| Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
+| Envd          | `vercel`         | 通过 EIP 连接兼容的沙箱守护进程                      | Vercel provider       |
+| Envd          | `sprites`        | 通过 EIP 连接兼容的沙箱守护进程                      | Sprites provider      |
+| Envd          | `runloop`        | 通过 EIP 连接兼容的沙箱守护进程                      | Runloop provider      |
+| Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
+| Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
-Direct Local 共享 Host 账号。Docker 使用原生 Engine 操作；六个云 provider 使用厂商原生传输。它们都无需 Envd。本地和远程 Envd provider 使用 EIP 执行 agent 操作。
+Native Local、Docker、E2B 直接提供 Files & Shell。Daytona、Modal、Vercel、Sprites、Runloop 的通用执行统一使用 Envd/EIP；各自的资源管理 provider 继续使用厂商 API。Docker 保留显式的 Native 和 Envd 路径。
 
-单独部署 Envd 时，参见 E2B、Runloop、Vercel、Daytona 和两个 Modal 运行时的[沙箱验证记录](../a13n-envd/egress.md#cloud-platform-validation-record)。它记录被测二进制文件、启动身份、出站网络覆盖和平台限制，不表示这些原生 provider 会启动 Envd 或配置其出站网络策略。
+部署 Envd 前，检查[沙箱验证记录](../a13n-envd/egress.md#cloud-platform-validation-record)中的启动身份、出站网络覆盖和平台限制。执行能力由守护进程协商结果与 Host 策略决定。
 
 多租户授权和容器分配仍由 Host 负责。一个设备支持多个并发独立会话；会话不是租户分区。Host 共享设备连接，为每个适配器选择固定 cwd，只有 Host 关闭时才关闭共享运行时。
 
@@ -129,7 +129,7 @@ Docker 目标配置接受 `pull_policy="if_missing"`（默认）或 `"never"`。
 
 ## 云 provider
 
-E2B（`e2b`）、Daytona（`daytona`）、Modal（`modal`）、Vercel Sandbox（`vercel`）、Fly.io Sprites（`sprites`）和 Runloop（`runloop`）无需安装 Envd 即可提供云执行。全部支持文件和 shell 命令；E2B 还支持进程观测、stdin、保留 SDK 文本输出和回环端口。Service 提供全部六种环境 provider；其 E2B 账号通过域名选择 E2B 云或其他 E2B 兼容服务（[Service 环境](../a13n-service/environments.md#providers)）。
+E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。E2B 提供 Native Files & Shell；其余五种使用通用 Envd 执行路径。E2B 目标需要进阶能力时，也通过兼容的 Envd 连接使用这些能力。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
 
 | Provider       | 后端设置                                                              | 凭据字段                         | 常用目标配置设置                                                              |
 | -------------- | --------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
@@ -142,7 +142,7 @@ E2B（`e2b`）、Daytona（`daytona`）、Modal（`modal`）、Vercel Sandbox（
 
 使用拥有所提供凭据的组织、团队或 Modal `workspace`；这些字段描述后端命名空间，不授予权限。凭据绝不属于目标配置或重连状态。
 
-Daytona、Modal、Vercel、Sprites 和 Runloop 目标配置接受 `root`、`python`、`shell`，以及有界请求/文件/输出设置。`python` 指定客体 PATH 上的可执行文件或客体绝对路径，绝不发现 Host 可执行文件。自定义镜像和快照必须包含 Linux、带标准库的 Python 3 和所选 shell。根目录将 `/notes.txt` 等文件路径映射到该客体目录；shell 执行保留原生客体用户权限。默认 Modal 镜像使用 `/usr/local/bin/python3`；Vercel 默认根目录为 `/vercel/sandbox`。这五个 provider 不声明进程句柄、端口、保留输出、交互 stdin、逐命令网络拒绝，或墙钟时间之外的资源限制。不支持的请求在命令执行前失败。
+Daytona、Modal、Vercel、Sprites 和 Runloop 的管理 provider 负责准备目标、兼容的 Envd 运行时和授权连接。镜像和快照可预装守护进程。文件路径、命令、进程和输出语义由 EIP 提供；OS sandbox 和 Egress 按 Host 选择的策略执行。能力以实际协商结果为准。现有目标引用与配置的迁移必须显式进行，不能将旧的原生执行配置静默解释为 Envd 配置。
 
 ### 重连与生命周期
 
@@ -159,11 +159,11 @@ Host 保存最新 `EnvironmentState` 并将其交给固定目标连接配置。�
 
 Modal 的停止会先保存文件系统快照，显式 `start()` 才从该快照恢复目标，并返回恢复后的引用。`open()` 不执行恢复或快照清理。快照删除需要匹配原生所有权标签。外部注册只提供连接配置；销毁权限属于独立管理端，不能从状态引用推导。
 
-创建被中断时，通过原生名称或所有权元数据核对。已分派但结果未知的命令不重放。Daytona、Modal、Vercel、Sprites 和 Runloop 的每个前台命令都有有限客体期限；传输丢失或取消不能证明命令立即停止。取消关闭本地传输资源；客体命令 runner 限制前台命令并终止其进程组。这不是沙箱级进程隔离：故意分离到新会话的后代需要原生目标生命周期清理。超时输出不完整，不会虚构生产方总量。Modal SDK 用稳定 exec ID 重试原生命令，用稳定快照请求 ID 重试文件系统快照。
+创建中断后，管理 provider 通过原生名称或归属元数据核对目标。命令派发结果未知时不自动重放。Envd 路径统一使用 EIP 的命令期限、取消、输出和 Session 清理语义；资源停止与销毁仍由各供应商的管理 provider 执行。
 
 ### E2B 运行时
 
-E2B 通过原生异步 SDK 直接执行命令。有界 Python helper 只实现文件和端口检查。默认 `base` 模板无需安装 `a13n-envd`、上传可执行文件或构建自定义模板。自定义模板需要 Linux、Python 3.11+、Bash，以及配置的账号/根目录；git-ignore 查询还需要 Git。
+E2B 通过原生异步 SDK 直接执行命令。有界 Python helper 实现文件操作。默认 `base` 模板无需安装 `a13n-envd`、上传可执行文件或构建自定义模板。自定义模板需要 Linux、Python 3.11+、Bash，以及配置的账号/根目录；git-ignore 查询还需要 Git。
 
 此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
 
@@ -202,7 +202,7 @@ result = await executable.run("Inspect the sandbox", environment=PreparedSource(
 
 E2B 使用原生登录 Bash，因此不支持直接 argv、显式非登录模式和移除环境变量。原生 stdin 有逐请求大小上限，不是跨执行配额。支持原生 kill；不支持 interrupt/terminate、进程树验证和逐命令硬期限。逐命令墙钟限制（`limits.wall_time_seconds`，或 shell 工具的 `execution_timeout_seconds`）在启动命令前被拒绝。SDK 连接/请求等待、Harness 工具等待和沙箱过期是不同限制。命令在无 observer 时运行，仍受沙箱 TTL 约束。
 
-隔离边界是 E2B 沙箱。文件根映射不限制获准 shell 命令。不支持逐命令 CPU、内存和进程数限制。逐命令网络拒绝要求整个沙箱设置 `allow_internet_access=False`，不能追加到已启用互联网的沙箱。端口检查只支持回环 TCP。追加和补丁不保证并发 compare-and-swap。
+隔离边界是 E2B 沙箱。文件根映射不限制获准 shell 命令。不支持逐命令 CPU、内存和进程数限制。逐命令网络拒绝要求整个沙箱设置 `allow_internet_access=False`，不能追加到已启用互联网的沙箱。追加和补丁不保证并发 compare-and-swap。
 
 在 Host 进程环境中设置 `E2B_API_KEY` 后运行示例：
 
@@ -217,21 +217,11 @@ uv run python -m a13n_environment_example.e2b
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
 
-### E2B 原生桌面 {#native-e2b-desktop}
+### E2B 桌面准备 {#e2b-desktop-preparation}
 
-使用已有 E2B 连接，在创建模板时启用**桌面环境**。内置桌面选项使用 E2B 的 `desktop` 模板，也可明确选择兼容的自定义模板。对应配置为：
+E2B provider 负责创建和恢复桌面资源。Native Execution 保持 Files & Shell 范围；Agent Computer use 通过通用 Envd 路径执行。
 
-```json
-{"desktop": true, "template": "desktop", "desktop_width": 1280, "desktop_height": 800}
-```
-
-Service 使用官方 `e2b-desktop` SDK 创建桌面并执行截图、点击、文字输入和鼠标手势。普通命令与文件操作继续使用基础异步 E2B SDK。Agent 的 Computer 工具与挂载的具体 Computer 权限需单独配置，无需安装 a13n-envd 或公开桌面端口。桌面初始化失败时遵循官方 SDK 的清理行为：尝试销毁新建沙箱。启动或恢复时检查已有桌面，不会替换它。
-
-桌面滚动仅支持垂直步进，每次最多 100 步；水平滚动和像素滚动会在输入前被拒绝。拖拽的按钮和持续时间通过 SDK 鼠标方法保留。输入失败不会自动重放。现有普通 E2B 模板行为不变。
-
-支持截图、点击、移动、拖拽、按步滚动、文本和组合键。组合键接受 Desktop SDK 定义的按键名称和小写 ASCII 字母、数字；文本是否正确进入应用取决于目标应用和键盘环境。操作前先观察，结果不确定时不要重复输入。本次接入不启动 VNC，也不包含人工接管。
-
-文本保持 Desktop SDK 默认输入速度，并将非 ASCII 字符逐个交给 SDK，避免 Unicode 字符丢失或重复。LF、CRLF 和 CR 换行转换为 Enter 按键，包括空行和末尾换行。Enter 可能提交表单或执行终端命令，输入多行文本前需确认焦点。适配器在文本分块之间检查 `request_timeout_seconds`，超时后停止发送；正在执行的 SDK 命令仍受其自身超时限制。超时输入可能只完成了一部分，不会自动重放。长文本应拆成较小的操作并观察结果，大型文档应使用文件操作。
+选择包含兼容 Envd 和桌面运行时的模板，为目标建立显式的 [Envd 连接](remote-envd.md)，再分别配置 Agent 的 Computer 工具和挂载权限。`desktop=true` 管理桌面资源，具体截图和输入能力由 EIP 方法协商。字体、桌面初始化和人工查看端点由模板及管理 provider 准备。输入行为见 [Envd Computer use](../a13n-envd/computer-use.md)。
 
 字体由沙箱模板提供。E2B 默认 `desktop` 模板可能缺少中文字形，即使文字已正确输入也会显示方框。使用[桌面模板示例](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py)构建安装了 `fonts-noto-cjk` 的兼容模板：
 
@@ -242,15 +232,15 @@ uv sync --locked
 uv run python desktop_template.py my-desktop-cjk
 ```
 
-在 Console 中开启**桌面环境**，选择**自定义模板**，填入构建结果的模板 ID 或 `my-desktop-cjk`，再按此配置创建新环境。已有沙箱不变。字体仅在 E2B 模板构建时安装，不会在连接或每次输入时安装。自定义模板由操作者维护，Service 不替换 E2B 官方默认模板。运行真实编辑器验收前，设置 `A13N_TEST_E2B_API_KEY` 和指向该模板的 `A13N_TEST_E2B_DESKTOP_CJK_TEMPLATE`，然后执行 `make e2b-provider-test`。
+在 Console 中选择自定义桌面模板后，创建新环境；已有沙箱保持不变。这个模板示例负责字体准备，Envd 的安装、启动和连接需另行配置。模板由操作者维护，字体在构建时安装。
 
 ### Daytona
 
 默认文件根目录：`/home/daytona`。标准沙箱提供 Python；命令选择客体 PATH 上的 `python3`。自定义快照必须提供所选根目录和可执行文件。停止要求确认已禁用自动删除；删除等待最终销毁，不只接受初始确认。参见 [Daytona 沙箱示例](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/)和[删除语义](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)。
 
-在 Daytona 环境配置中设置 `desktop: true`，即可启用共享 Computer 操作。默认 snapshot 包含桌面运行环境；自定义 snapshot 必须提供[所需桌面软件包](https://www.daytona.io/docs/en/vnc-access/)。Service 在创建或启动环境时初始化桌面，连接已有环境仅检查就绪状态。该实现使用 Daytona 官方 Computer Use HTTP API，不需要 `a13n-envd` 或额外的 Python SDK。
+Daytona 的管理 provider 准备包含 Envd 和桌面依赖的 snapshot，并在创建或启动时检查所选目标。Agent Computer 操作通过 EIP 执行。连接已有目标只检查就绪状态；工具能力按 Envd 协商结果启用。
 
-支持截图、点击、移动、拖拽、键盘输入和双轴步进滚动。Agent 的 Computer 工具集与挂载权限仍需分别配置。要显示中文，请在 snapshot 中预装 `fonts-noto-cjk` 等中文字库；输入操作不会安装字体。输入中断可能留下部分结果，必须核对后再继续。这个选项不启用 Console 桌面查看或人工接管。
+分别配置 Agent Computer 工具集和挂载权限。中文字体由 snapshot 预装；输入中断后先核对结果。Console 查看与人工接管使用独立的桌面访问端点。
 
 要启用 Console 查看、Agent 请求人工协助和用户主动接管，先构建预装现有桌面访问 supervisor 和中文字体的 snapshot：
 
@@ -265,7 +255,7 @@ Daytona 的签名预览域名仅开放 6081 端口，supervisor 另行强制执�
 
 新建的 Daytona 组织需要先在 Daytona 控制台设置默认区域，才能创建沙箱；连接中的区域字段不能替代这个账号初始化步骤。
 
-要运行真实桌面验收，请通过私有环境提供 `A13N_TEST_DAYTONA_BACKEND_JSON` 和 `A13N_TEST_DAYTONA_CREDENTIAL_JSON`，设置 `A13N_TEST_DAYTONA_DESKTOP=1`，然后执行 `uv run --locked pytest packages/a13n-service/tests/environment_providers/test_daytona_desktop_live.py`。测试会创建计费沙箱，检查原生输入和停止／恢复，最后清理目标。 将 `A13N_TEST_DAYTONA_SNAPSHOT` 指向自定义 snapshot，并额外运行 `packages/a13n-service/tests/environment_providers/test_daytona_access_live.py`，可验证服务端只读限制、已有连接撤销、租约到期和重启后旧代际失效。这些 Provider 检查与完整的 Console／Agent 交接验收分别进行。
+现有 `test_daytona_desktop_live.py` 覆盖旧的厂商原生 Computer 适配器；迁移时需改为验证 Envd 执行。`test_daytona_access_live.py` 验证人工查看端点的只读限制、连接撤销和租约到期。这些付费目标测试与完整 Console／Agent 交接验收分别执行。
 
 ### Modal
 

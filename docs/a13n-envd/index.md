@@ -1,10 +1,10 @@
 ---
 title: Envd
 sidebarTitle: Overview
-description: The native daemon for files, commands, processes, ports, and opt-in desktop actions over EIP.
+description: General execution over EIP, with OS sandbox and Egress policy enforcement, Computer use, and Device metrics.
 ---
 
-Envd (`a13n-envd`) serves the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection.
+Envd (`a13n-envd`) is the general execution path for Files & Shell, **OS sandbox** and **Egress** policy enforcement, **Computer use**, and **metrics collection**. It serves the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection. The Host selects execution policy and owns product authorization; Envd enforces the selected boundary and reports Device observations. Vendor-specific Environment Providers continue to manage target resources and prepare connections.
 
 Connect Agents through [Harness Environment Providers](../environments/index.md), or use the [Python EIP client](python-client.md) directly.
 

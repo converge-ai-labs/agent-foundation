@@ -5,6 +5,8 @@ description: Supply Host-owned sources that prepare Environments on first use.
 
 Harness owns Environment execution and shared types; Service owns target management. The Host supplies an `EnvironmentSource`: its `ensure_ready()` completes management and returns a fixed-target `EnvironmentConnector`. Harness owns Run-local mounts, permissions, routing, and execution cleanup.
 
+Choose **Native Execution** for quick deployment with Files & Shell: Local direct access, Docker local containerization, or E2B remote sandboxes. Choose **Envd Execution** for the general path, including OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Each managed vendor retains its own resource management provider. See the [execution model](../environments/index.md#choose-a-backend) for route selection and migration status.
+
 ## Start without an Environment
 
 ```python

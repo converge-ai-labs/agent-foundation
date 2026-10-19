@@ -21,7 +21,7 @@ executable = HarnessBuilder().build(
 )
 ```
 
-Supply a Host-owned `EnvironmentSource` to each `run(..., environment=...)`, or use `environments={...}` for named mounts. Harness prepares targets on first use and opens and closes fresh executions; your application selects their configuration, current state, access policy, and when to destroy a backing target. See [Environments](../../docs/a13n-harness/environments.md) and [Capabilities](../../docs/a13n-harness/capabilities.md).
+Supply a Host-owned `EnvironmentSource` to each `run(..., environment=...)`, or use `environments={...}` for named mounts. Harness invokes the source’s readiness preparation on first use, then opens and closes fresh fixed-target executions; your application selects their configuration, current state, access policy, and when to destroy a backing target. See [Environments](../../docs/a13n-harness/environments.md) and [Capabilities](../../docs/a13n-harness/capabilities.md).
 
 ## Model construction
 

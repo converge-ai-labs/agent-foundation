@@ -113,6 +113,6 @@ connector 的 `open()` 返回就绪执行对象后，获取其可选 `processes`
 
 ## 端口与生命周期
 
-可选 `ports` 接口支持 `inspect(PortTarget(...))` 和 `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`。`PortTarget` 包含地址选择（默认 `loopback` 或 `any`）和 1–65,535 的端口。这是观测，不是公共入口/隧道服务，也不是暴露端口的许可。
+通用 Envd 路径提供可选 `ports` 接口，它属于 Native Files & Shell 之外的能力。该接口支持 `inspect(PortTarget(...))` 和 `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`。`PortTarget` 包含地址选择（默认 `loopback` 或 `any`）和 1–65,535 的端口。这是观测，不是公共入口/隧道服务，也不是暴露端口的许可。
 
 provider 配置和实际描述符决定支持范围。将[生命周期恢复](lifecycle.md)与命令重放分开，每个独立范围使用新适配器并在结束后关闭。关闭释放本地资源，不表示销毁保留目标。

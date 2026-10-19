@@ -19,6 +19,8 @@ description: 分别配置 provider 的目标、后端连接和凭据。
 
 [生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。
 
+[执行模型](index.md#choose-a-backend)定义 Native Files & Shell 与 Envd 通用执行的能力边界。[配置参考](configuration-reference.md)从当前模型生成，仍包含迁移前的字段；选择路径时以执行模型为准，迁移已有配置需显式进行。
+
 ## Host 出站连接
 
 在 Host 进程环境中设置 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 或小写形式。这些可信设置路由 Host 自有 HTTP 连接，不控制设备命令流量。
@@ -29,7 +31,7 @@ TLS 默认启用验证。在构建自有 HTTP 客户端前设置 `A13N_OUTBOUND_
 
 ## Direct Local
 
-`DirectLocalEnvironmentConfiguration` 要求绝对路径 `root.path`。根目录始终可写；仅供参考的挂载通过 Harness 权限上限禁止写操作。基础配置仅支持文件：shell 配置、允许的可执行文件和端口默认均为空。
+`DirectLocalEnvironmentConfiguration` 要求绝对路径 `root.path`。根目录始终可写；仅供参考的挂载通过 Harness 权限上限禁止写操作。基础配置仅支持文件：shell 配置和允许的可执行文件默认均为空。
 
 要启用单个可执行文件，参考[完整命令示例](commands.md)。需要 shell 语法时，配置绝对 shell 路径和 profile ID、可选固定参数、`posix` 或 `powershell` 方言，以及显式登录许可。profile ID 必须唯一。PowerShell profile 不能启用登录模式。
 
@@ -51,7 +53,7 @@ Host 管理一个共享 `LocalEnvdProviderRuntime`、其二进制文件、启动
 
 使用原生执行且省略 `user` 时，provider 使用镜像标签 `ai.a13n.environment.user`；没有该标签的自定义镜像沿用镜像 USER。`a13n-sandbox` 选择 `sandbox`（UID/GID 1000）；recipe 显式设置的 `user` 优先。
 
-Service 的 `DockerRecipe` 默认采用 `execution="native"`，使用 Docker exec。选择 `execution="envd_http"` 可通过 HTTP EIP 使用镜像管理的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
+Service 的 `DockerRecipe` 默认采用 `execution="native"`，通过 Docker exec 提供 Files & Shell。选择 `execution="envd_http"` 可通过 HTTP EIP 使用镜像管理的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
 
 私有容器文件系统提供 `/workspace`。可选绑定挂载包含 Docker Engine 所在机器上已存在的绝对 `source`、容器 `target` 和 `read_only` 标志（默认 true）。不能替换 `/workspace` 或私有命令元数据。命名卷不是目标配置选项；销毁时保留外部数据。
 

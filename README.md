@@ -74,6 +74,8 @@ Build your agent stack in Console: choose model providers, web data services, ex
 | **Environments** | [Docker and hosted sandboxes](docs/a13n-service/environments.md#providers), including E2B, Daytona, Modal, Runloop, Sprites, and Vercel. |
 | **Connections**  | [Browse remote MCP servers](docs/a13n-service/tools.md#remote-mcp-servers) or connect your own compatible endpoint.                      |
 
+[Environment execution](docs/environments/index.md#choose-a-backend) has two paths: Native Local/Docker/E2B for quick setup with Files & Shell, and Envd for general execution with OS sandbox, Egress, Computer use, and Device metrics. Each infrastructure vendor retains its resource management provider.
+
 *Explore the full-size screenshots in the linked guides. The Local directory environment is available only in development.*
 
 ## Sign in with ChatGPT

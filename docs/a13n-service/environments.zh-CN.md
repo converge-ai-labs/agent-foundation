@@ -8,6 +8,8 @@ description: 让 agent 在托管沙箱或你自己的机器上工作。
 - **托管环境：** Service 根据**模板** 创建、启动、停止和删除，例如为每个线程创建一个 Docker 容器。
 - **外部目标：** 由你自行运行 `a13n-envd` 守护进程的计算机，Service 只负责连接。
 
+每个托管供应商保留资源管理 provider，负责创建、检查、启停、销毁、续期和连接准备。执行遵循[共享模型](../environments/index.md#choose-a-backend)：Native Local/Docker/E2B 提供适合快速搭建的 Files & Shell；Envd 提供通用执行及 OS sandbox、Egress、Computer use 和设备指标。
+
 线程**挂载** 环境。每次运行在被接收时固定线程挂载，并一直使用到结束。没有挂载环境时，agent 没有文件或终端工具。
 
 Console 的 **Environments → Templates** 管理模板，**Environments → Instances** 列出环境；provider 位于 **Workspace settings → Providers → Environment** 。下文所有 API 路径均位于 `/api/v1` 下。
@@ -235,7 +237,7 @@ Agent 可以主动暂停并请人操作桌面。Console 的协助卡片提供“
 
 | Provider | 桌面访问前提                                                                                                                                                                                                          |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2B      | 预装桌面访问端点的自定义模板。普通官方 `desktop` 模板支持 Computer 操作，但不包含该端点。                                                                                                                             |
+| E2B      | 预装桌面访问端点的自定义模板。普通官方 `desktop` 模板需要补充查看端点；Agent Computer use 还需要兼容的 Envd 执行。                                                                                                    |
 | Docker   | 兼容的桌面镜像及 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，由部署方将路由转发到各容器的 6081 端口。连接 Docker Engine 或 Envd 不能替代浏览器访问路由；仅回环地址允许明文 WS。     |
 | Daytona  | 自定义 `snapshot`，预装并在启动时运行桌面访问 supervisor。Service 通过签名预览路由访问 6081 端口；supervisor 负责只读权限及强制断开已撤销的控制连接。参见 [snapshot 构建说明](../environments/providers.md#daytona)。 |
 

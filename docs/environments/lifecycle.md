@@ -15,7 +15,7 @@ The Host manages a target and saves the result before its source returns a fixed
 
 A connector can serve several Runs. Every `open()` creates a separate execution. Opening, readiness checks, and execution cleanup never create, start, replace, or renew the target. A lost saved target fails instead of selecting another resource with the same name.
 
-`close()` releases only resources owned by that object. Native process survival follows the Provider contract: E2B disconnects observations, while Direct Local cleans up processes it started. Target retention and destruction remain Host decisions.
+`close()` releases only resources owned by that object. Process survival follows the execution path: Native Docker and E2B disconnect observations, Direct Local cleans up its owned processes, and Envd cleans up Session-owned resources. Target retention and destruction remain Host decisions.
 
 ## Manage and publish before execution
 

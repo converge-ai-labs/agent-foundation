@@ -113,6 +113,6 @@ When full output matters beyond an observation budget, write an application log 
 
 ## Ports and lifecycle
 
-The optional `ports` facet supports `inspect(PortTarget(...))` and `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`. `PortTarget` carries address selection (`loopback` by default or `any`), and port 1–65,535. This is observation, not a public ingress/tunnel service or permission to expose a port.
+The general Envd path provides an optional `ports` facet, beyond Native Files & Shell. It supports `inspect(PortTarget(...))` and `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`. `PortTarget` carries address selection (`loopback` by default or `any`), and port 1–65,535. This is observation, not a public ingress/tunnel service or permission to expose a port.
 
 Provider configuration and actual descriptors determine support. Keep [lifecycle recovery](lifecycle.md) separate from command replay, and close a fresh adapter after each independent scope. Close releases local resources; it does not imply retained target destruction.

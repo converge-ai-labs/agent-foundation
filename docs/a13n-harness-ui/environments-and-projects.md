@@ -3,6 +3,8 @@ title: Environments and Projects
 description: Choose execution permissions, work in Projects, connect Devices, and define custom Environment profiles.
 ---
 
+Harness UI uses the [shared execution model](../environments/index.md#choose-a-backend). Direct is Native Local Files & Shell for quick setup. Envd is the general path for OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Custom Docker and E2B Native profiles retain the same Files & Shell scope; vendor resource management stays with the Host.
+
 ## Execution permissions
 
 **Full Control** runs as your host account with ambient filesystem and network authority. Its default **Direct** runtime does not download or launch `a13n-envd`. Direct uses the Direct Local Provider, which executes natively on Linux, macOS, and Windows without WSL. Windows uses PowerShell (`pwsh`, then Windows PowerShell), UTF-8 text streams, and a Job Object that owns the command's descendants. Cancellation, timeout, and exit clean up that owned tree. Portable interrupt signals are unavailable on Windows; cancellation uses tree termination instead. Full Control remains host-account execution, not a sandbox.

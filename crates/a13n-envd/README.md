@@ -50,7 +50,7 @@ The default directory must exist; when omitted, it is captured from the daemon s
 
 `A13N_ENVD_TRANSPORT` defaults to `stdio` and also accepts `http` or `reverse_websocket`. HTTP requires a bind address, credential file, and either native TLS or explicit loopback/private-link plaintext scope. Reverse WebSocket requires a Host URL and credential file. The daemon exposes no inbound WebSocket, browser, generic HTTP, or health endpoint. Readiness is an EIP operation. Stdio stdout is reserved for protocol frames; diagnostics go to stderr.
 
-Linux deployments can separately enable [read-only resource monitoring](../../docs/a13n-envd/configuration.md#resource-monitoring). A dedicated authenticated HTTP listener serves cached system CPU/memory, explicitly selected cgroup v2, and filesystem-capacity observations alongside any EIP carrier. Monitoring defaults off and uses a distinct credential; it does not create Sessions or retain history.
+Envd provides [read-only Device metrics](../../docs/a13n-envd/configuration.md#resource-monitoring) on Linux, macOS, and Windows over the existing EIP connection and authentication. The outer daemon collects cached CPU/memory and configured filesystem samples, with optional cgroup v2 samples on Linux. `device.metrics` reads observations without opening a Session. The `connect` launcher enables default sampling; other launches enable it through `monitoring` configuration. The daemon retains the latest sample rather than a history.
 
 The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootstrap fields and limits. The [Python client guide](../../docs/a13n-envd/python-client.md) shows shared Device ownership and independent Session scopes.
 
