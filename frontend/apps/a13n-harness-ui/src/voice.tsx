@@ -79,14 +79,14 @@ export function VoiceIndicator() {
           </>
         ) : (
           <Button
-            size="sm"
+            size="icon-sm"
             variant="ghost"
+            title={voice.status === "failed" ? "Retry voice" : "Start voice"}
             onClick={() => void voice.start()}
             disabled={settings.isPending || !settings.data?.enabled}
             aria-label="Start voice"
           >
             <Microphone size={16} />
-            {voice.status === "failed" ? "Retry voice" : "Start voice"}
           </Button>
         )}
       </div>

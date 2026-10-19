@@ -22,6 +22,7 @@ from a13n_service.runs.schemas import (
     SessionUpdate,
     SessionView,
 )
+from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -108,6 +109,7 @@ async def find_session(session: AsyncSession, workspace_id: str, session_id: str
 
 async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, filters: SessionQuery) -> SessionPage:
     """Most recently updated first: a run's acceptance or a label edit updates a session."""
+    match = predicate(RunRow.search_vector, filters.text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(SessionRow).where(
@@ -132,6 +134,10 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
                 query = query.where(RunRow.status.in_(filters.status))
             if filters.trigger:
                 query = query.where(RunRow.trigger.in_(filters.trigger))
+        if match is not None:
+            query = query.where(
+                SessionRow.id.in_(select(RunRow.session_id).where(RunRow.workspace_id == scope.workspace_id, match))
+            )
         rows, next_cursor = await cursors.keyset_page(
             session,
             query,

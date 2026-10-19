@@ -157,6 +157,9 @@ def open_storage(config: Database) -> Storage:
 async def open_runtime(
     stack: AsyncExitStack, distribution: Distribution, config: Settings, *, executes: bool
 ) -> Runtime:
+    from a13n_service.runs.search import initialize
+
+    await asyncio.to_thread(initialize)
     storage = open_storage(config.database)
     stack.push_async_callback(storage.close)
     redis = Redis.from_url(

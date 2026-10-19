@@ -138,3 +138,24 @@ async def test_history_migration_preserves_existing_rows_and_guards_order(databa
                 )
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("invalid_index", [False, True])
+def test_run_search_migration_retries_after_concurrent_index_build(
+    empty_database: Database, invalid_index: bool
+) -> None:
+    upgrade(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        # The additive DDL and concurrent build committed, but the process died before stamping its revision.
+        command.stamp(config, "2e9655a2d223")
+        if invalid_index:
+            connection = config.attributes["connection"]
+            connection.execute(
+                text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'ix_runs_search_vector'::regclass")
+            )
+            connection.commit()
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    assert rows(
+        empty_database, "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_runs_search_vector'::regclass"
+    ) == [("true",)]

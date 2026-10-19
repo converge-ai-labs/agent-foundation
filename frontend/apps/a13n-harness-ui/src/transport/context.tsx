@@ -1,6 +1,11 @@
 import { createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { result, type Transport } from "./client";
+import { result, type Transport, type Schema } from "./client";
+
+export const GuestAccessContext = createContext<Schema<"ShareAccess"> | null>(
+  null,
+);
+export const useGuestAccess = () => useContext(GuestAccessContext);
 
 export const TransportContext = createContext<Transport | null>(null);
 export function useTransport() {
@@ -9,34 +14,38 @@ export function useTransport() {
   return transport;
 }
 export function useStatus(refetchInterval?: number) {
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   return useQuery({
     queryKey: ["status"],
+    enabled: !shareId,
     refetchInterval,
     queryFn: ({ signal }) => result(client.GET("/api/status", { signal })),
   });
 }
 export function useSources() {
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   return useQuery({
     queryKey: ["sources"],
+    enabled: !shareId,
     queryFn: ({ signal }) =>
       result(client.GET("/api/configuration/sources", { signal })),
   });
 }
 export function useSelectors() {
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   return useQuery({
     queryKey: ["selectors"],
+    enabled: !shareId,
     queryFn: ({ signal }) => result(client.GET("/api/selectors", { signal })),
   });
 }
 export function useProjects() {
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   const setup = useSetup();
   const cwd = setup.data?.suggested_project_path;
   return useQuery({
     queryKey: ["projects"],
+    enabled: !shareId,
     queryFn: ({ signal }) => result(client.GET("/api/projects", { signal })),
     // Default presentation only; explicit browser ordering still takes precedence.
     select: (projects) =>
@@ -46,9 +55,10 @@ export function useProjects() {
   });
 }
 export function useSetup() {
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   return useQuery({
     queryKey: ["setup"],
+    enabled: !shareId,
     queryFn: ({ signal }) => result(client.GET("/api/setup", { signal })),
   });
 }

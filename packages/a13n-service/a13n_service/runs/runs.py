@@ -32,6 +32,7 @@ from a13n_service.runs.schemas import (
     RunView,
 )
 from a13n_service.runs.seal import stop
+from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.tenancy.access import workspace_scope
@@ -125,6 +126,7 @@ async def list_thread_runs(
 async def list_runs(
     storage: Storage, actor: Principal, workspace_id: str, filters: RunQuery
 ) -> RunPage | read_views.RunSummaryPage:
+    match = predicate(RunRow.search_vector, filters.text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(RunRow).where(RunRow.workspace_id == scope.workspace_id)
@@ -135,6 +137,8 @@ async def list_runs(
             query = query.where(RunRow.created_at >= filters.created_after)
         if filters.created_before is not None:
             query = query.where(RunRow.created_at < filters.created_before)
+        if match is not None:
+            query = query.where(match)
         owner = cursors.query_owner(
             scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor", "view"})
         )

@@ -79,3 +79,25 @@ it("terminates the entire access lifetime on rejected socket authentication", as
   });
   transport.close();
 });
+
+it.each([undefined, "share-one"])(
+  "preserves secure realtime URLs for owner and guest (%s)",
+  (shareId) => {
+    vi.stubGlobal("window", { location: { origin: "https://example.test" } });
+    const socket = mockWebSocket();
+    const transport = createTransport("test-key", vi.fn(), shareId);
+    transport.realtime.subscribe({
+      stream: "focus",
+      root: "thread-one",
+      cursor: () => undefined,
+      receive: vi.fn(),
+      state: vi.fn(),
+    });
+    expect(String(socket().url)).toBe(
+      shareId
+        ? "wss://example.test/api/shared/share-one/realtime/connect"
+        : "wss://example.test/api/realtime/connect",
+    );
+    transport.close();
+  },
+);

@@ -30523,6 +30523,25 @@
         "operationId": "list_runs_api_v1_runs_get",
         "parameters": [
           {
+            "description": "All search terms must match one run's retained user/assistant text",
+            "in": "query",
+            "name": "text_query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "All search terms must match one run's retained user/assistant text",
+              "title": "Text Query"
+            }
+          },
+          {
             "in": "query",
             "name": "agent_id",
             "required": false,
@@ -32859,6 +32878,25 @@
       "get": {
         "operationId": "list_sessions_api_v1_sessions_get",
         "parameters": [
+          {
+            "description": "All search terms must match one run's retained user/assistant text",
+            "in": "query",
+            "name": "text_query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "All search terms must match one run's retained user/assistant text",
+              "title": "Text Query"
+            }
+          },
           {
             "description": "A session or thread ID",
             "in": "query",
@@ -35227,6 +35265,23 @@
                 }
               ],
               "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "text_query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Query"
             }
           },
           {

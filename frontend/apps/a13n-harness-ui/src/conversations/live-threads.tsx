@@ -146,6 +146,7 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   // Global discovery is independent of sidebar pagination, filters and collapse.
   const activity = useThreads("", undefined, false, {
     includeActive: true,
+    enabled: !transport.shareId,
     limit: 1,
   });
   const active = (activity.data?.pages[0]?.active_rows ?? []).map(

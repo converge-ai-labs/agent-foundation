@@ -13,6 +13,7 @@ Text and JSON fragments count Unicode code points. Start at `offset=0`, then sen
 
 Typical tasks:
 
+- Find a conversation by remembered message content: use `text_query` on Session, Thread or Run lists, then inspect matching Runs. Read [Execution and diagnostics](references/execution-and-diagnostics.md) for matching rules and coverage limits.
 - Diagnose a failure: filter Runs, read a selected failure section, find matching items or spans, and read their necessary input or output.
 - Choose a capability: search a model or tool index, select exact names, and read complete definitions or model characteristics and pricing.
 - Edit configuration: read the Agent head and target revision, obtain the complete configuration, validate the change, and submit with the original ETag and required review.

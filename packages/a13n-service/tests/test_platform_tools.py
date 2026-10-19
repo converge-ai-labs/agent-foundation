@@ -9,6 +9,7 @@ from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents.composer import configuration
 from a13n_service.runs.claim import claim
 from a13n_service.runs.platform_tokens import issue
 from a13n_service.runs.seal import LeaseExpirer
@@ -274,6 +275,28 @@ async def test_run_query_filters_pages_and_attempt_ownership(service, scripted_m
             attempt_id=lease.attempt_id,
         )
         assert wrong_parent["status"] == 404
+
+
+async def test_composer_discovers_and_calls_message_text_search(service, scripted_model, runs_kit):
+    lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
+    matching = (await runs_kit.start_thread(service, agent, "南京部署故障"))["run"]
+    token = await issue(service.runtime, lease, configuration("model").platform_tools.groups)
+    async with client(service, {"secret": token}) as http:
+        discovery = await rpc(http, "tools/list")
+        assert discovery.status_code == 200, discovery.text
+        tools = {tool["name"]: tool for tool in discovery.json()["result"]["tools"]}
+        paths = service.app.openapi()["paths"]
+        for resource, field in (("sessions", "session_id"), ("threads", "thread_id"), ("runs", "id")):
+            operation = paths[f"/api/v1/{resource}"]["get"]
+            tool = tools[tool_name(operation["operationId"])]
+            assert "text_query" in tool["inputSchema"]["properties"]
+            assert tool["_meta"]["x-a13n-platform"] == {"group": "execution", "effect": "read"}
+            projection = {"view": "compact", "agent_id": agent["id"]} if resource == "runs" else {}
+            result = await call(http, service, "GET", f"/{resource}", text_query="南京 故障", **projection)
+            assert result["status"] == 200, result
+            assert [row["id"] for row in result["body"]["items"]] == [matching[field]]
+            missing = await call(http, service, "GET", f"/{resource}", text_query="南京 missing", **projection)
+            assert missing["status"] == 200 and missing["body"]["items"] == []
 
 
 async def test_legacy_revision_tool_requires_original_version(service, scripted_model, runs_kit):

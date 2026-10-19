@@ -301,6 +301,7 @@
   "Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them.": "回复精确等待运行的审批、客户端工具和用户问题，后继运行从结果继续。",
   "The existing successor run in its current state": "已有后继运行的当前状态",
   "Resume Run": "恢复运行",
+  "All search terms must match one run's retained user/assistant text": "所有搜索词必须在同一个 Run 保留的用户或助手文本中命中",
   "A session or thread ID": "会话或线程 ID",
   "List Sessions": "列出会话",
   "Create Session": "创建会话",

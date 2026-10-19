@@ -14,7 +14,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -87,6 +87,7 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
     Failure,
+    MessagePayload,
     Outcome,
     Pending,
     Resume,
@@ -94,10 +95,11 @@ from a13n_service.runs.schemas import (
     canonical_json,
 )
 from a13n_service.runs.seal import release_attempt, seal, seal_attempt
+from a13n_service.runs.search import Index, seed
 from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
-from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -264,6 +266,14 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         # Until its own first checkpoint the run continues its parent's; a takeover after it repeats its own calls.
         unknown_outcomes = checkpoint is None and parent is not None and parent.status in {"failed", "cancelled"}
         session_id, source_entry_id = run.session_id, run.source_entry_id
+        source = await session.get(InboxEntryRow, source_entry_id) if source_entry_id else None
+        input_text = (
+            MessagePayload.model_validate(source.payload).text()
+            if source is not None and source.kind == "message"
+            else answers.input.text()
+            if answers is not None and answers.input is not None
+            else ""
+        )
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
     own, base, tail = await asyncio.gather(
@@ -271,6 +281,11 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
         checkpoints.load_tail(runtime.objects, tail_pointer, hydrate=True),
     )
+    if tail.search is None:
+        initial_index = await asyncio.to_thread(
+            seed, input_text, source_entry_id or lease.run_id, runtime.settings.run_search
+        )
+        tail.search = initial_index.state
     state, resume = _initial(lease.thread_id, base, pending=pending, answers=answers, history=history)
     consumed = own is not None and own.resume_input_consumed
     resume_input = (
@@ -371,6 +386,8 @@ class _Attempt:
         self.committed, self.seq = plan.committed, plan.seq
         self.envd_sessions = {name: HttpEnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
         self.contents = Contents(plan.tail.items, plan.tail.refs)
+        assert plan.tail.search is not None
+        self.search = Index(plan.tail.search, runtime.settings.run_search)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
             lease.run_id,
@@ -632,6 +649,7 @@ class _Attempt:
         started = time.monotonic()
         consumed = self.offers.incorporated(state)
         usage = self.usage.pending()
+        search, snapshot = await self._search(snapshot, consumed)
         pointer, display = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
@@ -653,6 +671,7 @@ class _Attempt:
             contents=self.contents,
             control=self.control,
         )
+        display = display.model_copy(update={"search_terms": tuple(sorted(search.counts)) if search.changed else None})
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
         async with transaction(self.runtime.storage) as session:
@@ -690,6 +709,7 @@ class _Attempt:
         if outcome is not None and outcome.pending is not None and outcome.pending.desktop_control_id:
             self.desktop_paused = True
         CHECKPOINT_DURATION.record(time.monotonic() - started)
+        self.search = search
         self.committed, self.seq = committed, self.seq + 1
         self.fold.committed(snapshot)
         self.contents.retire([item.id for page in snapshot.pages for item in page.items])
@@ -813,10 +833,31 @@ class _Attempt:
         display = None
         self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
+            snapshot = self.fold.pending(self._snapshot())
+            # Only user sources actually visible in this display join a failed/cancelled run's index.
+            visible = {
+                str(metadata["source_id"])
+                for item in (*[item for page in snapshot.pages for item in page.items], *snapshot.tail.items)
+                if isinstance(metadata := item.content.get("metadata"), dict) and "source_id" in metadata
+            }
+            search, snapshot = await self._search(snapshot, visible)
             display = await checkpoints.publish_display(
-                self.runtime, self.lease, self._snapshot(), contents=self.contents, control=self.control
+                self.runtime, self.lease, snapshot, contents=self.contents, control=self.control
+            )
+            display = display.model_copy(
+                update={"search_terms": tuple(sorted(search.counts)) if search.changed else None}
             )
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
+
+    async def _search(self, snapshot: Snapshot, consumed: Iterable[str]) -> tuple[Index, Snapshot]:
+        inputs = [
+            (entry.id, MessagePayload.model_validate(entry.payload).text())
+            for key in consumed
+            if (entry := self.offers.open.get(key)) is not None and entry.kind == "message"
+        ]
+        items = [item for page in snapshot.pages for item in page.items] + snapshot.tail.items
+        search = await asyncio.to_thread(self.search.prepare, items, inputs)
+        return search, Snapshot(snapshot.pages, snapshot.tail.model_copy(update={"search": search.state}))
 
     def _snapshot(self) -> Snapshot:
         """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.

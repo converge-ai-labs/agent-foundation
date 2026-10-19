@@ -14353,6 +14353,8 @@ export interface operations {
   list_runs_api_v1_runs_get: {
     parameters: {
       query?: {
+        /** @description All search terms must match one run's retained user/assistant text */
+        text_query?: string | null;
         agent_id?: string | null;
         session_id?: string | null;
         thread_id?: string | null;
@@ -15036,6 +15038,8 @@ export interface operations {
   list_sessions_api_v1_sessions_get: {
     parameters: {
       query?: {
+        /** @description All search terms must match one run's retained user/assistant text */
+        text_query?: string | null;
         /** @description A session or thread ID */
         q?: string | null;
         agent_id?: string | null;
@@ -15806,6 +15810,7 @@ export interface operations {
     parameters: {
       query?: {
         session_id?: string | null;
+        text_query?: string | null;
         label?: string[] | null;
         limit?: number;
         cursor?: string | null;

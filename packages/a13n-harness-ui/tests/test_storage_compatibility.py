@@ -34,6 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261019_f3d4ba03d1cc_add_scoped_sharing_grants.py").unlink()
     (newer / "versions/20261012_cb56f9a0a4df_add_live_voice_transcript_head_and_.py").unlink()
     (newer / "versions/20261010_3cf95de9550a_retire_saved_output_comments.py").unlink()
     (newer / "versions/20261010_4bd3d3ab1b82_retain_latest_root_execution_summary.py").unlink()
@@ -101,6 +102,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "coordinator_worker",
                 "live_transcript_head",
                 "planned_restart",
+                "share_grant",
                 "web_push_key",
                 "web_push_subscription",
                 "thread_inspection",
