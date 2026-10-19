@@ -151,7 +151,7 @@ function GuestSession({ shareId }: { shareId: string }) {
         <div>
           <ChatCircle size={32} />
           <h1>
-            {access.isError ? "Couldn’t connect" : "Opening shared space…"}
+            {access.isError ? "Couldn’t connect" : "Opening shared link…"}
           </h1>
           <ErrorNotice
             error={access.error}
@@ -263,7 +263,7 @@ function GuestShell({
               className={styles.mobileToggle}
               variant="ghost"
               size="icon-sm"
-              aria-label="Show conversations"
+              aria-label="Show Threads"
               aria-expanded={sidebar}
               onClick={() => setSidebar(!sidebar)}
             >
@@ -275,7 +275,7 @@ function GuestShell({
           </span>
           <div>
             <h1>{access.title}</h1>
-            <p>Shared {project ? "Project" : "conversation"}</p>
+            <p>Shared {project ? "Project" : "Thread"}</p>
           </div>
         </div>
         <div className={styles.access}>
@@ -297,7 +297,7 @@ function GuestShell({
               (p) => p.participant_id !== live.presence?.participant_id,
             )}
             ownId={live.presence?.participant_id}
-            threadTitle="this conversation"
+            threadTitle="this Thread"
           />
           <Button
             variant="ghost"
@@ -314,15 +314,15 @@ function GuestShell({
         {project && (
           <aside
             className={`${styles.sidebar} ${sidebar ? styles.sidebarOpen : ""}`}
-            aria-label="Project conversations"
+            aria-label="Project Threads"
           >
             <div className={styles.sidebarTop}>
-              <h2>Conversations</h2>
+              <h2>Threads</h2>
               {canPrompt && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="New conversation"
+                  aria-label="New Thread"
                   loading={create.isPending}
                   onClick={() => create.mutate()}
                 >
@@ -332,8 +332,8 @@ function GuestShell({
             </div>
             <Input
               type="search"
-              aria-label="Search shared conversations"
-              placeholder="Search conversations…"
+              aria-label="Search shared Threads"
+              placeholder="Search Threads…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -343,7 +343,7 @@ function GuestShell({
             />
             {create.isError && (
               <p className={styles.hint}>
-                Check the list before trying again; a conversation may have been
+                Check the list before trying again; a Thread may have been
                 created.
               </p>
             )}
@@ -358,7 +358,7 @@ function GuestShell({
                       isActive ? styles.activeThread : styles.thread
                     }
                   >
-                    <span>{thread.title || "Untitled conversation"}</span>
+                    <span>{thread.title || "Untitled Thread"}</span>
                     <small>
                       {thread.root_activity.state === "inactive"
                         ? new Date(
@@ -372,13 +372,11 @@ function GuestShell({
                   </NavLink>
                 ))}
               {list.isPending && (
-                <p className={styles.hint}>Loading conversations…</p>
+                <p className={styles.hint}>Loading Threads…</p>
               )}
               {list.data?.pages[0]?.total === 0 && (
                 <p className={styles.hint}>
-                  {search
-                    ? "No matching conversations."
-                    : "No conversations yet."}
+                  {search ? "No matching Threads." : "No Threads yet."}
                 </p>
               )}
               {list.hasNextPage && (
@@ -410,9 +408,9 @@ function GuestShell({
                 project ? (
                   <div className={styles.welcome}>
                     <Folder size={32} style={{ margin: "auto" }} />
-                    <h2>A shared space to work together</h2>
+                    <h2>Shared Project</h2>
                     <p>
-                      Choose a conversation to catch up
+                      Choose a Thread to catch up
                       {canPrompt
                         ? ", or start a new one with the Project’s Agent."
                         : " and follow along as the work unfolds."}
@@ -423,7 +421,7 @@ function GuestShell({
                         onClick={() => create.mutate()}
                       >
                         <Plus size={16} />
-                        New conversation
+                        New Thread
                       </Button>
                     )}
                   </div>
@@ -439,7 +437,7 @@ function GuestShell({
         open={profileOpen}
         onOpenChange={setProfileOpen}
         title="Your display name"
-        description="Shown to people in this conversation. Names are not verified identities."
+        description="Shown to people in this Thread. Names are not verified identities."
         closeLabel="Close"
       >
         <form

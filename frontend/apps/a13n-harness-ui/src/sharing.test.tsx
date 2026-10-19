@@ -173,7 +173,7 @@ it("sets Project access and expiry, preserves the link on copy failure and reset
   await user.click(screen.getByRole("combobox", { name: "Share" }));
   await user.click(
     await screen.findByRole("option", {
-      name: "Entire Project · Design studio",
+      name: "Project · Design studio",
     }),
   );
   await user.click(screen.getByRole("combobox", { name: "Link permission" }));
@@ -183,7 +183,7 @@ it("sets Project access and expiry, preserves the link on copy failure and reset
       /prompts use the Agent’s tools and Environment permissions/,
     ),
   ).toBeTruthy();
-  expect(screen.getByText(/Guests can also start conversations/)).toBeTruthy();
+  expect(screen.getByText(/Guests can also create Threads/)).toBeTruthy();
   await user.click(screen.getByRole("combobox", { name: "Expires in" }));
   await user.click(await screen.findByRole("option", { name: "7 days" }));
   expect(writes).toEqual([]);

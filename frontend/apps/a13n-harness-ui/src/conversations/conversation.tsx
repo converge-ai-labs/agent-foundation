@@ -1005,7 +1005,7 @@ function ConversationContent({
         )}
         {guest && !canCompose && (
           <p className={styles.composerConnection}>
-            View-only link · You’re following this conversation live.
+            View-only link · You’re following this Thread live.
           </p>
         )}
         {!guest && !readOnly && thread && !thread.archived && (

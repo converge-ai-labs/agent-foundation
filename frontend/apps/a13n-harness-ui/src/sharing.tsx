@@ -153,19 +153,15 @@ function ShareContents({
           readOnly={!!created || !(threadId && projectId)}
           disabled={create.isPending}
           options={[
-            ...(threadId
-              ? [{ value: "thread", label: "This conversation" }]
-              : []),
+            ...(threadId ? [{ value: "thread", label: "Thread" }] : []),
             ...(projectId
-              ? [{ value: "project", label: `Entire Project · ${projectName}` }]
+              ? [{ value: "project", label: `Project · ${projectName}` }]
               : []),
           ]}
           onValueChange={(value) => setScope(value as Scope)}
         />
         {scope === "project" && (
-          <p className={styles.hint}>
-            Includes current and future conversations.
-          </p>
+          <p className={styles.hint}>Includes current and future Threads.</p>
         )}
       </div>
       <section className={styles.linkSettings} aria-label="Link sharing">
@@ -191,7 +187,7 @@ function ShareContents({
           <p className={styles.authority}>
             For trusted people: prompts use the Agent’s tools and Environment
             permissions.
-            {scope === "project" ? " Guests can also start conversations." : ""}
+            {scope === "project" ? " Guests can also create Threads." : ""}
           </p>
         )}
         {created && (
@@ -281,8 +277,8 @@ function ShareContents({
         {grants.isPending && <p>Loading links…</p>}
         {grants.data?.length === 0 && (
           <p className={styles.hint}>
-            No active links for this{" "}
-            {scope === "thread" ? "conversation" : "Project"}.
+            No active links for this {scope === "thread" ? "Thread" : "Project"}
+            .
           </p>
         )}
         {grants.data?.map((grant) => (
