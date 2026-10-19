@@ -113,6 +113,8 @@ class PageRef(_Frozen):
 
 
 class RunState(_Frozen):
+    model_config = ConfigDict(extra="allow", frozen=True)
+
     format: Literal[1, 2, 3] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)

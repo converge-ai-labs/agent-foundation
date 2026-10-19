@@ -613,6 +613,7 @@ async def test_http_recovery_does_not_open_fresh_session_after_uncertain_attach(
             ):
                 pytest.fail("An uncertain attach must fail")
         opened.assert_not_awaited()
+        assert recovery.state is None
         assert (await original.readiness()).ready
 
 

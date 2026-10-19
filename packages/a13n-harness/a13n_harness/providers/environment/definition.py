@@ -108,5 +108,5 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
             environment_id=environment_id or "env-" + uuid4().hex,
             state=state,
             runtime=runtime,
-            **({"session_recovery": session_recovery} if session_recovery is not None else {}),
+            session_recovery=session_recovery,
         )

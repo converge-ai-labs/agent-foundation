@@ -117,7 +117,7 @@ class BackendConnector[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentC
                 environment_id=self.environment_id,
                 state=self.state,
                 runtime=runtime,
-                **({"session_recovery": self.session_recovery} if self.session_recovery is not None else {}),
+                session_recovery=self.session_recovery,
             )
             execution_id = "exec-" + uuid4().hex
             await target.open(execution_id=execution_id)
