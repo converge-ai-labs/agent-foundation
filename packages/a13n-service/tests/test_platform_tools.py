@@ -276,37 +276,6 @@ async def test_run_query_filters_pages_and_attempt_ownership(service, scripted_m
         assert wrong_parent["status"] == 404
 
 
-async def test_legacy_revision_tool_requires_original_version(service, scripted_model, runs_kit):
-    from a13n_service.runs.attempts import authorize_execution
-    from a13n_service.runs.configuration import ConfigurationCapability
-    from a13n_service.tenancy.authorize import ExecutionAuthority
-    from pydantic_ai.exceptions import ToolFailed
-
-    lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
-    async with transaction(service.runtime.storage) as session:
-        run = await session.get_one(RunRow, lease.run_id)
-        principal = await authorize_execution(session, service.runtime.access, run)
-        authority = ExecutionAuthority.model_validate(run.authority)
-    capability = ConfigurationCapability(service.runtime, lease, principal, authority, frozenset({"create_revision"}))
-    revision = await service.client.get(f"/api/v1/agents/{agent['id']}/revisions/{agent['default_revision_id']}")
-    config = revision.json()["config"]
-    config["instructions"] = "Proposed change"
-    with pytest.raises(ToolFailed, match="original version"):
-        await capability.create_agent_revision(agent["id"], config)
-    changed = await service.client.patch(
-        f"/api/v1/agents/{agent['id']}",
-        json={"description": "Concurrent edit"},
-        headers={"If-Match": f'"{agent["id"]}:{agent["version"]}"'},
-    )
-    assert changed.status_code == 200, changed.text
-    with pytest.raises(ToolFailed):
-        await capability.create_agent_revision(agent["id"], config, expected_version=agent["version"])
-    unchanged = (await service.client.get(f"/api/v1/agents/{agent['id']}")).json()
-    assert unchanged["default_revision_id"] == agent["default_revision_id"]
-    saved = await capability.create_agent_revision(agent["id"], config, expected_version=unchanged["version"])
-    assert saved["revision_id"] != agent["default_revision_id"]
-
-
 async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, runs_kit):
     agent = await runs_kit.create_agent(service, scripted_model)
     async with transaction(service.runtime.storage) as session:

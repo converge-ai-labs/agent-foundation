@@ -8,6 +8,13 @@ from .api import eventually, expect
 
 # User parts the Harness adds to every request: the environment snapshot and the run identity.
 HARNESS_CONTEXT = ("Current Environment mounts (trusted dynamic context)", "<agent-context ")
+# The builtin platform guide, and an agent configuration that reads it with `view`: a tool without effects, which
+# needs no environment and is allowed by default.
+GUIDE = "/platform-skills/platform-operations/SKILL.md"
+LOOKUP = {
+    "builtin_skills": ["platform-operations"],
+    "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
+}
 
 
 def user_texts(request: dict) -> list[str]:

@@ -1061,10 +1061,7 @@
         "computer",
         "web",
         "memory",
-        "assets",
-        "configuration",
-        "traces",
-        "findings"
+        "assets"
       ],
       "type": "string"
     },

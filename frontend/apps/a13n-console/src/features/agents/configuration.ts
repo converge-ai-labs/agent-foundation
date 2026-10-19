@@ -14,7 +14,7 @@ const sectionFields = {
   connections: ["connection_tools"],
   toolSearch: ["tool_search"],
   memory: ["memory_mounts", "memory"],
-  toolsets: ["toolsets"],
+  toolsets: ["toolsets", "platform_tools"],
   reviewer: ["reviewer"],
   environment: ["default_environment_template_id"],
 } as const;
@@ -68,6 +68,7 @@ export function buildConfig(
     | "memory_mounts"
     | "memory"
     | "toolsets"
+    | "platform_tools"
     | "reviewer"
     | "default_environment_template_id"
   >,

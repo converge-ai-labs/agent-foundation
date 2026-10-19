@@ -304,7 +304,12 @@ async def list_analyses(
         )
 
 
-async def read_scope(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, trace_id: str) -> None:
+async def read_scope(
+    runtime: Runtime, actor: Principal, workspace_id: str, run_id: str | None, trace_id: str | None
+) -> None:
+    """An analysis Run's own requests read only its selected traces, each by ID; other requests are unrestricted."""
+    if run_id is None:
+        return
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await session.scalar(
@@ -312,11 +317,16 @@ async def read_scope(runtime: Runtime, actor: Principal, workspace_id: str, run_
         )
         if row is None:
             return
+        if trace_id is None:
+            raise invalid("trace_id", "an analysis reads its selected traces by ID")
         if not any(item["trace_id"] == trace_id for item in row.selected_traces):
             raise invalid("trace_id", "outside the analysis selection")
 
 
-async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, trace_id: str) -> None:
+async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str | None, trace_id: str) -> None:
+    """Record a trace an analysis Run read, the evidence its findings may cite."""
+    if run_id is None:
+        return
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await session.scalar(

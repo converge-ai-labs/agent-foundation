@@ -1,6 +1,7 @@
 """User takeover crosses real execution, HTTP and SQL boundaries without a fabricated tool call."""
 
 import asyncio
+import json
 
 import pytest
 from a13n_service.infra.db import transaction
@@ -135,7 +136,7 @@ async def test_takeover_during_generation_skips_stale_tool_then_resumes(
         service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
     )
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="stale", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="stale", gate=gate)
     running = await runs_kit.attempt(service)
     await scripted_model.request()
     view = await open_desktop(service, first["run"])
@@ -254,22 +255,23 @@ async def test_readonly_cleanup_does_not_pause_or_settle_active_agent(service, s
 
 @pytest.mark.parametrize("tool_count", [1, 2])
 async def test_admitted_tool_drains_and_is_not_replayed(service, scripted_model, runs_kit, monkeypatch, tool_count):
-    from a13n_service.runs import configuration
+    from a13n_service.runs.boundaries import Boundaries
 
     first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
     entered, release = asyncio.Event(), asyncio.Event()
-    original = configuration.models.list_models
+    before = Boundaries.before_tool_execute
     count = 0
 
-    async def slow(*args, **kwargs):
+    # Execution runs the before-hooks inside the desktop fence, so a held hook holds an admitted tool.
+    async def slow(self, ctx, *, call, tool_def, args):
         nonlocal count
         count += 1
         if count == tool_count:
             entered.set()
         await release.wait()
-        return await original(*args, **kwargs)
+        return await before(self, ctx, call=call, tool_def=tool_def, args=args)
 
-    monkeypatch.setattr(configuration.models, "list_models", slow)
+    monkeypatch.setattr(Boundaries, "before_tool_execute", slow)
     scripted_model._script(
         {
             "deltas": [
@@ -279,7 +281,7 @@ async def test_admitted_tool_drains_and_is_not_replayed(service, scripted_model,
                             "index": index,
                             "id": f"admitted-{index}",
                             "type": "function",
-                            "function": {"name": "find_resources", "arguments": '{"kind":"model"}'},
+                            "function": {"name": "view", "arguments": json.dumps({"file_path": runs_kit.GUIDE})},
                         }
                         for index in range(tool_count)
                     ]
@@ -389,7 +391,7 @@ async def test_expired_user_control_requires_cleanup_and_explicit_resume(
 
     first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="stale", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="stale", gate=gate)
     running = await runs_kit.attempt(service)
     await scripted_model.request()
     view = await open_desktop(service, first["run"])

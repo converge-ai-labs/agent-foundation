@@ -101,7 +101,7 @@ export function FindingDetail() {
     composer.start({
       agent: { id: finding.agent_id, name: agent?.name ?? finding.agent_id },
       revision: { id: finding.agent_revision_id, number: revision.data.number },
-      context: `Review finding ${finding.id} using read_finding before proposing a change. Verify the hypothesis and cited traces against the named revision, state evidence limitations, and preserve unrelated settings.`,
+      context: `Review finding ${finding.id}: read it (GET /api/v1/findings/{finding_id}) before proposing a change. Verify the hypothesis and cited traces against the named revision, state evidence limitations, and preserve unrelated settings.`,
     });
   };
   return (

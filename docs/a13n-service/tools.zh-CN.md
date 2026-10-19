@@ -3,9 +3,10 @@ title: 工具与连接
 description: 为 agent 配置内置工具集、MCP 和应用连接、客户端工具以及 skill。
 ---
 
-Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agent-configuration)中选择：
+Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agent-configuration)中选择：
 
-- **内置工具集：** 由 Service 自身执行，包括文件、终端、web、记忆、资产发布、agent 配置、trace 查询和发现项。
+- **内置工具集：** 由 Service 自身执行，包括文件、终端、电脑、web、记忆和资产发布。
+- **平台工具：** Service API 操作，例如 agent 配置、运行查询和发现项提交。参阅[平台工具](#platform-tools)。
 - **连接：** 远程 MCP 服务器，以及 Composio 等 connector provider 的应用账号。
 - **客户端工具：** 由你的应用执行，并通过[恢复](agents-and-runs.md#waits-approvals-and-questions)提交结果。
 - **Skill：** 添加指令和文件；参阅 [Skill](skills.md)。
@@ -16,25 +17,34 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 
 `GET /api/v1/toolsets` 返回工具目录，包括各工具的 key、模型可见名称、默认状态与权限，以及配置 schema。
 
-| 工具集          | 工具（模型可见名称）                                                                                                                                                         | 默认状态                                       |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `files`         | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                               | 启用                                           |
-| `shell`（终端） | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                      | 启用                                           |
-| `computer`      | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys` | 禁用；还需要明确的环境挂载权限                 |
-| `web`           | `search`, `scrape`, `fetch`, `download`                                                                                                                                      | 各工具均禁用                                   |
-| `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                | 启用                                           |
-| `assets`        | `publish_asset`                                                                                                                                                              | 禁用                                           |
-| `configuration` | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                                                          | 禁用；参阅 [Agent Composer](agent-composer.md) |
-| `traces`        | `list_traces`, `read_trace`, `read_trace_spans`                                                                                                                              | 禁用                                           |
-| `findings`      | `read_finding`, `submit_finding`                                                                                                                                             | 禁用                                           |
+| 工具集          | 工具（模型可见名称）                                                                                                                                                         | 默认状态                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `files`         | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                               | 启用                           |
+| `shell`（终端） | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                      | 启用                           |
+| `computer`      | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys` | 禁用；还需要明确的环境挂载权限 |
+| `web`           | `search`, `scrape`, `fetch`, `download`                                                                                                                                      | 各工具均禁用                   |
+| `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                | 启用                           |
+| `assets`        | `publish_asset`                                                                                                                                                              | 禁用                           |
 
 电脑工具需要兼容的桌面，以及挂载环境上明确授予的动作权限。开启方式和截图预览参阅 [Computer Use](environments.md#computer-use)。
 
-发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。不支持的值返回校验错误。发现类型与分析规则预设相互独立。
-
-配置、trace 查询和发现项提交工具位于 **高级 / 平台功能**下。工具集开关会保留各平台工具的独立选择。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
-
 文件和终端工具操作运行挂载的[环境](environments.md)，只有挂载环境时才提供给模型。记忆工具操作挂载的[记忆](memory.md)：文件工具用于文件型记忆，记录工具用于记录型记忆；`read` 挂载只提供查看、列出和搜索。`publish_asset` 将环境文件转换为工作空间[资产](files-and-webhooks.md#assets)。
+
+## 平台工具
+
+平台工具是 Service API 操作。运行使用自己的短期凭据调用它们，权限不超过启动运行的人或 key。在 agent 工具的 **高级 / 平台功能**下按组选择，或在 `platform_tools` 中选择：
+
+| 组                      | 操作                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| `agents`                | Agent、其版本和工具集目录                                                                   |
+| `models`                | 模型和模型目录                                                                              |
+| `connections`           | 连接、其工具和 connector 应用                                                               |
+| `skills`                | Skill 及其版本                                                                              |
+| `environment_templates` | 环境模板                                                                                    |
+| `providers`             | Provider，以及对其已保存连接的测试                                                          |
+| `execution`             | Session、thread、run、trace 和发现项；唯一的写入操作是提交发现项（`POST /api/v1/findings`） |
+
+已选组的读取操作共用一个权限（默认 `allow`），写入操作共用另一个权限（默认 `ask`）；两者均可设为 `allow`、`ask` 或 `deny`。[Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) 给出配置示例，以及向模型说明这些工具的操作 skill。发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。
 
 ## Web 搜索与抓取
 

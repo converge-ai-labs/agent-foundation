@@ -1,4 +1,7 @@
-"""The trace HTTP surface: an attempt's spans, a workspace's traces for browsing, and the backend they come from."""
+"""The trace HTTP surface: an attempt's spans, a workspace's traces for browsing, and the backend they come from.
+
+An analysis Run's own requests read only the traces its analysis selected, and record each one they read.
+"""
 
 from typing import Annotated, Literal
 
@@ -11,8 +14,9 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.traces import Span, SpanPage
 from a13n_service.runs import trace_reads, traces
+from a13n_service.runs.findings import analysis
 from a13n_service.runs.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor, WorkspaceId
+from a13n_service.tenancy.requests import Actor, OriginRun, WorkspaceId
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 
@@ -31,6 +35,7 @@ async def list_attempt_spans(
     run_id: str,
     attempt_id: str,
     actor: Actor,
+    origin: OriginRun,
     view: reads.View = "detailed",
     status: Literal["ok", "error"] | None = None,
     kind: Annotated[str | None, Query(max_length=64)] = None,
@@ -39,6 +44,7 @@ async def list_attempt_spans(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """The attempt's spans, including its inline child runs."""
+    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
     return await traces.list_attempt_spans(
         runtime.storage,
         runtime.traces,
@@ -61,6 +67,7 @@ async def list_traces(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     actor: Actor,
+    origin: OriginRun,
     session_id: IdFilter = None,
     thread_id: IdFilter = None,
     run_id: IdFilter = None,
@@ -75,6 +82,7 @@ async def list_traces(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """Trace root spans, one per attempt. A cursor keeps the window of the first page."""
+    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
     return await traces.list_traces(
         runtime.storage,
         runtime.traces,
@@ -104,6 +112,7 @@ async def get_trace(
     workspace_id: WorkspaceId,
     trace_id: TraceId,
     actor: Actor,
+    origin: OriginRun,
     view: reads.View = "detailed",
     section: Literal["input", "output", "attributes", "resource_attributes", "events", "links", "usage"] | None = None,
     offset: reads.Offset = 0,
@@ -112,7 +121,9 @@ async def get_trace(
     query: reads.Search = None,
 ) -> Span | trace_reads.SpanSummary | reads.TextRead:
     """The trace's root span."""
+    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     span = await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, trace_id)
+    await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     if section is not None:
         return reads.read_value(
             getattr(span, section),
@@ -137,6 +148,7 @@ async def list_trace_spans(
     workspace_id: WorkspaceId,
     trace_id: TraceId,
     actor: Actor,
+    origin: OriginRun,
     view: reads.View = "detailed",
     status: Literal["ok", "error"] | None = None,
     kind: Annotated[str | None, Query(max_length=64)] = None,
@@ -145,7 +157,8 @@ async def list_trace_spans(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """The trace's spans."""
-    return await traces.list_trace_spans(
+    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
+    page = await traces.list_trace_spans(
         runtime.storage,
         runtime.traces,
         actor,
@@ -157,6 +170,9 @@ async def list_trace_spans(
         if view == "compact" or any((status, kind, tool_name))
         else None,
     )
+    if page.items:
+        await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
+    return page
 
 
 @router.get("/trace-backend", response_model=traces.TraceBackend, openapi_extra=platform_operation("execution", "read"))
@@ -176,6 +192,7 @@ async def read_span_content(
     trace_id: TraceId,
     span_id: Annotated[str, Path(pattern=r"^[0-9a-f]{16}$")],
     actor: Actor,
+    origin: OriginRun,
     section: Literal["all", "input", "output", "attributes", "resource_attributes", "events", "links", "usage"] = "all",
     cursor: str | None = None,
     offset: reads.Offset = 0,
@@ -185,11 +202,14 @@ async def read_span_content(
 ) -> trace_reads.SpanContentPage:
     """Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
     cursor while continuing fragments with version and next_offset."""
+    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     # Full span is needed only internally; projection happens after the original tenancy and redaction checks.
     page = await traces.list_trace_spans(
         runtime.storage, runtime.traces, actor, workspace_id, trace_id, limit=100, cursor=cursor
     )
     selected = [span for span in page.items if span.id == span_id]
+    if selected:
+        await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     return trace_reads.SpanContentPage(
         items=[
             reads.read_value(

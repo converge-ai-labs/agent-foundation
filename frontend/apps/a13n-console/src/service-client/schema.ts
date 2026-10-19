@@ -1078,7 +1078,11 @@ export interface paths {
     /** List Findings */
     get: operations["list_findings_api_v1_findings_get"];
     put?: never;
-    /** Create Finding */
+    /**
+     * Create Finding
+     * @description Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
+     *     A Run's own submission names that Run as its source; an analysis cites only selected traces it has read.
+     */
     post: operations["create_finding_api_v1_findings_post"];
     delete?: never;
     options?: never;
@@ -9466,16 +9470,7 @@ export interface components {
       tools: components["schemas"]["ToolDefinition"][];
     };
     /** @enum {string} */
-    ToolsetKey:
-      | "files"
-      | "shell"
-      | "computer"
-      | "web"
-      | "memory"
-      | "assets"
-      | "configuration"
-      | "traces"
-      | "findings";
+    ToolsetKey: "files" | "shell" | "computer" | "web" | "memory" | "assets";
     /** ToolsetSelection */
     ToolsetSelection: {
       /** Config */

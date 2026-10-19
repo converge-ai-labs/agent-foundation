@@ -251,11 +251,11 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     } <= selected
     assert {
         ("/api/v1/findings", "get"),
+        ("/api/v1/findings", "post"),
         ("/api/v1/findings/{finding_id}", "get"),
         ("/api/v1/finding-analyses", "get"),
     } <= selected
     assert {
-        ("/api/v1/findings", "post"),
         ("/api/v1/findings/{finding_id}", "patch"),
         ("/api/v1/finding-analyses", "post"),
         ("/api/v1/finding-agent", "post"),

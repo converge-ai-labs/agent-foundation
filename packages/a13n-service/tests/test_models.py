@@ -383,10 +383,11 @@ async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted
         "reviewed",
         "agent",
         instructions="Role: agent",
-        toolsets={"configuration": {"tools": {"find": {"permission": "review"}}}},
+        builtin_skills=["platform-operations"],
+        toolsets={"files": {"tools": {"view": {"permission": "review"}}}, "shell": {"enabled": False}},
         reviewer={"model": "reviewer"},
     )
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", to="Role: agent")
+    runs_kit.lookup(scripted_model, call_id="call_find", to="Role: agent")
     scripted_model.call("submit_tool_review", {"risk": "low"}, call_id="call_review", to="submit_tool_review")
     scripted_model.say("Found them", to="Role: agent")
     run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "find models"))["run"]["id"])
@@ -427,9 +428,9 @@ async def test_a_compaction_is_a_call_of_the_agent_model(executing, scripted_mod
         "compacting",
         "compacting",
         model_characteristics=characteristics,
-        toolsets={"configuration": {"tools": {"find": {}}}},
+        **runs_kit.LOOKUP,
     )
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find")
+    runs_kit.lookup(scripted_model, call_id="call_find")
     scripted_model.say("Found models so far.", to="compact continuation summary")
     scripted_model.say("Done")
     run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "find models"))["run"]["id"])

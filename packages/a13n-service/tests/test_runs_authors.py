@@ -38,9 +38,9 @@ async def member(service: SimpleNamespace, stack: AsyncExitStack, role: str) -> 
 
 async def test_authors_follow_initial_queued_and_steering_entries(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
     scripted_model.say("Done")
     first = await runs_kit.start_thread(service, agent, "initial request")
     path = f"{service.api}/sessions/{first['thread']['session_id']}/message-authors"

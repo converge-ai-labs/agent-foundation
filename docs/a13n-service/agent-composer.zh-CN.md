@@ -32,15 +32,15 @@ Agent Composer 帮助你在 Console 中创建和修改 agent。描述想要的�
 
 ## 可执行的操作
 
-| 工具组   | 支持的操作                                                                 |
-| -------- | -------------------------------------------------------------------------- |
-| Agent    | 创建、读取、重命名、修改标签、归档，以及配置修订版本和默认版本管理。       |
-| 模型     | 读取、创建和更新已配置的模型。                                             |
-| 连接     | 读取、创建、更新、发现工具和测试连接。                                     |
-| Skill    | 校验和导入上传包或公开 GitHub 来源、更新元数据和管理修订版本。             |
-| 环境模板 | 读取、创建和更新供后续实例使用的模板。                                     |
-| Provider | 读取 provider，通过 Console 私密凭据卡片创建和更新。                       |
-| 执行查询 | 查询 session、thread、输入队列、run、attempt、展示内容、trace 和 finding。 |
+| 工具组   | 支持的操作                                                                                 |
+| -------- | ------------------------------------------------------------------------------------------ |
+| Agent    | 创建、读取、重命名、修改标签、归档，以及配置修订版本和默认版本管理。                       |
+| 模型     | 读取、创建和更新已配置的模型。                                                             |
+| 连接     | 读取、创建、更新、发现工具和测试连接。                                                     |
+| Skill    | 校验和导入上传包或公开 GitHub 来源、更新元数据和管理修订版本。                             |
+| 环境模板 | 读取、创建和更新供后续实例使用的模板。                                                     |
+| Provider | 读取 provider，通过 Console 私密凭据卡片创建和更新。                                       |
+| 执行查询 | 查询 session、thread、输入队列、run、attempt、展示内容、trace 和 finding，并提交 finding。 |
 
 Composer 使用平台 MCP 工具，Service 为运行提供短期凭据。读取默认直接执行；写入和连接测试使用[审批](agents-and-runs.md#waits-approvals-and-questions)。操作受用户当前权限、运行接受时的授权上限和工作空间限制。批准不会增加平台权限。
 
@@ -75,7 +75,7 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
 
 ## 在自己的 agent 中使用工具集
 
-通过高级配置 JSON 选择平台工具组和本地操作 skill：
+在 agent 工具的 **高级 / 平台功能**下选择[平台工具组](tools.md#platform-tools)，并在高级配置 JSON 中选择本地操作 skill。配置如下：
 
 ```json
 {
@@ -93,8 +93,6 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
 `platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。它与用户 Skill 共用 Harness Skills 目录和读取机制。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`；`/platform-instance` 中的部署目录在进程启动时生成一次，供各次 attempt 共用。
 
 启用 `view`、`ls`、`glob` 和 `grep` 来读取 skill。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
-
-已有 agent 仍可使用旧的 `configuration` 工具集。它的 `create_agent_revision` 要求提供原始读取结果中的 `expected_version`。缺少该值时，需要重新读取并提交新请求。历史运行保留原有工具。
 
 ### Computer 坐标模式
 

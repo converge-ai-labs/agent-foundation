@@ -6,6 +6,7 @@ import pytest
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import transaction
 from a13n_service.migrations.runner import check, migration_connection, upgrade
+from a13n_service.resources.revisions import config_digest
 from a13n_service.runs.tables import SessionRow
 from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
@@ -138,3 +139,53 @@ async def test_history_migration_preserves_existing_rows_and_guards_order(databa
                 )
     finally:
         engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_legacy_toolsets_are_removed_from_stored_rows(database, service, runs_kit, scripted_model):  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    overridden = {"overrides": {"toolsets": {"web": {"enabled": False}}}}
+    run = (await runs_kit.start_thread(service, agent, "hi", options=overridden))["run"]
+    legacy = json.dumps({key: {"enabled": True} for key in ("configuration", "traces", "findings")})
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("SET LOCAL session_replication_role = replica"))
+            connection.execute(
+                text(
+                    "UPDATE agent_revisions SET config ="
+                    " jsonb_set(config, '{toolsets}', config->'toolsets' || CAST(:legacy AS jsonb))"
+                ),
+                {"legacy": legacy},
+            )
+            for table in ("runs", "inbox_entries"):
+                connection.execute(
+                    text(
+                        f"UPDATE {table} SET options = jsonb_set(options, '{{overrides,toolsets}}',"
+                        " options #> '{overrides,toolsets}' || CAST(:legacy AS jsonb))"
+                    ),
+                    {"legacy": legacy},
+                )
+    finally:
+        engine.dispose()
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "2e9655a2d223")
+    upgrade(database, OSS)
+
+    named = "?| '{configuration,traces,findings}'"
+    assert rows(
+        database,
+        f"SELECT count(*) FROM agent_revisions WHERE config->'toolsets' {named}"
+        f" UNION ALL SELECT count(*) FROM runs WHERE options #> '{{overrides,toolsets}}' {named}"
+        f" UNION ALL SELECT count(*) FROM inbox_entries WHERE options #> '{{overrides,toolsets}}' {named}",
+    ) == [(0,), (0,), (0,)]
+    assert all(
+        digest == config_digest(stored)
+        for stored, digest in rows(database, "SELECT config, digest FROM agent_revisions")
+    )
+    # The guards are back on, and the rewritten rows read as current configurations.
+    assert rows(database, "SELECT DISTINCT tgenabled FROM pg_trigger WHERE NOT tgisinternal") == [("O",)]
+    executed = await service.client.get(f"{service.api}/runs/{run['id']}/agent")
+    assert executed.status_code == 200, executed.text
+    assert set(executed.json()["config"]["toolsets"]) == {"files", "shell", "computer", "web", "memory", "assets"}
+    assert executed.json()["config"]["toolsets"]["web"]["enabled"] is False

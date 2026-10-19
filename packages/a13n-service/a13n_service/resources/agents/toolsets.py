@@ -26,23 +26,8 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
-CONFIGURATION_TOOL_IDS = {
-    "find": "service.configuration.find",
-    "read": "service.configuration.read",
-    "describe": "service.configuration.describe",
-    "create_agent": "service.configuration.create_agent",
-    "create_revision": "service.configuration.create_revision",
-}
 
-TRACE_TOOL_IDS = {"list": "service.traces.list", "read": "service.traces.read", "spans": "service.traces.spans"}
-FINDING_TOOL_IDS = {
-    "read": "service.findings.read",
-    "submit": "service.findings.submit",
-}
-
-type ToolsetKey = Literal[
-    "files", "shell", "computer", "web", "memory", "assets", "configuration", "traces", "findings"
-]
+type ToolsetKey = Literal["files", "shell", "computer", "web", "memory", "assets"]
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -136,8 +121,6 @@ class _Tool:
     config: type[BaseModel] = EmptyConfiguration
     default_enabled: bool = True
     operation: WebOperation | None = None
-    # What a selection starts with; `inherit` takes the agent's default, which allows.
-    permission: ToolPermissionSetting = "inherit"
     description: str = ""
 
     def definition(self, supported_operations: frozenset[str]) -> ToolDefinition:
@@ -148,7 +131,8 @@ class _Tool:
             execution_id=self.execution_id,
             model_name=self.model_name,
             default_enabled=self.default_enabled,
-            default_permission="allow" if self.permission == "inherit" else self.permission,
+            # A selection starts with `inherit`, which takes the agent's default: allow.
+            default_permission="allow",
             config_schema=self.config.model_json_schema(),
             supported_permissions=_PERMISSIONS,
             resource_selector=None
@@ -439,73 +423,6 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset", description="Publish an asset"),),
         description="Publish files as agent assets.",
     ),
-    _Toolset(
-        "traces",
-        "Trace queries",
-        False,
-        (
-            _Tool("list", "List traces", TRACE_TOOL_IDS["list"], "list_traces", description="List traces"),
-            _Tool("read", "Read trace", TRACE_TOOL_IDS["read"], "read_trace", description="Read trace"),
-            _Tool(
-                "spans", "Read trace steps", TRACE_TOOL_IDS["spans"], "read_trace_spans", description="Read trace steps"
-            ),
-        ),
-        description="Read execution traces and steps.",
-    ),
-    _Toolset(
-        "findings",
-        "Findings",
-        False,
-        (
-            _Tool("read", "Read finding", FINDING_TOOL_IDS["read"], "read_finding", description="Read finding"),
-            _Tool(
-                "submit", "Submit finding", FINDING_TOOL_IDS["submit"], "submit_finding", description="Submit finding"
-            ),
-        ),
-        description="Read and submit findings with execution evidence.",
-    ),
-    _Toolset(
-        "configuration",
-        "Agent configuration",
-        False,
-        (
-            _Tool(
-                "find",
-                "Find resources",
-                CONFIGURATION_TOOL_IDS["find"],
-                "find_resources",
-                description="Find workspace resources",
-            ),
-            _Tool(
-                "read", "Read resource", CONFIGURATION_TOOL_IDS["read"], "read_resource", description="Read a resource"
-            ),
-            _Tool(
-                "describe",
-                "Describe agent configuration",
-                CONFIGURATION_TOOL_IDS["describe"],
-                "describe_agent_config",
-                description="Describe the configuration schema",
-            ),
-            # Writes act with the run principal's authority, so each one waits for the user's approval.
-            _Tool(
-                "create_agent",
-                "Create agent",
-                CONFIGURATION_TOOL_IDS["create_agent"],
-                "create_agent",
-                permission="ask",
-                description="Create an agent",
-            ),
-            _Tool(
-                "create_revision",
-                "Create agent revision",
-                CONFIGURATION_TOOL_IDS["create_revision"],
-                "create_agent_revision",
-                permission="ask",
-                description="Publish an agent version",
-            ),
-        ),
-        description="Find resources and create agents and versions.",
-    ),
 )
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 
@@ -527,16 +444,12 @@ def normalize_toolset_overrides(value: dict[ToolsetKey, ToolsetSelection]) -> di
 def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetSelection:
     selected = selected or ToolsetSelection(enabled=toolset.default_enabled)
     configuration = toolset.config.model_validate(selected.config).model_dump(mode="json", exclude_none=True)
-    # Old immutable revisions may contain the retired report tool; never expose it again.
-    retired = {"report"} if toolset.key == "findings" else set()
-    unknown = selected.tools.keys() - {tool.key for tool in toolset.tools} - retired
+    unknown = selected.tools.keys() - {tool.key for tool in toolset.tools}
     if unknown:
         raise ValueError(f"unknown {toolset.key} tool {sorted(unknown)[0]!r}")
     tools: dict[str, ToolSelection] = {}
     for tool in toolset.tools:
-        submitted = selected.tools.get(tool.key) or ToolSelection(
-            enabled=tool.default_enabled, permission=tool.permission
-        )
+        submitted = selected.tools.get(tool.key) or ToolSelection(enabled=tool.default_enabled)
         config = tool.config.model_validate(submitted.config).model_dump(mode="json", exclude_none=True)
         tools[tool.key] = submitted.model_copy(update={"config": config})
     return ToolsetSelection(enabled=selected.enabled, config=configuration, tools=tools)

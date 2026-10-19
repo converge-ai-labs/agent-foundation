@@ -3,9 +3,10 @@ title: Tools and connections
 description: Give agents built-in toolsets, MCP and app connections, client tools, and skills.
 ---
 
-An agent's tools come from four places, all selected in its [revision](agents-and-runs.md#agent-configuration):
+An agent's tools come from five places, all selected in its [revision](agents-and-runs.md#agent-configuration):
 
-- **Built-in toolsets**, which the Service runs itself: files, terminal, computer, web, memory, asset publication, agent configuration, trace queries and findings.
+- **Built-in toolsets**, which the Service runs itself: files, terminal, computer, web, memory and asset publication.
+- **Platform tools**: Service API operations, such as agent configuration, run queries and finding submission. See [Platform tools](#platform-tools).
 - **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
 - **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
 - **Skills**, which add instructions and files; see [Skills](skills.md).
@@ -24,17 +25,26 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 | `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                                                      | Each tool disabled                                 |
 | `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                | Enabled                                            |
 | `assets`           | `publish_asset`                                                                                                                                                              | Disabled                                           |
-| `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                                                          | Disabled; see [Agent Composer](agent-composer.md)  |
-| `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                                                              | Disabled                                           |
-| `findings`         | `read_finding`, `submit_finding`                                                                                                                                             | Disabled                                           |
 
 Computer tools require a compatible desktop and explicit action permissions on the mounted environment. See [Computer Use](environments.md#computer-use) for setup and screenshot previews.
 
-Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), with one primary category per issue. Unsupported values return a validation error. Categories are separate from the analysis rule presets.
-
-Configuration, trace queries and finding submission appear under **Advanced / Platform Features**. Group switches preserve individual platform-tool choices. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
-
 The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md): file tools on file memories and record tools on record memories, and a `read` mount offers only viewing, listing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
+
+## Platform tools
+
+Platform tools are Service API operations that a run calls with its own short-lived credential, within the permissions of the person or key that started it. Select them by group under **Advanced / Platform Features** in an agent's tools, or in `platform_tools`:
+
+| Group                   | Operations                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `agents`                | Agents, their versions and the toolset catalog                                                           |
+| `models`                | Models and the model catalog                                                                             |
+| `connections`           | Connections, their tools and connector apps                                                              |
+| `skills`                | Skills and their versions                                                                                |
+| `environment_templates` | Environment templates                                                                                    |
+| `providers`             | Providers, and tests of their saved connections                                                          |
+| `execution`             | Sessions, threads, runs, traces and findings; its only write submits a finding (`POST /api/v1/findings`) |
+
+One permission applies to the selected reads (`allow` by default) and one to the selected writes (`ask` by default); each can be `allow`, `ask` or `deny`. [Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) shows the configuration and the operating skill that explains these tools to the model. Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), one primary category per issue.
 
 ## Web search and scrape
 

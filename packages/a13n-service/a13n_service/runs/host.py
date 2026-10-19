@@ -22,21 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.agents.schemas import PlatformSelection, SharedSkillSync
-from a13n_service.resources.agents.toolsets import (
-    enabled_tool,
-    enabled_tools,
-    memory_file_tools,
-    memory_record_tools,
-    web_tools,
-)
+from a13n_service.resources.agents.toolsets import enabled_tool, memory_file_tools, memory_record_tools, web_tools
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.calls import CallCheck
-from a13n_service.runs.configuration import ConfigurationCapability
 from a13n_service.runs.environments.mounts import PRIMARY
-from a13n_service.runs.findings.tools import FindingCapability
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
     file_memory,
@@ -128,7 +120,7 @@ class Host:
     environment: EnvironmentRuntime
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
-        """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
+        """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
         parts = self.plan.parts[agent.revision_id]
         skills = parts.skills
@@ -147,16 +139,6 @@ class Host:
             )
         if enabled_tool(agent.config.toolsets, "assets", "publish") is not None:
             features.append(AssetsCapability(self.runtime, self.lease, self.principal, self.authority))
-        if configuration := enabled_tools(agent.config.toolsets, "configuration"):
-            features.append(
-                ConfigurationCapability(self.runtime, self.lease, self.principal, self.authority, configuration)
-            )
-        trace_tools = enabled_tools(agent.config.toolsets, "traces")
-        finding_tools = enabled_tools(agent.config.toolsets, "findings")
-        if trace_tools or finding_tools:
-            features.append(
-                FindingCapability(self.runtime, self.lease, self.principal, self.authority, trace_tools, finding_tools)
-            )
         return features
 
     def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:

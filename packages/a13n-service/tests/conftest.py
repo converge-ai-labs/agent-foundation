@@ -12,6 +12,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from copy import deepcopy
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -371,6 +372,15 @@ def listen() -> Any:
     return listening
 
 
+@asynccontextmanager
+async def platform_runtime(service: SimpleNamespace, runtime: Runtime | None = None) -> AsyncIterator[Runtime]:
+    """`runtime`, by default the service's, whose runs reach their platform tools at the service served on loopback."""
+    base = runtime or service.runtime
+    async with listening(service.app) as url:
+        server = base.settings.server.model_copy(update={"control_url": url})
+        yield replace(base, settings=base.settings.model_copy(update={"server": server}))
+
+
 @pytest.fixture
 async def scripted_model() -> AsyncIterator[ScriptedModel]:
     model = ScriptedModel()
@@ -389,6 +399,20 @@ QUESTION = {
     "options": [{"label": "red", "description": "Red"}, {"label": "blue", "description": "Blue"}],
     "multiSelect": False,
 }
+
+
+# The builtin platform guide, and the configuration for `lookup`: a server-side tool that needs no environment
+# and changes nothing.
+GUIDE = "/platform-skills/platform-operations/SKILL.md"
+LOOKUP: dict[str, Any] = {
+    "builtin_skills": ["platform-operations"],
+    "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
+}
+
+
+def lookup(model: ScriptedModel, *, call_id: str, gate: asyncio.Event | None = None, to: str | None = None) -> None:
+    """Script a call that reads the builtin platform guide, the tool an agent configured with `LOOKUP` has."""
+    model.call("view", {"file_path": GUIDE}, call_id=call_id, gate=gate, to=to)
 
 
 async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
@@ -609,6 +633,9 @@ def runs_kit() -> SimpleNamespace:
     return SimpleNamespace(
         SEALED=SEALED,
         QUESTION=QUESTION,
+        GUIDE=GUIDE,
+        LOOKUP=LOOKUP,
+        lookup=lookup,
         create_model=create_model,
         add_agent=add_agent,
         create_agent=create_agent,
@@ -628,6 +655,7 @@ def runs_kit() -> SimpleNamespace:
         texts=texts,
         user_texts=user_texts,
         attempt=attempt,
+        platform_runtime=platform_runtime,
         pause_sweeps=pause_sweeps,
         bearer=bearer,
         frames=frames,

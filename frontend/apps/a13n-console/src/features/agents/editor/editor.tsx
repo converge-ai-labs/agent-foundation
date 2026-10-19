@@ -206,6 +206,8 @@ export function AgentEditor({
           <AgentToolsets
             value={draft.toolsets}
             onChange={draft.setToolsets}
+            platform={draft.platformTools}
+            onPlatformChange={draft.setPlatformTools}
             config={built.ok ? built.config : undefined}
             agentId={agentId}
             readOnly={readonly}

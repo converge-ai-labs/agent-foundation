@@ -3,8 +3,6 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { Section } from "../../../shared/page";
-import { isRecord } from "../../../service-client";
-import { jsonObject } from "../../../shared/forms";
 import type { useAgentChoices } from "../choices";
 import { displayName } from "../connections";
 import type { SearchGroup, ToolSearchDraft } from "../tool-search";
@@ -27,18 +25,7 @@ export function ToolSearchSection({
   const { t } = useTranslation();
   const value = draft.toolSearch;
   const groups = value.groups;
-  let platformSelected = !!draft.initial.platform_tools?.groups?.length;
-  try {
-    const advanced = jsonObject(draft.advanced);
-    const platform = advanced.platform_tools;
-    platformSelected = !!(
-      isRecord(platform) &&
-      Array.isArray(platform.groups) &&
-      platform.groups.length
-    );
-  } catch {
-    /* Advanced configuration reports its own JSON errors. */
-  }
+  const platformSelected = !!draft.platformTools.groups?.length;
   const sources = [
     ...draft.connections.map(({ connection_id }) => {
       const connection = choices.data?.connections.find(

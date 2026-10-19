@@ -16782,10 +16782,7 @@
           "computer",
           "web",
           "memory",
-          "assets",
-          "configuration",
-          "traces",
-          "findings"
+          "assets"
         ],
         "type": "string"
       },
@@ -24483,6 +24480,7 @@
         }
       },
       "post": {
+        "description": "Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.\nA Run's own submission names that Run as its source; an analysis cites only selected traces it has read.",
         "operationId": "create_finding_api_v1_findings_post",
         "parameters": [
           {
@@ -24546,7 +24544,12 @@
         "summary": "Create Finding",
         "tags": [
           "findings"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/findings/{finding_id}": {

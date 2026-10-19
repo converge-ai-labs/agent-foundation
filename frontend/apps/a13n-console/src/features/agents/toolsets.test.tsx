@@ -68,20 +68,29 @@ function renderDraft(
   starting: NonNullable<AgentConfig["toolsets"]>,
   onRequireReviewer = vi.fn(),
   onReview = vi.fn(),
+  startingPlatform: NonNullable<AgentConfig["platform_tools"]> = {},
 ) {
   function Draft() {
     const [value, setValue] = useState(starting);
+    const [platform, setPlatform] = useState(startingPlatform);
     return (
       <>
         <AgentToolsets
           value={value}
           onChange={setValue}
-          config={{ model: "model-test", toolsets: value }}
+          platform={platform}
+          onPlatformChange={setPlatform}
+          config={{
+            model: "model-test",
+            toolsets: value,
+            platform_tools: platform,
+          }}
           agentId="ap_test"
           onRequireReviewer={onRequireReviewer}
           onReview={onReview}
         />
         <output data-testid="draft">{JSON.stringify(value)}</output>
+        <output data-testid="platform">{JSON.stringify(platform)}</output>
       </>
     );
   }
@@ -100,6 +109,7 @@ function renderDraft(
   return {
     user: userEvent.setup(),
     draft: () => JSON.parse(screen.getByTestId("draft").textContent!),
+    platform: () => JSON.parse(screen.getByTestId("platform").textContent!),
   };
 }
 
@@ -259,7 +269,11 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
       "/api/v1/agents/validate",
       expect.objectContaining({
         body: {
-          config: { model: "model-test", toolsets: draft() },
+          config: {
+            model: "model-test",
+            toolsets: draft(),
+            platform_tools: {},
+          },
           agent_id: "ap_test",
         },
       }),
@@ -584,63 +598,40 @@ it("enables local Web tools while Provider discovery is still pending", async ()
   expect(draft().web.tools.search.config.provider_id).toBe("wprov_brave");
 });
 
-it("keeps platform choices when opening and toggling the group, including default ask on writes", async () => {
-  const configuration = {
-    key: "configuration",
-    display_name: "Configuration",
-    default_enabled: false,
-    config_schema: {},
-    tools: ["read", "create_revision"].map((key) => ({
-      key,
-      model_name: key,
-      display_name: key,
-      execution_id: key,
-      default_enabled: true,
-      default_permission: key === "read" ? "allow" : "ask",
-      config_schema: {},
-      supported_permissions: ["inherit", "allow", "ask", "deny", "review"],
-      resource_selector: null,
-    })),
-  };
+it("selects platform groups in a fixed order with one read and one write permission", async () => {
   http.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/toolsets")
-      ? { items: [configuration] }
+      ? { items: [web] }
       : { items: [], next_cursor: null },
   }));
   http.POST.mockResolvedValue({
     response: new Response(null, { status: 204 }),
   });
-  const starting: NonNullable<AgentConfig["toolsets"]> = {
-    configuration: {
-      enabled: false,
-      tools: {
-        create_revision: { enabled: false, config: {} },
-        read: { enabled: true, permission: "deny", config: {} },
-      },
-    },
-  };
-  const { user, draft } = renderDraft(starting);
+  const { user, platform } = renderDraft({}, undefined, undefined, {
+    groups: ["execution"],
+    read_permission: "allow",
+    write_permission: "ask",
+  });
   await user.click(
     await screen.findByRole("button", { name: "Advanced / Platform Features" }),
   );
-  expect(draft()).toEqual(starting);
-  await user.click(
-    screen.getByRole("checkbox", { name: "Enable Configuration tools" }),
-  );
-  expect(draft().configuration.enabled).toBe(true);
-  expect(draft().configuration.tools.create_revision).toMatchObject({
-    enabled: false,
-    permission: "ask",
+  await user.click(screen.getByRole("checkbox", { name: "Agents" }));
+  expect(platform().groups).toEqual(["agents", "execution"]);
+  await user.click(screen.getByRole("checkbox", { name: "Execution" }));
+  expect(platform().groups).toEqual(["agents"]);
+  const writes = screen.getByRole("group", {
+    name: "Platform write permission",
   });
-  expect(draft().configuration.tools.read).toMatchObject({
-    enabled: true,
-    permission: "deny",
+  // Platform permissions have no automatic review.
+  expect(
+    within(writes).queryByRole("button", { name: "Automatic review" }),
+  ).toBeNull();
+  await user.click(within(writes).getByRole("button", { name: "Deny" }));
+  expect(platform()).toEqual({
+    groups: ["agents"],
+    read_permission: "allow",
+    write_permission: "deny",
   });
-  await user.click(
-    screen.getByRole("checkbox", { name: "Enable Configuration tools" }),
-  );
-  expect(draft().configuration.tools.create_revision.enabled).toBe(false);
-  expect(draft().configuration.tools.read.enabled).toBe(true);
 });
 
 it("selects automatic review and opens a rule for the catalogue execution identity", async () => {

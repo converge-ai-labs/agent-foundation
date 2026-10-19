@@ -29,16 +29,19 @@ import type { ReviewTarget } from "./reviewer";
 import type { AgentConfig } from "./configuration";
 import { toolState } from "./toolset-state";
 import { ToolPermissions } from "./tool-permissions";
+import { PlatformTools } from "./platform-tools";
 import { WebToolSettings, WebLocalSettings } from "./web-tool-settings";
 import styles from "./agents.module.css";
 
 type Toolsets = NonNullable<AgentConfig["toolsets"]>;
 type Definition = Schema["ToolsetDefinition"];
-const platform = new Set(["configuration", "traces", "findings"]);
+type Platform = Schema["PlatformSelection"];
 
 export function AgentToolsets({
   value,
   onChange,
+  platform,
+  onPlatformChange,
   config,
   agentId,
   readOnly = false,
@@ -50,6 +53,8 @@ export function AgentToolsets({
   onRequireReviewer?: () => void;
   value: Toolsets;
   onChange: Dispatch<SetStateAction<Toolsets>>;
+  platform: Platform;
+  onPlatformChange: Dispatch<SetStateAction<Platform>>;
   /** The whole configuration a save would publish, once the draft builds. */
   config?: AgentConfig;
   /** The agent the configuration would become a version of; none while creating. */
@@ -152,9 +157,7 @@ export function AgentToolsets({
               {
                 permission: tool.default_permission,
                 ...selection,
-                enabled: platform.has(group.key)
-                  ? (selection?.enabled ?? tool.default_enabled)
-                  : enabled && !providerMissing,
+                enabled: enabled && !providerMissing,
                 ...(provider && {
                   config: { ...selection?.config, provider_id: provider.id },
                 }),
@@ -440,19 +443,17 @@ export function AgentToolsets({
       actions={mark}
     >
       <div className={styles.toolsetCard}>
-        {catalog.data?.items
-          .filter((group) => !platform.has(group.key))
-          .map(renderGroup)}
+        {catalog.data?.items.map(renderGroup)}
       </div>
       <DisclosureSection
         title={t("Advanced / Platform Features")}
         defaultOpen={false}
       >
-        <div className={styles.toolsetCard}>
-          {catalog.data?.items
-            .filter((group) => platform.has(group.key))
-            .map(renderGroup)}
-        </div>
+        <PlatformTools
+          value={platform}
+          onChange={onPlatformChange}
+          readOnly={readOnly}
+        />
       </DisclosureSection>
       <ErrorNotice error={catalog.error} />
       {validation.error && !refusal && <ErrorNotice error={validation.error} />}
