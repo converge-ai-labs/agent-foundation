@@ -6,6 +6,8 @@ Service reads the default mount's working-directory `AGENTS.md` and discovers pr
 
 Native Execution provides Files & Shell through Local direct access, Docker containerization, or E2B remote sandboxes for quick deployment and basic applications. Envd is the general execution path for OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Each vendor's Environment Provider retains resource management and connection preparation.
 
+Native Docker does not expose port inspection/wait or Computer operations; select the explicit Envd route for those capabilities. Changing a template does not install Envd in an existing native container.
+
 For Docker Computer use, select a compatible desktop variant of `a13n-sandbox` with `execution: envd_http` and `desktop: true`. The Provider's `docker_host` selects the Engine; its separate `envd_http` settings select the reachable host and port-publication interface. Service discovers the container's published EIP port and attaches to the image-managed daemon. Preserve the image's user, display, and envd settings. Configure Agent tools and mount permissions separately.
 
 For Computer use on an E2B target, prepare a template containing compatible Envd and desktop runtimes and establish an explicit EIP connection. E2B's provider manages the sandbox and desktop resources; Native E2B execution remains Files & Shell. Check the deployed schema and negotiated EIP methods before selecting the route, then configure Agent Computer tools and mount action ceilings.

@@ -79,6 +79,16 @@ async def test_connector_is_inert_and_opens_only_a_saved_running_target(native):
     async with await connector.open() as execution:
         assert execution.availability.status == "available"
         assert execution.operations.files is not None
+        assert execution.operations.shell is not None
+        assert execution.operations.processes is not None
+        assert execution.operations.outputs is not None
+        assert execution.operations.ports is None
+        assert execution.operations.computer is None
+        assert execution.descriptor.operation_families == frozenset({"files", "shell", "processes", "outputs"})
+        assert not any(
+            action.value.startswith(("environment.port.", "environment.computer."))
+            for action in execution.descriptor.permissions.operations
+        )
         assert execution.state == env.state
         await execution.check_ready(frozenset({"files"}))
     engine.client.containers.create.assert_not_called()

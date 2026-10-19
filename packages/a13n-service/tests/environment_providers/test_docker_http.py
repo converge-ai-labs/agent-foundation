@@ -15,6 +15,7 @@ from a13n_harness.providers.environment.docker.configuration import (
 from a13n_harness.providers.environment.docker.connection import DockerHttpConfiguration
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_harness.providers.environment.docker.shared import _fingerprint
+from a13n_harness.providers.environment.remote_envd import managed
 
 pytestmark = pytest.mark.anyio
 
@@ -66,7 +67,7 @@ def peer(monkeypatch):
             calls.append((self.configuration.endpoint, self.credential, kwargs))
             yield object()
 
-    monkeypatch.setattr(http, "HttpEnvdProviderRuntime", Runtime)
+    monkeypatch.setattr(managed, "HttpEnvdProviderRuntime", Runtime)
     monkeypatch.setattr(
         http.DockerCommands, "execute", AsyncMock(side_effect=[b"", b"instance-one", b"", b"instance-two"])
     )

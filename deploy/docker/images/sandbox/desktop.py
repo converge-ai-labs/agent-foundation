@@ -88,6 +88,9 @@ def main() -> int:
         wait_ready(["xdpyinfo"])
         start(["openbox"], desktop=True)
         wait_ready(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"], marker=b"window id")
+        # Openbox publishes its identity before finishing window management.
+        # Admitting clients then can leave their first window permanently unmapped.
+        wait_ready(["xprop", "-root", "_NET_CLIENT_LIST"], marker=b"window id")
         # Operator opt-in: an empty endpoint grants no access. Publishing port 6081
         # and providing TLS remain separate host duties.
         if os.environ.get("A13N_DESKTOP_ACCESS") == "true":

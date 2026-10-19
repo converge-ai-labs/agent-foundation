@@ -125,6 +125,8 @@ The native Provider overrides the image entrypoint, enables Docker init support 
 
 Docker recipes accept `pull_policy="if_missing"` (the default) or `"never"`. `never` refuses missing images with `environment_image_missing` and never contacts a registry. Use `make image-sandbox` to build the image, and follow the [Docker lifecycle example](examples.md#docker) for direct Provider use. The Service manages Docker environments from templates; see [Service environments](../a13n-service/environments.md).
 
+Native Docker exposes Files & Shell, including process control and output observation. Port inspection/wait and Computer operations require `execution="envd_http"`; callers previously using native port operations must explicitly select a compatible Envd target. Existing native defaults and target fingerprints are unchanged. Do not change the recipe of an existing native container to imply that a daemon has been installed.
+
 With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the retained container. Closing a Session preserves the desktop; stopping and restarting the container preserves files but recreates GUI state. Configure the separate HTTP route and compatible image as described in [Docker configuration](configuration.md#docker).
 
 ## Cloud Providers
