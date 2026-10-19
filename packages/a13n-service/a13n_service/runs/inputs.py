@@ -1,13 +1,14 @@
 """Turning accepted message input into the content the model reads.
 
 Each text the Service writes carries its source ID in `TextContent` metadata: an inbox entry ID for queued
-messages, or the successor Run ID for a resume's accompanying input. Assets and URL content reach the model as `attachments` decides, once the run's
+messages, or the successor Run ID for a resume's accompanying input and a reminder of changed mounts. Assets and URL content reach the model as `attachments` decides, once the run's
 environments are ready to take the files it places. URL input is fetched here under the endpoint policy rather
 than by the model provider, so no provider ever fetches an address the operator did not allow.
 """
 
 import json
 import posixpath
+from collections.abc import Sequence
 from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit
 
@@ -25,7 +26,7 @@ from a13n_service.resources.assets.service import get_asset, read_asset_content
 from a13n_service.runs import attachments
 from a13n_service.runs.attachments import Attached, Recipient
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import AssetPart, JsonPart, MessagePayload, TextPart, UrlPart
+from a13n_service.runs.schemas import AssetPart, EnvironmentMount, JsonPart, MessagePayload, TextPart, UrlPart
 from a13n_service.runs.tables import InboxEntryRow
 from a13n_service.tenancy.authorize import Principal
 
@@ -154,6 +155,33 @@ async def _message(
 def _child_result(entry: Offered) -> tuple[UserContent, ...]:
     # The parent learns that a child run it spawned has ended; its details stay readable through the tools.
     return (_text(entry, "A delegated subagent run ended:\n" + json.dumps(entry.payload, ensure_ascii=False)),)
+
+
+def mount_reminder(
+    run_id: str, previous: Sequence[EnvironmentMount], current: Sequence[EnvironmentMount]
+) -> TextContent | None:
+    """A hidden reminder of the mounts that changed since the run whose history this run continues: a name that now
+    mounts another environment, such as a new primary sandbox after an idle delete, or one no longer mounted. The
+    model reads the current mounts, but not that the files its history wrote are gone."""
+    environments = {mount.name: mount.environment_id for mount in current}
+    changes = [
+        f'- "{mount.name}" is no longer mounted.'
+        if mount.name not in environments
+        else f'- "{mount.name}" is now a different environment. Files and processes from earlier turns are not in it.'
+        for mount in previous
+        if environments.get(mount.name) != mount.environment_id
+    ]
+    if not changes:
+        return None
+    text = "\n".join(
+        [
+            "<system-reminder>",
+            "Environment mounts changed since the previous turn of this conversation:",
+            *changes,
+            "</system-reminder>",
+        ]
+    )
+    return TextContent(text, metadata={"source_id": run_id, "display": False})
 
 
 async def content(

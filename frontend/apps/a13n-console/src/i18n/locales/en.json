@@ -1513,6 +1513,8 @@
   "Enter to send": "Enter to send",
   "Esc stops": "Esc stops",
   "Guidance": "Guidance",
+  "Hidden input": "Hidden input",
+  "The model read this input. Chat does not show it.": "The model read this input. Chat does not show it.",
   "High risk": "High risk",
   "Interrupted": "Interrupted",
   "The agent has a question": "The agent has a question",

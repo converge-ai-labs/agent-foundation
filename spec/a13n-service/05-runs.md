@@ -242,6 +242,10 @@ The worker offers assigned entries to the Harness outside any transaction, befor
 
 A steer whose content cannot be read, such as one naming an asset that is no longer usable, fails alone with the refusal's code and the run continues without it, whether it is offered at a boundary or again by a recovered attempt. Only the run's own source entry fails the run when it cannot be read, and an `unavailable` read ends the attempt instead. An attempt whose initial entries all fail alone ends as `unavailable` too, and the next continues without them.
 
+### Changed mounts
+
+A run's frozen mounts may differ from those of the run whose state it continues, the nearest checkpoint along its parents: a mount name may now name another instance, such as a new primary sandbox after an idle delete ([06](06-environments.md#idle-policy)), or none. The model reads the current mounts, not that the files its history wrote there are gone. The run's initial input therefore starts with one `display: false` text, with the run's ID as its source ID, that names each such mount inside `<system-reminder>` tags. Once the run's own checkpoint holds that input, a recovered attempt does not repeat it, and a run without initial input, such as a resume with only call results, carries none.
+
 ### How files reach the model
 
 An asset or a `url`'s content is a file with a name (a URL's is the last segment of its path) and a media type (an asset's `content_type`, a URL's `Content-Type` without parameters). It reaches the model in the first way that applies:

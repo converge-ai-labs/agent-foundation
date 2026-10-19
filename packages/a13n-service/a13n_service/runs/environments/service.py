@@ -116,8 +116,8 @@ async def reserve_environment(
     """A workspace-managed sandbox for threads to mount, reserved as acceptance reserves a primary sandbox.
 
     Maintenance dispatches its create operation. From then on the template's live idle policy applies as to any
-    instance: `stop_after_seconds` without a run using it stops it and, while no thread mounts it either,
-    `delete_after_seconds` deletes it; both count from its last use, becoming ready included.
+    instance: `stop_after_seconds` without a run using it stops it, and `delete_after_seconds` deletes it with the
+    threads' mounts of it; both count from its last use, becoming ready included.
     """
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")

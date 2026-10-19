@@ -9,6 +9,7 @@ import {
   CpuIcon,
   CubeIcon,
   DotsThreeIcon,
+  EyeSlashIcon,
   FileTextIcon,
   GitBranchIcon,
   HandPalmIcon,
@@ -91,6 +92,8 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
       return { name: t("Reply"), mono: false };
     case "guidance":
       return { name: t("Guidance"), mono: false };
+    case "hidden":
+      return { name: t("Hidden input"), mono: false };
     case "other":
       return {
         name: t("{{count}} other observations", { count: entry.count }),
@@ -161,6 +164,8 @@ export function entryGlyph(entry: TimelineEntry): Icon {
       return ArrowBendUpRightIcon;
     case "guidance":
       return ArrowElbowDownRightIcon;
+    case "hidden":
+      return EyeSlashIcon;
     case "other":
       return DotsThreeIcon;
     case "event":

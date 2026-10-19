@@ -2,9 +2,10 @@
 `renew_environments` renews the ready sandboxes that end unless renewed.
 
 Each maintenance pass begins stop and delete operations for managed instances idle past their template's thresholds,
-then dispatches a bounded batch of outstanding operations whose claim is free or expired. It revisits failed
-operations at its fixed interval with the same operation ID; it never invents a new one. Renewal has its own sweep,
-so a slow lifecycle call never delays it.
+then dispatches a bounded batch of outstanding operations whose claim is free or expired. An idle delete removes the
+threads' mounts of the instance with it, so a thread that loses its primary sandbox gets a new one at its next
+acceptance. It revisits failed operations at its fixed interval with the same operation ID; it never invents a new
+one. Renewal has its own sweep, so a slow lifecycle call never delays it.
 """
 
 from collections.abc import Awaitable, Callable
@@ -13,17 +14,18 @@ from typing import Literal
 
 import anyio
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import Select, func, or_, select, text
+from sqlalchemy import Select, delete, func, or_, select, text
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_templates.service import idle_past
-from a13n_service.runs.environments.lifecycle import advance, begin, in_use, mounted, supports
+from a13n_service.runs.environments.lifecycle import advance, begin, in_use, supports
 from a13n_service.runs.environments.renewal import renew
-from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow
+from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.tables import ThreadRow
 from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import WorkspaceScope
 
@@ -64,31 +66,46 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
         conditions = [
             EnvironmentRow.status.in_(("reserved", "ready", "stopped")),
             idle_past(EnvironmentRow.template_id, since, "delete_after_seconds"),
-            ~mounted(EnvironmentRow.id),
         ]
+    idle = (
+        select(EnvironmentRow)
+        .where(
+            EnvironmentRow.template_id.is_not(None),
+            or_(
+                EnvironmentRow.status == "reserved",
+                EnvironmentRow.provider_identity["type"].astext.in_(capable),
+            ),
+            ~in_use(EnvironmentRow.id),
+            *conditions,
+        )
+        .order_by(since)
+        .limit(batch)
+    )
     async with transaction(runtime.storage) as session:
-        candidates = (
-            await session.scalars(
-                select(EnvironmentRow)
-                .where(
-                    EnvironmentRow.template_id.is_not(None),
-                    or_(
-                        EnvironmentRow.status == "reserved",
-                        EnvironmentRow.provider_identity["type"].astext.in_(capable),
-                    ),
-                    ~in_use(EnvironmentRow.id),
-                    *conditions,
-                )
-                .order_by(since)
-                .limit(batch)
-                .with_for_update(skip_locked=True)
+        threads: set[str] = set()
+        if phase == "deleting":
+            # The threads whose mounts go with an instance precede it in the lock order. Neither lock waits: an
+            # instance that a thread locked elsewhere mounts is left to a later pass.
+            mounting = select(ThreadEnvironmentRow.thread_id).where(
+                ThreadEnvironmentRow.environment_id.in_(idle.with_only_columns(EnvironmentRow.id))
             )
-        ).all()
-        for environment in candidates:
-            if await session.scalar(select(in_use(environment.id))) or (
-                phase == "deleting" and await session.scalar(select(mounted(environment.id)))
-            ):
+            threads = set(
+                await session.scalars(
+                    select(ThreadRow.id)
+                    .where(ThreadRow.id.in_(mounting))
+                    .order_by(ThreadRow.id)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+        for environment in (await session.scalars(idle.with_for_update(skip_locked=True))).all():
+            if await session.scalar(select(in_use(environment.id))):
                 continue
+            if phase == "deleting":
+                mounts = ThreadEnvironmentRow.environment_id == environment.id
+                mounting = set(await session.scalars(select(ThreadEnvironmentRow.thread_id).where(mounts)))
+                if not mounting <= threads:
+                    continue
+                await session.execute(delete(ThreadEnvironmentRow).where(mounts))
             if environment.status == "reserved":
                 environment.status = "deleted"
             else:

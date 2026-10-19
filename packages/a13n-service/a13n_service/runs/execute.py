@@ -45,7 +45,7 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.messages import UserContent
+from pydantic_ai.messages import TextContent, UserContent
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -125,6 +125,9 @@ class _Plan:
     state: HarnessState
     resume: DeferredToolResume | None
     resume_input: Offered | None
+    # The mounts changed since the run whose history this one continues; it precedes the input until the run's own
+    # first checkpoint holds it.
+    mount_reminder: TextContent | None
     # A run that starts from a failed or cancelled one never repeats that run's unanswered tool calls.
     tool_recovery: Literal["declared", "never"]
     tail: Tail
@@ -251,6 +254,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         tail_pointer = checkpoints.TailPointer.model_validate(run.tail) if run.tail else None
         committed = Committed.of(run)
         baseline = await _baseline(session, parent)
+        previous = [EnvironmentMount.model_validate(mount) for mount in baseline.environment_mounts] if baseline else []
         baseline_checkpoint = checkpoints.require_compatible(baseline) if baseline is not None else None
         pending = Pending.model_validate(parent.pending) if parent is not None and parent.pending is not None else None
         answers = Resume.model_validate(run.resume) if run.resume is not None else None
@@ -271,8 +275,9 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         if answers is not None and answers.input is not None and not (own and own.resume_input_consumed)
         else None
     )
+    mount_reminder = inputs.mount_reminder(lease.run_id, previous, mounts)
     if own is not None:
-        state = own.harness
+        state, mount_reminder = own.harness, None
         resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
     return _Plan(
         session_id=session_id,
@@ -291,6 +296,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state=state,
         resume=resume,
         resume_input=resume_input,
+        mount_reminder=mount_reminder,
         tool_recovery="never" if unknown_outcomes else "declared",
         tail=tail,
         committed=committed,
@@ -720,7 +726,7 @@ class _Attempt:
         if not parts:
             # Each entry was a steer that failed alone; the next attempt continues without them.
             raise ServiceError("unavailable", "No assigned input could be read", {"dependency": "input"})
-        return tuple(parts)
+        return tuple(parts) if self.plan.mount_reminder is None else (self.plan.mount_reminder, *parts)
 
     async def _read(self, entry: Offered, environment: BoundEnvironment) -> tuple[UserContent, ...] | None:
         """The entry's content, its files placed in `environment`, or None for a steer that cannot be read,

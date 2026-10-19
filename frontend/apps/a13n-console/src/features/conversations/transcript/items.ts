@@ -29,6 +29,8 @@ export function transcriptBlocks(
 ): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = [];
   for (const entry of flatten(entries)) {
+    // Input hidden from Chat stays a Debug record.
+    if (entry.kind === "hidden") continue;
     if (entry.kind === "reply" && !entry.subagentRunId) {
       blocks.push({ kind: "message", id: entry.id, entry });
       continue;

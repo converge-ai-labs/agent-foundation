@@ -127,9 +127,9 @@ An expired claim lets the next dispatcher continue the **same** operation. Share
 Idle time counts from `last_used_at`, or `created_at` when the instance was never used. `last_used_at` is set when an instance becomes ready, when an attempt finds it ready and when an attempt stops using it. Instances in `creating` are not subject to the policy.
 
 - **Idle stop.** A ready managed instance whose type supports stop, idle past its template's `stop_after_seconds`, not in active use and without a permanent failure begins `stopping`. Stopping would clear a failure, such as `environment_lost`, that refuses its use.
-- **Idle delete.** An unmounted `reserved` instance not in active use becomes `deleted` without a provider call after `delete_after_seconds`; its idle time starts at reservation. A ready or stopped managed instance whose type supports destroy, idle past `delete_after_seconds`, mounted by no thread and not in active use begins `deleting`.
+- **Idle delete.** A `reserved` instance not in active use becomes `deleted` without a provider call after `delete_after_seconds`; its idle time starts at reservation. A ready or stopped managed instance whose type supports destroy, idle past `delete_after_seconds` and not in active use begins `deleting`. Either removes every thread's mount of the instance in the same transaction. The threads precede the instance in the lock order, and neither lock waits: an instance that a thread locked elsewhere mounts is left to a later pass. A thread that loses its `workspace` mount gets a new primary sandbox at its next acceptance when its agent has a default template, and that run's model is told which mounts changed ([05](05-runs.md#changed-mounts)).
 
-Both recheck active use and mounts with fresh statements under the row lock, and audit `environment.stop` or `environment.delete` with no actor and reason `idle`.
+Both recheck active use with a fresh statement under the row lock, an idle delete also the threads that mount the instance, and audit `environment.stop` or `environment.delete` with no actor and reason `idle`.
 
 ### Renewal
 
@@ -226,7 +226,7 @@ A provider error carries a category and a certainty. Invalid, unsupported, missi
 - A `reserved` instance has no outstanding operation or native target; Control never starts it merely because it exists.
 - An instance has at most one outstanding operation, and a completion is recorded only by the dispatcher whose generation, operation ID and claim token still match.
 - A different operation begins only after the previous one is settled.
-- Stop and delete never begin while an accepted or running run's frozen mounts name the instance; delete also requires that no thread mounts it, except that deleting an instance a permanent failure makes unusable removes those mounts in the same transaction.
+- Stop and delete never begin while an accepted or running run's frozen mounts name the instance. An idle delete, or a delete of an instance a permanent failure makes unusable, removes the threads' mounts of the instance in the same transaction; any other delete requires that no thread mounts it.
 - Opening or reconnecting execution never creates, starts, replaces, or renews an instance; explicit renewal never creates, starts, or replaces it.
 - Only a ready instance is renewed, and a renewal's outcome is recorded only while its claim still holds.
 - A managed instance's recipe and provider identity never change after its create is first claimed.

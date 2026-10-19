@@ -81,7 +81,8 @@ export interface ActionEntry extends EntryBase {
 }
 
 export interface ContentEntry extends EntryBase {
-  kind: "reasoning" | "reply" | "guidance";
+  /** `hidden` is input the model read that its producer hid from Chat. */
+  kind: "reasoning" | "reply" | "guidance" | "hidden";
   text: string;
   /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
@@ -211,7 +212,7 @@ export function runTimeline({
   for (const item of [...items].sort((a, b) =>
     comparePositions(a.firstPosition, b.firstPosition),
   )) {
-    if (item.display === false || ownerOfItem.has(item.id)) continue;
+    if (ownerOfItem.has(item.id)) continue;
     const content = contentEntry(item, () => {
       const first = firstUserText;
       firstUserText = false;
@@ -220,7 +221,10 @@ export function runTimeline({
     // A Run read from retained Items alone reports no execution steps; the
     // call the Item itself recorded is still what happened.
     const entry =
-      content ?? (item.kind === "tool_call" ? retainedAction(item) : null);
+      content ??
+      (item.kind === "tool_call" && item.display !== false
+        ? retainedAction(item)
+        : null);
     if (entry)
       place(
         requestOfItem.get(item.id)?.id ??
@@ -262,10 +266,12 @@ export function runTimeline({
     const sorted = [...positioned].sort((a, b) =>
       comparePositions(a.position, b.position),
     );
-    // Guidance reads before the request that read it, in arrival order.
+    // Input reads before the request that read it, in arrival order.
     const ordered = [...sorted];
     for (const item of sorted) {
-      const request = item.entry.kind === "guidance" && readBy(item, sorted);
+      const input =
+        item.entry.kind === "guidance" || item.entry.kind === "hidden";
+      const request = input && readBy(item, sorted);
       if (!request) continue;
       ordered.splice(ordered.indexOf(item), 1);
       ordered.splice(ordered.indexOf(request), 0, item);
@@ -410,10 +416,11 @@ function retainedAction(item: PresentedItem): ActionEntry {
 }
 
 /**
- * A content Item becomes an entry only when it is the Agent's own output or
- * guidance sent into a working Run. Run input and injected context are not
- * timeline actions. `first` reports, once, whether this is the Run's leading
- * user text, which is the request itself rather than steering.
+ * A content Item becomes an entry only when it is the Agent's own output,
+ * guidance sent into a working Run, or input hidden from Chat, such as where a
+ * file was placed or which mounts changed. The Run's own input and injected
+ * context are not timeline actions. `first` reports, once, whether this is the
+ * Run's leading user text, which is the request itself rather than steering.
  */
 function contentEntry(
   item: PresentedItem,
@@ -432,6 +439,10 @@ function contentEntry(
     durationMs: duration(item.startedAt, item.endedAt),
     state: item.state,
   };
+  if (item.display === false)
+    return item.kind === "text_message" && item.role === "user"
+      ? { kind: "hidden", ...base }
+      : null;
   if (item.kind === "reasoning_message") return { kind: "reasoning", ...base };
   if (item.kind !== "text_message") return null;
   if (item.role === "assistant") return { kind: "reply", ...base };

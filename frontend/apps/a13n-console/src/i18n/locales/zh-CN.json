@@ -1512,6 +1512,8 @@
   "Enter to send": "回车发送",
   "Esc stops": "Esc 停止",
   "Guidance": "补充指令",
+  "Hidden input": "隐藏输入",
+  "The model read this input. Chat does not show it.": "模型读取了这段输入，对话视图中不显示。",
   "High risk": "高风险",
   "Interrupted": "已中断",
   "The agent has a question": "智能体有一个问题",
