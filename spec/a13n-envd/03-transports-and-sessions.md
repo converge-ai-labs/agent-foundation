@@ -36,7 +36,7 @@ Carrier liveness, Session inactivity and operation/transfer deadlines are distin
 
 ## Binary Data-Frame Profile
 
-EIP 0.2 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
+EIP 0.3 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
 
 | Field               | Width | Contract                                                                         |
 | ------------------- | ----: | -------------------------------------------------------------------------------- |

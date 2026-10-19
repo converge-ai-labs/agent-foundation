@@ -49,8 +49,8 @@ it("bounds zoom to retained history and the minute-resolution minimum", () => {
     start: 98,
     end: 100,
   });
-  expect(zoomRange({ start: -1340, end: 100 }, 2, 100)).toEqual({
-    start: -1340,
+  expect(zoomRange({ start: 40, end: 100 }, 2, 100)).toEqual({
+    start: 40,
     end: 100,
   });
 });

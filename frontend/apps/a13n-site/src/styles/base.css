@@ -6,7 +6,10 @@
   --ink-2: #2b2b30;
   --muted: #6b6b74;
   --dim: #9898a1;
+  --faint: #c4c4cb;
   --rule: rgba(11, 11, 12, 0.08);
+  --rule-2: rgba(11, 11, 12, 0.16);
+  --tint: rgba(11, 11, 12, 0.028);
   --indigo: #4f46e5;
   --night: #09090a;
   --night-ink: #f3f3f5;

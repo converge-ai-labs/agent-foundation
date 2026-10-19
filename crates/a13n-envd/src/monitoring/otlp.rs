@@ -408,6 +408,9 @@ mod tests {
                 sample["cgroup_v2"] =
                     json!({"cpu_usage_usec":value * 1_000_000, "memory_events":{}, "pressure":{}});
                 sample["filesystems"] = json!({"workspace":{"metrics":{"total_bytes":value,"free_bytes":0,"available_bytes":0}}});
+                sample["network"] = json!({"interfaces":{"eth0":{"identity":"7","received_bytes":value}},"truncated":false});
+                sample["disks"] = json!({"devices":{"disk0":{"identity":"9","read_operations":value}},"truncated":false});
+                sample["daemon"] = json!({"sessions":value,"connections":1});
             }
             let observed = Instant::now()
                 - if stale {
@@ -443,6 +446,9 @@ mod tests {
                 "envd_system_cpu_time_seconds_total",
                 "envd_cgroup_cpu_usage_seconds_total",
                 "envd_filesystem_total_bytes",
+                "envd_network_received_bytes_total",
+                "envd_disk_read_operations_total",
+                "envd_daemon_sessions",
             ] {
                 let actual = values.get(name).cloned().unwrap_or_default();
                 let expected = value

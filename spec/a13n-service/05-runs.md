@@ -255,6 +255,14 @@ The worker offers assigned entries to the Harness outside any transaction, befor
 
 A steer whose content cannot be read, such as one naming an asset that is no longer usable, fails alone with the refusal's code and the run continues without it, whether it is offered at a boundary or again by a recovered attempt. Only the run's own source entry fails the run when it cannot be read, and an `unavailable` read ends the attempt instead. An attempt whose initial entries all fail alone ends as `unavailable` too, and the next continues without them.
 
+### Turn reminder
+
+The model reads the current state in each request, but not that its history no longer describes it. When something changed since the run whose state this run continues, the nearest checkpoint along its parents, the run's initial input starts with one `display: false` text, the turn reminder. It lists each change under one heading inside `<system-reminder>` tags, and its source ID is `a13n.service.reminder`, so a client can tell it apart from a message. It names:
+
+- each mount name that now names another instance, such as a new primary sandbox after an idle delete ([06](06-environments.md#idle-policy)), or none. Files and processes from earlier turns are not in the new instance.
+
+A waiting run is not active use, so its resume may find a change too. A resume that carries only call results takes the reminder as its whole input: the approved calls run in the current mounts, and the model reads the reminder with their results. Once a model request carries the reminder, a recovered attempt does not repeat it.
+
 ### How files reach the model
 
 An asset or a `url`'s content is a file with a name (a URL's is the last segment of its path) and a media type (an asset's `content_type`, a URL's `Content-Type` without parameters). It reaches the model in the first way that applies:
@@ -381,7 +389,7 @@ Deferred results precede the accompanying user content in the native model reque
 
 An agent's async subagent edges ([04](04-resources.md)) let a run delegate to a child thread through Harness tools. Spawn proves the parent's lease under thread → run → attempt locks. Steer, cancel and continue prove it under run → attempt locks and then lock the child thread and its run; status reads and waits take no lock. No path locks a parent run while holding a child thread.
 
-**Spawn.** A child is identified by the delegating tool call: `(origin_run_id, origin_tool_call_id)` is unique, so a recovered parent finds the same child instead of starting another. Depth is bounded by `worker.child_depth` (`child_depth_exceeded`) and a run's children by `worker.child_count` (`child_count_exceeded`). The child thread is created in the parent's session with `origin = child`, `subagent` set to the edge name and the parent run's frozen `mcp_headers`. Its environments come from the edge policy, never the child agent's default template: `shared` adopts the parent run's frozen mounts, `dedicated` freezes the edge's template, `none` mounts nothing. It adopts the parent run's frozen memory mounts ([11](11-memory.md#mounts)). Its first message has delivery `next_run`, the edge's pinned revision and `max_usage.requests` equal to the edge's request limit; it starts through `start_run` with `trigger = spawned` under the parent run's principal and authority.
+**Spawn.** A child is identified by the delegating tool call: `(origin_run_id, origin_tool_call_id)` is unique, so a recovered parent finds the same child instead of starting another. Depth is bounded by `worker.child_depth` (`child_depth_exceeded`) and a run's children by `worker.child_count` (`child_count_exceeded`). The child thread is created in the parent's session with `origin = child`, `subagent` set to the edge name and the parent run's frozen `mcp_headers`. Its environments come from the edge policy, never the child agent's default template: `shared` adopts the parent run's frozen mounts, `dedicated` has its acceptance reserve its primary sandbox from the edge's template, `none` mounts nothing. A later acceptance that finds no `workspace` mount gets one from the same edge ([06](06-environments.md#mounts)). It adopts the parent run's frozen memory mounts ([11](11-memory.md#mounts)). Its first message has delivery `next_run`, the edge's pinned revision and `max_usage.requests` equal to the edge's request limit; it starts through `start_run` with `trigger = spawned` under the parent run's principal and authority.
 
 **Other operations.** Each async agent's tools reach only its own edges; an unknown edge name is `not_found`. Refusals follow the [Service tools](#execute) rule. The operations:
 

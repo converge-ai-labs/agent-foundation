@@ -46,6 +46,7 @@ export function EntryPane({
   if (
     entry.kind === "reasoning" ||
     entry.kind === "guidance" ||
+    entry.kind === "hidden" ||
     entry.kind === "reply"
   )
     return <ContentPane entry={entry} />;
@@ -301,9 +302,26 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
       {entry.kind === "guidance" && !entry.steeringSource && (
         <MessageAuthor entryId={entry.sourceId} plain />
       )}
+      {entry.kind === "hidden" && (
+        <p className={styles.paneNote}>
+          {t("The model read this input. Chat does not show it.")}
+        </p>
+      )}
       <div className={styles.reasoningProse}>
         {entry.text ? (
-          <StoredContent itemId={entry.id} field="text" value={entry.text} />
+          <StoredContent
+            itemId={entry.id}
+            field="text"
+            value={entry.text}
+            // Producers tag hidden input for the model; Markdown would drop it.
+            renderValue={
+              entry.kind === "hidden"
+                ? (value) => (
+                    <pre className={styles.paneCode}>{String(value)}</pre>
+                  )
+                : undefined
+            }
+          />
         ) : (
           <p className={styles.paneNote}>{t("No text was retained.")}</p>
         )}

@@ -190,6 +190,7 @@ export async function submitDraft(
         ? captured.parts
         : [captured.parts.length ? `${preset}\n\n` : preset, ...captured.parts];
     if (
+      !transport.shareId &&
       loadSkills &&
       parts.some(
         (part) => typeof part === "string" && /(?:^|\s)\$\S+/.test(part),
@@ -222,7 +223,7 @@ export async function submitDraft(
           body: {
             parts,
             draft: captured.snapshot,
-            mode,
+            ...(!transport.shareId ? { mode } : {}),
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(appContext.length ? { app_context: appContext } : {}),
@@ -569,7 +570,7 @@ export function Composer({
     !unknown &&
     valid &&
     !!activity.available_actions?.includes("steer");
-  const stopAction = busy && !hasInput;
+  const stopAction = !transport.shareId && busy && !hasInput;
   const canSend =
     canRun &&
     !coordinatorBlocked &&
@@ -997,7 +998,7 @@ export function Composer({
       )}
       <div className={styles.composerBody}>
         <div className={styles.composerHeader}>
-          {goalToggle}
+          {!transport.shareId && goalToggle}
           {ownerControl || coordinatorControl}
           <div className={styles.composerEnvironment}>{leadingControls}</div>
         </div>
@@ -1006,18 +1007,22 @@ export function Composer({
             autoFocus={autoFocus}
             local={local}
             skillContext={skillContext}
-            loadSkills={async () => {
-              try {
-                return await loadSkills();
-              } catch (failure) {
-                setError(
-                  failure instanceof Error
-                    ? `Could not load skills: ${failure.message}`
-                    : "Could not load skills. Type $ again to retry.",
-                );
-                throw failure;
-              }
-            }}
+            loadSkills={
+              transport.shareId
+                ? undefined
+                : async () => {
+                    try {
+                      return await loadSkills();
+                    } catch (failure) {
+                      setError(
+                        failure instanceof Error
+                          ? `Could not load skills: ${failure.message}`
+                          : "Could not load skills. Type $ again to retry.",
+                      );
+                      throw failure;
+                    }
+                  }
+            }
             draft={draft}
             profile={profile}
             presence={(value) => {
@@ -1157,21 +1162,23 @@ export function Composer({
               </span>
             )}
           </span>
-          <ClearContext
-            threadId={threadId}
-            continuationId={continuationId}
-            disabled={
-              local ||
-              !canClearContext ||
-              busy ||
-              preparing ||
-              pending ||
-              unknown
-            }
-            onPendingChange={setClearing}
-            onCleared={() => setContextCleared(true)}
-            reconcile={reconcile}
-          />
+          {!transport.shareId && (
+            <ClearContext
+              threadId={threadId}
+              continuationId={continuationId}
+              disabled={
+                local ||
+                !canClearContext ||
+                busy ||
+                preparing ||
+                pending ||
+                unknown
+              }
+              onPendingChange={setClearing}
+              onCleared={() => setContextCleared(true)}
+              reconcile={reconcile}
+            />
+          )}
           <div className={styles.composerChoices}>{controls?.()}</div>
           <Button
             ref={sendButton}

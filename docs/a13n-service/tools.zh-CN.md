@@ -40,11 +40,13 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 
 `search` 和 `scrape` 调用 [web provider](resources.md#providers)：在 **Workspace settings → Providers → Web** 添加 provider，再在各工具配置中选择。`fetch` 和 `download` 使用 Service 自身的 HTTP 客户端，不需要 provider。四种工具都遵循部署的[出站策略](configuration.md#outbound-requests)。
 
-| Provider 类型                                                | 操作           | 凭据      |
-| ------------------------------------------------------------ | -------------- | --------- |
-| `duckduckgo`                                                 | search         | 无        |
-| `brave`, `perplexity`, `serpapi`                             | search         | `api_key` |
-| `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key` |
+| Provider 类型                                                            | 操作           | 凭据      |
+| ------------------------------------------------------------------------ | -------------- | --------- |
+| `duckduckgo`                                                             | search         | 无        |
+| `brave`, `perplexity`, `serpapi`                                         | search         | `api_key` |
+| `deepseek`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key` |
+
+使用 DeepSeek 时，选择 `deepseek`，并将 DeepSeek API key 保存为 Web provider 的凭据。同一个账号密钥可以调用模型和 Web API，但每个 provider 资源单独保存凭据。A13N `search` 调用 [DeepSeek Search API](https://api-docs.deepseek.com/guides/search/)，使用面向模型的结果摘要。查询保留 DeepSeek 搜索运算符，长度最多为 128 个 Unicode 字符。上游结果数量最多为 50 条；Service 仍使用自身更低的 `max_results` 上限。A13N `scrape` 调用 DeepSeek Fetch 并返回 Markdown；URL 长度最多为 8192 个字符。
 
 ![Console 中的搜索与抓取 provider 目录，包含 TinyFish](../../.github/assets/console-search-providers.webp)
 

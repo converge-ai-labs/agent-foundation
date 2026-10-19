@@ -1,4 +1,5 @@
 import { memo, useContext, type ComponentPropsWithoutRef } from "react";
+import { useGuestAccess } from "../transport/context";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
@@ -14,6 +15,15 @@ function MarkdownLink({
   ...props
 }: ComponentPropsWithoutRef<"a">) {
   const openHostFile = useContext(OpenHostFile);
+  const guest = useGuestAccess();
+  if (guest && href) {
+    try {
+      if (new URL(href, window.location.href).origin === window.location.origin)
+        return <span>{children}</span>;
+    } catch {
+      return <span>{children}</span>;
+    }
+  }
   const path = href ? linkedHostFile(href, window.location.href) : null;
   if (path && openHostFile)
     return (
@@ -62,14 +72,17 @@ export const MessageText = memo(function MessageText({
 }: {
   text: string;
 }) {
+  const guest = useGuestAccess();
   return (
     <MarkdownSource value={text}>
       <div className={styles.markdown}>
         <Markdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[
-            [linkedMediaPreviews, { currentHref: window.location.href }],
-          ]}
+          rehypePlugins={
+            guest
+              ? []
+              : [[linkedMediaPreviews, { currentHref: window.location.href }]]
+          }
           skipHtml
           components={components}
         >

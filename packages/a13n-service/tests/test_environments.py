@@ -1,6 +1,7 @@
 """Environments: templates, desired mounts frozen at acceptance, the fenced lifecycle, maintenance and use."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import timedelta
@@ -466,6 +467,62 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
     assert dedicated["name"] == "workspace" and dedicated["environment_id"] != primary["environment_id"]
 
 
+async def test_a_child_without_a_primary_gets_one_from_its_edge(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    """A dedicated child reserves a new primary from its edge's template; a shared child mounts its parent thread's
+    current one, and none while the parent has none."""
+    model = await runs_kit.create_model(env, scripted_model)
+    worker = await runs_kit.add_agent(env, "worker", model, instructions="Role: worker")
+    pinned = {"agent_id": worker["id"], "revision_id": worker["default_revision_id"]}
+    coordinator = await runs_kit.add_agent(
+        env,
+        "coordinator",
+        model,
+        instructions="Role: coordinator",
+        default_environment_template_id=env.template["id"],
+        subagent_mode="async",
+        subagents={
+            "builder": {**pinned, "environment": {"mode": "shared"}},
+            "tester": {**pinned, "environment": {"mode": "dedicated", "template_id": env.template["id"]}},
+        },
+    )
+    for name in ("builder", "tester"):
+        delegate = {"subagent_name": name, "prompt": "go"}
+        scripted_model.call("delegate", delegate, call_id=f"call_{name}", to="Role: coordinator")
+    scripted_model.say("Delegated", to="Role: coordinator")
+    submitted = await runs_kit.start_thread(env, coordinator, "split the work")
+    parent = submitted["thread"]["id"]
+    [primary] = submitted["run"]["environment_mounts"]
+    await advance(env.runtime, primary["environment_id"], owner="test")
+    await (await runs_kit.attempt(env))
+    async with transaction(env.runtime.storage) as session:
+        spawned = await session.scalars(select(ThreadRow).where(ThreadRow.origin_run_id == submitted["run"]["id"]))
+        children = {child.subagent: (child.id, child.current_run_id) for child in spawned}
+    for _, run_id in children.values():
+        await interrupt(env, run_id)
+
+    async def next_mounts(thread_id: str, agent: dict) -> list[dict]:
+        """The mounts the thread's next run freezes; the run is then stopped."""
+        response = await runs_kit.submit(env, thread_id, runs_kit.message(agent, "again"))
+        assert response.status_code == 201, response.text
+        await interrupt(env, response.json()["run"]["id"])
+        return response.json()["run"]["environment_mounts"]
+
+    tester, _ = children["tester"]
+    [lost] = (await env.client.get(f"{env.api}/threads/{tester}/environments")).json()["items"]
+    await unmount(env, tester)
+    [restored] = await next_mounts(tester, worker)
+    assert restored["name"] == "workspace"
+    assert restored["environment_id"] not in {lost["environment_id"], primary["environment_id"]}
+
+    builder, _ = children["builder"]
+    await unmount(env, parent)
+    await unmount(env, builder)
+    assert await next_mounts(builder, worker) == [], "its parent has no primary to share yet"
+    [renewed] = await next_mounts(parent, coordinator)
+    assert renewed["environment_id"] != primary["environment_id"]
+    assert await next_mounts(builder, worker) == [renewed]
+
+
 async def advance(runtime, environment_id: str, *, owner: str) -> None:
     """Explicitly prepare the reservation used by these lifecycle tests."""
     async with transaction(runtime.storage) as session:
@@ -545,9 +602,9 @@ async def test_an_uncertain_operation_is_continued_never_replaced(env, caplog) -
     assert refused.status_code == 409 and reason(refused.json()) == "environment_deleted"
 
 
-async def test_maintenance_stops_idle_sandboxes_and_deletes_unmounted_ones(env) -> None:  # type: ignore[no-untyped-def]
+async def test_maintenance_stops_idle_sandboxes_and_deletes_them_with_their_mounts(env) -> None:  # type: ignore[no-untyped-def]
     submitted = await start(env)
-    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    thread_id, environment_id = submitted["thread"]["id"], submitted["run"]["environment_mounts"][0]["environment_id"]
     await advance(env.runtime, environment_id, owner="test")
     assert (await environment(env, environment_id))["status"] == "ready"
 
@@ -564,11 +621,116 @@ async def test_maintenance_stops_idle_sandboxes_and_deletes_unmounted_ones(env) 
     etag = (await env.client.get(template)).headers["etag"]
     policy = {"config": {"delete_after_seconds": 3600}}
     assert (await env.client.patch(template, json=policy, headers={"if-match": etag})).status_code == 200
-    await maintain_environments(env.runtime, owner="sweep")
-    assert (await environment(env, environment_id))["status"] == "stopped", "the thread still mounts it"
-    await unmount(env, submitted["thread"]["id"])
+    async with transaction(env.runtime.storage) as session:
+        await session.get(ThreadRow, thread_id, with_for_update=True)
+        await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, environment_id))["status"] == "stopped", "a thread locked elsewhere mounts it"
     await maintain_environments(env.runtime, owner="sweep")
     assert (await environment(env, environment_id))["status"] == "deleted" and BACKEND.instances == {}
+    assert (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json()["items"] == []
+
+    # Without its primary sandbox, the thread gets a new one at its next acceptance.
+    next_run = await follow_up(env, thread_id, "again")
+    assert next_run.status_code == 201, next_run.text
+    [primary] = next_run.json()["run"]["environment_mounts"]
+    assert primary["name"] == "workspace" and primary["environment_id"] != environment_id
+    assert (await environment(env, primary["environment_id"]))["status"] == "reserved"
+
+
+async def test_the_next_run_hears_once_which_mounts_changed(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    """The model reads the current mounts but not that its history's files are gone: the first input after a change
+    says which names now mount another instance or none, hidden from viewers."""
+    agent = await runs_kit.create_agent(env, scripted_model)
+    first, second, data = [(await reserve(env, env.template["id"]))["id"] for _ in range(3)]
+    await maintain_environments(env.runtime, owner="sweep")
+    mounts = [{"name": "workspace", "environment_id": first}, {"name": "data", "environment_id": data}]
+    started = await runs_kit.start_thread(env, agent, "hi", environments=mounts)
+    thread_id = started["thread"]["id"]
+    scripted_model.say("Hello")
+    await (await runs_kit.attempt(env))
+    assert "system-reminder" not in json.dumps((await scripted_model.request())["messages"])
+
+    environments = f"{env.api}/threads/{thread_id}/environments"
+    for name in ("workspace", "data"):
+        thread = await runs_kit.get_thread(env, thread_id)
+        assert (await env.client.delete(f"{environments}/{name}", headers=runs_kit.if_match(thread))).status_code == 204
+    thread = await runs_kit.get_thread(env, thread_id)
+    replaced = {"name": "workspace", "environment_id": second}
+    assert (await env.client.post(environments, json=replaced, headers=runs_kit.if_match(thread))).status_code == 201
+    reminder = "\n".join(
+        [
+            "<system-reminder>",
+            "Changed since the previous turn of this conversation:",
+            '- The environment mount "data" was removed.',
+            '- The environment mount "workspace" is now a different environment. '
+            "Files and processes from earlier turns are not in it.",
+            "</system-reminder>",
+        ]
+    )
+    changed = await runs_kit.submit(env, thread_id, runs_kit.message(agent, "again"))
+    assert changed.status_code == 201, changed.text
+    run_id = changed.json()["run"]["id"]
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(env))
+    sent = json.dumps((await scripted_model.request())["messages"])
+    assert sent.count(json.dumps(reminder)[1:-1]) == 1 and sent.index("system-reminder") < sent.index("again")
+    items = (await env.client.get(f"{env.api}/runs/{run_id}/items")).json()["items"]
+    [notice] = [item["content"] for item in items if item["content"].get("text") == reminder]
+    assert (notice["metadata"]["display"], notice["metadata"]["source_id"]) == (False, "a13n.service.reminder")
+
+    # Its history keeps the reminder where it was read, and an unchanged run adds none.
+    assert (await runs_kit.submit(env, thread_id, runs_kit.message(agent, "and again"))).status_code == 201
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(env))
+    assert json.dumps((await scripted_model.request())["messages"]).count("Changed since the previous turn") == 1
+
+
+async def test_a_resume_after_an_idle_delete_reads_the_change_with_its_results(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    """Waiting is not use: the resume's calls run in a new primary sandbox, and the model reads why beside them."""
+    review = {"name": "review", "description": "Ask a person to review", "parameters_json_schema": {"type": "object"}}
+    agent = await runs_kit.create_agent(
+        env, scripted_model, client_tools=[review], default_environment_template_id=env.template["id"]
+    )
+    started = await runs_kit.start_thread(env, agent, "Review it")
+    [mount] = started["run"]["environment_mounts"]
+    await maintain_environments(env.runtime, owner="sweep")
+    scripted_model.call("review", {}, call_id="review")
+    await (await runs_kit.attempt(env))
+    await scripted_model.request()
+    assert (await runs_kit.get_run(env, started["run"]["id"]))["status"] == "waiting"
+
+    await backdate(env, mount["environment_id"], last_used_at=timedelta(hours=2))
+    template = f"{env.api}/environment-templates/{env.template['id']}"
+    etag = (await env.client.get(template)).headers["etag"]
+    policy = {"config": {"delete_after_seconds": 3600}}
+    assert (await env.client.patch(template, json=policy, headers={"if-match": etag})).status_code == 200
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, mount["environment_id"]))["status"] == "deleted"
+
+    results = {"approvals": {}, "calls": {"review": {"status": "returned", "value": {"approved": True}}}}
+    resumed = await env.client.post(
+        f"{env.api}/runs/{started['run']['id']}/resume", json=results, headers=runs_kit.fresh_key()
+    )
+    assert resumed.status_code == 201, resumed.text
+    [primary] = resumed.json()["environment_mounts"]
+    assert primary["name"] == "workspace" and primary["environment_id"] != mount["environment_id"]
+    await maintain_environments(env.runtime, owner="sweep")
+    scripted_model.say("Reviewed")
+    await (await runs_kit.attempt(env))
+    assert (await runs_kit.get_run(env, resumed.json()["id"]))["status"] == "completed"
+    request = await scripted_model.request()
+    reminder = "\n".join(
+        [
+            "<system-reminder>",
+            "Changed since the previous turn of this conversation:",
+            '- The environment mount "workspace" is now a different environment. '
+            "Files and processes from earlier turns are not in it.",
+            "</system-reminder>",
+        ]
+    )
+    *_, result, notice = request["messages"]
+    assert (result["role"], json.loads(result["content"])) == ("tool", {"approved": True})
+    assert notice["role"] == "user" and json.dumps(reminder) in json.dumps(notice)
 
 
 async def test_authorization_and_private_devices(env) -> None:  # type: ignore[no-untyped-def]

@@ -526,7 +526,7 @@ def method_records(index: SchemaIndex, options: OptionReader) -> list[dict[str, 
             raise ValueError(f"duplicate EIP JSON-RPC method: {name}")
         names.add(name)
         if record["kind"] != "request_response":
-            raise ValueError(f"EIP 0.2 method {name} must use correlated request-response")
+            raise ValueError(f"EIP 0.3 method {name} must use correlated request-response")
         if record["replay_class"] == "unspecified":
             raise ValueError(f"EIP method {name} has unspecified replay class")
         if record["error_family"] == "unspecified":
@@ -851,7 +851,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_v
 
 from .models import EIPError, Identifier
 
-EIP_PROTOCOL_VERSION: Final = "0.2"
+EIP_PROTOCOL_VERSION: Final = "0.3"
 EIP_PROTOCOL_MAJOR: Final = 0
 EIP_PROTOCOL_MINOR: Final = 2
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"

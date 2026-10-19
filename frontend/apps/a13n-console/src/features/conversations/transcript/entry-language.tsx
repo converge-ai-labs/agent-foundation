@@ -9,6 +9,7 @@ import {
   CpuIcon,
   CubeIcon,
   DotsThreeIcon,
+  EyeSlashIcon,
   FileTextIcon,
   GitBranchIcon,
   HandPalmIcon,
@@ -58,6 +59,8 @@ const IN_PROGRESS = ["in_progress", "running", "prepared"];
 const RUN_WORKING = ["running", "queued", "accepted"];
 const RUN_STOPPED = ["failed", "cancelled"];
 const ENTRY_FAILED = ["failed", "error", "cancelled", "rejected"];
+/** The source ID of the Service's turn reminder: what changed since the previous turn. */
+const TURN_REMINDER = "a13n.service.reminder";
 
 export function workState(state: string, runState = "running"): WorkState {
   if (state === "completed") return "done";
@@ -91,6 +94,14 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
       return { name: t("Reply"), mono: false };
     case "guidance":
       return { name: t("Guidance"), mono: false };
+    case "hidden":
+      return {
+        name:
+          entry.sourceId === TURN_REMINDER
+            ? t("System reminder")
+            : t("Hidden input"),
+        mono: false,
+      };
     case "other":
       return {
         name: t("{{count}} other observations", { count: entry.count }),
@@ -161,6 +172,8 @@ export function entryGlyph(entry: TimelineEntry): Icon {
       return ArrowBendUpRightIcon;
     case "guidance":
       return ArrowElbowDownRightIcon;
+    case "hidden":
+      return EyeSlashIcon;
     case "other":
       return DotsThreeIcon;
     case "event":

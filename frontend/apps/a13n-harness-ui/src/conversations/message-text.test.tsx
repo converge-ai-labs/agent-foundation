@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { MessageText } from "./message-text";
+import { GuestAccessContext } from "../transport/context";
 import { renderDiagram } from "./mermaid-render";
 import { closedFence } from "./markdown-block";
 import { OpenHostFile } from "./tool-call";
@@ -170,4 +171,30 @@ it("retains highlighted code and copy state while later prose streams", async ()
   expect(view.container.querySelector("pre code")?.textContent).toBe(
     "const value = 2;\n",
   );
+});
+
+it("keeps guest transcript links readable without opening owner pages or Host previews", () => {
+  render(
+    <GuestAccessContext
+      value={{
+        title: "Shared",
+        grant: {
+          share_id: "share-one",
+          scope: "thread",
+          target_id: "thread-one",
+          permission: "view",
+          created_at: "2026-10-19",
+          expires_at: "2026-10-20",
+        },
+      }}
+    >
+      <MessageText text="[Report](/threads/other?native=files&native_path=%2Ftmp%2Freport.png) [Settings](/settings) [Broken](http://[) [External](https://example.com)" />
+    </GuestAccessContext>,
+  );
+  expect(screen.getByText("Report").tagName).toBe("SPAN");
+  expect(screen.getByText("Settings").tagName).toBe("SPAN");
+  expect(screen.getAllByRole("link")).toHaveLength(1);
+  expect(
+    screen.getByRole("link", { name: "External" }).getAttribute("href"),
+  ).toBe("https://example.com");
 });

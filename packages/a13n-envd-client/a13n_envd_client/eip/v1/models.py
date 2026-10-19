@@ -408,6 +408,14 @@ class ComputerZoomImage(EIPModel):
     captured_at: EIPTimestamp
 
 
+class ConnectionMetrics(EIPModel):
+    tcp_total: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    tcp_states: dict[StrictStr, Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]] = Field(
+        default_factory=dict
+    )
+    udp_sockets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
 class ContentDigest(EIPModel):
     algorithm: Literal["sha256"]
     value: Sha256Digest
@@ -422,6 +430,14 @@ class CpuTimeSeconds(EIPModel):
     irq: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
     softirq: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
     steal: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+
+
+class DaemonMetrics(EIPModel):
+    sessions: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    processes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transfers: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    connections: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    retained_output_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
 
 
 class DeviceDescribeParams(EIPModel):
@@ -455,6 +471,24 @@ class DirectoryListResult(EIPModel):
 
 class DisabledSandbox(EIPModel):
     mode: Literal["disabled"]
+
+
+class DiskIoMetrics(EIPModel):
+    identity: Annotated[StrictStr, Field(max_length=128)]
+    read_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    written_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    read_operations: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    write_operations: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    read_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    write_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    busy_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    weighted_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    in_progress: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class DiskMetrics(EIPModel):
+    devices: dict[StrictStr, DiskIoMetrics] = Field(default_factory=dict)
+    truncated: StrictBool
 
 
 class EIPCallContext(EIPModel):
@@ -760,6 +794,11 @@ class FileWriterOpenResult(EIPModel):
     expires_at: EIPTimestamp
 
 
+class FilesystemInventory(EIPModel):
+    filesystems: dict[StrictStr, FilesystemObservation] = Field(default_factory=dict)
+    truncated: StrictBool
+
+
 class FilesystemMetrics(EIPModel):
     total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
     available_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
@@ -797,6 +836,23 @@ class MemoryEvents(EIPModel):
     oom: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     oom_kill: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     oom_group_kill: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class NetworkInterfaceMetrics(EIPModel):
+    identity: Annotated[StrictStr, Field(max_length=128)]
+    received_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmitted_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    received_packets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmitted_packets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    receive_errors: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmit_errors: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    receive_drops: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmit_drops: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class NetworkMetrics(EIPModel):
+    interfaces: dict[StrictStr, NetworkInterfaceMetrics] = Field(default_factory=dict)
+    truncated: StrictBool
 
 
 class OperationCancelParams(EIPModel):
@@ -1296,6 +1352,16 @@ class SystemMetrics(EIPModel):
     memory_total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     memory_available_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     pressure: Pressures | None = None
+    memory_wired_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    memory_compressed_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    swap_used_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    swap_total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    commit_total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    commit_limit_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    memory_cache_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    process_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    thread_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    handle_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
 
 
 class CgroupMetrics(EIPModel):
@@ -1310,6 +1376,10 @@ class CgroupMetrics(EIPModel):
     memory_max: MemoryLimit | None = None
     memory_events: MemoryEvents
     pressure: Pressures
+    pids_current: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    pids_limit: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    pids_unlimited: StrictBool | None = None
+    io: DiskMetrics | None = None
 
 
 class CommandRequest(EIPModel):
@@ -1338,6 +1408,11 @@ class MetricsSample(EIPModel):
     system: SystemMetrics
     cgroup_v2: CgroupMetrics | None = None
     filesystems: dict[StrictStr, FilesystemObservation] = Field(default_factory=dict)
+    network: NetworkMetrics | None = None
+    disks: DiskMetrics | None = None
+    connections: ConnectionMetrics | None = None
+    daemon: DaemonMetrics | None = None
+    local_filesystems: FilesystemInventory | None = None
 
 
 class PortInspectResult(EIPModel):
@@ -1482,14 +1557,18 @@ ComputerPoint.model_rebuild()
 ComputerRegion.model_rebuild()
 ComputerTarget.model_rebuild()
 ComputerZoomImage.model_rebuild()
+ConnectionMetrics.model_rebuild()
 ContentDigest.model_rebuild()
 CpuTimeSeconds.model_rebuild()
+DaemonMetrics.model_rebuild()
 DeviceDescribeParams.model_rebuild()
 DeviceMetricsParams.model_rebuild()
 DirectoryEntry.model_rebuild()
 DirectoryListParams.model_rebuild()
 DirectoryListResult.model_rebuild()
 DisabledSandbox.model_rebuild()
+DiskIoMetrics.model_rebuild()
+DiskMetrics.model_rebuild()
 EIPCallContext.model_rebuild()
 EIPClientInfo.model_rebuild()
 EIPLimits.model_rebuild()
@@ -1531,12 +1610,15 @@ FileWriteTextParams.model_rebuild()
 FileWriterAbortResult.model_rebuild()
 FileWriterOpenParams.model_rebuild()
 FileWriterOpenResult.model_rebuild()
+FilesystemInventory.model_rebuild()
 FilesystemMetrics.model_rebuild()
 FilesystemObservation.model_rebuild()
 InitializeParams.model_rebuild()
 LimitedCpuLimit.model_rebuild()
 LimitedMemoryLimit.model_rebuild()
 MemoryEvents.model_rebuild()
+NetworkInterfaceMetrics.model_rebuild()
+NetworkMetrics.model_rebuild()
 OperationCancelParams.model_rebuild()
 OperationCancelResult.model_rebuild()
 OperationReceipt.model_rebuild()
@@ -1667,9 +1749,11 @@ __all__ = [
     "ComputerZoomImage",
     "ComputerZoomParams",
     "ComputerZoomResult",
+    "ConnectionMetrics",
     "ContentDigest",
     "CpuLimit",
     "CpuTimeSeconds",
+    "DaemonMetrics",
     "DesiredPortStatus",
     "DeviceDescribeParams",
     "DeviceDescribeResult",
@@ -1680,6 +1764,8 @@ __all__ = [
     "DirectoryListParams",
     "DirectoryListResult",
     "DisabledSandbox",
+    "DiskIoMetrics",
+    "DiskMetrics",
     "DispatchStage",
     "EIPCallContext",
     "EIPClientInfo",
@@ -1751,6 +1837,7 @@ __all__ = [
     "FileWriterHandle",
     "FileWriterOpenParams",
     "FileWriterOpenResult",
+    "FilesystemInventory",
     "FilesystemMetrics",
     "FilesystemObservation",
     "GrantAccess",
@@ -1761,6 +1848,8 @@ __all__ = [
     "MemoryEvents",
     "MemoryLimit",
     "MetricsSample",
+    "NetworkInterfaceMetrics",
+    "NetworkMetrics",
     "OperatingSystem",
     "OperationCancelParams",
     "OperationCancelResult",

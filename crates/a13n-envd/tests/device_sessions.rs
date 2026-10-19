@@ -71,7 +71,7 @@ impl Device {
                 None,
                 "initialize",
                 json!({
-                    "supported_protocol_versions":["0.2"], "expected_device_id":"device-test",
+                    "supported_protocol_versions":["0.3"], "expected_device_id":"device-test",
                     "client":{"name":"integration-test", "version":"0"}
                 }),
             )
@@ -145,7 +145,7 @@ impl Device {
     async fn open(&mut self, folder: &str) -> String {
         let result = self.call(None, "session.open", json!({
             "expected_device_id":"device-test", "expected_generation":self.descriptor["generation"],
-            "protocol_version":"0.2", "working_directory":device_path(&self.root.join(folder)), "required_methods":["file.read_text"]
+            "protocol_version":"0.3", "working_directory":device_path(&self.root.join(folder)), "required_methods":["file.read_text"]
         })).await;
         let session = result["descriptor"]["session_id"]
             .as_str()
@@ -247,7 +247,7 @@ async fn failed_open_and_disabled_discovery_do_not_poison_device() {
     assert_eq!(result["error"]["data"]["error_type"], "unsupported");
     let failed = device.response(None, "session.open", json!({
         "expected_device_id":"device-test", "expected_generation":device.descriptor["generation"],
-        "protocol_version":"0.2", "working_directory":device_path(&device.root.join("missing")), "required_methods":[]
+        "protocol_version":"0.3", "working_directory":device_path(&device.root.join("missing")), "required_methods":[]
     })).await;
     assert_eq!(failed["error"]["data"]["error_type"], "not_found_or_denied");
     let session = device.open("beta").await;

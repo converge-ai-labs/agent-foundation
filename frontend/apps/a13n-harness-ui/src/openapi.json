@@ -248,6 +248,169 @@
         }
       }
     },
+    "/api/shares": {
+      "post": {
+        "summary": "Create Share",
+        "operationId": "create_share_api_shares_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCreated"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareCreate"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Shares",
+        "operationId": "list_shares_api_shares_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "project",
+                "thread"
+              ],
+              "type": "string",
+              "title": "Scope"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareGrant"
+                  },
+                  "title": "Response List Shares Api Shares Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shares/{share_id}": {
+      "patch": {
+        "summary": "Update Share",
+        "operationId": "update_share_api_shares__share_id__patch",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareGrant"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revoke Share",
+        "operationId": "revoke_share_api_shares__share_id__delete",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "summary": "Status",
@@ -5801,6 +5964,1135 @@
           }
         }
       }
+    },
+    "/api/shared/{share_id}/access": {
+      "get": {
+        "summary": "Shared Access",
+        "operationId": "shared_access_api_shared__share_id__access_get",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAccess"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads": {
+      "get": {
+        "summary": "Shared Threads",
+        "operationId": "shared_threads_api_shared__share_id__threads_get",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Shared Create",
+        "operationId": "shared_create_api_shared__share_id__threads_post",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedThreadCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}": {
+      "get": {
+        "summary": "Shared Thread",
+        "operationId": "shared_thread_api_shared__share_id__threads__thread_id__get",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/submit": {
+      "post": {
+        "summary": "Shared Submit",
+        "operationId": "shared_submit_api_shared__share_id__threads__thread_id__submit_post",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootRunReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootSteerRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/operations/{receipt_id}": {
+      "get": {
+        "summary": "Shared Operation",
+        "operationId": "shared_operation_api_shared__share_id__operations__receipt_id__get",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Receipt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootOperationView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/operations/{receipt_id}/steer": {
+      "post": {
+        "summary": "Shared Steer",
+        "operationId": "shared_steer_api_shared__share_id__operations__receipt_id__steer_post",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Receipt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootControlResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootSteerRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/transcript": {
+      "get": {
+        "summary": "Transcript",
+        "operationId": "transcript_api_shared__share_id__threads__thread_id__transcript_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "turn_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Turn Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/inputs": {
+      "get": {
+        "summary": "Transcript Inputs",
+        "operationId": "transcript_inputs_api_shared__share_id__threads__thread_id__inputs_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptInputPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/saved-output": {
+      "post": {
+        "summary": "Saved Output",
+        "operationId": "saved_output_api_shared__share_id__threads__thread_id__saved_output_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 65536,
+              "minimum": 1,
+              "default": 65536,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedOutputView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedOutputTarget"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/children": {
+      "get": {
+        "summary": "Children",
+        "operationId": "children_api_shared__share_id__threads__thread_id__children_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildExecutionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/children/{execution_id}/saved-output": {
+      "get": {
+        "summary": "Saved Child Output",
+        "operationId": "saved_child_output_api_shared__share_id__threads__thread_id__children__execution_id__saved_output_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedChildOutputPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/context-usage": {
+      "get": {
+        "summary": "Context Usage",
+        "operationId": "context_usage_api_shared__share_id__threads__thread_id__context_usage_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextUsageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/work": {
+      "get": {
+        "summary": "Work",
+        "operationId": "work_api_shared__share_id__threads__thread_id__work_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "tasks",
+                  "notes"
+                ],
+                "type": "string"
+              },
+              "maxItems": 2,
+              "default": [],
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadWork"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/attachments/{attachment_id}": {
+      "get": {
+        "summary": "Download Attachment",
+        "operationId": "download_attachment_api_shared__share_id__threads__thread_id__attachments__attachment_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/attachments/{attachment_id}/metadata": {
+      "get": {
+        "summary": "Attachment Metadata",
+        "operationId": "attachment_metadata_api_shared__share_id__threads__thread_id__attachments__attachment_id__metadata_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shared/{share_id}/threads/{thread_id}/attachments": {
+      "post": {
+        "summary": "Upload Attachment",
+        "operationId": "upload_attachment_api_shared__share_id__threads__thread_id__attachments_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7647,6 +8939,53 @@
           },
           "pressure": {
             "$ref": "#/components/schemas/Pressures"
+          },
+          "pids_current": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Current"
+          },
+          "pids_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Limit"
+          },
+          "pids_unlimited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Unlimited"
+          },
+          "io": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -8537,6 +9876,48 @@
         ],
         "title": "ConfigurationValidation"
       },
+      "ConnectionMetrics": {
+        "properties": {
+          "tcp_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcp Total"
+          },
+          "tcp_states": {
+            "additionalProperties": {
+              "type": "integer",
+              "maximum": 1.8446744073709552e+19,
+              "minimum": 0.0
+            },
+            "type": "object",
+            "title": "Tcp States"
+          },
+          "udp_sockets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Udp Sockets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConnectionMetrics"
+      },
       "ContentMetadata": {
         "properties": {
           "display": {
@@ -8911,6 +10292,68 @@
         "additionalProperties": false,
         "type": "object",
         "title": "CpuTimeSeconds"
+      },
+      "DaemonMetrics": {
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Sessions"
+          },
+          "processes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processes"
+          },
+          "transfers": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfers"
+          },
+          "connections": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Connections"
+          },
+          "retained_output_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retained Output Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sessions",
+          "connections"
+        ],
+        "title": "DaemonMetrics"
       },
       "DecisionBatchView": {
         "properties": {
@@ -9291,6 +10734,159 @@
         ],
         "title": "DisabledSandbox",
         "type": "object"
+      },
+      "DiskIoMetrics": {
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Identity"
+          },
+          "read_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Bytes"
+          },
+          "written_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Bytes"
+          },
+          "read_operations": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Operations"
+          },
+          "write_operations": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Operations"
+          },
+          "read_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Time Ms"
+          },
+          "write_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Time Ms"
+          },
+          "busy_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Busy Time Ms"
+          },
+          "weighted_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weighted Time Ms"
+          },
+          "in_progress": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Progress"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identity"
+        ],
+        "title": "DiskIoMetrics"
+      },
+      "DiskMetrics": {
+        "properties": {
+          "devices": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DiskIoMetrics"
+            },
+            "type": "object",
+            "title": "Devices"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "truncated"
+        ],
+        "title": "DiskMetrics"
       },
       "DraftSummary": {
         "properties": {
@@ -9817,6 +11413,11 @@
               }
             ],
             "title": "Sample Interval Ms"
+          },
+          "collection_interval_seconds": {
+            "type": "integer",
+            "title": "Collection Interval Seconds",
+            "default": 60
           },
           "age_ms": {
             "anyOf": [
@@ -10484,6 +12085,27 @@
           "expires_at"
         ],
         "title": "FileTransferAccess"
+      },
+      "FilesystemInventory": {
+        "properties": {
+          "filesystems": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FilesystemObservation"
+            },
+            "type": "object",
+            "title": "Filesystems"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "truncated"
+        ],
+        "title": "FilesystemInventory"
       },
       "FilesystemMetrics": {
         "properties": {
@@ -11202,6 +12824,26 @@
             ]
           },
           "cgroup_memory_bytes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tcp_connections": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "udp_sockets": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Gauge"
@@ -12015,6 +13657,56 @@
             },
             "type": "object",
             "title": "Filesystems"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connections": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "daemon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DaemonMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_filesystems": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilesystemInventory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -12608,7 +14300,7 @@
           "retention_minutes": {
             "type": "integer",
             "title": "Retention Minutes",
-            "default": 1440
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -12631,10 +14323,23 @@
             "type": "array",
             "title": "History"
           },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceHistory"
+            },
+            "type": "array",
+            "title": "Resources",
+            "default": []
+          },
+          "omitted_rate_sources": {
+            "type": "integer",
+            "title": "Omitted Rate Sources",
+            "default": 0
+          },
           "retention_minutes": {
             "type": "integer",
             "title": "Retention Minutes",
-            "default": 1440
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -12684,6 +14389,146 @@
         ],
         "title": "NativeToolSearchConfig",
         "description": "Provider-native discovery; omitted strategy uses the provider default."
+      },
+      "NetworkInterfaceMetrics": {
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Identity"
+          },
+          "received_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Bytes"
+          },
+          "transmitted_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmitted Bytes"
+          },
+          "received_packets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Packets"
+          },
+          "transmitted_packets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmitted Packets"
+          },
+          "receive_errors": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receive Errors"
+          },
+          "transmit_errors": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmit Errors"
+          },
+          "receive_drops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receive Drops"
+          },
+          "transmit_drops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmit Drops"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identity"
+        ],
+        "title": "NetworkInterfaceMetrics"
+      },
+      "NetworkMetrics": {
+        "properties": {
+          "interfaces": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NetworkInterfaceMetrics"
+            },
+            "type": "object",
+            "title": "Interfaces"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "truncated"
+        ],
+        "title": "NetworkMetrics"
       },
       "NotePage": {
         "properties": {
@@ -13780,6 +15625,33 @@
         ],
         "title": "QuestionView"
       },
+      "RatePoint": {
+        "properties": {
+          "minute": {
+            "type": "integer",
+            "title": "Minute"
+          },
+          "segment": {
+            "type": "integer",
+            "title": "Segment"
+          },
+          "rates": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Gauge"
+            },
+            "type": "object",
+            "title": "Rates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "minute",
+          "segment",
+          "rates"
+        ],
+        "title": "RatePoint"
+      },
       "ReasoningModeControl": {
         "properties": {
           "supported": {
@@ -13828,6 +15700,42 @@
           "switch_to_file"
         ],
         "title": "RequiredAction"
+      },
+      "ResourceHistory": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "network",
+              "disk"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "identity": {
+            "type": "string",
+            "title": "Identity"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/RatePoint"
+            },
+            "type": "array",
+            "title": "History"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "identity",
+          "history"
+        ],
+        "title": "ResourceHistory"
       },
       "ResourceId": {
         "type": "string",
@@ -14917,6 +16825,103 @@
         ],
         "title": "SetupStatus"
       },
+      "ShareAccess": {
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/ShareGrant"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "grant",
+          "title"
+        ],
+        "title": "ShareAccess"
+      },
+      "ShareCreated": {
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/ShareGrant"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "grant",
+          "key"
+        ],
+        "title": "ShareCreated"
+      },
+      "ShareGrant": {
+        "properties": {
+          "share_id": {
+            "type": "string",
+            "title": "Share Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "project",
+              "thread"
+            ],
+            "title": "Scope"
+          },
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "view",
+              "prompt"
+            ],
+            "title": "Permission"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "share_id",
+          "scope",
+          "target_id",
+          "permission",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "ShareGrant"
+      },
       "SidekickConfiguration": {
         "properties": {
           "agent": {
@@ -15253,6 +17258,136 @@
                 "type": "null"
               }
             ]
+          },
+          "memory_wired_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Wired Bytes"
+          },
+          "memory_compressed_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compressed Bytes"
+          },
+          "swap_used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Used Bytes"
+          },
+          "swap_total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Total Bytes"
+          },
+          "commit_total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Total Bytes"
+          },
+          "commit_limit_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Limit Bytes"
+          },
+          "memory_cache_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Cache Bytes"
+          },
+          "process_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Count"
+          },
+          "thread_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Count"
+          },
+          "handle_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handle Count"
           }
         },
         "additionalProperties": false,
@@ -19509,6 +21644,68 @@
         ],
         "title": "PushSubscriptionInput"
       },
+      "ShareCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "enum": [
+              "project",
+              "thread"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "target_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Target Id",
+            "type": "string"
+          },
+          "permission": {
+            "default": "view",
+            "enum": [
+              "view",
+              "prompt"
+            ],
+            "title": "Permission",
+            "type": "string"
+          },
+          "lifetime_hours": {
+            "default": 24,
+            "enum": [
+              1,
+              24,
+              168
+            ],
+            "title": "Lifetime Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "target_id"
+        ],
+        "title": "ShareCreate",
+        "type": "object"
+      },
+      "ShareUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "permission": {
+            "enum": [
+              "view",
+              "prompt"
+            ],
+            "title": "Permission",
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission"
+        ],
+        "title": "ShareUpdate",
+        "type": "object"
+      },
       "PairingRequest": {
         "properties": {
           "device_id": {
@@ -21240,6 +23437,34 @@
           "parts"
         ],
         "title": "RootSteerRequest",
+        "type": "object"
+      },
+      "SharedThreadCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "thread_id": {
+            "pattern": "^thread[-_][0-9a-f]{32}$",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "title": "SharedThreadCreate",
         "type": "object"
       }
     }

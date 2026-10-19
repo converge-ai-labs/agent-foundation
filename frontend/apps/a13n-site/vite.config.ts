@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
+import { blog } from "./blog/plugin.ts";
 
 export default defineConfig({
+  plugins: [blog()],
   build: {
     outDir: "dist",
     emptyOutDir: true,

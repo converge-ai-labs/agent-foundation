@@ -60,6 +60,7 @@ pub(crate) struct Handoff {
     shared: Arc<Shared>,
     ticket: u64,
     delivered: bool,
+    requires_finish: bool,
 }
 
 impl Handoff {
@@ -69,13 +70,16 @@ impl Handoff {
 }
 impl Drop for Handoff {
     fn drop(&mut self) {
-        self.shared.finish(self.ticket, self.delivered);
+        if self.requires_finish {
+            self.shared.finish(self.ticket, self.delivered);
+        }
     }
 }
 
 struct PendingCall {
     shared: Arc<Shared>,
     ticket: u64,
+    requires_finish: bool,
 }
 impl Drop for PendingCall {
     fn drop(&mut self) {
@@ -84,6 +88,7 @@ impl Drop for PendingCall {
             .pending
             .lock()
             .is_ok_and(|mut pending| pending.remove(&self.ticket).is_some())
+            && self.requires_finish
         {
             self.shared.finish(self.ticket, false);
         }
@@ -175,6 +180,14 @@ impl Client {
         .await
     }
 
+    pub(crate) async fn resources(&self) -> io::Result<Option<crate::daemon::SessionResources>> {
+        let ticket = self.ticket()?;
+        let response = self.call(ticket, Command::Resources { ticket }).await?;
+        let resources = serde_json::from_slice(&response.payload).map_err(|_| broken())?;
+        response.handoff.complete();
+        Ok(resources)
+    }
+
     pub async fn close_worker(&self) -> io::Result<bool> {
         let ticket = self.ticket()?;
         let response = self.call(ticket, Command::Close { ticket }).await?;
@@ -221,6 +234,7 @@ impl Client {
         let _pending = PendingCall {
             shared: self.shared.clone(),
             ticket,
+            requires_finish: !matches!(command, Command::Resources { .. }),
         };
         tokio::select! {
             result = async {
@@ -267,10 +281,11 @@ async fn read_replies(
                             shared: shared.clone(),
                             ticket: reply.ticket,
                             delivered: false,
+                            requires_finish: reply.requires_finish,
                         },
                     };
                     let _ = pending.send(response);
-                } else {
+                } else if reply.requires_finish {
                     shared.finish(reply.ticket, false);
                 }
             }
@@ -306,6 +321,7 @@ mod tests {
     fn reply_frame(ticket: u64) -> Vec<u8> {
         let body = serde_json::to_vec(&Reply {
             ticket,
+            requires_finish: true,
             payload: if ticket == 0 {
                 serde_json::json!("/workspace")
             } else {
@@ -333,6 +349,56 @@ mod tests {
             }
             return command;
         }
+    }
+
+    #[tokio::test]
+    async fn resource_snapshot_cancellation_never_requires_delivery_acknowledgement() {
+        let (controls, _receiver) = mpsc::channel(1);
+        controls
+            .try_send(encode(&Command::Resources { ticket: 1 }))
+            .unwrap();
+        let (closed, _) = watch::channel(false);
+        let (sender, _response) = oneshot::channel();
+        let shared = Arc::new(Shared {
+            controls,
+            closed,
+            pending: Mutex::new(BTreeMap::from([(1, sender)])),
+        });
+        drop(PendingCall {
+            shared: shared.clone(),
+            ticket: 1,
+            requires_finish: false,
+        });
+        assert!(shared.pending.lock().unwrap().is_empty());
+        assert!(!*shared.closed.borrow());
+        drop(Handoff {
+            shared: shared.clone(),
+            ticket: 1,
+            delivered: true,
+            requires_finish: false,
+        });
+        assert!(!*shared.closed.borrow());
+        // A late snapshot reply is discarded without filling the public delivery lane.
+        let (mut writer, reader) = tokio::io::duplex(1024);
+        let body = serde_json::to_vec(&Reply {
+            ticket: 1,
+            payload: serde_json::Value::Null,
+            requires_finish: false,
+        })
+        .unwrap();
+        writer
+            .write_all(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes())
+            .await
+            .unwrap();
+        writer.write_all(&body).await.unwrap();
+        drop(writer);
+        let (_route, routes) = watch::channel(None);
+        assert!(
+            read_replies(reader, shared.clone(), routes, 1024, 1024)
+                .await
+                .is_err()
+        );
+        assert!(!*shared.closed.borrow());
     }
 
     #[tokio::test]

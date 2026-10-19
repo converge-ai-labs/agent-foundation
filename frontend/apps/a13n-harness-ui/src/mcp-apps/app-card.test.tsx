@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TransportContext } from "../transport/context";
+import { GuestAccessContext, TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import { ConversationTranscript } from "../conversations/transcript";
 import { AppCard } from "./app-card";
@@ -395,4 +395,28 @@ it("requires a trusted one-time confirmation for a child App handoff without rep
     }),
   );
   expect(screen.getByTitle("counter")).toBe(frame);
+});
+
+it("never mounts interactive App transport or frames for guests, including live Apps", () => {
+  render(
+    <GuestAccessContext
+      value={{
+        title: "Shared",
+        grant: {
+          share_id: "share-one",
+          scope: "thread",
+          target_id: "thread-one",
+          permission: "prompt",
+          created_at: "2026-10-19",
+          expires_at: "2026-10-20",
+        },
+      }}
+    >
+      <AppCard reference={reference} live />
+    </GuestAccessContext>,
+  );
+  expect(
+    screen.getByText("Interactive app · available to the instance owner"),
+  ).toBeTruthy();
+  expect(document.querySelector("iframe")).toBeNull();
 });

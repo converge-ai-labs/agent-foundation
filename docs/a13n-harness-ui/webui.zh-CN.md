@@ -3,7 +3,7 @@ title: 使用 WebUI
 description: 运行 WebUI，共享对话、文件、Git 变更、终端和配置。
 ---
 
-使用 WebUI 在浏览器中与 Agent 协作、处理文件和使用终端。它与 TUI 共用 App 和已保存的对话，每个对话是一个根 Thread。请与可信的人共享实例：参与者使用相同的凭据和 Host 访问权限。需要托管身份和权限管理时，使用 [Service](../a13n-service/index.md)。
+使用 WebUI 在浏览器中与 Agent 协作、处理文件和使用终端。它与 TUI 共用 App 和已保存的对话，每个对话是一个根 Thread。用临时分享链接邀请他人进入对话或 Project。实例登录密钥授予完整工作台和 Host 访问权限，请与访客链接分开保管。需要托管身份和权限管理时，使用 [Service](../a13n-service/index.md)。
 
 启动服务器，打开输出中的登录链接，连接模型，然后发送第一条提示词。使用期间请保持服务器进程运行。共享实例前，先了解[认证方式](#authentication-and-key-retention)。
 
@@ -68,6 +68,18 @@ Run 活跃时，**Next message** 仍可编辑，但不会成为队列。**Steer*
 输入 `$` 加 Skill 名称，可查看可用 Skill 和说明。上下箭头选择，Enter 或 Tab 插入名称，Escape 关闭列表。接受补全不会发送提示词。引用保持为可编辑的普通 `$name` 文字，适用于新对话、已保存对话和引导。识别的引用会针对当前或活跃 Run 的目录校验，未知名称保留为普通文字，不新增 slash-command 接口。
 
 输入框上方的 **Tasks**、**Notes** 、**Subagents** 和 **Processes** 打开浮动检查面板，不改变草稿或对话。Processes 显示最后观测到的后台命令及状态，可展开进程 handle、Run 标识和退出码。数量只统计观测到的运行中 handle，不代表服务器上的全部进程，前台 shell 调用不计入。Run 完成或观测丢失时，未完成 handle 标记为不可获得，不会认定进程已退出；缺口和有界省略会明确展示。最多显示保留的 128 条观测中的 16 条。重新加载或切换对话不会从保存消息重建进程。输出仍在工具详情中，面板不能停止或控制进程。
+
+## 分享 Thread 或 Project
+
+1. 点击 Thread 中麦克风旁的 **Share**，或 Project 菜单中的 **Share Project**。
+2. 选择 **Thread** 或 **Project**。Project 链接包含当前和未来的 Thread；Thread 移出后，该链接不再能访问它。
+3. 选择 **Can view** 阅读历史、附件和实时输出，或选择 **Can prompt** 共同编辑草稿、上传、发送和引导工作。可发送的访客还能按 Project 默认设置创建 Thread。
+4. 选择一小时、一天或七天的有效期，再点击 **Create link**。仅打开面板不会生成链接。
+5. 点击 **Copy link** 或 **Preview as guest**。关闭前请复制，密钥只显示一次。在 **Active links** 中修改权限后点击 **Save**，或用 **Revoke** 撤销访问。
+
+只把可发送链接交给信任的人。提示词使用现有 Agent 的工具和 Environment 权限，包括跨对话工具。分享限制浏览器/API 访问范围，不隔离 Agent 执行。访客不能修改配置、回答审批、使用原生 Files 或 Terminal，也不能管理链接。审批由实例主人处理。
+
+Thread 链接直接打开对应的 Thread 页面，Project 链接增加简洁的 Thread 列表和搜索。只读访客看到阅读提示，可发送访客使用共享编辑器。任务、笔记和子代理输出仍可查看。同一浏览器中的访客访问与主人登录独立。过期或撤销后显示不可用页面；撤销不会取消已经开始的工作。
 
 ## 创建对话副本
 

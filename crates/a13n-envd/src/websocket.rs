@@ -270,6 +270,7 @@ async fn serve_connection(
 
     let (data_tx, mut data_rx) = mpsc::channel::<DataFrame>(data_capacity);
     let (inbound_data_tx, mut inbound_data_rx) = mpsc::channel::<DataFrame>(data_capacity);
+    let _connection = daemon.connection_guard();
     let carrier = daemon.carrier(data_tx.clone());
 
     let mut inbound_dispatch =

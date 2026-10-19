@@ -232,11 +232,14 @@ Root `envd` configures the App-owned local runtime used by Full Control and Sand
 envd:
   executable: null
   computer_use: false
+  monitoring_interval_seconds: 60
 ```
 
 `executable: null` selects the exact managed release required by the installed client. For a source checkout or custom build, set an absolute path to `a13n-envd` (`a13n-envd.exe` on Windows); `~` expands on the Host. Custom executables are not downloaded automatically. Omitting `envd` retains an embedding application's executable setting and keeps desktop access disabled.
 
 `computer_use` permits desktop-capable local runtimes on this Host. An Agent also needs the explicit `environment-desktop` profile; enabling the Host capability alone does not expose the desktop. See [local runtime management](environments-and-projects.md#manage-local-envd).
+
+`monitoring_interval_seconds` sets the App's monitoring collection pause and the sampling interval for built-in local Sandbox, Envd and Desktop daemons. It accepts 10–60 seconds, defaults to 60, and requires an App restart. External daemons and custom launch recipes retain their own sampling intervals. Browser refresh remains one minute; history retains the last hour.
 
 ### Goal checks
 

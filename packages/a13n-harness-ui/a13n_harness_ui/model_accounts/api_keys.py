@@ -38,9 +38,9 @@ class ApiKeyStore:
         self.path = path
         self.document = HostAuthDocument(path)
 
-    async def _read(self) -> _Document:
+    async def _read(self, *, observation: bool = False) -> _Document:
         try:
-            return _Document.model_validate(await self.document.read())
+            return _Document.model_validate(await self.document.read(observation=observation))
         except ValidationError:
             raise HarnessUiError(
                 "The Host authentication store could not be read or updated.", code="api_key_store_unavailable"
@@ -50,8 +50,8 @@ class ApiKeyStore:
         document = await self._read()
         return tuple(ApiKeyStatus(credential_ref=ref) for ref in sorted(document.keys))
 
-    async def load(self, reference: str) -> str | None:
-        document = await self._read()
+    async def load(self, reference: str, *, observation: bool = False) -> str | None:
+        document = await self._read(observation=observation)
         key = document.keys.get(reference)
         return key.get_secret_value() if key is not None else None
 

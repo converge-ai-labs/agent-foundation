@@ -19,7 +19,7 @@ Collaboration is scoped to one running server instance. Opening the same data ro
 | Operation receipt    | Exact current-process execution/control correlation                          | Existing root-operation authority                                      |
 | Conversation history | Inspection of selected continuation and current live output                  | Existing transcript/checkpoint and live presentation contracts         |
 
-Participants see one shared draft and can edit it concurrently. Edits merge rather than replacing the entire document with the most recently received browser text. The UI shows collaborator names, cursors, and selections without forcing participants to share navigation or scroll.
+Instance-key participants and [prompt guests](05-scoped-sharing.md) see one shared draft and can edit it concurrently. View guests observe saved messages and live output without joining the draft. Guest page presence exposes only their authorized current conversation, not the instance directory. Edits merge rather than replacing the entire document with the most recently received browser text. The UI shows collaborator names, cursors, and selections without forcing participants to share navigation or scroll.
 
 Names and colors identify collaborators for interaction and attribution; they are not verified identities. Input submission, approval, cancellation, steering, and other shared controls identify their originating participant where available, without fabricating Agent tool messages for human actions.
 

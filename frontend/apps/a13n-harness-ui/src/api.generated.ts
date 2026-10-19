@@ -135,6 +135,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Shares */
+        get: operations["list_shares_api_shares_get"];
+        put?: never;
+        /** Create Share */
+        post: operations["create_share_api_shares_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/{share_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Share */
+        delete: operations["revoke_share_api_shares__share_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Share */
+        patch: operations["update_share_api_shares__share_id__patch"];
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -1989,6 +2025,279 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shared/{share_id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Shared Access */
+        get: operations["shared_access_api_shared__share_id__access_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Shared Threads */
+        get: operations["shared_threads_api_shared__share_id__threads_get"];
+        put?: never;
+        /** Shared Create */
+        post: operations["shared_create_api_shared__share_id__threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Shared Thread */
+        get: operations["shared_thread_api_shared__share_id__threads__thread_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Shared Submit */
+        post: operations["shared_submit_api_shared__share_id__threads__thread_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/operations/{receipt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Shared Operation */
+        get: operations["shared_operation_api_shared__share_id__operations__receipt_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/operations/{receipt_id}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Shared Steer */
+        post: operations["shared_steer_api_shared__share_id__operations__receipt_id__steer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transcript */
+        get: operations["transcript_api_shared__share_id__threads__thread_id__transcript_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transcript Inputs */
+        get: operations["transcript_inputs_api_shared__share_id__threads__thread_id__inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/saved-output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Saved Output */
+        post: operations["saved_output_api_shared__share_id__threads__thread_id__saved_output_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Children */
+        get: operations["children_api_shared__share_id__threads__thread_id__children_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/children/{execution_id}/saved-output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saved Child Output */
+        get: operations["saved_child_output_api_shared__share_id__threads__thread_id__children__execution_id__saved_output_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/context-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Context Usage */
+        get: operations["context_usage_api_shared__share_id__threads__thread_id__context_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Work */
+        get: operations["work_api_shared__share_id__threads__thread_id__work_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Attachment */
+        get: operations["download_attachment_api_shared__share_id__threads__thread_id__attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/attachments/{attachment_id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachment Metadata */
+        get: operations["attachment_metadata_api_shared__share_id__threads__thread_id__attachments__attachment_id__metadata_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shared/{share_id}/threads/{thread_id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Attachment */
+        post: operations["upload_attachment_api_shared__share_id__threads__thread_id__attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2634,6 +2943,13 @@ export interface components {
             memory_max?: components["schemas"]["MemoryLimit"] | null;
             memory_events: components["schemas"]["MemoryEvents"];
             pressure: components["schemas"]["Pressures"];
+            /** Pids Current */
+            pids_current?: number | null;
+            /** Pids Limit */
+            pids_limit?: number | null;
+            /** Pids Unlimited */
+            pids_unlimited?: boolean | null;
+            io?: components["schemas"]["DiskMetrics"] | null;
         };
         /** ChangesPage */
         ChangesPage: {
@@ -2970,6 +3286,17 @@ export interface components {
             /** Candidate Digest */
             candidate_digest: string;
         };
+        /** ConnectionMetrics */
+        ConnectionMetrics: {
+            /** Tcp Total */
+            tcp_total?: number | null;
+            /** Tcp States */
+            tcp_states?: {
+                [key: string]: number;
+            };
+            /** Udp Sockets */
+            udp_sockets?: number | null;
+        };
         /**
          * ContentMetadata
          * @description Presentation and opaque Host references; never instructions or authority.
@@ -3098,6 +3425,19 @@ export interface components {
             softirq?: number | null;
             /** Steal */
             steal?: number | null;
+        };
+        /** DaemonMetrics */
+        DaemonMetrics: {
+            /** Sessions */
+            sessions: number;
+            /** Processes */
+            processes?: number | null;
+            /** Transfers */
+            transfers?: number | null;
+            /** Connections */
+            connections: number;
+            /** Retained Output Bytes */
+            retained_output_bytes?: number | null;
         };
         /** DecisionBatchView */
         DecisionBatchView: {
@@ -3235,6 +3575,38 @@ export interface components {
              * @enum {string}
              */
             mode: "disabled";
+        };
+        /** DiskIoMetrics */
+        DiskIoMetrics: {
+            /** Identity */
+            identity: string;
+            /** Read Bytes */
+            read_bytes?: number | null;
+            /** Written Bytes */
+            written_bytes?: number | null;
+            /** Read Operations */
+            read_operations?: number | null;
+            /** Write Operations */
+            write_operations?: number | null;
+            /** Read Time Ms */
+            read_time_ms?: number | null;
+            /** Write Time Ms */
+            write_time_ms?: number | null;
+            /** Busy Time Ms */
+            busy_time_ms?: number | null;
+            /** Weighted Time Ms */
+            weighted_time_ms?: number | null;
+            /** In Progress */
+            in_progress?: number | null;
+        };
+        /** DiskMetrics */
+        DiskMetrics: {
+            /** Devices */
+            devices?: {
+                [key: string]: components["schemas"]["DiskIoMetrics"];
+            };
+            /** Truncated */
+            truncated: boolean;
         };
         /** DraftSummary */
         DraftSummary: {
@@ -3424,6 +3796,11 @@ export interface components {
             sample?: components["schemas"]["MetricsSample"] | null;
             /** Sample Interval Ms */
             sample_interval_ms?: number | null;
+            /**
+             * Collection Interval Seconds
+             * @default 60
+             */
+            collection_interval_seconds?: number;
             /** Age Ms */
             age_ms?: number | null;
         };
@@ -3657,6 +4034,15 @@ export interface components {
             url: string;
             /** Expires At */
             expires_at: number;
+        };
+        /** FilesystemInventory */
+        FilesystemInventory: {
+            /** Filesystems */
+            filesystems?: {
+                [key: string]: components["schemas"]["FilesystemObservation"];
+            };
+            /** Truncated */
+            truncated: boolean;
         };
         /** FilesystemMetrics */
         FilesystemMetrics: {
@@ -3911,6 +4297,8 @@ export interface components {
             cpu_busy_percent?: components["schemas"]["Gauge"] | null;
             memory_used_bytes?: components["schemas"]["Gauge"] | null;
             cgroup_memory_bytes?: components["schemas"]["Gauge"] | null;
+            tcp_connections?: components["schemas"]["Gauge"] | null;
+            udp_sockets?: components["schemas"]["Gauge"] | null;
         };
         /**
          * ImageInputPolicy
@@ -4279,6 +4667,11 @@ export interface components {
             filesystems?: {
                 [key: string]: components["schemas"]["FilesystemObservation"];
             };
+            network?: components["schemas"]["NetworkMetrics"] | null;
+            disks?: components["schemas"]["DiskMetrics"] | null;
+            connections?: components["schemas"]["ConnectionMetrics"] | null;
+            daemon?: components["schemas"]["DaemonMetrics"] | null;
+            local_filesystems?: components["schemas"]["FilesystemInventory"] | null;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
@@ -4494,7 +4887,7 @@ export interface components {
             capacity?: number;
             /**
              * Retention Minutes
-             * @default 1440
+             * @default 60
              */
             retention_minutes?: number;
         };
@@ -4504,8 +4897,18 @@ export interface components {
             /** History */
             history: components["schemas"]["HistoryPoint"][];
             /**
+             * Resources
+             * @default []
+             */
+            resources?: components["schemas"]["ResourceHistory"][];
+            /**
+             * Omitted Rate Sources
+             * @default 0
+             */
+            omitted_rate_sources?: number;
+            /**
              * Retention Minutes
-             * @default 1440
+             * @default 60
              */
             retention_minutes?: number;
         };
@@ -4523,6 +4926,36 @@ export interface components {
              * @enum {string}
              */
             mode: "native";
+        };
+        /** NetworkInterfaceMetrics */
+        NetworkInterfaceMetrics: {
+            /** Identity */
+            identity: string;
+            /** Received Bytes */
+            received_bytes?: number | null;
+            /** Transmitted Bytes */
+            transmitted_bytes?: number | null;
+            /** Received Packets */
+            received_packets?: number | null;
+            /** Transmitted Packets */
+            transmitted_packets?: number | null;
+            /** Receive Errors */
+            receive_errors?: number | null;
+            /** Transmit Errors */
+            transmit_errors?: number | null;
+            /** Receive Drops */
+            receive_drops?: number | null;
+            /** Transmit Drops */
+            transmit_drops?: number | null;
+        };
+        /** NetworkMetrics */
+        NetworkMetrics: {
+            /** Interfaces */
+            interfaces?: {
+                [key: string]: components["schemas"]["NetworkInterfaceMetrics"];
+            };
+            /** Truncated */
+            truncated: boolean;
         };
         /** NotePage */
         NotePage: {
@@ -4913,6 +5346,17 @@ export interface components {
              */
             multi_select?: boolean;
         };
+        /** RatePoint */
+        RatePoint: {
+            /** Minute */
+            minute: number;
+            /** Segment */
+            segment: number;
+            /** Rates */
+            rates: {
+                [key: string]: components["schemas"]["Gauge"];
+            };
+        };
         /** ReasoningModeControl */
         ReasoningModeControl: {
             /** Supported */
@@ -4928,6 +5372,20 @@ export interface components {
          * @enum {string}
          */
         RequiredAction: "none" | "login" | "refresh" | "reauthenticate" | "switch_to_file";
+        /** ResourceHistory */
+        ResourceHistory: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "network" | "disk";
+            /** Name */
+            name: string;
+            /** Identity */
+            identity: string;
+            /** History */
+            history: components["schemas"]["RatePoint"][];
+        };
         ResourceId: string;
         /** ResourcePage */
         ResourcePage: {
@@ -5394,6 +5852,47 @@ export interface components {
             /** Diagnostic */
             diagnostic?: string | null;
         };
+        /** ShareAccess */
+        ShareAccess: {
+            grant: components["schemas"]["ShareGrant"];
+            /** Title */
+            title: string;
+        };
+        /** ShareCreated */
+        ShareCreated: {
+            grant: components["schemas"]["ShareGrant"];
+            /** Key */
+            key: string;
+        };
+        /** ShareGrant */
+        ShareGrant: {
+            /** Share Id */
+            share_id: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "project" | "thread";
+            /** Target Id */
+            target_id: string;
+            /**
+             * Permission
+             * @enum {string}
+             */
+            permission: "view" | "prompt";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Revoked At */
+            revoked_at?: string | null;
+        };
         /**
          * SidekickConfiguration
          * @description Instruction-guided collaboration; omitted Agent inherits the calling Agent.
@@ -5485,6 +5984,26 @@ export interface components {
             /** Memory Available Bytes */
             memory_available_bytes?: number | null;
             pressure?: components["schemas"]["Pressures"] | null;
+            /** Memory Wired Bytes */
+            memory_wired_bytes?: number | null;
+            /** Memory Compressed Bytes */
+            memory_compressed_bytes?: number | null;
+            /** Swap Used Bytes */
+            swap_used_bytes?: number | null;
+            /** Swap Total Bytes */
+            swap_total_bytes?: number | null;
+            /** Commit Total Bytes */
+            commit_total_bytes?: number | null;
+            /** Commit Limit Bytes */
+            commit_limit_bytes?: number | null;
+            /** Memory Cache Bytes */
+            memory_cache_bytes?: number | null;
+            /** Process Count */
+            process_count?: number | null;
+            /** Thread Count */
+            thread_count?: number | null;
+            /** Handle Count */
+            handle_count?: number | null;
         };
         /** TaskPage */
         TaskPage: {
@@ -7103,6 +7622,36 @@ export interface components {
             /** Origin */
             origin: string;
         };
+        /** ShareCreate */
+        ShareCreate: {
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "project" | "thread";
+            /** Target Id */
+            target_id: string;
+            /**
+             * Permission
+             * @default view
+             * @enum {string}
+             */
+            permission?: "view" | "prompt";
+            /**
+             * Lifetime Hours
+             * @default 24
+             * @enum {integer}
+             */
+            lifetime_hours?: 1 | 24 | 168;
+        };
+        /** ShareUpdate */
+        ShareUpdate: {
+            /**
+             * Permission
+             * @enum {string}
+             */
+            permission: "view" | "prompt";
+        };
         /** PairingRequest */
         PairingRequest: {
             /** Device Id */
@@ -7608,6 +8157,13 @@ export interface components {
             source_id?: string | null;
             draft?: components["schemas"]["DraftCapture"] | null;
         };
+        /** SharedThreadCreate */
+        SharedThreadCreate: {
+            /** Thread Id */
+            thread_id: string;
+            /** Title */
+            title?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -7823,6 +8379,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PushTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_shares_api_shares_get: {
+        parameters: {
+            query: {
+                scope: "project" | "thread";
+                target_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareGrant"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_share_api_shares_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareCreated"];
+                };
+            };
+        };
+    };
+    revoke_share_api_shares__share_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_share_api_shares__share_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareGrant"];
                 };
             };
             /** @description Validation Error */
@@ -11586,6 +12262,593 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RootControlResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_access_api_shared__share_id__access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareAccess"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_threads_api_shared__share_id__threads_get: {
+        parameters: {
+            query?: {
+                query?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_create_api_shared__share_id__threads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedThreadCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_thread_api_shared__share_id__threads__thread_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_submit_api_shared__share_id__threads__thread_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RootSteerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RootRunReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_operation_api_shared__share_id__operations__receipt_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+                receipt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RootOperationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_steer_api_shared__share_id__operations__receipt_id__steer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+                receipt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RootSteerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RootControlResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcript_api_shared__share_id__threads__thread_id__transcript_get: {
+        parameters: {
+            query?: {
+                expected_continuation_id?: string | null;
+                cursor?: string | null;
+                limit?: number;
+                turn_id?: string | null;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcript_inputs_api_shared__share_id__threads__thread_id__inputs_get: {
+        parameters: {
+            query?: {
+                expected_continuation_id?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptInputPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_output_api_shared__share_id__threads__thread_id__saved_output_post: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedOutputTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedOutputView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    children_api_shared__share_id__threads__thread_id__children_get: {
+        parameters: {
+            query?: {
+                execution_id?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChildExecutionPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_child_output_api_shared__share_id__threads__thread_id__children__execution_id__saved_output_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                execution_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedChildOutputPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    context_usage_api_shared__share_id__threads__thread_id__context_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextUsageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    work_api_shared__share_id__threads__thread_id__work_get: {
+        parameters: {
+            query?: {
+                include?: ("tasks" | "notes")[];
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadWork"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_attachment_api_shared__share_id__threads__thread_id__attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                attachment_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attachment_metadata_api_shared__share_id__threads__thread_id__attachments__attachment_id__metadata_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                attachment_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadAttachment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_attachment_api_shared__share_id__threads__thread_id__attachments_post: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadAttachment"];
                 };
             };
             /** @description Validation Error */

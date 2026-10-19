@@ -326,6 +326,7 @@ class EnvdConfiguration(StrictModel):
 
     executable: str | None = Field(default=None, min_length=1, max_length=4096)
     computer_use: bool = False
+    monitoring_interval_seconds: int = Field(default=60, ge=10, le=60)
 
     @field_validator("executable")
     @classmethod

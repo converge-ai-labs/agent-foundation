@@ -63,7 +63,7 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          use serde::{Deserialize, Serialize};\n\n",
     );
     output.push_str(&format!(
-        "pub const EIP_PROTOCOL_VERSION: &str = \"0.2\";\n\
+        "pub const EIP_PROTOCOL_VERSION: &str = \"0.3\";\n\
          pub const EIP_PROTO_PACKAGE: &str = \"{PACKAGE}\";\n\n"
     ));
     render_data_frame(&mut output, pool, &extensions)?;
@@ -1278,7 +1278,7 @@ fn method_records(
         }
         if record.kind != "request_response" {
             return Err(format!(
-                "EIP 0.2 method {} must use correlated request-response",
+                "EIP 0.3 method {} must use correlated request-response",
                 record.jsonrpc_method
             ));
         }

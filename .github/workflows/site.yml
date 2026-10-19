@@ -4,6 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - "blog/**"
       - "docs/**"
       - "frontend/*"
       - "frontend/apps/a13n-docs/**"
@@ -17,6 +18,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "blog/**"
       - "docs/**"
       - "frontend/*"
       - "frontend/apps/a13n-docs/**"
