@@ -18,18 +18,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) mod clipboard;
 pub(crate) mod startup;
 
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
+mod macos_clipboard;
+#[cfg(target_os = "macos")]
 use macos as native;
 #[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
+mod x11_clipboard;
+#[cfg(target_os = "linux")]
 use x11 as native;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "windows")]
+mod windows_clipboard;
 #[cfg(target_os = "windows")]
 use windows as native;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
@@ -38,6 +45,21 @@ mod native {
     #[derive(Default)]
     pub(super) struct Backend {}
     impl Backend {
+        pub(super) fn read_clipboard(
+            &self,
+            _: u32,
+            _: &dyn Fn() -> bool,
+        ) -> Result<ComputerReadClipboardResult, EIPError> {
+            Err(unsupported())
+        }
+        pub(super) fn write_clipboard(
+            &self,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Effect, EIPError> {
+            Err(unsupported())
+        }
+        pub(super) fn close_clipboard(&self) {}
         pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
             Err(unsupported())
         }
@@ -263,6 +285,7 @@ pub(crate) struct Computer {
     ids: ShortIdAllocator,
     observations: Mutex<VecDeque<Basis>>,
     native: native::Backend,
+    clipboard_budget: Mutex<Option<crate::filesystem::StagingReservation>>,
 }
 
 impl Computer {
@@ -271,11 +294,72 @@ impl Computer {
             ids,
             observations: Mutex::new(VecDeque::new()),
             native: native::Backend::default(),
+            clipboard_budget: Mutex::new(None),
         }
     }
 
     pub(crate) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         self.native.describe()
+    }
+
+    pub(crate) fn read_clipboard(
+        &self,
+        max_bytes: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        if !(1..=clipboard::MAX_TEXT_BYTES as u32).contains(&max_bytes) {
+            return Err(error(
+                ErrorType::InvalidParams,
+                "max_bytes must be between 1 and 16384",
+            ));
+        }
+        let _access = clipboard::gate(interrupted)?;
+        let result = self.native.read_clipboard(max_bytes, interrupted)?;
+        clipboard::check(interrupted)?;
+        Ok(result)
+    }
+
+    pub(crate) fn write_clipboard(
+        &self,
+        text: &str,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        let text = clipboard::write_text(text)?;
+        let _access = clipboard::gate(interrupted)?;
+        self.native.write_clipboard(&text, interrupted)
+    }
+
+    pub(crate) fn reserve_clipboard(
+        &self,
+        filesystem: &crate::filesystem::DeviceFilesystem,
+    ) -> Result<(), EIPError> {
+        let mut budget = self
+            .clipboard_budget
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if budget.is_none() {
+            // One retained payload plus bounded native conversion, transfer and
+            // result buffers. Active access is serialized by the desktop gate.
+            *budget = Some(
+                filesystem
+                    .reserve_staging((clipboard::MAX_NATIVE_BYTES * 4) as u64)
+                    .map_err(|_| {
+                        error(
+                            ErrorType::QuotaExceeded,
+                            "clipboard memory budget unavailable",
+                        )
+                    })?,
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn close(&self) {
+        self.native.close_clipboard();
+        self.clipboard_budget
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
     }
 
     pub(crate) fn observe(

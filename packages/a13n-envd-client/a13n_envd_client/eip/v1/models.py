@@ -131,6 +131,12 @@ class ComputerButton(StrEnum):
     MIDDLE = "middle"
 
 
+class ComputerClipboardStatus(StrEnum):
+    TEXT = "text"
+    NO_CONTENT = "no_content"
+    NO_TEXT = "no_text"
+
+
 class ComputerEffect(StrEnum):
     NOT_EXECUTED = "not_executed"
     EXECUTED = "executed"
@@ -380,6 +386,11 @@ class ComputerObservation(EIPModel):
 class ComputerPoint(EIPModel):
     x: Annotated[StrictInt, Field(ge=0, le=4294967295)]
     y: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class ComputerReadClipboardResult(EIPModel):
+    status: ComputerClipboardStatus
+    text: StrictStr | None = None
 
 
 class ComputerRegion(EIPModel):
@@ -1118,6 +1129,11 @@ class ComputerPressKeysParams(EIPModel):
     keys: tuple[StrictStr, ...] = ()
 
 
+class ComputerReadClipboardParams(EIPModel):
+    context: EIPCallContext
+    max_bytes: Annotated[StrictInt, Field(ge=1, le=16384)] = 16384
+
+
 class ComputerScrollParams(EIPModel):
     context: EIPCallContext
     observation_id: Identifier
@@ -1130,6 +1146,17 @@ class ComputerScrollParams(EIPModel):
 class ComputerTypeTextParams(EIPModel):
     context: EIPCallContext
     text: StrictStr
+
+
+class ComputerWriteClipboardParams(EIPModel):
+    context: EIPCallContext
+    text: StrictStr
+
+
+class ComputerWriteClipboardResult(EIPModel):
+    receipt: OperationReceipt
+    effect: ComputerEffect
+    cleanup_complete: StrictBool
 
 
 class ComputerZoomParams(EIPModel):
@@ -1554,6 +1581,7 @@ CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
 ComputerObservation.model_rebuild()
 ComputerPoint.model_rebuild()
+ComputerReadClipboardResult.model_rebuild()
 ComputerRegion.model_rebuild()
 ComputerTarget.model_rebuild()
 ComputerZoomImage.model_rebuild()
@@ -1662,8 +1690,11 @@ ComputerMoveParams.model_rebuild()
 ComputerObserveParams.model_rebuild()
 ComputerObserveResult.model_rebuild()
 ComputerPressKeysParams.model_rebuild()
+ComputerReadClipboardParams.model_rebuild()
 ComputerScrollParams.model_rebuild()
 ComputerTypeTextParams.model_rebuild()
+ComputerWriteClipboardParams.model_rebuild()
+ComputerWriteClipboardResult.model_rebuild()
 ComputerZoomParams.model_rebuild()
 ComputerZoomResult.model_rebuild()
 EgressPolicy.model_rebuild()
@@ -1731,6 +1762,7 @@ __all__ = [
     "ComputerActionResult",
     "ComputerButton",
     "ComputerClickParams",
+    "ComputerClipboardStatus",
     "ComputerDescribeParams",
     "ComputerDescribeResult",
     "ComputerDragParams",
@@ -1741,11 +1773,15 @@ __all__ = [
     "ComputerObserveResult",
     "ComputerPoint",
     "ComputerPressKeysParams",
+    "ComputerReadClipboardParams",
+    "ComputerReadClipboardResult",
     "ComputerRegion",
     "ComputerScrollParams",
     "ComputerScrollUnit",
     "ComputerTarget",
     "ComputerTypeTextParams",
+    "ComputerWriteClipboardParams",
+    "ComputerWriteClipboardResult",
     "ComputerZoomImage",
     "ComputerZoomParams",
     "ComputerZoomResult",

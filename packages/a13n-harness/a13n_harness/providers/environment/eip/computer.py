@@ -6,6 +6,8 @@ from a13n_envd_client.eip import v1 as eip
 from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerDrag,
     ComputerInput,
@@ -28,6 +30,42 @@ class EIPComputerOperations:
         self._session = session
         self._execution_id = execution_id
         self._generation = generation
+
+    async def read_clipboard(self, *, max_bytes: int = 16384) -> ComputerClipboard:
+        result = await invoke(
+            session_client(self._session).computer_read_clipboard(
+                eip.ComputerReadClipboardParams(context=new_context(), max_bytes=max_bytes)
+            )
+        )
+        return ComputerClipboard.model_validate(result.model_dump())
+
+    async def write_clipboard(self, text: str) -> ComputerClipboardWriteResult:
+        try:
+            result = await invoke(
+                session_client(self._session).computer_write_clipboard(
+                    eip.ComputerWriteClipboardParams(context=new_context(), text=text)
+                )
+            )
+        except EnvironmentError as error:
+            if error.retry_hint == "new_run" and "dispatch_stage" not in error.details:
+                raise EnvironmentError(
+                    "Clipboard publication outcome is unconfirmed",
+                    code=error.code,
+                    retry_hint="reconcile_first",
+                    details={
+                        **error.details,
+                        "dispatch_stage": "unknown",
+                        "hint": "Inspect the clipboard before another write; do not automatically replay it.",
+                    },
+                ) from error
+            raise
+        return ComputerClipboardWriteResult(
+            receipt=convert_receipt(
+                result.receipt, session=self._session, execution_id=self._execution_id, generation=self._generation
+            ),
+            effect=result.effect.value,
+            cleanup_complete=result.cleanup_complete,
+        )
 
     async def describe(self) -> ComputerDescription:
         result = await invoke(

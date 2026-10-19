@@ -476,6 +476,15 @@
       "title": "ComputerClickParams",
       "type": "object"
     },
+    "ComputerClipboardStatus": {
+      "enum": [
+        "text",
+        "no_content",
+        "no_text"
+      ],
+      "title": "ComputerClipboardStatus",
+      "type": "string"
+    },
     "ComputerDescribeParams": {
       "additionalProperties": false,
       "properties": {
@@ -748,6 +757,51 @@
       "title": "ComputerPressKeysParams",
       "type": "object"
     },
+    "ComputerReadClipboardParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "max_bytes": {
+          "default": 16384,
+          "maximum": 16384,
+          "minimum": 1,
+          "title": "Max Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "ComputerReadClipboardParams",
+      "type": "object"
+    },
+    "ComputerReadClipboardResult": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ComputerClipboardStatus"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "ComputerReadClipboardResult",
+      "type": "object"
+    },
     "ComputerRegion": {
       "additionalProperties": false,
       "properties": {
@@ -891,6 +945,46 @@
         "text"
       ],
       "title": "ComputerTypeTextParams",
+      "type": "object"
+    },
+    "ComputerWriteClipboardParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "text"
+      ],
+      "title": "ComputerWriteClipboardParams",
+      "type": "object"
+    },
+    "ComputerWriteClipboardResult": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanup_complete": {
+          "title": "Cleanup Complete",
+          "type": "boolean"
+        },
+        "effect": {
+          "$ref": "#/$defs/ComputerEffect"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "receipt",
+        "effect",
+        "cleanup_complete"
+      ],
+      "title": "ComputerWriteClipboardResult",
       "type": "object"
     },
     "ComputerZoomImage": {

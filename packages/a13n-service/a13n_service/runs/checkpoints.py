@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
+from a13n_harness.environment.session_recovery import EnvdSessionState
 from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
@@ -45,10 +46,10 @@ from a13n_service.runs.usage import UsageReport, ingest
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
-# Format 2 adds the private search retention ledger to tails. New workers still read format 1;
-# old workers skip format-2 checkpoints. Upgrade readers before enabling new workers.
-FORMAT = 2
-READABLE_FORMATS = (1, 2)
+# Format 2 adds the private search retention ledger to tails; format 3 adds Session hints to state.
+# New workers read both older formats; old workers skip newer checkpoints. Upgrade readers first.
+FORMAT = 3
+READABLE_FORMATS = (1, 2, 3)
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -112,7 +113,9 @@ class PageRef(_Frozen):
 
 
 class RunState(_Frozen):
-    format: Literal[1, 2] = FORMAT
+    model_config = ConfigDict(extra="allow", frozen=True)
+
+    format: Literal[1, 2, 3] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
@@ -121,6 +124,8 @@ class RunState(_Frozen):
     # A model request in this checkpoint carried the run's initial input: a resume's optional ordinary input and any
     # turn reminder. Every other run's input reaches its first request before its first checkpoint.
     resume_input_consumed: bool = False
+    # Private same-Run attachment hints, never inherited by a successor Run.
+    envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
 
 def run_prefix(organization_id: str, run_id: str) -> str:

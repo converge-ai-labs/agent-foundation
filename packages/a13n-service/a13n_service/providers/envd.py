@@ -7,6 +7,7 @@ connection expects that identity, so an endpoint that now reaches another daemon
 
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -49,7 +50,13 @@ async def first_contact(endpoint: str, token: str, policy: EndpointPolicy) -> st
 
 
 async def connect(
-    endpoint: str, token: str, *, environment_id: str, device_id: str, policy: EndpointPolicy
+    endpoint: str,
+    token: str,
+    *,
+    environment_id: str,
+    device_id: str,
+    policy: EndpointPolicy,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
     """A fresh, unentered adapter that expects `device_id`, refused as `provider_device_mismatch` by another
     device; it never creates or changes anything there."""
@@ -59,6 +66,7 @@ async def connect(
         {},
         configuration={"endpoint": endpoint},
         credential={"token": token},
+        session_recovery=session_recovery,
         environment_id=environment_id,
         state=EnvironmentState(provider_key=TYPE, state_version="1", state=state),
     )

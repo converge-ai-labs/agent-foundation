@@ -12,6 +12,7 @@ from a13n_envd_client import (
 from a13n_envd_client.eip.v1 import EgressPolicy
 
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 
 
 class EIPSessionSource(ABC):
@@ -42,11 +43,19 @@ class EIPSessionSource(ABC):
 
 
 class DeviceEIPSessionSource(EIPSessionSource):
-    """Borrow a Host-owned Device connection; own only the newly opened Session."""
+    """Borrow a Device connection; own one attached or newly opened Session."""
 
-    def __init__(self, device: EIPDeviceConnection) -> None:
+    def __init__(
+        self,
+        device: EIPDeviceConnection,
+        *,
+        target: str | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
+    ) -> None:
         super().__init__()
         self._device = device
+        self._target = target if target is not None else device.descriptor.device_id
+        self._recovery = session_recovery
 
     @asynccontextmanager
     async def open_session(
@@ -63,13 +72,36 @@ class DeviceEIPSessionSource(EIPSessionSource):
             raise EIPSessionStateError("Session source belongs to another Device")
         if expected_boundary is not None:
             expected_boundary.check(self._device.descriptor.boundary)
-        session = await self._device.open_session(
-            working_directory=working_directory,
-            required_methods=tuple(sorted(required_methods)),
-            egress=egress,
+        recovery = self._recovery
+        if recovery is not None and egress is not None:
+            recovery.state = None
+            recovery = None
+        session = (
+            await recovery.attach(
+                self._device,
+                target=self._target,
+                expected_device_id=expected_device_id,
+                working_directory=working_directory,
+                required_methods=required_methods,
+                expected_boundary=expected_boundary,
+            )
+            if recovery is not None
+            else None
         )
+        if session is None:
+            session = await self._device.open_session(
+                working_directory=working_directory,
+                required_methods=tuple(sorted(required_methods)),
+                egress=egress,
+            )
         async with session:
-            yield session
+            if recovery is not None:
+                recovery.observe(self._target, working_directory, session)
+            try:
+                yield session
+            finally:
+                if recovery is not None:
+                    recovery.closed(session)
 
     async def discard(self) -> None:
         self._claimed = True

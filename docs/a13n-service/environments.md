@@ -148,6 +148,8 @@ curl -X PATCH "$A13N_URL/api/v1/environments/$ENVIRONMENT" \
 
 The Service verifies the new connection first; a daemon with another device ID answers `409 conflict` with reason `provider_device_mismatch`. An external target is **private**: only the principal (user or service account) that registered it can mount it, and only that principal or a workspace administrator can change or delete it. The Service never stops or deletes the daemon's computer; deleting the environment forgets its token.
 
+If a worker restarts during a run, Service makes a best-effort attempt to reuse that run's checkpointed Envd Session. This applies to external HTTP targets and Envd execution on managed Docker, E2B and Daytona targets; native execution has no Envd Session. A closed or expired Session, or a restarted daemon, gets a fresh Session. Normal cleanup still closes the Session; later runs start separately. Recovery does not restore run-local process references or output observations. An old worker's delayed cleanup can close a recovered Session, causing later operations to fail rather than replay automatically.
+
 ### Stop, rename and delete
 
 These take the environment's `If-Match` and need `write`:

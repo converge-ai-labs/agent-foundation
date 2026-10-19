@@ -268,7 +268,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - name: Linux x86_64
@@ -309,7 +309,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap
+          sudo apt-get install --yes bubblewrap xvfb xauth xclip
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
@@ -340,6 +340,13 @@ jobs:
           set -o pipefail
           mkdir -p test-results
           cargo test --locked --package a13n-envd 2>&1 | tee test-results/native.log
+
+      - name: Test native X11 clipboard under Xvfb
+        if: matrix.linux
+        shell: bash
+        run: |
+          set -o pipefail
+          xvfb-run -a cargo test --locked --package a13n-envd --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
 
       - name: Set up Python for native EIP tests
         uses: actions/setup-python@v6

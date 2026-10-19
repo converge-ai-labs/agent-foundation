@@ -1,4 +1,4 @@
-//! Native Windows shared-desktop capture and bounded input. No elevation or clipboard.
+//! Native Windows shared-desktop capture and bounded input. No elevation.
 #![allow(
     unsafe_code,
     reason = "Win32 desktop APIs require scoped native handles and input buffers"
@@ -25,6 +25,24 @@ use windows_sys::core::BOOL;
 #[derive(Default)]
 pub(super) struct Backend {}
 
+impl Backend {
+    pub(super) fn read_clipboard(
+        &self,
+        max: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        super::windows_clipboard::read(max, interrupted)
+    }
+    pub(super) fn write_clipboard(
+        &self,
+        text: &str,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        super::windows_clipboard::write(text, interrupted)
+    }
+    pub(super) fn close_clipboard(&self) {}
+}
+
 fn unavailable() -> EIPError {
     reason(
         ErrorType::ProviderUnavailable,
@@ -49,7 +67,7 @@ fn session_ready(info: &WTSINFOEXW) -> bool {
 }
 
 // A successful OpenInputDesktop is not sufficient: it also succeeds while disconnected.
-fn ready() -> Result<(), EIPError> {
+pub(super) fn ready() -> Result<(), EIPError> {
     unsafe {
         let mut session = 0;
         if ProcessIdToSessionId(GetCurrentProcessId(), &mut session) == 0 || session == 0 {
@@ -260,7 +278,9 @@ fn capture_pixels(g: &Geometry) -> Result<RgbImage, EIPError> {
         let pixels =
             std::slice::from_raw_parts(bits.cast::<u8>(), width as usize * height as usize * 4);
         let rgb = pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| [p[2], p[1], p[0]])
             .collect();
         RgbImage::from_raw(width, height, rgb).ok_or_else(unavailable)

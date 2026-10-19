@@ -1843,13 +1843,15 @@ pub(crate) fn map_path_error(error: PathError) -> ResourceError {
 mod tests {
     use std::{
         fs,
-        io::{BufReader, Cursor, Write},
+        io::{BufReader, Cursor},
         path::PathBuf,
         time::Duration,
     };
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use sha2::{Digest, Sha256};
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::io::Write;
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use crate::eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams};

@@ -18,6 +18,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
 from a13n_logging import exception_details, get_logger
@@ -74,6 +75,7 @@ class Source:
     configuration: RunConfiguration | None = None
     activated: bool = False
     skill_cache: Cache | None = None
+    session_recovery: EnvdSessionRecovery | None = None
 
     @property
     def environment_id(self) -> str:
@@ -99,6 +101,7 @@ class Source:
                         self.runtime,
                         prepared.target,
                         configuration=self.configuration,
+                        session_recovery=self.session_recovery,
                     )
             except TimeoutError as error:
                 raise _not_ready(self.mount.environment_id) from error
@@ -219,6 +222,7 @@ async def open_mounts(
     *,
     configuration: RunConfiguration | None = None,
     skill_cache: Cache | None = None,
+    envd_sessions: dict[str, EnvdSessionRecovery] | None = None,
 ) -> AsyncIterator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
@@ -265,6 +269,9 @@ async def open_mounts(
                     state,
                     configuration,
                     skill_cache=skill_cache if mount.name == PRIMARY else None,
+                    session_recovery=envd_sessions.setdefault(mount.name, EnvdSessionRecovery())
+                    if envd_sessions is not None
+                    else None,
                 )
             )
     try:

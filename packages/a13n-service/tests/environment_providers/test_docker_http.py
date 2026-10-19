@@ -75,11 +75,15 @@ def peer(monkeypatch):
 
 
 async def test_instances_use_their_own_published_endpoint_credential_and_device(monkeypatch, peer):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
     calls, closed = peer
     for identity, port in [("env_one", 32001), ("env_two", 32002)]:
         ref, _ = reference(identity, port)
-        async with http.http_session(ref):
+        recovery = EnvdSessionRecovery()
+        async with http.http_session(ref, session_recovery=recovery):
             pass
+        assert calls[-1][2]["session_recovery"] is recovery
         ref.runtime.engine.client.containers.get.assert_called_once_with(f"container-{identity}")
         ref.runtime.engine.client.containers.create.assert_not_called()
         assert "instance-" not in str(ref.state)

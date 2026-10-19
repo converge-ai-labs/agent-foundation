@@ -7,6 +7,7 @@ from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
 from a13n_harness.providers.environment.e2b.shared import E2BReference
@@ -64,10 +65,13 @@ async def http_runtime(reference: E2BReference) -> AsyncIterator[HttpEnvdProvide
 
 
 @asynccontextmanager
-async def http_session(reference: E2BReference) -> AsyncIterator[EIPSession]:
+async def http_session(
+    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> AsyncIterator[EIPSession]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference._native_id,
+            session_recovery=session_recovery,
             working_directory="/workspace",
             required_methods=REQUIRED_METHODS
             | (
@@ -79,7 +83,9 @@ async def http_session(reference: E2BReference) -> AsyncIterator[EIPSession]:
             yield session
 
 
-def http_execution(reference: E2BReference) -> RemoteEnvdExecution:
+def http_execution(
+    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> RemoteEnvdExecution:
     if reference.state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     return RemoteEnvdExecution(
@@ -87,5 +93,5 @@ def http_execution(reference: E2BReference) -> RemoteEnvdExecution:
         environment_id=reference.environment_id,
         state=reference.state,
         working_directory="/workspace",
-        session_context=http_session(reference),
+        session_context=http_session(reference, session_recovery=session_recovery),
     )

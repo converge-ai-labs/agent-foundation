@@ -10,6 +10,8 @@ export const computerActions = [
   "environment.computer.scroll",
   "environment.computer.type_text",
   "environment.computer.press_keys",
+  "environment.computer.read_clipboard",
+  "environment.computer.write_clipboard",
 ] satisfies Schema["EnvironmentAction"][];
 export const observationActions = [
   "environment.computer.describe",

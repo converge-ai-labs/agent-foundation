@@ -23,6 +23,16 @@ Envd-backed execution requires a compatible daemon, an authorized connection, an
 
 Human desktop viewing, connection grants, revocation, and Service control coordination follow the separate [desktop access contract](../a13n-service/06a-environment-management.md#desktop-access-enforcement). A provider-specific viewer route can serve that contract without becoming a vendor-native Agent execution backend. Shared Computer tools, relative-coordinate handling, assistance, and takeover remain above this execution boundary.
 
+### Envd Session Recovery
+
+Environment connector factories accept the `session_recovery` keyword on every call, including `None`. Envd-backed execution uses this optional Host-owned collaborator per execution scope; native execution accepts it without producing Session hints. The Host stores its transport-neutral Session hint separately from portable Environment state and Harness state, and restores it only within the original logical execution scope. Shared Device runtimes and connection registries do not own these per-scope hints. Native execution has no Envd Session to recover.
+
+Session acquisition validates the current target, Device identity and generation, execution boundary, requested working directory and required methods before attaching the saved descriptor. HTTP routes, including managed targets, bind the hint to the resolved endpoint; stdio and reverse WebSocket use Device identity. Transport establishment, current credentials, endpoint policy and managed-target ownership checks precede acquisition. Changed target or generation, incompatible directory or methods, and an unavailable saved Session cause a fresh independent Session to open. `NOT_INITIALIZED` means attachment is unavailable, including a framed Session still owned by another carrier; fallback leaves that owner untouched. A changed execution boundary within the same Device generation fails acquisition. Authentication, transport and compatibility failures propagate. Acquisition consumes the in-memory hint before attempting attachment; failure leaves that collaborator empty and does not itself rewrite the Host's persisted checkpoint. Controlled-egress Sessions use current policy resolution instead of restoring saved policy.
+
+HTTP, stdio and reverse WebSocket use the same attach-or-open rule on an initialized Device. Recovery depends on the daemon retaining the Session: reverse-WebSocket reconnect preserves the daemon and permits attachment within its grace period, while the current stdio executable shuts down and cleans Sessions on EOF. A replacement stdio daemon opens a new Session in its new generation.
+
+Attached Sessions retain normal close and abort cleanup, without fencing other clients or extending expiry. An old client's delayed cleanup can close an attached Session; subsequent operations fail without replay. Application process references and output observations remain local to each execution.
+
 ## Built-in Providers
 
 Built-in provider types follow two operation routes. Managed targets have separate Service management definitions; Harness definitions expose execution capabilities only. Built-ins use the same authoring contract as installed plugins.
@@ -73,7 +83,7 @@ The local launch configuration also accepts optional [Device resource monitoring
 
 Local, HTTP and WebSocket Envd use the same Session egress model: explicit tagged destinations and secret bindings containing `env`, `source: {kind: environment, name: ...}` and exact `inject_hosts`. Environment connector opening resolves these sources freshly through a runtime credential collaborator immediately before Session opening. Missing or empty values fail preparation; source variables are excluded from local daemon child inheritance. Captured definitions, portable state, descriptors and cache identity contain references or nonsecret metadata only, never resolved values. Remote recipes can require an exact Sandbox/network boundary and optionally native identity or privilege-gain blocking; mismatches fail before exposing operations. The provider-neutral descriptor's `execution_boundary` projects the EIP `boundary`, including the effective policy digest.
 
-Local Envd retains no durable target beyond Host-selected files and returns `None` state; the Host-owned connection runtime, not portable state, preserves a daemon across independent `EnvironmentExecution` scopes. `connector.open()` acquires the ready Device connection, opens a fresh Session with the captured working directory, verifies method compatibility and readiness, and exposes operation facets. Opening cancellation closes only the newly created Session; failing to open one Session never kills a healthy shared daemon. `close()` fences execution operations, stops Session keepalive, and closes that Session and its owned commands, output, and transfers while preserving the carrier and daemon. Local Envd declares no stop, destroy, or renewal capability, and workspace files are never deleted by close or collection. After opening, `backing_identity` uses the same Host filesystem evidence as Direct Local plus the effective launch configuration; a fresh Session does not change it, while root replacement or a changed launch boundary does.
+Local Envd retains no durable target beyond Host-selected files and returns `None` state; the Host-owned connection runtime, not portable state, preserves a daemon across independent `EnvironmentExecution` scopes. `connector.open()` acquires the ready Device connection, acquires a Session with the captured working directory under the shared [recovery contract](#envd-session-recovery), verifies method compatibility and readiness, and exposes operation facets. Opening cancellation closes only the acquired Session; failing to open one Session never kills a healthy shared daemon. `close()` fences execution operations, stops Session keepalive, and closes that Session and its owned commands, output, and transfers while preserving the carrier and daemon. Local Envd declares no stop, destroy, or renewal capability, and workspace files are never deleted by close or collection. After opening, `backing_identity` uses the same Host filesystem evidence as Direct Local plus the effective launch configuration; a fresh Session does not change it, while root replacement or a changed launch boundary does.
 
 ### Docker
 
@@ -147,16 +157,16 @@ Host-selected working directories use the EIP Device path model. Vendor target n
 
 ### Remote Envd
 
-`http_envd` and `websocket_envd` connect to externally operated Devices. They provision, start, stop, delete, and renew nothing: their execution definitions contain no management factory, and Service registers no management lifecycle for them. EIP Session keepalive is separate from target renewal. HTTP is Host-dialed; reverse WebSocket is daemon-dialed, with envd always the responder. A Host-owned Device connection serves several fresh execution-owned Sessions, and the Harness owns each execution and its Session independently of other executions.
+`http_envd` and `websocket_envd` connect to externally operated Devices. They provision, start, stop, delete, and renew nothing: their execution definitions contain no management factory, and Service registers no management lifecycle for them. EIP Session keepalive is separate from target renewal. HTTP is Host-dialed; reverse WebSocket is daemon-dialed, with envd always the responder. By default, a Host-owned Device connection serves several fresh execution-owned Sessions, and the Harness owns each execution and its Session independently of other executions.
 
-| Concern                                                                           | Owner                     |
-| --------------------------------------------------------------------------------- | ------------------------- |
-| Daemon deployment and outer security boundary                                     | Operator or Host          |
-| Device registration, endpoint, credentials, listener and trusted folder selection | Host                      |
-| Framing, multiplexing, Session controls and transfers                             | Low-level EIP client      |
-| Bounded process-local Device connection registry                                  | Host-owned connection SDK |
-| Fresh execution, folder configuration and provider-neutral operation translation  | Remote Provider           |
-| Cross-process routing, durable records and product policy                         | Host                      |
+| Concern                                                                              | Owner                     |
+| ------------------------------------------------------------------------------------ | ------------------------- |
+| Daemon deployment and outer security boundary                                        | Operator or Host          |
+| Device registration, endpoint, credentials, listener and trusted folder selection    | Host                      |
+| Framing, multiplexing, Session controls and transfers                                | Low-level EIP client      |
+| Bounded process-local Device connection registry                                     | Host-owned connection SDK |
+| Session acquisition, folder configuration and provider-neutral operation translation | Remote Provider           |
+| Cross-process routing, durable records and product policy                            | Host                      |
 
 A Session is a resource owner, not a tenant sandbox. Device and working-directory selection are trusted Host inputs; operation arguments do not confer authority to select another Device. The SDK owns no listener, global registry, credential issuer, or distributed relay.
 

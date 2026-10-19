@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.shared import DockerReference, _missing
@@ -75,10 +76,13 @@ async def http_runtime(reference: DockerReference) -> AsyncIterator[HttpEnvdProv
 
 
 @asynccontextmanager
-async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
+async def http_session(
+    reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> AsyncIterator[EIPSession]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference.allocation_id,
+            session_recovery=session_recovery,
             working_directory="/workspace",
             required_methods=REQUIRED_METHODS
             | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
@@ -111,7 +115,9 @@ async def _credential(reference: DockerReference) -> HttpEnvdCredential:
         raise provider_error("docker", "envd_credential_invalid", Category.UNAVAILABLE) from None
 
 
-def http_execution(reference: DockerReference) -> RemoteEnvdExecution:
+def http_execution(
+    reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> RemoteEnvdExecution:
     if reference.state is None:
         raise EnvironmentError("Docker target state is required", code="environment_not_found")
     return RemoteEnvdExecution(
@@ -119,5 +125,5 @@ def http_execution(reference: DockerReference) -> RemoteEnvdExecution:
         environment_id=reference.environment_id,
         state=reference.state,
         working_directory="/workspace",
-        session_context=http_session(reference),
+        session_context=http_session(reference, session_recovery=session_recovery),
     )

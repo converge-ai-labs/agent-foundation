@@ -8,6 +8,7 @@ import pytest
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.daytona import http
 from a13n_harness.providers.environment.daytona.provider import DAYTONA, construct
@@ -117,6 +118,18 @@ async def test_attach_authenticates_fixed_identity_and_does_not_replay(peer):
         async with http.http_session(reference()):
             raise TimeoutError("uncertain input")
     assert lookup.await_count == closed.await_count == 3
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("recover", [False, True])
+async def test_recovery_is_passed_to_session_not_device_runtime(peer, recover):
+    _, guest, _, closed, events = peer
+    recovery = EnvdSessionRecovery() if recover else None
+    async with http.http_session(reference(), session_recovery=recovery):
+        assert events[0]["session_recovery"] is recovery
+    guest.request.assert_awaited_once()
+    closed.assert_awaited_once()
+    assert events[1:] == ["closed"]
 
 
 @pytest.mark.anyio

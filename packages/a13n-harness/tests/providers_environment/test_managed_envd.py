@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.docker import http as docker_http
+from a13n_harness.providers.environment.e2b import http as e2b_http
 from a13n_harness.providers.environment.remote_envd import managed
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -92,16 +94,25 @@ async def test_runtime_cleanup_without_session_or_replay(peer, outcome):
     assert peer == ["connect", "connection_closed"]
 
 
-@pytest.fixture
-def session_context(peer, monkeypatch):
+@pytest.fixture(params=[docker_http, e2b_http], ids=["docker", "e2b"])
+def session_context(peer, monkeypatch, request):
     credentials = AsyncMock(return_value=HttpEnvdCredential(token=SecretStr("test-token")))
     monkeypatch.setattr(
-        docker_http,
+        request.param,
         "http_runtime",
         lambda reference: connection(endpoint_policy=EndpointPolicy(), load_credential=credentials),
     )
-    reference = SimpleNamespace(allocation_id="env-fixed", config=SimpleNamespace(desktop=True))
-    return lambda: docker_http.http_session(reference)
+    config = SimpleNamespace(desktop=True)
+    reference = SimpleNamespace(allocation_id="env-fixed", config=config, _native_id="env-fixed", _configuration=config)
+    return lambda **kwargs: request.param.http_session(reference, **kwargs)
+
+
+@pytest.mark.parametrize("recover", [False, True])
+async def test_provider_passes_recovery_to_session_not_device_runtime(peer, session_context, recover):
+    recovery = EnvdSessionRecovery() if recover else None
+    async with session_context(session_recovery=recovery):
+        assert peer[1]["session_recovery"] is recovery
+    assert peer[2:] == ["session_closed", "connection_closed"]
 
 
 @pytest.mark.parametrize("outcome", ["success", "unknown", "cancel"])
