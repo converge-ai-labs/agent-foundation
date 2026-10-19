@@ -107,6 +107,8 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
         "desktop_assistance": True,
         "snapshot" if provider_key == "daytona" else "template": "test-desktop",
     }
+    if provider_key == "e2b":
+        recipe["execution"] = "envd_http"
     response = await service.client.post(
         f"{service.api}/environment-templates",
         json={"name": "Desktop", "provider_id": response.json()["id"], "config": {"recipe": recipe}},
