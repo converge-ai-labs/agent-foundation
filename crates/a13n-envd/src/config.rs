@@ -290,7 +290,8 @@ impl Config {
             merge_config(&mut value, overlay);
         }
         apply_environment(&mut value)?;
-        if connection.is_some() && value.get("monitoring").is_none() {
+        let native_export = crate::monitoring::otlp::enabled()?;
+        if (connection.is_some() || native_export) && value.get("monitoring").is_none() {
             value["monitoring"] = serde_json::json!({});
         }
         let mut file: FileConfig = serde_json::from_value(value)
@@ -973,6 +974,7 @@ fn inherited_command_environment() -> BTreeMap<String, String> {
         .filter(|(name, value)| {
             valid_environment_name(name)
                 && !reserved_environment_name(name)
+                && !crate::monitoring::otlp::environment_name(name)
                 && !value.contains('\0')
         })
         .collect()

@@ -93,7 +93,7 @@ Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回�
 
 `a13n-envd connect` 默认每 10 秒采集一次 CPU 和内存，使用已保存的 Host 重新连接时也适用。已有安装需要更新 Envd 二进制并重启守护进程才能使用此默认值；只更新 Harness UI 不会改变正在运行的远程守护进程。
 
-在 `--config` 文件或 `A13N_ENVD_CONFIG_JSON` 中设置 `"monitoring": null` 可关闭采样。其他守护进程启动方式仍需显式开启。在守护进程配置中通过 `monitoring` 启用或自定义采样：
+在 `--config` 文件或 `A13N_ENVD_CONFIG_JSON` 中设置 `"monitoring": null` 可关闭采样。其他守护进程启动方式仍需显式开启；选择原生 OTLP 导出时，省略 `monitoring` 也会启用默认采样。在守护进程配置中通过 `monitoring` 启用或自定义采样：
 
 ```json
 {
@@ -145,13 +145,43 @@ PSI 提供可选 `some`、`full` 记录，包含 `avg10_percent`、`avg60_percen
 - 根据 exporter 需要，将累计时间换算为秒、事件数映射为 counter、字节和 inode 映射为 gauge、百分比换算为比例。
 - 图表峰值标记为采样值的最大值。CPU 百分比已是区间平均，瞬时尖峰可能落在采样间隔内。
 
-Envd 只保留一个样本，通过 EIP 和标准 HTTP 抓取提供读取。历史、告警、下游导出和产品图表由消费方及其可观测性基础设施负责。Session 清理不停止采样，daemon 关闭会停止采样。
+Envd 只保留一个样本，通过 EIP、标准 HTTP 抓取和可选的原生 OTLP 导出提供观测。历史、告警和产品图表由消费方及其可观测性基础设施负责。Session 清理不停止采样，daemon 关闭会停止采样。
 
 ## Prometheus 与 OpenTelemetry
 
 使用 [HTTP 传输](#carrier-profiles) 时，启用 `"monitoring": {}`，即可在同一地址抓取 `GET /metrics`。响应采用 Prometheus text format 0.0.4，与 `device.metrics` 读取同一缓存，无需 EIP 初始化或 Session。无需新增监听端口、令牌或 TLS 配置。stdio 和反向 WebSocket 部署（包括 `connect`）不提供 HTTP 抓取端点，消费方仍可通过 EIP 读取观测。
 
 使用 HTTP listener 的 Bearer 凭据和经过验证的 HTTPS。**该凭据同时拥有 listener 的 EIP 操作权限，不是只读监控令牌。** 在采集器端通过 secret 文件保存，限制访问者并使用可信网络。公网连接要求 TLS；现有显式 loopback/provider-private 明文配置仍可使用。
+
+### 原生 OTLP 推送
+
+任何 EIP 传输都可以直接向 OTLP receiver 推送指标，包括只有出站连接的 `connect` 部署：
+
+```bash
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4318
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_METRIC_EXPORT_INTERVAL=10000
+a13n-envd connect https://host.example.com
+```
+
+配置通用 OTLP endpoint 或 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 也会选择导出，无需设置 `OTEL_METRICS_EXPORTER`。此时省略 `monitoring` 会启用默认 CPU/内存采样；显式 `"monitoring": null` 同时关闭采样和导出。`OTEL_METRICS_EXPORTER=none` 或 `OTEL_SDK_DISABLED=true` 关闭导出，但保留显式配置的采样。修改后重启 Envd 生效。
+
+| 设置                                                            | 行为                                                                                                                   |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                   | HTTP 基础 URL，exporter 会追加 `/v1/metrics`。                                                                         |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`                           | 完整的指标 URL，直接使用原值。                                                                                         |
+| `OTEL_EXPORTER_OTLP[_METRICS]_PROTOCOL`                         | `http/protobuf`（默认）或 `grpc`。gRPC 使用 receiver 的 gRPC 端口，通常为 4317。                                       |
+| `OTEL_EXPORTER_OTLP[_METRICS]_HEADERS`                          | 逗号分隔的 `key=value` 请求头；值使用百分号编码，例如 `authorization=Bearer%20TOKEN`。真实值通过 secret 管理系统注入。 |
+| `OTEL_EXPORTER_OTLP[_METRICS]_TIMEOUT`                          | 导出请求超时，单位为毫秒。                                                                                             |
+| `OTEL_EXPORTER_OTLP[_METRICS]_CERTIFICATE`                      | 加入系统信任根的 PEM CA 文件。                                                                                         |
+| `OTEL_EXPORTER_OTLP[_METRICS]_CLIENT_CERTIFICATE`、`CLIENT_KEY` | mTLS 使用的 PEM 客户端证书和私钥，必须同时提供。                                                                       |
+| `OTEL_METRIC_EXPORT_INTERVAL`                                   | 导出间隔，单位为毫秒，默认 60000。采样使用独立的配置间隔。                                                             |
+| `OTEL_SERVICE_NAME`、`OTEL_RESOURCE_ATTRIBUTES`                 | 服务名称和资源属性，例如 `workspace.id=example`。                                                                      |
+
+`[_METRICS]` 表示通用和指标专用两种形式，指标专用设置优先。可信本地网络之外使用经过验证的 TLS。导出凭据与 Envd HTTP listener 令牌相互独立。托管 Linux 将 TLS 文件复制到私有 broker 镜像，并在 Session 中屏蔽原始路径。Full Control 命令不会继承 daemon 的 exporter 设置；payload 可以显式提供自己的 OTEL 设置。
+
+导出资源的 `service.instance.id` 始终为实际 Device ID。数据点携带 `device_id`、`generation`，使用下文列出的指标名。计数器保留原生累计绝对值，包括重置后的值。缺失或过期的资源值保持省略。OTLP 使用 double，极大的整数计数可能损失精度。导出错误不影响 EIP 和采样；关闭时只在有界时间内等待 exporter 刷出数据。每个 Device 选择一条采集路径，避免同时推送和抓取造成重复摄取。
 
 ### Prometheus 抓取配置
 
@@ -209,7 +239,7 @@ service:
       exporters: [otlphttp/metrics]
 ```
 
-替换 exporter 地址，并按后端要求配置认证。Envd 自身不推送 OTLP。每个目标应分配给一个活跃采集器，或明确配置后端的 HA 去重；相同配置的 Collector 副本会重复抓取。采集器必须能访问现有 Envd HTTP listener，仅有出站反向 WebSocket 连接并不提供这条网络路径。
+替换 exporter 地址，并按后端要求配置认证。使用原生推送时，以 OTLP receiver 替代 Prometheus receiver。每个目标应分配给一个活跃采集器，或明确配置后端的 HA 去重；相同配置的 Collector 副本会重复抓取。采集器必须能访问现有 Envd HTTP listener，仅有出站反向 WebSocket 连接并不提供这条网络路径。
 
 ### 指标与新鲜度
 
@@ -242,7 +272,7 @@ service:
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 ```
 
-也可在守护进程 JSON 中设置 `"full_control": true`。`A13N_ENVD_FULL_CONTROL` 覆盖 JSON 值；`false` 或 `0` 将其禁用。Full Control 自动创建默认原生 shell 配置：Unix 上为 `/bin/sh`，Windows 上为 PowerShell。命令继承启动进程的环境和原始 `PATH` 顺序，排除守护进程启动变量（`A13N_ENVD_*` 和 `EIP_*`）。命令级环境修改不会影响守护进程或后续命令。shell 别名和未导出的变量不会被继承。
+也可在守护进程 JSON 中设置 `"full_control": true`。`A13N_ENVD_FULL_CONTROL` 覆盖 JSON 值；`false` 或 `0` 将其禁用。Full Control 自动创建默认原生 shell 配置：Unix 上为 `/bin/sh`，Windows 上为 PowerShell。命令继承启动进程的环境和原始 `PATH` 顺序，排除守护进程启动变量（`A13N_ENVD_*` 和 `EIP_*`）及 daemon 的 OTLP 指标设置。命令级环境修改不会影响守护进程或后续命令。shell 别名和未导出的变量不会被继承。
 
 Envd Full Control（`full_control`）不是沙箱。它独立于 Harness UI 本地的 Full Control 或 Sandbox 模式。不要与手动可执行文件根目录或 shell 配置组合使用。需要显式配置命令访问时，提供可信可执行文件搜索根目录，并按需提供固定 shell 配置：
 

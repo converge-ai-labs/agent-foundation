@@ -175,8 +175,13 @@ fn session_methods(config: &Config) -> Vec<String> {
 }
 
 impl Daemon {
-    pub(crate) fn start_monitoring(&self) -> Option<crate::monitoring::Runtime> {
-        self.monitoring.as_ref().map(|state| state.start())
+    pub(crate) fn start_monitoring(
+        &self,
+    ) -> Result<Option<crate::monitoring::Runtime>, crate::config::ConfigError> {
+        self.monitoring
+            .as_ref()
+            .map(|state| state.start(&self.descriptor.device_id, self.descriptor.generation))
+            .transpose()
     }
 
     pub(crate) fn metrics_report(&self) -> Option<eip::DeviceMetricsResult> {

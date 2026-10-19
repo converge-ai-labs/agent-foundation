@@ -10,7 +10,7 @@ from typing import Any, Literal, Self, cast, overload
 from uuid import uuid4
 
 from pydantic import JsonValue, TypeAdapter
-from pydantic_ai import Agent
+from pydantic_ai import Agent, AgentRetries
 from pydantic_ai.agent.abstract import AbstractAgent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import (
@@ -703,8 +703,12 @@ class HarnessBuilder:
             definition_reserved_ids = definition_reserved_ids | _first_party_spec_reserved_ids(construction_spec)
             complete_output = [business_output, DeferredToolRequests]
             system_prompt = _normalize_system_prompt(construction_spec)
+            retries: int | AgentRetries | None = construction_spec.retries
+            if not isinstance(retries, int):
+                retries = {"tools": 5, "output": 3, **(retries or {})}
             agent = Agent.from_spec(
                 construction_spec,
+                retries=retries,
                 deps_type=AgentContext,
                 system_prompt=system_prompt,
                 custom_capability_types=(

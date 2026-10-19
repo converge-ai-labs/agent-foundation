@@ -1,17 +1,44 @@
 import {
   ApiError,
-  data,
+  data as responseData,
+  ProtocolError,
   type Client,
   type components,
 } from "../service-client";
-export { data };
 export type Schema = components["schemas"];
+/** Console consumers use complete responses; the generic client still supports every read view. */
+export function data<T>(result: { data?: T; response: Response }): Detailed<T> {
+  return requireDetailed(responseData(result));
+}
 export function representation<T>(result: { data?: T; response: Response }) {
   return {
     value: data(result),
     etag: result.response.headers.get("ETag") ?? undefined,
   };
 }
+/** Detailed reads must not feed summaries or text fragments into display or edit state. */
+type Detailed<T> = T extends unknown
+  ? "view" extends keyof T
+    ? never
+    : "representation" extends keyof T
+      ? never
+      : T extends { items: (infer Item)[] }
+        ? Omit<T, "items"> & { items: Detailed<Item>[] }
+        : T
+  : never;
+
+function requireDetailed<T>(value: T): Detailed<T> {
+  if (value && typeof value === "object") {
+    if ("view" in value || "representation" in value)
+      throw new ProtocolError(
+        "Expected a complete detailed response from the Service.",
+      );
+    if ("items" in value && Array.isArray(value.items))
+      value.items.forEach(requireDetailed);
+  }
+  return value as Detailed<T>;
+}
+
 export function isUnauthorized(error: unknown) {
   return error instanceof ApiError && error.status === 401;
 }

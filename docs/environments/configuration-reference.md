@@ -273,17 +273,11 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                                |
-| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
-| `root`                    | false    | string         | default="/home/daytona"                                |
-| `python`                  | false    | string         | default="python3"                                      |
-| `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `desktop`                 | false    | boolean        | default=false                                          |
-| `snapshot`                | false    | string or null | maxLength=256; default=null                            |
+| Field                     | Required | Type / choices | Constraints and default                      |
+| ------------------------- | -------- | -------------- | -------------------------------------------- |
+| `snapshot`                | true     | string         | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean        | default=false                                |
+| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
@@ -447,9 +441,10 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `HttpEnvdCredential`
 
-| Field   | Required | Type / choices | Constraints and default                        |
-| ------- | -------- | -------------- | ---------------------------------------------- |
-| `token` | true     | string         | minLength=1; maxLength=4096; format="password" |
+| Field     | Required | Type / choices | Constraints and default                        |
+| --------- | -------- | -------------- | ---------------------------------------------- |
+| `headers` | false    | object         | —; default from model factory                  |
+| `token`   | true     | string         | minLength=1; maxLength=4096; format="password" |
 
 ## `WebSocketEnvdConnectionConfiguration`
 

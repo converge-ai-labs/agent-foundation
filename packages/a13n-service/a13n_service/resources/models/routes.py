@@ -1,12 +1,14 @@
 """Workspace models by key, the model catalog they start from and the workspace's media-understanding defaults."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 
+from a13n_service.infra import reads
+from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IfMatch, PageLimit, key_tagged, tagged
 from a13n_service.infra.platform import platform_operation
-from a13n_service.resources.models import media, service
+from a13n_service.resources.models import media, read_views, service
 from a13n_service.resources.models.catalog import ModelsDevCatalog
 from a13n_service.resources.models.schemas import (
     MediaDefaults,
@@ -63,7 +65,11 @@ async def update_model(
     return key_tagged(response, result)
 
 
-@router.get("/model-catalog", response_model=ModelCatalog, openapi_extra=platform_operation("models", "read"))
+@router.get(
+    "/model-catalog",
+    response_model=ModelCatalog | read_views.ModelCatalogPage | reads.TextRead,
+    openapi_extra=platform_operation("models", "read"),
+)
 async def get_model_catalog(
     request: Request,
     actor: Actor,
@@ -75,7 +81,16 @@ async def get_model_catalog(
         str | None,
         Query(min_length=1, max_length=256, description="Exact, case-sensitive model ID within the catalog channel."),
     ] = None,
-) -> ModelCatalog:
+    view: reads.View = "detailed",
+    query: reads.IndexQuery = None,
+    capability: Annotated[str | None, Query(max_length=64)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: str | None = None,
+    section: Literal["all", "characteristics", "pricing"] | None = None,
+    offset: reads.Offset = 0,
+    text_limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+) -> ModelCatalog | read_views.ModelCatalogPage | reads.TextRead:
     """Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.
 
     Both filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.
@@ -83,7 +98,23 @@ async def get_model_catalog(
     Copy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.
     """
     catalog: ModelsDevCatalog = request.app.state.model_catalog
-    return await catalog.read(provider=provider, model=model)
+    result = await catalog.read(provider=provider, model=model)
+    if section is not None:
+        return read_views.detail(result, section, offset=offset, limit=text_limit, version=version, query=query)
+    if offset or version:
+        raise invalid("section", "Select a section for fragment parameters")
+    if view == "detailed" and query is None and capability is None and limit is None and cursor is None:
+        return result
+    return read_views.select(
+        result,
+        view=view,
+        query=query,
+        capability=capability,
+        limit=limit,
+        cursor=cursor,
+        provider=provider,
+        model=model,
+    )
 
 
 @router.get(

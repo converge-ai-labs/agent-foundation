@@ -106,10 +106,17 @@ function ModelPane({ entry, runId }: { entry: ModelEntry; runId: string }) {
           entry.stopReason &&
             t("stop {{reason}}", { reason: entry.stopReason }),
           entry.errorCode,
+          entry.errorStatus !== null &&
+            t("HTTP {{status}}", { status: entry.errorStatus }),
         ]}
         action={<RawDialog title={t("Model request")} value={entry} />}
       />
       <ErrorNotice error={metrics.error} retry={() => void metrics.refetch()} />
+      {entry.errorDetail && (
+        <PaneSection label={t("Error")}>
+          <pre className={styles.paneCode}>{entry.errorDetail}</pre>
+        </PaneSection>
+      )}
       {usage?.recordId && (
         <ContextWindow scope={{ record_id: usage.recordId }} />
       )}

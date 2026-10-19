@@ -62,6 +62,7 @@ class HttpEnvdConnectionConfiguration(RemoteEnvdConnectionConfiguration):
 class HttpEnvdCredential(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    headers: dict[str, SecretStr] = Field(default_factory=dict, repr=False, max_length=16)
     token: SecretStr = Field(min_length=1, max_length=4096)
 
     @field_validator("token")

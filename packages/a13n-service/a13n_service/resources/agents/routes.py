@@ -4,10 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
 
-from a13n_service.infra import images
+from a13n_service.infra import images, reads
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
-from a13n_service.resources.agents import composer, service
+from a13n_service.resources import catalog_reads
+from a13n_service.resources.agents import composer, read_views, service
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentCreate,
@@ -239,28 +240,64 @@ async def create_revision(
 
 
 @router.get(
-    "/agents/{agent_id}/revisions", response_model=AgentRevisionPage, openapi_extra=platform_operation("agents", "read")
+    "/agents/{agent_id}/revisions",
+    response_model=AgentRevisionPage | read_views.RevisionSummaryPage,
+    openapi_extra=platform_operation("agents", "read"),
 )
 async def list_revisions(
     workspace_id: WorkspaceId,
     agent_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
-    limit: PageLimit = 50,
+    view: reads.View = "detailed",
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
-) -> AgentRevisionPage:
-    return await service.list_revisions(runtime.storage, actor, workspace_id, agent_id, limit=limit, cursor=cursor)
+) -> AgentRevisionPage | read_views.RevisionSummaryPage:
+    if view == "compact":
+        return await service.list_revision_summaries(
+            runtime.storage, actor, workspace_id, agent_id, limit=reads.page_limit(view, limit), cursor=cursor
+        )
+    return await service.list_revisions(
+        runtime.storage, actor, workspace_id, agent_id, limit=reads.page_limit(view, limit), cursor=cursor
+    )
 
 
 @router.get(
     "/agents/{agent_id}/revisions/{revision_id}",
-    response_model=AgentRevision,
+    response_model=AgentRevision | read_views.RevisionSummary | reads.TextRead,
     openapi_extra=platform_operation("agents", "read"),
 )
 async def get_revision(
-    workspace_id: WorkspaceId, agent_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
-) -> AgentRevision:
-    return await service.get_revision(runtime.storage, actor, workspace_id, agent_id, revision_id)
+    workspace_id: WorkspaceId,
+    agent_id: str,
+    revision_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    view: reads.View = "detailed",
+    section: read_views.ConfigSection | None = None,
+    offset: reads.Offset = 0,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> AgentRevision | read_views.RevisionSummary | reads.TextRead:
+    value = await service.get_revision(runtime.storage, actor, workspace_id, agent_id, revision_id)
+    if section is not None:
+        return reads.read_value(
+            read_views.config_section(value.config, section),
+            source=f"agents/{agent_id}/revisions/{revision_id}/config/{section}",
+            offset=offset,
+            limit=limit,
+            version=version,
+            query=query,
+        )
+    if offset or version or query:
+        from a13n_service.infra.errors import invalid
+
+        raise invalid("section", "Select a configuration section for fragment or search parameters")
+    if view == "compact":
+        head = await service.get_agent(runtime.storage, actor, workspace_id, agent_id)
+        return read_views.revision_summary(value, head.default_revision_id)
+    return value
 
 
 @router.post(
@@ -293,3 +330,78 @@ async def set_default(
 @router.get("/toolsets", response_model=ToolsetCatalog, openapi_extra=platform_operation("agents", "read"))
 async def list_toolsets(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> ToolsetCatalog:
     return await service.toolset_catalog(runtime.storage, actor, workspace_id, registry=runtime.registry)
+
+
+@router.get(
+    "/toolsets/index", response_model=catalog_reads.CatalogIndex, openapi_extra=platform_operation("agents", "read")
+)
+async def index_toolsets(
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    query: reads.IndexQuery = None,
+    limit: PageLimit = 10,
+    cursor: str | None = None,
+) -> catalog_reads.CatalogIndex:
+    """Search full names and descriptions; definitions are read separately by exact name."""
+    values = await list_toolsets(workspace_id, actor, runtime)
+    return read_views.toolset_index(values, workspace_id=workspace_id, query=query, limit=limit, cursor=cursor)
+
+
+@router.get(
+    "/toolsets/definitions",
+    response_model=reads.Definitions | reads.TextRead,
+    openapi_extra=platform_operation("agents", "read"),
+)
+async def define_toolsets(
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    name: reads.Names,
+    offset: Annotated[int | None, Query(ge=0)] = None,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> reads.Definitions | reads.TextRead:
+    """Read up to five exact definitions. Oversized values provide a versioned fragment reference."""
+    values = await list_toolsets(workspace_id, actor, runtime)
+    return reads.definitions(
+        {value.key: value for value in values.items},
+        name,
+        source="/toolsets/definitions",
+        offset=offset,
+        limit=limit,
+        version=version,
+        query=query,
+    )
+
+
+@router.get(
+    "/agents/{agent_id}/revisions/{revision_id}/compare",
+    response_model=reads.TextRead,
+    openapi_extra=platform_operation("agents", "read"),
+)
+async def compare_revisions(
+    workspace_id: WorkspaceId,
+    agent_id: str,
+    revision_id: str,
+    base_revision_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    section: read_views.ConfigSection = "all",
+    offset: reads.Offset = 0,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> reads.TextRead:
+    """Versioned unified diff of two revisions of this agent, optionally limited to one configuration section."""
+    base = await service.get_revision(runtime.storage, actor, workspace_id, agent_id, base_revision_id)
+    target = await service.get_revision(runtime.storage, actor, workspace_id, agent_id, revision_id)
+    return reads.read_value(
+        read_views.config_diff(base.config, target.config, section),
+        source=f"agents/{agent_id}/compare/{base_revision_id}/{revision_id}/{section}",
+        offset=offset,
+        limit=limit,
+        version=version,
+        query=query,
+    )

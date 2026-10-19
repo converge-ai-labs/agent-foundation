@@ -1,94 +1,75 @@
-"""Build a Daytona snapshot with the Service desktop access supervisor and CJK fonts.
+"""Build an operator-owned Daytona snapshot for Envd execution and human desktop access.
 
-Set DAYTONA_API_KEY in the invoking process. Builds a new snapshot; never replaces
-an existing name. Ordinary Computer operations still use Daytona's native API.
+Use a compatible Linux amd64 a13n-envd binary and DAYTONA_API_KEY with snapshot
+build authority. The SDK is used only for uploading build inputs, not Agent execution.
+No per-sandbox credentials or live daemons are baked into the snapshot.
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import base64
-import os
 import re
 from pathlib import Path
-from urllib.parse import quote
-
-from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
-from a13n_service.providers.environment import desktop_guest
-from pydantic import BaseModel
-
-
-class Snapshot(BaseModel):
-    id: str
-    name: str
-    state: str
-
-
-def dockerfile() -> str:
-    source = base64.b64encode(Path(desktop_guest.__file__).read_bytes()).decode()
-    return "\n".join(
-        [
-            "FROM daytonaio/sandbox:0.9.0",
-            "USER root",
-            "RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
-            "x11vnc websockify libxtst6 fonts-noto-cjk && fc-cache -f && rm -rf /var/lib/apt/lists/*",
-            f"RUN printf '%s' '{source}' | base64 -d > /opt/a13n-desktop-access.py "
-            "&& chmod 0755 /opt/a13n-desktop-access.py",
-            "USER daytona",
-            'ENTRYPOINT ["sudo", "-n", "python3", "-I", "/opt/a13n-desktop-access.py", "serve", '
-            '"--root", "/run/a13n-desktop-access", "--display", ":0"]',
-        ]
-    )
-
-
-async def build(name: str, region: str) -> None:
-    transport = NativeHTTP("daytona", "https://app.daytona.io/api/", os.environ["DAYTONA_API_KEY"], 60)
-    try:
-        snapshot = decode_response(
-            Snapshot,
-            await transport.request(
-                "POST",
-                "snapshots",
-                body={
-                    "name": name,
-                    "regionId": region,
-                    "cpu": 2,
-                    "memory": 4,
-                    "disk": 10,
-                    "buildInfo": {"dockerfileContent": dockerfile(), "contextHashes": []},
-                },
-            ),
-            "daytona",
-            mutation=True,
-        )
-        print(f"Snapshot build accepted: {snapshot.id}", flush=True)
-        # A timeout leaves the build intact for reconciliation by ID, never retries creation.
-        async with asyncio.timeout(900):
-            previous = None
-            while snapshot.state not in {"active", "error", "build_failed"}:
-                if snapshot.state != previous:
-                    print(f"Snapshot state: {snapshot.state}", flush=True)
-                    previous = snapshot.state
-                await asyncio.sleep(5)
-                snapshot = decode_response(
-                    Snapshot, await transport.request("GET", "snapshots/" + quote(snapshot.id, safe="")), "daytona"
-                )
-        if snapshot.state != "active":
-            raise RuntimeError(f"Snapshot {snapshot.id} did not become active; inspect its build logs")
-        print(f"Desktop access snapshot ready: {snapshot.name}", flush=True)
-    finally:
-        await transport.close()
 
 
 def main() -> None:
+    from daytona import CreateSnapshotParams, Daytona, Image, Resources
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name", help="New snapshot name")
     parser.add_argument("--region", default="us")
+    parser.add_argument("--binary", required=True, type=Path, help="Compatible Linux amd64 a13n-envd binary")
     args = parser.parse_args()
     if re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", args.name) is None:
         parser.error("Invalid snapshot name")
-    asyncio.run(build(args.name, args.region))
+    repository = Path(__file__).resolve().parents[2]
+    image = Image.base("debian:trixie-slim").run_commands(
+        "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
+        "python3 ca-certificates libgcc-s1 util-linux procps sudo xvfb openbox xauth x11-utils x11-xkb-utils "
+        "x11vnc websockify fonts-noto-cjk fonts-noto-color-emoji chromium xterm mousepad xdotool "
+        "&& groupadd --gid 1000 sandbox "
+        "&& useradd --uid 1000 --gid sandbox --create-home --shell /bin/bash sandbox "
+        "&& install -d -o sandbox -g sandbox /workspace "
+        "&& install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state "
+        "&& rm -rf /var/lib/apt/lists/*"
+    )
+    image = image.add_local_file(args.binary, "/usr/local/bin/a13n-envd")
+    for source, name in (
+        ("desktop.py", "a13n-sandbox-desktop"),
+        ("entrypoint.sh", "a13n-sandbox-entrypoint"),
+        ("init-skills.sh", "a13n-sandbox-init"),
+    ):
+        image = image.add_local_file(repository / "deploy/docker/images/sandbox" / source, "/usr/local/bin/" + name)
+    image = (
+        image.add_local_file(
+            repository / "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
+            "/opt/a13n-desktop-access.py",
+        )
+        .run_commands("chmod 0755 /usr/local/bin/a13n-* /opt/a13n-desktop-access.py")
+        .workdir("/workspace")
+    )
+    # Daytona boots this entrypoint again after stop/start with the allocation's
+    # environment variables. The shared launcher creates fresh desktop processes.
+    startup = '#!/bin/sh\nset -eu\nif [ "$A13N_DESKTOP" = true ]; then exec a13n-sandbox-entrypoint a13n-sandbox-desktop; else exec a13n-sandbox-entrypoint a13n-envd; fi\n'
+    image = image.run_commands(
+        "printf %s "
+        + base64.b64encode(startup.encode()).decode()
+        + " | base64 -d > /usr/local/bin/a13n-daytona-start && chmod 0755 /usr/local/bin/a13n-daytona-start"
+    )
+    entrypoint = ["/usr/local/bin/a13n-daytona-start"]
+    snapshot = Daytona().snapshot.create(
+        CreateSnapshotParams(
+            name=args.name,
+            region_id=args.region,
+            image=image,
+            resources=Resources(cpu=2, memory=4, disk=10),
+            entrypoint=entrypoint,
+        ),
+        timeout=900,
+        on_logs=print,
+    )
+    print(f"Envd snapshot ready: {snapshot.name}")
 
 
 if __name__ == "__main__":

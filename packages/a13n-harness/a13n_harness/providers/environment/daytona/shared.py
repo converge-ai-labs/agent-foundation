@@ -4,11 +4,12 @@ import hashlib
 from typing import Literal
 from urllib.parse import quote, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.providers.environment.native.configuration import CommandConfiguration, TargetState, TokenCredential
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.native.configuration import TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
@@ -16,32 +17,30 @@ from a13n_harness.providers.environment.native.http import NativeHTTP, decode_re
 
 class DaytonaConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+    _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
     organization_id: str = Field(min_length=1, max_length=128, title="Organization ID")
     target: str = Field(default="us", min_length=1, max_length=64, title="Target region")
 
 
-class DaytonaEnvironmentConfiguration(CommandConfiguration):
+class DaytonaEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["desktop", "snapshot"]}
     )
-    root: str = "/home/daytona"
+    snapshot: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Operator-built snapshot containing a compatible a13n-envd; all Agent operations use EIP.",
+    )
     desktop: bool = Field(
         default=False,
         title="Desktop environment",
-        description="Use Daytona Computer Use. Custom snapshots must include desktop packages. Human control is not enabled by this option.",
+        description="Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately.",
     )
-    # Daytona sizes a sandbox by its snapshot and refuses resources requested alongside one.
-    snapshot: str | None = Field(
-        default=None,
-        max_length=256,
-        description="Existing Daytona snapshot, which sets the sandbox's resources; empty uses the default Python sandbox.",
-    )
+    request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
 
     @property
     def fingerprint(self) -> str:
-        # Adding an opt-in capability must not invalidate saved headless targets.
-        exclude = {"desktop"} if not self.desktop else set()
-        return hashlib.sha256(self.model_dump_json(exclude=exclude).encode()).hexdigest()
+        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
 
 
 class Sandbox(BaseModel):

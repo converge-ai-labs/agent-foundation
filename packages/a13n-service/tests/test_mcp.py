@@ -264,7 +264,11 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         "/auth" in path or "/uploads" in path or path.startswith("/api/v1/organizations") or "/users" in path
         for path, _ in selected
     )
-    assert not any(path.endswith("/content") or path.endswith("/authorize") for path, _ in selected)
+    assert {path for path, _ in selected if path.endswith("/content")} == {
+        "/api/v1/runs/{run_id}/items/{item_id}/content",
+        "/api/v1/traces/{trace_id}/spans/{span_id}/content",
+    }
+    assert not any(path.endswith("/authorize") for path, _ in selected)
     tools = api_tools(
         app, schema, settings.server.public_origin, [route for router in OSS.routers for route in router.routes]
     )

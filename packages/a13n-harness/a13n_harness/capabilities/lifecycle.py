@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -10,10 +11,12 @@ from typing import Any
 from pydantic_ai import RunContext
 from pydantic_ai.agent import CallToolsNode, ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.exceptions import ModelHTTPError
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, HarnessError
 from a13n_harness.events import (
+    MAX_FAILURE_DETAIL_CHARS,
     ModelRequestCompletedPayload,
     ModelRequestFailedPayload,
     ModelRequestStartedPayload,
@@ -102,11 +105,7 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
                 await emit_harness_event(
                     ctx.deps.events,
                     kind="lifecycle",
-                    payload=ModelRequestFailedPayload(
-                        request_id=request_id,
-                        request_index=request_index,
-                        error_code=_safe_error_code(exc),
-                    ),
+                    payload=_failed_payload(exc, request_id=request_id, request_index=request_index),
                 )
             except BaseException:
                 pass
@@ -151,6 +150,47 @@ def active_model_request_index(ctx: RunContext[AgentContext]) -> int:
             code="model_request_boundary_missing",
         )
     return owner.active_request_index
+
+
+def _failed_payload(exc: BaseException, *, request_id: str, request_index: int) -> ModelRequestFailedPayload:
+    """Name why the request failed: the provider's own message for an HTTP error, else the exception type.
+
+    A Harness error is already named by its code. Other exception messages stay out: they can carry anything the
+    failing code held.
+    """
+    error_code = _safe_error_code(exc)
+    status_code: int | None = None
+    detail: str | None = None
+    if isinstance(exc, ModelHTTPError):
+        status_code = exc.status_code
+        detail = _provider_message(exc.body)
+    elif not isinstance(exc, HarnessError | asyncio.CancelledError):
+        detail = type(exc).__name__
+    return ModelRequestFailedPayload(
+        request_id=request_id,
+        request_index=request_index,
+        error_code=error_code,
+        status_code=status_code,
+        detail=detail,
+    )
+
+
+def _provider_message(body: object) -> str | None:
+    """The message of a provider error body: its `error.message`, a top-level `message`, or the whole body."""
+    if isinstance(body, dict):
+        for container in (body.get("error"), body):
+            if isinstance(container, dict) and isinstance(container.get("message"), str):
+                return _bounded(container["message"])
+    if body is None:
+        return None
+    return _bounded(body if isinstance(body, str) else json.dumps(body, ensure_ascii=False, default=str))
+
+
+def _bounded(text: str) -> str | None:
+    text = text.strip()
+    if len(text) > MAX_FAILURE_DETAIL_CHARS:
+        text = text[: MAX_FAILURE_DETAIL_CHARS - 1] + "…"
+    return text or None
 
 
 def _safe_error_code(exc: BaseException) -> str:

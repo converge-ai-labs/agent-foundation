@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -30,7 +31,7 @@ from a13n_harness.capabilities import (
     WorkingStateConfiguration,
 )
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
-from a13n_harness.capabilities.lifecycle import _safe_error_code
+from a13n_harness.capabilities.lifecycle import _failed_payload, _safe_error_code
 from a13n_harness.events import (
     ContextOperationCompletedPayload,
     FileChangeProjection,
@@ -41,7 +42,7 @@ from pydantic import ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     CapabilityEvent,
     ModelMessage,
@@ -175,7 +176,74 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
         "request_id": "model-request-1",
         "request_index": 0,
         "error_code": "model_request_failed",
+        "status_code": None,
+        "detail": "UnexpectedModelBehavior",
     }
+
+
+async def test_failed_model_request_names_the_provider_http_error() -> None:
+    body = {
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "message": "prompt is too long: 1006745 tokens > 1000000 maximum (Bearer sk-live-secret)",
+        },
+    }
+
+    async def rejected_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        raise ModelHTTPError(status_code=400, model_name="provider-model", body=body)
+        yield "unreachable"
+
+    rejected = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=rejected_stream),
+    )
+    events, terminal = await _collect_extensions(rejected, "fail")
+
+    assert terminal.result.status == "failed"
+    assert _payloads(events, "lifecycle")[-1] == {
+        "type": "model_request_failed",
+        "request_id": "model-request-1",
+        "request_index": 0,
+        "error_code": "model_request_failed",
+        "status_code": 400,
+        "detail": "prompt is too long: 1006745 tokens > 1000000 maximum (Bearer [REDACTED])",
+    }
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"message": "Incorrect model", "type": "invalid_request_error"}, "Incorrect model"),
+        ({"error": {"code": 5005, "message": " gateway said no "}}, "gateway said no"),
+        ("upstream unavailable", "upstream unavailable"),
+        ({"error": "rate limited"}, '{"error": "rate limited"}'),
+        ("x" * 2500, "x" * 1999 + "…"),
+        (None, None),
+        ("   ", None),
+    ],
+)
+def test_failed_model_request_detail_reads_the_provider_message(body: object, detail: str | None) -> None:
+    error = ModelHTTPError(status_code=429, model_name="provider-model", body=body)
+
+    payload = _failed_payload(error, request_id="model-request-2", request_index=1)
+
+    assert (payload.status_code, payload.detail) == (429, detail)
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (asyncio.CancelledError(), "cancelled"),
+        (DefinitionError("named by its code", code="safe_code"), "safe_code"),
+    ],
+)
+def test_cancelled_or_harness_failure_carries_no_detail(error: BaseException, code: str) -> None:
+    payload = _failed_payload(error, request_id="model-request-1", request_index=0)
+
+    assert (payload.error_code, payload.status_code, payload.detail) == (code, None, None)
 
 
 def test_tool_extra_event_payload_is_typed_and_bounds_file_changes() -> None:

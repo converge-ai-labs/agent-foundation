@@ -151,8 +151,8 @@
           "type": "boolean"
         },
         "pool_size": {
-          "default": 5,
-          "maximum": 100,
+          "default": 32,
+          "maximum": 1024,
           "minimum": 1,
           "title": "Pool Size",
           "type": "integer"

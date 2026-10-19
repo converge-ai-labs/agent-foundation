@@ -237,26 +237,23 @@ uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/lin
 
 ### Daytona
 
-默认文件根目录：`/home/daytona`。标准沙箱提供 Python；命令选择客体 PATH 上的 `python3`。自定义快照必须提供所选根目录和可执行文件。停止要求确认已禁用自动删除；删除等待最终销毁，不只接受初始确认。参见 [Daytona 沙箱示例](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/)和[删除语义](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)。
+Daytona 的 Agent 文件、Shell、进程、端口和 Computer 操作全部通过 Envd/EIP 执行。Provider 保留沙箱创建、检查、停止／启动、删除和私有连接配置。工作目录为 `/workspace`，绝对文件路径指向沙箱文件系统。停止／启动保留文件，不保证桌面进程或旧截图观察仍有效。停止前需确认自动删除已禁用；删除等待目标最终销毁。
 
-Daytona 的管理 provider 准备包含 Envd 和桌面依赖的 snapshot，并在创建或启动时检查所选目标。Agent Computer 操作通过 EIP 执行。连接已有目标只检查就绪状态；工具能力按 Envd 协商结果启用。
-
-分别配置 Agent Computer 工具集和挂载权限。中文字体由 snapshot 预装；输入中断后先核对结果。Console 查看与人工接管使用独立的桌面访问端点。
-
-要启用 Console 查看、Agent 请求人工协助和用户主动接管，先构建预装现有桌面访问 supervisor 和中文字体的 snapshot：
+无桌面和桌面环境都需要预装兼容 Envd 的自定义 snapshot。在本仓库使用 Linux amd64 二进制构建，并通过私有环境提供具有 snapshot 构建权限的 `DAYTONA_API_KEY`：
 
 ```bash
-# 通过私有环境提供具有 snapshot 创建权限的 DAYTONA_API_KEY。
-uv run --locked python examples/environment-provider/daytona_desktop_snapshot.py my-desktop-access --region us
+uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-然后将 Service 环境配置设为 `{"snapshot": "my-desktop-access", "desktop": true, "desktop_assistance": true}`。snapshot 在启动时运行 supervisor；连接或授权访问时不会安装或启动它。构建 snapshot 需要额外权限，仅能管理沙箱的 Key 不够；普通 Service 运行过程不构建 snapshot。
+仅需文件和 Shell 时使用 `{"snapshot": "my-envd"}`；需要 Computer 和人工操作时使用 `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}`。Snapshot 启动 Envd，并按配置启动共用的 X11 桌面和访问 supervisor。Service 在创建／启动后检查 EIP 就绪状态。连接或授权访问不会安装、重启或修复服务。运行沙箱的 Key 不需要 snapshot 构建权限。
 
-Daytona 的签名预览域名仅开放 6081 端口，supervisor 另行强制执行只读权限、单一控制者、可续租的 60 秒授权，以及归还时断开已有连接。仅撤销 Daytona 原生签名链接不足以断开已建立的输入连接。Console 复用现有查看、获取控制权和归还控制权交互。Agent 必须到达已确认的安全边界才能交接；输入结果未知或后台工作未经确认时，会阻止接管。
+Agent 的 EIP 操作通过私有 HTTP 端口 8888。Daytona 代理认证与客体 Envd 凭据独立，只保留在内存中；Host 根据部署和 Run 策略校验发现的地址，不会回退到原生执行。Agent Computer 工具和挂载权限需单独开启。Snapshot 预装中文字体；当前 Envd X11 输入支持物理按键，但不支持直接输入文字，包括中文和多行文字。
 
-新建的 Daytona 组织需要先在 Daytona 控制台设置默认区域，才能创建沙箱；连接中的区域字段不能替代这个账号初始化步骤。
+人工访问使用独立的 6081 端口短期签名预览连接。Supervisor 强制执行只读、单一控制者、可续租授权及归还时断开连接；仅撤销原生签名链接不能证明已有输入连接已终止。Console 保留查看、Agent 请求协助、获取和归还控制权交互；Service 确认执行到达安全边界后交接，归还后要求重新观察。
 
-现有 `test_daytona_desktop_live.py` 覆盖旧的厂商原生 Computer 适配器；迁移时需改为验证 Envd 执行。`test_daytona_access_live.py` 验证人工查看端点的只读限制、连接撤销和租约到期。这些付费目标测试与完整 Console／Agent 交接验收分别执行。
+新建 Daytona 组织必须先在控制台选择默认区域。连接中的区域不能替代该账号设置。
+
+`test_daytona_desktop_live.py` 验证 EIP 文件、Shell、桌面操作和停止／启动；`test_daytona_access_live.py` 验证只读访问、控制连接撤销、过期和重启隔离。这些会创建付费目标的测试与完整 Console／Agent 交接验收分别执行。
 
 ### Modal
 
@@ -283,7 +280,7 @@ from a13n_harness.providers.environment.builtins import select_builtin_environme
 
 (DAYTONA,) = select_builtin_environment_providers(("daytona",))
 connector = DAYTONA.execution_connector(
-    {}, configuration={"organization_id": "your-organization"},
+    {"snapshot": "my-envd"}, configuration={"organization_id": "your-organization"},
     credential={"api_key": api_key}, environment_id="env-workspace", state=saved_state,
 )
 async with await connector.open() as execution:

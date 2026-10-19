@@ -377,6 +377,20 @@ jobs:
             --entrypoint python3 python:3.13-slim-trixie \
             /tests/monitoring_linux.py /test-bin/a13n-envd 2>&1 | tee test-results/monitoring-managed.log
 
+      - name: Test managed OTLP export and Session credential isolation
+        if: matrix.runner == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked --package a13n-envd --test otlp --no-run --message-format=json > test-results/otlp-build.jsonl
+          test_binary=$(python3 -c 'import json; from pathlib import Path; artifacts = [json.loads(line) for line in Path("test-results/otlp-build.jsonl").read_text().splitlines()]; print(next(item["executable"] for item in artifacts if item.get("target", {}).get("name") == "otlp" and item.get("executable")))')
+          docker run --rm --network=none --cap-add=SYS_ADMIN \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined --user 0 \
+            --mount "type=bind,src=$PWD/target/debug/a13n-envd,dst=$PWD/target/debug/a13n-envd,readonly" \
+            --mount "type=bind,src=$test_binary,dst=/otlp-test,readonly" \
+            --entrypoint /otlp-test python:3.13-slim-trixie \
+            managed_mtls_export_keeps_credentials_out_of_sessions --ignored --nocapture 2>&1 | tee test-results/otlp-managed.log
+
       - name: Exercise native Windows EIP process ownership and fail-closed isolation
         if: matrix.runner == 'windows-2025'
         env:

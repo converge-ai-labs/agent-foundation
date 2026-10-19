@@ -81,6 +81,7 @@ class HttpEnvdProviderRuntime:
                 transport = HttpTransport(
                     configuration.endpoint,
                     self.credential.token.get_secret_value(),
+                    extra_headers={key: value.get_secret_value() for key, value in self.credential.headers.items()},
                     verify=self.verify,
                     request_timeout=configuration.request_timeout,
                     allow_plaintext_private_link=configuration.allow_plaintext_private_link,

@@ -732,6 +732,14 @@ fn classify_connect_error(error: &WebSocketError) -> ConnectionFailure {
             }
             _ => ConnectionFailure::Fatal("reverse WebSocket upgrade was rejected"),
         },
+        // tokio-tungstenite carries rustls handshake failures inside I/O errors.
+        WebSocketError::Io(error)
+            if error
+                .get_ref()
+                .is_some_and(|source| source.is::<rustls::Error>()) =>
+        {
+            ConnectionFailure::Fatal("reverse WebSocket TLS validation failed")
+        }
         WebSocketError::Io(_) => ConnectionFailure::Transient,
         WebSocketError::Tls(_) => {
             ConnectionFailure::Fatal("reverse WebSocket TLS validation failed")
@@ -861,6 +869,41 @@ mod tests {
             classify_connect_error(&Error::Http(Box::new(response))),
             super::ConnectionFailure::Fatal(_)
         ));
+    }
+
+    #[test]
+    fn rustls_certificate_errors_wrapped_in_io_are_fatal() {
+        for certificate_error in [
+            rustls::CertificateError::UnknownIssuer,
+            rustls::CertificateError::NotValidForName,
+        ] {
+            // tokio-rustls wraps TLS handshake errors in io::Error; tungstenite preserves it.
+            let error = Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                rustls::Error::InvalidCertificate(certificate_error),
+            ));
+            assert_eq!(
+                classify_connect_error(&error),
+                super::ConnectionFailure::Fatal("reverse WebSocket TLS validation failed")
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_connect_io_errors_remain_transient() {
+        for kind in [
+            std::io::ErrorKind::ConnectionRefused,
+            std::io::ErrorKind::ConnectionReset,
+            std::io::ErrorKind::UnexpectedEof,
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::InvalidData,
+        ] {
+            let error = Error::Io(std::io::Error::new(kind, "ordinary I/O error"));
+            assert_eq!(
+                classify_connect_error(&error),
+                super::ConnectionFailure::Transient
+            );
+        }
     }
 
     #[test]
