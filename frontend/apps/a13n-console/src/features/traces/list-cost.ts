@@ -1,7 +1,7 @@
 import { ApiError } from "../../service-client";
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
-import { detailedData, data, type Schema } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 import { observationCost } from "./cost";
 
 /** Bound background reads; an incomplete trace is never presented as a total. */
@@ -33,7 +33,7 @@ export function useListCosts(
             // At most 2,000 observations per trace. Larger traces stay unknown.
             for (let page = 0; page < 20 && !accessError; page++) {
               signal.throwIfAborted();
-              const collection = detailedData(
+              const collection = data(
                 await client
                   .workspace(workspace)
                   .GET("/api/v1/traces/{trace_id}/spans", {

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { detailedData, data, ifMatch, type Schema } from "../../shared/api";
+import { data, ifMatch, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   ErrorNotice,
@@ -50,7 +50,7 @@ export function AgentVersions({
           },
           signal,
         })
-        .then(detailedData),
+        .then(data),
   });
   if (query.isPending) return <Loading variant="table" columns={6} rows={5} />;
   if (!query.data) return <ErrorNotice error={query.error} />;

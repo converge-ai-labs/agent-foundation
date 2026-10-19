@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 import type { ContentRef, DisplayItem } from "a13n-ui/display";
 import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { detailedData, data } from "../../shared/api";
+import { data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { JsonView } from "../../shared/forms";
 import { MarkdownContent } from "../../shared/markdown";
@@ -116,7 +116,7 @@ function LoadContent({
           params: { path: { run_id: runId, content_id: reference.id } },
           signal: controller.signal,
         })
-        .then(detailedData);
+        .then(data);
       if (!controller.signal.aborted) setLoaded({ value: result.value });
     } catch (failure) {
       if (!controller.signal.aborted) {

@@ -7,7 +7,7 @@ import { ArrowRightIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { detailedData, data } from "../../shared/api";
+import { data } from "../../shared/api";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import {
   DetailHeader,
@@ -64,7 +64,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           params: { path },
           signal,
         })
-        .then(detailedData),
+        .then(data),
   });
   const observationsQuery = useInfiniteQuery({
     queryKey: ["trace-observations", workspace.id, traceId],
@@ -77,7 +77,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           params: { path, query: { limit: 50, cursor: pageParam } },
           signal,
         })
-        .then(detailedData),
+        .then(data),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   // Do not display cached content after an authorization/not-found response.

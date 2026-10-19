@@ -6,7 +6,7 @@ import {
   replaceEqualDeep,
   type QueryClient,
 } from "@tanstack/react-query";
-import { detailedData, allPages, data, type Schema } from "../../shared/api";
+import { allPages, data, type Schema } from "../../shared/api";
 
 export type SessionFilters = Omit<
   NonNullable<paths["/api/v1/sessions"]["get"]["parameters"]["query"]>,
@@ -128,7 +128,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
               params: { path: { run_id } },
               signal,
             })
-            .then(detailedData),
+            .then(data),
       }),
     agent: (run_id: string) =>
       queryOptions({
@@ -140,7 +140,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
               params: { path: { run_id } },
               signal,
             })
-            .then(detailedData),
+            .then(data),
         staleTime: Infinity,
       }),
     environments: (thread_id: string) =>
@@ -200,7 +200,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
               },
               signal,
             })
-            .then(detailedData),
+            .then(data),
         getNextPageParam: (page) => page.next_cursor ?? undefined,
       }),
     usage: (scope: UsageScope) =>
@@ -242,7 +242,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
                 },
                 signal,
               })
-              .then(detailedData),
+              .then(data),
           ),
       }),
     attempts: (run_id: string) =>
@@ -273,7 +273,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
                 },
                 signal,
               })
-              .then(detailedData),
+              .then(data),
           ),
       }),
     /** One inbox entry, read on its own as its Thread reports changes. */
@@ -289,7 +289,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
               },
               signal,
             })
-            .then(detailedData),
+            .then(data),
       }),
   };
 }

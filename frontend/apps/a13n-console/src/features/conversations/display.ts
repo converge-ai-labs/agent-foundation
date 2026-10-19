@@ -4,7 +4,7 @@ import {
   type DisplayItem,
 } from "a13n-ui/display";
 import { isRecord, type Client } from "../../service-client";
-import { detailedData, data, type Schema } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 
 export type { DisplayItem } from "a13n-ui/display";
 export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
@@ -26,7 +26,7 @@ export function readDisplay(
       params: { path: { run_id: runId }, query: window },
       signal,
     })
-    .then(detailedData);
+    .then(data);
 }
 
 export type FullDisplay = Schema["RunItems"] & {

@@ -1,11 +1,6 @@
 import { expect, it, vi } from "vitest";
-import {
-  detailedData,
-  detailedRepresentation,
-  requireDetailed,
-  matchesSearch,
-  matchingPage,
-} from "./api";
+import { data, representation, matchesSearch, matchingPage } from "./api";
+import { data as clientData, ProtocolError } from "../service-client";
 
 const pages: Record<string, { items: string[]; next_cursor: string | null }> = {
   first: { items: ["Alpha", "Beta"], next_cursor: "second" },
@@ -40,12 +35,12 @@ it("keeps full response data and its original ETag for editing", () => {
     config: { instructions: "keep", toolsets: {} },
   };
   const response = new Response(null, { headers: { ETag: '\"agent:4\"' } });
-  expect(detailedRepresentation({ data: value, response })).toEqual({
+  expect(representation({ data: value, response })).toEqual({
     value,
     etag: '\"agent:4\"',
   });
   expect(
-    detailedData({ data: { items: [value], next_cursor: null }, response }),
+    data({ data: { items: [value], next_cursor: null }, response }),
   ).toEqual({
     items: [value],
     next_cursor: null,
@@ -60,6 +55,15 @@ it.each([
 ])(
   "rejects a partial response before it enters an editor or full display",
   (value) => {
-    expect(() => requireDetailed(value)).toThrow("complete detailed response");
+    const result = { data: value, response: new Response() };
+    expect(() => data(result)).toThrow(ProtocolError);
+    expect(() => representation(result)).toThrow("complete detailed response");
+    expect(clientData(result)).toBe(value);
   },
 );
+
+it("preserves the missing-representation error", () => {
+  expect(() => data({ response: new Response() })).toThrow(
+    "The Service returned no representation.",
+  );
+});

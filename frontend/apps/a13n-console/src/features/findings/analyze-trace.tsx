@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { detailedData, data } from "../../shared/api";
+import { data } from "../../shared/api";
 
 /** A trace's Service run supplies the target Agent; callers never guess it from span names. */
 export function AnalyzeTrace({
@@ -27,7 +27,7 @@ export function AnalyzeTrace({
           params: { path: { run_id: runId! } },
           signal,
         })
-        .then(detailedData),
+        .then(data),
   });
   const run = query.isSuccess ? query.data : undefined;
   if (!run || !["completed", "failed", "cancelled"].includes(run.status))
