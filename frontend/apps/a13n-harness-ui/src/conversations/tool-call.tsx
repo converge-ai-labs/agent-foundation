@@ -1,6 +1,7 @@
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
+import { useGuestAccess } from "../transport/context";
 import {
   ArrowSquareOut,
   Check,
@@ -419,10 +420,11 @@ const toolIcons = {
 };
 
 function ToolActions({ tool }: { tool: ToolView }) {
+  const guest = useGuestAccess();
   const info = describeTool(tool);
   const openFile = useContext(OpenHostFile);
   const path = hostLookupPath(info.path);
-  if (!info.threadId && !(openFile && path)) return null;
+  if (guest || (!info.threadId && !(openFile && path))) return null;
   return (
     <div className={styles.actions}>
       {info.threadId && (
@@ -452,6 +454,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
 }
 
 function CollaborationDetails({ tool }: { tool: ToolView }) {
+  const guest = useGuestAccess();
   const info = describeTool(tool);
   const { args, result } = info;
   const resources = ["threads", "projects", "agents", "models"].find(
@@ -525,12 +528,12 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
                       : id;
                 return (
                   <li key={id || index}>
-                    {resources === "threads" && id ? (
+                    {!guest && resources === "threads" && id ? (
                       <Link to={`/threads/${encodeURIComponent(id)}`}>
                         {name || id}
                         <ArrowSquareOut aria-hidden="true" />
                       </Link>
-                    ) : resources === "projects" && id ? (
+                    ) : !guest && resources === "projects" && id ? (
                       <Link to={`/projects/${encodeURIComponent(id)}`}>
                         {name || id}
                       </Link>

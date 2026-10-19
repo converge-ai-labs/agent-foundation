@@ -15,7 +15,7 @@ import { AppSession } from "./app-session";
 import { useAppLink } from "./app-link";
 import { useAppContextSelection } from "./context-selection";
 import { result, type Schema } from "../transport/client";
-import { useTransport } from "../transport/context";
+import { useGuestAccess, useTransport } from "../transport/context";
 import styles from "./app-card.module.css";
 
 const capabilities = {
@@ -26,7 +26,19 @@ const capabilities = {
   message: { text: {} },
 };
 
-export function AppCard({
+export function AppCard(props: {
+  reference: Schema<"AppReference">;
+  live?: boolean;
+}) {
+  const guest = useGuestAccess();
+  return guest ? (
+    <p>Interactive app · available to the instance owner</p>
+  ) : (
+    <OwnerAppCard {...props} />
+  );
+}
+
+function OwnerAppCard({
   reference,
   live = false,
 }: {

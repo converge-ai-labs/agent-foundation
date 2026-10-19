@@ -94,6 +94,25 @@ class WebPushSubscriptionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class ShareGrantRecord(Base):
+    """Revocable guest access; the secret itself is never retained."""
+
+    __tablename__ = "share_grant"
+    __table_args__ = (
+        CheckConstraint("scope IN ('project', 'thread')", name="scope"),
+        CheckConstraint("permission IN ('view', 'prompt')", name="permission"),
+    )
+
+    share_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(_ID), nullable=False, index=True)
+    permission: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
 class ProjectModelPreferenceRecord(Base):
     __tablename__ = "project_model_preference"
 

@@ -229,6 +229,7 @@ from a13n_harness_ui.setup import (
     preflight_environment,
 )
 from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, DraftSummary, SharedDraft
+from a13n_harness_ui.sharing import Sharing
 from a13n_harness_ui.skill_input import prepare_skill_input
 from a13n_harness_ui.storage import (
     AgentResourceSource,
@@ -240,6 +241,7 @@ from a13n_harness_ui.storage import (
 from a13n_harness_ui.storage import (
     ThreadConfigurationPatch as StoredThreadConfigurationPatch,
 )
+from a13n_harness_ui.storage.shares import ShareRepository
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import (
@@ -421,6 +423,7 @@ class HarnessUiApp:
         self._voice: VoiceController | None = None
         self._web_push = web_push
         self._store = store
+        self.sharing = Sharing(self, ShareRepository(store.database.sessions))
         self._saved_outputs = SavedOutputs(store)
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
         self._model_catalog = ModelCatalog()

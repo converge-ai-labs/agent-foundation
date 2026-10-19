@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import Awaitable, Callable
 
 from anyio import Lock, fail_after
 from pydantic import Field, ValidationError
 from starlette.types import Message
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
+from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.surfaces import SurfaceModel
 
 
@@ -79,7 +81,9 @@ async def receive_text(socket: WebSocket, *, limit: int) -> str:
     return text
 
 
-async def authenticate_interactive(socket: WebSocket, api_key: str | None) -> bool:
+async def authenticate_interactive(
+    socket: WebSocket, api_key: str | None, *, validate: Callable[[str], Awaitable[None]] | None = None
+) -> bool:
     # Host/Origin are checked by AccessBoundary before accept. The key never
     # appears in a query string, negotiated subprotocol or diagnostic response.
     await socket.accept()
@@ -87,11 +91,13 @@ async def authenticate_interactive(socket: WebSocket, api_key: str | None) -> bo
         with fail_after(10):
             raw = await receive_text(socket, limit=8192)
         auth = InteractiveAuthentication.model_validate_json(raw)
-        if api_key is not None and not hmac.compare_digest(auth.api_key.encode(), api_key.encode()):
+        if validate is not None:
+            await validate(auth.api_key)
+        elif api_key is not None and not hmac.compare_digest(auth.api_key.encode(), api_key.encode()):
             raise ValueError("Authentication failed")
     except WebSocketDisconnect:
         return False
-    except (TimeoutError, ValueError, ValidationError):
+    except (TimeoutError, ValueError, ValidationError, HarnessUiError):
         await socket.close(code=4401, reason="Authentication required")
         return False
     return True

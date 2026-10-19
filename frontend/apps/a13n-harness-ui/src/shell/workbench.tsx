@@ -1,3 +1,4 @@
+import { ShareButton } from "../sharing";
 import { ModelsPage } from "../configuration/models";
 import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
 import { useEffect, useRef, useState } from "react";
@@ -349,6 +350,7 @@ function WorkbenchContent({
             profile={
               <>
                 <VoiceIndicator />
+                <ShareButton />
                 <ParticipantAvatars
                   participants={(live.presence?.participants ?? []).filter(
                     (participant) =>

@@ -46,29 +46,65 @@ export async function responseError(response: Response): Promise<ApiError> {
   } catch {
     /* A proxy may return a non-JSON failure. */
   }
-  if (response.status === 401)
+  if (response.status === 401 && code !== "share_unavailable")
     message = "Access expired. Enter the API key printed by this server.";
   return new ApiError(message, response.status, code);
 }
-export function createTransport(key: string, onUnauthorized: () => void) {
+export function createTransport(
+  key: string,
+  onUnauthorized: () => void,
+  shareId?: string,
+) {
+  const apiUrl = (path: string) => {
+    const url = new URL(path, window.location.origin);
+    if (
+      shareId &&
+      url.origin === window.location.origin &&
+      url.pathname.startsWith("/api/") &&
+      !url.pathname.startsWith("/api/shared/")
+    )
+      url.pathname = `/api/shared/${encodeURIComponent(shareId)}/${url.pathname.slice(5)}`;
+    return url;
+  };
+  const socketUrl = (path: string) => {
+    const url = apiUrl(path);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url;
+  };
   // One lifetime covers queries, writes and response bodies, including open SSE streams.
   // Closing observation does not roll back a write the server may already have accepted.
   const lifetime = new AbortController();
-  const realtime = new Realtime(key, () => {
-    lifetime.abort();
-    onUnauthorized();
-  });
+  const realtime = new Realtime(
+    key,
+    () => {
+      lifetime.abort();
+      onUnauthorized();
+    },
+    socketUrl("/api/realtime/connect"),
+  );
   lifetime.signal.addEventListener("abort", () => realtime.close(), {
     once: true,
   });
   const authenticatedFetch: typeof fetch = async (input, init) => {
     lifetime.signal.throwIfAborted();
-    const request = new Request(
+    let request = new Request(
       input instanceof Request
         ? input
         : new URL(input.toString(), window.location.origin),
       init,
     );
+    if (shareId) {
+      // A Request used as init exposes its body as a stream. Materialize the
+      // bounded JSON/attachment body so URL rewriting also works over HTTP/1.
+      request = new Request(apiUrl(request.url), {
+        method: request.method,
+        headers: request.headers,
+        body: request.body ? await request.arrayBuffer() : undefined,
+        signal: request.signal,
+        credentials: request.credentials,
+        redirect: request.redirect,
+      });
+    }
     const headers = new Headers(request.headers);
     if (key) headers.set("Authorization", `Bearer ${key}`);
     const signal = AbortSignal.any([lifetime.signal, request.signal]);
@@ -100,6 +136,8 @@ export function createTransport(key: string, onUnauthorized: () => void) {
     }),
     fetch: authenticatedFetch,
     realtime,
+    socketUrl,
+    shareId,
     key,
     close() {
       lifetime.abort();

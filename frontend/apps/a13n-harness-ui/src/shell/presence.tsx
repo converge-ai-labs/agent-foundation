@@ -94,12 +94,15 @@ export function useLiveWorkbench(
             ? location.pathname.split("/")[2]
             : null,
         }
-      : pageFocus(location.pathname, focusedSource),
+      : transport.shareId && !location.pathname.startsWith("/threads/")
+        ? null
+        : pageFocus(location.pathname, focusedSource),
     foreground: document.visibilityState === "visible" && document.hasFocus(),
     pointer_enabled: true,
   };
 
   useEffect(() => {
+    if (transport.shareId) return;
     const close = watchSummary(
       transport,
       (event) => {
@@ -197,8 +200,7 @@ export function useLiveWorkbench(
     };
     function connect() {
       setPresenceState("Connecting");
-      const url = new URL("/api/presence/connect", window.location.origin);
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      const url = transport.socketUrl("/api/presence/connect");
       const ws = new WebSocket(url);
       socket.current = ws;
       ws.onopen = () => {
