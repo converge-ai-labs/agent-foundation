@@ -23,6 +23,18 @@ def test_monitoring_runs_native_carriers_and_real_managed_cgroup() -> None:
     assert "set -o pipefail" in managed["run"]
 
 
+def test_linux_clipboard_runs_ignored_native_tests_under_xvfb() -> None:
+    steps = yaml.safe_load(WORKFLOW.read_text())["jobs"]["daemon"]["steps"]
+    install = next(step for step in steps if "apt-get install" in step.get("run", ""))
+    assert install["if"] == "matrix.linux"
+    for dependency in ("xvfb", "xauth", "xclip"):
+        assert dependency in install["run"]
+    native = next(step for step in steps if "xvfb-run" in step.get("run", ""))
+    assert native["if"] == "matrix.linux"
+    assert "--lib clipboard -- --include-ignored --test-threads=1" in native["run"]
+    assert "set -o pipefail" in native["run"]
+
+
 def test_protocol_and_platform_checks_run_independently() -> None:
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
     for name in ("protocol", "client", "daemon"):

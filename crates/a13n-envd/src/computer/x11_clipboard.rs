@@ -95,6 +95,11 @@ fn wait<T>(
     }
 }
 
+// X timestamps wrap every 2^32 milliseconds; compare within the half-range.
+fn request_is_current(time: u32, acquired: u32) -> bool {
+    time == x11rb::CURRENT_TIME || (time.wrapping_sub(acquired) as i32) >= 0
+}
+
 struct State {
     connection: Arc<RustConnection>,
     root: u32,
@@ -211,11 +216,14 @@ impl State {
                 } else {
                     e.property
                 };
-                let success = if e.target == self.multiple {
-                    self.convert_multiple(e.requestor, property).is_ok()
-                } else {
-                    self.convert(e.requestor, e.target, property).is_ok()
-                };
+                // A queued request from an earlier publication must not receive
+                // the replacement payload, including through MULTIPLE.
+                let success = request_is_current(e.time, self.acquired)
+                    && if e.target == self.multiple {
+                        self.convert_multiple(e.requestor, property).is_ok()
+                    } else {
+                        self.convert(e.requestor, e.target, property).is_ok()
+                    };
                 let reply = SelectionNotifyEvent {
                     response_type: SELECTION_NOTIFY_EVENT,
                     sequence: 0,
@@ -758,6 +766,110 @@ mod tests {
             ErrorType::Timeout
         );
         assert!(start.elapsed() < Duration::from_secs(7));
+    }
+
+    #[test]
+    fn clipboard_request_timestamp_wraparound() {
+        assert!(request_is_current(0, 100));
+        assert!(request_is_current(100, 100));
+        assert!(request_is_current(101, 100));
+        assert!(!request_is_current(99, 100));
+        assert!(request_is_current(10, u32::MAX - 10));
+        assert!(!request_is_current(u32::MAX - 10, 10));
+    }
+
+    #[test]
+    #[ignore = "requires an isolated Xvfb DISPLAY"]
+    fn clipboard_stale_requests_do_not_receive_replacement() {
+        fn next_event(connection: &RustConnection) -> Event {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if let Some(event) = connection.poll_for_event().unwrap() {
+                    return event;
+                }
+                assert!(Instant::now() < deadline, "missing selection event");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        let (connection, screen) = x11rb::connect(None).unwrap();
+        let root = connection.setup().roots[screen].root;
+        let mut state = State::new(Arc::new(connection), root).unwrap();
+        let (other, _) = x11rb::connect(None).unwrap();
+        let window = State::window(&other, root).unwrap();
+        for multiple in [false, true] {
+            state.write("old".into(), &AtomicBool::new(false)).unwrap();
+            let old = state.acquired;
+            let target = if multiple { state.multiple } else { state.utf8 };
+            other.delete_property(window, state.plain).unwrap();
+            if multiple {
+                other
+                    .change_property32(
+                        PropMode::REPLACE,
+                        window,
+                        state.property,
+                        AtomEnum::ATOM,
+                        &[state.utf8, state.plain],
+                    )
+                    .unwrap();
+            }
+            other
+                .convert_selection(window, state.selection, target, state.property, old)
+                .unwrap()
+                .check()
+                .unwrap();
+            // Retain the actual server request until after a newer publication,
+            // reproducing a request queued behind write's timestamp notification.
+            let request = loop {
+                let event = next_event(&state.connection);
+                if matches!(event, Event::SelectionRequest(_)) {
+                    break event;
+                }
+                state.serve(&event);
+            };
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while state.acquired == old {
+                assert!(Instant::now() < deadline);
+                state.write("new".into(), &AtomicBool::new(false)).unwrap();
+            }
+            state.serve(&request);
+            let notify = loop {
+                if let Event::SelectionNotify(e) = next_event(&other) {
+                    break e;
+                }
+            };
+            assert_eq!(notify.property, 0);
+            let property = if multiple {
+                state.plain
+            } else {
+                state.property
+            };
+            let data = other
+                .get_property(false, window, property, AtomEnum::ANY, 0, 64)
+                .unwrap()
+                .reply()
+                .unwrap();
+            assert_eq!(data.type_, 0);
+            // Both the acquisition time and CURRENT_TIME still serve new content.
+            for time in [state.acquired, x11rb::CURRENT_TIME] {
+                let Event::SelectionRequest(mut current) = request.clone() else {
+                    unreachable!()
+                };
+                current.time = time;
+                state.serve(&Event::SelectionRequest(current));
+                let notify = loop {
+                    if let Event::SelectionNotify(e) = next_event(&other) {
+                        break e;
+                    }
+                };
+                assert_eq!(notify.property, state.property);
+                let data = other
+                    .get_property(true, window, property, state.utf8, 0, 64)
+                    .unwrap()
+                    .reply()
+                    .unwrap();
+                assert_eq!(data.value, b"new");
+            }
+        }
     }
 
     #[test]

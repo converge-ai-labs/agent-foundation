@@ -65,7 +65,7 @@ image = { version = "0.25.8", default-features = false, features = ["jpeg"] }
 x11rb = { version = "0.13.2", features = ["randr", "xkb", "xtest"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6.3"
+objc2 = { version = "0.6.3", features = ["exception"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSString"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFDictionary", "CFString", "CFCGTypes"] }
