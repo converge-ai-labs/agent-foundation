@@ -243,3 +243,18 @@ The complete machine-readable validation schema, including named enum/union defi
 | `telemetry.logfire_read_token`  | `A13N_TELEMETRY__LOGFIRE_READ_TOKEN`  | string or null                      | format="password"; default=null                                 |
 | `telemetry.trace_content`       | `A13N_TELEMETRY__TRACE_CONTENT`       | "none", "standard", "full"          | default="standard"                                              |
 | `telemetry.trace_query_timeout` | `A13N_TELEMETRY__TRACE_QUERY_TIMEOUT` | number                              | maximum=60; exclusiveMinimum=0; default=10                      |
+
+## `monitoring`
+
+| Setting                        | Environment variable                 | Type / choices | Constraints and default                          |
+| ------------------------------ | ------------------------------------ | -------------- | ------------------------------------------------ |
+| `monitoring.enabled`           | `A13N_MONITORING__ENABLED`           | boolean        | default=true                                     |
+| `monitoring.max_devices`       | `A13N_MONITORING__MAX_DEVICES`       | integer        | minimum=1; maximum=512; default=64               |
+| `monitoring.poll_seconds`      | `A13N_MONITORING__POLL_SECONDS`      | number         | minimum=5; maximum=60; default=10                |
+| `monitoring.request_seconds`   | `A13N_MONITORING__REQUEST_SECONDS`   | number         | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_concurrency` | `A13N_MONITORING__QUERY_CONCURRENCY` | integer        | minimum=1; maximum=64; default=8                 |
+| `monitoring.query_seconds`     | `A13N_MONITORING__QUERY_SECONDS`     | number         | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_bytes`       | `A13N_MONITORING__QUERY_BYTES`       | integer        | minimum=65536; maximum=16777216; default=4194304 |
+| `monitoring.collectors`        | `A13N_MONITORING__COLLECTORS`        | object         | —                                                |
+| `monitoring.collector_seconds` | `A13N_MONITORING__COLLECTOR_SECONDS` | number         | minimum=10; maximum=300; default=30              |
+| `monitoring.collector_targets` | `A13N_MONITORING__COLLECTOR_TARGETS` | integer        | minimum=1; maximum=4096; default=512             |

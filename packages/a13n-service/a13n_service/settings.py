@@ -21,6 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from pydantic_ai.exceptions import UserError
 
 from a13n_service.infra.outbox import OutboxKind, Policy
+from a13n_service.providers.collectors import Configuration as CollectorConfiguration
+from a13n_service.providers.collectors import Kind as CollectorKind
 from a13n_service.providers.tools.mcp_catalog import McpServers
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.providers.traces.langfuse import Langfuse
@@ -515,6 +517,30 @@ class Telemetry(Section):
                 )
 
 
+class Monitoring(Section):
+    """Small-deployment Device monitoring; external export and history query are independent."""
+
+    enabled: bool = True
+    max_devices: int = Field(default=64, ge=1, le=512)
+    poll_seconds: float = Field(default=10, ge=5, le=60)
+    request_seconds: float = Field(default=5, ge=1, le=30)
+    query_concurrency: int = Field(default=8, ge=1, le=64)
+    query_seconds: float = Field(default=5, ge=1, le=30)
+    query_bytes: int = Field(default=4194304, ge=65536, le=16777216)
+    collectors: dict[CollectorKind, CollectorConfiguration] = Field(default_factory=dict)
+    collector_seconds: float = Field(default=30, ge=10, le=300)
+    collector_targets: int = Field(default=512, ge=1, le=4096)
+
+    @model_validator(mode="after")
+    def collector_receivers(self) -> "Monitoring":
+        for kind, collector in self.collectors.items():
+            if kind == "alloy" and collector.receiver is None:
+                raise ValueError("Alloy requires an operator-owned receiver")
+            if kind == "vmagent" and collector.receiver is not None:
+                raise ValueError("vmagent delivery is configured through its remoteWrite flags")
+        return self
+
+
 class Settings(Section):
     server: Server = Field(default_factory=Server)
     database: Database = Field(default_factory=Database)
@@ -532,6 +558,7 @@ class Settings(Section):
     plugins: Plugins = Field(default_factory=Plugins)
     composer: Composer = Field(default_factory=Composer)
     telemetry: Telemetry = Field(default_factory=Telemetry)
+    monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
 

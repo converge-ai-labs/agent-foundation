@@ -18,10 +18,10 @@ from a13n_harness.providers.environment.docker.shared import DockerReference, _m
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_session
+from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
+from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.managed import managed_http_runtime
 
 
 class HttpReference(DockerReference):
@@ -32,7 +32,7 @@ class HttpReference(DockerReference):
 
 
 @asynccontextmanager
-async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
+async def http_runtime(reference: DockerReference) -> AsyncIterator[HttpEnvdProviderRuntime]:
     if reference.target is None:
         raise _missing()
     with engine_errors(mutation=False):
@@ -65,18 +65,25 @@ async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
         )
     except (KeyError, TypeError, ValueError):
         raise provider_error("docker", "envd_http_binding_invalid", Category.INVALID) from None
-    async with managed_http_session(
+    async with managed_http_runtime(
         provider_key="docker",
         connection=configuration,
         endpoint_policy=reference.runtime.endpoint_policy,
         load_credential=lambda: _credential(reference),
-        expected_device_id=reference.allocation_id,
-        configuration=RemoteEnvdEnvironmentConfiguration(
+    ) as runtime:
+        yield runtime
+
+
+@asynccontextmanager
+async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
+    async with http_runtime(reference) as runtime:
+        async with runtime.open_session(
+            expected_device_id=reference.allocation_id,
             working_directory="/workspace",
-            required_methods=("computer.describe", "computer.observe") if reference.config.desktop else (),
-        ),
-    ) as session:
-        yield session
+            required_methods=REQUIRED_METHODS
+            | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
+        ) as session:
+            yield session
 
 
 async def _credential(reference: DockerReference) -> HttpEnvdCredential:

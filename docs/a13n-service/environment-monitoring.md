@@ -1,0 +1,121 @@
+---
+title: Monitor environments
+description: Select collection and history backends for environment and Device metrics, and operate optional pull collectors.
+---
+
+Environment monitoring shows the resources used by an Envd target independently of agent runs. Select a workspace metrics data source on each environment. An unselected environment has no Service background collection or automatic exporter setup. [Service monitoring](monitoring.md) covers the health of Service itself.
+
+## Choose a data source
+
+| Collection | Use when                                                                        | Infrastructure                                                       |
+| ---------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `native`   | A managed Envd target should export directly.                                   | An OTLP receiver; optional Prometheus HTTP query backend.            |
+| `pull`     | An existing collector should scrape targets.                                    | Operator-installed vmagent or Grafana Alloy; optional query backend. |
+| `proxy`    | A small deployment needs temporary history, or targets connect back to Service. | Service and Redis; optional OTLP HTTP export and query backend.      |
+| `external` | You already operate ingestion and only need queries.                            | A Prometheus HTTP query backend.                                     |
+
+**Local Cache** is the built-in proxy source. Its configuration is fixed. Custom sources separate collection, export and historical queries. Service does not install a collector or time-series database. A failed backend never silently switches to Local Cache.
+
+Workspace administrators create sources through `/api/v1/metrics-data-sources`. For example, this request body selects native export and an independent query endpoint:
+
+```json
+{
+  "name": "Production metrics",
+  "config": {
+    "collection": "native",
+    "export": {"endpoint": "https://ingest.example.com/v1/metrics", "protocol": "http/protobuf"},
+    "query": {"endpoint": "https://metrics.example.com", "scope_labels": {"workspace_id": "ws_example"}}
+  },
+  "export_credentials": {"headers": {"Authorization": "Bearer <write-token>"}},
+  "query_credentials": {"headers": {"Authorization": "Bearer <read-token>"}}
+}
+```
+
+Use the API's workspace context and authentication described in [HTTP API](http.md). Credentials are encrypted and write-only. Responses expose presence flags. On update, omit a credential to retain it, send `null` to clear it, or supply an object to replace it. Changing an endpoint requires explicitly replacing or clearing its credential. Updates use `If-Match` with the resource ETag. A source cannot be deleted while an environment or Device references it.
+
+Use backend-scoped read credentials. Scope labels filter built-in queries; they do not restrict arbitrary PromQL. Custom PromQL requires workspace administration authority. Private environment queries also check environment ownership. Monitoring endpoints are human-facing and are excluded from agent tools and MCP.
+
+## Bind and verify an environment
+
+1. Select `metrics_data_source_id` when creating or updating the environment. Use `null` to clear the selection. External identity mappings and custom sources require administrator approval.
+2. For managed Docker or E2B `envd_http` creation, select the source before creation starts. Native, proxy and pull selections enable the 10-second sampler. Native also injects metrics-specific OTEL settings and write credentials.
+3. Inspect `metrics_application`. It records the source version and collection mode frozen for creation. `applied_at` records successful creation with those inputs, not successful ingestion.
+4. Query `/api/v1/environments/{environment_id}/metrics/query`. For pull collection, also inspect `/api/v1/environments/{environment_id}/metrics/collector` and the collector's own target status.
+
+Existing targets need operator configuration when their daemon has no sampler. Start/resume does not reinject settings or recreate the target. A later selection can change live proxy/pull collection, but does not rewrite an already launched native exporter. Unbinding or disabling a source does not revoke credentials previously delivered to a target; retire or reconfigure that exporter separately.
+
+Native HTTP export uses the complete metrics URL. Native gRPC uses the receiver origin. Proxy export supports HTTP/protobuf. Query endpoints are API bases before `/api/v1/query` and `/api/v1/query_range`. Endpoint policy, TLS trust and network reachability must permit each destination.
+
+## Bootstrap an optional collector
+
+Use an existing vmagent or Alloy installation with an operator-owned delivery pipeline. Service replaces only its generated scrape fragment. The collector must reach each target's HTTP listener. The Service writer must reach the collector's reload endpoint.
+
+1. Create a protected shared directory. Mount the directory into Service and the collector, rather than mounting the generated file: updates use atomic replacement.
+2. Run both processes with a UID that can read Service's mode-0600 fragments. Limit directory access to trusted operators. Fragments contain listener credentials that also authorize EIP access.
+3. Use storage supporting POSIX advisory locks and atomic rename. Rolling replacements of the writer must share the same directory.
+4. Configure exactly one `all` or `control` process with `writer = true` per collector. Other API replicas use the same collector configuration with `writer = false`.
+5. Protect reload access with network policy or authenticated ingress. Configure optional `headers` in the protected Service settings. The endpoint is an origin or gateway prefix; Service appends `/-/reload`.
+
+### vmagent
+
+Create an initial `a13n-managed.yml` containing `[]` in the shared directory with mode 0600. Add its collector-side path to your existing vmagent configuration:
+
+```yaml
+scrape_config_files:
+  - /etc/vmagent/a13n/a13n-managed.yml
+```
+
+Keep existing scrape jobs and `-remoteWrite.url` settings. Configure Service using its own mount path:
+
+```toml
+[monitoring.collectors.vmagent]
+directory = "/var/lib/a13n/vmagent"
+endpoint = "http://vmagent:8429"
+writer = true
+```
+
+The generated fragment is a top-level list of scrape jobs, not a full `scrape_configs` document. Service submits a reload after replacing the fragment.
+
+### Grafana Alloy
+
+Run Alloy with a configuration directory. Keep your receiver and existing pipelines in operator-owned `.alloy` files in that directory. For example, an existing `prometheus.remote_write "metrics"` component exposes `prometheus.remote_write.metrics.receiver`:
+
+```toml
+[monitoring.collectors.alloy]
+directory = "/var/lib/a13n/alloy"
+endpoint = "http://alloy:12345"
+receiver = "prometheus.remote_write.metrics.receiver"
+writer = true
+```
+
+Service writes only `a13n-managed.alloy`. Mount the same directory at Alloy's configuration path. The receiver expression must already exist; Service does not create or edit its remote-write destination or credentials.
+
+### Reconciliation and retirement
+
+Create a source with `{"collection":"pull","collector":"vmagent"}` or `{"collection":"pull","collector":"alloy"}`. Add `query` independently when historical queries are needed. `/api/v1/metrics-data-sources/capabilities` reports which collectors are configured. Configuration availability is separate from runtime health.
+
+Reconciliation defaults to every 30 seconds, with up to 512 environments per collector and eight concurrent route discoveries. It supports external HTTP and managed Docker/E2B `envd_http` targets. Unsupported or unavailable targets are omitted and reported, rather than redirected through Service proxy collection.
+
+`reload_requested` means the collector accepted a reload request. Verify applied configuration, scrape health and delivery at the collector; vmagent reload is asynchronous. Failed reloads are retried on reconciliation. Pending or expired receipts do not prove collection is working.
+
+To remove a source while the writer runs, disable or unbind it and verify the next successful reconciliation removes its jobs. Before stopping the writer, removing its configuration or setting `monitoring.enabled = false`, remove the managed fragment and reload the collector yourself. Stopping reconciliation leaves previously loaded jobs active.
+
+## Connect a reverse Device
+
+A monitoring Device registration is separate from an executable environment. Workspace administrators create it with an expected native Device identity and select a proxy source. Creation returns a one-time attachment token. Store it securely; metadata reads cannot retrieve it.
+
+Connect an Envd reverse carrier to `/api/v1/devices/{device_id}/connect` using WSS, the `eip.v1` subprotocol and the attachment token as Bearer authentication. Direct loopback WS is permitted for development. Query-string credentials, browser Origins and cookie-only authentication are refused. Configure the Envd sampler before connecting.
+
+The receiving replica owns the socket and temporary history. Other API replicas route authorized queries to that owner. Token rotation, disablement, source removal and lost ownership retire the carrier. Reverse Devices cannot select pull collection because the carrier does not supply a collector-reachable HTTP endpoint. Native/external Device history can be queried independently of a connected carrier.
+
+## Query and size temporary history
+
+Typed environment and Device queries select one metric and a time range. `history = "configured"` uses the selected source's query backend, or its temporary buffer when no query backend exists. `history = "temporary"` explicitly selects a proxy source's buffer. `include_snapshot = true` adds the latest EIP snapshot for overview and inventory views; ordinary chart queries return freshness and the requested series only.
+
+Local Cache retains minute-aggregated overview gauges for 24 hours and per-interface network and per-device disk/cgroup I/O rates for one hour. Resource history retains at most 64 sources per kind, including recently disappeared sources. Results report actual coverage and truncation. Missing and stale observations remain gaps; counter resets and source replacement break rate continuity. Interface and disk identities stay separate rather than being summed indiscriminately. Pressure and filesystem history require an external backend.
+
+Proxy capacity defaults to 64 connections per control process and can be configured up to 512. A full inventory uses less than 2 MiB of numeric history per connection, plus Python objects, the latest snapshot and export state. Size process memory for your inventory before increasing admission. Restart or ownership changes can discard temporary history. Redis carries ownership and bounded query messages; it does not store historical samples.
+
+External queries have a separate concurrency budget, default eight, a five-second deadline and a 4 MiB response limit. Each query is bounded to 200 series, 90 days and 11,000 evaluation points per series. Choose a step suited to the chart width. External rate queries use five-minute PromQL windows; temporary rates use adjacent observations, so their estimates can differ.
+
+See [Settings reference](configuration-reference.md#monitoring) for configuration bounds. Use an external history backend for durable retention, longer resource history or larger fleets.

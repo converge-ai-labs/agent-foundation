@@ -40,6 +40,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.environment.errors import observed_environment_state
 from a13n_service.providers.environment.management import EnvironmentProvider
+from a13n_service.providers.environment.metrics import MetricsLaunch
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import (
     ResolvedProvider,
@@ -49,7 +50,8 @@ from a13n_service.resources.providers.service import (
 )
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, credential_version, open_provider, provider_identity
-from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle
+from a13n_service.runs.environments.monitoring import launch
+from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
@@ -238,6 +240,7 @@ class Operation:
     # The provider credential's version now, and whether it changed since that credential last reached the instance.
     credential_version: str | None
     credential_changed: bool
+    metrics: MetricsLaunch | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,10 +310,17 @@ async def _refusal(
         definition = runtime.registry.get("environment", provider.type)
         # Freeze effective defaults too: rebuilding an adapter after an upgrade must use the same recipe.
         try:
-            recipe = definition.validate_environment(template.config.recipe).model_dump(mode="json")
-        except EnvironmentProviderError as error:
+            recipe = definition.validate_environment(template.config.recipe)
+            if environment.status == "creating":
+                await launch.freeze(
+                    session,
+                    runtime.keys,
+                    environment,
+                    supported=definition.metrics_launch is not None and definition.metrics_launch(recipe),
+                )
+        except (EnvironmentProviderError, ServiceError) as error:
             return fault_of(error, dispatched=False)
-        environment.handle = Handle(recipe=recipe).model_dump(mode="json")
+        environment.handle = Handle(recipe=recipe.model_dump(mode="json")).model_dump(mode="json")
         environment.provider_identity = identity
     elif environment.provider_identity != identity:
         message = "The provider now points at another account or endpoint; restore it or delete this environment"
@@ -369,6 +379,7 @@ async def claim_locked(
         seconds=seconds,
         credential_version=version,
         credential_changed=changed,
+        metrics=launch.restore(runtime.keys, environment) if phase == "creating" else None,
     )
 
 
@@ -381,6 +392,7 @@ async def _call(provider: EnvironmentProvider, operation: Operation) -> Environm
                 environment_id=target.environment_id,
                 operation_id=operation.operation_id,
                 state=target.state,
+                **({"metrics": operation.metrics} if operation.metrics is not None else {}),
             )
         case "starting":
             return await provider.start(
@@ -436,6 +448,10 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
     dispatched = False
     try:
         with anyio.fail_after(operation.seconds):
+            if operation.metrics is not None:
+                endpoint = operation.metrics.environment.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+                if endpoint is not None:
+                    await runtime.endpoint_policy.validate(endpoint)
             provider = await open_provider(runtime, operation.target)
             dispatched = True
             return Outcome(await _call(provider, operation))
@@ -487,8 +503,13 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.status = reached
         environment.operation_id = environment.operation_started_at = None
         environment.failure = None
+        if operation.phase == "creating" and environment.metrics_application is not None:
+            applied = MetricsApplication.model_validate(environment.metrics_application)
+            environment.metrics_application = applied.model_copy(update={"applied_at": current}).model_dump(mode="json")
+            environment.metrics_launch = None
         if reached == "deleted":
             environment.handle = None
+            environment.metrics_launch = None
         else:
             update = {"state": outcome.state, "credential_version": operation.credential_version}
             environment.handle = handle.model_copy(update=update).model_dump(mode="json")

@@ -40,4 +40,5 @@ E2B = management_definition(
     supports_stop=True,
     supports_destroy=True,
     requires_keepalive=True,
+    metrics_launch=lambda recipe: recipe.execution == "envd_http",
 )

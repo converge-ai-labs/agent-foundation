@@ -28,6 +28,7 @@
     "configuration",
     "operations",
     "monitoring",
+    "environment-monitoring",
     "http",
     "configuration-reference",
     "api-reference"

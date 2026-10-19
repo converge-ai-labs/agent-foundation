@@ -13,12 +13,15 @@ A thread chooses environments; a run uses the mount set frozen for it at accepta
 | When a run freezes mounts, and how a failed preparation ends a run     | [05](05-runs.md#source-selection)                                                                                |
 | Instances, thread mounts, operations, idle policy and execution mounts | This chapter                                                                                                     |
 
+Monitoring selection, collection and query authority are owned by [Environment monitoring](13-environment-monitoring.md). Monitoring uses the instance identity without acquiring lifecycle or execution authority.
+
 ## Tables
 
 ```
 environments   (env_)
   id  organization_id  workspace_id  provider_id NULL  provider_identity NULL  template_id NULL
   device_id NULL  endpoint NULL  token NULL  owner_principal_id NULL  name  status  handle NULL  generation
+  metrics_data_source_id NULL  metrics_labels  metrics_launch NULL  metrics_application NULL
   operation_id NULL  operation_started_at NULL  operation_deadline NULL
   lease_owner NULL  lease_token_hash NULL  lease_expires_at NULL
   failure NULL  last_used_at NULL  renew_at NULL  expires_at NULL  created_by_id  version  created_at  updated_at

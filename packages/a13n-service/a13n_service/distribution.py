@@ -48,6 +48,8 @@ from a13n_service.resources.memories.tables import (
     MemoryRow,
     MemorySpaceRow,
 )
+from a13n_service.resources.metrics_data_sources.routes import router as metrics_data_sources_router
+from a13n_service.resources.metrics_data_sources.tables import DataSourceRow
 from a13n_service.resources.models.routes import router as models_router
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.routes import router as providers_router
@@ -79,6 +81,8 @@ from a13n_service.runs.desktop_assistance.tables import (
     DesktopTargetRow,
     DesktopViewerRow,
 )
+from a13n_service.runs.devices.routes import router as devices_router
+from a13n_service.runs.devices.tables import DeviceRow
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
@@ -305,6 +309,8 @@ OSS = Distribution(
         EnvironmentTemplateRow,
         ConnectionRow,
         SubscriptionRow,
+        DataSourceRow,
+        DeviceRow,
         UploadRow,
         AssetRow,
         SkillRow,
@@ -349,6 +355,8 @@ OSS = Distribution(
         assets_router,
         skills_router,
         subscriptions_router,
+        metrics_data_sources_router,
+        devices_router,
         runs_router,
         usage_router,
         traces_router,

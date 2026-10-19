@@ -188,7 +188,7 @@ Every HTTP response, a 500 or an ingress refusal included, carries exactly one S
 
 ## Redis
 
-Redis is an accelerator, never an authority or a condition for correctness. PostgreSQL decides ownership and durable state, and every use of Redis stays correct, only slower or less live, when Redis is unreachable or has lost data. Every call is bounded by `redis.timeout`.
+Redis accelerates work and coordinates ephemeral observations; it grants no domain authority. PostgreSQL decides durable work ownership and state, and every use of Redis stays correct, only slower or less live, when Redis is unreachable or has lost data. Every call is bounded by `redis.timeout`.
 
 | Use                                                                      | When Redis fails                                                                                |
 | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
@@ -196,6 +196,8 @@ Redis is an accelerator, never an authority or a condition for correctness. Post
 | rate-limit counters (fixed windows per hashed identity)                  | the limit is not enforced and each skipped check is logged                                      |
 | session streams ([07](07-facts-and-delivery.md#the-session-stream))      | provisional output is lost and readers are told; committed display and run state are unaffected |
 | connection tool and connector catalog caches (`providers.discovery_ttl`) | results are fetched again from the provider ([04](04-resources.md))                             |
+
+[Environment monitoring](13-environment-monitoring.md#proxy-collection-and-temporary-history) also uses Redis for temporary collection-owner tokens and bounded cross-replica request/reply routing. Coordination loss discards or interrupts temporary observations without affecting Runs, lifecycle operations, native export or external history queries. Its bounded collector, ownership renewal, query router and export worker are control-role lifespan services; their history remains process-local.
 
 ## Sweeps
 
