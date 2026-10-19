@@ -323,3 +323,97 @@ async def test_http_authentication_identity_and_unreachable_endpoint(docker_endp
             for container in containers:
                 await asyncio.to_thread(container.remove, force=True)
             await asyncio.to_thread(engine.close)
+
+
+@pytest.mark.parametrize("route", ["native", "envd_http"])
+async def test_files_shell_stdin_and_route_specific_close(route):
+    """Both routes retain their file/process semantics on real owned containers."""
+    from uuid import uuid4
+
+    import docker
+    from a13n_harness.environment.commands import ArgvCommand, CommandRequest
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_service.providers.environments.docker.definition import DOCKER
+
+    identity = "env_" + uuid4().hex
+    recipe = {"image": IMAGE, "execution": route, "pull_policy": "never"}
+    account = {"envd_http": {"host": "127.0.0.1"}} if route == "envd_http" else {}
+    engine = docker.from_env()
+    container = None
+    async with await DOCKER.open_provider(configuration=account) as management:
+        try:
+            state = await management.create(recipe, environment_id=identity, operation_id="create")
+            container = await asyncio.to_thread(engine.containers.get, "a13n-" + identity)
+            connector = DOCKER.execution.execution_connector(
+                DOCKER.execution_environment(recipe), configuration=account, environment_id=identity, state=state
+            )
+            async with await connector.open() as execution:
+                operations = execution.operations
+                assert operations.files and operations.shell and operations.processes and operations.outputs
+                assert (operations.ports is not None) == (route == "envd_http")
+                await operations.files.write_text("/workspace/input.txt", "中文\n\nlast\n", mode="create")
+                assert (await operations.files.read_text("/workspace/input.txt")).text == "中文\n\nlast\n"
+                policy = EnvironmentOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096, overflow="retain")
+                result = await operations.shell.exec(
+                    CommandRequest(
+                        command=ArgvCommand(executable="python3", arguments=("-c", "print(31 * 13)")),
+                        output_policy=policy,
+                    )
+                )
+                assert result.status.exit_code == 0 and result.output.stdout.inline == b"403\n"
+                started = await operations.processes.start(
+                    CommandRequest(
+                        command=ArgvCommand(
+                            executable="python3", arguments=("-c", "import sys; print(sys.stdin.readline().upper())")
+                        ),
+                        keep_stdin_open=True,
+                        output_policy=policy,
+                    )
+                )
+                handle = started.process.handle
+                await operations.processes.write_stdin(handle, b"hello\n", close_after_write=True)
+                info = await operations.processes.wait(handle, condition="initial_terminal", timeout_seconds=10)
+                assert info.status.exit_code == 0
+                output = await operations.processes.read_output(handle, policy=policy)
+                assert output.stdout.capture.inline == b"HELLO\n\n"
+                await operations.processes.release(handle)
+                await operations.processes.start(
+                    CommandRequest(
+                        command=ArgvCommand(
+                            executable="python3",
+                            arguments=(
+                                "-c",
+                                "import os,time; open('/workspace/pid','w').write(str(os.getpid())); time.sleep(60)",
+                            ),
+                        ),
+                        output_policy=policy,
+                    )
+                )
+                # Wait for guest startup evidence, not for a presumed scheduling delay.
+                async with asyncio.timeout(10):
+                    while True:
+                        result = await asyncio.to_thread(container.exec_run, ["cat", "/workspace/pid"])
+                        if result.exit_code == 0 and result.output:
+                            pid = int(result.output)
+                            break
+                        await asyncio.sleep(0.1)
+            await asyncio.to_thread(container.reload)
+            assert container.status == "running"
+            probe = [
+                "python3",
+                "-c",
+                f"from pathlib import Path; p=Path('/proc/{pid}/stat'); print(int(p.exists() and p.read_text().split()[2] != 'Z'))",
+            ]
+            async with asyncio.timeout(10):
+                while True:
+                    alive = (await asyncio.to_thread(container.exec_run, probe)).output.strip() == b"1"
+                    if alive == (route == "native"):
+                        break
+                    await asyncio.sleep(0.1)
+            async with await connector.open() as again:
+                assert again.operations.files
+                assert (await again.operations.files.read_text("/workspace/input.txt")).text == "中文\n\nlast\n"
+        finally:
+            if container is not None:
+                await asyncio.to_thread(container.remove, force=True)
+            await asyncio.to_thread(engine.close)

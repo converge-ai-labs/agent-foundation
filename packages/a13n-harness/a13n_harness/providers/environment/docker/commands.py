@@ -132,16 +132,3 @@ class DockerCommands:
                 ],
                 maximum=65536,
             )
-
-    async def port(self, port: int) -> dict[str, JsonValue]:
-        output = await self.execute(
-            [
-                self.config.python,
-                "-I",
-                "-c",
-                "import socket,sys; s=socket.socket(); s.settimeout(.1); "
-                "print(int(s.connect_ex(('127.0.0.1',int(sys.argv[1])))==0)); s.close()",
-                str(port),
-            ]
-        )
-        return {"listening": output.strip() == b"1"}

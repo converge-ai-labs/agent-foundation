@@ -12,16 +12,16 @@ from pydantic import SecretStr
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.shared import DockerReference, _missing
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
+    RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
-from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
+from a13n_harness.providers.environment.remote_envd.managed import managed_http_session
 
 
 class HttpReference(DockerReference):
@@ -65,15 +65,24 @@ async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
         )
     except (KeyError, TypeError, ValueError):
         raise provider_error("docker", "envd_http_binding_invalid", Category.INVALID) from None
-    try:
-        await reference.runtime.endpoint_policy.validate(configuration.endpoint)
-    except EndpointPolicyError:
-        raise provider_error(
-            "docker",
-            "envd_endpoint_denied",
-            Category.INVALID,
-            description="Deployment or Run policy denies the discovered envd HTTP endpoint",
-        ) from None
+    async with managed_http_session(
+        provider_key="docker",
+        connection=configuration,
+        endpoint_policy=reference.runtime.endpoint_policy,
+        load_credential=lambda: _credential(reference),
+        expected_device_id=reference.allocation_id,
+        configuration=RemoteEnvdEnvironmentConfiguration(
+            working_directory="/workspace",
+            required_methods=("computer.describe", "computer.observe") if reference.config.desktop else (),
+        ),
+    ) as session:
+        yield session
+
+
+async def _credential(reference: DockerReference) -> HttpEnvdCredential:
+    assert reference.target is not None
+    connection = reference.runtime.envd_http
+    assert connection is not None
     commands = DockerCommands(reference.runtime.engine, reference.target.container_id, reference.config)
     try:
         await reference._check_initialized(commands)
@@ -90,17 +99,9 @@ async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
     finally:
         commands.closed = True
     try:
-        credential = HttpEnvdCredential(token=SecretStr(token.decode()))
+        return HttpEnvdCredential(token=SecretStr(token.decode()))
     except ValueError:
         raise provider_error("docker", "envd_credential_invalid", Category.UNAVAILABLE) from None
-    async with HttpEnvdProviderRuntime(configuration, credential) as runtime:
-        async with runtime.open_session(
-            expected_device_id=reference.allocation_id,
-            working_directory="/workspace",
-            required_methods=REQUIRED_METHODS
-            | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
-        ) as session:
-            yield session
 
 
 def http_execution(reference: DockerReference) -> RemoteEnvdExecution:

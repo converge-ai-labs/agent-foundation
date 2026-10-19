@@ -45,10 +45,12 @@ def descriptor(generation: str, config: DockerEnvironmentConfiguration) -> Envir
         generation=generation,
         working_directory="/workspace",
         backing_identity=None if generation == "unprepared" else generation,
-        operation_families=frozenset({"files", "shell", "processes", "outputs", "ports"}),
+        operation_families=frozenset({"files", "shell", "processes", "outputs"}),
         permissions=EnvironmentPermissionSet(
             operations=frozenset(
-                action for action in FILE_EXECUTION_ACTIONS if not action.value.startswith("environment.state.")
+                action
+                for action in FILE_EXECUTION_ACTIONS
+                if not action.value.startswith(("environment.state.", "environment.port."))
             )
         ),
         mounts=(

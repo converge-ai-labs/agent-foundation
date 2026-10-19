@@ -127,6 +127,8 @@ Docker 目标配置接受 `pull_policy="if_missing"`（默认）或 `"never"`。
 
 使用 `execution="envd_http"` 时，connector 向保留的容器打开 HTTP EIP Session。关闭 Session 会保留桌面；停止并重启容器会保留文件，但重建图形会话状态。独立 HTTP 路由和兼容镜像见 [Docker 配置](configuration.md#docker)。
 
+Native Docker 提供 Files & Shell，包括进程控制和输出观察。端口探测／等待和 Computer 操作需要 `execution="envd_http"`；原来使用原生端口操作的调用方需要显式选择兼容的 Envd 目标。现有原生默认值和目标指纹保持不变。修改已有原生容器的配置并不代表其中已安装守护进程。
+
 ## 云 provider
 
 E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。E2B 提供 Native Files & Shell；其余五种使用通用 Envd 执行路径。E2B 目标需要进阶能力时，也通过兼容的 Envd 连接使用这些能力。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
