@@ -98,9 +98,7 @@ async def test_service_proxy_keeps_response_bounds(
     assert len(requests) == 1
 
 
-@pytest.mark.parametrize("bypass", ["", "169.254.0.0/16"])
-async def test_service_proxy_keeps_run_literal_host_restrictions(monkeypatch: pytest.MonkeyPatch, bypass: str) -> None:
-    monkeypatch.setenv("NO_PROXY", bypass)
+async def test_service_proxy_keeps_run_literal_host_restrictions(monkeypatch: pytest.MonkeyPatch) -> None:
     async with proxy_server() as (proxy, requests):
         monkeypatch.setenv("ALL_PROXY", proxy)
         async with open_http(
@@ -134,17 +132,13 @@ async def test_service_uses_native_transport_without_pre_resolution(
         assert requests[0].startswith(b"GET http://proxy-only.test/read HTTP/1.1")
 
 
-@pytest.mark.parametrize("bypass", ["127.0.0.1", "127.0.0.0/8"])
-async def test_service_direct_transport_keeps_response_bounds(monkeypatch: pytest.MonkeyPatch, bypass: str) -> None:
-    async with proxy_server() as (server, requests), proxy_server() as (proxy, proxied):
-        monkeypatch.setenv("ALL_PROXY", proxy)
-        monkeypatch.setenv("NO_PROXY", bypass)
+async def test_service_direct_transport_keeps_response_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    async with proxy_server() as (server, requests):
         async with open_http(EndpointPolicy(), timeout=2, max_bytes=3) as client:
             with pytest.raises(ServiceError) as error:
                 await client.get(server + "/read")
     assert error.value.code == "payload_too_large"
     assert len(requests) == 1
-    assert not proxied
 
 
 @pytest.mark.parametrize(

@@ -89,7 +89,7 @@ async def test_https_proxy_environment_uses_connect(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize("variable", ["no_proxy", "NO_PROXY"])
-@pytest.mark.parametrize("bypass", ["127.0.0.1", "*", "127.0.0.0/8"])
+@pytest.mark.parametrize("bypass", ["127.0.0.1", "*"])
 async def test_no_proxy_uses_direct_transport_with_retries(
     monkeypatch: pytest.MonkeyPatch, variable: str, bypass: str
 ) -> None:

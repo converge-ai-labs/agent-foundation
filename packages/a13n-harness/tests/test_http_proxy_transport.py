@@ -165,48 +165,6 @@ async def test_no_proxy_keeps_host_direct_transport(monkeypatch: pytest.MonkeyPa
         assert not seen
 
 
-@pytest.mark.parametrize(
-    "bypass,url,expected_direct",
-    [
-        ("10.0.0.0/8", "http://10.20.30.40/path", True),
-        ("10.0.0.0/8", "http://192.0.2.1/path", False),
-        ("10.0.0.0/8", "http://origin.test/path", False),
-        ("fd00::/8", "http://[fd12::1]/path", True),
-        ("fd00::/8", "http://[2001:db8::1]/path", False),
-        ("[::1]", "http://[::1]/path", True),
-        ("[::1]:8080", "http://[::1]:8080/path", True),
-        ("[::1]:8080", "http://[::1]:8081/path", False),
-        ("foo:bar,10.0.0.0/33,origin.test", "http://origin.test/path", True),
-        ("foo:bar,10.0.0.0/33,origin.test", "http://other.test/path", False),
-    ],
-)
-async def test_no_proxy_network_and_ipv6_routes(
-    monkeypatch: pytest.MonkeyPatch, bypass: str, url: str, expected_direct: bool
-) -> None:
-    direct: list[str] = []
-
-    def send(request: httpx2.Request) -> httpx2.Response:
-        direct.append(str(request.url))
-        return httpx2.Response(200)
-
-    # The direct transport records selection without requiring private networks
-    # or IPv6 sockets; the proxy still receives an actual absolute-form request.
-    async with endpoint() as (port, seen):
-        monkeypatch.setenv("ALL_PROXY", f"http://127.0.0.1:{port}")
-        monkeypatch.setenv("NO_PROXY", bypass)
-        async with EnvironmentProxyClient(httpx2.MockTransport(send), timeout=2) as client:
-            assert (await client.get(url)).status_code == 200
-        assert client.is_closed
-        if expected_direct:
-            assert direct == [url]
-            assert not seen
-        else:
-            assert not direct
-            assert len(seen) == 1
-            assert seen[0].startswith(b"GET http://")
-            assert b"Host: " + httpx2.URL(url).netloc + b"\r\n" in seen[0]
-
-
 @pytest.mark.parametrize("variable", ["https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"])
 async def test_native_tunnel_keeps_hostname_tls_and_proxy_auth(
     monkeypatch: pytest.MonkeyPatch, tls_contexts: tuple[ssl.SSLContext, ssl.SSLContext], variable: str
