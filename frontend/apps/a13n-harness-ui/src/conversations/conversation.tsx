@@ -12,7 +12,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
-import { useSelectors, useTransport } from "../transport/context";
+import {
+  useGuestAccess,
+  useSelectors,
+  useTransport,
+} from "../transport/context";
+import { SharePanel } from "../sharing";
 import coordinatorStyles from "./coordinator.module.css";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
@@ -85,12 +90,15 @@ function ConversationContent({
   const queries = useQueryClient();
   const detail = useThread(threadId);
   const selectors = useSelectors();
+  const guest = useGuestAccess();
   const readOnly = !!detail.data?.thread.memory_scope;
+  const canCompose =
+    !readOnly && (!guest || guest.grant.permission === "prompt");
   const isCoordinator = detail.data?.thread.role === "coordinator";
   const ownerId = detail.data?.thread.coordinator_thread_id;
   const owner = useQuery({
     queryKey: ["thread", ownerId, "detail"],
-    enabled: !!ownerId,
+    enabled: !!ownerId && !guest,
     queryFn: ({ signal }) =>
       result(
         transport.client.GET("/api/threads/{thread_id}", {
@@ -162,19 +170,18 @@ function ConversationContent({
     // Saved body readiness is independent of live replay and editor sync.
     // The composer retains its own connection/control guards before sending.
   );
-  const rename = !readOnly && dialog === "rename";
+  const rename = !guest && !readOnly && dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
   const [title, setTitle] = useState("");
-  const inspection = dialog === "details";
+  const inspection = !guest && dialog === "details";
   const setInspection = (open: boolean) => {
     if (!open) closeDialog();
   };
   useEffect(() => {
     if (rename) setTitle(detail.data?.thread.title ?? "");
   }, [rename, detail.data?.thread.title]);
-  const [message, setMessage] = useState("");
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
@@ -250,11 +257,15 @@ function ConversationContent({
   }, [queries, transport, threadId]);
   const decisions = useDecisionPlacement(
     detail.data?.deferred_requests?.length ? (
-      <Decisions
-        threadId={threadId}
-        continuation={detail.data.continuation_id}
-        reconcile={reconcile}
-      />
+      guest ? (
+        <p role="status">Waiting for the instance owner to respond.</p>
+      ) : (
+        <Decisions
+          threadId={threadId}
+          continuation={detail.data.continuation_id}
+          reconcile={reconcile}
+        />
+      )
     ) : null,
   );
   const entries = useMemo(() => {
@@ -564,9 +575,9 @@ function ConversationContent({
     };
   }, [threadId, pageReady]);
   useEffect(() => {
-    if (detail.data && !detail.data.thread?.archived)
+    if (!guest && detail.data && !detail.data.thread?.archived)
       writePreference("last-thread", threadId);
-  }, [threadId, detail.data]);
+  }, [threadId, detail.data, guest]);
   const metadata = useMutation({
     mutationFn: (patch: { title?: string | null; archived?: boolean }) =>
       result(
@@ -613,7 +624,7 @@ function ConversationContent({
           reconnections={reconnections}
         />
 
-        {!readOnly && thread?.archived && (
+        {!guest && !readOnly && thread?.archived && (
           <div className={styles.warning}>
             <p>This conversation is archived. Its history remains available.</p>
             <Button
@@ -624,11 +635,6 @@ function ConversationContent({
               Restore conversation
             </Button>
           </div>
-        )}
-        {message && (
-          <p role="status" className={styles.receipt}>
-            {message}
-          </p>
         )}
         <ErrorNotice
           error={detail.error || history.error || metadata.error}
@@ -755,7 +761,7 @@ function ConversationContent({
                   }
                 />
                 {decisions.portal}
-                <McpInputs threadId={threadId} />
+                {!guest && <McpInputs threadId={threadId} />}
               </PauseConversationFollowing>
               {hasLater && (
                 <div className={styles.historyActions}>
@@ -779,7 +785,7 @@ function ConversationContent({
                 continuationId={detail.data?.continuation_id}
                 completedContinuationId={thread?.completion?.continuation_id}
                 retry={
-                  readOnly || thread?.archived
+                  guest || readOnly || thread?.archived
                     ? undefined
                     : () => {
                         void submitContinuation(
@@ -817,7 +823,15 @@ function ConversationContent({
                   <div
                     className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
                   >
-                    {readOnly ? (
+                    {guest && !canCompose ? (
+                      <>
+                        <h2>No messages yet</h2>
+                        <p>
+                          Messages will appear here when this conversation gets
+                          started.
+                        </p>
+                      </>
+                    ) : readOnly ? (
                       <>
                         <h2>No organization history yet</h2>
                         <p>
@@ -872,10 +886,11 @@ function ConversationContent({
             reconcile={reconcile}
           />
         )}
-        {!readOnly && !thread?.archived && (
+        {!guest && !readOnly && !thread?.archived && (
           <ErrorNotice error={agentSelection.error || selectors.error} />
         )}
-        {!readOnly &&
+        {!guest &&
+          !readOnly &&
           !thread?.archived &&
           (agentSelection.isError || detail.isError) && (
             <Button
@@ -889,13 +904,13 @@ function ConversationContent({
               Refresh agent selection before sending
             </Button>
           )}
-        {!readOnly && !thread?.archived && (
+        {canCompose && !thread?.archived && (
           <Composer
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
             owner={
-              ownerId
+              !guest && ownerId
                 ? {
                     title: owner.data
                       ? conversationTitle(owner.data.thread)
@@ -904,7 +919,7 @@ function ConversationContent({
                 : undefined
             }
             coordinator={
-              thread && thread.role !== "worker"
+              !guest && thread && thread.role !== "worker"
                 ? {
                     active: thread.role === "coordinator",
                     available: canPromoteCoordinator(
@@ -935,7 +950,8 @@ function ConversationContent({
             }
             modelId={draft.modelId}
             leadingControls={
-              thread?.configuration.agent_source.kind === "live" ? (
+              guest ? undefined : thread?.configuration.agent_source.kind ===
+                "live" ? (
                 <Link to="/settings#live">Live settings</Link>
               ) : (
                 <RunEnvironments
@@ -955,7 +971,8 @@ function ConversationContent({
               )
             }
             controls={() =>
-              thread?.configuration.agent_source.kind === "live" ? null : (
+              guest ? null : thread?.configuration.agent_source.kind ===
+                "live" ? null : (
                 <ThreadRunChoices
                   catalog={selectors.data}
                   agentId={thread?.configuration.agent_source.id ?? ""}
@@ -986,7 +1003,12 @@ function ConversationContent({
             reconcile={reconcile}
           />
         )}
-        {!readOnly && thread && !thread.archived && (
+        {guest && !canCompose && (
+          <p className={styles.composerConnection}>
+            View-only link · You’re following this Thread live.
+          </p>
+        )}
+        {!guest && !readOnly && thread && !thread.archived && (
           <ComposerStatus
             threadId={threadId}
             receipt={receipt}
@@ -1011,39 +1033,14 @@ function ConversationContent({
             }
           />
         )}
-        <ModalFrame
-          open={dialog === "share"}
-          onOpenChange={(open) => {
-            if (!open) closeDialog();
-          }}
-          title="Share conversation"
-          description="People need access to this instance to open the conversation. The link contains no API key."
-          closeLabel="Close"
-        >
-          <TextField
-            label="Conversation link"
-            value={`${window.location.origin}/threads/${encodeURIComponent(threadId)}`}
-            onChange={() => {}}
+        {!guest && !readOnly && (
+          <SharePanel
+            open={dialog === "share"}
+            onClose={closeDialog}
+            threadId={threadId}
+            projectId={thread?.configuration.project_id}
           />
-          <Button
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(
-                  `${window.location.origin}/threads/${encodeURIComponent(threadId)}`,
-                )
-                .then(
-                  () => setMessage("Conversation link copied."),
-                  () =>
-                    setMessage(
-                      "Could not copy the link. Select and copy it above.",
-                    ),
-                );
-            }}
-          >
-            Copy link
-          </Button>
-          {message && <p role="status">{message}</p>}
-        </ModalFrame>
+        )}
         <ModalFrame
           open={rename}
           onOpenChange={setRename}

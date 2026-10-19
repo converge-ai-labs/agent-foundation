@@ -47,6 +47,12 @@ async def thread_has_primary(session: AsyncSession, thread: ThreadRow) -> bool:
     return await session.get(ThreadEnvironmentRow, (thread.id, PRIMARY)) is not None
 
 
+async def primary_mount(session: AsyncSession, thread_id: str) -> EnvironmentMount | None:
+    """The thread's desired mount of its primary sandbox."""
+    row = await session.get(ThreadEnvironmentRow, (thread_id, PRIMARY))
+    return None if row is None else EnvironmentMount.model_validate(row, from_attributes=True)
+
+
 async def desired_mounts(session: AsyncSession, thread_id: str) -> list[ThreadEnvironmentRow]:
     return list(
         (
@@ -86,7 +92,8 @@ async def shared_mounts(session: AsyncSession, origin: ThreadRow) -> list[MountC
 
 
 async def adopt_mounts(session: AsyncSession, thread: ThreadRow, mounts: Sequence[EnvironmentMount]) -> None:
-    """A child thread mounts what its parent run froze; the run that starts it locks and checks them."""
+    """A child thread mounts its parent's: what the parent run froze when it was spawned, or later the parent thread's
+    primary. The run that starts it locks and checks them."""
     for mount in mounts:
         session.add(_mount(thread, mount.environment_id, mount.name, mount.working_directory, mount.permission_ceiling))
     await session.flush()
@@ -163,12 +170,11 @@ async def mount_environments(
 async def reserve_primary(
     session: AsyncSession, principal: Principal, thread: ThreadRow, *, template_id: str, limit: int
 ) -> None:
-    """Mount a new `creating` instance of the template as the thread's primary sandbox, unless the thread has one.
+    """Mount a new `creating` instance of the template as the thread's primary sandbox.
 
-    The caller holds the thread lock. The instance is created later, from the template current at that time.
+    The caller holds the thread lock and has found no primary mount. The instance is created later, from the
+    template current at that time.
     """
-    if await thread_has_primary(session, thread):
-        return
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     environment = await reserve(session, principal, scope, template_id, limit=limit)
     session.add(_mount(thread, environment.id, PRIMARY, None))

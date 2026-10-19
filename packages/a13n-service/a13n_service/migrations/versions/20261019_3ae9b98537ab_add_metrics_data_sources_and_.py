@@ -1,7 +1,7 @@
 """add metrics data sources and environment bindings
 
 Revision ID: 3ae9b98537ab
-Revises: 2e9655a2d223
+Revises: 4d51a94777d9
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "3ae9b98537ab"
-down_revision = "2e9655a2d223"
+down_revision = "4d51a94777d9"
 branch_labels = None
 depends_on = None
 

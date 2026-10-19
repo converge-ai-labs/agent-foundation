@@ -24,10 +24,20 @@
     "a13n-ui": "workspace:*"
   },
   "devDependencies": {
+    "@types/hast": "^3.0.4",
+    "github-slugger": "^2.0.0",
+    "hast-util-to-html": "^9.0.5",
     "parse5": "^8.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "shiki": "^4.4.3",
     "sitemap": "^9.0.1",
     "typescript": "^5.9.3",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0",
     "vite": "^8.2.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1"
   }
 }

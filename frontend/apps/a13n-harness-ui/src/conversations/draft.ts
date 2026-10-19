@@ -355,11 +355,9 @@ export class ThreadDraft {
       inFlight = undefined;
       this.status = "Connecting";
       this.notify();
-      const url = new URL(
+      const url = transport.socketUrl(
         `/api/threads/${encodeURIComponent(threadId)}/draft/connect`,
-        window.location.origin,
       );
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(url);
       socket = ws;
       ws.onopen = () => ws.send(JSON.stringify({ api_key: transport.key }));
@@ -429,7 +427,7 @@ export class ThreadDraft {
         this.status = "Disconnected";
         this.participants = {};
         this.notify();
-        if (event.code === 4401) {
+        if (event.code === 4401 || (transport.shareId && event.code === 4403)) {
           unauthorized();
           return;
         }

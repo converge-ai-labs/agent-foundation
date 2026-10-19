@@ -5,7 +5,7 @@ import { curl } from "fumadocs-openapi/requests/generators/curl";
 import { javascript } from "fumadocs-openapi/requests/generators/javascript";
 import { python } from "fumadocs-openapi/requests/generators/python";
 import { createOpenAPIPage } from "fumadocs-openapi/ui";
-import { codeThemes } from "@/lib/code-blocks";
+import { codeThemes } from "a13n-ui/code-theme";
 
 // Image uploads (agent avatars) send the file bytes as the request body.
 const imageBody: MediaAdapter = {

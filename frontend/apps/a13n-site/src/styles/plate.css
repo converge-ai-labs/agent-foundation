@@ -1,0 +1,75 @@
+/* ---- line drawings: a post's cover plate and its figures share one kit of
+   hairlines in ink and faint gray, the subject in indigo, labels in mono ---- */
+.plate {
+  position: relative;
+  aspect-ratio: 8 / 5;
+  background: rgba(11, 11, 12, 0.026);
+  transition: background-color 0.4s var(--out);
+}
+.plate svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 5% 6%;
+  overflow: visible;
+}
+:is(.plate, .fig) .pf {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+:is(.plate, .fig) .pl {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+:is(.plate, .fig) .pa {
+  fill: none;
+  stroke: var(--indigo);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+:is(.plate, .fig) .thick {
+  stroke-width: 4;
+}
+:is(.plate, .fig) .thin {
+  stroke-width: 1.25;
+}
+:is(.plate, .fig) .dash {
+  stroke-dasharray: 3 4;
+  stroke-linecap: butt;
+}
+:is(.plate, .fig) .fa {
+  fill: var(--indigo);
+}
+:is(.plate, .fig) .fi {
+  fill: var(--ink);
+}
+:is(.plate, .fig) .ff {
+  fill: rgba(11, 11, 12, 0.075);
+}
+:is(.plate, .fig) .band {
+  fill: rgba(79, 70, 229, 0.07);
+}
+:is(.plate, .fig) .pt {
+  font: 500 var(--pt, 13px) var(--mono);
+  fill: var(--muted);
+}
+.fig .pt {
+  font-size: 11px;
+}
+:is(.plate, .fig) .pt.ink {
+  fill: var(--ink-2);
+}
+:is(.plate, .fig) .pt.acc {
+  fill: var(--indigo);
+}
+/* a plate too small for readable labels shows its drawing alone */
+.plate.bare .pt {
+  display: none;
+}

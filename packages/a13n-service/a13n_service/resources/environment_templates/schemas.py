@@ -18,7 +18,7 @@ class TemplateConfig(BaseModel):
     # type's `environment_schema` from `GET /provider-types/environment`.
     recipe: dict[str, JsonValue] = Field(default_factory=dict)
     # The idle policy maintenance reads live: stop a ready environment no run has used for this long, and delete
-    # one that no thread mounts either. `null` turns either off.
+    # one, with the threads' mounts of it. `null` turns either off.
     stop_after_seconds: int | None = Field(default=1800, ge=60, le=2592000)
     delete_after_seconds: int | None = Field(default=None, ge=60, le=31536000)
 

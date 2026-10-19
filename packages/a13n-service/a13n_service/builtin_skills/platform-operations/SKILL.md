@@ -5,7 +5,7 @@ description: Configure workspace resources and diagnose sessions, threads, runs 
 
 # Platform operations
 
-Use the selected platform MCP tools. Read their schemas for exact parameters; JSON bodies are nested under `request_body`. Results contain `status`, `headers`, and `body`. Resource identifiers must come from these results. The Host supplies identity and workspace. A tool or this Skill cannot grant additional permissions.
+Use the selected platform MCP tools. Read their schemas for exact parameters; JSON bodies are nested under `request_body`. Results contain `status`, `headers`, and `body`. Resource identifiers must come from these results or the explicit `service_run_id` in the automatic Service context. Use that field as `run_id` for current Run queries; never substitute `harness_run_id`. The Host supplies identity and workspace. A tool or this Skill cannot grant additional permissions.
 
 Use filtered `view=compact` reads for discovery, then select IDs, names and sections for detail. Existing queries default to `detailed` for compatibility. Compact pages default to ten records and may stop sooner to respect the response budget. Follow `next_cursor`, `next_after` or `next_before` with the same filters; an empty filtered page can still have a continuation. A preview's `truncated` and `omitted_sections` describe missing response data, not absent source data. `source_truncated` describes a limit already applied to stored content.
 
@@ -13,6 +13,7 @@ Text and JSON fragments count Unicode code points. Start at `offset=0`, then sen
 
 Typical tasks:
 
+- Find a conversation by remembered message content: use `text_query` on Session, Thread or Run lists, then inspect matching Runs. Read [Execution and diagnostics](references/execution-and-diagnostics.md) for matching rules and coverage limits.
 - Diagnose a failure: filter Runs, read a selected failure section, find matching items or spans, and read their necessary input or output.
 - Choose a capability: search a model or tool index, select exact names, and read complete definitions or model characteristics and pricing.
 - Edit configuration: read the Agent head and target revision, obtain the complete configuration, validate the change, and submit with the original ETag and required review.

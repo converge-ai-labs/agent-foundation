@@ -121,6 +121,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "coordinator_worker",
             "planned_restart",
             "resource_index",
+            "share_grant",
             "thread",
             "thread_configuration",
             "thread_inspection",

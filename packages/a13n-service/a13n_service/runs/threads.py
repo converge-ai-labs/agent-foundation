@@ -15,6 +15,7 @@ from a13n_service.infra.labels import label_filter
 from a13n_service.resources.connections.service import validate_caller_headers
 from a13n_service.runs.history import HISTORY, MessageHistory
 from a13n_service.runs.schemas import McpHeaders, ThreadPage, ThreadUpdate, ThreadView
+from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import RunRow, SessionRow, ThreadRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -90,8 +91,10 @@ async def list_threads(
     label: Sequence[str],
     limit: int,
     cursor: str | None,
+    text_query: str | None = None,
 ) -> ThreadPage:
     """Oldest first, so a session opens at its first thread and child threads follow their parents."""
+    match = predicate(RunRow.search_vector, text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(ThreadRow).where(
@@ -101,12 +104,16 @@ async def list_threads(
         )
         if session_id is not None:
             query = query.where(ThreadRow.session_id == session_id)
+        if match is not None:
+            query = query.where(
+                ThreadRow.id.in_(select(RunRow.thread_id).where(RunRow.workspace_id == scope.workspace_id, match))
+            )
         rows, next_cursor = await cursors.keyset_page(
             session,
             query,
             (ThreadRow.created_at, ThreadRow.id),
             kind="threads",
-            owner=cursors.query_owner(scope.workspace_id, session_id, label),
+            owner=cursors.query_owner(scope.workspace_id, session_id, label, text_query),
             cursor=cursor,
             limit=limit,
             newest_first=False,

@@ -546,17 +546,24 @@ it("the App resumes an unanswered question after all viewers disconnect, with on
     { timeout: 10000 },
   );
   const viewer = createTransport("test-only-key", () => {});
-  const one = await result(
-    viewer.client.GET("/api/threads/{thread_id}/decisions", {
-      params: { path: { thread_id: thread } },
-    }),
+  // Suspension is visible before the App saves it and arms the deadline.
+  const one = await vi.waitFor(
+    async () => {
+      const batch = await result(
+        viewer.client.GET("/api/threads/{thread_id}/decisions", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      expect(batch?.expires_at).toBeTruthy();
+      return batch;
+    },
+    { timeout: 10000 },
   );
   const two = await result(
     transport.client.GET("/api/threads/{thread_id}/decisions", {
       params: { path: { thread_id: thread } },
     }),
   );
-  expect(one?.expires_at).toBeTruthy();
   expect(one?.expires_at).toBe(two?.expires_at);
   expect(one?.requests[0].kind).toBe("question");
   viewer.close();

@@ -138,6 +138,21 @@ it("reads guidance before the request that read it", () => {
   expect(kinds(models(entries)[1]!.children)).toEqual(["reply"]);
 });
 
+it("keeps input hidden from Chat as an entry read before its request", () => {
+  const reminder =
+    "<system-reminder>Environment mounts changed</system-reminder>";
+  const { entries } = timeline(
+    lifecycle("model_request_started", "model-request-1"),
+    text("reminder", "user", reminder, { display: false }),
+    text("input", "user", "Ship the release"),
+    text("reply", "assistant", "Released"),
+    lifecycle("model_request_completed", "model-request-1"),
+  );
+  expect(kinds(entries)).toEqual(["hidden", "model"]);
+  expect(entries[0]).toMatchObject({ text: reminder });
+  expect(kinds(models(entries)[0]!.children)).toEqual(["reply"]);
+});
+
 it("presents an inline delegation on its call and keeps a dispatch a dispatch", () => {
   const inline = tool("delegate", "inline");
   const dispatch = tool("delegate", "async");

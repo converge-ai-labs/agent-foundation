@@ -6,7 +6,7 @@ import { CopyMessage } from "./copy-message";
 import { retainedSkillSpans } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
 import type { Schema } from "../transport/client";
-import { useTransport } from "../transport/context";
+import { useGuestAccess, useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
 import { RetainedImagePreview } from "./image-preview";
@@ -262,6 +262,7 @@ export function InputContent({
 }) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
+  const guest = useGuestAccess();
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);
@@ -330,7 +331,11 @@ export function InputContent({
         className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
       >
         <header>
-          {source ? (
+          {source && guest ? (
+            <span className={styles.threadSource}>
+              From thread · {source.title || source.id}
+            </span>
+          ) : source ? (
             <Link
               className={styles.threadSource}
               to={`/threads/${encodeURIComponent(source.id)}`}

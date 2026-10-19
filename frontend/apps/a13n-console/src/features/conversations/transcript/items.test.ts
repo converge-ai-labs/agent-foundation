@@ -81,6 +81,21 @@ it("keeps the run's own request out of the transcript and shows later user text 
   ]);
 });
 
+it("leaves input hidden from Chat out of the transcript and the request in its place", () => {
+  const blocks = blocksOf([
+    item("reminder", "text_message", {
+      role: "user",
+      text: "Environment mounts changed",
+      display: false,
+    }),
+    item("request", "text_message", { role: "user", text: "The request" }),
+    item("reply", "text_message", { text: "Done" }),
+  ]);
+  expect(blocks.map((block) => [block.kind, block.id])).toEqual([
+    ["message", "reply"],
+  ]);
+});
+
 it("treats explicitly sourced steering as guidance even when it leads the run", () => {
   const blocks = blocksOf([
     item("steer", "text_message", {

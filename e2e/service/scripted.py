@@ -6,19 +6,19 @@ import httpx2
 
 from .api import eventually, expect
 
-# User parts the Harness adds to every request: the environment snapshot and the run identity.
-HARNESS_CONTEXT = ("Current Environment mounts (trusted dynamic context)", "<agent-context ")
+# Automatic user-role parts added by Harness and Service, rather than the test's conversation inputs.
+RUNTIME_CONTEXT = ("Current Environment mounts (trusted dynamic context)", "<agent-context ", "<service-context ")
 
 
 def user_texts(request: dict) -> list[str]:
-    """The conversation's user texts in a model request, in order, without the context the Harness adds."""
+    """The conversation's user texts in order, excluding automatic Harness and Service context."""
     texts = []
     for entry in request["body"]["messages"]:
         if entry["role"] != "user":
             continue
         content = entry["content"]
         parts = [content] if isinstance(content, str) else [part.get("text", "") for part in content]
-        texts.extend(part for part in parts if not part.startswith(HARNESS_CONTEXT))
+        texts.extend(part for part in parts if not part.startswith(RUNTIME_CONTEXT))
     return texts
 
 

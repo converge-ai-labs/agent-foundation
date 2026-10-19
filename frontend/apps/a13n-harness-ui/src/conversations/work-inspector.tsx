@@ -20,6 +20,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { type Schema } from "../transport/client";
+import { useGuestAccess } from "../transport/context";
 import { useThreadWork, workCaption } from "./work";
 import { ErrorNotice } from "../shell/ui";
 import { MessageText } from "./message-text";
@@ -130,6 +131,7 @@ export function WorkInspector({
   connected?: boolean;
   reconcile: () => void;
 }) {
+  const guest = useGuestAccess();
   const [tab, setTab] = useState<
     "tasks" | "notes" | "children" | "processes" | null
   >(null);
@@ -164,9 +166,12 @@ export function WorkInspector({
     children: "Subagents",
     processes: "Processes",
   };
+  const tabs = (["tasks", "notes", "children", "processes"] as const).filter(
+    (key) => !guest || key !== "processes",
+  );
   return (
     <div className={styles.strip} aria-label="Work inspection">
-      {(["tasks", "notes", "children", "processes"] as const).map((key) => {
+      {tabs.map((key) => {
         const Icon =
           key === "tasks"
             ? ListChecks

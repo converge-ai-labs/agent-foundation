@@ -1,3 +1,9 @@
+/* One stylesheet per page; see blog.css. */
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/inter";
+@import "./base.css";
+@import "./nav.css";
+
 .missing {
   display: flex;
   flex-direction: column;

@@ -14,6 +14,8 @@ WebUI is the project-centric collaborative browser surface of Harness UI. Truste
 | [03-distribution.md](03-distribution.md)                               | Bundled browser assets and the ready-to-use Python distribution                                                                 |
 | [04-workbench-interaction.md](04-workbench-interaction.md)             | Default user journey, participant awareness, composer controls, configuration UX, code/diff workflows, and terminal interaction |
 
+[05-scoped-sharing.md](05-scoped-sharing.md) owns temporary Project/Thread grants, view/prompt guest authority, expiry/revocation, and the focused guest experience.
+
 ## Reading Paths
 
 Read `00` for the product and `04` for the end-to-end user experience. Read `01` for page awareness and pair prompting, `02` for native server access, and `03` for packaging and container deployment boundaries.
@@ -31,4 +33,5 @@ Read `00` for the product and `04` for the end-to-end user experience. Read `01`
 5. Access to native computer-sharing operations requires explicit startup enablement; API authentication bypass alone does not enable them.
 6. File-backed resources remain editable without the browser. Configuration UI does not create a parallel resource store.
 7. Browser disconnect neither cancels an Agent Run nor destroys a native terminal. Server process loss has different recovery consequences from browser disconnect.
-8. Browser assets remain part of the Harness UI distribution rather than an independently released application.
+8. Scoped sharing grants restrict guest browser/API access while prompt input retains the existing Agent's execution authority.
+9. Browser assets remain part of the Harness UI distribution rather than an independently released application.

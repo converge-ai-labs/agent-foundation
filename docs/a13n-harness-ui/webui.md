@@ -3,7 +3,7 @@ title: Use WebUI
 description: Run WebUI for shared conversations, files, Git changes, terminals, and configuration.
 ---
 
-Use WebUI to work with Agents, files and terminals from your browser. It shares the TUI's App and saved conversations. Each conversation is a root Thread. Share an instance with people you trust: participants use the same credentials and Host access. Use [Service](../a13n-service/index.md) for managed identities and permissions.
+Use WebUI to work with Agents, files and terminals from your browser. It shares the TUI's App and saved conversations. Each conversation is a root Thread. Use temporary sharing links to invite people into a conversation or Project. The instance login key grants full workbench and Host access; keep it separate from guest links. Use [Service](../a13n-service/index.md) for managed identities and permissions.
 
 Start the server, open its printed login link, connect a model, and send a first prompt. Keep the server process running while you work. Review [authentication](#authentication-and-key-retention) before sharing the instance.
 
@@ -68,6 +68,18 @@ Draft collaboration lives only in this App instance. In-app navigation retains t
 Type `$` followed by a Skill name to see available Skills and their descriptions. Use Up/Down to choose and Enter or Tab to insert the name; Escape dismisses the list. Accepting a completion does not send the prompt. The reference stays editable as ordinary `$name` text and works in new conversations, saved conversations, and steering. Recognized references are validated against the current or active Run's catalog; unknown names remain ordinary text. No slash-command interface is added.
 
 **Tasks**, **Notes**, **Subagents**, and **Processes** above the composer open floating inspectors without changing your draft or conversation. Processes shows the last observed background command and status, with expandable process handle, Run identity, and exit code. Its count reflects observed running handles, not all processes on the server. Foreground shell calls do not count. Run completion or loss of observation marks unfinished handles unavailable rather than exited; gaps and bounded omissions are explicit. At most 16 entries are shown from 128 retained observations. Reloading or changing conversations does not reconstruct processes from saved messages. Output stays in tool details; the inspector cannot stop or control processes.
+
+## Share a Thread or Project
+
+1. Click **Share** beside the microphone in a Thread, or **Share Project** in a Project's menu.
+2. Choose **Thread** or **Project**. A Project link includes its current and future Threads; moving a Thread out removes that link's access.
+3. Choose **Can view** to read history, attachments and live output, or **Can prompt** to coedit the shared draft, upload, send and steer. Prompt guests can also create Threads in a shared Project using its defaults.
+4. Choose an expiry of one hour, one day or seven days, then click **Create link**. Opening the panel alone creates nothing.
+5. **Copy link** or **Preview as guest**. Copy before closing: the secret is displayed only once. Under **Active links**, change permission and click **Save**, or **Revoke** access immediately.
+
+Share prompt links only with people you trust. Prompts use the existing Agent's tools and Environment authority, including any cross-conversation tools. Sharing limits browser/API access, not Agent execution. Guests cannot change configuration, answer approvals, use native Files or Terminal, or manage links. The owner responds to approvals.
+
+A Thread link opens directly into that Thread. A Project link adds a compact Thread list and search. View guests see a read-only footer; prompt guests use the shared composer. Tasks, notes and subagent output remain inspectable. Guest access stays separate from an owner login in the same browser. Expired or revoked links show an unavailable page; revocation does not cancel work already started.
 
 ## Fork a conversation
 

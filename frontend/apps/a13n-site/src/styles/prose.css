@@ -1,0 +1,293 @@
+/* ---- a post's body: the reading column, code, tables, figures and notes ---- */
+.prose {
+  font: 400 18px/1.72 var(--text);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.prose > * {
+  margin: 0;
+}
+.prose > * + * {
+  margin-top: 1.3em;
+}
+/* the first paragraph leads */
+.prose > p:first-child {
+  font-size: 21px;
+  line-height: 1.6;
+  color: var(--ink);
+  letter-spacing: -0.006em;
+}
+.prose :is(h2, h3) {
+  position: relative;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.prose h2 {
+  margin-top: 2.6em;
+  font: 500 28px/1.2 var(--display);
+  letter-spacing: -0.026em;
+}
+.prose h3 {
+  margin-top: 2em;
+  font: 500 21px/1.3 var(--display);
+  letter-spacing: -0.018em;
+}
+.prose :is(h2, h3) + * {
+  margin-top: 0.75em;
+}
+.prose em {
+  font-style: italic;
+}
+.prose strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.prose a {
+  color: var(--ink);
+  background: linear-gradient(var(--rule-2), var(--rule-2)) 0 100% / 100% 1px
+    no-repeat;
+  transition: background-image 0.2s;
+}
+.prose a:hover {
+  background-image: linear-gradient(var(--ink), var(--ink));
+}
+.prose :not(pre) > code {
+  padding: 0.12em 0.36em;
+  border-radius: 4px;
+  background: var(--tint);
+  font: 400 0.86em var(--mono);
+}
+.prose :is(ol, ul) {
+  padding-left: 1.4em;
+}
+.prose li + li {
+  margin-top: 0.6em;
+}
+.prose ol > li::marker {
+  font: 500 0.82em var(--mono);
+  color: var(--muted);
+}
+.prose hr {
+  height: 1px;
+  border: 0;
+  background: var(--rule);
+}
+
+/* ---- heading links hang in the gutter, shown on hover or focus ---- */
+.prose .anchor {
+  position: absolute;
+  right: calc(100% + 14px);
+  top: 0;
+  padding: 0 2px;
+  font: 400 0.8em/1.5 var(--mono);
+  color: var(--faint);
+  background: none;
+  opacity: 0;
+  transition:
+    opacity 0.2s,
+    color 0.2s;
+}
+.prose :is(h2, h3):hover .anchor,
+.prose .anchor:focus-visible {
+  opacity: 1;
+}
+.prose .anchor:hover {
+  color: var(--ink);
+}
+.prose .anchor.copied {
+  color: var(--indigo);
+  opacity: 1;
+}
+
+/* ---- a quotation is a statement of its own, in the display face ---- */
+.prose blockquote {
+  margin-top: 1.8em;
+  margin-bottom: 1.8em;
+  font: 500 clamp(26px, 2.5vw, 34px) / 1.18 var(--display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.prose blockquote + * {
+  margin-top: 0;
+}
+.prose blockquote p {
+  margin: 0;
+}
+
+/* ---- code on the page, between hairlines, in the shared palette ---- */
+.codeblock {
+  margin-top: 2em !important;
+  margin-bottom: 2em;
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule);
+}
+.codeblock + * {
+  margin-top: 0 !important;
+}
+.cb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule);
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+}
+.cb-copy {
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.cb-copy:hover {
+  color: var(--ink);
+}
+.codeblock pre {
+  margin: 0;
+  padding: 18px 0 20px;
+  overflow-x: auto;
+  font: 400 14px/1.75 var(--mono);
+  tab-size: 4;
+  scrollbar-width: thin;
+}
+.codeblock pre:focus-visible {
+  outline-offset: 2px;
+}
+
+/* ---- tables: the landing's stack rows ---- */
+.prose table {
+  width: 100%;
+  margin-top: 2em;
+  margin-bottom: 2em;
+  border-collapse: collapse;
+  font: 400 15px/1.5 var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.prose table + * {
+  margin-top: 0;
+}
+.prose th {
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--ink);
+  text-align: left;
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+}
+.prose td {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.prose td:first-child {
+  color: var(--ink);
+}
+.prose :is(th, td)[align="right"] {
+  text-align: right;
+}
+.prose :is(th, td) + :is(th, td) {
+  padding-left: 24px;
+}
+
+/* ---- figures break out of the column; wide drawings scroll on phones
+   rather than shrink their labels ---- */
+.prose .fig {
+  width: min(960px, 100vw - 2 * var(--pad));
+  margin: 2.4em 0 2.4em 50%;
+  translate: -50% 0;
+}
+.prose .fig + * {
+  margin-top: 0;
+}
+.fig img,
+.fig svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.fig-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.prose figcaption {
+  max-width: 680px;
+  margin: 18px auto 0;
+  font: 400 14px/1.6 var(--text);
+  color: var(--muted);
+}
+.prose figcaption b {
+  font-weight: 500;
+  color: var(--ink);
+}
+@media (max-width: 860px) {
+  .fig-scroll svg {
+    min-width: var(--w);
+  }
+  .fig-scroll:not(.end) {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - 56px),
+      transparent
+    );
+    mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+  }
+}
+
+/* ---- notes: numbered in the text, listed after it ---- */
+.prose [data-footnote-ref] {
+  margin-left: 2px;
+  font: 600 11px/0 var(--mono);
+  color: var(--indigo);
+  background: none;
+}
+.prose sup {
+  line-height: 0;
+}
+.prose .footnotes {
+  margin-top: 4em;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font: 400 14px/1.6 var(--text);
+  color: var(--muted);
+}
+.prose .notes-head {
+  margin: 0 0 12px;
+  font: 500 12px/1.4 var(--mono);
+  color: var(--muted);
+}
+.prose .footnotes ol {
+  margin: 0;
+}
+.prose .footnotes li::marker {
+  font-size: 11px;
+  color: var(--indigo);
+}
+.prose .footnotes p {
+  margin: 0;
+}
+.prose [data-footnote-backref] {
+  margin-left: 4px;
+  color: var(--dim);
+  background: none;
+}
+
+@media (max-width: 760px) {
+  .prose .anchor {
+    position: static;
+    margin-left: 0.35em;
+    opacity: 1;
+  }
+}
+@media (max-width: 600px) {
+  .prose {
+    font-size: 17px;
+  }
+  .prose > p:first-child {
+    font-size: 19px;
+  }
+  .prose h2 {
+    font-size: 24px;
+  }
+  .codeblock pre {
+    font-size: 13px;
+  }
+}

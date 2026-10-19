@@ -76,7 +76,8 @@
   color: var(--muted);
   transition: color 0.2s;
 }
-.nav-links a:hover {
+.nav-links a:hover,
+.nav-links a[aria-current] {
   color: var(--ink);
 }
 

@@ -184,6 +184,10 @@ The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new t
 
 `POST …/sessions` creates an empty session to pass as `session_id`. `GET …/sessions` lists sessions with a `preview` of the latest run and filters by `q` (a session or thread ID), `agent_id`, `status`, `trigger`, `updated_after`, `updated_before` and `label`. `GET …/threads?session_id=…` lists a session's threads, and `PATCH` changes session and thread `labels`.
 
+`GET …/sessions`, `GET …/threads` and `GET …/runs` also accept `text_query`, up to 1024 characters and 64 distinct terms. For example, `GET …/runs?text_query=南京%20request` finds Runs containing both terms in their retained user/assistant text. Session and Thread searches require all terms in the same Run. Chinese words and code identifiers are supported; existing filters, ordering and pagination still apply, and Session `q` remains ID lookup. Empty/punctuation-only queries match nothing.
+
+Search covers accepted user text and committed assistant text, including intermediate responses. It excludes tools/results, reasoning, attachments, system text and inherited history. Default excerpts retain 8 KiB per user message and 16 KiB per assistant message; older intermediate messages may leave the index when its budget is reached. Original messages remain unchanged. Streaming text becomes searchable at a completed-message checkpoint or terminal display commit. Existing history is not backfilled. Search does not provide relevance ranking, phrases, highlighting or arbitrary substring matching. See the `run_search` section in [Settings reference](configuration-reference.md) for budgets.
+
 Sessions list most recently updated first: a new run or a label edit moves a session to the top. A run's acceptance does not change a session's `ETag`, so a label edit's `If-Match` read before a later run still applies.
 
 In Console, **Sessions → New session** starts a session; **Try agent** starts one from the agent's page.

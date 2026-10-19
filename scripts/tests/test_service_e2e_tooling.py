@@ -15,9 +15,28 @@ import pytest
 from a13n_service.settings import load_settings
 
 from dev.fixtures.process import fixture_process
+from e2e.service.scripted import user_texts
 from e2e.service.stack import LEASE_SECONDS, Stores, write_config
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_user_texts_excludes_runtime_context_without_losing_conversation_order(structured):
+    contents = [
+        "First question",
+        "Current Environment mounts (trusted dynamic context)\n[]",
+        '<agent-context source="a13n-harness">\n{"harness_run_id":"run-one"}\n</agent-context>',
+        '<service-context source="a13n-service">\n{"service_run_id":"run_one"}\n</service-context>',
+        'Explain the <service-context source="a13n-service"> block',
+        '<service-context source="a13n-service">\n{"service_run_id":"run_two"}\n</service-context>',
+    ]
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": content}] if structured else content}
+        for content in contents
+    ]
+    messages.insert(4, {"role": "assistant", "content": "First answer"})
+    assert user_texts({"body": {"messages": messages}}) == [contents[0], contents[4]]
 
 
 def collect_scenarios(*arguments: str) -> set[str]:
