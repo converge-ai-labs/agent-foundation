@@ -140,10 +140,11 @@ Choices: `"read_only", "read_write"`.
 
 ## `RestrictedSandbox`
 
-| Field    | Required | Type / choices        | Constraints and default |
-| -------- | -------- | --------------------- | ----------------------- |
-| `mode`   | true     | "restricted"          | —                       |
-| `grants` | false    | array of SandboxGrant | default=[]              |
+| Field            | Required | Type / choices        | Constraints and default |
+| ---------------- | -------- | --------------------- | ----------------------- |
+| `mode`           | true     | "restricted"          | —                       |
+| `grants`         | false    | array of SandboxGrant | default=[]              |
+| `full_disk_read` | false    | boolean               | default=false           |
 
 ## `SandboxGrant`
 
@@ -160,20 +161,24 @@ Choices: `DisabledSandbox or RestrictedSandbox`.
 
 Host-selected daemon launch configuration, shared by every Session on this runtime.
 
-| Field                         | Required | Type / choices                 | Constraints and default                             |
-| ----------------------------- | -------- | ------------------------------ | --------------------------------------------------- |
-| `execution`                   | false    | EnvdExecutionConfiguration     | —; default from model factory                       |
-| `sandbox`                     | false    | SandboxPolicy                  | —; default from model factory                       |
-| `egress`                      | false    | EnvdNetworkConfiguration       | —; default from model factory                       |
-| `default_working_directory`   | false    | string or null                 | format="path"; default=null                         |
-| `directory_discovery`         | false    | boolean                        | default=true                                        |
-| `trusted_executable_roots`    | false    | array of string                | default=[]                                          |
-| `shell_profiles`              | false    | array of LocalEnvdShellProfile | default=[]                                          |
-| `max_file_bytes`              | false    | integer                        | exclusiveMinimum=0; default=16777216                |
-| `max_output_preview_bytes`    | false    | integer                        | maximum=16777216; exclusiveMinimum=0; default=65536 |
-| `max_output_bytes_per_stream` | false    | integer                        | exclusiveMinimum=0; default=268435456               |
-| `max_spool_bytes`             | false    | integer                        | exclusiveMinimum=0; default=1073741824              |
-| `max_device_spool_bytes`      | false    | integer                        | exclusiveMinimum=0; default=4294967296              |
+| Field                                | Required | Type / choices                           | Constraints and default                             |
+| ------------------------------------ | -------- | ---------------------------------------- | --------------------------------------------------- |
+| `execution`                          | false    | EnvdExecutionConfiguration               | —; default from model factory                       |
+| `sandbox`                            | false    | SandboxPolicy                            | —; default from model factory                       |
+| `egress`                             | false    | EnvdNetworkConfiguration                 | —; default from model factory                       |
+| `default_working_directory`          | false    | string or null                           | format="path"; default=null                         |
+| `directory_discovery`                | false    | boolean                                  | default=true                                        |
+| `full_control`                       | false    | boolean                                  | default=false                                       |
+| `computer_use`                       | false    | boolean                                  | default=false                                       |
+| `computer_use_permission_timeout_ms` | false    | integer                                  | exclusiveMinimum=0; default=120000                  |
+| `monitoring`                         | false    | LocalEnvdMonitoringConfiguration or null | default=null                                        |
+| `trusted_executable_roots`           | false    | array of string                          | default=[]                                          |
+| `shell_profiles`                     | false    | array of LocalEnvdShellProfile           | default=[]                                          |
+| `max_file_bytes`                     | false    | integer                                  | exclusiveMinimum=0; default=16777216                |
+| `max_output_preview_bytes`           | false    | integer                                  | maximum=16777216; exclusiveMinimum=0; default=65536 |
+| `max_output_bytes_per_stream`        | false    | integer                                  | exclusiveMinimum=0; default=268435456               |
+| `max_spool_bytes`                    | false    | integer                                  | exclusiveMinimum=0; default=1073741824              |
+| `max_device_spool_bytes`             | false    | integer                                  | exclusiveMinimum=0; default=4294967296              |
 
 ## `EnvdExecutionConfiguration`
 
@@ -188,6 +193,16 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field  | Required | Type / choices                  | Constraints and default |
 | ------ | -------- | ------------------------------- | ----------------------- |
 | `mode` | true     | "inherit", "deny", "controlled" | —                       |
+
+## `LocalEnvdMonitoringConfiguration`
+
+Optional outer-daemon sampling; independent of Session execution policy.
+
+| Field                 | Required | Type / choices | Constraints and default                    |
+| --------------------- | -------- | -------------- | ------------------------------------------ |
+| `sample_interval_ms`  | false    | integer        | minimum=1000; maximum=60000; default=10000 |
+| `filesystems`         | false    | object         | —; default from model factory              |
+| `cgroup_v2_directory` | false    | string or null | format="path"; default=null                |
 
 ## `LocalEnvdShellProfile`
 
@@ -224,6 +239,8 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
+| `desktop_assistance`          | false    | boolean                           | default=false                                                                    |
+| `desktop_viewer_url`          | false    | string or null                    | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
 
 ## `DockerMountConfiguration`
@@ -254,6 +271,7 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `max_active_observations`   | false    | integer        | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false    | boolean        | default=false                                             |
 | `timeout_seconds`           | false    | integer        | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`

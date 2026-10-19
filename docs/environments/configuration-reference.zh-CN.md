@@ -140,10 +140,11 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `RestrictedSandbox`
 
-| 字段     | 必填  | 类型 / 可选值                 | 约束与默认值 |
-| -------- | ----- | ----------------------------- | ------------ |
-| `mode`   | true  | "restricted"                  | —            |
-| `grants` | false | 数组，元素类型为 SandboxGrant | default=[]   |
+| 字段             | 必填  | 类型 / 可选值                 | 约束与默认值  |
+| ---------------- | ----- | ----------------------------- | ------------- |
+| `mode`           | true  | "restricted"                  | —             |
+| `grants`         | false | 数组，元素类型为 SandboxGrant | default=[]    |
+| `full_disk_read` | false | boolean                       | default=false |
 
 ## `SandboxGrant`
 
@@ -160,20 +161,24 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 由 Host 选择的守护进程启动配置，由该运行时上的所有会话共享。
 
-| 字段                          | 必填  | 类型 / 可选值                          | 约束与默认值                                        |
-| ----------------------------- | ----- | -------------------------------------- | --------------------------------------------------- |
-| `execution`                   | false | EnvdExecutionConfiguration             | —; 默认值由模型工厂计算                             |
-| `sandbox`                     | false | SandboxPolicy                          | —; 默认值由模型工厂计算                             |
-| `egress`                      | false | EnvdNetworkConfiguration               | —; 默认值由模型工厂计算                             |
-| `default_working_directory`   | false | string 或 null                         | format="path"; default=null                         |
-| `directory_discovery`         | false | boolean                                | default=true                                        |
-| `trusted_executable_roots`    | false | string 数组                            | default=[]                                          |
-| `shell_profiles`              | false | 数组，元素类型为 LocalEnvdShellProfile | default=[]                                          |
-| `max_file_bytes`              | false | integer                                | exclusiveMinimum=0; default=16777216                |
-| `max_output_preview_bytes`    | false | integer                                | maximum=16777216; exclusiveMinimum=0; default=65536 |
-| `max_output_bytes_per_stream` | false | integer                                | exclusiveMinimum=0; default=268435456               |
-| `max_spool_bytes`             | false | integer                                | exclusiveMinimum=0; default=1073741824              |
-| `max_device_spool_bytes`      | false | integer                                | exclusiveMinimum=0; default=4294967296              |
+| 字段                                 | 必填  | 类型 / 可选值                            | 约束与默认值                                        |
+| ------------------------------------ | ----- | ---------------------------------------- | --------------------------------------------------- |
+| `execution`                          | false | EnvdExecutionConfiguration               | —; 默认值由模型工厂计算                             |
+| `sandbox`                            | false | SandboxPolicy                            | —; 默认值由模型工厂计算                             |
+| `egress`                             | false | EnvdNetworkConfiguration                 | —; 默认值由模型工厂计算                             |
+| `default_working_directory`          | false | string 或 null                           | format="path"; default=null                         |
+| `directory_discovery`                | false | boolean                                  | default=true                                        |
+| `full_control`                       | false | boolean                                  | default=false                                       |
+| `computer_use`                       | false | boolean                                  | default=false                                       |
+| `computer_use_permission_timeout_ms` | false | integer                                  | exclusiveMinimum=0; default=120000                  |
+| `monitoring`                         | false | LocalEnvdMonitoringConfiguration 或 null | default=null                                        |
+| `trusted_executable_roots`           | false | string 数组                              | default=[]                                          |
+| `shell_profiles`                     | false | 数组，元素类型为 LocalEnvdShellProfile   | default=[]                                          |
+| `max_file_bytes`                     | false | integer                                  | exclusiveMinimum=0; default=16777216                |
+| `max_output_preview_bytes`           | false | integer                                  | maximum=16777216; exclusiveMinimum=0; default=65536 |
+| `max_output_bytes_per_stream`        | false | integer                                  | exclusiveMinimum=0; default=268435456               |
+| `max_spool_bytes`                    | false | integer                                  | exclusiveMinimum=0; default=1073741824              |
+| `max_device_spool_bytes`             | false | integer                                  | exclusiveMinimum=0; default=4294967296              |
 
 ## `EnvdExecutionConfiguration`
 
@@ -188,6 +193,16 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | 字段   | 必填 | 类型 / 可选值                   | 约束与默认值 |
 | ------ | ---- | ------------------------------- | ------------ |
 | `mode` | true | "inherit", "deny", "controlled" | —            |
+
+## `LocalEnvdMonitoringConfiguration`
+
+可选的外层守护进程采样配置，独立于会话执行策略。
+
+| 字段                  | 必填  | 类型 / 可选值  | 约束与默认值                               |
+| --------------------- | ----- | -------------- | ------------------------------------------ |
+| `sample_interval_ms`  | false | integer        | minimum=1000; maximum=60000; default=10000 |
+| `filesystems`         | false | object         | —; 默认值由模型工厂计算                    |
+| `cgroup_v2_directory` | false | string 或 null | format="path"; default=null                |
 
 ## `LocalEnvdShellProfile`
 
@@ -224,6 +239,8 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `max_output_bytes_per_stream` | false | integer                        | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false | integer                        | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false | integer                        | exclusiveMinimum=0; default=128                                                  |
+| `desktop_assistance`          | false | boolean                        | default=false                                                                    |
+| `desktop_viewer_url`          | false | string 或 null                 | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false | "never", "if_missing"          | default="if_missing"                                                             |
 
 ## `DockerMountConfiguration`
@@ -254,6 +271,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `max_active_observations`   | false | integer       | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false | boolean       | default=false                                             |
 | `timeout_seconds`           | false | integer       | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`
@@ -353,12 +371,12 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DockerHttpConfiguration`
 
-| 字段                           | 必填  | 类型 / 可选值 | 约束与默认值                                            |
-| ------------------------------ | ----- | ------------- | ------------------------------------------------------- |
-| `host`                         | true  | string        | minLength=1; maxLength=253                              |
-| `bind_host`                    | false | string        | default="127.0.0.1"                                     |
-| `allow_plaintext_private_link` | false | boolean       | default=false                                           |
-| `credential_file`              | false | string        | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
+| 字段                           | 必填  | 类型 / 可选值  | 约束与默认值                                            |
+| ------------------------------ | ----- | -------------- | ------------------------------------------------------- |
+| `host`                         | true  | string         | minLength=1; maxLength=253                              |
+| `bind_host`                    | false | string 或 null | default=null                                            |
+| `allow_plaintext_private_link` | false | boolean        | default=false                                           |
+| `credential_file`              | false | string         | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
 
 ## `E2BConnectionConfiguration`
 
