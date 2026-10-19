@@ -149,6 +149,17 @@
           "default": null,
           "title": "Cpu User Usec"
         },
+        "io": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiskMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "memory_current_bytes": {
           "anyOf": [
             {
@@ -176,6 +187,46 @@
             }
           ],
           "default": null
+        },
+        "pids_current": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pids Current"
+        },
+        "pids_limit": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pids Limit"
+        },
+        "pids_unlimited": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pids Unlimited"
         },
         "pressure": {
           "$ref": "#/$defs/Pressures"
@@ -966,6 +1017,50 @@
       "title": "ComputerZoomResult",
       "type": "object"
     },
+    "ConnectionMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "tcp_states": {
+          "additionalProperties": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "Tcp States",
+          "type": "object"
+        },
+        "tcp_total": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tcp Total"
+        },
+        "udp_sockets": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Udp Sockets"
+        }
+      },
+      "title": "ConnectionMetrics",
+      "type": "object"
+    },
     "ContentDigest": {
       "additionalProperties": false,
       "properties": {
@@ -1113,6 +1208,71 @@
         }
       },
       "title": "CpuTimeSeconds",
+      "type": "object"
+    },
+    "DaemonMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "connections": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Connections",
+          "type": "integer"
+        },
+        "processes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Processes"
+        },
+        "retained_output_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retained Output Bytes"
+        },
+        "sessions": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Sessions",
+          "type": "integer"
+        },
+        "transfers": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transfers"
+        }
+      },
+      "required": [
+        "sessions",
+        "connections"
+      ],
+      "title": "DaemonMetrics",
       "type": "object"
     },
     "DesiredPortStatus": {
@@ -1423,6 +1583,168 @@
         "mode"
       ],
       "title": "DisabledSandbox",
+      "type": "object"
+    },
+    "DiskIoMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "busy_time_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Busy Time Ms"
+        },
+        "identity": {
+          "maxLength": 128,
+          "title": "Identity",
+          "type": "string"
+        },
+        "in_progress": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Progress"
+        },
+        "read_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read Bytes"
+        },
+        "read_operations": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read Operations"
+        },
+        "read_time_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read Time Ms"
+        },
+        "weighted_time_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weighted Time Ms"
+        },
+        "write_operations": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Write Operations"
+        },
+        "write_time_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Write Time Ms"
+        },
+        "written_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Written Bytes"
+        }
+      },
+      "required": [
+        "identity"
+      ],
+      "title": "DiskIoMetrics",
+      "type": "object"
+    },
+    "DiskMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "devices": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DiskIoMetrics"
+          },
+          "title": "Devices",
+          "type": "object"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "truncated"
+      ],
+      "title": "DiskMetrics",
       "type": "object"
     },
     "DispatchStage": {
@@ -3515,6 +3837,27 @@
       "title": "FileWriterOpenResult",
       "type": "object"
     },
+    "FilesystemInventory": {
+      "additionalProperties": false,
+      "properties": {
+        "filesystems": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FilesystemObservation"
+          },
+          "title": "Filesystems",
+          "type": "object"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "truncated"
+      ],
+      "title": "FilesystemInventory",
+      "type": "object"
+    },
     "FilesystemMetrics": {
       "additionalProperties": false,
       "properties": {
@@ -3850,12 +4193,67 @@
           "title": "Collection Duration Ms",
           "type": "integer"
         },
+        "connections": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConnectionMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "daemon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DaemonMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "disks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiskMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "filesystems": {
           "additionalProperties": {
             "$ref": "#/$defs/FilesystemObservation"
           },
           "title": "Filesystems",
           "type": "object"
+        },
+        "local_filesystems": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilesystemInventory"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NetworkMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "sample_age_ms": {
           "maximum": 18446744073709551615,
@@ -3886,6 +4284,154 @@
         "system"
       ],
       "title": "MetricsSample",
+      "type": "object"
+    },
+    "NetworkInterfaceMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "maxLength": 128,
+          "title": "Identity",
+          "type": "string"
+        },
+        "receive_drops": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receive Drops"
+        },
+        "receive_errors": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receive Errors"
+        },
+        "received_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Received Bytes"
+        },
+        "received_packets": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Received Packets"
+        },
+        "transmit_drops": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transmit Drops"
+        },
+        "transmit_errors": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transmit Errors"
+        },
+        "transmitted_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transmitted Bytes"
+        },
+        "transmitted_packets": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transmitted Packets"
+        }
+      },
+      "required": [
+        "identity"
+      ],
+      "title": "NetworkInterfaceMetrics",
+      "type": "object"
+    },
+    "NetworkMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "interfaces": {
+          "additionalProperties": {
+            "$ref": "#/$defs/NetworkInterfaceMetrics"
+          },
+          "title": "Interfaces",
+          "type": "object"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "truncated"
+      ],
+      "title": "NetworkMetrics",
       "type": "object"
     },
     "OperatingSystem": {
@@ -5429,6 +5975,34 @@
     "SystemMetrics": {
       "additionalProperties": false,
       "properties": {
+        "commit_limit_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commit Limit Bytes"
+        },
+        "commit_total_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commit Total Bytes"
+        },
         "cpu_busy_percent": {
           "anyOf": [
             {
@@ -5453,6 +6027,20 @@
             }
           ],
           "default": null
+        },
+        "handle_count": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handle Count"
         },
         "logical_cpu_count": {
           "anyOf": [
@@ -5482,6 +6070,34 @@
           "default": null,
           "title": "Memory Available Bytes"
         },
+        "memory_cache_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Cache Bytes"
+        },
+        "memory_compressed_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Compressed Bytes"
+        },
         "memory_total_bytes": {
           "anyOf": [
             {
@@ -5496,6 +6112,20 @@
           "default": null,
           "title": "Memory Total Bytes"
         },
+        "memory_wired_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Wired Bytes"
+        },
         "pressure": {
           "anyOf": [
             {
@@ -5506,6 +6136,62 @@
             }
           ],
           "default": null
+        },
+        "process_count": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Process Count"
+        },
+        "swap_total_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Swap Total Bytes"
+        },
+        "swap_used_bytes": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Swap Used Bytes"
+        },
+        "thread_count": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thread Count"
         }
       },
       "title": "SystemMetrics",
@@ -5556,5 +6242,5 @@
   },
   "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Environment Interaction Protocol 0.2"
+  "title": "Environment Interaction Protocol 0.3"
 }

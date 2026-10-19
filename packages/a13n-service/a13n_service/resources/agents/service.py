@@ -11,7 +11,7 @@ from pydantic import JsonValue, ValidationError
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra import cursors, images
+from a13n_service.infra import cursors, images, reads
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import conflict, disabled, invalid, not_found
 from a13n_service.infra.ids import new_object_id
@@ -19,7 +19,7 @@ from a13n_service.infra.labels import label_filter
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources import revisions
-from a13n_service.resources.agents import toolsets
+from a13n_service.resources.agents import read_views, toolsets
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentConfig,
@@ -313,6 +313,32 @@ async def list_agents(
             limit=limit,
         )
         return AgentPage(items=[agent_view(row) for row in rows], next_cursor=next_cursor)
+
+
+async def list_revision_summaries(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    agent_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+) -> read_views.RevisionSummaryPage:
+    items, following = await revisions.list_revisions(
+        storage,
+        actor,
+        AgentRow,
+        AgentRevisionRow,
+        lambda head, row: read_views.revision_summary(AgentRevision.model_validate(row), head.default_revision_id),
+        workspace_id,
+        agent_id,
+        limit=limit,
+        cursor=cursor,
+    )
+    count = reads.fit_count(items)
+    if count < len(items):
+        following = cursors.encode("agent_revisions", agent_id, items[count - 1].number)
+    return read_views.RevisionSummaryPage(items=items[:count], next_cursor=following)
 
 
 async def list_revisions(

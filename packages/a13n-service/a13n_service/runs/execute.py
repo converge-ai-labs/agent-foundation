@@ -77,6 +77,7 @@ from a13n_service.runs.desktop_assistance.execution import ExecutionFence
 from a13n_service.runs.desktop_assistance.tools import DesktopAssistanceCapability
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
+from a13n_service.runs.environments.lifecycle import public_message
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
@@ -199,7 +200,7 @@ def _deterministic(error: Exception) -> Outcome | None:
     if isinstance(error, EnvironmentUnavailable):
         return Outcome.failed("environment_unavailable", str(error))
     if isinstance(error, EnvironmentProviderError) and error.category not in _TRANSIENT_ENVIRONMENT:
-        return Outcome.failed("environment_unavailable", error.safe_projection().message)
+        return Outcome.failed("environment_unavailable", public_message(error))
     return None
 
 

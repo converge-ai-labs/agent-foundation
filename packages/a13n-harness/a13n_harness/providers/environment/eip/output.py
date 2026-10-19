@@ -213,7 +213,11 @@ class EIPOutputRegistry:
             try:
                 await self.release_raw(reference)
             except EnvironmentError as error:
-                if first_error is None:
+                # A producer or daemon cleanup may already have retired deferred
+                # output. Absence settles internal cleanup, not a public release.
+                if error.code == "environment_not_found":
+                    self._forget_reference(reference)
+                elif first_error is None:
                     first_error = error
         if first_error is not None:
             raise first_error

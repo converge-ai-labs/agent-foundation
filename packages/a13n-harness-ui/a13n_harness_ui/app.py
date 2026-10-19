@@ -617,6 +617,7 @@ class HarnessUiApp:
                 generation_changed = True
                 self._memory_organizer.configuration_changed(candidate)
                 await self._retire_mcp_bindings(candidate)
+            self._devices.update_monitoring_sources(candidate.devices.values())
             await self._devices.synchronize_registrations(candidate.devices.values())
             candidate_error: HarnessUiError | None = None
         except HarnessUiError as exc:
@@ -2784,6 +2785,7 @@ class HarnessUiApp:
                 await self._summary_hub.publish(kind="configuration")
             raise
         self._replace_candidate_error(None)
+        self._devices.update_monitoring_sources(result.configuration.devices.values())
         self._memory_organizer.configuration_changed(result.configuration)
         await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
@@ -3069,16 +3071,18 @@ async def open_harness_ui_app(
             resources.push_async_callback(devices.close)
             device_configuration = await configurations.current()
             if device_configuration is not None:
+                devices.update_monitoring_sources(device_configuration.devices.values())
                 await devices.synchronize_registrations(device_configuration.devices.values())
 
-            async def monitoring_sources() -> Iterable[MonitoringSource]:
-                source = await configurations.current()
+            def monitoring_sources() -> Iterable[MonitoringSource]:
                 return chain(
-                    devices.monitoring_sources(() if source is None else source.devices.values()),
+                    devices.monitoring_sources(),
                     environment_reconstructor.monitoring_sources(),
                 )
 
-            environment_monitoring = EnvironmentMonitoring(monitoring_sources)
+            environment_monitoring = EnvironmentMonitoring(
+                monitoring_sources, poll_seconds=envd.monitoring_interval_seconds
+            )
             environment_service = EnvironmentRunService(
                 store,
                 environment_reconstructor,

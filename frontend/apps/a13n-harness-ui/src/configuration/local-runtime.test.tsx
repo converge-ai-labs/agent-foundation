@@ -197,6 +197,26 @@ it("saves Host desktop capability without launching or changing execution defaul
   expect(content).toContain("environment-native");
   expect(requests.some((item) => item.startsWith("POST"))).toBe(false);
 });
+it("saves collection cadence without starting or restarting a runtime", async () => {
+  content +=
+    "envd: {executable: /custom/envd, computer_use: true, monitoring_interval_seconds: 20}\n";
+  mount("envd");
+  const interval = await screen.findByRole("combobox", {
+    name: "Metrics collection interval",
+  });
+  await waitFor(() => expect(interval.hasAttribute("disabled")).toBe(false));
+  expect(interval.textContent).toContain("Every 20 seconds");
+  await userEvent.click(interval);
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Every 30 seconds" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("Saved", { exact: true });
+  expect(content).toContain("monitoring_interval_seconds: 30");
+  expect(content).toContain("/custom/envd");
+  expect(content).toContain("computer_use: true");
+  expect(requests.some((item) => item.startsWith("POST"))).toBe(false);
+});
 it("starts envd only on explicit action and never publishes a default", async () => {
   mount("runtime");
   await screen.findByText("test-host");

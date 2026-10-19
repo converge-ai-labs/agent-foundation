@@ -1226,6 +1226,36 @@ async def test_environment_preparation_preserves_service_failure_and_attempt_pol
         assert scripted_model.requests.empty()
 
 
+async def test_stored_recipe_refused_by_provider_schema_fails_run_with_its_reasons(
+    env, local_instance, scripted_model, runs_kit
+) -> None:
+    identity, _ = local_instance
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, identity, with_for_update=True)
+        row.handle = {**row.handle, "recipe": {**row.handle["recipe"], "retired": True}}
+    agent = await runs_kit.create_agent(env, scripted_model)
+    submitted = await runs_kit.start_thread(
+        env, agent, "read the file", environments=[{"name": "workspace", "environment_id": identity}]
+    )
+    await (await runs_kit.attempt(env))
+    current = await runs_kit.get_run(env, submitted["run"]["id"])
+    assert current["failure"] == {
+        "code": "environment_unavailable",
+        "message": "Environment provider input is invalid (local, provider_spec_invalid): "
+        "retired: Extra inputs are not permitted.",
+    }
+
+
+def test_provider_fault_names_provider_and_code() -> None:
+    from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
+
+    error = provider_error(
+        "e2b", "provider_denied", EnvironmentProviderErrorCategory.DENIED, description="raw 403 body"
+    )
+    fault = lifecycle.fault_of(error, dispatched=True)
+    assert fault.message == "Environment provider operation was denied (e2b, provider_denied)."
+
+
 async def test_tool_first_use_rejects_invalid_mount_directory_without_breaking_instance(
     env, local_instance, scripted_model, runs_kit
 ) -> None:

@@ -179,6 +179,7 @@ impl State {
         self: &Arc<Self>,
         device_id: &str,
         generation: u64,
+        daemon: std::sync::Weak<crate::daemon::Daemon>,
     ) -> Result<Runtime, ConfigError> {
         let (exporter, mut instruments) =
             match otlp::start(self.clone(), device_id.to_owned(), generation)? {
@@ -204,8 +205,13 @@ impl State {
                 })
                 .await;
                 match result {
-                    Ok((next, observed_at, snapshot)) => {
+                    Ok((next, observed_at, mut snapshot)) => {
                         collector = next;
+                        let Some(daemon) = daemon.upgrade() else {
+                            break;
+                        };
+                        snapshot.daemon = daemon.resource_metrics().await;
+                        snapshot.collection_duration_ms = elapsed_ms(observed_at);
                         state
                             .latest
                             .send_replace(Some(Arc::new((observed_at, snapshot))));

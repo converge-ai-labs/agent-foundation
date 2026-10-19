@@ -88,7 +88,9 @@ def publish(api: Api, skill: Skill, *, revision: int) -> Json:
 def seed_templates(api: Api, environment_providers: dict[str, Json], local_template: Json) -> None:
     """A template per fictional environment account and a disabled template."""
     for provider_type, provider in environment_providers.items():
-        body = {"name": f"{provider['name']} sandbox", "provider_id": provider["id"]}
+        body: Json = {"name": f"{provider['name']} sandbox", "provider_id": provider["id"]}
+        if provider_type == "daytona":
+            body["config"] = {"recipe": {"snapshot": "northstar-fictional-envd"}}
         api.post("/api/v1/environment-templates", {**body, "labels": {"runtime": provider_type}})
     retired = api.post(
         "/api/v1/environment-templates",

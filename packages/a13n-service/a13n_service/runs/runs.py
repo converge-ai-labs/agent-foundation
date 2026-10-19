@@ -8,13 +8,13 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra import cursors
+from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.resources.agents.schemas import AgentRevision, apply_override
-from a13n_service.resources.agents.tables import AgentRevisionRow
-from a13n_service.runs import checkpoints
+from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
+from a13n_service.runs import checkpoints, read_views
 from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
@@ -94,8 +94,15 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
 
 
 async def list_thread_runs(
-    storage: Storage, actor: Principal, workspace_id: str, thread_id: str, *, limit: int, cursor: str | None
-) -> RunPage:
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    thread_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    view: reads.ReadView = "detailed",
+) -> RunPage | read_views.RunSummaryPage:
     """Newest first, so the Console can open a thread at its latest runs."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -110,10 +117,14 @@ async def list_thread_runs(
             limit=limit,
             newest_first=True,
         )
-        return RunPage(items=await run_views(session, rows), next_cursor=next_cursor)
+        return await _run_page(
+            session, await run_views(session, rows), next_cursor, view=view, kind="thread_runs", owner=thread.id
+        )
 
 
-async def list_runs(storage: Storage, actor: Principal, workspace_id: str, filters: RunQuery) -> RunPage:
+async def list_runs(
+    storage: Storage, actor: Principal, workspace_id: str, filters: RunQuery
+) -> RunPage | read_views.RunSummaryPage:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(RunRow).where(RunRow.workspace_id == scope.workspace_id)
@@ -124,17 +135,51 @@ async def list_runs(storage: Storage, actor: Principal, workspace_id: str, filte
             query = query.where(RunRow.created_at >= filters.created_after)
         if filters.created_before is not None:
             query = query.where(RunRow.created_at < filters.created_before)
+        owner = cursors.query_owner(
+            scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor", "view"})
+        )
         rows, cursor = await cursors.keyset_page(
             session,
             query,
             (RunRow.created_at, RunRow.id),
             kind="runs",
-            owner=cursors.query_owner(scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor"})),
+            owner=owner,
             cursor=filters.cursor,
-            limit=filters.limit,
+            limit=reads.page_limit(filters.view, filters.limit),
             newest_first=True,
         )
-        return RunPage(items=await run_views(session, rows), next_cursor=cursor)
+        return await _run_page(
+            session, await run_views(session, rows), cursor, view=filters.view, kind="runs", owner=owner
+        )
+
+
+async def _run_page(
+    session: AsyncSession, values: list[RunView], following: str | None, *, view: reads.ReadView, kind: str, owner: str
+) -> RunPage | read_views.RunSummaryPage:
+    if view == "detailed":
+        return RunPage(items=values, next_cursor=following)
+    summaries = await _summaries(session, values)
+    count = reads.fit_count(summaries)
+    if count < len(values):
+        last = values[count - 1]
+        following = cursors.encode(kind, owner, last.created_at.isoformat(), last.id)
+    return read_views.RunSummaryPage(items=summaries[:count], next_cursor=following)
+
+
+async def _summaries(session: AsyncSession, values: Sequence[RunView]) -> list[read_views.RunSummary]:
+    ids = {value.agent_id for value in values}
+    names = (
+        dict((await session.execute(select(AgentRow.id, AgentRow.name).where(AgentRow.id.in_(ids)))).tuples().all())
+        if ids
+        else {}
+    )
+    return [read_views.run_summary(value, names.get(value.agent_id)) for value in values]
+
+
+async def compact_view(storage: Storage, value: RunView) -> read_views.RunSummary:
+    """Project an already-authorized Run, resolving its Agent's current display name in one short read."""
+    async with short_session(storage) as session:
+        return (await _summaries(session, [value]))[0]
 
 
 async def get_attempt(
@@ -149,19 +194,37 @@ async def get_attempt(
         return AttemptView.model_validate(attempt)
 
 
-async def lineage(storage: Storage, actor: Principal, workspace_id: str, run_id: str, *, cursor: str | None) -> RunPage:
+async def lineage(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    *,
+    cursor: str | None,
+    view: reads.ReadView = "detailed",
+    limit: int = MAX_LINEAGE,
+) -> RunPage | read_views.RunSummaryPage:
     """The run and its ancestors through `parent_run_id`, across fork origins, nearest first."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         start = cursors.id_position(cursor, "lineage", run_id) or run_id
         chain = [await get_run(session, scope.workspace_id, start)]
-        while chain[-1].parent_run_id is not None and len(chain) < MAX_LINEAGE:
+        while chain[-1].parent_run_id is not None and len(chain) < limit:
             parent = await session.get(RunRow, chain[-1].parent_run_id)
             assert parent is not None
             chain.append(parent)
         older = chain[-1].parent_run_id
+        values = await run_views(session, chain)
+        if view == "compact":
+            summaries = await _summaries(session, values)
+            count = reads.fit_count(summaries)
+            older = chain[count].id if count < len(chain) else older
+            return read_views.RunSummaryPage(
+                items=summaries[:count],
+                next_cursor=cursors.encode("lineage", run_id, older) if older is not None else None,
+            )
         return RunPage(
-            items=await run_views(session, chain),
+            items=values,
             next_cursor=cursors.encode("lineage", run_id, older) if older is not None else None,
         )
 

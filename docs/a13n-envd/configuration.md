@@ -91,7 +91,7 @@ Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD
 
 Linux, macOS and Windows expose basic system information in the Device descriptor returned by EIP `initialize` and `device.describe`: operating system/version, kernel version, native architecture and CPU model when available. Envd's own version is in `initialize.server.version`.
 
-`a13n-envd connect` enables CPU and memory sampling every 10 seconds by default, including when reconnecting with a saved Host. Existing installations need an updated Envd binary and a daemon restart to use this default; updating Harness UI alone does not change a running remote daemon.
+`a13n-envd connect` enables system, network, disk, socket, local-filesystem and daemon sampling every 10 seconds by default, including when reconnecting with a saved Host. Existing installations need an updated Envd binary and a daemon restart to use this default; updating Harness UI alone does not change a running remote daemon.
 
 Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to disable sampling. Other daemon launches remain opt-in; selecting native OTLP export also enables default sampling when `monitoring` is omitted. Enable or customize sampling with `monitoring` in your daemon configuration:
 
@@ -104,7 +104,7 @@ Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to d
 }
 ```
 
-Use absolute native paths, such as `C:\\workspace` in Windows JSON. `monitoring: {}` enables CPU and memory sampling with defaults. Custom settings follow the usual configuration precedence and are preserved by `connect`. Disabling sampling preserves system information. The interval accepts 1000–60000 ms. At most 16 filesystem targets are allowed, with 1–64 character names containing ASCII letters, digits, `_` or `-`. Paths cannot contain `..`.
+Use absolute native paths, such as `C:\\workspace` in Windows JSON. `monitoring: {}` enables the resource overview with defaults, including automatic local-filesystem discovery. Custom settings follow the usual configuration precedence and are preserved by `connect`. Disabling sampling preserves system information. The interval accepts 1000–60000 ms. At most 16 filesystem targets are allowed, with 1–64 character names containing ASCII letters, digits, `_` or `-`. Paths cannot contain `..`.
 
 Read through your initialized Python Device connection, with no Session required:
 
@@ -117,7 +117,7 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-This uses EIP `device.metrics` over the same authenticated HTTP, reverse WebSocket or stdio connection. No additional port, token or TLS configuration is needed. The method is advertised only when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.2; upgrade them together when moving from a 0.1 deployment. The `eip.v1` namespace and carrier framing are unchanged.
+This uses EIP `device.metrics` over the same authenticated HTTP, reverse WebSocket or stdio connection. No additional port, token or TLS configuration is needed. The method is advertised only when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.3; upgrade them together when moving from a 0.1 or 0.2 deployment. The `eip.v1` namespace and carrier framing are unchanged.
 
 | Observation                                                  | Meaning                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +129,20 @@ This uses EIP `device.metrics` over the same authenticated HTTP, reverse WebSock
 | `sample.system.pressure`                                     | Optional Linux CPU/memory/I/O PSI.                                                                                                                                                                                                                  |
 | `sample.cgroup_v2`                                           | Optional explicitly selected Linux cgroup v2 observations.                                                                                                                                                                                          |
 
-On Linux, add `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"` inside `monitoring` to observe that group and its descendants. Other platforms reject this Linux-only option. The group exposes CPU user/system/total microseconds, bandwidth periods/throttling, memory usage/events, local CPU/memory limits and PSI. Limits use tagged `unlimited` or `limited` values. These are local limits, not effective limits after ancestors or affinity.
+The overview also includes:
+
+| Observation                     | Meaning                                                                                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sample.system` platform fields | Linux/macOS swap usage and capacity; macOS wired/compressed memory; Windows commit, commit limit, cache, and global process/thread/handle counts. Windows commit is not swap usage. |
+| `sample.network.interfaces`     | Up to 64 interfaces with native identity and available cumulative byte, packet, error and drop counters.                                                                            |
+| `sample.disks.devices`          | Up to 64 disks with cumulative byte/operation counters and optional native timing/queue values. Linux excludes partitions and loop/RAM devices.                                     |
+| `sample.connections`            | Aggregate TCP state and UDP socket counts, without addresses or per-connection records. macOS supplies totals without TCP states.                                                   |
+| `sample.local_filesystems`      | Up to 16 automatically discovered local filesystems, separately from named targets. Reports opaque native identities rather than paths.                                             |
+| `sample.daemon`                 | Envd Sessions, active command groups, transfers, public carrier connections and actual retained-output bytes. Worker-dependent totals are absent if collection is incomplete.       |
+
+Inventories report truncation explicitly. Missing native sources remain absent. Interface and disk identities distinguish counter lifetimes; stacked devices are not a meaningful host-wide sum. Filesystem discovery filters pseudo and remote filesystems; mounted removable local volumes can be included. It never scans directory contents. Available fields vary by platform and native API permissions.
+
+On Linux, add `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"` inside `monitoring` to observe that group and its descendants. Other platforms reject this Linux-only option. The group exposes CPU user/system/total microseconds, bandwidth periods/throttling, memory usage/events, local CPU/memory limits, task count/limit, per-device I/O byte/operation counters and PSI. Limits use tagged `unlimited` or `limited` values. These are local limits, not effective limits after ancestors or affinity.
 
 PSI contains optional `some` and `full` records with `avg10_percent`, `avg60_percent`, `avg300_percent` and cumulative `total_usec`. The averages are kernel windows, independent of the sampling interval. System CPU `full` is absent because it is undefined at that scope. Missing fields remain absent on the wire and `None` in Python, never synthetic zero.
 

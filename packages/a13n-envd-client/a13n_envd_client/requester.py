@@ -158,6 +158,9 @@ class RequestCoordinator(EIPRequester):
         self._transport = transport
         self._admission = _AdmissionLimiter(max_in_flight)
         self._device_admission = _AdmissionLimiter(8)
+        # Observations retain correlation after caller timeout, but cannot consume
+        # Session-open capacity. One unanswered observation also bounds retries.
+        self._observation_admission = _AdmissionLimiter(1)
         self._max_sessions = max_sessions
         self._request_timeout = request_timeout
         self._pending: dict[str | int, _PendingRequest] = {}
@@ -210,7 +213,12 @@ class RequestCoordinator(EIPRequester):
         payload = json.loads(encode_model(cast(BaseModel, params)))
         timeout = _effective_timeout(payload, self._request_timeout)
         deadline = None if timeout is None else started + timeout
-        admissions = (self._device_admission,) if owner is None else owner.admissions(method)
+        if owner is not None:
+            admissions = owner.admissions(method)
+        elif method.name in {"device.describe", "device.metrics"}:
+            admissions = (self._observation_admission,)
+        else:
+            admissions = (self._device_admission,)
         acquired: list[_AdmissionLimiter] = []
         try:
             async with asyncio.timeout_at(deadline):
@@ -455,6 +463,7 @@ class RequestCoordinator(EIPRequester):
             self._terminal_error = error
         self._admission.fail(error)
         self._device_admission.fail(error)
+        self._observation_admission.fail(error)
         for owner in tuple(self._sessions.values()):
             owner.finish(error)
         for request_id in tuple(self._pending):

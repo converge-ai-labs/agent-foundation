@@ -45,7 +45,7 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
                 configuration, configuration=backend, credential=credential, environment_id=environment_id, state=state
             )
 
-        filename = "/a13n-test-" + secrets.token_hex(8)
+        filename = ("/workspace/" if key == "daytona" else "/") + "a13n-test-" + secrets.token_hex(8)
         try:
             async with await connector().open() as env:
                 await env.operations.files.write_text(filename, "native persistence", mode="create")

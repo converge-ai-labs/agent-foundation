@@ -47,7 +47,7 @@ def guest_container():
         subprocess.run(["docker", "rm", "-f", container], check=True, stdout=subprocess.DEVNULL)
 
 
-@pytest.mark.parametrize("key", ["daytona", "runloop", "sprites"])
+@pytest.mark.parametrize("key", ["runloop", "sprites"])
 def test_default_guest_workspace_is_writable_without_root(key, guest_container):
     async def scenario():
         provider = ProviderCatalog(select_builtin_environment_providers([key])).require(key)

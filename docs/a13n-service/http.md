@@ -100,6 +100,31 @@ Generate a unique key per logical request and reuse it when retrying after a los
 
 Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–100, default 50) and, for the next page, `cursor=<next_cursor>`; `next_cursor` is `null` on the last page. A cursor is opaque and bound to its collection, its scope and every filter of the query that produced it; reusing it with a different filter is `invalid_cursor`. Bounded catalogs, toolsets, mounts and attempts may return all items without pagination; check the operation's schema.
 
+## Read summaries and selected details
+
+Use `view=compact` to find relevant runs, revisions, models, inbox entries, display items or spans. Combine the view with the operation's filters. Existing calls default to `view=detailed` and keep their original response. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
+
+A preview contains `text` and `truncated`. `omitted_sections` lists fields you can read separately. `source_truncated` means the stored content was already shortened; fetching more cannot recover discarded data. An omitted field or a shortened preview does not prove that the source lacks the information.
+
+For example, find failed runs and read one failure:
+
+```http
+GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs/{run_id}?section=failure
+GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
+GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0
+```
+
+Use the item's actual `ordinal` with its ID. Compact item reads start at the oldest ordinal unless you provide `before` or `after`; follow `next_before` or `next_after`. Detailed unfiltered item reads retain the existing latest-items and full-tail behavior.
+
+Section and content reads return `representation=fragment`, a content `version`, `text`, `next_offset` and `has_more`. Offsets count Unicode code points. Continue with the returned offset **and version**. Changed content returns `409 conflict` with reason `content_changed`; restart the read. JSON fragments must be joined before parsing the whole value. Literal `query` search finds the next match with surrounding context; its next offset continues searching, rather than extracting every character.
+
+To inspect configuration, read a revision with `section=all` or a configuration field such as `instructions`. A run's `/agent` endpoint uses `section=original|effective|overrides`, with an optional `part` for original/effective. Revision `/compare` takes `base_revision_id` and an optional section. Before editing, obtain the complete original configuration and the agent head's ETag. Preserve unrelated fields. Never submit a summary, fragment or diff as the full configuration.
+
+Search tool catalogs through `/toolsets/index`, `/connections/{connection_id}/tools/index` or `/connector-providers/{provider_id}/apps/{app}/actions/index`. Read the matching `/definitions` endpoint with up to five repeated exact `name` values. Check `missing` and `oversized`. An oversized definition is read through that same endpoint with one name and versioned fragments; it is never silently shortened. The model catalog accepts compact search, capability filters and paging; select the exact provider/model for characteristics or pricing sections.
+
+Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. Follow `next_cursor` while `items` is empty. Once found, keep the request cursor that located the span while continuing its text fragments. Trace data remains subject to the deployment's retention and backend availability.
+
 ## Limits
 
 - Request bodies are bounded by `server.request_bytes` (`413`) and must arrive within `server.request_timeout` (`408`). Uploads and images have smaller limits.

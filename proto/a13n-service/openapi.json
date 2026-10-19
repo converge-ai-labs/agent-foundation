@@ -2810,6 +2810,100 @@
         "title": "CallbackOutcome",
         "type": "object"
       },
+      "CatalogIndex": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogIndexItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "omitted_sections": {
+            "default": [
+              "definitions"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "CatalogIndex",
+        "type": "object"
+      },
+      "CatalogIndexItem": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "description_truncated": {
+            "default": false,
+            "title": "Description Truncated",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Version"
+          },
+          "supported_tool_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported Tool Count"
+          },
+          "tool_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Count"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "CatalogIndexItem",
+        "type": "object"
+      },
       "CatalogModel": {
         "description": "A catalog model, with the characteristics and pricing a model created from it starts with.",
         "properties": {
@@ -3115,6 +3209,82 @@
           "status"
         ],
         "title": "ComputerCheck",
+        "type": "object"
+      },
+      "ConfigSection": {
+        "enum": [
+          "all",
+          "model",
+          "model_settings",
+          "model_characteristics",
+          "instructions",
+          "toolsets",
+          "skills",
+          "skill_sync",
+          "connection_tools",
+          "platform_tools",
+          "tool_search",
+          "builtin_skills",
+          "client_tools",
+          "user_questions",
+          "subagent_mode",
+          "subagents",
+          "reviewer",
+          "media_understanding",
+          "plugins",
+          "output_spec",
+          "retries",
+          "default_environment_template_id",
+          "lazy_environment",
+          "memory_mounts",
+          "memory"
+        ],
+        "type": "string"
+      },
+      "ConfigSummary": {
+        "properties": {
+          "connection_count": {
+            "title": "Connection Count",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "omitted_sections": {
+            "default": [
+              "configuration"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "skill_count": {
+            "title": "Skill Count",
+            "type": "integer"
+          },
+          "subagent_count": {
+            "title": "Subagent Count",
+            "type": "integer"
+          },
+          "toolsets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Toolsets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "toolsets",
+          "connection_count",
+          "skill_count",
+          "subagent_count"
+        ],
+        "title": "ConfigSummary",
         "type": "object"
       },
       "Connection": {
@@ -3838,6 +4008,54 @@
         "title": "ContentRef",
         "type": "object"
       },
+      "ContentSummary": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "omitted_sections": {
+            "default": [
+              "value"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "size_chars": {
+            "title": "Size Chars",
+            "type": "integer"
+          },
+          "source_truncated": {
+            "title": "Source Truncated",
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "media_type",
+          "size_chars",
+          "value",
+          "source_truncated"
+        ],
+        "title": "ContentSummary",
+        "type": "object"
+      },
       "ContextUsage": {
         "description": "One reported generation, compared with its currently configured window.",
         "properties": {
@@ -4018,6 +4236,82 @@
         "title": "DailyUsage",
         "type": "object"
       },
+      "Definition": {
+        "properties": {
+          "definition": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Definition",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "definition"
+        ],
+        "title": "Definition",
+        "type": "object"
+      },
+      "DefinitionReference": {
+        "properties": {
+          "instruction": {
+            "default": "Read this endpoint with one name, offset=0 and limit=4000, then continue with version and next_offset.",
+            "title": "Instruction",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size_chars": {
+            "title": "Size Chars",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "size_chars"
+        ],
+        "title": "DefinitionReference",
+        "type": "object"
+      },
+      "Definitions": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Definition"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "oversized": {
+            "items": {
+              "$ref": "#/components/schemas/DefinitionReference"
+            },
+            "title": "Oversized",
+            "type": "array"
+          }
+        },
+        "title": "Definitions",
+        "type": "object"
+      },
       "DelegationContextPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -4174,6 +4468,195 @@
           "withdrawn"
         ],
         "type": "string"
+      },
+      "EntrySummary": {
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "agent_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
+          },
+          "assigned_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Run Id"
+          },
+          "child_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Run Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery": {
+            "enum": [
+              "steer",
+              "next_run"
+            ],
+            "title": "Delivery",
+            "type": "string"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "message",
+              "child_result"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "omitted_sections": {
+            "default": [
+              "payload",
+              "options"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "origin_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Run Id"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EntryStatus"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "thread_id",
+          "kind",
+          "delivery",
+          "status",
+          "position",
+          "principal_id",
+          "agent_id",
+          "agent_revision_id",
+          "child_run_id",
+          "origin_run_id",
+          "assigned_run_id",
+          "created_at",
+          "finished_at",
+          "payload",
+          "failure"
+        ],
+        "title": "EntrySummary",
+        "type": "object"
+      },
+      "EntrySummaryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EntrySummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "EntrySummaryPage",
+        "type": "object"
       },
       "EntryUpdate": {
         "additionalProperties": false,
@@ -5034,6 +5517,23 @@
           "message"
         ],
         "title": "Failure",
+        "type": "object"
+      },
+      "FailureSummary": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/Preview"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "FailureSummary",
         "type": "object"
       },
       "Finding": {
@@ -6223,6 +6723,69 @@
         ],
         "type": "string"
       },
+      "ItemPage": {
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ItemSummary"
+                },
+                {
+                  "$ref": "#/components/schemas/Item"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          "view": {
+            "enum": [
+              "compact",
+              "detailed"
+            ],
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "view",
+          "run",
+          "items",
+          "complete"
+        ],
+        "title": "ItemPage",
+        "type": "object"
+      },
       "ItemState": {
         "enum": [
           "in_progress",
@@ -6231,6 +6794,111 @@
           "failed"
         ],
         "type": "string"
+      },
+      "ItemSummary": {
+        "properties": {
+          "arguments": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          },
+          "omitted_sections": {
+            "default": [
+              "content",
+              "content_refs"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "result": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "source_truncated": {
+            "title": "Source Truncated",
+            "type": "boolean"
+          },
+          "source_truncated_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Truncated Fields",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ItemState"
+          },
+          "text": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          },
+          "tool_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Name"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal",
+          "kind",
+          "state",
+          "started_at",
+          "ended_at",
+          "tool_call_id",
+          "tool_name",
+          "text",
+          "arguments",
+          "result",
+          "source_truncated",
+          "source_truncated_fields"
+        ],
+        "title": "ItemSummary",
+        "type": "object"
       },
       "JsonPart": {
         "additionalProperties": false,
@@ -8541,6 +9209,51 @@
         "title": "ModelCatalog",
         "type": "object"
       },
+      "ModelCatalogPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ModelSummary"
+                },
+                {
+                  "$ref": "#/components/schemas/CatalogModel"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "status",
+          "next_cursor"
+        ],
+        "title": "ModelCatalogPage",
+        "type": "object"
+      },
       "ModelConfig-Input": {
         "additionalProperties": false,
         "properties": {
@@ -9182,6 +9895,65 @@
           "output_tokens_per_second"
         ],
         "title": "ModelRequestMetrics",
+        "type": "object"
+      },
+      "ModelSummary": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "context_window_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Tokens"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "omitted_sections": {
+            "default": [
+              "characteristics",
+              "pricing"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "pricing_available": {
+            "title": "Pricing Available",
+            "type": "boolean"
+          },
+          "ref": {
+            "$ref": "#/components/schemas/CatalogRef"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "name",
+          "capabilities",
+          "context_window_tokens",
+          "pricing_available"
+        ],
+        "title": "ModelSummary",
         "type": "object"
       },
       "ModelUpdate": {
@@ -10304,6 +11076,24 @@
         ],
         "type": "string"
       },
+      "Preview": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated"
+        ],
+        "title": "Preview",
+        "type": "object"
+      },
       "PriceComponent-Input": {
         "additionalProperties": false,
         "description": "One genai-prices usage dimension and its USD unit price.",
@@ -11311,6 +12101,13 @@
         "title": "ProxyToolSearchConfig",
         "type": "object"
       },
+      "ReadView": {
+        "enum": [
+          "detailed",
+          "compact"
+        ],
+        "type": "string"
+      },
       "Request": {
         "additionalProperties": false,
         "properties": {
@@ -11448,6 +12245,98 @@
           "value"
         ],
         "title": "Returned",
+        "type": "object"
+      },
+      "RevisionSummary": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/ConfigSummary"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "omitted_sections": {
+            "default": [
+              "config",
+              "note"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agent_id",
+          "number",
+          "digest",
+          "is_default",
+          "created_at",
+          "note",
+          "config"
+        ],
+        "title": "RevisionSummary",
+        "type": "object"
+      },
+      "RevisionSummaryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RevisionSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "RevisionSummaryPage",
         "type": "object"
       },
       "RevokedConnection": {
@@ -11601,6 +12490,78 @@
           "config"
         ],
         "title": "RunAgent",
+        "type": "object"
+      },
+      "RunAgentSummary": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ConfigSummary"
+          },
+          "connection_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Connection Ids",
+            "type": "array"
+          },
+          "omitted_sections": {
+            "default": [
+              "original",
+              "effective",
+              "overrides"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "overridden_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overridden Paths",
+            "type": "array"
+          },
+          "references_truncated": {
+            "title": "References Truncated",
+            "type": "boolean"
+          },
+          "revision_id": {
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skill Ids",
+            "type": "array"
+          },
+          "subagent_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Subagent Ids",
+            "type": "array"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision_id",
+          "config",
+          "connection_ids",
+          "skill_ids",
+          "subagent_ids",
+          "overridden_paths",
+          "references_truncated"
+        ],
+        "title": "RunAgentSummary",
         "type": "object"
       },
       "RunConfiguration-Input": {
@@ -11910,6 +12871,264 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "RunSummary": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "agent_revision_id": {
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Attempt Id"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "lineage": {
+            "enum": [
+              "root",
+              "continue",
+              "fork"
+            ],
+            "title": "Lineage",
+            "type": "string"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "omitted_sections": {
+            "default": [
+              "input",
+              "output",
+              "resume",
+              "pending",
+              "options",
+              "environment_mounts",
+              "memory_mounts",
+              "usage_at_seal",
+              "labels"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "output": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "revision_selection": {
+            "enum": [
+              "pinned",
+              "default",
+              "inherited"
+            ],
+            "title": "Revision Selection",
+            "type": "string"
+          },
+          "sealed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sealed At"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Entry Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "session_id",
+          "thread_id",
+          "agent_id",
+          "agent_name",
+          "agent_revision_id",
+          "revision_selection",
+          "principal_id",
+          "parent_run_id",
+          "source_entry_id",
+          "current_attempt_id",
+          "lineage",
+          "status",
+          "trigger",
+          "attempts",
+          "max_attempts",
+          "wait_reason",
+          "failure",
+          "input",
+          "output",
+          "usage",
+          "version",
+          "created_at",
+          "started_at",
+          "sealed_at",
+          "updated_at"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
+      "RunSummaryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "RunSummaryPage",
+        "type": "object"
       },
       "RunUsage": {
         "properties": {
@@ -13620,6 +14839,35 @@
         "title": "Span",
         "type": "object"
       },
+      "SpanContentPage": {
+        "description": "A matching span's selected content, or a continuation to keep locating that span.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TextRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "SpanContentPage",
+        "type": "object"
+      },
       "SpanEvent": {
         "description": "Something the span recorded at one moment, such as an exception.",
         "properties": {
@@ -13701,6 +14949,167 @@
           "next_cursor"
         ],
         "title": "SpanPage",
+        "type": "object"
+      },
+      "SpanReadPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SpanSummary"
+                },
+                {
+                  "$ref": "#/components/schemas/Span"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "SpanReadPage",
+        "type": "object"
+      },
+      "SpanSummary": {
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "name": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "omitted_sections": {
+            "default": [
+              "input",
+              "output",
+              "attributes",
+              "resource_attributes",
+              "events",
+              "links",
+              "usage"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omitted Sections",
+            "type": "array"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "view": {
+            "const": "compact",
+            "default": "compact",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "id",
+          "parent_id",
+          "name",
+          "kind",
+          "status",
+          "started_at",
+          "ended_at",
+          "duration_ms",
+          "model",
+          "usage",
+          "cost_usd",
+          "error"
+        ],
+        "title": "SpanSummary",
         "type": "object"
       },
       "SubagentOverride-Input": {
@@ -14617,6 +16026,99 @@
           "text"
         ],
         "title": "TextPart",
+        "type": "object"
+      },
+      "TextRead": {
+        "description": "A fragment of a versioned value, not a complete JSON object or writable configuration.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "match_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Offset"
+          },
+          "media_type": {
+            "enum": [
+              "text/plain",
+              "application/json"
+            ],
+            "title": "Media Type",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "representation": {
+            "const": "fragment",
+            "default": "fragment",
+            "title": "Representation",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_truncated": {
+            "default": false,
+            "title": "Source Truncated",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "version",
+          "media_type",
+          "offset",
+          "text",
+          "total_chars",
+          "next_offset",
+          "has_more"
+        ],
+        "title": "TextRead",
         "type": "object"
       },
       "ThreadPage": {
@@ -17230,15 +18732,32 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -17283,7 +18802,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentRevisionPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentRevisionPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RevisionSummaryPage"
+                    }
+                  ],
+                  "title": "Response List Revisions Api V1 Agents  Agent Id  Revisions Get"
                 }
               }
             },
@@ -17438,6 +18965,99 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ConfigSection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -17463,7 +19083,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentRevision"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentRevision"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RevisionSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Get Revision Api V1 Agents  Agent Id  Revisions  Revision Id  Get"
                 }
               }
             },
@@ -17485,6 +19116,199 @@
           }
         ],
         "summary": "Get Revision",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
+      }
+    },
+    "/api/v1/agents/{agent_id}/revisions/{revision_id}/compare": {
+      "get": {
+        "description": "Versioned unified diff of two revisions of this agent, optionally limited to one configuration section.",
+        "operationId": "compare_revisions_api_v1_agents__agent_id__revisions__revision_id__compare_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "title": "Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base_revision_id",
+            "required": true,
+            "schema": {
+              "title": "Base Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "model",
+                "model_settings",
+                "model_characteristics",
+                "instructions",
+                "toolsets",
+                "skills",
+                "skill_sync",
+                "connection_tools",
+                "platform_tools",
+                "tool_search",
+                "builtin_skills",
+                "client_tools",
+                "user_questions",
+                "subagent_mode",
+                "subagents",
+                "reviewer",
+                "media_understanding",
+                "plugins",
+                "output_spec",
+                "retries",
+                "default_environment_template_id",
+                "lazy_environment",
+                "memory_mounts",
+                "memory"
+              ],
+              "title": "Section",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Compare Revisions",
         "tags": [
           "agents"
         ],
@@ -19123,6 +20947,292 @@
         }
       }
     },
+    "/api/v1/connections/{connection_id}/tools/definitions": {
+      "get": {
+        "description": "Read up to five exact definitions. Oversized values provide a versioned fragment reference.",
+        "operationId": "define_connection_tools_api_v1_connections__connection_id__tools_definitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact names; repeat name to select up to five definitions.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "Exact names; repeat name to select up to five definitions.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 5,
+              "minItems": 1,
+              "title": "Name",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Definitions"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Define Connection Tools Api V1 Connections  Connection Id  Tools Definitions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Define Connection Tools",
+        "tags": [
+          "connections"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
+      }
+    },
+    "/api/v1/connections/{connection_id}/tools/index": {
+      "get": {
+        "description": "Search full names and descriptions; definitions are read separately by exact name.",
+        "operationId": "index_connection_tools_api_v1_connections__connection_id__tools_index_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive substring of full names and descriptions.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring of full names and descriptions.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogIndex"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Index Connection Tools",
+        "tags": [
+          "connections"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
+      }
+    },
     "/api/v1/connector-providers": {
       "get": {
         "operationId": "list_providers_api_v1_connector_providers_get",
@@ -19723,6 +21833,310 @@
           }
         ],
         "summary": "List Actions",
+        "tags": [
+          "connections"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
+      }
+    },
+    "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/definitions": {
+      "get": {
+        "description": "Read up to five exact definitions. Oversized values provide a versioned fragment reference.",
+        "operationId": "define_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_definitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app",
+            "required": true,
+            "schema": {
+              "title": "App",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact names; repeat name to select up to five definitions.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "Exact names; repeat name to select up to five definitions.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 5,
+              "minItems": 1,
+              "title": "Name",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Definitions"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Define Connector Actions Api V1 Connector Providers  Provider Id  Apps  App  Actions Definitions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Define Connector Actions",
+        "tags": [
+          "connections"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "connections"
+        }
+      }
+    },
+    "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/index": {
+      "get": {
+        "description": "Search full names and descriptions; definitions are read separately by exact name.",
+        "operationId": "index_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_index_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app",
+            "required": true,
+            "schema": {
+              "title": "App",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive substring of full names and descriptions.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring of full names and descriptions.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogIndex"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Index Connector Actions",
         "tags": [
           "connections"
         ],
@@ -25548,6 +27962,155 @@
               "description": "Exact, case-sensitive model ID within the catalog channel.",
               "title": "Model"
             }
+          },
+          {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "description": "Case-insensitive substring of full names and descriptions.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring of full names and descriptions.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "capability",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "all",
+                    "characteristics",
+                    "pricing"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "text_limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Text Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
           }
         ],
         "responses": {
@@ -25555,7 +28118,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelCatalog"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ModelCatalog"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ModelCatalogPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Get Model Catalog Api V1 Model Catalog Get"
                 }
               }
             },
@@ -28080,14 +30654,34 @@
           },
           {
             "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "detailed",
+              "enum": [
+                "detailed",
+                "compact"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -28132,7 +30726,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunSummaryPage"
+                    }
+                  ],
+                  "title": "Response List Runs Api V1 Runs Get"
                 }
               }
             },
@@ -28178,6 +30780,111 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "input",
+                    "output",
+                    "failure",
+                    "resume",
+                    "pending",
+                    "options",
+                    "environment_mounts",
+                    "memory_mounts",
+                    "usage_at_seal",
+                    "labels"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -28203,7 +30910,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunView"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunView"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Get Run Api V1 Runs  Run Id  Get"
                 }
               }
             },
@@ -28332,7 +31050,7 @@
     },
     "/api/v1/runs/{run_id}/agent": {
       "get": {
-        "description": "The agent configuration the run executes: its revision with the run's override applied.",
+        "description": "The frozen revision and effective configuration. Section reads are versioned fragments, never writable configs.",
         "operationId": "run_agent_api_v1_runs__run_id__agent_get",
         "parameters": [
           {
@@ -28342,6 +31060,141 @@
             "schema": {
               "title": "Run Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "original",
+                    "effective",
+                    "overrides"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "in": "query",
+            "name": "part",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "model",
+                "model_settings",
+                "model_characteristics",
+                "instructions",
+                "toolsets",
+                "skills",
+                "skill_sync",
+                "connection_tools",
+                "platform_tools",
+                "tool_search",
+                "builtin_skills",
+                "client_tools",
+                "user_questions",
+                "subagent_mode",
+                "subagents",
+                "reviewer",
+                "media_understanding",
+                "plugins",
+                "output_spec",
+                "retries",
+                "default_environment_template_id",
+                "lazy_environment",
+                "memory_mounts",
+                "memory"
+              ],
+              "title": "Part",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
             }
           },
           {
@@ -28370,7 +31223,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunAgent"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunAgent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunAgentSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Run Agent Api V1 Runs  Run Id  Agent Get"
                 }
               }
             },
@@ -28577,15 +31441,86 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Name"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -28630,7 +31565,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SpanPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SpanPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SpanReadPage"
+                    }
+                  ],
+                  "title": "Response List Attempt Spans Api V1 Runs  Run Id  Attempts  Attempt Id  Trace Get"
                 }
               }
             },
@@ -28686,6 +31629,87 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -28711,7 +31735,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunContent"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ContentSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Run Content Api V1 Runs  Run Id  Contents  Content Id  Get"
                 }
               }
             },
@@ -29221,7 +32256,7 @@
     },
     "/api/v1/runs/{run_id}/items": {
       "get": {
-        "description": "A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose\nitems live output can still change; `before` and `after` page from an ordinal and exclude each other.",
+        "description": "A run's committed display items by ordinal. Detailed unfiltered reads default to the newest items and full tail.\nCompact or filtered reads start at the oldest ordinal and strictly honor limit. Use exclusive before/after\npositions, then follow next_before/next_after even when a filtered page is empty.",
         "operationId": "run_items_api_v1_runs__run_id__items_get",
         "parameters": [
           {
@@ -29276,11 +32311,78 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 200,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ItemKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ItemState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Name"
             }
           },
           {
@@ -29309,7 +32411,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunItems"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunItems"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ItemPage"
+                    }
+                  ],
+                  "title": "Response Run Items Api V1 Runs  Run Id  Items Get"
                 }
               }
             },
@@ -29331,6 +32441,185 @@
           }
         ],
         "summary": "Run Items",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
+    "/api/v1/runs/{run_id}/items/{item_id}/content": {
+      "get": {
+        "description": "Read one display field or follow its retained content reference, under the run's existing authorization.",
+        "operationId": "read_item_content_api_v1_runs__run_id__items__item_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ordinal returned with this item ID; both must match",
+            "in": "query",
+            "name": "ordinal",
+            "required": true,
+            "schema": {
+              "description": "Ordinal returned with this item ID; both must match",
+              "minimum": 1,
+              "title": "Ordinal",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "field",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "text",
+                "arguments",
+                "result",
+                "value",
+                "result_parts",
+                "metadata",
+                "failure"
+              ],
+              "title": "Field",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Read Item Content",
         "tags": [
           "runs"
         ],
@@ -29372,6 +32661,35 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 50,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -29397,7 +32715,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunSummaryPage"
+                    }
+                  ],
+                  "title": "Response Run Lineage Api V1 Runs  Run Id  Lineage Get"
                 }
               }
             },
@@ -32737,15 +36063,52 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "message",
+                    "child_result"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -32790,7 +36153,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntryPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EntryPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EntrySummaryPage"
+                    }
+                  ],
+                  "title": "Response List Inbox Api V1 Threads  Thread Id  Inbox Get"
                 }
               }
             },
@@ -33134,6 +36505,104 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "payload",
+                    "options",
+                    "failure"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -33159,7 +36628,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntryView"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EntryView"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EntrySummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Get Entry Api V1 Threads  Thread Id  Inbox  Entry Id  Get"
                 }
               }
             },
@@ -33660,15 +37140,32 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -33713,7 +37210,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunSummaryPage"
+                    }
+                  ],
+                  "title": "Response List Thread Runs Api V1 Threads  Thread Id  Runs Get"
                 }
               }
             },
@@ -33920,6 +37425,274 @@
         }
       }
     },
+    "/api/v1/toolsets/definitions": {
+      "get": {
+        "description": "Read up to five exact definitions. Oversized values provide a versioned fragment reference.",
+        "operationId": "define_toolsets_api_v1_toolsets_definitions_get",
+        "parameters": [
+          {
+            "description": "Exact names; repeat name to select up to five definitions.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "Exact names; repeat name to select up to five definitions.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 5,
+              "minItems": 1,
+              "title": "Name",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Definitions"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Define Toolsets Api V1 Toolsets Definitions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Define Toolsets",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
+      }
+    },
+    "/api/v1/toolsets/index": {
+      "get": {
+        "description": "Search full names and descriptions; definitions are read separately by exact name.",
+        "operationId": "index_toolsets_api_v1_toolsets_index_get",
+        "parameters": [
+          {
+            "description": "Case-insensitive substring of full names and descriptions.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring of full names and descriptions.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogIndex"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Index Toolsets",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "agents"
+        }
+      }
+    },
     "/api/v1/trace-backend": {
       "get": {
         "description": "The backend trace queries read, and how far back they find a trace.",
@@ -34098,15 +37871,86 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Name"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -34151,7 +37995,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SpanPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SpanPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SpanReadPage"
+                    }
+                  ],
+                  "title": "Response List Traces Api V1 Traces Get"
                 }
               }
             },
@@ -34199,6 +38051,108 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "input",
+                    "output",
+                    "attributes",
+                    "resource_attributes",
+                    "events",
+                    "links",
+                    "usage"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -34224,7 +38178,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Span"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Span"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SpanSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TextRead"
+                    }
+                  ],
+                  "title": "Response Get Trace Api V1 Traces  Trace Id  Get"
                 }
               }
             },
@@ -34272,15 +38237,86 @@
             }
           },
           {
+            "description": "Use compact for discovery; detailed preserves the original response.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadView",
+              "default": "detailed",
+              "description": "Use compact for discovery; detailed preserves the original response."
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Name"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           },
           {
@@ -34325,7 +38361,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SpanPage"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SpanPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SpanReadPage"
+                    }
+                  ],
+                  "title": "Response List Trace Spans Api V1 Traces  Trace Id  Spans Get"
                 }
               }
             },
@@ -34347,6 +38391,191 @@
           }
         ],
         "summary": "List Trace Spans",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
+    "/api/v1/traces/{trace_id}/spans/{span_id}/content": {
+      "get": {
+        "description": "Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's\ncursor while continuing fragments with version and next_offset.",
+        "operationId": "read_span_content_api_v1_traces__trace_id__spans__span_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "span_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{16}$",
+              "title": "Span Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "input",
+                "output",
+                "attributes",
+                "resource_attributes",
+                "events",
+                "links",
+                "usage"
+              ],
+              "title": "Section",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "Case-sensitive literal text search.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-sensitive literal text search.",
+              "title": "Query"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpanContentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Read Span Content",
         "tags": [
           "runs"
         ],

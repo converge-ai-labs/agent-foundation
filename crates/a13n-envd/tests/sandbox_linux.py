@@ -145,7 +145,7 @@ def verify_grant_replacement(binary, mode):
                 {
                     "expected_device_id": device.descriptor["device_id"],
                     "expected_generation": device.descriptor["generation"],
-                    "protocol_version": "0.2",
+                    "protocol_version": "0.3",
                     "working_directory": str(device.workspace),
                     **({"egress": policy} if policy is not None else {}),
                 },

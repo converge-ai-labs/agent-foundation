@@ -169,7 +169,7 @@ async def running_device(
 def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, carrier: str):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
-            assert device.protocol_version == "0.2"
+            assert device.protocol_version == "0.3"
             assert (await device.describe()).device_id == "device-test"
             discovery = await device.list_directories(
                 DirectoryListParams(

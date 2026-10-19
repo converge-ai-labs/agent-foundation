@@ -135,7 +135,7 @@ class NativeCloud:
         return httpx2.Response(200, json=self.view())
 
 
-@pytest.mark.parametrize("key", BACKENDS)
+@pytest.mark.parametrize("key", [key for key in BACKENDS if key != "daytona"])
 def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
     async def scenario(key):
         cloud = NativeCloud(key)
@@ -197,13 +197,6 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
             )
         )
         assert failed.status.exit_code == 7
-        if key == "daytona":
-            cloud.target["autoDeleteInterval"] = 0
-            with pytest.raises(EnvironmentProviderError) as exc:
-                await manage("stop", state)
-            assert exc.value.code == "provider_stop_retention_unsupported"
-            assert cloud.target["state"] == "started"
-            cloud.target["autoDeleteInterval"] = -1
         if key == "runloop":
             cloud.target["launch_parameters"]["after_idle"]["idle_time_seconds"] = 600
             with pytest.raises(EnvironmentProviderError) as exc:
@@ -271,7 +264,7 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
     asyncio.run(scenario(key))
 
 
-@pytest.mark.parametrize("key", BACKENDS)
+@pytest.mark.parametrize("key", [key for key in BACKENDS if key != "daytona"])
 @pytest.mark.parametrize("poll_failure", ["timeout", "unavailable"])
 def test_native_delete_keeps_state_until_terminal_evidence(key, poll_failure, tmp_path, monkeypatch):
     async def scenario():
@@ -299,66 +292,5 @@ def test_native_delete_keeps_state_until_terminal_evidence(key, poll_failure, tm
             assert observed_environment_state(exc.value, None) == state
             mutations = [call for call in cloud.calls if call[0] == "DELETE" or call[1].endswith("/shutdown")]
             assert len(mutations) == 1
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("fail_start", [False, True])
-def test_daytona_desktop_initialization_belongs_to_management(fail_start, monkeypatch):
-    class DesktopCloud(NativeCloud):
-        async def request(self, request):
-            path = request.url.path
-            if "/computeruse/" in path:
-                self.calls.append((request.method, path))
-                if path.endswith("/start"):
-                    return httpx2.Response(500 if fail_start else 200, json={})
-                return httpx2.Response(
-                    200,
-                    json={"displays": [{"id": 0, "width": 1024, "height": 768, "x": 0, "y": 0, "isActive": True}]},
-                )
-            if path.endswith("/process/execute"):
-                self.calls.append((request.method, path))
-                assert "/proc/sys/kernel/random/boot_id" in json.loads(request.content)["command"]
-                return httpx2.Response(200, json={"exitCode": 0, "result": "boot-id\n123 start-time"})
-            return await super().request(request)
-
-    async def scenario():
-        cloud = DesktopCloud("daytona")
-
-        def transport_init(self, key, url, token, timeout, **kwargs):
-            self.key = key
-            self.client = httpx2.AsyncClient(base_url=url, transport=httpx2.MockTransport(cloud.request))
-
-        monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
-        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["daytona"]
-        config = definition.validate_environment({"desktop": True})
-        credential = {"api_key": "fixture-private-token"}
-        provider = await definition.open_provider(configuration=BACKENDS["daytona"], credential=credential)
-        try:
-            if fail_start:
-                with pytest.raises(EnvironmentProviderError) as error:
-                    await provider.create(config, environment_id="env-fixture", state=None, operation_id="op-create")
-                state = observed_environment_state(error.value, None)
-                assert state is not None and state.state["target_id"] == "target-1"
-            else:
-                state = await provider.create(
-                    config, environment_id="env-fixture", state=None, operation_id="op-create"
-                )
-                before = len(cloud.calls)
-                connector = definition.execution.execution_connector(
-                    config,
-                    configuration=BACKENDS["daytona"],
-                    credential=credential,
-                    environment_id="env-fixture",
-                    state=state,
-                )
-                async with await connector.open() as execution:
-                    await execution.check_ready(frozenset({"computer"}))
-                    assert execution.operations.computer is not None
-                    assert (await execution.operations.computer.describe()).input_ready
-                assert not any(path.endswith("/start") for _, path in cloud.calls[before:])
-            assert cloud.count == 1
-        finally:
-            await provider.close()
 
     asyncio.run(scenario())

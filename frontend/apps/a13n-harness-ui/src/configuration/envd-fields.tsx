@@ -173,12 +173,16 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
   const computer = configured
     ? document?.getIn(["envd", "computer_use"]) === true
     : (runtime.data?.computer_use ?? false);
+  const interval = Number(
+    document?.getIn(["envd", "monitoring_interval_seconds"]) ?? 60,
+  );
   const custom = configured
     ? document?.getIn(["envd", "executable"]) != null
     : runtime.data?.source === "custom";
   const update = (changes: {
     executable?: string | null;
     computer_use?: boolean;
+    monitoring_interval_seconds?: number;
   }) => {
     let next = source;
     if (!configured)
@@ -224,6 +228,33 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
             />
           </div>
         )}
+        <SettingsRow
+          label="Metrics collection"
+          description="App collection and built-in local Envd sampling. External daemons and custom launch recipes keep their own sampling interval. Restart Harness UI after saving."
+        >
+          <ChoiceField
+            label="Metrics collection interval"
+            hideLabel
+            disabled={!runtime.data}
+            value={String(interval)}
+            options={[
+              { value: "10", label: "Every 10 seconds" },
+              { value: "30", label: "Every 30 seconds" },
+              { value: "60", label: "Every minute" },
+              ...([10, 30, 60].includes(interval)
+                ? []
+                : [
+                    {
+                      value: String(interval),
+                      label: `Every ${interval} seconds`,
+                    },
+                  ]),
+            ]}
+            onValueChange={(value) =>
+              update({ monitoring_interval_seconds: Number(value) })
+            }
+          />
+        </SettingsRow>
         <SettingsRow
           label="Desktop capability"
           description="Permit Computer Use runtimes on this Host. Agents still need a profile that explicitly allows desktop access."

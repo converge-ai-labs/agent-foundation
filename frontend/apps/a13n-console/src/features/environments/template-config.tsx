@@ -322,7 +322,9 @@ export function TemplateConfig({
                   ? "docker"
                   : definition?.type === "e2b"
                     ? "e2b"
-                    : "default"
+                    : definition?.type === "daytona"
+                      ? "daytona"
+                      : "default"
               }
             />
           )}

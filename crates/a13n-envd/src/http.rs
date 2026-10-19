@@ -204,7 +204,9 @@ pub(crate) async fn serve(
                 let (stream, _) = accepted?;
                 let state = Arc::clone(&state);
                 let tls = tls.clone();
+                let connection = state.daemon.connection_guard();
                 tokio::spawn(async move {
+                    let _connection = connection;
                     let result = match tls {
                         Some(acceptor) => match acceptor.accept(stream).await {
                             Ok(stream) => serve_connection(stream, state).await,

@@ -174,6 +174,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/agents/{agent_id}/revisions/{revision_id}/compare": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Compare Revisions
+     * @description Versioned unified diff of two revisions of this agent, optionally limited to one configuration section.
+     */
+    get: operations["compare_revisions_api_v1_agents__agent_id__revisions__revision_id__compare_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default": {
     parameters: {
       query?: never;
@@ -554,6 +574,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connections/{connection_id}/tools/definitions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Define Connection Tools
+     * @description Read up to five exact definitions. Oversized values provide a versioned fragment reference.
+     */
+    get: operations["define_connection_tools_api_v1_connections__connection_id__tools_definitions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/tools/index": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Index Connection Tools
+     * @description Search full names and descriptions; definitions are read separately by exact name.
+     */
+    get: operations["index_connection_tools_api_v1_connections__connection_id__tools_index_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connector-providers": {
     parameters: {
       query?: never;
@@ -636,6 +696,46 @@ export interface paths {
     };
     /** List Actions */
     get: operations["list_actions_api_v1_connector_providers__provider_id__apps__app__actions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/definitions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Define Connector Actions
+     * @description Read up to five exact definitions. Oversized values provide a versioned fragment reference.
+     */
+    get: operations["define_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_definitions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/index": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Index Connector Actions
+     * @description Search full names and descriptions; definitions are read separately by exact name.
+     */
+    get: operations["index_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_index_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1873,7 +1973,7 @@ export interface paths {
     };
     /**
      * Run Agent
-     * @description The agent configuration the run executes: its revision with the run's override applied.
+     * @description The frozen revision and effective configuration. Section reads are versioned fragments, never writable configs.
      */
     get: operations["run_agent_api_v1_runs__run_id__agent_get"];
     put?: never;
@@ -2059,10 +2159,31 @@ export interface paths {
     };
     /**
      * Run Items
-     * @description A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose
-     *     items live output can still change; `before` and `after` page from an ordinal and exclude each other.
+     * @description A run's committed display items by ordinal. Detailed unfiltered reads default to the newest items and full tail.
+     *     Compact or filtered reads start at the oldest ordinal and strictly honor limit. Use exclusive before/after
+     *     positions, then follow next_before/next_after even when a filtered page is empty.
      */
     get: operations["run_items_api_v1_runs__run_id__items_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/items/{item_id}/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Item Content
+     * @description Read one display field or follow its retained content reference, under the run's existing authorization.
+     */
+    get: operations["read_item_content_api_v1_runs__run_id__items__item_id__content_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2707,6 +2828,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/toolsets/definitions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Define Toolsets
+     * @description Read up to five exact definitions. Oversized values provide a versioned fragment reference.
+     */
+    get: operations["define_toolsets_api_v1_toolsets_definitions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/toolsets/index": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Index Toolsets
+     * @description Search full names and descriptions; definitions are read separately by exact name.
+     */
+    get: operations["index_toolsets_api_v1_toolsets_index_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/trace-backend": {
     parameters: {
       query?: never;
@@ -2779,6 +2940,27 @@ export interface paths {
      * @description The trace's spans.
      */
     get: operations["list_trace_spans_api_v1_traces__trace_id__spans_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/traces/{trace_id}/spans/{span_id}/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Span Content
+     * @description Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
+     *     cursor while continuing fragments with version and next_offset.
+     */
+    get: operations["read_span_content_api_v1_traces__trace_id__spans__span_id__content_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -4366,6 +4548,38 @@ export interface components {
       error: string | null;
       status: components["schemas"]["ConnectionStatus"];
     };
+    /** CatalogIndex */
+    CatalogIndex: {
+      /** Items */
+      items: components["schemas"]["CatalogIndexItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /**
+       * Omitted Sections
+       * @default [
+       *       "definitions"
+       *     ]
+       */
+      omitted_sections?: string[];
+    };
+    /** CatalogIndexItem */
+    CatalogIndexItem: {
+      /** Description */
+      description: string;
+      /**
+       * Description Truncated
+       * @default false
+       */
+      description_truncated?: boolean;
+      /** Name */
+      name: string;
+      /** Provider Version */
+      provider_version?: string | null;
+      /** Supported Tool Count */
+      supported_tool_count?: number | null;
+      /** Tool Count */
+      tool_count?: number | null;
+    };
     /**
      * CatalogModel
      * @description A catalog model, with the characteristics and pricing a model created from it starts with.
@@ -4508,6 +4722,53 @@ export interface components {
        * @enum {string}
        */
       status: "checked" | "unsupported" | "not_ready";
+    };
+    /** @enum {string} */
+    ConfigSection:
+      | "all"
+      | "model"
+      | "model_settings"
+      | "model_characteristics"
+      | "instructions"
+      | "toolsets"
+      | "skills"
+      | "skill_sync"
+      | "connection_tools"
+      | "platform_tools"
+      | "tool_search"
+      | "builtin_skills"
+      | "client_tools"
+      | "user_questions"
+      | "subagent_mode"
+      | "subagents"
+      | "reviewer"
+      | "media_understanding"
+      | "plugins"
+      | "output_spec"
+      | "retries"
+      | "default_environment_template_id"
+      | "lazy_environment"
+      | "memory_mounts"
+      | "memory";
+    /** ConfigSummary */
+    ConfigSummary: {
+      /** Connection Count */
+      connection_count: number;
+      /** Model */
+      model: string;
+      /**
+       * Omitted Sections
+       * @default [
+       *       "configuration"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Skill Count */
+      skill_count: number;
+      /** Subagent Count */
+      subagent_count: number;
+      /** Toolsets */
+      toolsets: string[];
     };
     /** Connection */
     Connection: {
@@ -4741,6 +5002,31 @@ export interface components {
        */
       truncated?: boolean;
     };
+    /** ContentSummary */
+    ContentSummary: {
+      /** Id */
+      id: string;
+      /** Media Type */
+      media_type: string;
+      /**
+       * Omitted Sections
+       * @default [
+       *       "value"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Size Chars */
+      size_chars: number;
+      /** Source Truncated */
+      source_truncated: boolean;
+      value: components["schemas"]["Preview"];
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
+    };
     /**
      * ContextUsage
      * @description One reported generation, compared with its currently configured window.
@@ -4812,6 +5098,38 @@ export interface components {
       date: string;
       usage: components["schemas"]["ModelMetrics"];
     };
+    /** Definition */
+    Definition: {
+      /** Definition */
+      definition: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Name */
+      name: string;
+    };
+    /** DefinitionReference */
+    DefinitionReference: {
+      /**
+       * Instruction
+       * @default Read this endpoint with one name, offset=0 and limit=4000, then continue with version and next_offset.
+       */
+      instruction?: string;
+      /** Name */
+      name: string;
+      /** Size Chars */
+      size_chars: number;
+      /** Version */
+      version: string;
+    };
+    /** Definitions */
+    Definitions: {
+      /** Items */
+      items?: components["schemas"]["Definition"][];
+      /** Missing */
+      missing?: string[];
+      /** Oversized */
+      oversized?: components["schemas"]["DefinitionReference"][];
+    };
     /** DelegationContextPolicy */
     DelegationContextPolicy: {
       /**
@@ -4868,6 +5186,68 @@ export interface components {
     };
     /** @enum {string} */
     EntryStatus: "pending" | "assigned" | "consumed" | "failed" | "withdrawn";
+    /** EntrySummary */
+    EntrySummary: {
+      /** Agent Id */
+      agent_id: string | null;
+      /** Agent Revision Id */
+      agent_revision_id: string | null;
+      /** Assigned Run Id */
+      assigned_run_id: string | null;
+      /** Child Run Id */
+      child_run_id: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Delivery
+       * @enum {string}
+       */
+      delivery: "steer" | "next_run";
+      failure: components["schemas"]["FailureSummary"] | null;
+      /** Finished At */
+      finished_at: string | null;
+      /** Id */
+      id: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "message" | "child_result";
+      /**
+       * Omitted Sections
+       * @default [
+       *       "payload",
+       *       "options"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Origin Run Id */
+      origin_run_id: string | null;
+      payload: components["schemas"]["Preview"];
+      /** Position */
+      position: number;
+      /** Principal Id */
+      principal_id: string;
+      status: components["schemas"]["EntryStatus"];
+      /** Thread Id */
+      thread_id: string;
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
+    };
+    /** EntrySummaryPage */
+    EntrySummaryPage: {
+      /** Items */
+      items: components["schemas"]["EntrySummary"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /**
      * EntryUpdate
      * @description Pending entries only; the original request digest never changes.
@@ -5206,6 +5586,12 @@ export interface components {
       code: string;
       /** Message */
       message: string;
+    };
+    /** FailureSummary */
+    FailureSummary: {
+      /** Code */
+      code: string;
+      message: components["schemas"]["Preview"];
     };
     /** Finding */
     Finding: {
@@ -5667,8 +6053,62 @@ export interface components {
     /** @enum {string} */
     ItemKind:
       "text_message" | "reasoning_message" | "tool_call" | "observation";
+    /** ItemPage */
+    ItemPage: {
+      /** Complete */
+      complete: boolean;
+      /** Items */
+      items: (
+        components["schemas"]["ItemSummary"] | components["schemas"]["Item"]
+      )[];
+      /** Next After */
+      next_after?: number | null;
+      /** Next Before */
+      next_before?: number | null;
+      run: components["schemas"]["RunSummary"];
+      /**
+       * View
+       * @enum {string}
+       */
+      view: "compact" | "detailed";
+    };
     /** @enum {string} */
     ItemState: "in_progress" | "completed" | "interrupted" | "failed";
+    /** ItemSummary */
+    ItemSummary: {
+      arguments: components["schemas"]["Preview"];
+      /** Ended At */
+      ended_at: string | null;
+      /** Id */
+      id: string;
+      kind: components["schemas"]["ItemKind"];
+      /**
+       * Omitted Sections
+       * @default [
+       *       "content",
+       *       "content_refs"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Ordinal */
+      ordinal: number;
+      result: components["schemas"]["Preview"];
+      /** Source Truncated */
+      source_truncated: boolean;
+      /** Source Truncated Fields */
+      source_truncated_fields: string[];
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      state: components["schemas"]["ItemState"];
+      text: components["schemas"]["Preview"];
+      /** Tool Call Id */
+      tool_call_id: string | null;
+      /** Tool Name */
+      tool_name: string | null;
+    };
     /** JsonPart */
     JsonPart: {
       /**
@@ -6416,6 +6856,21 @@ export interface components {
        */
       status: "ready" | "stale" | "unavailable";
     };
+    /** ModelCatalogPage */
+    ModelCatalogPage: {
+      /** Items */
+      items: (
+        | components["schemas"]["ModelSummary"]
+        | components["schemas"]["CatalogModel"]
+      )[];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ready" | "stale" | "unavailable";
+    };
     /** ModelConfig */
     "ModelConfig-Input": {
       characteristics?: components["schemas"]["HarnessModelCharacteristics-Input"];
@@ -6595,6 +7050,32 @@ export interface components {
       request_duration_seconds: number | null;
       /** Time To First Chunk Seconds */
       time_to_first_chunk_seconds: number | null;
+    };
+    /** ModelSummary */
+    ModelSummary: {
+      /** Capabilities */
+      capabilities: string[];
+      /** Context Window Tokens */
+      context_window_tokens: number | null;
+      /** Name */
+      name: string;
+      /**
+       * Omitted Sections
+       * @default [
+       *       "characteristics",
+       *       "pricing"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Pricing Available */
+      pricing_available: boolean;
+      ref: components["schemas"]["CatalogRef"];
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
     };
     /** ModelUpdate */
     ModelUpdate: {
@@ -7025,6 +7506,13 @@ export interface components {
     Preset: "execution" | "recovery" | "answer";
     /** @enum {string} */
     PresetKind: "composer" | "finding" | "memory_organizer";
+    /** Preview */
+    Preview: {
+      /** Text */
+      text: string;
+      /** Truncated */
+      truncated: boolean;
+    };
     /**
      * PriceComponent
      * @description One genai-prices usage dimension and its USD unit price.
@@ -7372,6 +7860,8 @@ export interface components {
        */
       search_name?: string;
     };
+    /** @enum {string} */
+    ReadView: "detailed" | "compact";
     /** Request */
     Request: {
       /** Mount */
@@ -7425,6 +7915,47 @@ export interface components {
        */
       status: "returned";
       value: components["schemas"]["JsonValue"];
+    };
+    /** RevisionSummary */
+    RevisionSummary: {
+      /** Agent Id */
+      agent_id: string;
+      config: components["schemas"]["ConfigSummary"];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Digest */
+      digest: string;
+      /** Id */
+      id: string;
+      /** Is Default */
+      is_default: boolean;
+      note: components["schemas"]["Preview"];
+      /** Number */
+      number: number;
+      /**
+       * Omitted Sections
+       * @default [
+       *       "config",
+       *       "note"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
+    };
+    /** RevisionSummaryPage */
+    RevisionSummaryPage: {
+      /** Items */
+      items: components["schemas"]["RevisionSummary"][];
+      /** Next Cursor */
+      next_cursor: string | null;
     };
     /** RevokedConnection */
     RevokedConnection: {
@@ -7483,6 +8014,37 @@ export interface components {
     RunAgent: {
       config: components["schemas"]["AgentConfig-Output"];
       revision: components["schemas"]["AgentRevision"];
+    };
+    /** RunAgentSummary */
+    RunAgentSummary: {
+      config: components["schemas"]["ConfigSummary"];
+      /** Connection Ids */
+      connection_ids: string[];
+      /**
+       * Omitted Sections
+       * @default [
+       *       "original",
+       *       "effective",
+       *       "overrides"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Overridden Paths */
+      overridden_paths: string[];
+      /** References Truncated */
+      references_truncated: boolean;
+      /** Revision Id */
+      revision_id: string;
+      /** Skill Ids */
+      skill_ids: string[];
+      /** Subagent Ids */
+      subagent_ids: string[];
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
     };
     /**
      * RunConfiguration
@@ -7601,6 +8163,96 @@ export interface components {
     /** @enum {string} */
     RunStatus:
       "accepted" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+    /** RunSummary */
+    RunSummary: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Name */
+      agent_name: string | null;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Attempts */
+      attempts: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Current Attempt Id */
+      current_attempt_id: string | null;
+      failure: components["schemas"]["FailureSummary"] | null;
+      /** Id */
+      id: string;
+      input: components["schemas"]["Preview"];
+      /**
+       * Lineage
+       * @enum {string}
+       */
+      lineage: "root" | "continue" | "fork";
+      /** Max Attempts */
+      max_attempts: number;
+      /**
+       * Omitted Sections
+       * @default [
+       *       "input",
+       *       "output",
+       *       "resume",
+       *       "pending",
+       *       "options",
+       *       "environment_mounts",
+       *       "memory_mounts",
+       *       "usage_at_seal",
+       *       "labels"
+       *     ]
+       */
+      omitted_sections?: string[];
+      output: components["schemas"]["Preview"];
+      /** Parent Run Id */
+      parent_run_id: string | null;
+      /** Principal Id */
+      principal_id: string;
+      /**
+       * Revision Selection
+       * @enum {string}
+       */
+      revision_selection: "pinned" | "default" | "inherited";
+      /** Sealed At */
+      sealed_at: string | null;
+      /** Session Id */
+      session_id: string;
+      /** Source Entry Id */
+      source_entry_id: string | null;
+      /** Started At */
+      started_at: string | null;
+      status: components["schemas"]["RunStatus"];
+      /** Thread Id */
+      thread_id: string;
+      trigger: components["schemas"]["Trigger"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      usage: components["schemas"]["Preview"];
+      /** Version */
+      version: number;
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
+      wait_reason: components["schemas"]["WaitReason"] | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** RunSummaryPage */
+    RunSummaryPage: {
+      /** Items */
+      items: components["schemas"]["RunSummary"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** RunUsage */
     RunUsage: {
       /** Models */
@@ -8178,6 +8830,16 @@ export interface components {
       };
     };
     /**
+     * SpanContentPage
+     * @description A matching span's selected content, or a continuation to keep locating that span.
+     */
+    SpanContentPage: {
+      /** Items */
+      items: components["schemas"]["TextRead"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /**
      * SpanEvent
      * @description Something the span recorded at one moment, such as an exception.
      */
@@ -8214,6 +8876,65 @@ export interface components {
       items: components["schemas"]["Span"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** SpanReadPage */
+    SpanReadPage: {
+      /** Items */
+      items: (
+        components["schemas"]["SpanSummary"] | components["schemas"]["Span"]
+      )[];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** SpanSummary */
+    SpanSummary: {
+      /** Cost Usd */
+      cost_usd: string | null;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /** Ended At */
+      ended_at: string | null;
+      error: components["schemas"]["Preview"];
+      /** Id */
+      id: string;
+      /** Kind */
+      kind: string;
+      model: components["schemas"]["Preview"];
+      name: components["schemas"]["Preview"];
+      /**
+       * Omitted Sections
+       * @default [
+       *       "input",
+       *       "output",
+       *       "attributes",
+       *       "resource_attributes",
+       *       "events",
+       *       "links",
+       *       "usage"
+       *     ]
+       */
+      omitted_sections?: string[];
+      /** Parent Id */
+      parent_id: string | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ok" | "error";
+      /** Trace Id */
+      trace_id: string;
+      usage: components["schemas"]["Preview"];
+      /**
+       * View
+       * @default compact
+       * @constant
+       */
+      view?: "compact";
     };
     /**
      * SubagentOverride
@@ -8471,6 +9192,46 @@ export interface components {
        * @enum {string}
        */
       type: "text";
+    };
+    /**
+     * TextRead
+     * @description A fragment of a versioned value, not a complete JSON object or writable configuration.
+     */
+    TextRead: {
+      /** Has More */
+      has_more: boolean;
+      /** Match Offset */
+      match_offset?: number | null;
+      /**
+       * Media Type
+       * @enum {string}
+       */
+      media_type: "text/plain" | "application/json";
+      /** Next Offset */
+      next_offset: number | null;
+      /** Offset */
+      offset: number;
+      /** Query */
+      query?: string | null;
+      /**
+       * Representation
+       * @default fragment
+       * @constant
+       */
+      representation?: "fragment";
+      /** Source */
+      source: string;
+      /**
+       * Source Truncated
+       * @default false
+       */
+      source_truncated?: boolean;
+      /** Text */
+      text: string;
+      /** Total Chars */
+      total_chars: number;
+      /** Version */
+      version: string;
     };
     /** ThreadPage */
     ThreadPage: {
@@ -9396,7 +10157,9 @@ export interface operations {
   list_revisions_api_v1_agents__agent_id__revisions_get: {
     parameters: {
       query?: {
-        limit?: number;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -9416,7 +10179,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["AgentRevisionPage"];
+          "application/json":
+            | components["schemas"]["AgentRevisionPage"]
+            | components["schemas"]["RevisionSummaryPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -9458,7 +10223,19 @@ export interface operations {
   };
   get_revision_api_v1_agents__agent_id__revisions__revision_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        section?: components["schemas"]["ConfigSection"] | null;
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -9477,7 +10254,74 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["AgentRevision"];
+          "application/json":
+            | components["schemas"]["AgentRevision"]
+            | components["schemas"]["RevisionSummary"]
+            | components["schemas"]["TextRead"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  compare_revisions_api_v1_agents__agent_id__revisions__revision_id__compare_get: {
+    parameters: {
+      query: {
+        base_revision_id: string;
+        section?:
+          | "all"
+          | "model"
+          | "model_settings"
+          | "model_characteristics"
+          | "instructions"
+          | "toolsets"
+          | "skills"
+          | "skill_sync"
+          | "connection_tools"
+          | "platform_tools"
+          | "tool_search"
+          | "builtin_skills"
+          | "client_tools"
+          | "user_questions"
+          | "subagent_mode"
+          | "subagents"
+          | "reviewer"
+          | "media_understanding"
+          | "plugins"
+          | "output_spec"
+          | "retries"
+          | "default_environment_template_id"
+          | "lazy_environment"
+          | "memory_mounts"
+          | "memory";
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+        revision_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -10166,6 +11010,77 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  define_connection_tools_api_v1_connections__connection_id__tools_definitions_get: {
+    parameters: {
+      query: {
+        /** @description Exact names; repeat name to select up to five definitions. */
+        name: string[];
+        offset?: number | null;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["Definitions"]
+            | components["schemas"]["TextRead"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  index_connection_tools_api_v1_connections__connection_id__tools_index_get: {
+    parameters: {
+      query?: {
+        /** @description Case-insensitive substring of full names and descriptions. */
+        query?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogIndex"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_providers_api_v1_connector_providers_get: {
     parameters: {
       query?: {
@@ -10365,6 +11280,79 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ConnectorActionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  define_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_definitions_get: {
+    parameters: {
+      query: {
+        /** @description Exact names; repeat name to select up to five definitions. */
+        name: string[];
+        offset?: number | null;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+        app: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["Definitions"]
+            | components["schemas"]["TextRead"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  index_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_index_get: {
+    parameters: {
+      query?: {
+        /** @description Case-insensitive substring of full names and descriptions. */
+        query?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+        app: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogIndex"];
         };
       };
       400: components["responses"]["Error"];
@@ -12403,6 +13391,20 @@ export interface operations {
         provider?: string | null;
         /** @description Exact, case-sensitive model ID within the catalog channel. */
         model?: string | null;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        /** @description Case-insensitive substring of full names and descriptions. */
+        query?: string | null;
+        capability?: string | null;
+        limit?: number | null;
+        cursor?: string | null;
+        section?: ("all" | "characteristics" | "pricing") | null;
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        text_limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
       };
       header?: never;
       path?: never;
@@ -12416,7 +13418,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ModelCatalog"];
+          "application/json":
+            | components["schemas"]["ModelCatalog"]
+            | components["schemas"]["ModelCatalogPage"]
+            | components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -13364,7 +14369,8 @@ export interface operations {
           | null;
         created_after?: string | null;
         created_before?: string | null;
-        limit?: number;
+        view?: "detailed" | "compact";
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -13382,7 +14388,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunPage"];
+          "application/json":
+            | components["schemas"]["RunPage"]
+            | components["schemas"]["RunSummaryPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -13391,7 +14399,32 @@ export interface operations {
   };
   get_run_api_v1_runs__run_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        section?:
+          | (
+              | "input"
+              | "output"
+              | "failure"
+              | "resume"
+              | "pending"
+              | "options"
+              | "environment_mounts"
+              | "memory_mounts"
+              | "usage_at_seal"
+              | "labels"
+            )
+          | null;
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -13409,7 +14442,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunView"];
+          "application/json":
+            | components["schemas"]["RunView"]
+            | components["schemas"]["RunSummary"]
+            | components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -13451,7 +14487,45 @@ export interface operations {
   };
   run_agent_api_v1_runs__run_id__agent_get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        section?: ("original" | "effective" | "overrides") | null;
+        part?:
+          | "all"
+          | "model"
+          | "model_settings"
+          | "model_characteristics"
+          | "instructions"
+          | "toolsets"
+          | "skills"
+          | "skill_sync"
+          | "connection_tools"
+          | "platform_tools"
+          | "tool_search"
+          | "builtin_skills"
+          | "client_tools"
+          | "user_questions"
+          | "subagent_mode"
+          | "subagents"
+          | "reviewer"
+          | "media_understanding"
+          | "plugins"
+          | "output_spec"
+          | "retries"
+          | "default_environment_template_id"
+          | "lazy_environment"
+          | "memory_mounts"
+          | "memory";
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -13469,7 +14543,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunAgent"];
+          "application/json":
+            | components["schemas"]["RunAgent"]
+            | components["schemas"]["RunAgentSummary"]
+            | components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -13534,7 +14611,12 @@ export interface operations {
   list_attempt_spans_api_v1_runs__run_id__attempts__attempt_id__trace_get: {
     parameters: {
       query?: {
-        limit?: number;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        status?: ("ok" | "error") | null;
+        kind?: string | null;
+        tool_name?: string | null;
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -13555,7 +14637,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SpanPage"];
+          "application/json":
+            | components["schemas"]["SpanPage"]
+            | components["schemas"]["SpanReadPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -13564,7 +14648,17 @@ export interface operations {
   };
   run_content_api_v1_runs__run_id__contents__content_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        offset?: number | null;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -13583,7 +14677,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunContent"];
+          "application/json":
+            | components["schemas"]["RunContent"]
+            | components["schemas"]["ContentSummary"]
+            | components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -13780,7 +14877,12 @@ export interface operations {
         before?: number | null;
         /** @description Return the items just after this ordinal */
         after?: number | null;
-        limit?: number;
+        limit?: number | null;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        kind?: components["schemas"]["ItemKind"] | null;
+        state?: components["schemas"]["ItemState"] | null;
+        tool_name?: string | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -13799,7 +14901,57 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunItems"];
+          "application/json":
+            | components["schemas"]["RunItems"]
+            | components["schemas"]["ItemPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_item_content_api_v1_runs__run_id__items__item_id__content_get: {
+    parameters: {
+      query: {
+        /** @description Ordinal returned with this item ID; both must match */
+        ordinal: number;
+        field?:
+          | "all"
+          | "text"
+          | "arguments"
+          | "result"
+          | "value"
+          | "result_parts"
+          | "metadata"
+          | "failure";
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        item_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -13810,6 +14962,9 @@ export interface operations {
     parameters: {
       query?: {
         cursor?: string | null;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        limit?: number | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -13828,7 +14983,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunPage"];
+          "application/json":
+            | components["schemas"]["RunPage"]
+            | components["schemas"]["RunSummaryPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -14929,7 +16086,10 @@ export interface operations {
     parameters: {
       query?: {
         status?: components["schemas"]["EntryStatus"][] | null;
-        limit?: number;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        kind?: ("message" | "child_result") | null;
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -14949,7 +16109,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EntryPage"];
+          "application/json":
+            | components["schemas"]["EntryPage"]
+            | components["schemas"]["EntrySummaryPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -15032,7 +16194,19 @@ export interface operations {
   };
   get_entry_api_v1_threads__thread_id__inbox__entry_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        section?: ("payload" | "options" | "failure") | null;
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -15051,7 +16225,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EntryView"];
+          "application/json":
+            | components["schemas"]["EntryView"]
+            | components["schemas"]["EntrySummary"]
+            | components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -15247,7 +16424,9 @@ export interface operations {
   list_thread_runs_api_v1_threads__thread_id__runs_get: {
     parameters: {
       query?: {
-        limit?: number;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -15267,7 +16446,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RunPage"];
+          "application/json":
+            | components["schemas"]["RunPage"]
+            | components["schemas"]["RunSummaryPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -15330,6 +16511,73 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  define_toolsets_api_v1_toolsets_definitions_get: {
+    parameters: {
+      query: {
+        /** @description Exact names; repeat name to select up to five definitions. */
+        name: string[];
+        offset?: number | null;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["Definitions"]
+            | components["schemas"]["TextRead"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  index_toolsets_api_v1_toolsets_index_get: {
+    parameters: {
+      query?: {
+        /** @description Case-insensitive substring of full names and descriptions. */
+        query?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogIndex"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_trace_backend_api_v1_trace_backend_get: {
     parameters: {
       query?: never;
@@ -15365,7 +16613,12 @@ export interface operations {
         attribute?: string[] | null;
         started_after?: string | null;
         started_before?: string | null;
-        limit?: number;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        status?: ("ok" | "error") | null;
+        kind?: string | null;
+        tool_name?: string | null;
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -15383,7 +16636,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SpanPage"];
+          "application/json":
+            | components["schemas"]["SpanPage"]
+            | components["schemas"]["SpanReadPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -15392,7 +16647,29 @@ export interface operations {
   };
   get_trace_api_v1_traces__trace_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        section?:
+          | (
+              | "input"
+              | "output"
+              | "attributes"
+              | "resource_attributes"
+              | "events"
+              | "links"
+              | "usage"
+            )
+          | null;
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -15410,7 +16687,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Span"];
+          "application/json":
+            | components["schemas"]["Span"]
+            | components["schemas"]["SpanSummary"]
+            | components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -15420,7 +16700,12 @@ export interface operations {
   list_trace_spans_api_v1_traces__trace_id__spans_get: {
     parameters: {
       query?: {
-        limit?: number;
+        /** @description Use compact for discovery; detailed preserves the original response. */
+        view?: components["schemas"]["ReadView"];
+        status?: ("ok" | "error") | null;
+        kind?: string | null;
+        tool_name?: string | null;
+        limit?: number | null;
         cursor?: string | null;
       };
       header?: {
@@ -15440,7 +16725,56 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SpanPage"];
+          "application/json":
+            | components["schemas"]["SpanPage"]
+            | components["schemas"]["SpanReadPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_span_content_api_v1_traces__trace_id__spans__span_id__content_get: {
+    parameters: {
+      query?: {
+        section?:
+          | "all"
+          | "input"
+          | "output"
+          | "attributes"
+          | "resource_attributes"
+          | "events"
+          | "links"
+          | "usage";
+        cursor?: string | null;
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+        /** @description Case-sensitive literal text search. */
+        query?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        trace_id: string;
+        span_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SpanContentPage"];
         };
       };
       400: components["responses"]["Error"];

@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import shlex
+from unittest.mock import AsyncMock
 
 import httpx2
 import pytest
@@ -101,6 +102,9 @@ def test_access_is_attach_only_and_revoke_does_not_depend_on_preview(fault, monk
             self.client = httpx2.AsyncClient(base_url=url, transport=httpx2.MockTransport(cloud.request))
 
         monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
+        from a13n_service.providers.environments.daytona.management import DaytonaManagement
+
+        monkeypatch.setattr(DaytonaManagement, "_check_envd", AsyncMock())
         async with await DAYTONA.open_provider(
             configuration=BACKENDS["daytona"], credential={"api_key": "unused"}
         ) as provider:

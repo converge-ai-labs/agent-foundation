@@ -2634,6 +2634,13 @@ export interface components {
             memory_max?: components["schemas"]["MemoryLimit"] | null;
             memory_events: components["schemas"]["MemoryEvents"];
             pressure: components["schemas"]["Pressures"];
+            /** Pids Current */
+            pids_current?: number | null;
+            /** Pids Limit */
+            pids_limit?: number | null;
+            /** Pids Unlimited */
+            pids_unlimited?: boolean | null;
+            io?: components["schemas"]["DiskMetrics"] | null;
         };
         /** ChangesPage */
         ChangesPage: {
@@ -2970,6 +2977,17 @@ export interface components {
             /** Candidate Digest */
             candidate_digest: string;
         };
+        /** ConnectionMetrics */
+        ConnectionMetrics: {
+            /** Tcp Total */
+            tcp_total?: number | null;
+            /** Tcp States */
+            tcp_states?: {
+                [key: string]: number;
+            };
+            /** Udp Sockets */
+            udp_sockets?: number | null;
+        };
         /**
          * ContentMetadata
          * @description Presentation and opaque Host references; never instructions or authority.
@@ -3098,6 +3116,19 @@ export interface components {
             softirq?: number | null;
             /** Steal */
             steal?: number | null;
+        };
+        /** DaemonMetrics */
+        DaemonMetrics: {
+            /** Sessions */
+            sessions: number;
+            /** Processes */
+            processes?: number | null;
+            /** Transfers */
+            transfers?: number | null;
+            /** Connections */
+            connections: number;
+            /** Retained Output Bytes */
+            retained_output_bytes?: number | null;
         };
         /** DecisionBatchView */
         DecisionBatchView: {
@@ -3235,6 +3266,38 @@ export interface components {
              * @enum {string}
              */
             mode: "disabled";
+        };
+        /** DiskIoMetrics */
+        DiskIoMetrics: {
+            /** Identity */
+            identity: string;
+            /** Read Bytes */
+            read_bytes?: number | null;
+            /** Written Bytes */
+            written_bytes?: number | null;
+            /** Read Operations */
+            read_operations?: number | null;
+            /** Write Operations */
+            write_operations?: number | null;
+            /** Read Time Ms */
+            read_time_ms?: number | null;
+            /** Write Time Ms */
+            write_time_ms?: number | null;
+            /** Busy Time Ms */
+            busy_time_ms?: number | null;
+            /** Weighted Time Ms */
+            weighted_time_ms?: number | null;
+            /** In Progress */
+            in_progress?: number | null;
+        };
+        /** DiskMetrics */
+        DiskMetrics: {
+            /** Devices */
+            devices?: {
+                [key: string]: components["schemas"]["DiskIoMetrics"];
+            };
+            /** Truncated */
+            truncated: boolean;
         };
         /** DraftSummary */
         DraftSummary: {
@@ -3424,6 +3487,11 @@ export interface components {
             sample?: components["schemas"]["MetricsSample"] | null;
             /** Sample Interval Ms */
             sample_interval_ms?: number | null;
+            /**
+             * Collection Interval Seconds
+             * @default 60
+             */
+            collection_interval_seconds?: number;
             /** Age Ms */
             age_ms?: number | null;
         };
@@ -3657,6 +3725,15 @@ export interface components {
             url: string;
             /** Expires At */
             expires_at: number;
+        };
+        /** FilesystemInventory */
+        FilesystemInventory: {
+            /** Filesystems */
+            filesystems?: {
+                [key: string]: components["schemas"]["FilesystemObservation"];
+            };
+            /** Truncated */
+            truncated: boolean;
         };
         /** FilesystemMetrics */
         FilesystemMetrics: {
@@ -3911,6 +3988,8 @@ export interface components {
             cpu_busy_percent?: components["schemas"]["Gauge"] | null;
             memory_used_bytes?: components["schemas"]["Gauge"] | null;
             cgroup_memory_bytes?: components["schemas"]["Gauge"] | null;
+            tcp_connections?: components["schemas"]["Gauge"] | null;
+            udp_sockets?: components["schemas"]["Gauge"] | null;
         };
         /**
          * ImageInputPolicy
@@ -4279,6 +4358,11 @@ export interface components {
             filesystems?: {
                 [key: string]: components["schemas"]["FilesystemObservation"];
             };
+            network?: components["schemas"]["NetworkMetrics"] | null;
+            disks?: components["schemas"]["DiskMetrics"] | null;
+            connections?: components["schemas"]["ConnectionMetrics"] | null;
+            daemon?: components["schemas"]["DaemonMetrics"] | null;
+            local_filesystems?: components["schemas"]["FilesystemInventory"] | null;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
@@ -4494,7 +4578,7 @@ export interface components {
             capacity?: number;
             /**
              * Retention Minutes
-             * @default 1440
+             * @default 60
              */
             retention_minutes?: number;
         };
@@ -4504,8 +4588,18 @@ export interface components {
             /** History */
             history: components["schemas"]["HistoryPoint"][];
             /**
+             * Resources
+             * @default []
+             */
+            resources?: components["schemas"]["ResourceHistory"][];
+            /**
+             * Omitted Rate Sources
+             * @default 0
+             */
+            omitted_rate_sources?: number;
+            /**
              * Retention Minutes
-             * @default 1440
+             * @default 60
              */
             retention_minutes?: number;
         };
@@ -4523,6 +4617,36 @@ export interface components {
              * @enum {string}
              */
             mode: "native";
+        };
+        /** NetworkInterfaceMetrics */
+        NetworkInterfaceMetrics: {
+            /** Identity */
+            identity: string;
+            /** Received Bytes */
+            received_bytes?: number | null;
+            /** Transmitted Bytes */
+            transmitted_bytes?: number | null;
+            /** Received Packets */
+            received_packets?: number | null;
+            /** Transmitted Packets */
+            transmitted_packets?: number | null;
+            /** Receive Errors */
+            receive_errors?: number | null;
+            /** Transmit Errors */
+            transmit_errors?: number | null;
+            /** Receive Drops */
+            receive_drops?: number | null;
+            /** Transmit Drops */
+            transmit_drops?: number | null;
+        };
+        /** NetworkMetrics */
+        NetworkMetrics: {
+            /** Interfaces */
+            interfaces?: {
+                [key: string]: components["schemas"]["NetworkInterfaceMetrics"];
+            };
+            /** Truncated */
+            truncated: boolean;
         };
         /** NotePage */
         NotePage: {
@@ -4913,6 +5037,17 @@ export interface components {
              */
             multi_select?: boolean;
         };
+        /** RatePoint */
+        RatePoint: {
+            /** Minute */
+            minute: number;
+            /** Segment */
+            segment: number;
+            /** Rates */
+            rates: {
+                [key: string]: components["schemas"]["Gauge"];
+            };
+        };
         /** ReasoningModeControl */
         ReasoningModeControl: {
             /** Supported */
@@ -4928,6 +5063,20 @@ export interface components {
          * @enum {string}
          */
         RequiredAction: "none" | "login" | "refresh" | "reauthenticate" | "switch_to_file";
+        /** ResourceHistory */
+        ResourceHistory: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "network" | "disk";
+            /** Name */
+            name: string;
+            /** Identity */
+            identity: string;
+            /** History */
+            history: components["schemas"]["RatePoint"][];
+        };
         ResourceId: string;
         /** ResourcePage */
         ResourcePage: {
@@ -5485,6 +5634,26 @@ export interface components {
             /** Memory Available Bytes */
             memory_available_bytes?: number | null;
             pressure?: components["schemas"]["Pressures"] | null;
+            /** Memory Wired Bytes */
+            memory_wired_bytes?: number | null;
+            /** Memory Compressed Bytes */
+            memory_compressed_bytes?: number | null;
+            /** Swap Used Bytes */
+            swap_used_bytes?: number | null;
+            /** Swap Total Bytes */
+            swap_total_bytes?: number | null;
+            /** Commit Total Bytes */
+            commit_total_bytes?: number | null;
+            /** Commit Limit Bytes */
+            commit_limit_bytes?: number | null;
+            /** Memory Cache Bytes */
+            memory_cache_bytes?: number | null;
+            /** Process Count */
+            process_count?: number | null;
+            /** Thread Count */
+            thread_count?: number | null;
+            /** Handle Count */
+            handle_count?: number | null;
         };
         /** TaskPage */
         TaskPage: {

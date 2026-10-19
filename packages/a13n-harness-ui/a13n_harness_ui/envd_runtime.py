@@ -58,6 +58,7 @@ class EnvdRuntimeManager:
         configuration: EnvdConfiguration | None = None,
     ) -> None:
         self.configuration = configuration
+        self.monitoring_interval_seconds = (configuration or EnvdConfiguration()).monitoring_interval_seconds
         self.settings = (
             settings
             if configuration is None
@@ -112,6 +113,22 @@ class EnvdRuntimeManager:
             {} if profile is None else profile.provider_configuration
         )
         adapter = LocalEnvdProjectConfiguration.model_validate({} if profile is None else profile.adapter_configuration)
+        if profile is None or profile.profile_id in {"environment-sandbox", "environment-envd", "environment-desktop"}:
+            monitoring = selected.launch.monitoring
+            if monitoring is not None:
+                selected = selected.model_copy(
+                    update={
+                        "launch": selected.launch.model_copy(
+                            update={
+                                "monitoring": monitoring.model_copy(
+                                    update={
+                                        "sample_interval_ms": self.monitoring_interval_seconds * 1000,
+                                    }
+                                ),
+                            }
+                        )
+                    }
+                )
         if selected.launch.computer_use:
             self.require_computer_use()
         roots = tuple(root.resolve(strict=True) for root in roots)

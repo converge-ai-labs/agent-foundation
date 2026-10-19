@@ -1,14 +1,12 @@
-"""Opt-in Daytona desktop acceptance; the test owns and deletes its sandbox."""
-
-# ruff: noqa: RUF001 -- Fullwidth punctuation exercises real Unicode keyboard input.
+"""Opt-in real Daytona EIP files, processes, Computer and stop/start acceptance."""
 
 import asyncio
 import os
 import secrets
 import shlex
-from pathlib import PurePosixPath
 
 import pytest
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.computer import (
     ComputerClick,
     ComputerDrag,
@@ -18,10 +16,9 @@ from a13n_harness.environment.computer import (
     ComputerTypeText,
 )
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.providers.environment.daytona.execution import DaytonaExecution
-from a13n_harness.providers.environment.daytona.shared import (
-    DaytonaConnectionConfiguration,
-)
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.daytona.http import HttpReference, http_execution
+from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.native.configuration import TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
@@ -29,7 +26,7 @@ from a13n_service.providers.environments.daytona.management import DaytonaManage
 
 pytestmark = [
     pytest.mark.anyio,
-    pytest.mark.skipif(os.environ.get("A13N_TEST_DAYTONA_DESKTOP") != "1", reason="Requires Daytona desktop opt-in"),
+    pytest.mark.skipif(os.environ.get("A13N_TEST_DAYTONA_DESKTOP") != "1", reason="Requires Daytona opt-in"),
 ]
 
 
@@ -38,63 +35,93 @@ def anyio_backend():
     return "asyncio"
 
 
-async def test_daytona_desktop_unicode_and_resume(tmp_path):
+async def test_daytona_envd_desktop_and_resume(tmp_path):
     try:
         runtime = NativeRuntime(
             DaytonaConnectionConfiguration.model_validate_json(os.environ["A13N_TEST_DAYTONA_BACKEND_JSON"]),
             TokenCredential.model_validate_json(os.environ["A13N_TEST_DAYTONA_CREDENTIAL_JSON"]),
         )
+        recipe = DaytonaRecipe(desktop=True, snapshot=os.environ["A13N_TEST_DAYTONA_SNAPSHOT"])
     except (KeyError, ValueError):
-        pytest.fail("Configure the Daytona test backend and credential JSON", pytrace=False)
-    recipe = DaytonaRecipe(desktop=True, snapshot=os.environ.get("A13N_TEST_DAYTONA_SNAPSHOT"))
-    identity = "env-daytona-desktop-" + secrets.token_hex(8)
+        pytest.fail("Configure the Daytona test backend, credential and Envd snapshot", pytrace=False)
+    identity = "env-daytona-envd-" + secrets.token_hex(8)
     management = DaytonaManagement(recipe, identity, None, runtime, "op-create")
     execution = None
+
+    def connect():
+        return http_execution(HttpReference(recipe, identity, management.state, runtime))
+
+    async def shell(script):
+        result = await execution.operations.shell.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="default", script=script),
+                output_policy=EnvironmentOutputPolicy(
+                    max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                ),
+            )
+        )
+        assert result.status.exit_code == 0
+        return (result.output.stdout.inline or b"").decode()
+
     try:
         await management.create()
         initial = management.state
-        assert initial is not None
-        execution = DaytonaExecution(recipe, identity, initial, runtime)
-        await execution.open(execution_id="exec-daytona-first")
+        execution = connect()
+        await execution.open(execution_id="exec-first")
+        files = execution.operations.files
+        await files.write_text("/workspace/persistence.txt", "Envd persistence", mode="create")
+        assert await shell("cat /workspace/persistence.txt") == "Envd persistence"
+        await files.write_text(
+            "/workspace/input.sh", "read line; printf '%s' \"$line\" > /workspace/input.txt; sleep 300", mode="create"
+        )
+        # A short fixture launch is separate from input: only Computer keys write input.txt.
+        target = await management.lookup()
+        assert target is not None
+        toolbox = await management.open_toolbox(target)
+        fixture = await toolbox.request(
+            "POST",
+            target.id + "/process/execute",
+            body={
+                "command": shlex.join(
+                    [
+                        "runuser",
+                        "-u",
+                        "sandbox",
+                        "--",
+                        "env",
+                        "DISPLAY=:99",
+                        "XAUTHORITY=/run/a13n-desktop/Xauthority",
+                        "sh",
+                        "-c",
+                        "nohup xterm -geometry 80x20+20+30 -T a13n-input -e bash /workspace/input.sh >/tmp/terminal.log 2>&1 </dev/null &",
+                    ]
+                ),
+                "timeout": 10,
+            },
+        )
+        assert fixture["exitCode"] == 0
+        async with asyncio.timeout(30):
+            while "a13n-input" not in await shell(
+                "env DISPLAY=:99 XAUTHORITY=/run/a13n-desktop/Xauthority xwininfo -root -tree"
+            ):
+                await asyncio.sleep(0.2)
         computer = execution.operations.computer
         assert computer is not None
-        root = PurePosixPath(recipe.root)
-        # The fixture launches a real terminal; only Computer input writes its output.
-        fixture = f"cat > {shlex.quote(str(root / 'desktop-input.txt'))}; sleep 300"
-        await execution.execute(
-            [
-                "sh",
-                "-c",
-                "nohup env DISPLAY=:0 LC_ALL=C.UTF-8 xfce4-terminal --disable-server --geometry=100x25+20+30 --title=a13n-desktop-acceptance "
-                + "--command="
-                + shlex.quote("sh -c " + shlex.quote(fixture))
-                + " >/tmp/a13n-desktop-acceptance.log 2>&1 </dev/null &",
-            ],
-            30,
-        )
-        assert execution.toolbox is not None
-        async with asyncio.timeout(30):
-            while True:
-                windows = await execution.toolbox.request(
-                    "GET", execution.target.target_id + "/computeruse/display/windows"
-                )
-                assert isinstance(windows, dict)
-                window = next((w for w in windows["windows"] if w.get("title") == "a13n-desktop-acceptance"), None)
-                if window is not None:
-                    break
-                await asyncio.sleep(0.2)
         screen = await computer.observe()
-        # The fixture explicitly positions its 100x25 terminal at +20+30.
-        # Daytona window metadata may report 1x1 for a visible terminal.
-        point = ComputerPoint(x=200, y=200)
-        await computer.execute(ComputerClick(observation=screen.observation, point=point))
-        text = "中文输入验证：你好，世界！\r\n\r\n第二行：Daytona 123\r第三行：换行成功。\n"
-        await computer.execute(ComputerTypeText(text=text))
-        await computer.execute(ComputerPressKeys(keys=("ctrl", "d")))
-        expected = text.replace("\r\n", "\n").replace("\r", "\n")
-        (tmp_path / "daytona-desktop.jpg").write_bytes((await computer.observe()).data)
-        actual = (await execution.operations.files.read_text("/desktop-input.txt")).text
-        assert actual == expected
+        point = ComputerPoint(x=150, y=150)
+        for request in (
+            ComputerClick(observation=screen.observation, point=point),
+            ComputerPressKeys(keys=("a",)),
+            ComputerPressKeys(keys=("enter",)),
+        ):
+            assert (await computer.execute(request)).effect == "executed"
+        async with asyncio.timeout(10):
+            while "input.txt" not in await shell("ls /workspace"):
+                await asyncio.sleep(0.2)
+        assert (await files.read_text("/workspace/input.txt")).text == "a"
+        with pytest.raises(EnvironmentError) as unsupported:
+            await computer.execute(ComputerTypeText(text="中文\nline two"))
+        assert unsupported.value.code == "environment_unsupported"
         scaled = await computer.observe(max_dimension=640)
         await computer.execute(
             ComputerDrag(
@@ -107,18 +134,18 @@ async def test_daytona_desktop_unicode_and_resume(tmp_path):
         await computer.execute(
             ComputerScroll(observation=scaled.observation, point=ComputerPoint(x=40, y=40), delta_y=1, unit="steps")
         )
+        (tmp_path / "daytona-envd.png").write_bytes((await computer.observe()).data)
         await execution.close()
         execution = None
         await management.stop()
         assert await management.inspect() == "stopped"
         await management.start()
         assert management.state == initial
-        execution = DaytonaExecution(recipe, identity, initial, runtime)
-        await execution.open(execution_id="exec-daytona-resumed")
-        assert (await execution.operations.files.read_text("/desktop-input.txt")).text == expected
+        execution = connect()
+        await execution.open(execution_id="exec-resumed")
+        assert (await execution.operations.files.read_text("/workspace/persistence.txt")).text == "Envd persistence"
         computer = execution.operations.computer
-        assert computer is not None
-        assert (await computer.describe()).input_ready
+        assert computer is not None and (await computer.describe()).input_ready
         with pytest.raises(EnvironmentError):
             await computer.execute(ComputerClick(observation=screen.observation, point=point))
     finally:
@@ -127,7 +154,6 @@ async def test_daytona_desktop_unicode_and_resume(tmp_path):
                 await execution.close()
         finally:
             try:
-                # Reconcile by the owned name even if create lost its response.
                 await management.destroy()
             finally:
                 await management.close()

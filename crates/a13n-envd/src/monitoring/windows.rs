@@ -234,6 +234,17 @@ impl SystemCollector {
         };
         let memory = (unsafe { GlobalMemoryStatusEx(&mut memory) } != 0).then_some(memory);
         let count = unsafe { GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) };
+        use windows_sys::Win32::System::ProcessStatus::{
+            GetPerformanceInfo, PERFORMANCE_INFORMATION,
+        };
+        let mut performance = PERFORMANCE_INFORMATION::default();
+        let performance = (unsafe {
+            GetPerformanceInfo(
+                &mut performance,
+                size_of::<PERFORMANCE_INFORMATION>() as u32,
+            )
+        } != 0)
+            .then_some(performance);
         SystemMetrics {
             cpu_busy_percent,
             cpu_time_seconds: current.map(Cpu::seconds),
@@ -241,6 +252,22 @@ impl SystemCollector {
             memory_total_bytes: memory.as_ref().map(|m| m.ullTotalPhys),
             memory_available_bytes: memory.as_ref().map(|m| m.ullAvailPhys),
             pressure: None,
+            memory_wired_bytes: None,
+            memory_compressed_bytes: None,
+            swap_used_bytes: None,
+            swap_total_bytes: None,
+            commit_total_bytes: performance
+                .as_ref()
+                .and_then(|p| (p.CommitTotal as u64).checked_mul(p.PageSize as u64)),
+            commit_limit_bytes: performance
+                .as_ref()
+                .and_then(|p| (p.CommitLimit as u64).checked_mul(p.PageSize as u64)),
+            memory_cache_bytes: performance
+                .as_ref()
+                .and_then(|p| (p.SystemCache as u64).checked_mul(p.PageSize as u64)),
+            process_count: performance.as_ref().map(|p| u64::from(p.ProcessCount)),
+            thread_count: performance.as_ref().map(|p| u64::from(p.ThreadCount)),
+            handle_count: performance.as_ref().map(|p| u64::from(p.HandleCount)),
         }
     }
 }
@@ -329,4 +356,305 @@ mod tests {
         assert_eq!(Cpu { count: 16, ..next }.percent(first), None);
         assert_eq!(first.percent(first), None);
     }
+}
+
+use crate::eip::{
+    ConnectionMetrics, DiskIoMetrics, DiskMetrics, FilesystemInventory, FilesystemObservation,
+    NetworkInterfaceMetrics, NetworkMetrics,
+};
+use std::collections::BTreeMap;
+use windows_sys::Win32::NetworkManagement::IpHelper::*;
+use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6};
+
+pub(super) fn network() -> Option<NetworkMetrics> {
+    let mut table = ptr::null_mut();
+    // SAFETY: the API allocates its table; FreeMibTable releases it after copying bounded rows.
+    if unsafe { GetIfTable2(&mut table) } != 0 {
+        return None;
+    }
+    let count = unsafe { (*table).NumEntries as usize };
+    let rows = unsafe { std::slice::from_raw_parts((*table).Table.as_ptr(), count.min(64)) };
+    let mut interfaces = BTreeMap::new();
+    for row in rows {
+        let id = unsafe { row.InterfaceLuid.Value }.to_string();
+        interfaces.insert(
+            row.InterfaceIndex.to_string(),
+            NetworkInterfaceMetrics {
+                identity: id,
+                received_bytes: Some(row.InOctets),
+                transmitted_bytes: Some(row.OutOctets),
+                received_packets: row.InUcastPkts.checked_add(row.InNUcastPkts),
+                transmitted_packets: row.OutUcastPkts.checked_add(row.OutNUcastPkts),
+                receive_errors: Some(row.InErrors),
+                transmit_errors: Some(row.OutErrors),
+                receive_drops: Some(row.InDiscards),
+                transmit_drops: Some(row.OutDiscards),
+            },
+        );
+    }
+    unsafe {
+        FreeMibTable(table.cast());
+    }
+    Some(NetworkMetrics {
+        interfaces,
+        truncated: count > 64,
+    })
+}
+
+fn tcp_counts() -> Option<BTreeMap<String, u64>> {
+    let mut states = BTreeMap::new();
+    // Bound native table allocation, then immediately discard addresses and owners.
+    macro_rules! collect {
+        ($api:ident, $table:ty, $row:ty, $state:ident) => {{
+            let mut size = 0;
+            unsafe {
+                $api(ptr::null_mut(), &mut size, 0);
+            }
+            if size == 0 || size > 4 * 1024 * 1024 {
+                return None;
+            }
+            let mut bytes = vec![0_u64; (size as usize).div_ceil(8)];
+            if unsafe { $api(bytes.as_mut_ptr().cast(), &mut size, 0) } != 0 {
+                return None;
+            }
+            let table = bytes.as_ptr().cast::<$table>();
+            let count = unsafe { (*table).dwNumEntries } as usize;
+            let offset = std::mem::offset_of!($table, table);
+            if offset + count * size_of::<$row>() > size as usize {
+                return None;
+            }
+            let rows = unsafe { std::slice::from_raw_parts((*table).table.as_ptr(), count) };
+            for row in rows {
+                let name = match row.$state {
+                    1 => "closed",
+                    2 => "listen",
+                    3 => "syn_sent",
+                    4 => "syn_received",
+                    5 => "established",
+                    6 => "fin_wait_1",
+                    7 => "fin_wait_2",
+                    8 => "close_wait",
+                    9 => "closing",
+                    10 => "last_ack",
+                    11 => "time_wait",
+                    12 => "delete_tcb",
+                    _ => "unknown",
+                };
+                *states.entry(name.to_owned()).or_insert(0) += 1;
+            }
+        }};
+    }
+    collect!(GetTcpTable2, MIB_TCPTABLE2, MIB_TCPROW2, dwState);
+    collect!(GetTcp6Table2, MIB_TCP6TABLE2, MIB_TCP6ROW2, State);
+    Some(states)
+}
+
+pub(super) fn connections() -> Option<ConnectionMetrics> {
+    let tcp = tcp_counts();
+    let udp = [AF_INET, AF_INET6]
+        .into_iter()
+        .try_fold(0_u64, |sum, family| {
+            let mut stats = MIB_UDPSTATS::default();
+            (unsafe { GetUdpStatisticsEx(&mut stats, u32::from(family)) } == 0)
+                .then(|| sum + u64::from(stats.dwNumAddrs))
+        });
+    if tcp.is_none() && udp.is_none() {
+        return None;
+    }
+    Some(ConnectionMetrics {
+        tcp_total: tcp.as_ref().map(|s| s.values().sum()),
+        tcp_states: tcp.unwrap_or_default(),
+        udp_sockets: udp,
+    })
+}
+
+pub(super) fn local_filesystems() -> Option<FilesystemInventory> {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FindFirstVolumeW, FindNextVolumeW, FindVolumeClose, GetDriveTypeW,
+        GetVolumePathNamesForVolumeNameW,
+    };
+    let mut buffer = [0_u16; 1024];
+    let handle = unsafe { FindFirstVolumeW(buffer.as_mut_ptr(), buffer.len() as u32) };
+    if handle == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut filesystems = BTreeMap::new();
+    let mut truncated = false;
+    loop {
+        // DRIVE_FIXED and DRIVE_REMOVABLE; exclude remote, optical and RAM drives.
+        if matches!(unsafe { GetDriveTypeW(buffer.as_ptr()) }, 2 | 3) {
+            if filesystems.len() == 16 {
+                truncated = true;
+                break;
+            }
+            let volume = String::from_utf16_lossy(
+                &buffer[..buffer.iter().position(|v| *v == 0).unwrap_or(buffer.len())],
+            );
+            let mut paths = vec![0_u16; 32768];
+            let mut required = 0;
+            let metrics = if unsafe {
+                GetVolumePathNamesForVolumeNameW(
+                    buffer.as_ptr(),
+                    paths.as_mut_ptr(),
+                    paths.len() as u32,
+                    &mut required,
+                )
+            } != 0
+            {
+                let length = paths.iter().position(|v| *v == 0).unwrap_or(paths.len());
+                (length > 0)
+                    .then(|| String::from_utf16_lossy(&paths[..length]))
+                    .and_then(|path| filesystem(Path::new(&path)))
+            } else {
+                None
+            };
+            filesystems.insert(
+                volume
+                    .trim_start_matches("\\\\?\\")
+                    .trim_end_matches('\\')
+                    .to_owned(),
+                FilesystemObservation { metrics },
+            );
+        }
+        if unsafe { FindNextVolumeW(handle, buffer.as_mut_ptr(), buffer.len() as u32) } == 0 {
+            break;
+        }
+    }
+    unsafe {
+        FindVolumeClose(handle);
+    }
+    Some(FilesystemInventory {
+        filesystems,
+        truncated,
+    })
+}
+
+struct DiskQuery(windows_sys::Win32::System::Performance::PDH_HQUERY);
+impl Drop for DiskQuery {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::System::Performance::PdhCloseQuery(self.0);
+        }
+    }
+}
+
+pub(super) fn disks() -> Option<DiskMetrics> {
+    use windows_sys::Win32::System::Performance::*;
+    let mut query = ptr::null_mut();
+    if unsafe { PdhOpenQueryW(ptr::null(), 0, &mut query) } != 0 {
+        return None;
+    }
+    let query = DiskQuery(query);
+    let mut counters = Vec::new();
+    for (field, name) in [
+        "Disk Read Bytes/sec",
+        "Disk Write Bytes/sec",
+        "Disk Reads/sec",
+        "Disk Writes/sec",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let path = wide(std::ffi::OsStr::new(&format!(r"\PhysicalDisk(*)\{name}")))?;
+        let mut counter = ptr::null_mut();
+        if unsafe { PdhAddEnglishCounterW(query.0, path.as_ptr(), 0, &mut counter) } == 0 {
+            counters.push((field, counter));
+        }
+    }
+    if counters.is_empty() || unsafe { PdhCollectQueryData(query.0) } != 0 {
+        return None;
+    }
+    let mut devices = BTreeMap::new();
+    let mut truncated = false;
+    for (field, counter) in counters {
+        let mut size = 0;
+        unsafe {
+            PdhGetCounterInfoW(counter, false, &mut size, ptr::null_mut());
+        }
+        if size < size_of::<PDH_COUNTER_INFO_W>() as u32 || size > 64 * 1024 {
+            continue;
+        }
+        let mut info = vec![0_u64; (size as usize).div_ceil(8)];
+        if unsafe { PdhGetCounterInfoW(counter, false, &mut size, info.as_mut_ptr().cast()) } != 0 {
+            continue;
+        }
+        let kind = unsafe { (*info.as_ptr().cast::<PDH_COUNTER_INFO_W>()).dwType };
+        // Winperf PERF_COUNTER_COUNTER (DWORD) and PERF_COUNTER_BULK_COUNT (LARGE).
+        // These /sec counters' raw FirstValue is the cumulative event/byte count.
+        if !matches!(kind, 0x10410400 | 0x10410500) {
+            continue;
+        }
+        let (mut bytes, mut count) = (0, 0);
+        unsafe {
+            PdhGetRawCounterArrayW(counter, &mut bytes, &mut count, ptr::null_mut());
+        }
+        if bytes == 0 || bytes > 4 * 1024 * 1024 {
+            continue;
+        }
+        let mut buffer = vec![0_u64; (bytes as usize).div_ceil(8)];
+        if unsafe {
+            PdhGetRawCounterArrayW(counter, &mut bytes, &mut count, buffer.as_mut_ptr().cast())
+        } != 0
+        {
+            continue;
+        }
+        if count as usize * size_of::<PDH_RAW_COUNTER_ITEM_W>() > bytes as usize {
+            continue;
+        }
+        let rows = unsafe {
+            std::slice::from_raw_parts(
+                buffer.as_ptr().cast::<PDH_RAW_COUNTER_ITEM_W>(),
+                count as usize,
+            )
+        };
+        for row in rows {
+            if !matches!(row.RawValue.CStatus, 0 | 1) || row.szName.is_null() {
+                continue;
+            }
+            // Native item names live inside the caller-owned buffer. Retain only the physical disk number.
+            let start = row.szName as usize;
+            let end = buffer.as_ptr() as usize + bytes as usize;
+            if start < buffer.as_ptr() as usize || start >= end || start % 2 != 0 {
+                continue;
+            }
+            let name = unsafe { std::slice::from_raw_parts(row.szName, (end - start) / 2) };
+            let Some(len) = name.iter().position(|c| *c == 0) else {
+                continue;
+            };
+            let name = String::from_utf16_lossy(&name[..len]);
+            let Some(id) = name
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            let id = id.to_string();
+            if devices.len() == 64 && !devices.contains_key(&id) {
+                truncated = true;
+                continue;
+            }
+            let v = devices.entry(id.clone()).or_insert_with(|| DiskIoMetrics {
+                identity: id,
+                read_bytes: None,
+                written_bytes: None,
+                read_operations: None,
+                write_operations: None,
+                read_time_ms: None,
+                write_time_ms: None,
+                busy_time_ms: None,
+                weighted_time_ms: None,
+                in_progress: None,
+            });
+            let value = u64::try_from(row.RawValue.FirstValue).ok();
+            match field {
+                0 => v.read_bytes = value,
+                1 => v.written_bytes = value,
+                2 => v.read_operations = value,
+                _ => v.write_operations = value,
+            }
+        }
+    }
+    Some(DiskMetrics { devices, truncated })
 }

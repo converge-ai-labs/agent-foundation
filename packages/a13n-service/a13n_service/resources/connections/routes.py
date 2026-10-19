@@ -8,9 +8,11 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from a13n_service.infra import reads
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.tools import mcp_catalog
+from a13n_service.resources import catalog_reads
 from a13n_service.resources.connections import authorization, discovery, service
 from a13n_service.resources.connections.authorization import CALLBACK_PATH, Callback, callback_url, flow_cookie
 from a13n_service.resources.connections.schemas import (
@@ -257,3 +259,53 @@ async def revoke_connection(
         settings=runtime.settings,
     )
     return tagged(response, result)
+
+
+@router.get(
+    "/connections/{connection_id}/tools/index",
+    response_model=catalog_reads.CatalogIndex,
+    openapi_extra=platform_operation("connections", "read"),
+)
+async def index_connection_tools(
+    workspace_id: WorkspaceId,
+    connection_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    query: reads.IndexQuery = None,
+    limit: PageLimit = 10,
+    cursor: str | None = None,
+) -> catalog_reads.CatalogIndex:
+    """Search full names and descriptions; definitions are read separately by exact name."""
+    values = await list_tools(workspace_id, connection_id, actor, runtime)
+    return catalog_reads.index(
+        values.items, scope=f"/connections/{connection_id}/tools", query=query, limit=limit, cursor=cursor
+    )
+
+
+@router.get(
+    "/connections/{connection_id}/tools/definitions",
+    response_model=reads.Definitions | reads.TextRead,
+    openapi_extra=platform_operation("connections", "read"),
+)
+async def define_connection_tools(
+    workspace_id: WorkspaceId,
+    connection_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    name: reads.Names,
+    offset: Annotated[int | None, Query(ge=0)] = None,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> reads.Definitions | reads.TextRead:
+    """Read up to five exact definitions. Oversized values provide a versioned fragment reference."""
+    values = await list_tools(workspace_id, connection_id, actor, runtime)
+    return reads.definitions(
+        {value.name: value for value in values.items},
+        name,
+        source=f"/connections/{connection_id}/tools/definitions",
+        offset=offset,
+        limit=limit,
+        version=version,
+        query=query,
+    )

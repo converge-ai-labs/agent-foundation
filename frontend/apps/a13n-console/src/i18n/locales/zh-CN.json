@@ -2465,5 +2465,7 @@
   "Enter an operator-built template with a13n-envd preinstalled.": "填写预装 a13n-envd 的自建模板。",
   "Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.": "选择原生 E2B 文件与 Shell，或通过认证 HTTP EIP 连接预装 a13n-envd 的模板。",
   "Require Computer operations from a13n-envd. Requires envd_http and a compatible template.": "使用 a13n-envd 提供 Computer 操作，需要 envd_http 和兼容模板。",
-  "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.": "通过 Envd 截图、操作鼠标和物理按键。Linux 暂不支持文字输入。"
+  "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.": "通过 Envd 截图、操作鼠标和物理按键。Linux 暂不支持文字输入。",
+  "Operator-built snapshot containing a compatible a13n-envd; all Agent operations use EIP.": "预装兼容 a13n-envd 的自定义 snapshot；所有 Agent 操作通过 EIP 执行。",
+  "Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately.": "使用 snapshot 内的共用 X11 桌面开启 Envd Computer Use。人工访问需单独配置。"
 }

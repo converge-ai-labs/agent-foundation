@@ -1,14 +1,29 @@
 """The runs HTTP surface: sessions and their stream, threads, their inbox and stream, and runs."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
+from a13n_stream_protocol.display import ItemKind, ItemState
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
+from a13n_service.infra import reads
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
-from a13n_service.runs import archive, authors, entries, resume, runs, sessions, stream, submit, threads
+from a13n_service.resources.agents import read_views as agent_reads
+from a13n_service.runs import (
+    archive,
+    authors,
+    entries,
+    item_reads,
+    read_views,
+    resume,
+    runs,
+    sessions,
+    stream,
+    submit,
+    threads,
+)
 from a13n_service.runs import thread_stream as thread_streams
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
@@ -206,17 +221,24 @@ async def archive_thread(
     return tagged(response, result)
 
 
-@router.get("/threads/{thread_id}/runs", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
+@router.get(
+    "/threads/{thread_id}/runs",
+    response_model=RunPage | read_views.RunSummaryPage,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def list_thread_runs(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     thread_id: str,
     actor: Actor,
-    limit: PageLimit = 50,
+    view: reads.View = "detailed",
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
-) -> RunPage:
+) -> RunPage | read_views.RunSummaryPage:
     """Newest first."""
-    return await runs.list_thread_runs(runtime.storage, actor, workspace_id, thread_id, limit=limit, cursor=cursor)
+    return await runs.list_thread_runs(
+        runtime.storage, actor, workspace_id, thread_id, limit=reads.page_limit(view, limit), cursor=cursor, view=view
+    )
 
 
 @router.get(
@@ -254,7 +276,9 @@ async def thread_stream(
 
 
 @router.get(
-    "/threads/{thread_id}/inbox", response_model=EntryPage, openapi_extra=platform_operation("execution", "read")
+    "/threads/{thread_id}/inbox",
+    response_model=EntryPage | read_views.EntrySummaryPage,
+    openapi_extra=platform_operation("execution", "read"),
 )
 async def list_inbox(
     runtime: CurrentRuntime,
@@ -262,12 +286,22 @@ async def list_inbox(
     thread_id: str,
     actor: Actor,
     status: Annotated[list[EntryStatus] | None, Query()] = None,
-    limit: PageLimit = 50,
+    view: reads.View = "detailed",
+    kind: Literal["message", "child_result"] | None = None,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
-) -> EntryPage:
+) -> EntryPage | read_views.EntrySummaryPage:
     """In inbox order."""
     return await entries.list_entries(
-        runtime.storage, actor, workspace_id, thread_id, status=status or [], limit=limit, cursor=cursor
+        runtime.storage,
+        actor,
+        workspace_id,
+        thread_id,
+        status=status or [],
+        limit=reads.page_limit(view, limit),
+        cursor=cursor,
+        view=view,
+        kind=kind,
     )
 
 
@@ -295,14 +329,36 @@ async def submit_message(
 
 @router.get(
     "/threads/{thread_id}/inbox/{entry_id}",
-    response_model=EntryView,
+    response_model=EntryView | read_views.EntrySummary | reads.TextRead,
     openapi_extra=platform_operation("execution", "read"),
 )
 async def get_entry(
-    runtime: CurrentRuntime, workspace_id: WorkspaceId, thread_id: str, entry_id: str, actor: Actor
-) -> EntryView:
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    entry_id: str,
+    actor: Actor,
+    view: reads.View = "detailed",
+    section: Literal["payload", "options", "failure"] | None = None,
+    offset: reads.Offset = 0,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> EntryView | read_views.EntrySummary | reads.TextRead:
     """One entry and its disposition; edits name the thread's ETag."""
-    return await entries.get_entry(runtime.storage, actor, workspace_id, thread_id, entry_id)
+    value = await entries.get_entry(runtime.storage, actor, workspace_id, thread_id, entry_id)
+    if section is not None:
+        return reads.read_value(
+            getattr(value, section),
+            source=f"inbox/{entry_id}/{section}",
+            offset=offset,
+            limit=limit,
+            version=version,
+            query=query,
+        )
+    if offset or version or query:
+        raise invalid("section", "Select a section for fragment or search parameters")
+    return read_views.entry_summary(value) if view == "compact" else value
 
 
 @router.patch("/threads/{thread_id}/inbox/{entry_id}", response_model=Submitted)
@@ -354,18 +410,58 @@ async def reorder_inbox(
 # Runs
 
 
-@router.get("/runs", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
+@router.get(
+    "/runs", response_model=RunPage | read_views.RunSummaryPage, openapi_extra=platform_operation("execution", "read")
+)
 async def list_runs(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[RunQuery, Query()]
-) -> RunPage:
+) -> RunPage | read_views.RunSummaryPage:
     return await runs.list_runs(runtime.storage, actor, workspace_id, query)
 
 
-@router.get("/runs/{run_id}", response_model=RunView, openapi_extra=platform_operation("execution", "read"))
+@router.get(
+    "/runs/{run_id}",
+    response_model=RunView | read_views.RunSummary | reads.TextRead,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def get_run(
-    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, run_id: str, actor: Actor
-) -> RunView:
-    return tagged(response, await runs.get(runtime.storage, actor, workspace_id, run_id))
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    actor: Actor,
+    view: reads.View = "detailed",
+    section: Literal[
+        "input",
+        "output",
+        "failure",
+        "resume",
+        "pending",
+        "options",
+        "environment_mounts",
+        "memory_mounts",
+        "usage_at_seal",
+        "labels",
+    ]
+    | None = None,
+    offset: reads.Offset = 0,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> RunView | read_views.RunSummary | reads.TextRead:
+    value = tagged(response, await runs.get(runtime.storage, actor, workspace_id, run_id))
+    if section is not None:
+        return reads.read_value(
+            getattr(value, section),
+            source=f"runs/{run_id}/{section}",
+            offset=offset,
+            limit=limit,
+            version=version,
+            query=query,
+        )
+    if offset or version or query:
+        raise invalid("section", "Select a section for fragment or search parameters")
+    return await runs.compact_view(runtime.storage, value) if view == "compact" else value
 
 
 @router.patch("/runs/{run_id}", response_model=RunView)
@@ -430,7 +526,11 @@ async def resume_run(
     return tagged(response, successor)
 
 
-@router.get("/runs/{run_id}/items", response_model=RunItems, openapi_extra=platform_operation("execution", "read"))
+@router.get(
+    "/runs/{run_id}/items",
+    response_model=RunItems | item_reads.ItemPage,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def run_items(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -438,30 +538,106 @@ async def run_items(
     actor: Actor,
     before: Annotated[int | None, Query(ge=1, description="Return the items just before this ordinal")] = None,
     after: Annotated[int | None, Query(ge=0, description="Return the items just after this ordinal")] = None,
-    limit: Annotated[int, Query(ge=1, le=500)] = runs.NEWEST_ITEMS,
-) -> RunItems:
-    """A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose
-    items live output can still change; `before` and `after` page from an ordinal and exclude each other."""
-    return await runs.items(runtime, actor, workspace_id, run_id, before=before, after=after, limit=limit)
+    limit: Annotated[int | None, Query(ge=1, le=500)] = None,
+    view: reads.View = "detailed",
+    kind: ItemKind | None = None,
+    state: ItemState | None = None,
+    tool_name: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+) -> RunItems | item_reads.ItemPage:
+    """A run's committed display items by ordinal. Detailed unfiltered reads default to the newest items and full tail.
+    Compact or filtered reads start at the oldest ordinal and strictly honor limit. Use exclusive before/after
+    positions, then follow next_before/next_after even when a filtered page is empty."""
+    if view == "compact" or any((kind, state, tool_name)):
+        return await item_reads.list_items(
+            runtime,
+            actor,
+            workspace_id,
+            run_id,
+            view=view,
+            before=before,
+            after=after,
+            limit=reads.page_limit(view, limit, runs.NEWEST_ITEMS),
+            kind=kind,
+            state=state,
+            tool_name=tool_name,
+        )
+    return await runs.items(
+        runtime,
+        actor,
+        workspace_id,
+        run_id,
+        before=before,
+        after=after,
+        limit=reads.page_limit(view, limit, runs.NEWEST_ITEMS),
+    )
 
 
-@router.get("/runs/{run_id}/agent", response_model=RunAgent, openapi_extra=platform_operation("execution", "read"))
-async def run_agent(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> RunAgent:
-    """The agent configuration the run executes: its revision with the run's override applied."""
-    return await runs.agent(runtime.storage, actor, workspace_id, run_id)
+@router.get(
+    "/runs/{run_id}/agent",
+    response_model=RunAgent | agent_reads.RunAgentSummary | reads.TextRead,
+    openapi_extra=platform_operation("execution", "read"),
+)
+async def run_agent(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    actor: Actor,
+    view: reads.View = "detailed",
+    section: Literal["original", "effective", "overrides"] | None = None,
+    part: agent_reads.ConfigSection = "all",
+    offset: reads.Offset = 0,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> RunAgent | agent_reads.RunAgentSummary | reads.TextRead:
+    """The frozen revision and effective configuration. Section reads are versioned fragments, never writable configs."""
+    value = await runs.agent(runtime.storage, actor, workspace_id, run_id)
+    if section is not None:
+        if section == "overrides":
+            if part != "all":
+                raise invalid("part", "overrides reads use part=all")
+            run = await runs.get(runtime.storage, actor, workspace_id, run_id)
+            selected = run.options.overrides
+        else:
+            selected = agent_reads.config_section(
+                value.revision.config if section == "original" else value.config, part
+            )
+        return reads.read_value(
+            selected,
+            source=f"runs/{run_id}/agent/{section}/{part}",
+            offset=offset,
+            limit=limit,
+            version=version,
+            query=query,
+        )
+    if part != "all" or offset or version or query:
+        raise invalid("section", "Select original, effective or overrides for a partial read")
+    return agent_reads.run_agent_summary(value.revision, value.config) if view == "compact" else value
 
 
-@router.get("/runs/{run_id}/lineage", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
+@router.get(
+    "/runs/{run_id}/lineage",
+    response_model=RunPage | read_views.RunSummaryPage,
+    openapi_extra=platform_operation("execution", "read"),
+)
 async def run_lineage(
-    runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor, cursor: str | None = None
-) -> RunPage:
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    actor: Actor,
+    cursor: str | None = None,
+    view: reads.View = "detailed",
+    limit: Annotated[int | None, Query(ge=1, le=50)] = None,
+) -> RunPage | read_views.RunSummaryPage:
     """The run and its ancestors, nearest first, across fork origins."""
-    return await runs.lineage(runtime.storage, actor, workspace_id, run_id, cursor=cursor)
+    return await runs.lineage(
+        runtime.storage, actor, workspace_id, run_id, cursor=cursor, view=view, limit=reads.page_limit(view, limit)
+    )
 
 
 @router.get(
     "/runs/{run_id}/contents/{content_id}",
-    response_model=RunContent,
+    response_model=RunContent | read_views.ContentSummary | reads.TextRead,
     openapi_extra=platform_operation("execution", "read"),
 )
 async def run_content(
@@ -471,10 +647,28 @@ async def run_content(
     content_id: str,
     actor: Actor,
     response: Response,
-) -> RunContent:
+    view: reads.View = "detailed",
+    offset: Annotated[int | None, Query(ge=0)] = None,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> RunContent | read_views.ContentSummary | reads.TextRead:
     """The complete value behind a committed display reference."""
     response.headers["Cache-Control"] = "no-store"
-    return await runs.content(runtime, actor, workspace_id, run_id, content_id)
+    value = await runs.content(runtime, actor, workspace_id, run_id, content_id)
+    if offset is not None or query is not None:
+        return reads.read_value(
+            value.value,
+            source=f"runs/{run_id}/contents/{content_id}",
+            offset=offset or 0,
+            limit=limit,
+            version=version,
+            query=query,
+            source_truncated=value.truncated,
+        )
+    if version is not None:
+        raise invalid("offset", "Provide offset=0 for a fragment")
+    return read_views.content_summary(value) if view == "compact" else value
 
 
 @router.get("/runs/{run_id}/attempts", response_model=Attempts, openapi_extra=platform_operation("execution", "read"))
@@ -513,3 +707,37 @@ async def get_attempt(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, run_id: str, attempt_id: str
 ) -> AttemptView:
     return await runs.get_attempt(runtime.storage, actor, workspace_id, run_id, attempt_id)
+
+
+@router.get(
+    "/runs/{run_id}/items/{item_id}/content",
+    response_model=reads.TextRead,
+    openapi_extra=platform_operation("execution", "read"),
+)
+async def read_item_content(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    item_id: str,
+    actor: Actor,
+    ordinal: Annotated[int, Query(ge=1, description="Ordinal returned with this item ID; both must match")],
+    field: Literal["all", "text", "arguments", "result", "value", "result_parts", "metadata", "failure"] = "all",
+    offset: reads.Offset = 0,
+    limit: reads.TextLimit = 4000,
+    version: reads.Version = None,
+    query: reads.Search = None,
+) -> reads.TextRead:
+    """Read one display field or follow its retained content reference, under the run's existing authorization."""
+    return await item_reads.content(
+        runtime,
+        actor,
+        workspace_id,
+        run_id,
+        item_id,
+        ordinal=ordinal,
+        field=field,
+        offset=offset,
+        limit=limit,
+        version=version,
+        query=query,
+    )

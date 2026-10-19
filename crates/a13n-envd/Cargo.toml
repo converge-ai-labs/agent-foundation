@@ -75,7 +75,7 @@ mxc-sdk = { version = "=1.0.0", default-features = false }
 flatbuffers = "25"
 # 1.2.4 imports OneCore_apiset, unavailable in the Windows GNU toolchain.
 tracelogging = "=1.2.3"
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Com", "Win32_System_Console", "Win32_UI_Shell", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Registry", "Win32_System_LibraryLoader", "Wdk_System_SystemServices", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Gdi", "Win32_System_RemoteDesktop", "Win32_System_StationsAndDesktops", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_System_Performance", "Win32_System_IO", "Win32_System_Com", "Win32_System_Console", "Win32_UI_Shell", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Registry", "Win32_System_LibraryLoader", "Wdk_System_SystemServices", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Gdi", "Win32_System_RemoteDesktop", "Win32_System_StationsAndDesktops", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 tonic = { version = "0.14", default-features = false, features = ["transport", "router", "tls-ring"] }

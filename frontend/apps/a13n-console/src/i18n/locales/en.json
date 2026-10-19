@@ -2465,5 +2465,7 @@
   "Enter an operator-built template with a13n-envd preinstalled.": "Enter an operator-built template with a13n-envd preinstalled.",
   "Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.": "Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.",
   "Require Computer operations from a13n-envd. Requires envd_http and a compatible template.": "Require Computer operations from a13n-envd. Requires envd_http and a compatible template.",
-  "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.": "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux."
+  "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.": "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.",
+  "Operator-built snapshot containing a compatible a13n-envd; all Agent operations use EIP.": "Operator-built snapshot containing a compatible a13n-envd; all Agent operations use EIP.",
+  "Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately.": "Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately."
 }

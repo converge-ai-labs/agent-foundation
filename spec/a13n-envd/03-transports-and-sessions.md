@@ -36,7 +36,7 @@ Carrier liveness, Session inactivity and operation/transfer deadlines are distin
 
 ## Binary Data-Frame Profile
 
-EIP 0.2 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
+EIP 0.3 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
 
 | Field               | Width | Contract                                                                         |
 | ------------------- | ----: | -------------------------------------------------------------------------------- |
@@ -73,6 +73,8 @@ Binary content uses `application/vnd.a13n.eip-data` and contains one complete pr
 The first initialize is device-scoped. Thereafter the Host opens/closes independent Sessions without reinitializing the pipes or waiting for another Session to finish. A shared Local Envd Host runtime owns the daemon; a workspace adapter owns only its Session. Explicit standalone ownership still permits a caller to own the entire daemon. Stdin EOF normally triggers owned-daemon shutdown; it is neither successful transfer EOF nor proof of non-dispatch. Stdio has no Bearer token and is not exposed as an unauthenticated network service.
 
 ## Host-Dialed HTTP Profile
+
+A Host may supply separate private proxy authentication in bounded `X-` headers on both control and transfer requests. These headers cannot replace EIP bearer authentication, Session/transfer selectors, or HTTP framing. They are connection credentials, never operation arguments, and redirects are not followed. The daemon's bearer credential remains independent of any infrastructure gateway credential.
 
 The dedicated EIP listener requires an Authorization Bearer token on every control/transfer request. Public links use verified HTTPS by default; scoped loopback/provider-private plaintext can sit behind provider TLS. The Python HTTP client accepts an explicit caller-owned `verify=False` as an insecure TLS opt-out without allowing public plaintext or redirects. It does not read Harness environment variables; the Harness Host applies its [operator-controlled outbound TLS policy](../a13n-harness/15-security-compatibility-and-tradeoffs.md#operator-controlled-outbound-tls) when constructing the attachment. Tokens and selectors never appear in URLs, cookies, logs, model state or portable provider state. No redirects, browser CORS surface, generic file routes, health endpoint or arbitrary URL fetch are supported.
 

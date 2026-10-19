@@ -4,7 +4,7 @@
 
 ## Device and Session runtime
 
-The daemon implements EIP 0.2 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
+The daemon implements EIP 0.3 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
 
 - `initialize` negotiates the Device connection without creating a Session.
 - `device.describe` and bounded `directory.list` work without a Session.

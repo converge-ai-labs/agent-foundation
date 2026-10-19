@@ -7647,6 +7647,53 @@
           },
           "pressure": {
             "$ref": "#/components/schemas/Pressures"
+          },
+          "pids_current": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Current"
+          },
+          "pids_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Limit"
+          },
+          "pids_unlimited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Unlimited"
+          },
+          "io": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -8537,6 +8584,48 @@
         ],
         "title": "ConfigurationValidation"
       },
+      "ConnectionMetrics": {
+        "properties": {
+          "tcp_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcp Total"
+          },
+          "tcp_states": {
+            "additionalProperties": {
+              "type": "integer",
+              "maximum": 1.8446744073709552e+19,
+              "minimum": 0.0
+            },
+            "type": "object",
+            "title": "Tcp States"
+          },
+          "udp_sockets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Udp Sockets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConnectionMetrics"
+      },
       "ContentMetadata": {
         "properties": {
           "display": {
@@ -8911,6 +9000,68 @@
         "additionalProperties": false,
         "type": "object",
         "title": "CpuTimeSeconds"
+      },
+      "DaemonMetrics": {
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Sessions"
+          },
+          "processes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processes"
+          },
+          "transfers": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfers"
+          },
+          "connections": {
+            "type": "integer",
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Connections"
+          },
+          "retained_output_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retained Output Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sessions",
+          "connections"
+        ],
+        "title": "DaemonMetrics"
       },
       "DecisionBatchView": {
         "properties": {
@@ -9291,6 +9442,159 @@
         ],
         "title": "DisabledSandbox",
         "type": "object"
+      },
+      "DiskIoMetrics": {
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Identity"
+          },
+          "read_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Bytes"
+          },
+          "written_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Bytes"
+          },
+          "read_operations": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Operations"
+          },
+          "write_operations": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Operations"
+          },
+          "read_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Time Ms"
+          },
+          "write_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Time Ms"
+          },
+          "busy_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Busy Time Ms"
+          },
+          "weighted_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weighted Time Ms"
+          },
+          "in_progress": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Progress"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identity"
+        ],
+        "title": "DiskIoMetrics"
+      },
+      "DiskMetrics": {
+        "properties": {
+          "devices": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DiskIoMetrics"
+            },
+            "type": "object",
+            "title": "Devices"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "truncated"
+        ],
+        "title": "DiskMetrics"
       },
       "DraftSummary": {
         "properties": {
@@ -9817,6 +10121,11 @@
               }
             ],
             "title": "Sample Interval Ms"
+          },
+          "collection_interval_seconds": {
+            "type": "integer",
+            "title": "Collection Interval Seconds",
+            "default": 60
           },
           "age_ms": {
             "anyOf": [
@@ -10484,6 +10793,27 @@
           "expires_at"
         ],
         "title": "FileTransferAccess"
+      },
+      "FilesystemInventory": {
+        "properties": {
+          "filesystems": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FilesystemObservation"
+            },
+            "type": "object",
+            "title": "Filesystems"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "truncated"
+        ],
+        "title": "FilesystemInventory"
       },
       "FilesystemMetrics": {
         "properties": {
@@ -11202,6 +11532,26 @@
             ]
           },
           "cgroup_memory_bytes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tcp_connections": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gauge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "udp_sockets": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Gauge"
@@ -12015,6 +12365,56 @@
             },
             "type": "object",
             "title": "Filesystems"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connections": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "daemon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DaemonMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_filesystems": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilesystemInventory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -12608,7 +13008,7 @@
           "retention_minutes": {
             "type": "integer",
             "title": "Retention Minutes",
-            "default": 1440
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -12631,10 +13031,23 @@
             "type": "array",
             "title": "History"
           },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceHistory"
+            },
+            "type": "array",
+            "title": "Resources",
+            "default": []
+          },
+          "omitted_rate_sources": {
+            "type": "integer",
+            "title": "Omitted Rate Sources",
+            "default": 0
+          },
           "retention_minutes": {
             "type": "integer",
             "title": "Retention Minutes",
-            "default": 1440
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -12684,6 +13097,146 @@
         ],
         "title": "NativeToolSearchConfig",
         "description": "Provider-native discovery; omitted strategy uses the provider default."
+      },
+      "NetworkInterfaceMetrics": {
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Identity"
+          },
+          "received_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Bytes"
+          },
+          "transmitted_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmitted Bytes"
+          },
+          "received_packets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Packets"
+          },
+          "transmitted_packets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmitted Packets"
+          },
+          "receive_errors": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receive Errors"
+          },
+          "transmit_errors": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmit Errors"
+          },
+          "receive_drops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receive Drops"
+          },
+          "transmit_drops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmit Drops"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identity"
+        ],
+        "title": "NetworkInterfaceMetrics"
+      },
+      "NetworkMetrics": {
+        "properties": {
+          "interfaces": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NetworkInterfaceMetrics"
+            },
+            "type": "object",
+            "title": "Interfaces"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "truncated"
+        ],
+        "title": "NetworkMetrics"
       },
       "NotePage": {
         "properties": {
@@ -13780,6 +14333,33 @@
         ],
         "title": "QuestionView"
       },
+      "RatePoint": {
+        "properties": {
+          "minute": {
+            "type": "integer",
+            "title": "Minute"
+          },
+          "segment": {
+            "type": "integer",
+            "title": "Segment"
+          },
+          "rates": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Gauge"
+            },
+            "type": "object",
+            "title": "Rates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "minute",
+          "segment",
+          "rates"
+        ],
+        "title": "RatePoint"
+      },
       "ReasoningModeControl": {
         "properties": {
           "supported": {
@@ -13828,6 +14408,42 @@
           "switch_to_file"
         ],
         "title": "RequiredAction"
+      },
+      "ResourceHistory": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "network",
+              "disk"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "identity": {
+            "type": "string",
+            "title": "Identity"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/RatePoint"
+            },
+            "type": "array",
+            "title": "History"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "identity",
+          "history"
+        ],
+        "title": "ResourceHistory"
       },
       "ResourceId": {
         "type": "string",
@@ -15253,6 +15869,136 @@
                 "type": "null"
               }
             ]
+          },
+          "memory_wired_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Wired Bytes"
+          },
+          "memory_compressed_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compressed Bytes"
+          },
+          "swap_used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Used Bytes"
+          },
+          "swap_total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Total Bytes"
+          },
+          "commit_total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Total Bytes"
+          },
+          "commit_limit_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Limit Bytes"
+          },
+          "memory_cache_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Cache Bytes"
+          },
+          "process_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Count"
+          },
+          "thread_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Count"
+          },
+          "handle_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handle Count"
           }
         },
         "additionalProperties": false,

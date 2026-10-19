@@ -144,14 +144,14 @@ async def initialized(transport: FakeTransport, *, monitoring: bool = False) -> 
     task = asyncio.create_task(EIPDeviceConnection.initialize(transport, expected_device_id="device-test"))
     request = await transport.request()
     assert request.method == "initialize" and request.eip_session is None
-    assert request.params["supported_protocol_versions"] == ["0.2"]
+    assert request.params["supported_protocol_versions"] == ["0.3"]
     advertised = device_descriptor().model_dump(mode="json", exclude_none=True)
     if monitoring:
         advertised["available_methods"].append("device.metrics")
     transport.reply(
         request,
         {
-            "protocol_version": "0.2",
+            "protocol_version": "0.3",
             "server": {"name": "a13n-envd", "version": "0"},
             "descriptor": advertised,
         },
@@ -178,6 +178,43 @@ def test_metrics_is_device_scoped_and_checks_response_identity(identity: str, ge
                 await task
             assert device.is_closed
             assert transport.closed
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("method_name", ["metrics", "describe"])
+def test_stalled_observations_do_not_consume_session_admission(method_name: str) -> None:
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport, monitoring=True)
+        observe = device.metrics if method_name == "metrics" else device.describe
+        first = asyncio.create_task(observe())
+        request = await transport.request()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        # Poll deadlines must not accumulate dispatched requests/tombstones.
+        for _ in range(10):
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0.01):
+                    await observe()
+        assert transport.sent.empty()
+        async with asyncio.timeout(1):
+            session = await opened(device, transport)
+            await closed(session, transport)
+        next_poll = asyncio.create_task(observe())
+        result = (
+            {"device_id": "device-test", "generation": 1, "sample_interval_ms": 10000}
+            if method_name == "metrics"
+            else {"descriptor": device.descriptor.model_dump(mode="json")}
+        )
+        transport.reply(request, result)
+        async with asyncio.timeout(1):
+            resumed = await transport.request()
+            assert resumed.method == request.method
+            transport.reply(resumed, result)
+            await next_poll
         await device.close()
 
     asyncio.run(scenario())

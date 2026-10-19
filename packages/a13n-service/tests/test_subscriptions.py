@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_service.infra import outbox
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import short_session, transaction
@@ -205,7 +206,9 @@ async def status(runtime, delivery_id: str) -> tuple[str, int, str | None]:  # t
         return row.status, row.attempts, row.last_error
 
 
-async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Keep the retry pending during later sends with a one-attempt policy, even on slow CI runners.
+    monkeypatch.setattr(outbox, "backoff", lambda attempts: 3600)
     storage, keys, policy = runtime.storage, runtime.keys, runtime.endpoint_policy
     workspace_id = tenant.workspace_id
     admin = Principal(

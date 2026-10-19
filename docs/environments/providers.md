@@ -237,26 +237,23 @@ Enable `desktop_assistance=true` for viewing and human control. Configure Agent 
 
 ### Daytona
 
-Default file root: `/home/daytona`. The standard sandbox supplies Python; commands select `python3` on the guest PATH. Custom snapshots must supply the selected root and executables. Stop requires confirmed disabled auto-delete; delete waits for terminal destruction rather than accepting the initial acknowledgement. See [Daytona's sandbox example](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/) and [delete semantics](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/).
+Daytona runs all Agent files, shell, process, port and Computer operations through Envd/EIP. Its provider retains sandbox creation, inspection, stop/start, deletion and private connection setup. The working directory is `/workspace`; absolute file paths address the sandbox filesystem. Native stop/start preserves files, not desktop processes or old screenshot observations. Stop requires confirmed disabled auto-delete; deletion waits for terminal destruction.
 
-The Daytona management provider prepares a snapshot with Envd and desktop dependencies and checks the selected target during creation or start. Agent Computer operations use EIP. Attaching to an existing target checks readiness; tools are enabled from negotiated Envd capabilities.
-
-Configure the Agent Computer toolset and mount permissions separately. Preinstall CJK fonts in the snapshot and reconcile interrupted input before continuing. Console viewing and human takeover use a separate desktop-access endpoint.
-
-For Console viewing, Agent-requested assistance and user takeover, build a custom snapshot with the existing desktop access supervisor and CJK fonts:
+Both headless and desktop environments require an operator-built snapshot containing compatible Envd. Build one from this source checkout with a Linux amd64 binary and a private `DAYTONA_API_KEY` that can create snapshots:
 
 ```bash
-# Supply DAYTONA_API_KEY privately with permission to create snapshots.
-uv run --locked python examples/environment-provider/daytona_desktop_snapshot.py my-desktop-access --region us
+uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-Then use `{"snapshot": "my-desktop-access", "desktop": true, "desktop_assistance": true}` in the Service environment recipe. The snapshot starts the supervisor at boot; attaching or granting access does not install or start it. Snapshot creation needs additional permission beyond a sandbox-management-only Key; ordinary Service runtime does not build snapshots.
+Use `{"snapshot": "my-envd"}` for Files & Shell, or `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}` for Computer and human access. Snapshot boot starts Envd and, when enabled, the shared X11 desktop and access supervisor. Service checks EIP readiness after create/start. Connecting and granting access never installs, restarts or repairs services. Runtime sandbox keys do not need snapshot-build permission.
 
-Daytona's signed preview host opens only port 6081. The supervisor separately enforces read-only viewing, a single controller, 60-second renewable grants and forced disconnect on return. Revoking a native signed preview URL alone is insufficient to close an established input connection. The Console reuses its existing viewing, acquire-control and return-control interactions. Agent execution must reach a confirmed safe boundary before control is granted; uncertain input or unmanaged background work blocks takeover.
+Private HTTP port 8888 carries Agent EIP operations. Daytona proxy authentication and the guest Envd credential remain separate, in memory only. The Host validates the discovered endpoint against its deployment and Run policy. There is no native execution fallback. Enable Agent Computer tools and mount permissions separately. The snapshot includes CJK fonts; current Envd X11 input supports physical keys but rejects literal text, including Chinese and multiline text.
 
-New Daytona organizations must choose a default region in the Daytona dashboard before creating sandboxes. The connection's region does not replace that account setup requirement.
+Human access uses a separate, short-lived signed preview route to port 6081. The supervisor enforces read-only viewing, one controller, renewable grants and forced disconnect on return. Revoking a native signed URL alone does not establish termination of existing input connections. Console retains viewing, Agent-requested assistance, acquire-control and return-control interactions; Service confirms a safe execution boundary before handing over and requires re-observation after return.
 
-The existing `test_daytona_desktop_live.py` covers the legacy vendor-native Computer adapter and needs Envd execution coverage during migration. `test_daytona_access_live.py` checks the human-viewer endpoint for read-only enforcement, connection revocation, and lease expiry. These billable-target tests are separate from full Console/Agent handoff acceptance.
+New Daytona organizations must choose a default region in the dashboard before creating sandboxes. The connection's region does not replace that setup requirement.
+
+`test_daytona_desktop_live.py` verifies EIP files, shell, desktop operations and stop/start. `test_daytona_access_live.py` verifies read-only viewing, controller revocation, expiry and restart fencing. These billable-target tests are separate from full Console/Agent handoff acceptance.
 
 ### Modal
 
@@ -283,7 +280,7 @@ from a13n_harness.providers.environment.builtins import select_builtin_environme
 
 (DAYTONA,) = select_builtin_environment_providers(("daytona",))
 connector = DAYTONA.execution_connector(
-    {}, configuration={"organization_id": "your-organization"},
+    {"snapshot": "my-envd"}, configuration={"organization_id": "your-organization"},
     credential={"api_key": api_key}, environment_id="env-workspace", state=saved_state,
 )
 async with await connector.open() as execution:

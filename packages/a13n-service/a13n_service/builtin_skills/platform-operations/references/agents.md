@@ -29,3 +29,9 @@ Grouped connections use the group's discovery mode while retaining their saved `
 ## Configure desktop coordinates
 
 The Computer toolset requires explicit enablement and an authorized desktop Environment. `toolsets.computer.config.coordinate_space` defaults to `pixels`. Select `normalized_1000` only when the chosen model supplies relative positions on a 0–1000 scale for each axis. The tool converts pointer positions using the referenced screenshot; model instructions must not ask the model to multiply by image dimensions. Scroll distances retain their declared units. Do not infer or change this setting from the Environment Provider or template. Check the deployed toolset catalog for supported configuration before creating a Revision.
+
+## Read only the needed configuration
+
+Revision lists support `view=compact`; selected revision reads accept `section=all` or a named configuration field. Fragment reads preserve the revision's content version. `/agents/{agent_id}/revisions/{revision_id}/compare` compares against `base_revision_id`, optionally for one section. Before publishing, obtain and preserve the complete base config; a diff or section alone is insufficient.
+
+Search `/toolsets/index` by `query` and follow its cursor. Read `/toolsets/definitions` with repeated `name` values (up to five). Index descriptions omit schemas. Definitions report `missing` names and `oversized` references explicitly; use the same definition endpoint with one name and `offset=0` to read an oversized definition in fragments. Supported tool counts reflect deployment registration, not workspace authorization.
