@@ -484,5 +484,6 @@
   "List Schedules": "列出定时任务",
   "Pause Schedule": "暂停定时任务",
   "Preview Schedule": "预览触发时间",
-  "Update Schedule": "更新定时任务"
+  "Update Schedule": "更新定时任务",
+  "Dispatch Schedule": "手动触发定时任务"
 }

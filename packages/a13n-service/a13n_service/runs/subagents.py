@@ -139,6 +139,7 @@ class ChildRuns(SubagentOperator):
                 origin_run_id=run.id,
                 origin_tool_call_id=tool_call.tool_call_id,
                 subagent=request.subagent_name,
+                schedule_occurrence_id=thread.schedule_occurrence_id,
             )
             session.add(child)
             await session.flush()

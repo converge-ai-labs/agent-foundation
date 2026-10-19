@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra.http import IdempotencyKey, IfMatch, tagged
 from a13n_service.runs.requests import CurrentRuntime
-from a13n_service.runs.schedules import queries, service
+from a13n_service.runs.schedules import dispatch, queries, service
 from a13n_service.runs.schedules.schemas import (
     Occurrence,
     OccurrencePage,
@@ -136,3 +136,21 @@ async def get_schedule_occurrence(
     workspace_id: WorkspaceId, schedule_id: str, occurrence_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Occurrence:
     return await queries.get_occurrence(runtime.storage, actor, workspace_id, schedule_id, occurrence_id)
+
+
+@router.post("/{schedule_id}/dispatch", response_model=Occurrence, status_code=202)
+async def dispatch_schedule(
+    response: Response,
+    workspace_id: WorkspaceId,
+    schedule_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    body: ScheduleCommand,
+    key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> Occurrence:
+    result, created = await dispatch.manual(
+        runtime, actor, workspace_id, schedule_id, request_key=key, if_match=if_match
+    )
+    response.status_code = 202 if created else 200
+    return result

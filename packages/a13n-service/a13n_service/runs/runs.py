@@ -19,6 +19,7 @@ from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules.origin import origins
 from a13n_service.runs.schemas import (
     Attempts,
     AttemptView,
@@ -52,6 +53,7 @@ def newest(pointer: TailPointer | None, limit: int) -> int:
 
 async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunView]:
     """Views with each run's source input, which the Console shows as the request of that run."""
+    schedule_origins = await origins(session, (run.thread_id for run in runs))
     sources = [run.source_entry_id for run in runs if run.source_entry_id is not None]
     payloads = (
         dict(
@@ -67,7 +69,12 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         else {}
     )
     return [
-        RunView.model_validate(run).model_copy(update={"input": payloads.get(run.source_entry_id or "")})
+        RunView.model_validate(run).model_copy(
+            update={
+                "input": payloads.get(run.source_entry_id or ""),
+                "schedule_origin": schedule_origins.get(run.thread_id),
+            }
+        )
         for run in runs
     ]
 

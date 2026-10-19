@@ -2289,6 +2289,23 @@ export interface paths {
     patch: operations["update_schedule_api_v1_schedules__schedule_id__patch"];
     trace?: never;
   };
+  "/api/v1/schedules/{schedule_id}/dispatch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Dispatch Schedule */
+    post: operations["dispatch_schedule_api_v1_schedules__schedule_id__dispatch_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/schedules/{schedule_id}/enable": {
     parameters: {
       query?: never;
@@ -7487,11 +7504,8 @@ export interface components {
       id: string;
       /** Last Error */
       last_error: string | null;
-      /**
-       * Next Attempt At
-       * Format: date-time
-       */
-      next_attempt_at: string;
+      /** Next Attempt At */
+      next_attempt_at: string | null;
       /** Principal Id */
       principal_id: string;
       /** Reason */
@@ -7566,11 +7580,8 @@ export interface components {
       id: string;
       /** Last Error */
       last_error: string | null;
-      /**
-       * Next Attempt At
-       * Format: date-time
-       */
-      next_attempt_at: string;
+      /** Next Attempt At */
+      next_attempt_at: string | null;
       /** Reason */
       reason: string | null;
       /** Schedule Id */
@@ -8517,6 +8528,7 @@ export interface components {
        * @enum {string}
        */
       revision_selection: "pinned" | "default" | "inherited";
+      schedule_origin?: components["schemas"]["ScheduleOrigin"] | null;
       /** Sealed At */
       sealed_at: string | null;
       /** Session Id */
@@ -8616,6 +8628,7 @@ export interface components {
        * @enum {string}
        */
       revision_selection: "pinned" | "default" | "inherited";
+      schedule_origin?: components["schemas"]["ScheduleOrigin"] | null;
       /** Sealed At */
       sealed_at: string | null;
       /** Session Id */
@@ -8748,6 +8761,13 @@ export interface components {
       memories?: components["schemas"]["MemoryMount"][];
       options?: components["schemas"]["RunOptions-Output"];
       payload: components["schemas"]["MessagePayload"];
+    };
+    /** ScheduleOrigin */
+    ScheduleOrigin: {
+      /** Occurrence Id */
+      occurrence_id: string;
+      /** Schedule Id */
+      schedule_id: string;
     };
     /** SchedulePage */
     SchedulePage: {
@@ -9778,6 +9798,8 @@ export interface components {
        * @enum {string}
        */
       purpose?: "conversation" | "memory_organization";
+      /** Schedule Occurrence Id */
+      schedule_occurrence_id?: string | null;
       /** Session Id */
       session_id: string;
       /** Subagent */
@@ -15702,6 +15724,40 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  dispatch_schedule_api_v1_schedules__schedule_id__dispatch_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleCommand"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Occurrence"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   enable_schedule_api_v1_schedules__schedule_id__enable_post: {
     parameters: {
       query?: never;
@@ -16633,6 +16689,7 @@ export interface operations {
     parameters: {
       query?: {
         session_id?: string | null;
+        occurrence_id?: string | null;
         text_query?: string | null;
         label?: string[] | null;
         limit?: number;

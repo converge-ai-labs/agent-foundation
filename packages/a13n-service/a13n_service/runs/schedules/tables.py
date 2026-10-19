@@ -195,7 +195,7 @@ class OccurrenceRow(Stamped, Base):
     status: Mapped[str]
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     dispatch_attempts: Mapped[int] = mapped_column(default=0)
-    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None]
     reason: Mapped[str | None]
     thread_id: Mapped[str | None] = mapped_column(String(72))

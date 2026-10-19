@@ -10671,9 +10671,16 @@
             "title": "Last Error"
           },
           "next_attempt_at": {
-            "format": "date-time",
-            "title": "Next Attempt At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
           },
           "principal_id": {
             "title": "Principal Id",
@@ -10932,9 +10939,16 @@
             "title": "Last Error"
           },
           "next_attempt_at": {
-            "format": "date-time",
-            "title": "Next Attempt At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
           },
           "reason": {
             "anyOf": [
@@ -13488,6 +13502,16 @@
             "title": "Revision Selection",
             "type": "string"
           },
+          "schedule_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sealed_at": {
             "anyOf": [
               {
@@ -13828,6 +13852,16 @@
             ],
             "title": "Revision Selection",
             "type": "string"
+          },
+          "schedule_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sealed_at": {
             "anyOf": [
@@ -14258,6 +14292,24 @@
           "payload"
         ],
         "title": "ScheduleInvocation",
+        "type": "object"
+      },
+      "ScheduleOrigin": {
+        "properties": {
+          "occurrence_id": {
+            "title": "Occurrence Id",
+            "type": "string"
+          },
+          "schedule_id": {
+            "title": "Schedule Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule_id",
+          "occurrence_id"
+        ],
+        "title": "ScheduleOrigin",
         "type": "object"
       },
       "SchedulePage": {
@@ -17378,6 +17430,17 @@
             ],
             "title": "Purpose",
             "type": "string"
+          },
+          "schedule_occurrence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Occurrence Id"
           },
           "session_id": {
             "title": "Session Id",
@@ -34505,6 +34568,114 @@
         ]
       }
     },
+    "/api/v1/schedules/{schedule_id}/dispatch": {
+      "post": {
+        "operationId": "dispatch_schedule_api_v1_schedules__schedule_id__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "pattern": "^[!-~]+$",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Occurrence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Dispatch Schedule",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
     "/api/v1/schedules/{schedule_id}/enable": {
       "post": {
         "operationId": "enable_schedule_api_v1_schedules__schedule_id__enable_post",
@@ -37405,6 +37576,22 @@
                 }
               ],
               "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "occurrence_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurrence Id"
             }
           },
           {

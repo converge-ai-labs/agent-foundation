@@ -82,19 +82,20 @@ Enable and time-affecting configuration edits select a next time strictly after 
 
 All paths below are relative to `/api/v1` and use the ordinary Workspace, authentication, pagination and error contracts. The Schedule endpoints are HTTP-only; MCP and Composer admission are outside this surface.
 
-| Method and path                                | Contract                                                   |
-| ---------------------------------------------- | ---------------------------------------------------------- |
-| `POST /schedules`                              | Idempotency-Key; first 201, replay 200; Schedule with ETag |
-| `GET /schedules`                               | Configuration page                                         |
-| `GET /schedules/{id}`                          | Configuration and ETag                                     |
-| `PATCH /schedules/{id}`                        | If-Match; partial configuration update                     |
-| `POST /schedules/{id}/enable`                  | If-Match; empty object                                     |
-| `POST /schedules/{id}/pause`                   | If-Match; empty object                                     |
-| `DELETE /schedules/{id}`                       | If-Match; soft archive, 204                                |
-| `POST /schedules/preview`                      | Time rule, aware `after`, count 1–10 (default 5)           |
-| `GET /schedules/{id}/status`                   | Progress, pending/latest IDs and unfinished work           |
-| `GET /schedules/{id}/occurrences`              | Compact trigger history page                               |
-| `GET /schedules/{id}/occurrences/{occurrence}` | Full trigger snapshot and submission details               |
+| Method and path                                | Contract                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------- |
+| `POST /schedules`                              | Idempotency-Key; first 201, replay 200; Schedule with ETag        |
+| `GET /schedules`                               | Configuration page                                                |
+| `GET /schedules/{id}`                          | Configuration and ETag                                            |
+| `PATCH /schedules/{id}`                        | If-Match; partial configuration update                            |
+| `POST /schedules/{id}/enable`                  | If-Match; empty object                                            |
+| `POST /schedules/{id}/pause`                   | If-Match; empty object                                            |
+| `DELETE /schedules/{id}`                       | If-Match; soft archive, 204                                       |
+| `POST /schedules/preview`                      | Time rule, aware `after`, count 1–10 (default 5)                  |
+| `POST /schedules/{id}/dispatch`                | Idempotency-Key and If-Match; empty object; first 202, replay 200 |
+| `GET /schedules/{id}/status`                   | Progress, pending/latest IDs and unfinished work                  |
+| `GET /schedules/{id}/occurrences`              | Compact trigger history page                                      |
+| `GET /schedules/{id}/occurrences/{occurrence}` | Full trigger snapshot and submission details                      |
 
 Configuration responses include fixed Session/stream URL, Workspace, principal/creator/editor, state/reason, version and timestamps. They omit saved authority and request keys. PATCH can replace name, description, labels, time rule, lateness or invocation; nested time rule and invocation are replaced completely. Only description accepts explicit null. State, identity and progress cannot be patched. Labels do not propagate to Runs; invocation Run options own Run labels.
 
@@ -105,3 +106,15 @@ Schedule pages sort by `(created_at DESC, id DESC)` and filter state, Agent, pri
 Status reports observation time, next fire time, pending/latest IDs and whether any submitted Occurrence has unfinished work. Its busy page contains up to 20 root Thread/Entry references; continue with the history endpoint's `unfinished=true` filter. Reading does not advance scheduling. Status has no configuration ETag.
 
 Time-affecting edits cancel pending intent; pause/archive also cancel manual pending intent created while paused. Before discarding an elapsed old timeline, record one skipped Occurrence covering that range with the old configuration and the relevant change reason. Name/description/label edits do not alter pending work or the timeline. Configuration mutation and submission serialize on the Schedule lock. Work already submitted is never withdrawn by pause or archive, even when it has no Run yet.
+
+## Dispatch and overlap
+
+Manual dispatch is allowed while paused. It authorizes the current caller and original ceiling before replay lookup, then checks If-Match and archival. A pending Occurrence or unfinished owned work refuses a new request with `conflict: schedule_busy`, without creating a record. Request keys are scoped to Workspace/requester across schedules. A replay returns the original Occurrence even after configuration changes or archival. Dispatch does not change the periodic timeline. HTTP 202 means intent was saved, not that execution started.
+
+The pending processor locks Schedule before Occurrence and checks database time against the immutable deadline. Overlap is an indexed `EXISTS` query across all Threads owned by this Schedule's Occurrences. A Thread blocks while it has a current Run or pending/assigned inbox Entry. A non-archived Thread also blocks while its latest Run is waiting or a pending child-result outbox delivery targets it, including leased or delayed deliveries. One SQL snapshot observes these handoffs. Independent Threads and explicit forks are excluded. Ordinary manual continuation does not acquire the Schedule lock: continuation committed before the check blocks; later concurrent continuation may coexist.
+
+The processor reuses ordinary new-Thread message preparation and acceptance inside its transaction. It sets Thread provenance before acceptance, so an immediately created Run and its webhook already have the origin. Thread, first Entry, and submitted Occurrence commit together. A receipt without a Run, including a failed Entry, remains submitted. No new Run execution path is introduced. `GET /threads` supports `occurrence_id` alongside `session_id` to page the root and descendants.
+
+An exception rolls back the entire candidate submission, including after-commit callbacks. A separate short failure transaction reacquires the same locks and rereads the Occurrence before recording an attempt; it does nothing if a lost commit response or concurrent pause already finished it. Transient unavailability, database conflicts, request timeouts and explicit rate limits retry after 5, 10, 20, then 40 seconds, honoring a longer Retry-After. Attempts are bounded by `schedules.dispatch_max_attempts`; exhausted attempts fail with `dispatch_attempts_exhausted`. The deadline takes precedence and skips with `missed_deadline`. Before-input permanent authority/target refusal fails the Occurrence and automatically pauses the Schedule, with an audit naming the saved principal and reason. Error history stores stable codes, not raw exception messages.
+
+Terminal Occurrences clear `next_attempt_at`. Submission checks all owned work again because earlier Threads can have been continued since intent creation; overlap skips the pending trigger. Pause/archive serialize on the same Schedule lock and only cancel unsubmitted intent. They never withdraw an already persisted input. Submission logging runs after commit and includes Schedule, Occurrence and resulting Thread/Entry identifiers without input content.

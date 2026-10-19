@@ -6,7 +6,16 @@ from typing import Literal
 from pydantic import BaseModel
 
 from a13n_service.infra.reads import Preview, bounded, preview
-from a13n_service.runs.schemas import EntryStatus, EntryView, RunContent, RunStatus, RunView, Trigger, WaitReason
+from a13n_service.runs.schemas import (
+    EntryStatus,
+    EntryView,
+    RunContent,
+    RunStatus,
+    RunView,
+    ScheduleOrigin,
+    Trigger,
+    WaitReason,
+)
 
 
 class FailureSummary(BaseModel):
@@ -15,6 +24,7 @@ class FailureSummary(BaseModel):
 
 
 class RunSummary(BaseModel):
+    schedule_origin: ScheduleOrigin | None = None
     view: Literal["compact"] = "compact"
     id: str
     workspace_id: str

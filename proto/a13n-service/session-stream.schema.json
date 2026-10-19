@@ -2595,6 +2595,17 @@
           "title": "Revision Selection",
           "type": "string"
         },
+        "schedule_origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "sealed_at": {
           "anyOf": [
             {
@@ -2718,6 +2729,24 @@
         "updated_at"
       ],
       "title": "RunView",
+      "type": "object"
+    },
+    "ScheduleOrigin": {
+      "properties": {
+        "occurrence_id": {
+          "title": "Occurrence Id",
+          "type": "string"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schedule_id",
+        "occurrence_id"
+      ],
+      "title": "ScheduleOrigin",
       "type": "object"
     },
     "SharedSkillSync": {
@@ -3054,6 +3083,18 @@
           ],
           "title": "Purpose",
           "type": "string"
+        },
+        "schedule_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schedule Occurrence Id"
         },
         "session_id": {
           "title": "Session Id",

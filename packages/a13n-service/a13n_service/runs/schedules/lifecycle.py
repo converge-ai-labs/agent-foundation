@@ -75,7 +75,7 @@ async def occurrence(
         reason=reason,
         deadline_at=(scheduled_at or current) + timedelta(seconds=row.max_lateness_seconds),
         dispatch_attempts=0,
-        next_attempt_at=current,
+        next_attempt_at=current if status == "pending" else None,
         finished_at=None if status == "pending" else current,
     )
     session.add(result)
@@ -92,6 +92,7 @@ def finish(
     row: ScheduleRow, item: OccurrenceRow, current: datetime, *, status: OccurrenceStatus, reason: str | None
 ) -> None:
     item.status, item.reason, item.finished_at = status, reason, current
+    item.next_attempt_at = None
     if row.pending_occurrence_id == item.id:
         row.pending_occurrence_id = None
 

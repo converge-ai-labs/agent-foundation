@@ -134,7 +134,7 @@ class OccurrenceSummary(_Model):
     thread_id: str | None
     entry_id: str | None
     dispatch_attempts: int
-    next_attempt_at: datetime
+    next_attempt_at: datetime | None
     deadline_at: datetime
     last_error: str | None
     version: int
