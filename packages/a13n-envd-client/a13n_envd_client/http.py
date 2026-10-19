@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import re
 import ssl
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
@@ -48,6 +50,7 @@ class HttpTransport:
         endpoint: str,
         credential: str,
         *,
+        extra_headers: Mapping[str, str] | None = None,
         verify: ssl.SSLContext | str | bool = True,
         request_timeout: float = 30.0,
         allow_plaintext_private_link: bool = False,
@@ -66,6 +69,15 @@ class HttpTransport:
             endpoint,
             allow_plaintext_private_link=allow_plaintext_private_link,
         )
+        self._extra_headers = dict(extra_headers or {})
+        if len(self._extra_headers) > 16 or any(
+            not re.fullmatch(r"[Xx]-[A-Za-z0-9-]{1,100}", name)
+            or not value
+            or len(value) > 4096
+            or any(ord(character) < 32 or ord(character) > 126 for character in value)
+            for name, value in self._extra_headers.items()
+        ):
+            raise ValueError("Proxy authentication headers must be bounded X- headers with printable values")
         self._credential = credential
         self._request_timeout = request_timeout
         self._client = httpx2.AsyncClient(
@@ -342,6 +354,7 @@ class HttpTransport:
 
     def _headers(self, content_type: str) -> dict[str, str]:
         return {
+            **self._extra_headers,
             "Authorization": f"Bearer {self._credential}",
             "Content-Type": content_type,
             "Accept-Encoding": "identity",

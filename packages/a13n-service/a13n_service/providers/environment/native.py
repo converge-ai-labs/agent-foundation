@@ -10,7 +10,7 @@ from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty 
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.native.configuration import CommandConfiguration, TargetState
-from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
+from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime, TargetConfiguration
 from a13n_harness.providers.environment.native.errors import failure
 from pydantic import BaseModel
 
@@ -21,7 +21,7 @@ from .definition import EnvironmentManagementDefinition, management_definition
 _DELETE_POLL_SECONDS = 0.5
 
 
-class NativeManagement[C: CommandConfiguration, S: TargetState](NativeReference[C, S], ManagementBackend):
+class NativeManagement[C: TargetConfiguration, S: TargetState](NativeReference[C, S], ManagementBackend):
     def observe(self, state: S) -> None:
         self.target = state
         self._cache_state(

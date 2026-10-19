@@ -42,7 +42,7 @@ export function ProviderConfiguration({
   error?: string;
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
-  variant?: "default" | "docker" | "e2b";
+  variant?: "default" | "docker" | "e2b" | "daytona";
 }) {
   const { t } = useTranslation();
   const desktopId = useId();
@@ -122,7 +122,7 @@ export function ProviderConfiguration({
     )
       continue;
     if (
-      variant === "e2b" &&
+      (variant === "e2b" || variant === "daytona") &&
       key.startsWith("desktop_") &&
       value?.desktop !== true
     )
@@ -153,7 +153,15 @@ export function ProviderConfiguration({
     else advanced.push(property);
   }
   const change = (next: Record<string, unknown>) =>
-    onChange(JSON.stringify(next, null, 2));
+    onChange(
+      JSON.stringify(
+        variant === "daytona" && next.desktop !== true
+          ? { ...next, desktop_assistance: false }
+          : next,
+        null,
+        2,
+      ),
+    );
   const fieldsAvailable = !!schema && !!value;
   const jsonMode = !builtIn && (mode === "json" || !fieldsAvailable);
   return (

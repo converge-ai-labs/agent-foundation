@@ -4,7 +4,6 @@ import inspect
 
 import pytest
 from a13n_harness.providers.environment._backend import ExecutionBackend
-from a13n_harness.providers.environment.daytona.execution import DaytonaExecution
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
@@ -27,7 +26,6 @@ from a13n_service.providers.environments.vercel.management import VercelManageme
 @pytest.mark.parametrize(
     "implementation",
     [
-        DaytonaExecution,
         DirectLocalExecution,
         DockerExecution,
         E2BExecution,

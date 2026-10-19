@@ -62,7 +62,9 @@ async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(ser
         assert json.loads(service.runtime.keys.reveal(Envelope.model_validate(row.credential), location)) == credential
 
         template = {"name": "Box", "provider_id": provider["id"]}
-        accepted = await service.client.post(templates, json={**template, "config": {"recipe": {}}})
+        accepted = await service.client.post(
+            templates, json={**template, "config": {"recipe": {"snapshot": "envd"} if type_ == "daytona" else {}}}
+        )
         assert accepted.status_code == 201, accepted.text
         rejected = await service.client.post(templates, json={**template, "config": {"recipe": broken}})
         assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe", type_

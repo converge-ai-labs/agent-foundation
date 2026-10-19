@@ -4,7 +4,8 @@ import asyncio
 import json
 import os
 import secrets
-from urllib.parse import quote
+import shlex
+from urllib.parse import quote, urlsplit
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -59,10 +60,25 @@ async def test_signed_route_readonly_revocation_expiry_and_restart(tmp_path):
         generation = description.generation
         target = await management.lookup()
         assert target is not None
-        toolbox = await management.open_toolbox(target)
+
+        async def guest(script):
+            toolbox = await management.open_toolbox(target)
+            response = await toolbox.request(
+                "POST",
+                target.id + "/process/execute",
+                body={
+                    "command": shlex.join(
+                        ["env", "DISPLAY=:99", "XAUTHORITY=/run/a13n-desktop/Xauthority", "sh", "-c", script]
+                    ),
+                    "timeout": 10,
+                },
+            )
+            assert response["exitCode"] == 0
+            return response["result"]
 
         async def position():
-            return await toolbox.request("GET", target.id + "/computeruse/mouse/position")
+            values = dict(line.split("=", 1) for line in (await guest("xdotool getmouselocation --shell")).splitlines())
+            return {"x": int(values["X"]), "y": int(values["Y"])}
 
         async def connect(identity, mode, epoch, ttl=60):
             route = await management.desktop_access(wire.Describe())
@@ -88,8 +104,7 @@ async def test_signed_route_readonly_revocation_expiry_and_restart(tmp_path):
 
         viewer = await connect("dgrant_readonly", "view", 1)
         # Access operations own a separate short-lived toolbox client.
-        toolbox = await management.open_toolbox(target)
-        await toolbox.request("POST", target.id + "/computeruse/mouse/move", body={"x": 100, "y": 100})
+        await guest("xdotool mousemove 100 100")
         await asyncio.to_thread(viewer.pointer, 200, 200)
         # A frame response on the same ordered channel confirms that the
         # preceding pointer packet has reached the server, despite proxy delay.
@@ -98,7 +113,6 @@ async def test_signed_route_readonly_revocation_expiry_and_restart(tmp_path):
         evidence["server_readonly_enforced"] = True
         await management.desktop_access(wire.Renew(generation=generation, id="dgrant_readonly", epoch=1))
         controller = await connect("dgrant_control", "control", 2)
-        toolbox = await management.open_toolbox(target)
         await asyncio.to_thread(controller.pointer, 300, 300)
         async with asyncio.timeout(10):
             while await position() != {"x": 300, "y": 300}:
@@ -124,12 +138,34 @@ async def test_signed_route_readonly_revocation_expiry_and_restart(tmp_path):
         )
         assert isinstance(result, wire.AccessGrant) and result.state == "revoked"
         assert await asyncio.to_thread(controller.closed)
-        # TLS/upgrade timeouts and proxy errors are inconclusive, not proof of
-        # authorization rejection. They must fail this acceptance check.
+
+        # Daytona can translate the guest's rejected WebSocket upgrade into 502.
+        # Prove the guest's authorization rejection independently, then verify a
+        # fresh valid connection through the same proxy. A 502 alone is no proof.
+        async def guest_upgrade(identity):
+            query = urlsplit(endpoints[identity][0]).query
+            probe = f"""import http.client
+c=http.client.HTTPConnection('127.0.0.1',6081,timeout=5)
+c.request('GET',{("/websockify?" + query)!r},headers={{
+ 'Upgrade':'websocket','Connection':'Upgrade','Sec-WebSocket-Version':'13',
+ 'Sec-WebSocket-Key':'dGhlIHNhbXBsZSBub25jZQ==','Sec-WebSocket-Protocol':'binary'}})
+try: print(c.getresponse().status)
+except http.client.RemoteDisconnected: print('closed')
+c.close()
+"""
+            return (await guest(shlex.join(["python3", "-I", "-c", probe]))).strip()
+
+        assert await guest_upgrade("dgrant_readonly") == "101"
+        assert await guest_upgrade("dgrant_control") in {"401", "403", "closed"}
         with pytest.raises((ConnectionClosed, InvalidStatus, AuthRejected, EOFError)) as rejected:
             await asyncio.to_thread(RFB, *endpoints["dgrant_control"])
         if isinstance(rejected.value, InvalidStatus):
-            assert rejected.value.response.status_code in {401, 403}
+            assert rejected.value.response.status_code in {401, 403, 502}
+            evidence["revoked_proxy_status"] = rejected.value.response.status_code
+        fresh_viewer = await asyncio.to_thread(RFB, *endpoints["dgrant_readonly"])
+        clients.append(fresh_viewer)
+        assert (await asyncio.to_thread(fresh_viewer.frame))["pixel_bytes"] > 0
+        evidence["guest_rejects_revoked_token_with_healthy_proxy"] = True
         assert (await asyncio.to_thread(viewer.frame))["pixel_bytes"] > 0
         replay = await management.desktop_access(
             wire.Grant(

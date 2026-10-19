@@ -4,7 +4,7 @@ import hashlib
 from abc import abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -53,7 +53,17 @@ def descriptor(
     )
 
 
-class NativeReference[C: CommandConfiguration, S: TargetState](BackendReference):
+class TargetConfiguration(Protocol):
+    """Identity and lifecycle bounds shared by native resource references."""
+
+    @property
+    def fingerprint(self) -> str: ...
+
+    @property
+    def request_timeout_seconds(self) -> float: ...
+
+
+class NativeReference[C: TargetConfiguration, S: TargetState](BackendReference):
     """Shared target identity and read-only validation; no lifecycle or execution API."""
 
     def __init__(

@@ -5,7 +5,9 @@ import shlex
 from urllib.parse import urlsplit, urlunsplit
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.daytona.http import HttpReference, http_execution
 from a13n_harness.providers.environment.daytona.shared import (
     DaytonaEnvironmentConfiguration,
     DaytonaReference,
@@ -69,6 +71,19 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                     "target": self.backend.target,
                     "labels": self.labels,
                     "public": False,
+                    "env": {
+                        "A13N_ENVD_DEVICE_ID": self.owner,
+                        "A13N_ENVD_TRANSPORT": "http",
+                        "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                        "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                        "A13N_ENVD_EXECUTION_UID": "1000",
+                        "A13N_ENVD_EXECUTION_GID": "1000",
+                        "A13N_ENVD_FULL_CONTROL": "true",
+                        "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                        "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                        "A13N_DESKTOP": "true" if self.config.desktop else "false",
+                        "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
+                    },
                     "autoStopInterval": 0,
                     "autoPauseInterval": 0,
                     "autoDeleteInterval": -1,
@@ -86,20 +101,48 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
         if target.state in {"stopped", "archived", "paused"}:
             await self.transport().request("POST", self.path + "/start")
         target = await self.wait_for("started")
-        if self.config.desktop:
-            toolbox = await self.open_toolbox(target)
-            await toolbox.request("POST", target.id + "/computeruse/start")
-            # Validate desktop readiness without allocating or initializing during attachment.
-            from a13n_harness.providers.environment.daytona.execution import DaytonaExecution
+        await self._check_envd(target)
+        if self.recipe.desktop_assistance:
+            await self.desktop_access(access.Describe())
 
-            runtime = NativeRuntime(configuration=self.backend, credential=TokenCredential(api_key=self.token))
-            execution = DaytonaExecution(self.config, self.environment_id, self.state, runtime)
-            try:
-                await execution.open(execution_id="desktop-readiness")
-            finally:
-                await execution.close()
-            if self.recipe.desktop_assistance:
-                await self.desktop_access(access.Describe())
+    async def _check_envd(self, target: Sandbox) -> None:
+        # Snapshot boot owns startup on create and restart. Attachment only reads
+        # credentials and checks EIP; it cannot repair a failed daemon.
+        toolbox = await self.open_toolbox(target)
+        probe = """import socket,time
+end=time.monotonic()+30
+while time.monotonic()<end:
+ try:
+  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
+ except OSError: time.sleep(.2)
+else: raise RuntimeError('a13n-envd did not become ready')
+"""
+        result = decode_response(
+            Execution,
+            await toolbox.request(
+                "POST",
+                target.id + "/process/execute",
+                body={
+                    "command": shlex.join(["python3", "-I", "-c", probe]),
+                    "timeout": 35,
+                },
+            ),
+            self.provider_key,
+        )
+        if result.exitCode != 0:
+            raise provider_error(
+                self.provider_key,
+                "envd_bootstrap_failed",
+                Category.UNAVAILABLE,
+                description="The Daytona snapshot must start compatible a13n-envd and desktop services at boot",
+            )
+        runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
+        execution = http_execution(HttpReference(self.config, self.environment_id, self.state, runtime))
+        try:
+            await execution.open(execution_id="exec-readiness")
+            await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
+        finally:
+            await execution.close()
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:

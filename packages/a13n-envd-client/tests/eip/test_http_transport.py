@@ -35,7 +35,7 @@ def session_requester(device):
 
 
 @asynccontextmanager
-async def control_server(*, delay=0, status=200, disconnect=False):
+async def control_server(*, delay=0, status=200, disconnect=False, proxy_token=None):
     tasks = set()
     received = []
 
@@ -43,6 +43,9 @@ async def control_server(*, delay=0, status=200, disconnect=False):
         tasks.add(asyncio.current_task())
         try:
             headers = await reader.readuntil(b"\r\n\r\n")
+            if proxy_token is not None:
+                assert f"X-Proxy-Token: {proxy_token}".encode().lower() in headers.lower()
+                assert b"authorization: bearer envd-token" in headers.lower()
             length = next(
                 int(line.split(b":", 1)[1])
                 for line in headers.split(b"\r\n")
@@ -298,3 +301,32 @@ async def test_explicit_tls_verification_choice_keeps_https_and_redirect_policy(
             HttpTransport("http://example.test", "test-credential", verify=verify)
     finally:
         await transport.close()
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Authorization": "other"},
+        {"EIP-Session": "other"},
+        {"Host": "other"},
+        {"X-Proxy": "bad\r\nheader"},
+        {"X-Proxy": "x" * 4097},
+    ],
+)
+def test_proxy_headers_cannot_override_eip_or_http_framing(headers):
+    with pytest.raises(ValueError, match="Proxy authentication"):
+        HttpTransport("https://fixture.example", "envd-token", extra_headers=headers)
+
+
+def test_proxy_and_envd_authentication_are_sent_together():
+    async def scenario():
+        async with control_server(proxy_token="proxy-token") as (endpoint, received):
+            transport = HttpTransport(endpoint, "envd-token", extra_headers={"X-Proxy-Token": "proxy-token"})
+            try:
+                await transport.send(ControlFrame(b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'))
+                assert isinstance(await transport.receive(), ControlFrame)
+                assert len(received) == 1
+            finally:
+                await transport.close()
+
+    asyncio.run(scenario())

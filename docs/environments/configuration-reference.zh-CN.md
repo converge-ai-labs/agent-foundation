@@ -273,17 +273,11 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DaytonaEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值  | 约束与默认值                                           |
-| ------------------------- | ----- | -------------- | ------------------------------------------------------ |
-| `root`                    | false | string         | default="/home/daytona"                                |
-| `python`                  | false | string         | default="python3"                                      |
-| `shell`                   | false | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `desktop`                 | false | boolean        | default=false                                          |
-| `snapshot`                | false | string 或 null | maxLength=256; default=null                            |
+| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                 |
+| ------------------------- | ----- | ------------- | -------------------------------------------- |
+| `snapshot`                | true  | string        | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean       | default=false                                |
+| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
@@ -447,9 +441,10 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `HttpEnvdCredential`
 
-| 字段    | 必填 | 类型 / 可选值 | 约束与默认值                                   |
-| ------- | ---- | ------------- | ---------------------------------------------- |
-| `token` | true | string        | minLength=1; maxLength=4096; format="password" |
+| 字段      | 必填  | 类型 / 可选值 | 约束与默认值                                   |
+| --------- | ----- | ------------- | ---------------------------------------------- |
+| `headers` | false | object        | —; default from model factory                  |
+| `token`   | true  | string        | minLength=1; maxLength=4096; format="password" |
 
 ## `WebSocketEnvdConnectionConfiguration`
 
