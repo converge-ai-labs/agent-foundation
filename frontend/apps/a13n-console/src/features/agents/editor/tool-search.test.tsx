@@ -8,6 +8,20 @@ import { buildDraftConfig, useAgentDraft } from "./draft";
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock("../toolsets", () => ({
+  useToolsetCatalog: () => ({
+    data: {
+      items: [
+        {
+          key: "execution",
+          default_enabled: false,
+          platform: true,
+          tools: [{ key: "get_trace", default_enabled: true }],
+        },
+      ],
+    },
+  }),
+}));
 afterEach(cleanup);
 const id = "con_0123456789abcdef0123";
 const choices = {
@@ -74,4 +88,26 @@ it("selects native discovery, edits a group, and preserves the connection's load
       },
     }),
   );
+});
+
+it("offers platform tools as a source only while one is enabled", async () => {
+  function Editor({ enabled }: { enabled: boolean }) {
+    const draft = useAgentDraft({
+      model: "test",
+      toolsets: { execution: { enabled } },
+      tool_search: {
+        config: { mode: "native" },
+        groups: { tools: { description: "Tools" } },
+      },
+    });
+    return (
+      <ToolSearchSection draft={draft} choices={choices} readOnly={false} />
+    );
+  }
+  const { rerender } = render(<Editor key="off" enabled={false} />);
+  const source = () =>
+    screen.getByRole("checkbox", { name: "Selected platform tools" });
+  expect(source().hasAttribute("data-disabled")).toBe(true);
+  rerender(<Editor key="on" enabled />);
+  expect(source().hasAttribute("data-disabled")).toBe(false);
 });

@@ -75,20 +75,26 @@ Preparation owns Composer's configuration and model selection. Editing, revising
 
 ## Use the toolset in your own agents
 
-Select [platform tool groups](tools.md#platform-tools) under **Advanced / Platform Features** in the agent's tools, and the local operating skill in advanced configuration JSON. In the configuration:
+Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Features** in the agent's tools, and the local operating skill in advanced configuration JSON. In the configuration, this agent can manage agents, models and skills and read executions, but cannot archive agents:
 
 ```json
 {
-  "platform_tools": {
-    "groups": ["agents", "models", "skills", "execution"],
-    "read_permission": "allow",
-    "write_permission": "ask"
+  "toolsets": {
+    "agents": {
+      "enabled": true,
+      "tools": {
+        "archive_agent_api_v1_agents__agent_id__archive_post": { "enabled": false }
+      }
+    },
+    "models": { "enabled": true },
+    "skills": { "enabled": true },
+    "execution": { "enabled": true }
   },
   "builtin_skills": ["platform-operations"]
 }
 ```
 
-Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. Select tool groups to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
+Platform groups and the skill are not selected by default. Each tool keeps its own `permission`; `inherit` lets reads run and asks before writes. Select tools to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
 
 The `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. It shares the Harness Skills catalog and read lifecycle with user Skills. The Agent configuration schema is under `/platform-skills/platform-operations/schemas`; the deployment catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
 

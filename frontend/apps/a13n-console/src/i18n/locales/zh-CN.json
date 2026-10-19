@@ -2460,10 +2460,5 @@
   "Skills and their versions.": "技能和技能版本。",
   "Environment templates.": "环境模板。",
   "Providers, and tests of their saved connections.": "供应商，以及对已保存连接的测试。",
-  "Sessions, threads, runs, traces and findings; its only write submits a finding.": "会话、线程、运行、trace 和发现项；唯一的写操作是提交发现项。",
-  "Reads": "读取",
-  "Writes": "写入",
-  "Platform read permission": "平台读取权限",
-  "Platform write permission": "平台写入权限",
-  "Applies to every selected group.": "适用于所有已选的组。"
+  "Sessions, threads, runs, traces and findings; its only write submits a finding.": "会话、线程、运行、trace 和发现项；唯一的写操作是提交发现项。"
 }

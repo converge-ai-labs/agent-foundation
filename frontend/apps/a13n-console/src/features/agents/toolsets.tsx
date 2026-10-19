@@ -29,19 +29,31 @@ import type { ReviewTarget } from "./reviewer";
 import type { AgentConfig } from "./configuration";
 import { toolState } from "./toolset-state";
 import { ToolPermissions } from "./tool-permissions";
-import { PlatformTools } from "./platform-tools";
 import { WebToolSettings, WebLocalSettings } from "./web-tool-settings";
 import styles from "./agents.module.css";
 
 type Toolsets = NonNullable<AgentConfig["toolsets"]>;
 type Definition = Schema["ToolsetDefinition"];
-type Platform = Schema["PlatformSelection"];
+
+/** The built-in and platform toolsets this deployment offers. */
+export function useToolsetCatalog() {
+  const client = useClient();
+  const { workspace } = useWorkspace();
+  return useQuery({
+    queryKey: ["toolset-catalog", workspace.id],
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/toolsets", {
+          signal,
+        })
+        .then(data),
+  });
+}
 
 export function AgentToolsets({
   value,
   onChange,
-  platform,
-  onPlatformChange,
   config,
   agentId,
   readOnly = false,
@@ -53,8 +65,6 @@ export function AgentToolsets({
   onRequireReviewer?: () => void;
   value: Toolsets;
   onChange: Dispatch<SetStateAction<Toolsets>>;
-  platform: Platform;
-  onPlatformChange: Dispatch<SetStateAction<Platform>>;
   /** The whole configuration a save would publish, once the draft builds. */
   config?: AgentConfig;
   /** The agent the configuration would become a version of; none while creating. */
@@ -67,16 +77,7 @@ export function AgentToolsets({
   const client = useClient();
   const { workspace, basePath } = useWorkspace();
   const [selected, setSelected] = useState<Definition["key"] | null>(null);
-  const catalog = useQuery({
-    queryKey: ["toolset-catalog", workspace.id],
-    queryFn: ({ signal }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/toolsets", {
-          signal,
-        })
-        .then(data),
-  });
+  const catalog = useToolsetCatalog();
   const webProviders = useQuery({
     queryKey: ["web-providers", workspace.id, "choices"],
     queryFn: ({ signal }) =>
@@ -260,9 +261,9 @@ export function AgentToolsets({
               {group.tools.map((tool) => {
                 const selection = value[group.key]?.tools?.[tool.key];
                 const selectedPermission =
-                  selection?.permission === "inherit"
-                    ? "allow"
-                    : (selection?.permission ?? tool.default_permission);
+                  !selection?.permission || selection.permission === "inherit"
+                    ? tool.default_permission
+                    : selection.permission;
                 const {
                   provider,
                   providerMissing,
@@ -434,6 +435,8 @@ export function AgentToolsets({
       </section>
     );
   };
+  const groups = catalog.data?.items ?? [];
+  const platform = groups.filter((group) => group.platform);
   return (
     <Section
       title={t("Tools")}
@@ -443,18 +446,16 @@ export function AgentToolsets({
       actions={mark}
     >
       <div className={styles.toolsetCard}>
-        {catalog.data?.items.map(renderGroup)}
+        {groups.filter((group) => !group.platform).map(renderGroup)}
       </div>
-      <DisclosureSection
-        title={t("Advanced / Platform Features")}
-        defaultOpen={false}
-      >
-        <PlatformTools
-          value={platform}
-          onChange={onPlatformChange}
-          readOnly={readOnly}
-        />
-      </DisclosureSection>
+      {platform.length > 0 && (
+        <DisclosureSection
+          title={t("Advanced / Platform Features")}
+          defaultOpen={false}
+        >
+          <div className={styles.toolsetCard}>{platform.map(renderGroup)}</div>
+        </DisclosureSection>
+      )}
       <ErrorNotice error={catalog.error} />
       {validation.error && !refusal && <ErrorNotice error={validation.error} />}
       {refusal && candidate?.text === configText && (

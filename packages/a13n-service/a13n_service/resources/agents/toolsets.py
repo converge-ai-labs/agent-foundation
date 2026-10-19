@@ -1,5 +1,6 @@
-"""The built-in toolset catalogue, normalized selections of it, and the Harness configuration they select.
+"""The toolset catalogue, normalized selections of it, and the Harness configuration they select.
 
+The catalogue holds the built-in toolsets and one toolset per platform group, whose tools are its operations.
 A stored selection is always complete: normalization materializes every toolset and tool of the catalogue
 with its defaults and validates each typed config, so readers never merge defaults again.
 """
@@ -19,15 +20,17 @@ from a13n_harness.environment import DynamicEnvironmentConfiguration
 from a13n_harness.environment.configuration import ComputerConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
-from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
+from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissionSetting, source_tool_id
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
+PLATFORM_SOURCE = "platform"
 
-type ToolsetKey = Literal["files", "shell", "computer", "web", "memory", "assets"]
+type ToolsetKey = Literal["files", "shell", "computer", "web", "memory", "assets"] | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -104,6 +107,8 @@ class ToolsetDefinition(_Frozen):
     display_name: str
     description: str = ""
     default_enabled: bool
+    # Its tools call Service operations with the run's own credential.
+    platform: bool = False
     config_schema: dict[str, JsonValue]
     tools: tuple[ToolDefinition, ...]
 
@@ -122,6 +127,8 @@ class _Tool:
     default_enabled: bool = True
     operation: WebOperation | None = None
     description: str = ""
+    # The Harness default an `inherit` selection takes.
+    default_permission: ToolPermissionMode = "allow"
 
     def definition(self, supported_operations: frozenset[str]) -> ToolDefinition:
         return ToolDefinition(
@@ -131,8 +138,8 @@ class _Tool:
             execution_id=self.execution_id,
             model_name=self.model_name,
             default_enabled=self.default_enabled,
-            # A selection starts with `inherit`, which takes the agent's default: allow.
-            default_permission="allow",
+            # A selection starts with `inherit`, which takes this default.
+            default_permission=self.default_permission,
             config_schema=self.config.model_json_schema(),
             supported_permissions=_PERMISSIONS,
             resource_selector=None
@@ -150,6 +157,7 @@ class _Toolset:
     tools: tuple[_Tool, ...]
     description: str = ""
     config: type[BaseModel] = EmptyConfiguration
+    platform: bool = False
 
     def definition(self, supported_operations: frozenset[str]) -> ToolsetDefinition:
         return ToolsetDefinition(
@@ -157,9 +165,33 @@ class _Toolset:
             display_name=self.display_name,
             description=self.description,
             default_enabled=self.default_enabled,
+            platform=self.platform,
             config_schema=self.config.model_json_schema(),
             tools=tuple(tool.definition(supported_operations) for tool in self.tools),
         )
+
+
+def _platform(group: PlatformGroup, display_name: str, description: str) -> _Toolset:
+    """A group's operations, each called by its MCP tool name; reads default to allow and writes to ask."""
+    return _Toolset(
+        group,
+        display_name,
+        False,
+        tuple(
+            _Tool(
+                tool.key,
+                tool.summary,
+                source_tool_id(PLATFORM_SOURCE, tool.key, kind="mcp"),
+                tool.key,
+                description=f"{tool.method} {tool.path.removeprefix('/api/v1')}",
+                default_permission="allow" if tool.effect == "read" else "ask",
+            )
+            for tool in PLATFORM_TOOLS
+            if tool.group == group
+        ),
+        description=description,
+        platform=True,
+    )
 
 
 _TOOLSETS: tuple[_Toolset, ...] = (
@@ -423,6 +455,15 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset", description="Publish an asset"),),
         description="Publish files as agent assets.",
     ),
+    _platform("agents", "Agents", "Agents, their versions and the tool catalog."),
+    _platform("models", "Models", "Models and the model catalog."),
+    _platform("connections", "Connections", "Connections, their tools and connector apps."),
+    _platform("skills", "Skills", "Skills and their versions."),
+    _platform("environment_templates", "Environment templates", "Environment templates."),
+    _platform("providers", "Providers", "Providers, and tests of their saved connections."),
+    _platform(
+        "execution", "Execution", "Sessions, threads, runs, traces and findings; its only write submits a finding."
+    ),
 )
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 
@@ -491,6 +532,17 @@ def model_names(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
+
+
+def platform_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolIdentity]:
+    """The enabled platform tools by MCP name, each with the identity its permission rule and default apply to."""
+    return {
+        tool.model_name: ToolIdentity(tool.execution_id, tool.default_permission)
+        for toolset in _TOOLSETS
+        if toolset.platform
+        for tool in toolset.tools
+        if enabled_tool(toolsets, toolset.key, tool.key) is not None
+    }
 
 
 # The memory toolset's tool keys name each memory kind's tools by their Harness keys, such as `file_view`.

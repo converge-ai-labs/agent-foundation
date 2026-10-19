@@ -32,6 +32,7 @@ from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.resources.agents import composer as builtin_composer
 from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import (
@@ -92,17 +93,24 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
         "web",
         "memory",
         "assets",
+        *PLATFORM_GROUPS,
     ]
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
     supported = {tool.execution_id: tool.deployment_supported for tool in tools}
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]
+    # A platform group is an opt-in toolset of its operations; a read runs, a write asks.
+    execution = next(toolset for toolset in catalogue.items if toolset.key == "execution")
+    assert execution.platform and not execution.default_enabled
+    defaults = {tool.description: tool.default_permission for tool in execution.tools}
+    assert defaults["GET /traces/{trace_id}"] == "allow" and defaults["POST /findings"] == "ask"
 
 
 def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     provider = new_object_id("wp")
     selected = config(toolsets={"web": {"tools": {"search": {"config": {"provider_id": provider}}}}})
 
-    assert set(selected.toolsets) == {"files", "shell", "computer", "web", "memory", "assets"}
+    assert set(selected.toolsets) == {"files", "shell", "computer", "web", "memory", "assets", *PLATFORM_GROUPS}
+    assert not any(selected.toolsets[group].enabled for group in PLATFORM_GROUPS)
     assert not selected.toolsets["assets"].enabled
     # Memory tools reach a run only through its mounts; a disabled tool is left out of every mount.
     assert toolsets.memory_file_tools(selected.toolsets) == {
@@ -132,8 +140,12 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
 
 
 def test_permissions_compile_from_each_selection() -> None:
+    finding = "create_finding_api_v1_findings_post"
     selected = config(
-        toolsets={"shell": {"tools": {"exec": {"permission": "ask"}}}},
+        toolsets={
+            "shell": {"tools": {"exec": {"permission": "ask"}}},
+            "execution": {"enabled": True, "tools": {finding: {"permission": "allow"}}},
+        },
         connection_tools=[
             {"connection_id": MCP, "permission": "review", "permissions": {"drop": "deny"}},
             {
@@ -156,6 +168,7 @@ def test_permissions_compile_from_each_selection() -> None:
 
     assert rules["environment.shell_exec"] == "ask" and rules["filesystem.view"] == "inherit"
     assert "web.search" not in rules
+    assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents_api_v1_agents_get" not in rules
     assert rules[f"mcp/{MCP}/*"] == "review" and rules[f"mcp/{MCP}/drop"] == "deny"
     assert rules[f"tool/{GITHUB}/issues"] == "ask" and rules[f"tool/{GITHUB}/pulls"] == "allow"
     assert rules["tool/a13n-service-client/lookup"] == "deny"
@@ -855,6 +868,7 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
         "web",
         "memory",
         "assets",
+        *PLATFORM_GROUPS,
     ]
 
 

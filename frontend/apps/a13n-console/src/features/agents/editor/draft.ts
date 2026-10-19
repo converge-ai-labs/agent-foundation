@@ -65,7 +65,6 @@ export function useAgentDraft(initial: AgentConfig) {
       initial.default_environment_template_id ?? null,
     ),
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
-    [platformTools, setPlatformTools] = useState(initial.platform_tools ?? {}),
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
@@ -86,8 +85,6 @@ export function useAgentDraft(initial: AgentConfig) {
     environmentTemplateId !==
       (initial.default_environment_template_id ?? null) ||
     JSON.stringify(toolsets) !== JSON.stringify(initial.toolsets ?? {}) ||
-    JSON.stringify(platformTools) !==
-      JSON.stringify(initial.platform_tools ?? {}) ||
     instructions !== (initial.instructions ?? "") ||
     model !== initial.model ||
     thinking !== thinkingSelection(initialThinking) ||
@@ -121,8 +118,6 @@ export function useAgentDraft(initial: AgentConfig) {
     setEnvironmentTemplateId,
     toolsets,
     setToolsets,
-    platformTools,
-    setPlatformTools,
     reviewer,
     setReviewer,
     skills,
@@ -228,7 +223,6 @@ export function buildDraftConfig(
         {
           instructions: draft.instructions,
           toolsets: draft.toolsets,
-          platform_tools: draft.platformTools,
           reviewer: draft.reviewer,
           model: draft.model,
           model_settings: modelSettings,

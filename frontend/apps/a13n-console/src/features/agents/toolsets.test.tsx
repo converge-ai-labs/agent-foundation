@@ -68,29 +68,23 @@ function renderDraft(
   starting: NonNullable<AgentConfig["toolsets"]>,
   onRequireReviewer = vi.fn(),
   onReview = vi.fn(),
-  startingPlatform: NonNullable<AgentConfig["platform_tools"]> = {},
 ) {
   function Draft() {
     const [value, setValue] = useState(starting);
-    const [platform, setPlatform] = useState(startingPlatform);
     return (
       <>
         <AgentToolsets
           value={value}
           onChange={setValue}
-          platform={platform}
-          onPlatformChange={setPlatform}
           config={{
             model: "model-test",
             toolsets: value,
-            platform_tools: platform,
           }}
           agentId="ap_test"
           onRequireReviewer={onRequireReviewer}
           onReview={onReview}
         />
         <output data-testid="draft">{JSON.stringify(value)}</output>
-        <output data-testid="platform">{JSON.stringify(platform)}</output>
       </>
     );
   }
@@ -109,7 +103,6 @@ function renderDraft(
   return {
     user: userEvent.setup(),
     draft: () => JSON.parse(screen.getByTestId("draft").textContent!),
-    platform: () => JSON.parse(screen.getByTestId("platform").textContent!),
   };
 }
 
@@ -272,7 +265,6 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
           config: {
             model: "model-test",
             toolsets: draft(),
-            platform_tools: {},
           },
           agent_id: "ap_test",
         },
@@ -598,39 +590,72 @@ it("enables local Web tools while Provider discovery is still pending", async ()
   expect(draft().web.tools.search.config.provider_id).toBe("wprov_brave");
 });
 
-it("selects platform groups in a fixed order with one read and one write permission", async () => {
+it("selects platform tools one by one, with writes asking by default", async () => {
+  const tool = (key: string, display_name: string, permission: string) => ({
+    ...web.tools[2],
+    key,
+    display_name,
+    description: "",
+    execution_id: `mcp/platform/${key}`,
+    model_name: key,
+    default_enabled: true,
+    default_permission: permission,
+  });
+  const execution = {
+    key: "execution",
+    display_name: "Execution",
+    description: "Sessions, threads, runs, traces and findings.",
+    default_enabled: false,
+    platform: true,
+    config_schema: {},
+    tools: [
+      tool("get_trace", "GET /traces/{trace_id}", "allow"),
+      tool("create_finding", "POST /findings", "ask"),
+    ],
+  };
   http.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/toolsets")
-      ? { items: [web] }
+      ? { items: [web, execution] }
       : { items: [], next_cursor: null },
   }));
   http.POST.mockResolvedValue({
     response: new Response(null, { status: 204 }),
   });
-  const { user, platform } = renderDraft({}, undefined, undefined, {
-    groups: ["execution"],
-    read_permission: "allow",
-    write_permission: "ask",
+  const { user, draft } = renderDraft({
+    execution: {
+      enabled: false,
+      tools: {
+        get_trace: { enabled: true, permission: "inherit" },
+        create_finding: { enabled: true, permission: "inherit" },
+      },
+    },
   });
+  // Platform groups stay out of the main list, under the advanced section.
+  expect(await screen.findByText("Web")).toBeTruthy();
+  expect(screen.queryByText("Execution")).toBeNull();
   await user.click(
-    await screen.findByRole("button", { name: "Advanced / Platform Features" }),
+    screen.getByRole("button", { name: "Advanced / Platform Features" }),
   );
-  await user.click(screen.getByRole("checkbox", { name: "Agents" }));
-  expect(platform().groups).toEqual(["agents", "execution"]);
-  await user.click(screen.getByRole("checkbox", { name: "Execution" }));
-  expect(platform().groups).toEqual(["agents"]);
+  await user.click(
+    screen.getByRole("checkbox", { name: "Enable Execution tools" }),
+  );
+  await user.click(screen.getByText("Execution").closest("button")!);
+  await user.click(screen.getByRole("checkbox", { name: "get_trace" }));
+  expect(draft().execution.enabled).toBe(true);
+  expect(draft().execution.tools.get_trace.enabled).toBe(false);
+  // An inherited permission shows the tool's default: a write asks.
   const writes = screen.getByRole("group", {
-    name: "Platform write permission",
+    name: "create_finding permission",
   });
-  // Platform permissions have no automatic review.
   expect(
-    within(writes).queryByRole("button", { name: "Automatic review" }),
-  ).toBeNull();
-  await user.click(within(writes).getByRole("button", { name: "Deny" }));
-  expect(platform()).toEqual({
-    groups: ["agents"],
-    read_permission: "allow",
-    write_permission: "deny",
+    within(writes)
+      .getByRole("button", { name: "Ask" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  await user.click(within(writes).getByRole("button", { name: "Allow" }));
+  expect(draft().execution.tools.create_finding).toEqual({
+    enabled: true,
+    permission: "allow",
   });
 });
 

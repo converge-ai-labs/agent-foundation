@@ -148,24 +148,6 @@
 .toolsetGroupBody {
   border-top: 1px solid var(--a13n-border);
 }
-.platformRow {
-  display: grid;
-  grid-template-columns: 18px clamp(90px, 21%, 150px) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 54px;
-  padding: 0 16px;
-}
-.platformRow + .platformRow {
-  border-top: 1px solid var(--a13n-border);
-}
-.platformPermission {
-  grid-column: 2;
-}
-/* The label spans the checkbox and name cells, so clicking the name toggles the group. */
-.platformGroup {
-  display: contents;
-}
 .toolsetTool {
   padding: 0 18px 0 46px;
 }
@@ -421,10 +403,6 @@
     justify-content: space-between;
   }
   .toolsetGroupHeader {
-    padding: 0 14px;
-  }
-  .platformRow {
-    grid-template-columns: 18px minmax(0, 1fr) auto;
     padding: 0 14px;
   }
 }

@@ -32,7 +32,7 @@ Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agen
 
 ## 平台工具
 
-平台工具是 Service API 操作。运行使用自己的短期凭据调用它们，权限不超过启动运行的人或 key。在 agent 工具的 **高级 / 平台功能**下按组选择，或在 `platform_tools` 中选择：
+平台工具是 Service API 操作。运行使用自己的短期凭据调用它们，权限不超过启动运行的人或 key。每个组是 `toolsets` 中的一个工具集，组内每个操作是一个工具，键为它的 MCP 工具名。在 agent 工具的 **高级 / 平台功能**下选择。各组默认禁用；启用一个组会启用组内全部工具，然后可以关掉 agent 不需要的工具：
 
 | 组                      | 操作                                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------------- |
@@ -44,7 +44,7 @@ Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agen
 | `providers`             | Provider，以及对其已保存连接的测试                                                          |
 | `execution`             | Session、thread、run、trace 和发现项；唯一的写入操作是提交发现项（`POST /api/v1/findings`） |
 
-已选组的读取操作共用一个权限（默认 `allow`），写入操作共用另一个权限（默认 `ask`）；两者均可设为 `allow`、`ask` 或 `deny`。[Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) 给出配置示例，以及向模型说明这些工具的操作 skill。发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。
+每个工具都有自己的权限，和内置工具一样。`inherit` 取操作的默认值：读取为 `allow`，写入为 `ask`。运行只会获得已启用的工具。[Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) 给出配置示例，以及向模型说明这些工具的操作 skill。发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。
 
 ## Web 搜索与抓取
 
@@ -187,7 +187,7 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 模型通过提供商的原生搜索发现单个工具，再调用 `knowledge__search_docs` 等名称。Service 沿用已有连接执行，保留凭据、调用方请求头和工具权限。不支持的模型会在发送模型请求前以 `native_tool_search_unsupported` 失败。
 
-分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已选的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
+分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已启用的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
 
 - **原生工具搜索**（`config.mode: native`）使用提供商原生发现和普通工具调用。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。
 - **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `search_proxy_tools` 和 `call_proxy_tool`。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。

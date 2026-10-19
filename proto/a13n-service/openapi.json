@@ -288,9 +288,6 @@
               }
             ]
           },
-          "platform_tools": {
-            "$ref": "#/components/schemas/PlatformSelection"
-          },
           "plugins": {
             "default": [],
             "items": {
@@ -492,9 +489,6 @@
                 "type": "null"
               }
             ]
-          },
-          "platform_tools": {
-            "$ref": "#/components/schemas/PlatformSelection"
           },
           "plugins": {
             "default": [],
@@ -861,16 +855,6 @@
               }
             ]
           },
-          "platform_tools": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlatformSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "plugins": {
             "anyOf": [
               {
@@ -1124,16 +1108,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "platform_tools": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlatformSelection"
               },
               {
                 "type": "null"
@@ -3222,7 +3196,6 @@
           "skills",
           "skill_sync",
           "connection_tools",
-          "platform_tools",
           "tool_search",
           "builtin_skills",
           "client_tools",
@@ -10994,43 +10967,6 @@
         ],
         "type": "string"
       },
-      "PlatformSelection": {
-        "additionalProperties": false,
-        "description": "Platform MCP groups selected independently of local operating instructions.",
-        "properties": {
-          "groups": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/PlatformGroup"
-            },
-            "title": "Groups",
-            "type": "array",
-            "uniqueItems": true
-          },
-          "read_permission": {
-            "default": "allow",
-            "enum": [
-              "allow",
-              "ask",
-              "deny"
-            ],
-            "title": "Read Permission",
-            "type": "string"
-          },
-          "write_permission": {
-            "default": "ask",
-            "enum": [
-              "allow",
-              "ask",
-              "deny"
-            ],
-            "title": "Write Permission",
-            "type": "string"
-          }
-        },
-        "title": "PlatformSelection",
-        "type": "object"
-      },
       "PluginSelection": {
         "additionalProperties": false,
         "description": "One instance of a Harness plugin factory the deployment installed.",
@@ -16757,6 +16693,11 @@
           "key": {
             "$ref": "#/components/schemas/ToolsetKey"
           },
+          "platform": {
+            "default": false,
+            "title": "Platform",
+            "type": "boolean"
+          },
           "tools": {
             "items": {
               "$ref": "#/components/schemas/ToolDefinition"
@@ -16776,15 +16717,22 @@
         "type": "object"
       },
       "ToolsetKey": {
-        "enum": [
-          "files",
-          "shell",
-          "computer",
-          "web",
-          "memory",
-          "assets"
-        ],
-        "type": "string"
+        "anyOf": [
+          {
+            "enum": [
+              "files",
+              "shell",
+              "computer",
+              "web",
+              "memory",
+              "assets"
+            ],
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/PlatformGroup"
+          }
+        ]
       },
       "ToolsetSelection": {
         "additionalProperties": false,
@@ -19171,7 +19119,6 @@
                 "skills",
                 "skill_sync",
                 "connection_tools",
-                "platform_tools",
                 "tool_search",
                 "builtin_skills",
                 "client_tools",
@@ -31132,7 +31079,6 @@
                 "skills",
                 "skill_sync",
                 "connection_tools",
-                "platform_tools",
                 "tool_search",
                 "builtin_skills",
                 "client_tools",

@@ -120,7 +120,7 @@ flowchart TB
     class Reviewer ext
 ```
 
-内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。平台工具的权限在 `platform_tools` 中设置；参阅[平台工具](tools.md#platform-tools)。
+内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。[平台工具](tools.md#platform-tools)也是工具集，使用同一个字段。
 
 ### 客户端工具与问题
 
@@ -491,4 +491,4 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读平台查询读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
 
-Finding Agent 使用 `execution` [平台工具](tools.md#platform-tools)组，读取和写入均为允许：它读取 run、trace 和发现项，唯一的写入操作是提交发现项。它的发现项只引用已读取的所选 trace，并以其运行作为来源。自定义 Agent 可以选择同一组，写入默认需要询问用户。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。
+Finding Agent 只启用 `execution` 组中的六个[平台工具](tools.md#platform-tools)，均为允许：它读取所选 trace、其 span 和 span 内容、run 实际执行的配置和发现项，唯一的写入操作是提交发现项。它的发现项只引用已读取的所选 trace，并以其运行作为来源。自定义 Agent 可以选择相同的工具，写入默认需要询问用户。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。

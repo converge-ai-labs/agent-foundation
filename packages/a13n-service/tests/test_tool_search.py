@@ -46,7 +46,7 @@ def test_configuration_preserves_defaults_and_validates_membership() -> None:
         ({"tools": {"description": " "}}, "non-blank"),
         ({"tools": {"description": "Tools", "connections": [new_object_id("con")]}}, "unselected connection"),
         ({"tools": {"description": "Tools", "plugins": ["missing"]}}, "unselected plugin"),
-        ({"tools": {"description": "Tools", "platform": True}}, "selected platform"),
+        ({"tools": {"description": "Tools", "platform": True}}, "enabled platform tool"),
         (
             {name: {"description": "Tools", "connections": [CONNECTION]} for name in ("one", "two")},
             "multiple groups",
@@ -76,7 +76,7 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
     selected = config(
         connection_tools=[{"connection_id": CONNECTION}],
         plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
-        platform_tools={"groups": ["agents"]},
+        toolsets={"agents": {"enabled": True}},
         tool_search={
             "config": {"mode": "native"},
             "groups": {

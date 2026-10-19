@@ -3754,7 +3754,6 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      platform_tools?: components["schemas"]["PlatformSelection"];
       /**
        * Plugins
        * @default []
@@ -3836,7 +3835,6 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      platform_tools?: components["schemas"]["PlatformSelection"];
       /**
        * Plugins
        * @default []
@@ -3955,7 +3953,6 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      platform_tools?: components["schemas"]["PlatformSelection"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
@@ -4008,7 +4005,6 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      platform_tools?: components["schemas"]["PlatformSelection"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
@@ -4738,7 +4734,6 @@ export interface components {
       | "skills"
       | "skill_sync"
       | "connection_tools"
-      | "platform_tools"
       | "tool_search"
       | "builtin_skills"
       | "client_tools"
@@ -7470,29 +7465,6 @@ export interface components {
       | "providers"
       | "execution";
     /**
-     * PlatformSelection
-     * @description Platform MCP groups selected independently of local operating instructions.
-     */
-    PlatformSelection: {
-      /**
-       * Groups
-       * @default []
-       */
-      groups?: components["schemas"]["PlatformGroup"][];
-      /**
-       * Read Permission
-       * @default allow
-       * @enum {string}
-       */
-      read_permission?: "allow" | "ask" | "deny";
-      /**
-       * Write Permission
-       * @default ask
-       * @enum {string}
-       */
-      write_permission?: "allow" | "ask" | "deny";
-    };
-    /**
      * PluginSelection
      * @description One instance of a Harness plugin factory the deployment installed.
      */
@@ -9466,11 +9438,17 @@ export interface components {
       /** Display Name */
       display_name: string;
       key: components["schemas"]["ToolsetKey"];
+      /**
+       * Platform
+       * @default false
+       */
+      platform?: boolean;
       /** Tools */
       tools: components["schemas"]["ToolDefinition"][];
     };
-    /** @enum {string} */
-    ToolsetKey: "files" | "shell" | "computer" | "web" | "memory" | "assets";
+    ToolsetKey:
+      | ("files" | "shell" | "computer" | "web" | "memory" | "assets")
+      | components["schemas"]["PlatformGroup"];
     /** ToolsetSelection */
     ToolsetSelection: {
       /** Config */
@@ -10273,7 +10251,6 @@ export interface operations {
           | "skills"
           | "skill_sync"
           | "connection_tools"
-          | "platform_tools"
           | "tool_search"
           | "builtin_skills"
           | "client_tools"
@@ -14498,7 +14475,6 @@ export interface operations {
           | "skills"
           | "skill_sync"
           | "connection_tools"
-          | "platform_tools"
           | "tool_search"
           | "builtin_skills"
           | "client_tools"

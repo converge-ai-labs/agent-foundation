@@ -16,13 +16,20 @@ from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfigu
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
+from a13n_harness.tools import ToolIdentity
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import ServiceError
-from a13n_service.resources.agents.schemas import PlatformSelection, SharedSkillSync
-from a13n_service.resources.agents.toolsets import enabled_tool, memory_file_tools, memory_record_tools, web_tools
+from a13n_service.resources.agents.schemas import SharedSkillSync
+from a13n_service.resources.agents.toolsets import (
+    enabled_tool,
+    memory_file_tools,
+    memory_record_tools,
+    platform_tools,
+    web_tools,
+)
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
@@ -50,7 +57,7 @@ class _Parts:
     connections: tuple[SelectedConnection, ...]
     web: ResolvedWeb | None
     skills: tuple[PinnedSkill, ...]
-    platform: PlatformSelection
+    platform: Mapping[str, ToolIdentity]
     builtin_skill: bool
 
 
@@ -93,7 +100,7 @@ async def resolve_host(
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
             skills=await resolve_skills(session, run, config.skills, sync=config.skill_sync),
-            platform=config.platform_tools,
+            platform=platform_tools(config.toolsets),
             builtin_skill="platform-operations" in config.builtin_skills,
         )
     return HostPlan(
@@ -189,7 +196,7 @@ async def open_host(
                 )
             )
             tools[revision_id] = dict(zip((item.connection.id for item in parts.connections), connections, strict=True))
-            if parts.platform.groups:
+            if parts.platform:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
                 tools[revision_id]["platform"] = platform
             if parts.web is not None:

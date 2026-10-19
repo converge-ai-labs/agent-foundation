@@ -75,20 +75,26 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
 
 ## 在自己的 agent 中使用工具集
 
-在 agent 工具的 **高级 / 平台功能**下选择[平台工具组](tools.md#platform-tools)，并在高级配置 JSON 中选择本地操作 skill。配置如下：
+在 agent 工具的 **高级 / 平台功能**下选择[平台工具](tools.md#platform-tools)，并在高级配置 JSON 中选择本地操作 skill。下面的配置让 agent 可以管理 agent、模型和 skill，读取执行记录，但不能归档 agent：
 
 ```json
 {
-  "platform_tools": {
-    "groups": ["agents", "models", "skills", "execution"],
-    "read_permission": "allow",
-    "write_permission": "ask"
+  "toolsets": {
+    "agents": {
+      "enabled": true,
+      "tools": {
+        "archive_agent_api_v1_agents__agent_id__archive_post": { "enabled": false }
+      }
+    },
+    "models": { "enabled": true },
+    "skills": { "enabled": true },
+    "execution": { "enabled": true }
   },
   "builtin_skills": ["platform-operations"]
 }
 ```
 
-两项选择默认均为空。权限可设为 `allow`、`ask` 或 `deny`。选择工具组提供操作能力，选择 skill 提供说明。修改配置后，正在执行的运行保留接收时的授权和工具范围。
+平台组和 skill 默认都不选择。每个工具有自己的 `permission`；`inherit` 时读取直接执行，写入先请求批准。选择工具提供操作能力，选择 skill 提供说明。修改配置后，正在执行的运行保留接收时的授权和工具范围。
 
 `platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。它与用户 Skill 共用 Harness Skills 目录和读取机制。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`；`/platform-instance` 中的部署目录在进程启动时生成一次，供各次 attempt 共用。
 

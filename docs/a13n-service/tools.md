@@ -32,7 +32,7 @@ The files and terminal tools act on the run's mounted [environments](environment
 
 ## Platform tools
 
-Platform tools are Service API operations that a run calls with its own short-lived credential, within the permissions of the person or key that started it. Select them by group under **Advanced / Platform Features** in an agent's tools, or in `platform_tools`:
+Platform tools are Service API operations that a run calls with its own short-lived credential, within the permissions of the person or key that started it. Each group is a toolset in `toolsets`, and each of its operations is a tool, keyed by its MCP tool name. Select them under **Advanced / Platform Features** in an agent's tools. The groups are disabled by default; enabling one enables all its tools, and you can then turn off the ones the agent does not need:
 
 | Group                   | Operations                                                                                               |
 | ----------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -44,7 +44,7 @@ Platform tools are Service API operations that a run calls with its own short-li
 | `providers`             | Providers, and tests of their saved connections                                                          |
 | `execution`             | Sessions, threads, runs, traces and findings; its only write submits a finding (`POST /api/v1/findings`) |
 
-One permission applies to the selected reads (`allow` by default) and one to the selected writes (`ask` by default); each can be `allow`, `ask` or `deny`. [Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) shows the configuration and the operating skill that explains these tools to the model. Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), one primary category per issue.
+Each tool has its own permission, as built-in tools do. `inherit` takes the operation's default: `allow` for a read and `ask` for a write. A run is offered only the enabled tools. [Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) shows the configuration and the operating skill that explains these tools to the model. Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), one primary category per issue.
 
 ## Web search and scrape
 
@@ -187,7 +187,7 @@ In Console, open an agent's **Tool discovery** section, choose **Native tool sea
 
 The model discovers individual tools through its provider's native search, then calls names such as `knowledge__search_docs`. Service executes them through the existing connection, with its credentials, caller headers and tool permissions. An unsupported model fails before a model request with `native_tool_search_unsupported`.
 
-Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's selected platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
+Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's enabled platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
 
 - **Native tool search** (`config.mode: native`) uses provider-native discovery and ordinary tool calls. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default.
 - **Grouped proxy search** (`config.mode: proxy`) uses Harness's `search_proxy_tools` and `call_proxy_tool`. Optional `config` settings follow [Harness ToolSearch](../a13n-harness/tool-search.md).

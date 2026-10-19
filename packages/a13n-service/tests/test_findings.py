@@ -9,9 +9,10 @@ import pytest
 from a13n_service.api_tools import tool_name
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.platform import PLATFORM_GROUPS, PLATFORM_TOOLS
 from a13n_service.infra.telemetry import correlation_attributes
 from a13n_service.providers.traces import Span, SpanPage
-from a13n_service.runs.findings import analysis
+from a13n_service.runs.findings import analysis, preset
 from a13n_service.runs.findings.schemas import Category
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 
@@ -178,12 +179,15 @@ async def test_presets_coexist_and_finder_writes_only_findings(service, scripted
         f"/api/v1/agents/{finder.json()['id']}/revisions/{finder.json()['default_revision_id']}"
     )
     config = revision.json()["config"]
-    assert config["platform_tools"] == {
-        "groups": ["execution"],
-        "read_permission": "allow",
-        "write_permission": "allow",
+    operations = {tool.key: (tool.method, tool.path) for tool in PLATFORM_TOOLS}
+    selected = {
+        operations[key]: tool["permission"]
+        for key, tool in config["toolsets"]["execution"]["tools"].items()
+        if tool["enabled"]
     }
-    assert not any(config["toolsets"][key]["enabled"] for key in ("files", "shell", "memory"))
+    assert selected == dict.fromkeys(preset.TOOLS, "allow")
+    others = ("files", "shell", "memory", *(group for group in PLATFORM_GROUPS if group != "execution"))
+    assert not any(config["toolsets"][key]["enabled"] for key in others)
     # Submitting a finding is the one write of the execution group.
     writes = [
         (method, path)
@@ -279,8 +283,7 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
             source_run_id=result["run_id"],
         )
     read_trace, submit = operation(service, "get", "/traces/{trace_id}"), operation(service, "post", "/findings")
-    # The analysis Run's own credential reads only its selected traces, each by ID.
-    scripted_model.call(operation(service, "get", "/traces"), {}, call_id="list")
+    # The analysis Run's own credential reads only its selected traces.
     scripted_model.call(read_trace, {"trace_id": "c" * 32}, call_id="unselected")
     scripted_model.call(read_trace, {"trace_id": TRACE}, call_id="read-1")
     submitted = finding(agent, run)
@@ -306,14 +309,42 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     while not scripted_model.requests.empty():
         last_request = scripted_model.requests.get_nowait()
     tools = {tool["function"]["name"]: tool["function"] for tool in last_request["tools"]}
-    assert operation(service, "post", "/agents/{agent_id}/revisions") not in tools
+    operations = {tool.key: (tool.method, tool.path) for tool in PLATFORM_TOOLS}
+    assert {operations[name] for name in tools if name in operations} == preset.TOOLS
     assert all(f'"{category}"' in json.dumps(tools[submit]["parameters"]) for category in get_args(Category.__value__))
     results = {
         message["tool_call_id"]: message["content"] for message in last_request["messages"] if message["role"] == "tool"
     }
-    assert "an analysis reads its selected traces by ID" in results["list"]
     assert "outside the analysis selection" in results["unselected"]
     assert "category" in results["bad-category"]
+
+
+async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(service, scripted_model, runs_kit):
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.platform_tokens import issue
+
+    from .mcp_support import call, client
+
+    _, run = await target(service, scripted_model, runs_kit)
+    service.app.state.runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    await service.client.post("/api/v1/finding-agent")
+    created = await service.client.post(
+        "/api/v1/finding-analyses", json={"trace_id": TRACE}, headers={"Idempotency-Key": "credential"}
+    )
+    assert created.status_code == 201, created.text
+    (lease,) = await claim(service.runtime, worker_id="finding-test", worker_build="test", limit=1)
+    assert lease.run_id == created.json()["run_id"]
+    # A Host that offered more tools than the Finding Agent selects would still meet these route rules.
+    token = await issue(service.runtime, lease, frozenset({"execution"}))
+    async with client(service, {"secret": token}) as http:
+        listed = await call(http, service, "GET", "/traces")
+        assert "an analysis reads its selected traces by ID" in listed["body"]["error"]["message"]
+        unselected = await call(http, service, "GET", "/traces/{trace_id}", trace_id="c" * 32)
+        assert "outside the analysis selection" in unselected["body"]["error"]["message"]
+        selected = await call(http, service, "GET", "/traces/{trace_id}", trace_id=TRACE)
+        assert selected["status"] == 200, selected
+    status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
+    assert status["read_trace_ids"] == [TRACE]
 
 
 async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_runs(service, scripted_model, runs_kit):

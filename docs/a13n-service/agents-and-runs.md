@@ -120,7 +120,7 @@ flowchart TB
     class Reviewer ext
 ```
 
-Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_tools[].permission` (`inherit`, `allow` or `deny`). Platform tools take their permissions from `platform_tools`; see [platform tools](tools.md#platform-tools).
+Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_tools[].permission` (`inherit`, `allow` or `deny`). [Platform tools](tools.md#platform-tools) are toolsets too, and use the same field.
 
 ### Client tools and questions
 
@@ -491,4 +491,4 @@ Selection scans at most 100 roots and selects at most 20 matching traces. Execut
 
 For findings other than expected or false positive, **Review with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only platform queries. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
 
-Finding Agent uses the `execution` [platform tools](tools.md#platform-tools) group, with its reads and writes allowed: it reads runs, traces and findings, and its only write submits a finding. Its findings cite only selected traces that it read, and name its run as their source. Custom agents can select the same group; their writes default to asking. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.
+Finding Agent enables only six `execution` [platform tools](tools.md#platform-tools), each allowed: it reads the selected traces, their spans and span content, the run's executed configuration and a finding, and its only write submits a finding. Its findings cite only selected traces that it read, and name its run as their source. Custom agents can select the same tools; their writes default to asking. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.

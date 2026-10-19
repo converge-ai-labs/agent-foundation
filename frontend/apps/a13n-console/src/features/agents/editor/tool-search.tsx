@@ -5,6 +5,7 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { Section } from "../../../shared/page";
 import type { useAgentChoices } from "../choices";
 import { displayName } from "../connections";
+import { useToolsetCatalog } from "../toolsets";
 import type { SearchGroup, ToolSearchDraft } from "../tool-search";
 import type { AgentDraft } from "./draft";
 import styles from "./editor.module.css";
@@ -25,7 +26,17 @@ export function ToolSearchSection({
   const { t } = useTranslation();
   const value = draft.toolSearch;
   const groups = value.groups;
-  const platformSelected = !!draft.platformTools.groups?.length;
+  const catalog = useToolsetCatalog();
+  const platformSelected = !!catalog.data?.items.some(
+    (group) =>
+      group.platform &&
+      (draft.toolsets[group.key]?.enabled ?? group.default_enabled) &&
+      group.tools.some(
+        (tool) =>
+          draft.toolsets[group.key]?.tools?.[tool.key]?.enabled ??
+          tool.default_enabled,
+      ),
+  );
   const sources = [
     ...draft.connections.map(({ connection_id }) => {
       const connection = choices.data?.connections.find(

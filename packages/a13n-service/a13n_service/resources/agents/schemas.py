@@ -16,10 +16,9 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
-from a13n_service.infra.platform import PlatformGroup
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
-from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
+from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets, platform_tools
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
@@ -158,14 +157,6 @@ class PluginSelection(_Frozen):
     config: JsonObject = Field(default_factory=dict)
 
 
-class PlatformSelection(_Frozen):
-    """Platform MCP groups selected independently of local operating instructions."""
-
-    groups: frozenset[PlatformGroup] = frozenset()
-    read_permission: Literal["allow", "ask", "deny"] = "allow"
-    write_permission: Literal["allow", "ask", "deny"] = "ask"
-
-
 class ToolSearchGroup(_Frozen):
     description: str = Field(min_length=1, max_length=512)
     connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
@@ -209,7 +200,6 @@ class AgentConfig(_Frozen):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
-    platform_tools: PlatformSelection = Field(default_factory=PlatformSelection)
     tool_search: ToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     builtin_skills: frozenset[Literal["platform-operations"]] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -250,8 +240,8 @@ class AgentConfig(_Frozen):
                     raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
                 if set(group.plugins) - plugins:
                     raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
-                if group.platform and not self.platform_tools.groups:
-                    raise ValueError(f"ToolSearch group {name!r} requires selected platform tools")
+                if group.platform and not platform_tools(self.toolsets):
+                    raise ValueError(f"ToolSearch group {name!r} requires an enabled platform tool")
         return self
 
 
@@ -290,7 +280,6 @@ class AgentOverride(_Frozen):
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
     skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
-    platform_tools: PlatformSelection | None = None
     tool_search: ToolSearch | None = None
     builtin_skills: frozenset[Literal["platform-operations"]] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
@@ -311,7 +300,6 @@ _REPLACED = (
     "skills",
     "skill_sync",
     "connection_tools",
-    "platform_tools",
     "tool_search",
     "builtin_skills",
     "client_tools",

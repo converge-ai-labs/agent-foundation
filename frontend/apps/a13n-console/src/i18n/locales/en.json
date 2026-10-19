@@ -2460,10 +2460,5 @@
   "Skills and their versions.": "Skills and their versions.",
   "Environment templates.": "Environment templates.",
   "Providers, and tests of their saved connections.": "Providers, and tests of their saved connections.",
-  "Sessions, threads, runs, traces and findings; its only write submits a finding.": "Sessions, threads, runs, traces and findings; its only write submits a finding.",
-  "Reads": "Reads",
-  "Writes": "Writes",
-  "Platform read permission": "Platform read permission",
-  "Platform write permission": "Platform write permission",
-  "Applies to every selected group.": "Applies to every selected group."
+  "Sessions, threads, runs, traces and findings; its only write submits a finding.": "Sessions, threads, runs, traces and findings; its only write submits a finding."
 }
