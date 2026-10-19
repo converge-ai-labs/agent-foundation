@@ -19,7 +19,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSON, JSONB
+from sqlalchemy.dialects.postgresql import JSON, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, immutable, rules, trigger
@@ -323,6 +323,7 @@ _RUN_PROGRESS = (
 class RunRow(Stamped, Base):
     __tablename__ = "runs"
     __table_args__ = (
+        Index("ix_runs_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_runs_thread_created", "thread_id", "created_at", "id"),
         Index("ix_runs_session_created", "workspace_id", "session_id", "created_at", "id"),
         UniqueConstraint("thread_id", "id"),
@@ -403,15 +404,20 @@ class RunRow(Stamped, Base):
         rules(
             f"""
             CREATE FUNCTION guard_run() RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE new_facts runs := NEW; old_facts runs := OLD;
             BEGIN
+                -- Avoid serializing the large search vector on every lease/checkpoint update.
+                new_facts.search_vector := NULL;
+                old_facts.search_vector := NULL;
                 IF OLD.status IN ('waiting', 'completed', 'failed', 'cancelled') THEN
                     -- Labels are the one editable property of a sealed run.
-                    IF (to_jsonb(NEW) - ARRAY['labels', 'version', 'updated_at'])
-                        IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['labels', 'version', 'updated_at'])
+                    IF NEW.search_vector IS DISTINCT FROM OLD.search_vector
+                        OR (to_jsonb(new_facts) - ARRAY['labels', 'version', 'updated_at'])
+                        IS DISTINCT FROM (to_jsonb(old_facts) - ARRAY['labels', 'version', 'updated_at'])
                     THEN RAISE EXCEPTION 'sealed run facts are immutable'; END IF;
                     RETURN NEW;
                 END IF;
-                IF (to_jsonb(NEW) - ARRAY[{_RUN_PROGRESS}]) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY[{_RUN_PROGRESS}])
+                IF (to_jsonb(new_facts) - ARRAY[{_RUN_PROGRESS}]) IS DISTINCT FROM (to_jsonb(old_facts) - ARRAY[{_RUN_PROGRESS}])
                 THEN RAISE EXCEPTION 'accepted run selection is immutable'; END IF;
                 IF NEW.status <> OLD.status AND NOT (
                     (OLD.status = 'accepted' AND NEW.status IN ('running', 'failed', 'cancelled'))
@@ -424,7 +430,8 @@ class RunRow(Stamped, Base):
             trigger("runs", "guard_run"),
             _thread_pointer_check("runs"),
             # A checkpoint commit keeps the run's version, so session streams send its state only on real changes.
-            unversioned=("checkpoint", "tail", "memory_cursors"),
+            unversioned=("checkpoint", "tail", "memory_cursors", "search_vector"),
+            compare_columns=True,
         ),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -463,6 +470,10 @@ class RunRow(Stamped, Base):
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     attempts: Mapped[int] = mapped_column(server_default=text("0"))
     max_attempts: Mapped[int]
+    # Internal derived data: list/get queries must not fetch the vector.
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR, server_default=text("''::tsvector"), deferred=True, deferred_raiseload=True
+    )
     # Typed pointers to the latest committed state and display tail objects; only fenced commits move them.
     checkpoint: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     tail: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))

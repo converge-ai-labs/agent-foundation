@@ -515,6 +515,25 @@ class Telemetry(Section):
                 )
 
 
+class RunSearch(Section):
+    """UTF-8 excerpt budgets and stripped PostgreSQL vector retention limits."""
+
+    user_head_bytes: int = Field(default=6144, ge=256, le=6144)
+    user_tail_bytes: int = Field(default=2048, ge=256, le=2048)
+    assistant_head_bytes: int = Field(default=4096, ge=256, le=4096)
+    assistant_tail_bytes: int = Field(default=12288, ge=256, le=12288)
+    vector_bytes: int = Field(default=524288, ge=393216, le=786432)
+    target_bytes: int = Field(default=393216, ge=327680, le=655360)
+    # Identical messages do not grow the vector, but still need a bounded retention ledger.
+    messages: int = Field(default=512, ge=8, le=4096)
+
+    @model_validator(mode="after")
+    def target_below_limit(self) -> "RunSearch":
+        if self.target_bytes >= self.vector_bytes:
+            raise ValueError("run_search.target_bytes must be below vector_bytes")
+        return self
+
+
 class Settings(Section):
     server: Server = Field(default_factory=Server)
     database: Database = Field(default_factory=Database)
@@ -525,6 +544,7 @@ class Settings(Section):
     control: Control = Field(default_factory=Control)
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
+    run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
     provisioning: Provisioning = Field(default_factory=Provisioning)
     memory: MemorySettings = Field(default_factory=MemorySettings)

@@ -184,6 +184,9 @@ async def test_a_crashed_attempt_recovers_from_its_checkpoint(service, scripted_
     await (await runs_kit.attempt(service))
     run = await runs_kit.get_run(service, run_id)
     assert run["status"] == "completed" and run["output"] == "Recovered" and run["attempts"] == 2
+    matched = await service.client.get(f"{service.api}/runs", params={"text_query": "survive Recovered"})
+    assert [item["id"] for item in matched.json()["items"]] == [run_id]
+
     attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [(item["status"], item["start_reason"]) for item in attempts] == [
         ("failed", "initial"),

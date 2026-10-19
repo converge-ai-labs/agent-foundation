@@ -149,6 +149,18 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | 整数        | minimum=0; maximum=16; default=4                 |
 | `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | 整数        | minimum=0; maximum=256; default=16               |
 
+## `run_search`
+
+| 设置                              | 环境变量                                | 类型 / 选项 | 约束与默认值                                   |
+| --------------------------------- | --------------------------------------- | ----------- | ---------------------------------------------- |
+| `run_search.user_head_bytes`      | `A13N_RUN_SEARCH__USER_HEAD_BYTES`      | 整数        | minimum=256; maximum=6144; default=6144        |
+| `run_search.user_tail_bytes`      | `A13N_RUN_SEARCH__USER_TAIL_BYTES`      | 整数        | minimum=256; maximum=2048; default=2048        |
+| `run_search.assistant_head_bytes` | `A13N_RUN_SEARCH__ASSISTANT_HEAD_BYTES` | 整数        | minimum=256; maximum=4096; default=4096        |
+| `run_search.assistant_tail_bytes` | `A13N_RUN_SEARCH__ASSISTANT_TAIL_BYTES` | 整数        | minimum=256; maximum=12288; default=12288      |
+| `run_search.vector_bytes`         | `A13N_RUN_SEARCH__VECTOR_BYTES`         | 整数        | minimum=393216; maximum=786432; default=524288 |
+| `run_search.target_bytes`         | `A13N_RUN_SEARCH__TARGET_BYTES`         | 整数        | minimum=327680; maximum=655360; default=393216 |
+| `run_search.messages`             | `A13N_RUN_SEARCH__MESSAGES`             | 整数        | minimum=8; maximum=4096; default=512           |
+
 ## `environments`
 
 | 设置                              | 环境变量                                | 类型 / 选项   | 约束与默认值                                  |

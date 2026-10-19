@@ -96,12 +96,12 @@ def identity_guarded(table: str) -> str:
     return trigger(table, "guard_identity")
 
 
-def rules(*statements: str, unversioned: tuple[str, ...] = ()) -> dict[str, Any]:
+def rules(*statements: str, unversioned: tuple[str, ...] = (), compare_columns: bool = False) -> dict[str, Any]:
     """The `__table_args__` entry carrying a table's rules, in execution order (functions before triggers).
 
     Changes confined to `unversioned` columns of a `Stamped` table keep its version, and so its ETag.
     """
-    return {"info": {"rules": statements, "unversioned": unversioned}}
+    return {"info": {"rules": statements, "unversioned": unversioned, "compare_columns": compare_columns}}
 
 
 def table_rules(row: type[Base]) -> list[str]:
@@ -113,6 +113,11 @@ def table_rules(row: type[Base]) -> list[str]:
         unversioned = table.info.get("unversioned", ())
         ignored = "'{" + ",".join(unversioned) + "}'::text[]"
         when = f"(to_jsonb(OLD) - {ignored}) IS DISTINCT FROM (to_jsonb(NEW) - {ignored})" if unversioned else None
+        if table.info.get("compare_columns"):
+            names = [column.name for column in table.columns if column.name not in unversioned]
+            old = ", ".join(f'OLD."{name}"' for name in names)
+            new = ", ".join(f'NEW."{name}"' for name in names)
+            when = f"ROW({old}) IS DISTINCT FROM ROW({new})"
         stamp = [trigger(table.name, "stamp_resource", when=when)]
     return [*stamp, *table.info.get("rules", ())]
 

@@ -24,6 +24,7 @@ dependencies = [
     "fastapi>=0.116,<1",
     "fastmcp-slim[client,server]>=4.0,<5",
     "httpx2>=2.5,<3",
+    "jieba==0.42.1",
     "jsonschema>=4.25,<5",
     "jsonschema-path>=0.5,<0.6",
     "mcp>=2.2,<3",

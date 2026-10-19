@@ -38,14 +38,17 @@ from a13n_service.runs import inbox
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
 from a13n_service.runs.contents import ContentObject, Contents, decode, live_continuation
 from a13n_service.runs.display import Page, Snapshot, StreamPosition, Tail
+from a13n_service.runs.search import vector
 from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
 from a13n_service.runs.usage import UsageReport, ingest
 
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
-# Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
-FORMAT = 1
+# Format 2 adds the private search retention ledger to tails. New workers still read format 1;
+# old workers skip format-2 checkpoints. Upgrade readers before enabling new workers.
+FORMAT = 2
+READABLE_FORMATS = (1, 2)
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -109,7 +112,7 @@ class PageRef(_Frozen):
 
 
 class RunState(_Frozen):
-    format: Literal[1] = FORMAT
+    format: Literal[1, 2] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
@@ -155,8 +158,8 @@ def claimable() -> ColumnElement[bool]:
     """Runs this build claims: those whose checkpoint has a format no newer than its own. A run without one yet
     starts from its parent's, so that one decides, and a run without either always qualifies.
 
-    A newer format waits for a newer worker during a rolling deploy. An older one no build reads again, since
-    `FORMAT` only moves on with a plan for outstanding checkpoints, so this build claims it to fail it.
+    A newer format waits for a newer worker during a rolling deploy. Supported older formats remain readable;
+    an unsupported older format is claimed so `require_compatible` can fail it explicitly.
     """
     parent = aliased(RunRow)
     newer_parent = exists().where(parent.id == RunRow.parent_run_id, parent.checkpoint["format"].as_integer() > FORMAT)
@@ -167,7 +170,7 @@ def require_compatible(run: RunRow) -> StatePointer | None:
     """The run's checkpoint pointer, if it has one, in a format this build reads."""
     if run.checkpoint is None:
         return None
-    if (pointer := StatePointer.model_validate(run.checkpoint)).format != FORMAT:
+    if (pointer := StatePointer.model_validate(run.checkpoint)).format not in READABLE_FORMATS:
         raise conflict("run", run.id, "checkpoint_incompatible")
     return pointer
 
@@ -239,6 +242,7 @@ class DisplayWrite(_Frozen):
 
     tail: TailPointer
     pages: tuple[PageRef, ...]
+    search_terms: tuple[str, ...] | None = None
 
 
 async def _all(writes: Sequence[Awaitable[ObjectRef]]) -> list[ObjectRef]:
@@ -367,6 +371,8 @@ async def publish_checkpoint(
 def record_display(session: AsyncSession, run: RunRow, display: DisplayWrite) -> None:
     """Make a written tail the run's and add its pages to the catalog, in the caller's fenced transaction."""
     run.tail = display.tail.model_dump(mode="json")
+    if display.search_terms is not None:
+        run.search_vector = vector(display.search_terms)
     session.add_all(
         RunItemPageRow(
             run_id=run.id,
