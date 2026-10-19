@@ -2,7 +2,14 @@ import { useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, Input, ModalFrame } from "a13n-ui";
-import { Check, Copy, LinkSimple, ShareNetwork } from "@phosphor-icons/react";
+import {
+  ArrowUpRight,
+  Check,
+  Copy,
+  Globe,
+  LinkSimple,
+  ShareNetwork,
+} from "@phosphor-icons/react";
 import { result, type Schema } from "./transport/client";
 import { useProjects, useTransport } from "./transport/context";
 import { useThread } from "./conversations/queries";
@@ -67,8 +74,7 @@ export function SharePanel({
       onOpenChange={(value) => {
         if (!value) onClose();
       }}
-      title="Share access"
-      description="Invite someone into this conversation or Project with a temporary link."
+      title="Share"
       closeLabel="Close"
     >
       {open && <ShareContents threadId={threadId} projectId={projectId} />}
@@ -114,7 +120,11 @@ function ShareContents({
           body: { scope, target_id: target, permission, lifetime_hours: hours },
         }),
       ),
-    onSuccess: setCreated,
+    onSuccess: (value) => {
+      setCreated(value);
+      setCopied(false);
+      setCopyError("");
+    },
     onSettled: refresh,
     retry: false,
   });
@@ -135,120 +145,85 @@ function ShareContents({
   };
   return (
     <div className={styles.panel}>
-      {created ? (
-        <section className={styles.result}>
-          <div className={styles.resultHeading}>
-            <Check size={20} />
-            <div>
-              <h3>Your link is ready</h3>
-              <p>
-                {created.grant.scope === "thread"
-                  ? "This conversation"
-                  : `Entire Project · ${projectName}`}
-              </p>
-              <p>
-                {currentGrant?.permission === "view"
-                  ? "Can view"
-                  : "Can prompt"}{" "}
-                · Expires {expires(created.grant.expires_at)}
-              </p>
-            </div>
-          </div>
-          <Input
-            aria-label="Sharing link"
-            readOnly
-            value={link}
-            onFocus={(e) => e.target.select()}
-          />
-          <div className={styles.actions}>
-            <Button onClick={() => void copy()}>
-              <Copy size={16} />
-              {copied ? "Copied" : "Copy link"}
-            </Button>
-            <a href={link} target="_blank" rel="noreferrer">
-              Preview as guest
-            </a>
-          </div>
+      <div className={styles.scope}>
+        <ChoiceField
+          label="Share"
+          hideLabel
+          value={scope}
+          readOnly={!!created || !(threadId && projectId)}
+          disabled={create.isPending}
+          options={[
+            ...(threadId
+              ? [{ value: "thread", label: "This conversation" }]
+              : []),
+            ...(projectId
+              ? [{ value: "project", label: `Entire Project · ${projectName}` }]
+              : []),
+          ]}
+          onValueChange={(value) => setScope(value as Scope)}
+        />
+        {scope === "project" && (
           <p className={styles.hint}>
-            Anyone with this link can use it. Copy it before closing; the key is
-            shown only once.
+            Includes current and future conversations.
           </p>
-          {copyError && <p role="status">{copyError}</p>}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setCreated(null);
-              setCopied(false);
-              create.reset();
-            }}
-          >
-            Create another link
-          </Button>
-        </section>
-      ) : (
-        <>
+        )}
+      </div>
+      <section className={styles.linkSettings} aria-label="Link sharing">
+        <div className={styles.permissionRow}>
+          <span className={styles.linkAudience}>
+            <span className={styles.linkIcon}>
+              <Globe size={20} aria-hidden />
+            </span>
+            Anyone with the link
+          </span>
           <ChoiceField
-            label="Share"
-            value={scope}
-            options={[
-              ...(threadId
-                ? [{ value: "thread", label: "This conversation" }]
-                : []),
-              ...(projectId
-                ? [
-                    {
-                      value: "project",
-                      label: `Entire Project · ${projectName}`,
-                    },
-                  ]
-                : []),
-            ]}
-            onValueChange={(value) => setScope(value as Scope)}
+            label="Link permission"
+            className={styles.permissionControl}
+            hideLabel
+            value={created ? currentGrant?.permission : permission}
+            readOnly={!!created}
+            disabled={create.isPending}
+            options={permissions}
+            onValueChange={(value) => setPermission(value as Permission)}
           />
-          {scope === "project" && (
+        </div>
+        {!created && permission === "prompt" && (
+          <p className={styles.authority}>
+            For trusted people: prompts use the Agent’s tools and Environment
+            permissions.
+            {scope === "project" ? " Guests can also start conversations." : ""}
+          </p>
+        )}
+        {created && (
+          <div className={styles.linkResult}>
+            <Input
+              aria-label="Sharing link"
+              readOnly
+              value={link}
+              onFocus={(e) => e.target.select()}
+            />
             <p className={styles.hint}>
-              Includes existing and future conversations in {projectName}.
+              Copy before closing. This link is shown only once.
             </p>
-          )}
-          <div
-            className={styles.permissionChoices}
-            role="group"
-            aria-label="Link permission"
-          >
-            {permissions.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                aria-pressed={permission === item.value}
-                className={
-                  permission === item.value
-                    ? styles.selectedPermission
-                    : styles.permission
-                }
-                onClick={() => setPermission(item.value as Permission)}
-              >
-                <strong>{item.label}</strong>
-                <span>
-                  {item.value === "view"
-                    ? "Read messages and follow live output."
-                    : "Write together, send prompts and steer work."}
-                </span>
-              </button>
-            ))}
+            {copyError && (
+              <p className={styles.hint} role="status">
+                {copyError}
+              </p>
+            )}
           </div>
-          {permission === "prompt" && (
-            <p className={styles.authority}>
-              Share with people you trust. Prompts use this Agent’s tools and
-              Environment with its existing authority.
-              {scope === "project"
-                ? " Guests can also start conversations using Project defaults."
-                : ""}
-            </p>
-          )}
+        )}
+      </section>
+      <div className={styles.actions}>
+        {created ? (
+          <span className={styles.hint}>
+            Expires {expires(created.grant.expires_at)}
+          </span>
+        ) : (
           <ChoiceField
-            label="Link expires after"
+            label="Expires in"
+            variant="filter"
             value={String(hours)}
+            disabled={create.isPending}
             options={[
               { value: "1", label: "1 hour" },
               { value: "24", label: "1 day" },
@@ -256,23 +231,47 @@ function ShareContents({
             ]}
             onValueChange={(value) => setHours(Number(value) as 1 | 24 | 168)}
           />
-          <ErrorNotice error={create.error} />
-          {create.isError && (
-            <p className={styles.hint}>
-              If the connection was interrupted, check active links below before
-              creating another.
-            </p>
-          )}
-          <div className={styles.actions}>
-            <Button loading={create.isPending} onClick={() => create.mutate()}>
-              <LinkSimple size={16} />
-              Create link
-            </Button>
-            <span className={styles.hint}>
-              You can change access or revoke it anytime.
-            </span>
-          </div>
-        </>
+        )}
+        {created ? (
+          <Button onClick={() => void copy()}>
+            {copied ? (
+              <Check size={16} aria-hidden />
+            ) : (
+              <Copy size={16} aria-hidden />
+            )}
+            <span aria-live="polite">{copied ? "Copied" : "Copy link"}</span>
+          </Button>
+        ) : (
+          <Button loading={create.isPending} onClick={() => create.mutate()}>
+            <LinkSimple size={16} aria-hidden />
+            Create link
+          </Button>
+        )}
+      </div>
+      {!created && <ErrorNotice error={create.error} />}
+      {!created && create.isError && (
+        <p className={styles.hint}>
+          Check active links before retrying; the link may have been created.
+        </p>
+      )}
+      {created && (
+        <div className={styles.secondaryActions}>
+          <a href={link} target="_blank" rel="noreferrer">
+            Preview as guest <ArrowUpRight size={14} aria-hidden />
+          </a>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setCreated(null);
+              setCopied(false);
+              setCopyError("");
+              create.reset();
+            }}
+          >
+            Create another link
+          </Button>
+        </div>
       )}
       <details className={styles.manage}>
         <summary>
@@ -338,6 +337,7 @@ function GrantRow({
       </div>
       <ChoiceField
         label="Permission"
+        className={styles.permissionControl}
         hideLabel
         value={permission}
         options={permissions}
