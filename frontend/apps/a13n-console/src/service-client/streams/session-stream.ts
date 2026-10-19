@@ -45,11 +45,41 @@ export interface SessionGap {
   run_id: string;
 }
 
+/** Compact plan state; input and saved execution authority are never in the stream. */
+export interface ScheduleEvent {
+  session_id: string;
+  schedule_id: string;
+  configuration: Pick<
+    Schemas["Schedule"],
+    | "id"
+    | "session_id"
+    | "name"
+    | "state"
+    | "pause_reason"
+    | "version"
+    | "principal_id"
+    | "schedule"
+    | "max_lateness_seconds"
+  >;
+  progress: Pick<
+    Schemas["ScheduleStatus"],
+    "next_fire_at" | "pending_occurrence_id" | "last_occurrence_id"
+  >;
+}
+
+export interface OccurrenceEvent {
+  session_id: string;
+  schedule_id: string;
+  occurrence: Schemas["OccurrenceSummary"];
+}
+
 export type SessionFrame =
   | { type: "thread"; data: ThreadState }
   | { type: "items"; data: RunSnapshot }
   | { type: "delta"; data: SessionDelta }
-  | { type: "gap"; data: SessionGap };
+  | { type: "gap"; data: SessionGap }
+  | { type: "schedule"; data: ScheduleEvent }
+  | { type: "occurrence"; data: OccurrenceEvent };
 
 /**
  * The connection's state, in order with its frames: `live` precedes the
@@ -65,6 +95,8 @@ export type SessionEvent = SessionFrame | SessionConnection;
 
 export interface SessionStreamOptions {
   signal?: AbortSignal;
+  view?: "schedule";
+  historyLimit?: number;
 }
 
 /** Reconnect delays grow to this bound; a connection open this long resets them. */
@@ -90,8 +122,36 @@ function json(text: string): Record<string, unknown> {
 
 /** A frame, or undefined for an event this client does not know. */
 function parseFrame(event: string, text: string): SessionFrame | undefined {
-  if (!["thread", "items", "delta", "gap"].includes(event)) return undefined;
+  if (
+    !["thread", "items", "delta", "gap", "schedule", "occurrence"].includes(
+      event,
+    )
+  )
+    return undefined;
   const data = json(text);
+  if (event === "schedule" || event === "occurrence") {
+    if (!isId(data.session_id) || !isId(data.schedule_id))
+      throw new ProtocolError(`Invalid session stream ${event} frame.`);
+    if (
+      event === "schedule" &&
+      isRecord(data.configuration) &&
+      isId(data.configuration.id) &&
+      isCount(data.configuration.version) &&
+      isRecord(data.progress)
+    )
+      return { type: "schedule", data: data as unknown as ScheduleEvent };
+    if (
+      event === "occurrence" &&
+      isRecord(data.occurrence) &&
+      isId(data.occurrence.id) &&
+      isCount(data.occurrence.version) &&
+      ["pending", "submitted", "skipped", "failed", "cancelled"].includes(
+        String(data.occurrence.status),
+      )
+    )
+      return { type: "occurrence", data: data as unknown as OccurrenceEvent };
+    throw new ProtocolError(`Invalid session stream ${event} frame.`);
+  }
   if (
     event === "thread" &&
     isRecord(data.thread) &&
@@ -160,7 +220,11 @@ export async function* sessionStream(
   const signal = options.signal
     ? AbortSignal.any([options.signal, transport.signal])
     : transport.signal;
-  const url = `${transport.baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/stream`;
+  const query = new URLSearchParams();
+  if (options.view) query.set("view", options.view);
+  if (options.historyLimit !== undefined)
+    query.set("history_limit", String(options.historyLimit));
+  const url = `${transport.baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/stream${query.size ? `?${query}` : ""}`;
   let failures = 0;
   let error: unknown;
   for (;;) {

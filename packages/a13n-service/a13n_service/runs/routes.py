@@ -118,11 +118,19 @@ async def update_session(
     responses={200: {"content": {"text/event-stream": {}}}},
 )
 async def session_stream(
-    request: Request, runtime: CurrentRuntime, workspace_id: WorkspaceId, session_id: str, credential: Credential
+    request: Request,
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    session_id: str,
+    credential: Credential,
+    view: Literal["schedule"] | None = None,
+    history_limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> StreamingResponse:
     """The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
     frames. Every connection starts from a snapshot."""
-    reader = await stream.open_stream(runtime, credential, workspace_id, session_id)
+    reader = await stream.open_stream(
+        runtime, credential, workspace_id, session_id, view=view, history_limit=history_limit
+    )
     return StreamingResponse(
         stream.frames(request.app.state.session_hub, reader),
         media_type="text/event-stream",

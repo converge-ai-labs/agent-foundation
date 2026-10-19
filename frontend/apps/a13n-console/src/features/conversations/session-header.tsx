@@ -69,9 +69,16 @@ export function SessionHeader({
     (isActiveRun(run.data.status) || run.data.status === "waiting");
   return (
     <header className={styles.sessionHeader}>
-      <Link className={styles.back} to={`${basePath}/sessions`}>
+      <Link
+        className={styles.back}
+        to={
+          session.data?.schedule_id
+            ? `${basePath}/schedules/${session.data.schedule_id}`
+            : `${basePath}/sessions`
+        }
+      >
         <CaretLeftIcon size={13} aria-hidden="true" />
-        {t("Sessions")}
+        {t(session.data?.schedule_id ? "Schedule" : "Sessions")}
       </Link>
       <span className={styles.headerRule} aria-hidden="true" />
       <div className={styles.sessionIdentity}>
@@ -103,13 +110,15 @@ export function SessionHeader({
                 ]
                   .filter(Boolean)
                   .join(" · ")
-              : run.data
-                ? t("Started by {{trigger}}", {
-                    trigger: t(`trigger.${run.data.trigger}`, {
-                      defaultValue: run.data.trigger,
-                    }),
-                  })
-                : ""}
+              : run.data?.schedule_origin
+                ? t("Scheduled execution")
+                : run.data
+                  ? t("Started by {{trigger}}", {
+                      trigger: t(`trigger.${run.data.trigger}`, {
+                        defaultValue: run.data.trigger,
+                      }),
+                    })
+                  : ""}
         </span>
       </div>
       <div className={styles.sessionControls}>

@@ -18,6 +18,16 @@ const ModelsPage = lazy(() =>
     default: module.ModelsPage,
   })),
 );
+const SchedulesPage = lazy(() =>
+  import("./features/schedules/list").then((module) => ({
+    default: module.SchedulesPage,
+  })),
+);
+const ScheduleDetail = lazy(() =>
+  import("./features/schedules/detail").then((module) => ({
+    default: module.ScheduleDetail,
+  })),
+);
 const Agents = lazy(() =>
   import("./features/agents/list").then((module) => ({
     default: module.Agents,
@@ -229,6 +239,11 @@ function AppContent() {
                       <Route path="agents" element={<Agents />} />
                       <Route path="agents/new" element={<CreateAgent />} />
                       <Route path="agents/:agentId" element={<AgentDetail />} />
+                      <Route path="schedules" element={<SchedulesPage />} />
+                      <Route
+                        path="schedules/:scheduleId"
+                        element={<ScheduleDetail />}
+                      />
                       <Route path="sessions" element={<ConversationsPage />}>
                         <Route path="new" element={<NewConversation />} />
                         <Route path=":sessionId" element={<SessionLayout />}>

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useEffectEvent,
   useState,
   type ReactNode,
 } from "react";
@@ -11,6 +12,7 @@ import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { applyThreadState, conversationKeys } from "./api";
 import { SessionDisplays } from "./session-displays";
+import type { SessionEvent } from "../../service-client";
 
 export interface SessionStream {
   displays: SessionDisplays;
@@ -30,9 +32,13 @@ const Context = createContext<SessionStream | undefined>(undefined);
  */
 export function SessionStreamProvider({
   sessionId,
+  view,
+  onEvent,
   children,
 }: {
   sessionId: string;
+  view?: "schedule";
+  onEvent?: (event: SessionEvent) => void;
   children: ReactNode;
 }) {
   const client = useClient(),
@@ -43,25 +49,28 @@ export function SessionStreamProvider({
     Pick<SessionStream, "state" | "error">
   >({ state: "connecting" });
   const [generation, setGeneration] = useState(0);
+  const received = useEffectEvent((event: SessionEvent) => onEvent?.(event));
   useEffect(() => {
     const controller = new AbortController(),
       keys = conversationKeys(workspace.id);
     async function follow() {
       for await (const event of client.streamSession(workspace.id, sessionId, {
         signal: controller.signal,
+        view,
       })) {
+        received(event);
         switch (event.type) {
           case "connection":
-            if (event.state === "live") displays.connected();
+            if (event.state === "live")
+              for (const runId of displays.connected())
+                void cache.invalidateQueries({
+                  queryKey: keys.items(runId),
+                  exact: true,
+                });
             setConnection({ state: event.state, error: event.error });
             break;
           case "thread":
             applyThreadState(cache, workspace.id, event.data);
-            for (const runId of displays.thread(event.data))
-              void cache.invalidateQueries({
-                queryKey: keys.items(runId),
-                exact: true,
-              });
             break;
           case "items":
             displays.items(event.data);
@@ -81,7 +90,7 @@ export function SessionStreamProvider({
       setConnection({ state: "closed", error });
     });
     return () => controller.abort();
-  }, [client, workspace.id, sessionId, cache, displays, generation]);
+  }, [client, workspace.id, sessionId, view, cache, displays, generation]);
   useEffect(() => () => displays.close(), [displays]);
   const value = useMemo(
     () => ({

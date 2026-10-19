@@ -393,7 +393,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 `proto/a13n-service/` holds the two wire contracts generated from the code:
 
 - `openapi.json`, the OpenAPI document the application serves at `/api/v1/openapi.json`;
-- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`).
+- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`, plus `schedule` and `occurrence` in Schedule view).
 - `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.

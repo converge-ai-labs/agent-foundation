@@ -128,3 +128,22 @@ Transaction A selects one enabled due Schedule using its ordered due index and `
 After A commits and releases its locks, transaction B uses the ordinary pending processor. A crash before A commits leaves the old timeline; a crash between A and B leaves discoverable pending intent; a lost response after B commits is resolved by reading that terminal Occurrence. Pending discovery orders by the earlier of next attempt and deadline, so backoff cannot hide expiry. Schedule edits, pause and archival share the Schedule lock. Runtime progress does not change configuration ETags.
 
 All replicas must use the same cron and timezone-data versions. Stop old control replicas before upgrading time interpretation, retain already persisted UTC instants and calculate subsequent times strictly after them. The immutable Occurrence snapshot identifies the timezone-data version used. No per-Schedule timer, new process role, Redis scheduling queue, leader election or generic jobs table is introduced.
+
+## Session observation and Console
+
+The fixed Session is readable before any trigger. Its stream requires `GET /sessions/{session_id}/stream?view=schedule`; the returned `stream_url` names this view. Opening a Schedule Session without this view returns `409 conflict` with reason `schedule_stream_view_required` and the appropriate URL. Requesting this view for an ordinary Session returns `400`. Ordinary Session streams retain their existing four output events and full Thread selection.
+
+Schedule mode adds two state frames, both scoped by `session_id` and `schedule_id`:
+
+- `schedule`: compact `configuration` (identity, name, state/pause reason, version, execution principal, time rule, maximum lateness) and `progress` (next fire, pending and latest Occurrence IDs).
+- `occurrence`: one compact `OccurrenceSummary`, including submission state and resulting root Thread/Entry IDs. It contains neither invocation snapshot nor saved authority.
+
+These are current-state observations, not an event log. Intermediate states may coalesce. There is no change cursor, acknowledgement, replay log or extra sync frame. Each connection begins with current Schedule and Occurrence state, then the ordinary Thread and Run output frames. Empty Sessions still emit their Schedule state. A no-Run failure, skip or cancellation remains visible as an Occurrence.
+
+`history_limit` defaults to 20 and accepts 1–100. The snapshot selects the most recent N Occurrences plus pending Occurrences and any submitted Occurrences with unfinished owned work. Its Thread set is the roots submitted among those recent N records, plus **all** unfinished Threads in the Session, including independent interactive work. It does not load completed historical child trees or the Session's full Thread history. Selection, versions and authority checks use a short read-only repeatable-read transaction; object and Redis I/O happen after it closes.
+
+A refresh keeps the prior selection long enough to send a changed departing Occurrence's terminal state and a followed Run's final items. It then removes completed Threads that are outside the window. Reactivated old Threads reenter through the unfinished-work selection. Different requested windows remain separate subscriptions while sharing one Redis read per Thread. The window bounds historical work, not active work; no arbitrary active-Thread cap is imposed.
+
+Reconnect starts a fresh snapshot. Consumers also reread their visible history page and any selected old Thread/Entry/Run and output: an Occurrence stays `submitted` while its execution finishes, and an old completed Thread may no longer be in the live window. History pages and occurrence-filtered Thread pages remain ordinary HTTP reads; saved output uses the existing Run items API. Redis loss does not erase Schedule/Occurrence state.
+
+Console provides a paginated Schedule list, paused creation, time preview, configuration editing, enable/pause/archive, manual dispatch and paginated trigger history. It distinguishes submission, Entry and Run state and reuses the Run output view. Creator-only actions follow the authority table; other writers may stop work. Drafts retain their original ETag, and unchanged create/dispatch retries retain their request key. A reconnect refreshes the visible page and selected execution; completed display caches remain bounded. The interface explains durable delegation and that signing out or revoking the original credential does not stop future triggers.

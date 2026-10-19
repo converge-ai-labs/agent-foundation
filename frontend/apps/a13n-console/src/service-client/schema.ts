@@ -16072,7 +16072,10 @@ export interface operations {
   };
   session_stream_api_v1_sessions__session_id__stream_get: {
     parameters: {
-      query?: never;
+      query?: {
+        view?: "schedule" | null;
+        history_limit?: number;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;

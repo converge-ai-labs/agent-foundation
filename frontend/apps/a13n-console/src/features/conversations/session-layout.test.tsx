@@ -15,7 +15,7 @@ vi.mock("../../auth/context", () => ({
   useAuth: () => ({ data: undefined }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" } }),
+  useWorkspace: () => ({ workspace: { id: "workspace" }, basePath: "" }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -44,12 +44,20 @@ function Location() {
   return <output>{pathname + search}</output>;
 }
 
-function show(threads: ReturnType<typeof fixtureThread>[], path: string) {
+function show(
+  threads: ReturnType<typeof fixtureThread>[],
+  path: string,
+  scheduleId: string | null = null,
+) {
+  const requested: string[] = [];
   client = createClient({
     baseUrl: "https://service.example",
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      requested.push(url.pathname);
+      if (url.pathname === "/api/v1/sessions/ses_1")
+        return Response.json({ id: "ses_1", schedule_id: scheduleId });
       if (url.pathname === "/api/v1/threads") {
         // The root can be on a later page than recent child activity.
         const next = url.searchParams.has("cursor");
@@ -66,6 +74,7 @@ function show(threads: ReturnType<typeof fixtureThread>[], path: string) {
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
+          <Route path="/schedules/:scheduleId" element={<Location />} />
           <Route path="/sessions/:sessionId" element={<SessionLayout />}>
             <Route path="threads/:threadId" element={<ThreadLayout />}>
               <Route path="runs/:runId" element={<Location />} />
@@ -75,6 +84,7 @@ function show(threads: ReturnType<typeof fixtureThread>[], path: string) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return requested;
 }
 
 it("continues the unique root in Chat even when child activity is listed first", async () => {
@@ -128,3 +138,22 @@ it.each([
     expect(await screen.findByText(expected)).toBeTruthy();
   },
 );
+
+it("opens the Schedule from its fixed Session without listing historical Threads", async () => {
+  const requested = show([root], "/sessions/ses_1", "sch_1");
+  expect(await screen.findByText("/schedules/sch_1")).toBeTruthy();
+  expect(requested).not.toContain("/api/v1/threads");
+});
+
+it("loads only the selected Schedule Thread when opening historical output", async () => {
+  const requested = show(
+    [root, child],
+    "/sessions/ses_1/threads/thr_root",
+    "sch_1",
+  );
+  expect(
+    await screen.findByText("/sessions/ses_1/threads/thr_root/runs/run_root"),
+  ).toBeTruthy();
+  expect(requested).toContain("/api/v1/threads/thr_root");
+  expect(requested).not.toContain("/api/v1/threads");
+});
