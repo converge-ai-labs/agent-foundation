@@ -268,7 +268,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - name: Linux x86_64

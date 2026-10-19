@@ -37,6 +37,7 @@ def test_linux_clipboard_runs_ignored_native_tests_under_xvfb() -> None:
 
 def test_protocol_and_platform_checks_run_independently() -> None:
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    assert jobs["daemon"]["strategy"]["fail-fast"] is False
     for name in ("protocol", "client", "daemon"):
         assert jobs[name]["needs"] == "changes"
         assert "needs.protocol.result" not in jobs[name]["if"]
