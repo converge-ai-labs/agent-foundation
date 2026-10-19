@@ -91,8 +91,12 @@ impl Receiver {
                 let acceptor = acceptor.clone();
                 tokio::spawn(async move {
                     let stream: Box<dyn AsyncStream> = if let Some(acceptor) = acceptor {
-                        let Ok(stream) = acceptor.accept(stream).await else {
-                            return;
+                        let stream = match acceptor.accept(stream).await {
+                            Ok(stream) => stream,
+                            Err(error) => {
+                                eprintln!("OTLP test receiver TLS handshake failed: {error}");
+                                return;
+                            }
                         };
                         Box::new(stream)
                     } else {
@@ -282,6 +286,11 @@ impl Certificates {
             BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair, KeyUsagePurpose,
         };
         let mut params = CertificateParams::default();
+        // Give each certificate a distinct subject: platform chain builders must
+        // distinguish the leaf from its issuer instead of treating it as self-issued.
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "OTLP test CA");
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
@@ -289,15 +298,18 @@ impl Certificates {
         ];
         let ca = CertifiedIssuer::self_signed(params, KeyPair::generate().unwrap()).unwrap();
         let server_key = KeyPair::generate().unwrap();
-        let server = CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()])
-            .unwrap()
-            .signed_by(&server_key, &ca)
-            .unwrap();
+        let mut server =
+            CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()]).unwrap();
+        server
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "localhost");
+        let server = server.signed_by(&server_key, &ca).unwrap();
         let client_key = KeyPair::generate().unwrap();
-        let client = CertificateParams::new(vec!["envd-client".into()])
-            .unwrap()
-            .signed_by(&client_key, &ca)
-            .unwrap();
+        let mut client = CertificateParams::new(vec!["envd-client".into()]).unwrap();
+        client
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "envd-client");
+        let client = client.signed_by(&client_key, &ca).unwrap();
         Self {
             ca,
             server,
