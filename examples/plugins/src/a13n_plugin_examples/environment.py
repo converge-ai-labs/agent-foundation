@@ -6,6 +6,7 @@ from pathlib import Path
 
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.configuration import (
@@ -53,11 +54,15 @@ def _connector(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
     """Map the plugin's recipe to the existing Direct Local execution provider."""
     del configuration, credential, runtime
     return DIRECT_LOCAL.execution_connector(
-        _direct_configuration(environment), environment_id=environment_id, state=state
+        _direct_configuration(environment),
+        environment_id=environment_id,
+        state=state,
+        session_recovery=session_recovery,
     )
 
 

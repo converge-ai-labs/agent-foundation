@@ -216,7 +216,7 @@ async def test_stdio_recovery_uses_common_session_source(binary, tmp_path, close
 async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tmp_path):
     import json
 
-    from a13n_envd_client import EIPDeviceConnection, EIPSessionStateError, StdioTransport
+    from a13n_envd_client import EIPDeviceConnection, EIPSessionStateError, EIPTransportClosedError, StdioTransport
     from a13n_harness.environment.attachments import DeviceEIPSessionSource
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 
@@ -243,7 +243,12 @@ async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tm
         transport = StdioTransport.from_process(process)
         device = await EIPDeviceConnection.initialize(transport, expected_device_id="stdio-recovery")
         try:
-            with pytest.raises(EIPSessionStateError, match="did not close cleanly"):
+            # Cleanup can observe either the finished Session or the closed Device,
+            # depending on when the reader propagates the carrier failure.
+            with pytest.raises(
+                (EIPSessionStateError, EIPTransportClosedError),
+                match=r"Session did not close cleanly|Device connection is closed",
+            ):
                 async with DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
                     expected_device_id="stdio-recovery", required_methods=frozenset()
                 ) as session:
