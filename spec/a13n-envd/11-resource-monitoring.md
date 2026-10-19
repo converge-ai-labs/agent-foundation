@@ -2,7 +2,7 @@
 
 ## Ownership and Lifecycle
 
-Envd exposes Device system information and optional resource samples on Linux, macOS and Windows through EIP. The outer daemon owns these observations independently of Sessions. A Device connection can describe the system and read metrics without opening a Session. Session workers do not collect Device metrics.
+Envd exposes Device system information and optional resource samples on Linux, macOS and Windows through EIP. HTTP deployments also expose cached resource samples in standard Prometheus text format. The outer daemon owns these observations independently of Sessions. A Device connection can describe the system and read metrics without opening a Session. Session workers do not collect Device metrics.
 
 `initialize` and `device.describe` return `DeviceDescriptor.system_info`. It describes the outer Device environment at daemon startup: operating system, observed OS version, kernel version, native architecture and CPU model where available. Optional facts remain absent when their native source is unavailable. Linux OS version is the distribution's `PRETTY_NAME`; macOS uses the product version; Windows uses the NT major/minor/build rather than an inferred marketing name. Managed Linux reads distribution information from its original system tree, not the private broker image. Architecture describes the native system rather than the executable build target. Envd's own version remains `initialize.server.version`.
 
@@ -88,10 +88,52 @@ Linux and macOS use one `statvfs` observation, preserving reserved-block/account
 
 Windows resolves the target's containing volume. `GetDiskSpaceInformationW` supplies actual volume total; `GetDiskFreeSpaceExW` supplies total free bytes and bytes available to the daemon account. The quota-limited total returned by `GetDiskFreeSpaceExW` is not used as volume capacity. These calls are sequential. Windows leaves inode counts absent. On Windows versions before the volume-information API is available (Windows 10 version 1809 / Server 2019), this filesystem observation is unavailable; the daemon still starts and serves its other capabilities.
 
+## Prometheus HTTP Exposition
+
+With monitoring enabled, `GET /metrics` on the existing HTTP listener returns Prometheus text format 0.0.4, with `Content-Type: text/plain; version=0.0.4; charset=utf-8` and `Cache-Control: no-store`. It uses the listener's existing Bearer authentication, TLS and network exposure policy. Missing or invalid credentials return 401, including when monitoring is disabled; authenticated requests with monitoring disabled return 404. Other methods on this path return 405. Query strings, cookies and content encodings are rejected under the existing HTTP rules. Scraping requires neither EIP initialization nor a Session. Stdio and reverse-WebSocket deployments do not acquire a listener or a push exporter.
+
+The endpoint reads the same latest completed observation as `device.metrics`, with no native collection, Session allocation or sample mutation. Sampling defaults and EIP behavior are unchanged. A scrape returns 200 with sampler status even before the first sample or when collection is stale. Prometheus `up` therefore describes scrape availability; `envd_sample_fresh` describes collection freshness.
+
+Every series carries `device_id` and decimal-string `generation` labels. These identify the Device, not an Environment binding, Session or workspace. Paths, credentials, sequence numbers and timestamps are not labels. Additional labels have bounded values: CPU `mode`, memory `event`, pressure `resource` (`cpu`, `memory`, `io`), `level` (`some`, `full`), `window` (`10`, `60`, `300`, in seconds), and configured `filesystem` names. A new generation creates new series; cgroup recreation can still reset counters within one generation.
+
+Samples have no explicit Prometheus timestamp: the scraper owns ingestion time. Collection time and monotonic age are separate gauges. Repeated scrapes can read the same sequence. Resource series are emitted only while `sample_age_ms <= 2 * sample_interval_ms`; older samples retain metadata but omit all system, cgroup and filesystem series so stalled observations are not continually published as current. A subsequent fresh sample restores available series. Consumers can apply a stricter maximum age. This freshness rule does not change EIP's retained-sample behavior.
+
+Absent native fields produce no numeric sample; real zeros remain zero. Unlimited limits use an explicit boolean gauge and omit the numeric limit, rather than inventing a zero or effective capacity. All durations use seconds and percentages become ratios. Metric families have one HELP and TYPE declaration and contiguous samples. Native integer counts are emitted as decimal integers; downstream floating-point storage can lose precision for large counts.
+
+| Metric (all prefixed `envd_`)                                                                        | Type    | Meaning / additional labels                                                     |
+| ---------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------- |
+| `sample_interval_seconds`                                                                            | gauge   | Configured interval.                                                            |
+| `sample_available`                                                                                   | gauge   | 1 once a completed sample is cached, otherwise 0.                               |
+| `sample_fresh`                                                                                       | gauge   | 1 when a cached sample is within two intervals, otherwise 0.                    |
+| `sample_sequence`                                                                                    | gauge   | Latest completed generation-local sequence; absent before first completion.     |
+| `sample_timestamp_seconds`                                                                           | gauge   | UTC collection-start Unix timestamp in seconds; absent before first completion. |
+| `sample_age_seconds`                                                                                 | gauge   | Monotonic age of the cached sample; absent before first completion.             |
+| `collection_duration_seconds`                                                                        | gauge   | Cached collection duration; absent before first completion.                     |
+| `system_cpu_busy_ratio`                                                                              | gauge   | Existing CPU busy percentage divided by 100.                                    |
+| `system_logical_cpus`                                                                                | gauge   | Native logical CPU count.                                                       |
+| `system_cpu_time_seconds_total`                                                                      | counter | Native cumulative seconds, `mode` label.                                        |
+| `system_memory_total_bytes`, `system_memory_available_bytes`                                         | gauge   | Existing system memory observations.                                            |
+| `system_pressure_ratio`, `cgroup_pressure_ratio`                                                     | gauge   | Kernel percentage divided by 100; `resource`, `level`, `window`.                |
+| `system_pressure_stall_seconds_total`, `cgroup_pressure_stall_seconds_total`                         | counter | Kernel cumulative microseconds divided by 1000000; `resource`, `level`.         |
+| `cgroup_cpu_usage_seconds_total`, `cgroup_cpu_user_seconds_total`, `cgroup_cpu_system_seconds_total` | counter | Selected-group CPU microseconds divided by 1000000.                             |
+| `cgroup_cpu_throttled_seconds_total`                                                                 | counter | Local bandwidth throttling microseconds divided by 1000000.                     |
+| `cgroup_cpu_periods_total`, `cgroup_cpu_throttled_periods_total`                                     | counter | Local bandwidth periods.                                                        |
+| `cgroup_cpu_limit_unlimited`                                                                         | gauge   | 1 for an observed unlimited local limit, 0 for limited, absent if unreadable.   |
+| `cgroup_cpu_quota_seconds`, `cgroup_cpu_period_seconds`                                              | gauge   | Observed limited local quota and period divided by 1000000.                     |
+| `cgroup_memory_current_bytes`                                                                        | gauge   | Selected-group memory usage.                                                    |
+| `cgroup_memory_limit_unlimited`                                                                      | gauge   | 1 for an observed unlimited local limit, 0 for limited, absent if unreadable.   |
+| `cgroup_memory_limit_bytes`                                                                          | gauge   | Observed limited local memory limit.                                            |
+| `cgroup_memory_events_total`                                                                         | counter | Native cumulative events, `event` label.                                        |
+| `filesystem_available`                                                                               | gauge   | 1 for a readable configured target, 0 otherwise; `filesystem` label.            |
+| `filesystem_total_bytes`, `filesystem_free_bytes`, `filesystem_available_bytes`                      | gauge   | Whole-filesystem observations; `filesystem` label.                              |
+| `filesystem_total_inodes`, `filesystem_free_inodes`, `filesystem_available_inodes`                   | gauge   | Available native inode observations; `filesystem` label.                        |
+
+Operators can scrape this endpoint with Prometheus or an OpenTelemetry Collector Prometheus receiver. The collector owns downstream export, discovery and scrape scheduling. Possession of the existing listener credential grants its existing EIP authority as well as metrics access; this is not a metrics-only credential. Operators restrict collector credentials and connectivity accordingly.
+
 ## Consumer Interpretation
 
 Consumers identify samples by `(device_id, generation, sample.sequence)` and do not ingest repeated reads as new observations. A successful EIP response establishes report availability, not freshness or completeness. Consumers apply a maximum sample age appropriate to their polling cadence. Counter rates use distinct samples, reset after generation changes or decreases, and do not bridge missing observations.
 
 Export adapters own metric types and unit conversion: cumulative CPU/pressure/throttling times become counters in seconds, byte/inode observations become gauges, event counts become counters, and percentages become ratios where needed. Sampled maxima are not instantaneous peaks: CPU utilization is already an interval average and point observations can miss events between samples.
 
-History aggregation, external export, push delivery, alerts and product UI belong to consuming Hosts. Envd provides bounded observations without durable storage or a Service dependency.
+History aggregation, downstream export, push delivery, alerts and product UI belong to consumers and their observability infrastructure. Envd provides bounded EIP observations and standard HTTP scrape exposition without durable storage or a Service dependency.

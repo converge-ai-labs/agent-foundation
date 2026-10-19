@@ -599,3 +599,142 @@ async fn reverse_websocket_binary_transfer_survives_sibling_close_and_rejects_cr
     result(ws_control(&mut socket, request(Some(beta), "session.close", json!({}))).await);
     device.stop().await;
 }
+
+async fn scrape(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+) -> (hyper::StatusCode, hyper::HeaderMap, String) {
+    use http_body_util::{BodyExt, Empty};
+    timeout(Duration::from_secs(10), async {
+        let stream = TcpStream::connect(address).await.unwrap();
+        let (mut sender, connection) =
+            hyper::client::conn::http1::handshake(hyper_util::rt::TokioIo::new(stream))
+                .await
+                .unwrap();
+        let task = tokio::spawn(connection);
+        let mut request = hyper::Request::builder()
+            .method(method)
+            .uri(path)
+            .header("Host", address.to_string());
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = sender
+            .send_request(request.body(Empty::<bytes::Bytes>::new()).unwrap())
+            .await
+            .unwrap();
+        let (parts, body) = response.into_parts();
+        let text = String::from_utf8(body.collect().await.unwrap().to_bytes().to_vec()).unwrap();
+        drop(sender);
+        task.await.unwrap().unwrap();
+        (parts.status, parts.headers, text)
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn prometheus_scrapes_share_auth_and_cached_samples_without_sessions() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let device = DeviceProcess::start(
+        "http",
+        address,
+        json!({"monitoring":{"sample_interval_ms":60000}}),
+    );
+    timeout(Duration::from_secs(10), async {
+        while TcpStream::connect(address).await.is_err() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let token = format!("Bearer {}", "carrier-test-credential");
+    let auth = [("Authorization", token.as_str())];
+    for headers in [vec![], vec![("Authorization", "Bearer wrong")]] {
+        let (status, _, body) = scrape(address, "GET", "/metrics", &headers).await;
+        assert_eq!(status, 401);
+        assert!(body.is_empty());
+    }
+    for (method, path, expected) in [
+        ("POST", "/metrics", 405),
+        ("DELETE", "/metrics", 405),
+        ("GET", "/eip/control", 405),
+        ("GET", "/eip/transfer", 405),
+        ("GET", "/metrics?token=x", 400),
+    ] {
+        assert_eq!(scrape(address, method, path, &auth).await.0, expected);
+    }
+    for forbidden in [("Cookie", "session=x"), ("Content-Encoding", "gzip")] {
+        assert_eq!(
+            scrape(address, "GET", "/metrics", &[auth[0], forbidden])
+                .await
+                .0,
+            400
+        );
+    }
+    // Scraping precedes even initialize and never opens a Session.
+    let first = timeout(Duration::from_secs(10), async {
+        loop {
+            let (status, headers, text) = scrape(address, "GET", "/metrics", &auth).await;
+            assert_eq!(status, 200);
+            assert_eq!(
+                headers["content-type"],
+                "text/plain; version=0.0.4; charset=utf-8"
+            );
+            assert_eq!(headers["cache-control"], "no-store");
+            if text.contains("envd_sample_sequence{") {
+                break text;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let descriptor = result(http_control(address, request(None, "initialize", initialize())).await)
+        ["descriptor"]
+        .clone();
+    let report = result(http_control(address, request(None, "device.metrics", json!({
+        "expected_device_id":"device-test", "expected_generation":descriptor["generation"]
+    }))).await);
+    let labels = format!(
+        "device_id=\"device-test\",generation=\"{}\"",
+        descriptor["generation"].as_u64().unwrap()
+    );
+    assert!(first.contains(&format!(
+        "envd_sample_sequence{{{labels}}} {}\n",
+        report["sample"]["sequence"]
+    )));
+    assert!(first.contains(&format!(
+        "envd_system_memory_total_bytes{{{labels}}} {}\n",
+        report["sample"]["system"]["memory_total_bytes"]
+    )));
+    for _ in 0..3 {
+        let text = scrape(address, "GET", "/metrics", &auth).await.2;
+        let stable = |text: &str| {
+            text.lines()
+                .filter(|line| !line.starts_with("envd_sample_age_seconds{"))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(stable(&text), stable(&first));
+    }
+    device.stop().await;
+
+    let device = DeviceProcess::start("http", address, json!({}));
+    timeout(Duration::from_secs(10), async {
+        while TcpStream::connect(address).await.is_err() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(scrape(address, "GET", "/metrics", &[]).await.0, 401);
+    let (status, _, body) = scrape(address, "GET", "/metrics", &auth).await;
+    assert_eq!(status, 404);
+    assert!(body.is_empty());
+    device.stop().await;
+}

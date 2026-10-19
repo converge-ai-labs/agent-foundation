@@ -179,6 +179,12 @@ impl Daemon {
         self.monitoring.as_ref().map(|state| state.start())
     }
 
+    pub(crate) fn metrics_report(&self) -> Option<eip::DeviceMetricsResult> {
+        self.monitoring
+            .as_ref()
+            .map(|state| state.report(&self.descriptor.device_id, self.descriptor.generation))
+    }
+
     pub(crate) fn new(config: &Config) -> Result<Self, DaemonInitError> {
         Self::with_generation(config, fresh_generation()?)
     }
@@ -824,15 +830,9 @@ impl EipDeviceHandler for DeviceRequest<'_> {
     ) -> Result<eip::DeviceMetricsResult, EIPError> {
         self.daemon
             .check_device(&params.expected_device_id, params.expected_generation)?;
-        let state = self
-            .daemon
-            .monitoring
-            .as_ref()
-            .ok_or_else(|| protocol_error(ErrorType::Unsupported, "monitoring is disabled"))?;
-        Ok(state.report(
-            &self.daemon.descriptor.device_id,
-            self.daemon.descriptor.generation,
-        ))
+        self.daemon
+            .metrics_report()
+            .ok_or_else(|| protocol_error(ErrorType::Unsupported, "monitoring is disabled"))
     }
 
     async fn directory_list(

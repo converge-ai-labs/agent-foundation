@@ -33,6 +33,7 @@ use crate::{
     eip::{DataFrame, DataFrameKind, DataResetStatus},
 };
 
+const METRICS_PATH: &str = "/metrics";
 const CONTROL_PATH: &str = "/eip/control";
 const TRANSFER_PATH: &str = "/eip/transfer";
 const SESSION_HEADER: HeaderName = HeaderName::from_static("eip-session");
@@ -258,8 +259,11 @@ where
 }
 
 async fn route(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResponse {
-    if request.method() != Method::POST
-        && !(request.method() == Method::DELETE && request.uri().path() == TRANSFER_PATH)
+    let metrics_request = request.uri().path() == METRICS_PATH;
+    if (metrics_request && request.method() != Method::GET)
+        || (!metrics_request
+            && request.method() != Method::POST
+            && !(request.method() == Method::DELETE && request.uri().path() == TRANSFER_PATH))
     {
         return empty_response(StatusCode::METHOD_NOT_ALLOWED);
     }
@@ -275,6 +279,7 @@ async fn route(request: Request<Incoming>, state: Arc<HttpState>) -> HttpRespons
         return empty_response(StatusCode::BAD_REQUEST);
     }
     match request.uri().path() {
+        METRICS_PATH => metrics(&state.daemon),
         CONTROL_PATH => control(request, state).await,
         TRANSFER_PATH => transfer(request, state).await,
         _ => empty_response(StatusCode::NOT_FOUND),
@@ -772,6 +777,19 @@ fn content_type_is(headers: &hyper::HeaderMap, expected: &str) -> bool {
 
 fn header_text<'a>(headers: &'a hyper::HeaderMap, name: &HeaderName) -> Option<&'a str> {
     headers.get(name)?.to_str().ok()
+}
+
+fn metrics(daemon: &Daemon) -> HttpResponse {
+    let Some(report) = daemon.metrics_report() else {
+        return empty_response(StatusCode::NOT_FOUND);
+    };
+    response_with_body(
+        StatusCode::OK,
+        "text/plain; version=0.0.4; charset=utf-8",
+        Full::new(Bytes::from(crate::monitoring::prometheus::encode(&report)))
+            .map_err(infallible_to_io)
+            .boxed(),
+    )
 }
 
 fn empty_response(status: StatusCode) -> HttpResponse {

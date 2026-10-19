@@ -18,6 +18,7 @@ use crate::{
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+pub(crate) mod prometheus;
 mod sample;
 #[cfg(target_os = "windows")]
 mod windows;

@@ -145,7 +145,94 @@ When consuming reports:
 - Convert cumulative times to seconds, event counts to counters, byte/inode observations to gauges, and percentages to ratios as needed by your exporter.
 - Label chart peaks as sampled maxima. CPU percentages are interval averages; point observations can miss spikes.
 
-Envd retains one sample. History, alerts, export adapters and product charts belong to the consuming Host. Session cleanup does not stop sampling; daemon shutdown does.
+Envd retains one sample and exposes it through EIP and standard HTTP scraping. History, alerts, downstream export and product charts belong to consumers and their observability infrastructure. Session cleanup does not stop sampling; daemon shutdown does.
+
+## Prometheus and OpenTelemetry
+
+When using the [HTTP transport](#carrier-profiles), enable `"monitoring": {}` and scrape `GET /metrics` on the same address. The response uses Prometheus text format 0.0.4. It reads the same cache as `device.metrics` without EIP initialization or a Session. No additional listener, token or TLS settings are needed. Stdio and reverse-WebSocket deployments, including `connect`, do not expose an HTTP scrape endpoint; their consumers can continue reading EIP observations.
+
+Use the HTTP listener's Bearer credential and verified HTTPS. **This credential also grants the listener's EIP authority; it is not a read-only monitoring token.** Keep it in a collector-side secret file, restrict access to the collector and use a trusted network. Public links require TLS. Existing explicit loopback/provider-private plaintext settings remain available.
+
+### Prometheus scrape configuration
+
+Mount the Envd credential as `/run/secrets/envd-token` on the Prometheus machine. Configure the actual reachable Envd address, port and CA certificate:
+
+```yaml
+scrape_configs:
+  - job_name: envd
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/envd-token
+    tls_config:
+      ca_file: /etc/prometheus/envd-ca.pem
+    static_configs:
+      - targets: [envd.example.com:8443]
+```
+
+Omit `ca_file` for certificates trusted by the scraper's system roots. The credential file contains only the token. For explicitly configured same-machine loopback HTTP, use `scheme: http`, a loopback target and omit `tls_config`. Keep the scrape interval at least as long as the daemon sampling interval; faster scraping only rereads the cache.
+
+### OpenTelemetry Collector
+
+A Collector distribution with the [Prometheus receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver) can use the same scrape configuration and export through its usual pipeline:
+
+```yaml
+receivers:
+  prometheus/envd:
+    config:
+      scrape_configs:
+        - job_name: envd
+          scrape_interval: 10s
+          scrape_timeout: 5s
+          scheme: https
+          metrics_path: /metrics
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/envd-token
+          tls_config:
+            ca_file: /etc/otelcol/envd-ca.pem
+          static_configs:
+            - targets: [envd.example.com:8443]
+processors:
+  batch: {}
+exporters:
+  otlphttp/metrics:
+    endpoint: https://metrics.example.com:4318
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus/envd]
+      processors: [batch]
+      exporters: [otlphttp/metrics]
+```
+
+Replace the exporter endpoint and configure its authentication for your backend. Envd itself does not push OTLP. Assign each target to one active scraper, or configure your backend's deliberate HA deduplication; identical Collector replicas otherwise duplicate scraping. The collector must be able to reach the existing Envd HTTP listener. An outbound reverse-WebSocket connection alone does not provide that route.
+
+### Metrics and freshness
+
+All series have `device_id` and `generation` labels. System metrics describe the daemon-visible system, which can be the host inside a container. `envd_cgroup_*` describes only the configured cgroup. Filesystem series use the configured `filesystem` name, never the native path, and measure the whole containing filesystem.
+
+| Series                                                                                      | Interpretation                                                                                                                 |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `envd_sample_available`, `envd_sample_fresh`                                                | Cache and collection health, independently of Prometheus `up`.                                                                 |
+| `envd_sample_age_seconds`, `envd_sample_interval_seconds`                                   | Monotonic age and configured interval.                                                                                         |
+| `envd_sample_timestamp_seconds`, `envd_sample_sequence`, `envd_collection_duration_seconds` | Collection start time, generation-local sequence and duration.                                                                 |
+| `envd_system_cpu_busy_ratio`                                                                | CPU busy fraction, 0–1, already averaged between native samples.                                                               |
+| `envd_system_cpu_time_seconds_total{mode="user"}`                                           | Cumulative CPU seconds; use `rate` over several sampling intervals.                                                            |
+| `envd_system_memory_total_bytes`, `envd_system_memory_available_bytes`                      | System memory gauges.                                                                                                          |
+| `envd_cgroup_cpu_usage_seconds_total`, `envd_cgroup_cpu_throttled_seconds_total`            | Selected-group cumulative CPU and throttling seconds.                                                                          |
+| `envd_cgroup_memory_current_bytes`, `envd_cgroup_memory_events_total{event="oom"}`          | Selected-group memory gauge and cumulative events.                                                                             |
+| `envd_cgroup_cpu_limit_unlimited`, `envd_cgroup_memory_limit_unlimited`                     | 1 for unlimited local limits, 0 for limited; absent when unreadable. Numeric quota/limit series exist only for limited values. |
+| `envd_system_pressure_ratio`, `envd_cgroup_pressure_ratio`                                  | PSI fractions with `resource`, `level` and `window` labels; windows are 10/60/300 seconds.                                     |
+| `envd_system_pressure_stall_seconds_total`, `envd_cgroup_pressure_stall_seconds_total`      | Cumulative stall seconds with `resource` and `level` labels.                                                                   |
+| `envd_filesystem_available`, `envd_filesystem_available_bytes`                              | Target readability and account-available filesystem bytes. Total/free bytes and native inode gauges are also exposed.          |
+
+Missing values are omitted, not set to zero. Before the first completed collection, `/metrics` returns 200 with `sample_available=0` and `sample_fresh=0`, without resource values. When a cached sample is older than twice the sampling interval, it returns 200 with `sample_fresh=0` and retained sample metadata, omitting resource series until fresh observations resume. Disabled monitoring returns 404 after authentication; missing or invalid credentials return 401. Samples use scrape timestamps, with observation time carried separately.
+
+For example, alert separately on `up{job="envd"} == 0` and `envd_sample_fresh{job="envd"} == 0`. Use `100 * envd_system_cpu_busy_ratio` to display percent and `rate(envd_cgroup_cpu_usage_seconds_total[5m])` for consumed CPU seconds per second. Counter decreases represent resets; a new daemon generation creates a distinct series. Cgroup recreation can reset within a generation. Missing or stale observations remain gaps; do not fill them with zero or infer complete collection from a successful scrape.
 
 ## Enable commands
 

@@ -145,7 +145,94 @@ PSI 提供可选 `some`、`full` 记录，包含 `avg10_percent`、`avg60_percen
 - 根据 exporter 需要，将累计时间换算为秒、事件数映射为 counter、字节和 inode 映射为 gauge、百分比换算为比例。
 - 图表峰值标记为采样值的最大值。CPU 百分比已是区间平均，瞬时尖峰可能落在采样间隔内。
 
-Envd 只保留一个样本。历史、告警、导出适配器和产品图表由消费方 Host 负责。Session 清理不停止采样，daemon 关闭会停止采样。
+Envd 只保留一个样本，通过 EIP 和标准 HTTP 抓取提供读取。历史、告警、下游导出和产品图表由消费方及其可观测性基础设施负责。Session 清理不停止采样，daemon 关闭会停止采样。
+
+## Prometheus 与 OpenTelemetry
+
+使用 [HTTP 传输](#carrier-profiles) 时，启用 `"monitoring": {}`，即可在同一地址抓取 `GET /metrics`。响应采用 Prometheus text format 0.0.4，与 `device.metrics` 读取同一缓存，无需 EIP 初始化或 Session。无需新增监听端口、令牌或 TLS 配置。stdio 和反向 WebSocket 部署（包括 `connect`）不提供 HTTP 抓取端点，消费方仍可通过 EIP 读取观测。
+
+使用 HTTP listener 的 Bearer 凭据和经过验证的 HTTPS。**该凭据同时拥有 listener 的 EIP 操作权限，不是只读监控令牌。** 在采集器端通过 secret 文件保存，限制访问者并使用可信网络。公网连接要求 TLS；现有显式 loopback/provider-private 明文配置仍可使用。
+
+### Prometheus 抓取配置
+
+在 Prometheus 所在机器上，将 Envd 凭据挂载到 `/run/secrets/envd-token`。配置实际可达的 Envd 地址、端口和 CA 证书：
+
+```yaml
+scrape_configs:
+  - job_name: envd
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/envd-token
+    tls_config:
+      ca_file: /etc/prometheus/envd-ca.pem
+    static_configs:
+      - targets: [envd.example.com:8443]
+```
+
+如果证书已受抓取端的系统根证书信任，可省略 `ca_file`。凭据文件只包含令牌。对于显式配置的同机 loopback HTTP，使用 `scheme: http`、loopback 地址，并省略 `tls_config`。抓取间隔应不短于 daemon 的采样间隔；更频繁的抓取只会重复读取缓存。
+
+### OpenTelemetry Collector
+
+包含 [Prometheus receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver) 的 Collector 发行版可以使用相同抓取配置，再通过普通 pipeline 导出：
+
+```yaml
+receivers:
+  prometheus/envd:
+    config:
+      scrape_configs:
+        - job_name: envd
+          scrape_interval: 10s
+          scrape_timeout: 5s
+          scheme: https
+          metrics_path: /metrics
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/envd-token
+          tls_config:
+            ca_file: /etc/otelcol/envd-ca.pem
+          static_configs:
+            - targets: [envd.example.com:8443]
+processors:
+  batch: {}
+exporters:
+  otlphttp/metrics:
+    endpoint: https://metrics.example.com:4318
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus/envd]
+      processors: [batch]
+      exporters: [otlphttp/metrics]
+```
+
+替换 exporter 地址，并按后端要求配置认证。Envd 自身不推送 OTLP。每个目标应分配给一个活跃采集器，或明确配置后端的 HA 去重；相同配置的 Collector 副本会重复抓取。采集器必须能访问现有 Envd HTTP listener，仅有出站反向 WebSocket 连接并不提供这条网络路径。
+
+### 指标与新鲜度
+
+所有序列携带 `device_id` 和 `generation` 标签。系统指标描述 daemon 可见的系统，容器内也可能是宿主机。`envd_cgroup_*` 仅描述配置的 cgroup。文件系统序列使用配置的 `filesystem` 名称，不暴露原生路径，测量范围是整个所在文件系统。
+
+| 序列                                                                                        | 含义                                                                            |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `envd_sample_available`、`envd_sample_fresh`                                                | 缓存和采集健康状态，与 Prometheus `up` 分开。                                   |
+| `envd_sample_age_seconds`、`envd_sample_interval_seconds`                                   | 单调时钟样本年龄与配置的采样间隔。                                              |
+| `envd_sample_timestamp_seconds`、`envd_sample_sequence`、`envd_collection_duration_seconds` | 采集开始时间、generation 内序号和采集耗时。                                     |
+| `envd_system_cpu_busy_ratio`                                                                | 0–1 的 CPU 忙碌比例，已是相邻原生样本间的平均值。                               |
+| `envd_system_cpu_time_seconds_total{mode="user"}`                                           | 累计 CPU 秒数，使用跨多个采样间隔的 `rate`。                                    |
+| `envd_system_memory_total_bytes`、`envd_system_memory_available_bytes`                      | 系统内存 gauge。                                                                |
+| `envd_cgroup_cpu_usage_seconds_total`、`envd_cgroup_cpu_throttled_seconds_total`            | 所选组累计 CPU 和限流秒数。                                                     |
+| `envd_cgroup_memory_current_bytes`、`envd_cgroup_memory_events_total{event="oom"}`          | 所选组内存 gauge 和累计事件。                                                   |
+| `envd_cgroup_cpu_limit_unlimited`、`envd_cgroup_memory_limit_unlimited`                     | 本地限制无限为 1，有限为 0，不可读时缺失；只有有限值才有数值 quota/limit 序列。 |
+| `envd_system_pressure_ratio`、`envd_cgroup_pressure_ratio`                                  | PSI 比例，标签为 `resource`、`level`、`window`，窗口为 10/60/300 秒。           |
+| `envd_system_pressure_stall_seconds_total`、`envd_cgroup_pressure_stall_seconds_total`      | 累计 stall 秒数，标签为 `resource`、`level`。                                   |
+| `envd_filesystem_available`、`envd_filesystem_available_bytes`                              | 目标可读性与当前账户可用字节数；同时提供总量、空闲字节和原生 inode gauge。      |
+
+缺失值保持省略，不填零。首次采集完成前，`/metrics` 返回 200，携带 `sample_available=0`、`sample_fresh=0`，不包含资源值。缓存年龄超过两倍采样间隔时，仍返回 200，携带 `sample_fresh=0` 和保留的样本元数据，并省略资源序列，直到恢复新鲜观测。关闭监控时，认证后返回 404；凭据缺失或无效返回 401。序列使用抓取时间戳，观测时间另行提供。
+
+例如，分别对 `up{job="envd"} == 0` 和 `envd_sample_fresh{job="envd"} == 0` 告警。使用 `100 * envd_system_cpu_busy_ratio` 显示百分比，用 `rate(envd_cgroup_cpu_usage_seconds_total[5m])` 计算每秒消耗的 CPU 秒数。计数器下降表示重置；新的 daemon generation 会创建独立序列。cgroup 可在同一 generation 内重置。缺失或过期观测保持为空档，不要填零，也不要从抓取成功推断所有字段采集完整。
 
 ## 启用命令
 
