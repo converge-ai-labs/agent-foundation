@@ -314,7 +314,9 @@ See [spec/repository-model.md](spec/repository-model.md) for the normative repos
 
 ## Writing Issues and Pull Requests
 
-Agents must follow the writing guidance in this section when drafting or updating Issue and PR bodies. Human contributors may adapt it at their discretion; this section adds no mandatory writing format for humans. Existing contribution and validation requirements still apply.
+Agents must follow the writing guidance in this section when drafting or updating Issue and PR titles and bodies. Human contributors may adapt it at their discretion; this section adds no mandatory writing format for humans. Existing contribution and validation requirements still apply.
+
+Before creating an Issue, read the applicable repository template under [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/) and follow its title prefix, body fields, and required checks. This applies equally to browser, CLI (including `gh issue create`), and API creation. When supplying a title and body directly, reproduce the template's structure explicitly; do not substitute commit or PR title conventions for the Issue template. Verify the title and body against the selected template before submitting.
 
 Start the main description with a concise explanation that a reader unfamiliar with the discussion can understand: the triggering scenario, the problem and its impact, and the desired or resulting behavior. Use the existing Issue problem field or PR Summary rather than adding a duplicate overview.
 
