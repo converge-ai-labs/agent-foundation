@@ -50,6 +50,12 @@ Default excerpt budgets are 8 KiB per user message (6 KiB head, 2 KiB tail) and 
 
 The private tail object keeps per-message terms, compact user terms and completed/pending display ordinals. Recovery restores this ledger without reindexing inherited history or resurrecting evicted messages. Runtime term reference counts remove a term only when no retained message references it. Failed transactions discard candidate caches; unchanged term sets skip the vector write. Changed vectors are still complete PostgreSQL values and incur normal MVCC/TOAST/GIN work; this is not an in-place delta update. Retention logs contain sizes/counts, never text.
 
+## Model-visible execution identity
+
+At each eligible input or tool-result boundary, the Service adds a `service-context` block containing only a JSON object with `service_run_id` from the executing Run. This is the ID used as `run_id` in Service Run query APIs and tools; query guidance belongs in the built-in platform operations skill. The Harness context's `harness_run_id` identifies one Harness execution and is not a Service Run resource ID. These identifiers grant no additional authority.
+
+Root agents and inline subagents receive the containing Service Run ID; their Harness execution IDs remain distinct. Recovery and handoff retain the Service Run ID, while a successor or separately scheduled child Run receives its own ID. Fresh context uses current execution bindings, leaving historical context unchanged under the [Harness projection contract](../a13n-harness/09-context-and-memory.md#eligible-requests-and-placement).
+
 ## Run configuration
 
 Message `options.configuration` accepts the shared [Harness Run configuration](../a13n-harness/06-execution-context-and-lifecycle.md#run-configuration), independently of Agent revision overrides. Omission or null selects the default for a new Run and retains the snapshot when steering. An explicit object selects its entire value; `{allowed_hosts: null}` explicitly clears a hostname restriction for a new Run, while `{allowed_hosts: []}` denies every destination.

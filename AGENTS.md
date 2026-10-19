@@ -19,7 +19,7 @@ For local Service work, use the stable Make targets and discover checkout-specif
 
 ## Scope and Authorization
 
-When drafting or updating Issue and PR bodies, follow [Writing Issues and Pull Requests](CONTRIBUTING.md#writing-issues-and-pull-requests). This writing guidance is mandatory for agents and discretionary for human contributors.
+When drafting or updating Issue and PR titles and bodies, follow [Writing Issues and Pull Requests](CONTRIBUTING.md#writing-issues-and-pull-requests), including its requirement to read and follow the applicable repository Issue template before creation through browser, CLI, or API. This writing guidance is mandatory for agents and discretionary for human contributors.
 
 - Carry requested changes through implementation and relevant validation. Resolve routine choices from the request and repository evidence; ask only when missing information materially affects correctness, scope, or authorization. Existing authorization carries across follow-ups.
 - An audit or review is read-only unless fixes are requested. Local editing does not itself authorize committing, pushing, GitHub writes, merging, deploying, or releasing. Each action must be covered by the request or established authorization; loading a skill grants none of these permissions.
