@@ -125,9 +125,9 @@ class _Plan:
     state: HarnessState
     resume: DeferredToolResume | None
     resume_input: Offered | None
-    # The mounts changed since the run whose history this one continues; it precedes the input, or is the input of a
-    # resume that has none, until a model request carries it.
-    mount_reminder: TextContent | None
+    # What changed since the run whose history this one continues; it precedes the input, or is the input of a resume
+    # that has none, until a model request carries it.
+    reminder: TextContent | None
     # A run that starts from a failed or cancelled one never repeats that run's unanswered tool calls.
     tool_recovery: Literal["declared", "never"]
     tail: Tail
@@ -276,7 +276,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         if answers is not None and answers.input is not None and not consumed
         else None
     )
-    mount_reminder = None if consumed else inputs.mount_reminder(lease.run_id, previous, mounts)
+    reminder = None if consumed else inputs.reminder(inputs.mount_changes(previous, mounts))
     if own is not None:
         state = own.harness
         resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
@@ -297,7 +297,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state=state,
         resume=resume,
         resume_input=resume_input,
-        mount_reminder=mount_reminder,
+        reminder=reminder,
         tool_recovery="never" if unknown_outcomes else "declared",
         tail=tail,
         committed=committed,
@@ -511,7 +511,7 @@ class _Attempt:
             start = partial(
                 executable.stream,
                 input_factory=self._assigned_input
-                if self.plan.assigned or self.plan.resume_input or self.plan.mount_reminder
+                if self.plan.assigned or self.plan.resume_input or self.plan.reminder
                 else None,
                 previous_state=self.plan.state,
                 # Recovery creates a new writer/attempt, not a serialized same-writer accounting resume.
@@ -636,7 +636,7 @@ class _Attempt:
                 seq=self.seq + 1,
                 attempt=self.lease.number,
                 deferred=deferred,
-                resume_input_consumed=(self.plan.resume_input is None and self.plan.mount_reminder is None)
+                resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
                 or self.offers.requested,
             ),
             snapshot,
@@ -730,7 +730,7 @@ class _Attempt:
         if not parts and (self.plan.assigned or self.plan.resume_input):
             # Each entry was a steer that failed alone; the next attempt continues without them.
             raise ServiceError("unavailable", "No assigned input could be read", {"dependency": "input"})
-        return tuple(parts) if self.plan.mount_reminder is None else (self.plan.mount_reminder, *parts)
+        return tuple(parts) if self.plan.reminder is None else (self.plan.reminder, *parts)
 
     async def _read(self, entry: Offered, environment: BoundEnvironment) -> tuple[UserContent, ...] | None:
         """The entry's content, its files placed in `environment`, or None for a steer that cannot be read,

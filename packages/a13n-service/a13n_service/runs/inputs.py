@@ -1,9 +1,10 @@
 """Turning accepted message input into the content the model reads.
 
 Each text the Service writes carries its source ID in `TextContent` metadata: an inbox entry ID for queued
-messages, or the successor Run ID for a resume's accompanying input and a reminder of changed mounts. Assets and URL content reach the model as `attachments` decides, once the run's
-environments are ready to take the files it places. URL input is fetched here under the endpoint policy rather
-than by the model provider, so no provider ever fetches an address the operator did not allow.
+messages, the successor Run ID for a resume's accompanying input, or `REMINDER_SOURCE` for the turn reminder. Assets
+and URL content reach the model as `attachments` decides, once the run's environments are ready to take the files it
+places. URL input is fetched here under the endpoint policy rather than by the model provider, so no provider ever
+fetches an address the operator did not allow.
 """
 
 import json
@@ -29,6 +30,8 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import AssetPart, EnvironmentMount, JsonPart, MessagePayload, TextPart, UrlPart
 from a13n_service.runs.tables import InboxEntryRow
 from a13n_service.tenancy.authorize import Principal
+
+REMINDER_SOURCE = "a13n.service.reminder"
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,31 +160,34 @@ def _child_result(entry: Offered) -> tuple[UserContent, ...]:
     return (_text(entry, "A delegated subagent run ended:\n" + json.dumps(entry.payload, ensure_ascii=False)),)
 
 
-def mount_reminder(
-    run_id: str, previous: Sequence[EnvironmentMount], current: Sequence[EnvironmentMount]
-) -> TextContent | None:
-    """A hidden reminder of the mounts that changed since the run whose history this run continues: a name that now
-    mounts another environment, such as a new primary sandbox after an idle delete, or one no longer mounted. The
-    model reads the current mounts, but not that the files its history wrote are gone."""
-    environments = {mount.name: mount.environment_id for mount in current}
-    changes = [
-        f'- "{mount.name}" is no longer mounted.'
-        if mount.name not in environments
-        else f'- "{mount.name}" is now a different environment. Files and processes from earlier turns are not in it.'
-        for mount in previous
-        if environments.get(mount.name) != mount.environment_id
-    ]
+def reminder(changes: Sequence[str]) -> TextContent | None:
+    """The turn reminder: one hidden text that names what changed since the run whose history this run continues.
+    The model reads the current state in each request, but not that its history no longer describes it."""
     if not changes:
         return None
     text = "\n".join(
         [
             "<system-reminder>",
-            "Environment mounts changed since the previous turn of this conversation:",
-            *changes,
+            "Changed since the previous turn of this conversation:",
+            *(f"- {change}" for change in changes),
             "</system-reminder>",
         ]
     )
-    return TextContent(text, metadata={"source_id": run_id, "display": False})
+    return TextContent(text, metadata={"source_id": REMINDER_SOURCE, "display": False})
+
+
+def mount_changes(previous: Sequence[EnvironmentMount], current: Sequence[EnvironmentMount]) -> list[str]:
+    """The mount changes the turn reminder names: a name that now mounts another environment, such as a new primary
+    sandbox after an idle delete, or one no longer mounted."""
+    environments = {mount.name: mount.environment_id for mount in current}
+    return [
+        f'The environment mount "{mount.name}" was removed.'
+        if mount.name not in environments
+        else f'The environment mount "{mount.name}" is now a different environment. '
+        "Files and processes from earlier turns are not in it."
+        for mount in previous
+        if environments.get(mount.name) != mount.environment_id
+    ]
 
 
 async def content(

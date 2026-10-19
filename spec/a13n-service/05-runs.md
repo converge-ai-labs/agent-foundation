@@ -242,9 +242,13 @@ The worker offers assigned entries to the Harness outside any transaction, befor
 
 A steer whose content cannot be read, such as one naming an asset that is no longer usable, fails alone with the refusal's code and the run continues without it, whether it is offered at a boundary or again by a recovered attempt. Only the run's own source entry fails the run when it cannot be read, and an `unavailable` read ends the attempt instead. An attempt whose initial entries all fail alone ends as `unavailable` too, and the next continues without them.
 
-### Changed mounts
+### Turn reminder
 
-A run's frozen mounts may differ from those of the run whose state it continues, the nearest checkpoint along its parents: a mount name may now name another instance, such as a new primary sandbox after an idle delete ([06](06-environments.md#idle-policy)), or none. The model reads the current mounts, not that the files its history wrote there are gone. The run's initial input therefore starts with one `display: false` text, with the run's ID as its source ID, that names each such mount inside `<system-reminder>` tags. A waiting run is not active use, so its resume may find a changed mount too. A resume that carries only call results takes the text as its whole input: the approved calls run in the current mounts, and the model reads the text with their results. Once a model request carries the text, a recovered attempt does not repeat it.
+The model reads the current state in each request, but not that its history no longer describes it. When something changed since the run whose state this run continues, the nearest checkpoint along its parents, the run's initial input starts with one `display: false` text, the turn reminder. It lists each change under one heading inside `<system-reminder>` tags, and its source ID is `a13n.service.reminder`, so a client can tell it apart from a message. It names:
+
+- each mount name that now names another instance, such as a new primary sandbox after an idle delete ([06](06-environments.md#idle-policy)), or none. Files and processes from earlier turns are not in the new instance.
+
+A waiting run is not active use, so its resume may find a change too. A resume that carries only call results takes the reminder as its whole input: the approved calls run in the current mounts, and the model reads the reminder with their results. Once a model request carries the reminder, a recovered attempt does not repeat it.
 
 ### How files reach the model
 

@@ -660,9 +660,10 @@ async def test_the_next_run_hears_once_which_mounts_changed(env, scripted_model,
     reminder = "\n".join(
         [
             "<system-reminder>",
-            "Environment mounts changed since the previous turn of this conversation:",
-            '- "data" is no longer mounted.',
-            '- "workspace" is now a different environment. Files and processes from earlier turns are not in it.',
+            "Changed since the previous turn of this conversation:",
+            '- The environment mount "data" was removed.',
+            '- The environment mount "workspace" is now a different environment. '
+            "Files and processes from earlier turns are not in it.",
             "</system-reminder>",
         ]
     )
@@ -672,16 +673,16 @@ async def test_the_next_run_hears_once_which_mounts_changed(env, scripted_model,
     scripted_model.say("Done")
     await (await runs_kit.attempt(env))
     sent = json.dumps((await scripted_model.request())["messages"])
-    assert sent.count(json.dumps(reminder)[1:-1]) == 1 and sent.index("Environment mounts") < sent.index("again")
+    assert sent.count(json.dumps(reminder)[1:-1]) == 1 and sent.index("system-reminder") < sent.index("again")
     items = (await env.client.get(f"{env.api}/runs/{run_id}/items")).json()["items"]
     [notice] = [item["content"] for item in items if item["content"].get("text") == reminder]
-    assert (notice["metadata"]["display"], notice["metadata"]["source_id"]) == (False, run_id)
+    assert (notice["metadata"]["display"], notice["metadata"]["source_id"]) == (False, "a13n.service.reminder")
 
     # Its history keeps the reminder where it was read, and an unchanged run adds none.
     assert (await runs_kit.submit(env, thread_id, runs_kit.message(agent, "and again"))).status_code == 201
     scripted_model.say("Done")
     await (await runs_kit.attempt(env))
-    assert json.dumps((await scripted_model.request())["messages"]).count("Environment mounts changed") == 1
+    assert json.dumps((await scripted_model.request())["messages"]).count("Changed since the previous turn") == 1
 
 
 async def test_a_resume_after_an_idle_delete_reads_the_change_with_its_results(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -721,8 +722,9 @@ async def test_a_resume_after_an_idle_delete_reads_the_change_with_its_results(e
     reminder = "\n".join(
         [
             "<system-reminder>",
-            "Environment mounts changed since the previous turn of this conversation:",
-            '- "workspace" is now a different environment. Files and processes from earlier turns are not in it.',
+            "Changed since the previous turn of this conversation:",
+            '- The environment mount "workspace" is now a different environment. '
+            "Files and processes from earlier turns are not in it.",
             "</system-reminder>",
         ]
     )
