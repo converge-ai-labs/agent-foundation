@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import PurePosixPath
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field_validator, model_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 PROVIDER_KEY = "e2b"
 
 
 class E2BConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
 
     domain: str = Field(
         default="e2b.dev",
@@ -58,7 +62,7 @@ class E2BEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        json_schema_extra={"x-primary-fields": ["desktop", "template", "allow_internet_access"]},
+        json_schema_extra={"x-primary-fields": ["execution", "desktop", "template", "allow_internet_access"]},
     )
 
     template: str = Field(
@@ -68,22 +72,24 @@ class E2BEnvironmentConfiguration(BaseModel):
         title="E2B template name or ID",
         description="Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.",
     )
+    execution: Literal["native", "envd_http"] = Field(
+        default="native",
+        title="Execution connection",
+        description="Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.",
+    )
     desktop: bool = Field(
         default=False,
         title="Desktop environment",
-        description="Enable native E2B Computer operations. When template is omitted, use desktop instead of base.",
+        description="Require Computer operations from a13n-envd. Requires envd_http and a compatible template.",
     )
-    desktop_width: int = Field(default=1280, ge=256, le=4096, title="Desktop width")
-    desktop_height: int = Field(default=800, ge=256, le=4096, title="Desktop height")
-    desktop_dpi: int = Field(default=96, ge=48, le=192, title="Desktop DPI")
-    desktop_display: str = Field(default=":0", pattern=r"^:[0-9]{1,3}$", title="X11 display")
 
-    @model_validator(mode="before")
-    @classmethod
-    def _desktop_template(cls, value: object) -> object:
-        if isinstance(value, dict) and value.get("desktop") is True and "template" not in value:
-            return {**value, "template": "desktop"}
-        return value
+    @model_validator(mode="after")
+    def _execution(self) -> Self:
+        if self.desktop and self.execution != "envd_http":
+            raise ValueError("Desktop requires execution=envd_http and an a13n-envd template")
+        if self.execution == "envd_http" and self.template in {"base", "desktop"}:
+            raise ValueError("Envd execution requires an operator-built a13n-envd template")
+        return self
 
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
@@ -108,8 +114,8 @@ class E2BEnvironmentConfiguration(BaseModel):
     def fingerprint(self) -> str:
         fields = {"template", "root", "user", "allow_internet_access"}
         # Preserve the historical digest byte-for-byte for non-desktop instances.
-        if self.desktop:
-            fields.update({"desktop", "desktop_width", "desktop_height", "desktop_dpi", "desktop_display"})
+        if self.execution != "native":
+            fields.update({"execution", "desktop"})
         target = self.model_dump_json(include=fields)
         return hashlib.sha256(target.encode()).hexdigest()
 

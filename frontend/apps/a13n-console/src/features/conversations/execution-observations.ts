@@ -136,14 +136,15 @@ export function applyObservation(
             ? payload.error_code
             : undefined;
         // A cancelled request was stopped, not failed.
-        return updateStep(
-          next,
-          at,
-          id,
-          errorCode === "cancelled"
-            ? { state: "interrupted" }
-            : { state: "failed", errorCode },
-        );
+        if (errorCode === "cancelled")
+          return updateStep(next, at, id, { state: "interrupted" });
+        return updateStep(next, at, id, {
+          state: "failed",
+          errorCode,
+          errorStatus: numeric(payload.status_code),
+          errorDetail:
+            typeof payload.detail === "string" ? payload.detail : undefined,
+        });
       }
     }
   }

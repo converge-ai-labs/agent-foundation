@@ -59,14 +59,17 @@ def output_model(payloads: list[dict[str, Any]], calls: list[int]) -> FunctionMo
 
 
 @pytest.mark.parametrize("invalid", INVALID)
-async def test_model_retries_schema_violations_then_accepts_valid_output(invalid: dict[str, Any]) -> None:
+@pytest.mark.parametrize("failures", [1, 3])
+async def test_model_retries_schema_violations_then_accepts_valid_output(
+    invalid: dict[str, Any], failures: int
+) -> None:
     calls: list[int] = []
     executable = HarnessBuilder().build(
-        AgentSpec(output_schema=SCHEMA), output_type=None, model=output_model([invalid, VALID], calls)
+        AgentSpec(output_schema=SCHEMA), output_type=None, model=output_model([invalid] * failures + [VALID], calls)
     )
     result = await executable.run("produce output", bindings=RunBindings.embedded())
     assert result.output_or_raise() == VALID
-    assert len(calls) == 2
+    assert len(calls) == failures + 1
 
 
 async def test_repeated_invalid_output_exhausts_native_retry_budget() -> None:
@@ -76,7 +79,7 @@ async def test_repeated_invalid_output_exhausts_native_retry_budget() -> None:
     )
     result = await executable.run("produce output", bindings=RunBindings.embedded())
     assert result.status == "failed"
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 class ReplaceOutput(AbstractHarnessPlugin):
@@ -130,4 +133,4 @@ async def test_external_reference_does_not_trigger_network_retrieval(monkeypatch
     )
     result = await executable.run("produce output", bindings=RunBindings.embedded())
     assert result.status == "failed"
-    assert len(calls) == 2
+    assert len(calls) == 4

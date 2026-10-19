@@ -59,8 +59,11 @@ export function ProviderConfiguration({
   } catch {
     // An unfinished JSON draft remains editable without losing its text.
   }
-  const e2bDefaultTemplate = value?.desktop === true ? "desktop" : "base";
+  const e2bDefaultTemplate = "base";
+  const e2bRequiresEnvd =
+    value?.execution === "envd_http" || value?.desktop === true;
   const e2bUsesCustomTemplate =
+    e2bRequiresEnvd ||
     e2bCustom ||
     (typeof value?.template === "string" &&
       value.template !== e2bDefaultTemplate);
@@ -100,6 +103,21 @@ export function ProviderConfiguration({
     const key = property[0];
     if (
       variant === "e2b" &&
+      e2bRequiresEnvd &&
+      [
+        "root",
+        "user",
+        "python",
+        "max_file_bytes",
+        "max_observation_bytes",
+        "max_active_observations",
+        "max_retained_output_bytes",
+        "max_query_entries",
+      ].includes(key)
+    )
+      continue;
+    if (
+      variant === "e2b" &&
       ["template", "allow_internet_access"].includes(key)
     )
       continue;
@@ -117,7 +135,10 @@ export function ProviderConfiguration({
           title: "Container image",
         },
       ]);
-    } else if (variant === "docker" && key === "execution")
+    } else if (
+      (variant === "docker" || variant === "e2b") &&
+      key === "execution"
+    )
       execution.push(property);
     else if ((variant === "docker" || variant === "e2b") && key === "desktop")
       continue;
@@ -242,7 +263,16 @@ export function ProviderConfiguration({
                 onChange={(next) =>
                   change({
                     ...next,
-                    ...(next.execution === "native" ? { desktop: false } : {}),
+                    ...(next.execution === "native"
+                      ? { desktop: false, desktop_assistance: false }
+                      : {}),
+                    ...(variant === "e2b" &&
+                    next.execution === "envd_http" &&
+                    ["base", "desktop"].includes(
+                      String(next.template ?? "base"),
+                    )
+                      ? { template: "" }
+                      : {}),
                   })
                 }
               />
@@ -282,7 +312,7 @@ export function ProviderConfiguration({
                 <SettingsRow
                   label={t("Desktop environment")}
                   description={t(
-                    "Screenshots, mouse and keyboard input for this environment.",
+                    "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.",
                   )}
                   controlId={desktopId}
                   stackOnNarrow={false}
@@ -295,8 +325,13 @@ export function ProviderConfiguration({
                       change({
                         ...value,
                         desktop: enabled,
-                        ...(!e2bUsesCustomTemplate
-                          ? { template: enabled ? "desktop" : "base" }
+                        ...(enabled
+                          ? { execution: "envd_http" }
+                          : { desktop_assistance: false }),
+                        ...(enabled &&
+                        (!value.template ||
+                          ["base", "desktop"].includes(String(value.template)))
+                          ? { template: "" }
                           : {}),
                       })
                     }
@@ -314,7 +349,7 @@ export function ProviderConfiguration({
                         {
                           value: "official",
                           label: t("Official default"),
-                          disabled: readOnly,
+                          disabled: readOnly || e2bRequiresEnvd,
                         },
                         {
                           value: "custom",
@@ -352,8 +387,10 @@ export function ProviderConfiguration({
                             ...(e2bTemplate as Record<string, unknown>),
                             description:
                               value.desktop === true
-                                ? "Enter an E2B template name or ID with desktop components preinstalled. Enabling desktop does not install them."
-                                : "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.",
+                                ? "Enter an operator-built template with a13n-envd and desktop components preinstalled."
+                                : e2bRequiresEnvd
+                                  ? "Enter an operator-built template with a13n-envd preinstalled."
+                                  : "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.",
                           },
                         },
                       }}

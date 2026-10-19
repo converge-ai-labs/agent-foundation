@@ -359,50 +359,63 @@ async def test_independent_opens_never_resume_or_renew(api):
     assert api.calls == ["attach", "inspect", "attach", "inspect"]
 
 
-async def test_desktop_creation_records_identity_before_sdk_failure(api, monkeypatch):
-    import a13n_service.providers.environments.e2b.management as management_module
-
-    async def create(config, *, timeout, metadata, options, allocated):
-        sandbox = await api.create(metadata=metadata, template=config.template)
-        allocated(sandbox.sandbox_id)
-        raise EnvironmentError("Desktop unavailable", code="environment_unavailable")
-
-    monkeypatch.setattr(management_module, "create_desktop", create)
-    env = environment(configuration=E2BRecipe(desktop=True))
+async def test_envd_creation_records_identity_before_bootstrap_failure(api, monkeypatch):
+    env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
+    bootstrap = AsyncMock(side_effect=EnvironmentError("Envd unavailable", code="environment_unavailable"))
+    monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
     with pytest.raises(EnvironmentError):
         await env.create()
     assert env.state is not None
     assert api.calls.count("create") == 1
-    assert api.options[0]["template"] == "desktop"
-    monkeypatch.setattr(
-        management_module, "open_sandbox", AsyncMock(return_value=api.sandbox(env.state.state["sandbox_id"]))
-    )
+    assert api.options[0]["template"] == "team-envd"
     check = AsyncMock(side_effect=EnvironmentError("Not ready", code="environment_unavailable"))
-    monkeypatch.setattr(env, "_check_desktop", check)
+    monkeypatch.setattr(env, "_check_envd", check)
     with pytest.raises(EnvironmentError):
         await env.create()
     assert api.calls.count("create") == 1
     assert check.await_count == 1
+    assert bootstrap.await_count == 1
     await env.destroy()
 
 
-async def test_desktop_resume_checks_desktop_without_reallocation(api, monkeypatch):
-    import a13n_service.providers.environments.e2b.management as management_module
-
-    async def create(config, *, timeout, metadata, options, allocated):
-        sandbox = await api.create(metadata=metadata, template=config.template)
-        allocated(sandbox.sandbox_id)
-
-    monkeypatch.setattr(management_module, "create_desktop", create)
-    env = environment(configuration=E2BRecipe(desktop=True))
-    check = AsyncMock()
-    monkeypatch.setattr(env, "_check_desktop", check)
+async def test_envd_resume_checks_without_bootstrap_or_reallocation(api, monkeypatch):
+    env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
+    bootstrap, check = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
+    monkeypatch.setattr(env, "_check_envd", check)
     await env.create()
     state = env.state
     await env.stop()
     await env.start()
     assert env.state == state
-    assert check.await_count == 1
+    assert check.await_count == 2
+    assert bootstrap.await_count == 1
     assert api.calls.count("create") == 1
     assert api.calls.count("connect") == 1
+    await env.destroy()
+
+
+async def test_envd_bootstrap_exit_is_actionable_and_does_not_expose_guest_output(api, monkeypatch):
+    from e2b.sandbox.commands.command_handle import CommandExitException
+
+    env = environment(configuration=E2BRecipe(execution="envd_http", template="team-envd"))
+    monkeypatch.setattr(
+        env,
+        "_bootstrap_envd",
+        AsyncMock(
+            side_effect=CommandExitException(
+                stderr="private guest stderr",
+                stdout="private guest stdout",
+                exit_code=1,
+                error=None,
+            )
+        ),
+    )
+    with pytest.raises(EnvironmentProviderError) as failure:
+        await env.create()
+    assert failure.value.code == "envd_bootstrap_failed"
+    assert "template prerequisites" in str(failure.value)
+    assert "private guest" not in str(failure.value)
+    assert env.state is not None
+    assert api.calls.count("create") == 1
     await env.destroy()

@@ -4,6 +4,8 @@ import json
 import os
 import secrets
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness import HarnessBuilder, RunBindings
@@ -39,7 +41,13 @@ async def managed_environment():
             state=state,
         )
         try:
-            yield connector
+            yield SimpleNamespace(
+                provider_key=connector.provider_key,
+                environment_id=connector.environment_id,
+                descriptor=connector.descriptor,
+                state=connector.state,
+                ensure_ready=AsyncMock(return_value=connector),
+            )
             assert (await provider.inspect(configuration, environment_id=identity, state=state)).status == "running"
         finally:
             await provider.destroy(configuration, environment_id=identity, state=state, operation_id="op-delete")

@@ -51,6 +51,8 @@ export interface ModelEntry extends EntryBase {
   reportedUsage: boolean;
   messageCount: number | null;
   errorCode: string | null;
+  errorStatus: number | null;
+  errorDetail: string | null;
   contextTokens: number | null;
   stopReason: StopReason;
   children: TimelineEntry[];
@@ -315,6 +317,8 @@ function modelEntry(
     reportedUsage: reportsTokens(step.usage),
     messageCount: step.messageCount ?? null,
     errorCode: step.errorCode ?? null,
+    errorStatus: step.errorStatus ?? null,
+    errorDetail: step.errorDetail ?? null,
     contextTokens:
       step.contextTokens ?? execution.contextTokens[step.id] ?? null,
     stopReason: null,

@@ -79,7 +79,8 @@ _CERTAINTY: dict[EnvironmentProviderOutcomeCertainty, Certainty] = {
 
 
 def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool]:
-    """Whether an accepted or running run's frozen mounts name the instance: the durable active-use evidence."""
+    """Whether the instance is in active use: an accepted or running run's frozen mounts name it, or a desktop
+    context holds the reservation of its native target under any alias."""
     from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
 
     held = aliased(EnvironmentRow)

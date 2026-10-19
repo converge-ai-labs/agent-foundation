@@ -61,7 +61,9 @@ Control 进程通过有界扫描维护排队任务和投递。失败的扫描记
 | 扫描任务                        | 间隔                               | 工作                                                                                              |
 | ------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `advance_threads`               | `control.scan_seconds`             | 启动空闲线程的下一条排队输入。                                                                    |
+| `organize_memory_spaces`        | 每 10 秒                           | 检查有已保存变更或手动请求的空间，启动到期的整理轮次，并结算已结束的轮次。                        |
 | `expire_leases`                 | `worker.authority_seconds`         | 结束租约过期的尝试，让运行由其他 worker 继续或失败。                                              |
+| `desktop_assistance`            | 每 10 秒                           | 撤销过期或已失去授权的桌面协助和桌面控制授权，确认清理完成后释放桌面。                            |
 | `expire_credentials`            | `auth.expiry_scan_seconds`         | 删除过期或撤销的登录会话、邮件链接和未接受邀请。                                                  |
 | `maintain_environments`         | `environments.scan_seconds`        | 停止或删除超过模板空闲阈值的托管环境，并继续未完成 provider 操作。                                |
 | `renew_environments`            | `environments.scan_seconds`        | 续期即将结束的就绪云沙箱，每次调用受 `environments.renewal_seconds` 限制。                        |

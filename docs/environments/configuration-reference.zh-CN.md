@@ -253,26 +253,23 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `E2BRecipe`
 
-| 字段                        | 必填  | 类型 / 可选值 | 约束与默认值                                              |
-| --------------------------- | ----- | ------------- | --------------------------------------------------------- |
-| `template`                  | false | string        | minLength=1; maxLength=256; default="base"                |
-| `desktop`                   | false | boolean       | default=false                                             |
-| `desktop_width`             | false | integer       | minimum=256; maximum=4096; default=1280                   |
-| `desktop_height`            | false | integer       | minimum=256; maximum=4096; default=800                    |
-| `desktop_dpi`               | false | integer       | minimum=48; maximum=192; default=96                       |
-| `desktop_display`           | false | string        | `pattern="^:[0-9]{1,3}$"`; default=":0"                   |
-| `root`                      | false | string        | default="/home/user"                                      |
-| `user`                      | false | string        | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false | string        | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false | number        | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false | boolean       | default=true                                              |
-| `max_file_bytes`            | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false | integer       | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000         |
-| `desktop_assistance`        | false | boolean       | default=false                                             |
-| `timeout_seconds`           | false | integer       | minimum=30; maximum=86400; default=3600                   |
+| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
+| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
+| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false | "native", "envd_http" | default="native"                                          |
+| `desktop`                   | false | boolean               | default=false                                             |
+| `root`                      | false | string                | default="/home/user"                                      |
+| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false | string                | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false | boolean               | default=true                                              |
+| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false | boolean               | default=false                                             |
+| `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`
 
