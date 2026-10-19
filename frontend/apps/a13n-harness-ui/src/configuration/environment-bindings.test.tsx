@@ -274,6 +274,15 @@ it("defaults to full control and can save and reopen read-only access", async ()
 it.each([
   undefined,
   { operations: ["environment.file.read_text"] },
+  { operations: ["environment.computer.read_clipboard"] },
+  { operations: ["environment.computer.write_clipboard"] },
+  {
+    operations: fullControl.filter(
+      (action) =>
+        action !== "environment.computer.read_clipboard" &&
+        action !== "environment.computer.write_clipboard",
+    ),
+  },
   {
     operations: ["environment.computer.observe", "environment.computer.click"],
   },
