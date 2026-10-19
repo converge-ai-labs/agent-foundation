@@ -1,7 +1,7 @@
 """Explicit admission and operation effects shared by HTTP, MCP and internal agents."""
 
 from dataclasses import dataclass
-from pathlib import Path
+from importlib.resources import files
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
@@ -48,7 +48,7 @@ class PlatformTool(PlatformOperation):
 
 # Generated from the admitted routes by `make service-contract-generate`, so configuration validates without them.
 PLATFORM_TOOLS = TypeAdapter(tuple[PlatformTool, ...]).validate_json(
-    Path(__file__).with_name("platform_tools.json").read_bytes()
+    files("a13n_service.infra").joinpath("platform_tools.json").read_bytes()
 )
 
 
