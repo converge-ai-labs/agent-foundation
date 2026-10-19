@@ -18,6 +18,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def schedule_for(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     response = await service.client.post(
         f"{service.api}/schedules",

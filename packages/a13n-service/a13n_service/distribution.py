@@ -93,6 +93,7 @@ from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.routes import router as schedules_router
+from a13n_service.runs.schedules.sweep import schedule_sweep
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
@@ -370,6 +371,7 @@ OSS = Distribution(
     ),
     migrations=(Path(__file__).parent / "migrations" / "versions",),
     sweeps=(
+        schedule_sweep,
         _advance_threads,
         organization_sweep,
         _expire_leases,

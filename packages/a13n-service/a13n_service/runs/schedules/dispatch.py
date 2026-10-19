@@ -1,6 +1,6 @@
 """Durable manual intent and atomic submission through the ordinary Thread/inbox path."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from functools import partial
 
 from a13n_logging import get_logger
@@ -77,33 +77,30 @@ async def manual(
         return Occurrence.model_validate(item), True
 
 
-async def _log(
-    schedule_id: str,
-    occurrence_id: str,
-    status: str,
-    reason: str | None,
-    thread_id: str | None,
-    entry_id: str | None,
-    scheduled_at: datetime | None,
+async def _log(details: dict[str, object]) -> None:
+    logger.info("Schedule occurrence processed", extra=details)
+
+
+def log_after_commit(
+    session: AsyncSession, row: ScheduleRow, item: OccurrenceRow, *, run_id: str | None = None
 ) -> None:
-    logger.info(
-        "Schedule occurrence processed",
-        extra={
-            "schedule_id": schedule_id,
-            "occurrence_id": occurrence_id,
-            "status": status,
-            "reason": reason,
-            "thread_id": thread_id,
-            "entry_id": entry_id,
-            "scheduled_at": scheduled_at,
-        },
-    )
-
-
-def log_after_commit(session: AsyncSession, row: ScheduleRow, item: OccurrenceRow) -> None:
+    delay = ((item.finished_at or item.created_at) - item.scheduled_at).total_seconds() if item.scheduled_at else None
     after_commit(
         session,
-        partial(_log, row.id, item.id, item.status, item.reason, item.thread_id, item.entry_id, item.scheduled_at),
+        partial(
+            _log,
+            {
+                "schedule_id": row.id,
+                "occurrence_id": item.id,
+                "status": item.status,
+                "reason": item.reason,
+                "thread_id": item.thread_id,
+                "entry_id": item.entry_id,
+                "scheduled_at": item.scheduled_at,
+                "run_id": run_id,
+                "delay_seconds": delay,
+            },
+        ),
     )
 
 
@@ -154,7 +151,7 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
             item.thread_id, item.entry_id = thread.id, source.entry.id
             lifecycle.finish(row, item, await now(session), status="submitted", reason=None)
             await session.flush()
-            log_after_commit(session, row, item)
+            log_after_commit(session, row, item, run_id=source.entry.assigned_run_id)
     except (ServiceError, DBAPIError) as error:
         if occurrence_id is None:
             raise
