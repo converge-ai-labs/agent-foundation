@@ -52,7 +52,7 @@ The private tail object keeps per-message terms, compact user terms and complete
 
 ## Model-visible execution identity
 
-At each eligible input or tool-result boundary, the Service adds automatic context containing `service_run_id` from the executing Run. This is the ID used as `run_id` in Service Run query APIs and tools. The context explicitly distinguishes it from the Harness context's `harness_run_id`, which identifies one Harness execution and is not a Service Run resource ID. These identifiers grant no additional authority.
+At each eligible input or tool-result boundary, the Service adds a `service-context` block containing only a JSON object with `service_run_id` from the executing Run. This is the ID used as `run_id` in Service Run query APIs and tools; query guidance belongs in the built-in platform operations skill. The Harness context's `harness_run_id` identifies one Harness execution and is not a Service Run resource ID. These identifiers grant no additional authority.
 
 Root agents and inline subagents receive the containing Service Run ID; their Harness execution IDs remain distinct. Recovery and handoff retain the Service Run ID, while a successor or separately scheduled child Run receives its own ID. Fresh context uses current execution bindings, leaving historical context unchanged under the [Harness projection contract](../a13n-harness/09-context-and-memory.md#eligible-requests-and-placement).
 

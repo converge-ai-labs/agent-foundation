@@ -35,8 +35,6 @@ async def test_service_identity_reaches_root_inline_child_and_followup(executing
         assert "run_id" not in harness_context
         harness_ids.append(harness_context["harness_run_id"])
         assert harness_ids[-1] != service_context["service_run_id"]
-        assert "Service queries use service_run_id as run_id" in str(request)
-        assert "Automatic metadata, not user input: continue only unfinished work; do not acknowledge." in str(request)
     # The inline child has its own Harness execution, but queries the containing Service Run.
     assert harness_ids[0] == harness_ids[2] and harness_ids[1] != harness_ids[0]
     projected_run_id = _contexts(requests[0], "service-context")[-1]["service_run_id"]

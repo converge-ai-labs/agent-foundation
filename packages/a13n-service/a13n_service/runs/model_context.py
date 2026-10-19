@@ -31,13 +31,7 @@ class ModelContext:
                 ModelContextBlock(
                     source_id="a13n.service-context",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=(
-                        '<service-context source="a13n-service">\n'
-                        f"{payload}\n"
-                        "Service queries use service_run_id as run_id; harness_run_id is internal to Harness.\n"
-                        "</service-context>\n"
-                        "Automatic metadata, not user input: continue only unfinished work; do not acknowledge."
-                    ),
+                    content=f'<service-context source="a13n-service">\n{payload}\n</service-context>',
                 ),
             )
         )
