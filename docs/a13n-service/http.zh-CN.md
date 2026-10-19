@@ -100,6 +100,31 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 集合返回 `{"items": [...], "next_cursor": "..."}`。提供 `limit`（1–100，默认 50），下一页提供 `cursor=<next_cursor>`；最后一页的 `next_cursor` 为 `null`。游标是不透明值，绑定集合、范围和产生它的查询全部筛选条件；改用不同筛选条件时返回 `invalid_cursor`。有界目录、工具集、挂载和执行尝试可以一次返回所有项而不分页；请检查具体操作的 schema。
 
+## 读取摘要和指定详情
+
+使用 `view=compact` 查找相关 run、修订、模型、收件箱记录、显示条目或 span，并结合接口支持的过滤条件。现有调用默认使用 `view=detailed`，保留原来的响应。精简列表默认每页十条；为控制响应大小，实际可能更少。即使过滤后当前页为空，也要按返回的游标或 ordinal 继续读取。
+
+预览包含 `text` 和 `truncated`。`omitted_sections` 列出可以单独读取的字段。`source_truncated` 表示保存的内容已经被截短，继续读取也无法恢复被丢弃的数据。字段被省略或预览被截短，不代表原始数据没有相关信息。
+
+例如，查找失败的 run，再读取其中一次失败：
+
+```http
+GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs/{run_id}?section=failure
+GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
+GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0
+```
+
+条目 ID 必须配合该条目的实际 `ordinal`。精简条目查询默认从最早的 ordinal 开始，也可以指定 `before` 或 `after`，然后按 `next_before` 或 `next_after` 继续。未加过滤的详细查询保留读取最新条目及完整尾部的原有行为。
+
+部分内容和正文查询返回 `representation=fragment`、内容 `version`、`text`、`next_offset` 和 `has_more`。offset 按 Unicode 码点计数。继续读取时，同时传入返回的 offset **和 version**。内容变化会返回 `409 conflict`，原因是 `content_changed`，此时应重新开始读取。JSON 片段必须拼接完整后才能解析整个值。字面关键词 `query` 搜索返回下一处命中及其上下文；此时 next offset 用于继续搜索，而不是逐字提取全部内容。
+
+检查配置时，可通过修订的 `section=all` 或 `instructions` 等配置字段读取。run 的 `/agent` 接口使用 `section=original|effective|overrides`，original/effective 还可用 `part` 选择字段。修订的 `/compare` 接口接受 `base_revision_id` 和可选 section。编辑前应取得完整原配置及 agent 主记录的 ETag，并保留无关字段。不能把摘要、片段或差异当成完整配置提交。
+
+通过 `/toolsets/index`、`/connections/{connection_id}/tools/index` 或 `/connector-providers/{provider_id}/apps/{app}/actions/index` 搜索工具目录。使用对应的 `/definitions` 接口读取定义，每次最多重复传入五个准确的 `name`。检查 `missing` 和 `oversized`。超大的定义可在同一接口中指定一个名称，按版本分段读取；接口不会静默截短定义。模型目录支持精简搜索、能力过滤和分页；读取能力或价格部分时，应准确选择 provider/model。
+
+Trace 列表支持 `status`、`kind` 和 `tool_name`。读取单个 span 的输入或输出时，使用 `/traces/{trace_id}/spans/{span_id}/content` 和 `section=input|output`。若 `items` 为空，应按 `next_cursor` 继续查找。找到后，后续文本分段请求继续使用定位该 span 时的请求游标。Trace 数据仍受部署的保存期限和后端可用性限制。
+
 ## 限制
 
 - 请求体受 `server.request_bytes` 限制（`413`），且必须在 `server.request_timeout` 内到达（`408`）。上传和图片有更小的限制。

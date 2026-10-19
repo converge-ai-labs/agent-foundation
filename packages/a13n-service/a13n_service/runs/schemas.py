@@ -517,7 +517,8 @@ class RunQuery(_Frozen):
     status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
     created_after: AwareDatetime | None = None
     created_before: AwareDatetime | None = None
-    limit: int = Field(default=50, ge=1, le=100)
+    view: Literal["detailed", "compact"] = "detailed"
+    limit: int | None = Field(default=None, ge=1, le=100)
     cursor: str | None = None
 
     @model_validator(mode="after")

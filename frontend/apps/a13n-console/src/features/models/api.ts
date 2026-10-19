@@ -1,5 +1,6 @@
 import type { Client } from "../../service-client";
 import {
+  detailedData,
   allPages,
   data,
   ifMatch,
@@ -144,7 +145,7 @@ export function modelApi(client: Client, workspaceId: string) {
         })
         .then(data),
     catalog: (signal: AbortSignal) =>
-      client.http.GET("/api/v1/model-catalog", { signal }).then(data),
+      client.http.GET("/api/v1/model-catalog", { signal }).then(detailedData),
     model: (key: string, signal: AbortSignal) =>
       http
         .GET("/api/v1/models/{key}", { params: { path: { key } }, signal })

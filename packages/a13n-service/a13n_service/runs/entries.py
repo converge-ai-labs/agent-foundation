@@ -9,11 +9,11 @@ from collections.abc import Sequence
 
 from sqlalchemy import select
 
-from a13n_service.infra import cursors
+from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import require_match
-from a13n_service.runs import inbox
+from a13n_service.runs import inbox, read_views
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EntryPage,
@@ -40,7 +40,9 @@ async def list_entries(
     status: Sequence[EntryStatus],
     limit: int,
     cursor: str | None,
-) -> EntryPage:
+    view: reads.ReadView = "detailed",
+    kind: str | None = None,
+) -> EntryPage | read_views.EntrySummaryPage:
     """In inbox order, which is also the order pending entries become runs."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -48,13 +50,22 @@ async def list_entries(
         query = select(InboxEntryRow).where(InboxEntryRow.thread_id == thread.id)
         if status:
             query = query.where(InboxEntryRow.status.in_(status))
-        owner = cursors.query_owner(thread.id, status)
+        if kind is not None:
+            query = query.where(InboxEntryRow.kind == kind)
+        owner = cursors.query_owner(thread.id, status) if kind is None else cursors.query_owner(thread.id, status, kind)
         if cursor is not None:
             position = cursors.decode(cursor, "inbox", owner)
             if len(position) != 1 or not isinstance(position[0], int):
                 raise ServiceError("invalid_cursor", "Invalid collection cursor")
             query = query.where(InboxEntryRow.position > position[0])
         rows = (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit + 1))).all()
+        if view == "compact":
+            values = [read_views.entry_summary(EntryView.model_validate(row)) for row in rows[:limit]]
+            count = reads.fit_count(values)
+            return read_views.EntrySummaryPage(
+                items=values[:count],
+                next_cursor=cursors.encode("inbox", owner, rows[count - 1].position) if len(rows) > count else None,
+            )
         return EntryPage(
             items=[EntryView.model_validate(row) for row in rows[:limit]],
             next_cursor=cursors.encode("inbox", owner, rows[limit - 1].position) if len(rows) > limit else None,

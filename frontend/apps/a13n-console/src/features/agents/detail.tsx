@@ -12,7 +12,13 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data, ifMatch, representation } from "../../shared/api";
+import {
+  detailedData,
+  allPages,
+  data,
+  ifMatch,
+  representation,
+} from "../../shared/api";
 import {
   ErrorNotice,
   ErrorToast,
@@ -67,7 +73,7 @@ export function AgentDetail() {
       );
       if (!resource.value.default_revision_id)
         throw new Error(t("Agent configuration is unavailable."));
-      const revision = data(
+      const revision = detailedData(
         await client
           .workspace(workspace.id)
           .GET("/api/v1/agents/{agent_id}/revisions/{revision_id}", {

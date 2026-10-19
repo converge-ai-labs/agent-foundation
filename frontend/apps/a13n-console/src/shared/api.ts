@@ -12,6 +12,43 @@ export function representation<T>(result: { data?: T; response: Response }) {
     etag: result.response.headers.get("ETag") ?? undefined,
   };
 }
+/** Detailed reads must not feed summaries or text fragments into display or edit state. */
+export type Detailed<T> = T extends unknown
+  ? "view" extends keyof T
+    ? never
+    : "representation" extends keyof T
+      ? never
+      : T extends { items: (infer Item)[] }
+        ? Omit<T, "items"> & { items: Detailed<Item>[] }
+        : T
+  : never;
+
+export function requireDetailed<T>(value: T): Detailed<T> {
+  if (value && typeof value === "object") {
+    if ("view" in value || "representation" in value)
+      throw new Error(
+        "Expected a complete detailed response from the Service.",
+      );
+    if ("items" in value && Array.isArray(value.items))
+      value.items.forEach(requireDetailed);
+  }
+  return value as Detailed<T>;
+}
+
+export function detailedData<T>(result: { data?: T; response: Response }) {
+  return requireDetailed(data(result));
+}
+
+export function detailedRepresentation<T>(result: {
+  data?: T;
+  response: Response;
+}) {
+  return {
+    value: detailedData(result),
+    etag: result.response.headers.get("ETag") ?? undefined,
+  };
+}
+
 export function isUnauthorized(error: unknown) {
   return error instanceof ApiError && error.status === 401;
 }

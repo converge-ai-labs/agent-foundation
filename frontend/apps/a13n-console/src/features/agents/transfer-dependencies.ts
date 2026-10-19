@@ -1,5 +1,5 @@
 import type { Client } from "../../service-client";
-import { allPages, data } from "../../shared/api";
+import { detailedData, allPages, data } from "../../shared/api";
 import { connectionState } from "../connections/api";
 import { environmentTemplates } from "../environments/api";
 import { modelApi } from "../models/api";
@@ -365,7 +365,7 @@ export async function inspectAgentDependencies(
                     },
                     signal,
                   })
-                  .then(data),
+                  .then(detailedData),
               );
         const pinned = revisions.find(
           (revision) => revision.id === ref.revision,

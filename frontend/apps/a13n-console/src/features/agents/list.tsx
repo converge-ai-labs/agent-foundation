@@ -11,7 +11,13 @@ import {
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
+import {
+  detailedData,
+  data,
+  ifMatch,
+  rowTag,
+  type Schema,
+} from "../../shared/api";
 import {
   ArchivedFilter,
   CollectionFooter,
@@ -164,7 +170,7 @@ function useRevisions(items: readonly Agent[]) {
             },
             signal,
           })
-          .then(data),
+          .then(detailedData),
     })),
   });
 }

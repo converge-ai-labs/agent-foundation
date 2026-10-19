@@ -26,7 +26,7 @@ import { ApiError } from "../../service-client";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data } from "../../shared/api";
+import { detailedData, data } from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
@@ -525,7 +525,7 @@ export function TraceList({ filters, page }: TraceListProps) {
           },
           signal,
         })
-        .then(data),
+        .then(detailedData),
   });
   const costs = useListCosts(
     workspace.id,

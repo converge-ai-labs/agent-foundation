@@ -156,6 +156,8 @@ Composer also declares the native `configure_provider` client tool for Model, En
 
 Provider saving and Run resumption are separate operations, with no new persistence or API coupling. The card does not automatically retry saves; retrying a create with an uncertain outcome or after reloading may create a duplicate. After a confirmed save, the mounted card retains only the safe result and retries only resume. Update conflicts require a fresh proposal with a new read and review, not silent ETag replacement. The generic resume endpoint does not verify Provider business state.
 
+Composer's short instruction prefers filtered compact discovery and selected detail, follows continuation and omission markers, and requires a complete base configuration and original ETag before editing. Exact query parameters belong to generated tool schemas; the builtin Skill carries only the relevant task examples and reference guidance.
+
 ### Builtin operating Skills
 
 `platform-operations` ships as local text files in the Worker's installed Service package, separately from user Skill resources. The Host mounts that package directory through Harness Direct Local as the non-default `builtin-skills` Environment at `/platform-skills`; no Service Environment resource, Provider resource, user container or primary mount is required. The source root is `/platform-skills/platform-operations`. Agent configuration cannot select arbitrary Host paths. `builtin-skills` and `builtin-instance` are reserved mount names when any inline agent selects the builtin Skill; adding them preserves the user Environment's default selection.
@@ -475,3 +477,11 @@ A subscription is a webhook. `kinds` lists the lifecycle kinds it wants, any of 
 - `url` passes the endpoint policy when written.
 - The signing secret (16 to 256 characters) is generated as `whsec_` and random text when absent, encrypted, and returned only in the create response. `PATCH` may replace it, which never returns it.
 - `PATCH` and `DELETE` require `If-Match`; `DELETE` deletes the row. Delivery staging, signing, retries, the delivery list and redelivery are [07](07-facts-and-delivery.md#lifecycle-webhooks)'s. Each delivery copies the URL and secret when staged, so a change affects later deliveries only.
+
+## Bounded resource discovery
+
+The [bounded read contract](10-api.md#bounded-read-representations) applies to the optional compact and section reads below. The original detailed endpoints remain available.
+
+- Agent revision summaries retain revision and Agent IDs, number, digest, creation time, default-revision status, note preview, model, enabled toolset names and counts of selected connections, Skills and subagents. Revision detail accepts `section=all` or a declared AgentConfig field. `/agents/{agent}/revisions/{revision}/compare` takes `base_revision_id` and an optional section, returning a versioned unified diff. Both revisions must belong to the authorized Agent. Summaries, sections and diffs cannot replace the whole AgentConfig in a revision write.
+- `/toolsets/index`, `/connections/{connection}/tools/index` and `/connector-providers/{provider}/apps/{app}/actions/index` accept a case-insensitive substring `query` over complete names/descriptions, `limit` and `cursor`. Entries carry exact names, short descriptions with truncation flags, and available provider versions. Toolset entries additionally report tool and deployment-supported-tool counts. Indexes omit schemas and do not infer account availability.
+- Their sibling `/definitions` routes take one to five unique repeated `name` values. `items` contain complete selected definitions, `missing` identifies unknown names, and `oversized` contains name, version, character size and instructions for a single-name fragment read through the same endpoint. A definition is either complete or an explicit reference; schemas are never silently shortened. Toolset definitions preserve configuration schemas and tool configuration semantics; connection tools and connector actions preserve invocation schemas, annotations and provider versions.

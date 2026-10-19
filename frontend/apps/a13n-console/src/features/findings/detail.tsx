@@ -11,7 +11,13 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
+import {
+  detailedData,
+  data,
+  ifMatch,
+  rowTag,
+  type Schema,
+} from "../../shared/api";
 import { MarkdownContent } from "../../shared/markdown";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Page, Section } from "../../shared/page";
@@ -60,7 +66,7 @@ export function FindingDetail() {
           },
           signal,
         })
-        .then(data),
+        .then(detailedData),
   });
   const update = useMutation({
     mutationFn: ({
@@ -298,7 +304,7 @@ function RunEvidence({ runId, label }: { runId: string; label?: string }) {
           params: { path: { run_id: runId } },
           signal,
         })
-        .then(data),
+        .then(detailedData),
   });
   return (
     <>
