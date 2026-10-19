@@ -399,7 +399,7 @@ All reads need `read` on the workspace.
 
 ## Failure semantics
 
-A run's `failure` is `{code, message}`. Model HTTP failures retain the Harness code and include the safe upstream HTTP status in `message`, such as `HTTP 401`; raw upstream bodies and exception payloads are not returned. The codes the Service produces:
+A run's `failure` is `{code, message}`. Model HTTP failures retain the Harness code and include the safe upstream HTTP status in `message`, such as `HTTP 401`; raw upstream bodies and exception payloads are not returned. An environment provider error carries the provider, its error code and any schema reasons, as an instance failure does ([06](06-environments.md#tables)). The codes the Service produces:
 
 | Code                                                                   | Cause                                                                                                                                                       | Retry                                          |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |

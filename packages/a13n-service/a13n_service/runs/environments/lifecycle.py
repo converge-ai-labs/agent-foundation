@@ -27,6 +27,7 @@ from a13n_harness.environment.errors import (
 from a13n_harness.environment.models import EnvironmentError as OperationError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
+from pydantic import ValidationError
 from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -40,7 +41,12 @@ from a13n_service.providers.environment.definition import EnvironmentManagementD
 from a13n_service.providers.environment.errors import observed_environment_state
 from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
-from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
+from a13n_service.resources.providers.service import (
+    ResolvedProvider,
+    read_provider,
+    rejection_reason,
+    resolve_provider,
+)
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, credential_version, open_provider, provider_identity
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle
@@ -400,11 +406,21 @@ async def _call(provider: EnvironmentProvider, operation: Operation) -> Environm
             return None
 
 
+def public_message(error: EnvironmentProviderError) -> str:
+    """The safe message with the Provider and its code and, when a schema refused the input, the fields and the
+    schema's reasons, never the input or upstream text."""
+    origin = ", ".join(part for part in (error.context.provider_key, error.code) if part)
+    message = f"{error.safe_projection().message.removesuffix('.')} ({origin})"
+    if isinstance(error.__cause__, ValidationError):
+        return f"{message}: {rejection_reason(error.__cause__)}."
+    return f"{message}."
+
+
 def fault_of(error: Exception, *, dispatched: bool) -> Fault:
     if isinstance(error, EnvironmentProviderError):
         certainty = _CERTAINTY[error.certainty]
         permanent = certainty != "unknown" and error.category in PERMANENT
-        return Fault(error.code, error.safe_projection().message, certainty, permanent)
+        return Fault(error.code, public_message(error), certainty, permanent)
     if isinstance(error, ServiceError):
         return Fault("environment_provider_unavailable", error.message, "not_dispatched", permanent=True)
     certainty: Certainty = "unknown" if dispatched else "not_dispatched"
