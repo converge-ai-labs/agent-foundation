@@ -1363,6 +1363,10 @@ impl Session {
             };
             let transfers_closed = self.transfers.close_session().await;
             self.operations.wait_until_owned_idle().await;
+            let computer = self.computer.clone();
+            let computer_closed = tokio::task::spawn_blocking(move || computer.close())
+                .await
+                .is_ok();
             self.session.wait_until_idle().await;
             self.transfers.reconcile_committing().await;
             let outputs_closed = execution_closed && self.retention.close().await;
@@ -1370,7 +1374,7 @@ impl Session {
             let candidates_closed = tokio::task::spawn_blocking(move || filesystem.retry_cleanup())
                 .await
                 .unwrap_or(false);
-            transfers_closed && outputs_closed && candidates_closed
+            computer_closed && transfers_closed && outputs_closed && candidates_closed
         })
         .await
         .unwrap_or(false)
@@ -1510,6 +1514,18 @@ impl Session {
 }
 
 impl EipSessionHandler for Session {
+    async fn computer_read_clipboard(
+        &self,
+        params: eip::ComputerReadClipboardParams,
+    ) -> Result<eip::ComputerReadClipboardResult, EIPError> {
+        self.read_computer_clipboard(params).await
+    }
+    async fn computer_write_clipboard(
+        &self,
+        params: eip::ComputerWriteClipboardParams,
+    ) -> Result<eip::ComputerWriteClipboardResult, EIPError> {
+        self.write_computer_clipboard(params).await
+    }
     async fn computer_describe(
         &self,
         params: eip::ComputerDescribeParams,
@@ -5054,10 +5070,142 @@ mod tests {
                 target_os = "windows"
             ))
         );
+        for method in ["computer.read_clipboard", "computer.write_clipboard"] {
+            assert_eq!(
+                methods.iter().any(|m| m == method),
+                cfg!(any(
+                    target_os = "macos",
+                    target_os = "linux",
+                    target_os = "windows"
+                ))
+            );
+        }
         assert_eq!(
             methods.iter().any(|m| m == "computer.type_text"),
             cfg!(any(target_os = "macos", target_os = "windows"))
         );
+    }
+
+    #[tokio::test]
+    async fn clipboard_budget_charges_session_and_device_until_close() {
+        const BYTES: u64 = 512 * 1024;
+        let mut config = Config::for_test("env-test");
+        config.limits.max_staged_file_bytes = BYTES;
+        config.limits.max_device_staged_file_bytes = BYTES;
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let busy = fixture.filesystem.reserve_staging(1).unwrap();
+        assert!(
+            fixture
+                .computer
+                .reserve_clipboard(&fixture.filesystem)
+                .is_err()
+        );
+        drop(busy);
+        fixture
+            .computer
+            .reserve_clipboard(&fixture.filesystem)
+            .unwrap();
+        fixture
+            .computer
+            .reserve_clipboard(&fixture.filesystem)
+            .unwrap();
+        assert_eq!(fixture.filesystem.staging_usage(), (BYTES, 1));
+        assert_eq!(fixture.device.filesystem.staging_usage(), (BYTES, 1));
+        let opened = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        let sibling = fixture
+            .device
+            .lookup(
+                opened["result"]["descriptor"]["session_id"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(
+            sibling
+                .computer
+                .reserve_clipboard(&sibling.filesystem)
+                .is_err()
+        );
+        assert_eq!(sibling.filesystem.staging_usage(), (0, 0));
+        assert!(fixture.close(Duration::from_secs(2)).await);
+        assert_eq!(fixture.device.filesystem.staging_usage(), (0, 0));
+        sibling
+            .computer
+            .reserve_clipboard(&sibling.filesystem)
+            .unwrap();
+        assert!(sibling.close(Duration::from_secs(2)).await);
+        assert_eq!(fixture.device.filesystem.staging_usage(), (0, 0));
+    }
+
+    #[tokio::test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop"]
+    async fn clipboard_eip_evidence_and_active_reads() {
+        let mut config = Config::for_test("env-test");
+        config.computer_use = true;
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let write = json!({"context": {"operation_id": "clipboard-write-a", "timeout_ms": 1000},
+            "text": "café 中文 🦀\r\n"});
+        let first = fixture
+            .call("computer.write_clipboard", write.clone())
+            .await;
+        assert_eq!(first["result"]["effect"], "executed", "{first}");
+        assert_eq!(first["result"]["cleanup_complete"], true);
+        assert_eq!(first["result"]["receipt"]["outcome"], "succeeded");
+        let read = json!({"context": {"operation_id": "clipboard-read", "timeout_ms": 1000}});
+        let result = fixture.call("computer.read_clipboard", read.clone()).await;
+        assert_eq!(result["result"]["text"], "café 中文 🦀\n", "{result}");
+        let second = fixture
+            .call(
+                "computer.write_clipboard",
+                json!({
+            "context": {"operation_id": "clipboard-write-b", "timeout_ms": 1000}, "text": ""}),
+            )
+            .await;
+        assert_eq!(second["result"]["effect"], "executed", "{second}");
+        // A retained write returns its original evidence without republishing A.
+        assert_eq!(fixture.call("computer.write_clipboard", write).await, first);
+        // Active-only read identity may be reused; it returns current content.
+        let result = fixture.call("computer.read_clipboard", read.clone()).await;
+        assert_eq!(result["result"]["status"], "text", "{result}");
+        assert_eq!(result["result"]["text"], "");
+        let missing = fixture
+            .call(
+                "computer.write_clipboard",
+                json!({
+            "context": {"operation_id": "clipboard-missing", "timeout_ms": 1000}}),
+            )
+            .await;
+        assert_eq!(
+            missing["error"]["data"]["error_type"], "invalid_params",
+            "{missing}"
+        );
+        for maximum in [0, 16385] {
+            let mut invalid = read.clone();
+            invalid["max_bytes"] = json!(maximum);
+            let result = fixture.call("computer.read_clipboard", invalid).await;
+            assert_eq!(
+                result["error"]["data"]["error_type"], "invalid_params",
+                "{result}"
+            );
+        }
+        for (index, value) in ["a\0b".to_string(), "é".repeat(8193)].iter().enumerate() {
+            let result = fixture.call("computer.write_clipboard", json!({
+                "context": {"operation_id": format!("clipboard-invalid-{index}"), "timeout_ms": 1000},
+                "text": value})).await;
+            assert_eq!(
+                result["error"]["data"]["error_type"], "invalid_params",
+                "{result}"
+            );
+            assert_eq!(
+                result["error"]["data"]["dispatch_stage"], "pre_dispatch",
+                "{result}"
+            );
+        }
+        assert!(fixture.close(Duration::from_secs(2)).await);
     }
 
     #[tokio::test]

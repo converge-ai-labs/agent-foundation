@@ -5347,7 +5347,9 @@ export interface components {
       | "environment.computer.drag"
       | "environment.computer.scroll"
       | "environment.computer.type_text"
-      | "environment.computer.press_keys";
+      | "environment.computer.press_keys"
+      | "environment.computer.read_clipboard"
+      | "environment.computer.write_clipboard";
     /**
      * EnvironmentFailure
      * @description The last error of the outstanding operation or, on a ready instance, of its last renewal.

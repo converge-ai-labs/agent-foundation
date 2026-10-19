@@ -135,7 +135,7 @@ Response handoff and evidence publication are bounded and atomic at the operatio
 | Ports                       | `port.inspect`, `port.wait`                                                                                                                              | `active_only`                       |
 | Output                      | `output.read` / `output.release`                                                                                                                         | `active_only` / `terminal_evidence` |
 
-[Computer use](10-computer-use.md) adds active-only `computer.describe`, `computer.observe`, `computer.zoom`, and `computer.close_observation`, plus terminal-evidence `computer.click`, `computer.move`, `computer.drag`, `computer.scroll`, `computer.type_text`, and `computer.press_keys`. Screenshot bytes use the same raw transfer plane as file readers.
+[Computer use](10-computer-use.md) adds active-only `computer.describe`, `computer.observe`, `computer.zoom`, `computer.close_observation`, and `computer.read_clipboard`, plus terminal-evidence `computer.click`, `computer.move`, `computer.drag`, `computer.scroll`, `computer.type_text`, `computer.press_keys`, and `computer.write_clipboard`. Screenshot bytes use the same raw transfer plane as file readers.
 
 Unknown methods return `method_not_found`; known unavailable methods return `unsupported` before dispatch. Exact available methods determine support. `ExecutionFeatures` advertises optional native resource limits and signals, not per-command sandbox/network policy.
 

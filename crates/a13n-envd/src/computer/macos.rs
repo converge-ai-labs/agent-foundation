@@ -19,6 +19,21 @@ use xcap::Monitor;
 pub(super) struct Backend {}
 
 impl Backend {
+    pub(super) fn read_clipboard(
+        &self,
+        max: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        super::macos_clipboard::read(max, interrupted)
+    }
+    pub(super) fn write_clipboard(
+        &self,
+        text: &str,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        super::macos_clipboard::write(text, interrupted)
+    }
+    pub(super) fn close_clipboard(&self) {}
     pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         describe()
     }

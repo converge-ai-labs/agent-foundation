@@ -152,6 +152,7 @@ async def operation(
         EnvironmentAction.COMPUTER_OBSERVE,
         EnvironmentAction.COMPUTER_ZOOM,
         EnvironmentAction.COMPUTER_DESCRIBE,
+        EnvironmentAction.COMPUTER_READ_CLIPBOARD,
         EnvironmentAction.PROCESS_LIST,
         EnvironmentAction.PROCESS_INSPECT,
         EnvironmentAction.PROCESS_READ_OUTPUT,
