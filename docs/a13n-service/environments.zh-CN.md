@@ -153,8 +153,8 @@ Service 先验证新连接；设备 ID 不同时返回 `409 conflict`，原因�
 这些操作需要环境的 `If-Match` 和 `write` 权限：
 
 - `PATCH …/environments/{environment_id}` 传入 `{"name": ...}` 重命名；外部目标还接受新的 `token` 和 `endpoint`（见上文）。
-- `POST …/stop` 停止没有运行使用的 `ready` 托管环境，并返回 `202`；后续运行再次启动。其他情况返回 `409 conflict`，原因例如 `in_use`、`environment_stopped`、`connect_only`（外部目标）、`stop_unsupported`，或停止可清除的永久失败码，例如 `environment_lost`。
-- `DELETE …/environments/{environment_id}` 停用没有活跃运行使用的环境。请先从线程卸载，否则返回 `409 conflict`，原因为 `mounted`。**例外：** 删除永久失败的环境也会移除线程挂载，使配置了默认模板的线程在下次运行时获得新的 `workspace` 环境。未解决的操作返回 `409 conflict`，原因为 `operation_unresolved`。删除托管环境会销毁文件；删除外部目标只会忘记 token，不影响计算机。
+- `POST …/stop` 停止未在使用的 `ready` 托管环境，并返回 `202`；后续运行再次启动。其他情况返回 `409 conflict`，原因例如 `in_use`、`environment_stopped`、`connect_only`（外部目标）、`stop_unsupported`，或停止可清除的永久失败码，例如 `environment_lost`。有活跃运行使用环境，或桌面协助、桌面控制占用其桌面时，环境都算正在使用。
+- `DELETE …/environments/{environment_id}` 停用未在使用的环境。请先从线程卸载，否则返回 `409 conflict`，原因为 `mounted`。**例外：** 删除永久失败的环境也会移除线程挂载，使配置了默认模板的线程在下次运行时获得新的 `workspace` 环境。未解决的操作返回 `409 conflict`，原因为 `operation_unresolved`。删除托管环境会销毁文件；删除外部目标只会忘记 token，不影响计算机。
 
 `environment_lost` 等永久失败会阻止新使用；请删除环境，或在可行时修复原因。临时失败在重试成功后清除。
 
