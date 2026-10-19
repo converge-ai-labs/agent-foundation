@@ -170,6 +170,34 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | ---------- | ----------- | ------------ | -------- |
 | `--format` | text, json  | `"text"`     | 输出格式 |
 
+### `environment status`
+
+查看本地 Envd 安装和运行时状态，不下载、不启动守护进程，也不请求桌面权限。
+
+| 参数       | 类型 / 选项 | 解析器默认值 | 含义     |
+| ---------- | ----------- | ------------ | -------- |
+| `--format` | text, json  | `"text"`     | 输出格式 |
+
+### `environment check`
+
+准备并检查本地 Environment profile，必要时下载匹配版本的 Envd。检查保留已保存的默认配置；准备就绪时退出码为 `0`，准备失败时为 `1`。
+
+| 参数        | 类型 / 选项                                                                    | 解析器默认值         | 含义                 |
+| ----------- | ------------------------------------------------------------------------------ | -------------------- | -------------------- |
+| `--profile` | environment-native, environment-envd, environment-desktop, environment-sandbox | `"environment-envd"` | 要检查的内置 profile |
+| `--format`  | text, json                                                                     | `"text"`             | 输出格式             |
+
+桌面检查要求先在 Runtime 设置中启用 Computer Use 并重启 Harness UI。检查可能在 Harness Host 上请求操作系统权限。参见[管理本地 envd](environments-and-projects.md#manage-local-envd)。
+
+### `environment configure`
+
+检查本地 Environment profile，准备成功后将其保存为新对话默认配置。已有 Thread 保留原先选择。成功时退出码为 `0`，准备失败时为 `1`；检查失败保留已保存的默认值。桌面检查的前提条件与 `environment check` 相同。
+
+| 参数        | 类型 / 选项                                                                    | 解析器默认值 | 含义                         |
+| ----------- | ------------------------------------------------------------------------------ | ------------ | ---------------------------- |
+| `--profile` | environment-native, environment-envd, environment-desktop, environment-sandbox | 必需         | 要保存为默认值的内置 profile |
+| `--format`  | text, json                                                                     | `"text"`     | 输出格式                     |
+
 ### `doctor`
 
 检查 App 和扩展健康状态。
@@ -279,7 +307,7 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `/fast [on\|off\|ultrafast\|reset]`                           | —       | 否         | 选择 Fast 或 Ultrafast 直到你退出，不保存配置。                                                                                             |
 | `/pro [on\|off\|reset]`                                       | —       | 否         | 选择 Pro 推理模式；off 选择 Standard，reset 继承 Model。                                                                                    |
 | `/thinking [level]`                                           | —       | 否         | 查看或改变后续轮次推理强度。                                                                                                                |
-| `/environment [mode]`                                         | —       | 否         | 查看或选择后续轮次的 Environment 模式（Full Control 或 Sandbox）。                                                                          |
+| `/environment [mode]`                                         | —       | 否         | 选择后续轮次的本地执行方式；`envd` 和 `desktop` 会先准备运行时。                                                                            |
 | `/new`                                                        | —       | 否         | 开始新对话，保留全部已存历史。                                                                                                              |
 | `/resume [thread-id]`                                         | —       | 否         | 搜索、预览、命名已保存对话，或按 Thread ID 恢复。                                                                                           |
 | `/history`                                                    | —       | 否         | 浏览保留消息（Ctrl+T）。                                                                                                                    |
@@ -289,7 +317,7 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `/cancel`                                                     | —       | 是         | 停止活动 Run。                                                                                                                              |
 | `/quit`                                                       | `/exit` | 是         | 退出 TUI；已保存对话仍可恢复。                                                                                                              |
 
-`/thinking` 打开所选 Model 支持的选项；命令补全使用相同列表。`default` 继承 Model 配置。按模型和适配器，显式选择可能包括 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。不支持的选项会被拒绝；未知模型仅提供 default 并解释原因。`/environment` 在支持时选择 `full-control` 或 `sandbox`。原生 `/steer` 保留整个尾随消息，不拆成 shell 词语。
+`/thinking` 打开所选 Model 支持的选项；命令补全使用相同列表。`default` 继承 Model 配置。按模型和适配器，显式选择可能包括 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。不支持的选项会被拒绝；未知模型仅提供 default 并解释原因。`/environment` 在支持时选择 `full-control`、`envd`、`desktop` 或 `sandbox`。`envd` 和 `desktop` 先准备运行时，再修改当前对话下一轮的 profile；检查失败保留原选择。此操作修改当前 Thread，不修改新对话默认值。原生 `/steer` 保留整个尾随消息，不拆成 shell 词语。
 
 ## 重要操作与限制
 

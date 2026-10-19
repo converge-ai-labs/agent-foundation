@@ -170,6 +170,34 @@ List Environment modes and profiles.
 | ---------- | -------------- | -------------- | ------------- |
 | `--format` | text, json     | `"text"`       | Output format |
 
+### `environment status`
+
+Inspect the local Envd installation and runtime status without downloading, starting the daemon, or requesting desktop permissions.
+
+| Parameter  | Type / choices | Parser default | Meaning       |
+| ---------- | -------------- | -------------- | ------------- |
+| `--format` | text, json     | `"text"`       | Output format |
+
+### `environment check`
+
+Prepare and check a local Environment profile, downloading the matching Envd version if needed. The check leaves the saved default unchanged and exits with `0` when ready or `1` when preparation fails.
+
+| Parameter   | Type / choices                                                                 | Parser default       | Meaning                   |
+| ----------- | ------------------------------------------------------------------------------ | -------------------- | ------------------------- |
+| `--profile` | environment-native, environment-envd, environment-desktop, environment-sandbox | `"environment-envd"` | Built-in profile to check |
+| `--format`  | text, json                                                                     | `"text"`             | Output format             |
+
+Desktop checks require Computer Use to be enabled in Runtime settings and Harness UI to be restarted. They may request OS permissions on the Harness Host. See [Manage local envd](environments-and-projects.md#manage-local-envd).
+
+### `environment configure`
+
+Check a local Environment profile and save it as the new-conversation default after successful preparation. Existing Threads keep their selected profiles. The command exits with `0` on success or `1` when preparation fails; a failed check preserves the saved default. Desktop checks use the same prerequisites as `environment check`.
+
+| Parameter   | Type / choices                                                                 | Parser default | Meaning                                 |
+| ----------- | ------------------------------------------------------------------------------ | -------------- | --------------------------------------- |
+| `--profile` | environment-native, environment-envd, environment-desktop, environment-sandbox | `required`     | Built-in profile to save as the default |
+| `--format`  | text, json                                                                     | `"text"`       | Output format                           |
+
 ### `doctor`
 
 Inspect App and extension health.
@@ -279,7 +307,7 @@ Type these in the TUI composer, not your shell. Tab completes supported syntax; 
 | `/fast [on\|off\|ultrafast\|reset]`                           | —       | No         | Select Fast or Ultrafast until you quit, without saving configuration.                                                                                                                     |
 | `/pro [on\|off\|reset]`                                       | —       | No         | Select Pro reasoning mode; off selects Standard, reset inherits the Model.                                                                                                                 |
 | `/thinking [level]`                                           | —       | No         | Show or change reasoning effort for subsequent turns.                                                                                                                                      |
-| `/environment [mode]`                                         | —       | No         | Show or select the Environment mode (Full Control or Sandbox) for subsequent turns.                                                                                                        |
+| `/environment [mode]`                                         | —       | No         | Select local execution for subsequent turns; `envd` and `desktop` prepare the runtime first.                                                                                               |
 | `/new`                                                        | —       | No         | Start a new conversation; keep all saved history.                                                                                                                                          |
 | `/resume [thread-id]`                                         | —       | No         | Search, preview, and name saved conversations, or resume one by Thread ID.                                                                                                                 |
 | `/history`                                                    | —       | No         | Browse retained messages (Ctrl+T).                                                                                                                                                         |
@@ -289,7 +317,7 @@ Type these in the TUI composer, not your shell. Tab completes supported syntax; 
 | `/cancel`                                                     | —       | Yes        | Stop the active Run.                                                                                                                                                                       |
 | `/quit`                                                       | `/exit` | Yes        | Quit the TUI; the saved conversation stays resumable.                                                                                                                                      |
 
-`/thinking` opens the selected Model's supported choices; command completion uses the same list. `default` inherits the Model's configured settings. Depending on the model and adapter, explicit choices can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported choices are rejected, and unknown models offer only default with an explanation. `/environment` selects `full-control` or `sandbox` where supported. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
+`/thinking` opens the selected Model's supported choices; command completion uses the same list. `default` inherits the Model's configured settings. Depending on the model and adapter, explicit choices can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported choices are rejected, and unknown models offer only default with an explanation. `/environment` selects `full-control`, `envd`, `desktop`, or `sandbox` where supported. `envd` and `desktop` prepare the runtime before changing the current conversation's next-turn profile; a failed check preserves the selection. This changes the Thread, not the new-conversation default. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
 
 ## Consequential actions and limitations
 
