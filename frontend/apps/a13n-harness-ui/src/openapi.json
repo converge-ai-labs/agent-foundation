@@ -8606,6 +8606,7 @@
               "minimum": 0.0
             },
             "type": "object",
+            "maxProperties": 16,
             "title": "Tcp States"
           },
           "udp_sockets": {
@@ -9582,6 +9583,7 @@
               "$ref": "#/components/schemas/DiskIoMetrics"
             },
             "type": "object",
+            "maxProperties": 64,
             "title": "Devices"
           },
           "truncated": {
@@ -10801,6 +10803,7 @@
               "$ref": "#/components/schemas/FilesystemObservation"
             },
             "type": "object",
+            "maxProperties": 16,
             "title": "Filesystems"
           },
           "truncated": {
@@ -13224,6 +13227,7 @@
               "$ref": "#/components/schemas/NetworkInterfaceMetrics"
             },
             "type": "object",
+            "maxProperties": 64,
             "title": "Interfaces"
           },
           "truncated": {

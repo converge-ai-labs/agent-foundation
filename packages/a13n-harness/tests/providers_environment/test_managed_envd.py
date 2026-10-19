@@ -2,16 +2,17 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.docker import http as docker_http
 from a13n_harness.providers.environment.remote_envd import managed
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    RemoteEnvdEnvironmentConfiguration,
 )
 from pydantic import SecretStr
 
@@ -45,13 +46,9 @@ def peer(monkeypatch):
 
 
 def connection(**kwargs):
-    return managed.managed_http_session(
+    return managed.managed_http_runtime(
         provider_key="docker",
         connection=HttpEnvdConnectionConfiguration(endpoint="http://127.0.0.1:8888"),
-        expected_device_id="env-fixed",
-        configuration=RemoteEnvdEnvironmentConfiguration(
-            working_directory="/workspace", required_methods=("computer.observe",)
-        ),
         **kwargs,
     )
 
@@ -76,7 +73,7 @@ async def test_failed_credential_loading_does_not_dial_or_retry(peer):
 
 
 @pytest.mark.parametrize("outcome", ["success", "unknown", "cancel"])
-async def test_fixed_target_session_cleanup_without_replay(peer, outcome):
+async def test_runtime_cleanup_without_session_or_replay(peer, outcome):
     credentials = AsyncMock(return_value=HttpEnvdCredential(token=SecretStr("test-token")))
 
     async def execute():
@@ -92,6 +89,35 @@ async def test_fixed_target_session_cleanup_without_replay(peer, outcome):
         with pytest.raises(TimeoutError if outcome == "unknown" else asyncio.CancelledError):
             await execute()
     credentials.assert_awaited_once()
+    assert peer == ["connect", "connection_closed"]
+
+
+@pytest.fixture
+def session_context(peer, monkeypatch):
+    credentials = AsyncMock(return_value=HttpEnvdCredential(token=SecretStr("test-token")))
+    monkeypatch.setattr(
+        docker_http,
+        "http_runtime",
+        lambda reference: connection(endpoint_policy=EndpointPolicy(), load_credential=credentials),
+    )
+    reference = SimpleNamespace(allocation_id="env-fixed", config=SimpleNamespace(desktop=True))
+    return lambda: docker_http.http_session(reference)
+
+
+@pytest.mark.parametrize("outcome", ["success", "unknown", "cancel"])
+async def test_provider_session_cleanup_without_replay(peer, session_context, outcome):
+    async def execute():
+        async with session_context():
+            if outcome == "unknown":
+                raise TimeoutError("operation outcome unknown")
+            if outcome == "cancel":
+                raise asyncio.CancelledError()
+
+    if outcome == "success":
+        await execute()
+    else:
+        with pytest.raises(TimeoutError if outcome == "unknown" else asyncio.CancelledError):
+            await execute()
     assert peer[0] == "connect"
     assert peer[1]["expected_device_id"] == "env-fixed"
     assert peer[1]["working_directory"] == "/workspace"
@@ -100,15 +126,14 @@ async def test_fixed_target_session_cleanup_without_replay(peer, outcome):
     assert peer[2:] == ["session_closed", "connection_closed"]
 
 
-async def test_failed_session_negotiation_closes_connection(peer, monkeypatch):
+async def test_failed_session_negotiation_closes_connection(peer, session_context, monkeypatch):
     @asynccontextmanager
     async def incompatible(self, **kwargs):
         raise RuntimeError("required capability unavailable")
         yield  # pragma: no cover
 
     monkeypatch.setattr(managed.HttpEnvdProviderRuntime, "open_session", incompatible)
-    credentials = AsyncMock(return_value=HttpEnvdCredential(token=SecretStr("test-token")))
     with pytest.raises(RuntimeError, match="required capability unavailable"):
-        async with connection(endpoint_policy=EndpointPolicy(), load_credential=credentials):
+        async with session_context():
             pytest.fail("Incompatible daemon")
     assert peer == ["connect", "connection_closed"]

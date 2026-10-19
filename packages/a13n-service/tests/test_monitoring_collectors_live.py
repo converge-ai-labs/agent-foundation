@@ -23,15 +23,16 @@ from a13n_service.runs.environments.monitoring import pull
 from .test_environments_envd import Daemons
 from .test_monitoring_proxy import controlled, external_row
 
-pytestmark = [
-    pytest.mark.anyio,
-    pytest.mark.skipif(
-        sys.platform != "linux"
-        or os.environ.get("A13N_COLLECTOR_TEST") != "1"
-        or not os.environ.get("A13N_ENVD_TEST_BINARY"),
-        reason="opt-in real Linux Envd/collector interoperability",
-    ),
-]
+pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture(autouse=True)
+def collector_prerequisites():
+    assert sys.platform == "linux", "Collector interoperability requires Linux host networking"
+    assert os.environ.get("A13N_COLLECTOR_TEST") == "1", "Set A13N_COLLECTOR_TEST=1 to run collector interoperability"
+    assert os.environ.get("A13N_ENVD_TEST_BINARY"), "Set A13N_ENVD_TEST_BINARY to the built Envd executable"
+
+
 IMAGES = {"vmagent": "victoriametrics/vmagent:v1.128.0", "alloy": "grafana/alloy:v1.10.2"}
 
 
