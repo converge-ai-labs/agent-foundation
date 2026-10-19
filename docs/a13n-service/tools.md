@@ -40,11 +40,13 @@ The files and terminal tools act on the run's mounted [environments](environment
 
 `search` and `scrape` call a [web provider](resources.md#providers): add one under **Workspace settings → Providers → Web**, then select it in each tool's configuration. `fetch` and `download` use the Service's own HTTP client and need no provider. All four pass the deployment's [outbound policy](configuration.md#outbound-requests).
 
-| Provider type                                                | Operations     | Credential |
-| ------------------------------------------------------------ | -------------- | ---------- |
-| `duckduckgo`                                                 | search         | none       |
-| `brave`, `perplexity`, `serpapi`                             | search         | `api_key`  |
-| `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key`  |
+| Provider type                                                            | Operations     | Credential |
+| ------------------------------------------------------------------------ | -------------- | ---------- |
+| `duckduckgo`                                                             | search         | none       |
+| `brave`, `perplexity`, `serpapi`                                         | search         | `api_key`  |
+| `deepseek`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key`  |
+
+For DeepSeek, select `deepseek` and save your DeepSeek API key as the web provider credential. The same account key can serve model and web APIs, but each provider resource has its own credential. A13N `search` calls the [DeepSeek Search API](https://api-docs.deepseek.com/guides/search/) and uses its model-facing summaries. Queries preserve DeepSeek search operators and must be at most 128 Unicode characters. The upstream result count is capped at 50; Service keeps its own lower `max_results` limit. A13N `scrape` calls DeepSeek Fetch and returns Markdown; its URL must be at most 8192 characters.
 
 ![Console search and scrape provider catalog, including TinyFish](../../.github/assets/console-search-providers.webp)
 
