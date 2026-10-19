@@ -290,7 +290,7 @@ export function AgentToolsets({
                   : undefined;
                 return (
                   <div
-                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""}`}
+                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""} ${group.platform ? styles.toolsetToolPlatform : ""}`}
                     key={tool.key}
                   >
                     <Collapsible>
