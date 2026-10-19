@@ -479,6 +479,54 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order(png_image_
     assert protocol and all(content.metadata["display"] is False for content in protocol)
 
 
+async def test_handoff_replays_a_host_subagent_notice_with_its_input_id() -> None:
+    from a13n_harness.capabilities.steering import steering_input_ids
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        calls.append(messages)
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "Acknowledged"
+        elif len(calls) == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize",
+                    json_args=json.dumps({"content": "Continue implementation."}),
+                    tool_call_id="handoff-notice",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(HandoffCapability(),),
+    )
+    async with executable.stream("Initial current task", bindings=RunBindings.embedded()) as run:
+        consumer = asyncio.create_task(_consume_run(run))
+        await started.wait()
+        await run.steer("A delegated subagent run ended: 42", input_id="entry-1", source="async_subagent")
+        release.set()
+        result = await asyncio.wait_for(consumer, timeout=2)
+
+    assert result.output_or_raise() == "done"
+    # Replacing history keeps the accepted notice for the model and its ID as the Host's evidence.
+    assert _user_text(calls[-1]).count("A delegated subagent run ended: 42") == 1
+    assert result.state is not None
+    assert steering_input_ids(result.state.message_history) == ("entry-1",)
+    initial, notice = result.state.agent_context_state.entries["a13n.steering"].data["retained_requests"]
+    assert "a13n.steering-source" not in initial["metadata"]
+    assert notice["metadata"]["a13n.steering-source"] == "async_subagent"
+
+
 # tool_choice passes through one settings merge: an absent and an explicit value suffice. CodeAct is independent.
 @pytest.mark.parametrize(("tool_choice", "codeact_enabled"), [(None, False), ("auto", True)])
 async def test_compaction_uses_same_agent_plain_text_run_without_handoff(

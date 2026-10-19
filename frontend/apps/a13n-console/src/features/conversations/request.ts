@@ -53,8 +53,9 @@ export function runRequest(run: Run, thread?: Thread | null): RunRequest {
 /**
  * The child wrote a reply, so its payload is prose. A payload that is not text
  * is shown as the compact value it is, never expanded into a JSON document.
+ * The same payload reaches a working parent as a notice from its inbox entry.
  */
-function subagentResult(input: unknown): RunRequest {
+export function subagentResult(input: unknown): RunRequest {
   const payload = isRecord(input) ? input : {};
   return {
     kind: "subagent_result",

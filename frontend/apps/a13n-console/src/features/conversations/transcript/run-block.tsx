@@ -84,6 +84,7 @@ export function RunBlock({
         agentImageUrl={agentImageUrl}
         model={<RunModelButton run={run} />}
         childPath={child && childThreadPath(basePath, child)}
+        threadId={run.thread_id}
         footer={
           (copy || branch || action) && (
             <div className={styles.turnActions}>

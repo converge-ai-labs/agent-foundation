@@ -90,7 +90,13 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
     case "reply":
       return { name: t("Reply"), mono: false };
     case "guidance":
-      return { name: t("Guidance"), mono: false };
+      return {
+        name:
+          entry.steeringSource === "async_subagent"
+            ? t("Subagent result")
+            : t("Guidance"),
+        mono: false,
+      };
     case "other":
       return {
         name: t("{{count}} other observations", { count: entry.count }),
@@ -160,7 +166,9 @@ export function entryGlyph(entry: TimelineEntry): Icon {
     case "reply":
       return ArrowBendUpRightIcon;
     case "guidance":
-      return ArrowElbowDownRightIcon;
+      return entry.steeringSource === "async_subagent"
+        ? UsersThreeIcon
+        : ArrowElbowDownRightIcon;
     case "other":
       return DotsThreeIcon;
     case "event":

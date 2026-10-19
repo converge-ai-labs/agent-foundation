@@ -313,11 +313,11 @@ After stream entry:
 - `stream.context` exposes the fresh `AgentContext` to trusted embedding code;
 - `stream.usage` returns a detached `RunUsageSummary` of current local Context usage, not the mutable native accumulator;
 - `await stream.export_state()` returns the latest safe portable state boundary;
-- `await stream.steer(input, input_id=None)` delivers non-empty native user content through Pydantic AI's active-run `priority="asap"` queue and returns its enqueue ID. A Host-chosen `input_id` is recorded on the delivered request. `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` lists the IDs present in exported state;
+- `await stream.steer(input, input_id=None, source="steering")` delivers non-empty native user content through Pydantic AI's active-run `priority="asap"` queue and returns its enqueue ID. A Host-chosen `input_id` is recorded on the delivered request. Pass `source="async_subagent"` when the content is an asynchronous subagent's result rather than user guidance: the model reads it the same way, but its input event has source `async_subagent` and its content is hidden from transcripts. `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` lists the IDs present in exported state;
 - `stream.cancel()` requests semantic cancellation;
 - `stream.result` becomes available only after the terminal result event is delivered.
 
-`steer()` is available only while an inner Pydantic run is active. When automatic compaction is configured, the Harness also retains accepted initial and steering inputs for later compact replay, preserving structured and multimodal content. This favors retaining user context over exact-once replay; it is not a durable command or receipt protocol.
+`steer()` is available only while an inner Pydantic run is active. When automatic compaction is configured, the Harness also retains accepted initial inputs and every `steer()` input for later compact replay, preserving structured and multimodal content. This favors retaining user context over exact-once replay; it is not a durable command or receipt protocol.
 
 Always use the stream as an async context manager. Early consumer exit, exceptions, task cancellation, or an explicit cancellation request still trigger Harness cleanup.
 

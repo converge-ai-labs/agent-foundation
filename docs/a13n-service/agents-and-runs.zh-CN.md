@@ -157,7 +157,7 @@ flowchart TB
 ```
 
 - **内联**（`subagent_mode: "inline"`，默认值）：委派 agent 在父运行及其尝试内部执行，属于同一运行。内联子 agent 不能回到委派它的 agent，图的深度和大小有上限。`usage_limits` 限制每次委派的请求、token 和工具调用。
-- **异步**（`subagent_mode: "async"`）：每次委派在同一会话中启动子线程，使用父运行主体。父 agent 可通过 Harness [委派工具](../a13n-harness/delegation-and-codeact.md#asynchronous-children)检查、等待、引导、取消和继续子 agent。子结果以 `child_result` 收件箱条目到达，引导活跃父运行或启动下一次运行；收件箱已满时投递重试。对于等待用户的子运行，父运行的委派工具报告其状态为 `running`。异步调用边只使用 `usage_limits.request_limit`。
+- **异步**（`subagent_mode: "async"`）：每次委派在同一会话中启动子线程，使用父运行主体。父 agent 可通过 Harness [委派工具](../a13n-harness/delegation-and-codeact.md#asynchronous-children)检查、等待、引导、取消和继续子 agent。子结果以 `child_result` 收件箱条目到达，引导活跃父运行或启动下一次运行；收件箱已满时投递重试。引导活跃父运行的结果在父运行的对话记录中显示为子 agent 结果，而不是某人发送的消息。对于等待用户的子运行，父运行的委派工具报告其状态为 `running`。异步调用边只使用 `usage_limits.request_limit`。
 
 异步子 agent 的环境遵循调用边配置：`shared`（默认）挂载父运行环境，`dedicated` 根据 `template_id` 预留新环境，`none` 不挂载。子 agent 自身的 `default_environment_template_id` 不生效。一次运行最多启动 `worker.child_count` 个子 agent，嵌套最多 `worker.child_depth` 层。
 

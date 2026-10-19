@@ -86,7 +86,7 @@ it("treats explicitly sourced steering as guidance even when it leads the run", 
     item("steer", "text_message", {
       role: "user",
       text: "Prefer the smaller scope",
-      steeringSource: "harness",
+      inputSource: "steering",
     }),
   ]);
   expect(blocks.map((block) => block.kind)).toEqual(["guidance"]);

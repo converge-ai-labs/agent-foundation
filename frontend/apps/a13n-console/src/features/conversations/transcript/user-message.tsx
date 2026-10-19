@@ -88,18 +88,16 @@ export function GuidanceMessage({
   text,
   itemId,
   sourceId,
-  steeringSource,
 }: {
   text: string;
   itemId?: string;
   sourceId?: string;
-  steeringSource?: string | null;
 }) {
   const { t } = useTranslation();
   if (!text.trim()) return null;
   return (
     <div className={styles.userTurn}>
-      {!steeringSource && <MessageAuthor entryId={sourceId} />}
+      <MessageAuthor entryId={sourceId} />
       <article className={`${styles.userMessage} ${styles.guidanceMessage}`}>
         <span className={styles.guidanceLabel}>{t("Guidance")}</span>
         <div className={styles.prose}>

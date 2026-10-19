@@ -23,6 +23,7 @@ import type {
 } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { readQuestions } from "../questions";
+import { SubagentNotice } from "../subagent-notice";
 import { workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
 import type { RunScope } from "./scope";
@@ -48,7 +49,7 @@ export function EntryPane({
     entry.kind === "guidance" ||
     entry.kind === "reply"
   )
-    return <ContentPane entry={entry} />;
+    return <ContentPane entry={entry} threadId={scope.run.thread_id} />;
   if (entry.kind === "other") return <OtherPane entry={entry} />;
   if (!isAction(entry)) return null;
   return <ActionPane entry={entry} scope={scope} />;
@@ -286,13 +287,23 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
   );
 }
 
-function ContentPane({ entry }: { entry: ContentEntry }) {
+function ContentPane({
+  entry,
+  threadId,
+}: {
+  entry: ContentEntry;
+  threadId: string;
+}) {
   const { t } = useTranslation();
   return (
     <div className={styles.pane}>
       {/* Guidance is someone's message; its author is part of the record. */}
       {entry.kind === "guidance" && !entry.steeringSource && (
         <MessageAuthor entryId={entry.sourceId} plain />
+      )}
+      {/* A subagent's result reads as itself; the text below is what the model read. */}
+      {entry.steeringSource === "async_subagent" && (
+        <SubagentNotice threadId={threadId} entryId={entry.sourceId} />
       )}
       <div className={styles.reasoningProse}>
         {entry.text ? (

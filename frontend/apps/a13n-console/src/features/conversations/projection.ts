@@ -28,8 +28,6 @@ export interface PresentedItem {
   failure?: unknown;
   protectedReasoning: boolean;
   display?: boolean;
-  /** `a13n.steering-source` presentation provenance for enqueued user content. */
-  steeringSource?: string;
   sourceId?: string;
   inputSource?: string;
 }
@@ -39,7 +37,6 @@ const text = (value: unknown) => (typeof value === "string" ? value : "");
 export function presentItem(item: DisplayItem): PresentedItem {
   const { content } = item;
   const metadata = isRecord(content.metadata) ? content.metadata : {};
-  const source = metadata["a13n.steering-source"];
   const sourceId = text(metadata.source_id);
   return {
     id: item.id,
@@ -67,7 +64,6 @@ export function presentItem(item: DisplayItem): PresentedItem {
     ...(typeof metadata.display === "boolean"
       ? { display: metadata.display }
       : {}),
-    ...(typeof source === "string" ? { steeringSource: source } : {}),
   };
 }
 

@@ -905,7 +905,12 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
         assert terminal_error.value.code == "run_not_active"
 
 
-async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event() -> None:
+async def test_host_subagent_notice_steers_active_run_with_notice_provenance() -> None:
+    from a13n_harness.capabilities.steering import steering_input_ids
+    from a13n_harness.content import request_input_content
+    from a13n_harness.events import InputTextEvent
+    from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, TextContent
+
     started = asyncio.Event()
     release = asyncio.Event()
     calls: list[tuple[ModelMessage, ...]] = []
@@ -920,47 +925,36 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         else:
             yield "collected"
 
+    notice = "A delegated subagent run ended: 42"
     executable = _build(FunctionModel(stream_function=steering_stream))
     async with executable.stream("initial", bindings=RunBindings.embedded()) as stream:
         consumer = asyncio.create_task(_consume_stream(stream))
         await started.wait()
-        enqueue_id = await stream.context._steering.notify(
-            "Background subagent subagent-1 has finished. Call wait_subagent.",
-            source="async_subagent",
-            references=("subagent-1",),
+        enqueue_id = await stream.steer(
+            (TextContent(notice, metadata={"source_id": "entry-1"}),), input_id="entry-1", source="async_subagent"
         )
         release.set()
         items = await asyncio.wait_for(consumer, timeout=2)
 
     assert enqueue_id
     assert len(calls) == 2
-    assert "wait_subagent" in str(calls[1])
-    from a13n_harness.content import request_input_content
-    from a13n_harness.events import InputTextEvent
-    from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest
-
+    assert notice in str(calls[1])
     delivered = next(
         item for item in items if isinstance(item, HarnessEvent) and isinstance(item.event, EnqueuedMessagesEvent)
     )
-    content = [
-        content
-        for message in delivered.event.messages
-        if isinstance(message, ModelRequest)
-        for content in request_input_content(message)
-    ]
+    (request,) = [message for message in delivered.event.messages if isinstance(message, ModelRequest)]
+    assert request.metadata is not None and request.metadata["a13n.steering-source"] == "async_subagent"
+    content = request_input_content(request)
+    # The Host's annotations remain; a notice is never displayed as authored content.
     assert content[0].metadata.display is False
-    assert content[0].metadata.source_id == "a13n.async_subagent"
-    assert content[0].value == "Background subagent subagent-1 has finished. Call wait_subagent."
+    assert content[0].metadata.source_id == "entry-1"
     observed = [
-        item.event
-        for item in items
-        if isinstance(item, HarnessEvent)
-        and isinstance(item.event, InputTextEvent)
-        and item.event.source == "async_subagent"
+        item.event for item in items if isinstance(item, HarnessEvent) and isinstance(item.event, InputTextEvent)
     ]
-    assert len(observed) == 1
-    assert observed[0].content == content[0].value
-    assert observed[0].input_id == enqueue_id
+    assert [(event.content, event.input_id) for event in observed if event.source == "async_subagent"] == [
+        (notice, enqueue_id)
+    ]
+    assert not any(event.source == "steering" for event in observed)
     notifications = [
         item.event
         for item in items
@@ -974,8 +968,29 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         "type": "steering_input_enqueued",
         "enqueue_id": enqueue_id,
         "source": "async_subagent",
-        "references": ["subagent-1"],
+        "references": [],
     }
+    terminal = items[-1]
+    assert isinstance(terminal, HarnessRunResultEvent) and terminal.result.state is not None
+    # The Host input ID is the durable incorporation evidence, as for authored steering.
+    assert steering_input_ids(terminal.result.state.message_history) == ("entry-1",)
+
+
+async def test_steer_rejects_a_source_the_host_does_not_own() -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities.steering import SteeringBridge
+    from a13n_harness.state import AgentContextState
+    from pydantic_ai import RunContext
+    from pydantic_ai.models.test import TestModel
+
+    bridge = SteeringBridge(AgentContextState(), run_id="run-test", retain_inputs=False, events=AsyncMock())
+    context = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
+    await bridge.bind(context)
+    with pytest.raises(RunError) as rejected:
+        await bridge.steer("process exited", source="background_process")  # type: ignore[arg-type]
+    assert rejected.value.code == "input_invalid"
+    assert context.pending_messages == []
 
 
 async def test_stream_steer_requires_an_active_native_run() -> None:

@@ -10,6 +10,7 @@ import type { Schema } from "../../shared/api";
 import { SessionAuthorsProvider } from "./message-authors";
 import { MessageAuthor } from "./message-author";
 import { GuidanceMessage, UserMessage } from "./transcript/user-message";
+import { AgentTurn } from "./transcript/assistant-message";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
   fixtureRun,
@@ -70,6 +71,12 @@ beforeEach(() => {
       const url = new URL(new Request(input, init).url);
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
+      if (url.pathname === "/api/v1/threads/thr_parent/inbox/inb_child")
+        return Response.json({
+          id: "inb_child",
+          kind: "child_result",
+          payload: { subagent: "helper", status: "completed", output: "42" },
+        });
       if (url.pathname.endsWith("/message-authors")) {
         requests.push(url);
         if (failed)
@@ -237,4 +244,36 @@ it("keeps the message readable when author lookup fails and retries from the car
   expect(
     await screen.findByRole("button", { name: "Show author: Alex" }),
   ).toBeTruthy();
+});
+
+it("reads a child result steered into a working Run as the subagent's result, never as someone's message", async () => {
+  show(
+    <AgentTurn
+      threadId="thr_parent"
+      blocks={[
+        {
+          kind: "guidance",
+          id: "obs_notice",
+          entry: {
+            kind: "guidance",
+            id: "obs_notice",
+            text: 'A delegated subagent run ended:\n{"output": "42"}',
+            steeringSource: "async_subagent",
+            sourceId: "inb_child",
+            protectedReasoning: false,
+            failure: null,
+            startedAt: null,
+            endedAt: null,
+            durationMs: null,
+            state: "completed",
+          },
+        },
+      ]}
+    />,
+  );
+  expect(await screen.findByText("Subagent result · helper")).toBeTruthy();
+  expect(screen.getByText("42")).toBeTruthy();
+  expect(screen.queryByText(/A delegated subagent run ended/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /Show author/ })).toBeNull();
+  expect(requests).toHaveLength(0);
 });

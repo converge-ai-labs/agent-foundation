@@ -80,7 +80,7 @@ capability = SubagentCapability(
 )
 ```
 
-operator 实现完整的 `delegate`、`info`、`wait`、`steer`、`cancel` 和 `resume`。受理前，Harness 解析确切子级、派生身份、应用上下文、用量限制交集和独立的父级关联。可用时还分别提供原工具调用 ID 和组装名称。operator 可据此派生自己的幂等身份和重放范围；Harness 不生成这些值。之后 operator 负责子 Thread 创建、新 `RunBindings`、Environment 关联和重新进入、递归 Harness 调用、存储、检查点、观测、唤醒、取消、恢复、丢失、清理和保留。
+operator 实现完整的 `delegate`、`info`、`wait`、`steer`、`cancel` 和 `resume`。受理前，Harness 解析确切子级、派生身份、应用上下文、用量限制交集和独立的父级关联。可用时还分别提供原工具调用 ID 和组装名称。operator 可据此派生自己的幂等身份和重放范围；Harness 不生成这些值。之后 operator 负责子 Thread 创建、新 `RunBindings`、Environment 关联和重新进入、递归 Harness 调用、存储、检查点、观测、唤醒、取消、恢复、丢失、清理和保留。Host 把子级结果交付给活跃父 Run 时调用 [`stream.steer(..., source="async_subagent")`](agents-and-runs.md)，使结果显示为子 agent 通知，而不是用户引导。
 
 Harness 不提供默认异步管理器、执行存储、后台任务注册表、父状态执行镜像或关闭方法。父 Run 或 Environment 关闭不取消已受理子任务，也不关闭 operator。`subagent_info` 和 `wait_subagent` 每次直接查询 Host。
 

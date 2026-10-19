@@ -71,22 +71,6 @@ it("leaves an unfinished or untimed Item without the times it never reported", (
   });
 });
 
-it("keeps steering provenance so an enqueued notice is not read as authored input", () => {
-  expect(
-    presentItem(
-      item({
-        content: {
-          role: "user",
-          metadata: {
-            "a13n.steering-source": "async_subagent",
-            display: false,
-          },
-        },
-      }),
-    ),
-  ).toMatchObject({ steeringSource: "async_subagent", display: false });
-});
-
 it("presents the messages and tool calls in the order they first appeared", () => {
   expect(
     presentItems([

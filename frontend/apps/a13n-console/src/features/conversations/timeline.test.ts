@@ -5,6 +5,7 @@ import {
   custom,
   display,
   finish,
+  item,
   lifecycle,
   message,
   observation,
@@ -101,17 +102,12 @@ it("treats later user text as guidance and never the Run input", () => {
   const { entries } = timeline(
     text("input", "user", "Ship the release"),
     lifecycle("model_request_started"),
-    text("notice", "user", "A subagent finished", {
-      "a13n.steering-source": "async_subagent",
-    }),
     text("steer", "user", "Skip the changelog"),
   );
   const guidance = entries.filter((entry) => entry.kind === "guidance");
-  expect(guidance).toHaveLength(2);
-  expect(guidance[0]).toMatchObject({
-    text: "A subagent finished",
-    steeringSource: "async_subagent",
-  });
+  expect(guidance).toMatchObject([
+    { text: "Skip the changelog", steeringSource: null },
+  ]);
   expect(
     entries.some(
       (entry) => "text" in entry && entry.text === "Ship the release",
@@ -132,6 +128,36 @@ it("reads guidance before the request that read it", () => {
   );
   expect(kinds(entries)).toEqual(["model", "guidance", "model"]);
   expect(kinds(models(entries)[1]!.children)).toEqual(["reply"]);
+});
+
+it("reads a child result the Service steered in as subagent guidance, not as an observation", () => {
+  const notice = item("notice", "observation", {
+    name: "a13n.input.async_subagent",
+    value: {
+      event: {
+        input_id: "enqueue-1",
+        source: "async_subagent",
+        content: "A delegated subagent run ended",
+      },
+    },
+    metadata: { source_id: "inb_child", display: false },
+  });
+  const { entries } = timeline(
+    text("input", "user", "Count the files with a helper"),
+    lifecycle("model_request_started", "model-request-1"),
+    text("first", "assistant", "Delegated"),
+    lifecycle("model_request_completed", "model-request-1"),
+    lifecycle("model_request_started", "model-request-2"),
+    notice,
+    text("second", "assistant", "The helper said 42"),
+    lifecycle("model_request_completed", "model-request-2"),
+  );
+  expect(kinds(entries)).toEqual(["model", "guidance", "model"]);
+  expect(entries[1]).toMatchObject({
+    id: "notice",
+    steeringSource: "async_subagent",
+    sourceId: "inb_child",
+  });
 });
 
 it("presents an inline delegation on its call and keeps a dispatch a dispatch", () => {

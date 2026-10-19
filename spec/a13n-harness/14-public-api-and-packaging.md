@@ -332,7 +332,13 @@ class HarnessRunStream[OutputT](
 
     def cancel(self) -> None: ...
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None) -> str: ...
+    async def steer(
+        self,
+        input: RunInputValue,
+        *,
+        input_id: str | None = None,
+        source: Literal["steering", "async_subagent"] = "steering",
+    ) -> str: ...
 
     async def export_state(self) -> HarnessState: ...
 ```
@@ -343,7 +349,7 @@ The stream has exactly one consumer and forbids concurrent `__anext__()` calls. 
 
 `result` remains `None` until the terminal event is actually yielded. After shutdown, `outcome` exposes the nearest validated terminal candidate, including when cleanup failure or external cancellation prevented delivery; before shutdown it is `None`. This is the same candidate authority used by `RunCleanupError.outcome`, not a success receipt. Hosts recovering a suspended candidate preserve its state and deferred requests together and still propagate the original failure or cancellation. Leaving the context earlier establishes the terminal fence and closes resources without synthesizing a normal result. `cancel()` is idempotent and interrupts pre-start, active-attempt, or recovery-backoff work. While active, `export_state()` includes Environment state collection linearized with mount publication. After close it returns the detached shutdown checkpoint, or raises an explicit state-unavailable error if capture failed. `diagnostic_error` exposes the terminal exception only to trusted in-process Hosts for private diagnostics; it is not part of `SafeFailure`, events, state, or any serialized result.
 
-`steer()` accepts one non-empty native `RunInputValue` while an inner Pydantic run is active, records it as user-authored input when compaction is enabled, and delivers it through public `RunContext.enqueue(..., priority="asap")`. It returns the native enqueue ID. An optional host `input_id` (1-256 characters, default a random ID) is recorded in the delivered request's metadata; `a13n_harness.capabilities.steering.steering_input_ids(messages)` reads the delivered IDs back from exported history, which is how a durable host proves a value was incorporated without trusting observer events. Native Pydantic queue timing and `EnqueuedMessagesEvent` own active-run incorporation; the Harness adds no parallel delivery queue or applied-receipt state machine. A steering value retained immediately before an active-run boundary may be replayed by later compaction even when immediate native delivery cannot be confirmed. This context-first behavior deliberately prefers possible duplicate replay to silently losing accepted user intent.
+`steer()` accepts one non-empty native `RunInputValue` while an inner Pydantic run is active, retains it for compact replay when compaction is enabled, and delivers it through public `RunContext.enqueue(..., priority="asap")`. It returns the native enqueue ID. `source="steering"` is authored user guidance. `source="async_subagent"` is a Host-delivered subagent result: the model still reads it as user-role input, but the request carries [notice provenance](12-events-observability-and-usage.md#first-party-event-contracts), its content uses `display: false`, and its input observation carries source `async_subagent`. Any other source fails with `input_invalid`; background-process notices remain Harness-owned. An optional host `input_id` (1-256 characters, default a random ID) is recorded in the delivered request's metadata; `a13n_harness.capabilities.steering.steering_input_ids(messages)` reads the delivered IDs back from exported history, which is how a durable host proves a value was incorporated without trusting observer events. Native Pydantic queue timing and `EnqueuedMessagesEvent` own active-run incorporation; the Harness adds no parallel delivery queue or applied-receipt state machine. A steering value retained immediately before an active-run boundary may be replayed by later compaction even when immediate native delivery cannot be confirmed. This context-first behavior deliberately prefers possible duplicate replay to silently losing accepted user intent.
 
 The Harness exposes no cross-thread marshalling, when-idle queue, safe-pause state machine, durable command receipt, exactly-once reconciliation, or Pydantic private run handle. Run-local Environment mutation is not a durable command protocol and cannot change Host Environment association. External mount authorization and durable desired-mount semantics remain Host concerns.
 

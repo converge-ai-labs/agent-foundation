@@ -193,7 +193,7 @@ it("does not keep interrupted work spinning, and shows guidance sent mid-run", (
           item("steer", "text_message", {
             role: "user",
             text: "Use the smaller scope",
-            steeringSource: "harness",
+            inputSource: "steering",
           }),
         ],
         "cancelled",

@@ -80,6 +80,16 @@
   background: transparent;
   border: 1px dashed var(--a13n-border);
 }
+.subagentNotice {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--a13n-border);
+  border-radius: 12px;
+  font-size: var(--a13n-text-md);
+  line-height: 1.6;
+}
 .guidanceLabel {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);

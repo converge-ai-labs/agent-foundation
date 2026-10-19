@@ -13,6 +13,7 @@ import {
   useStoredReference,
 } from "../stored-content";
 import { GuidanceMessage } from "./user-message";
+import { SubagentNotice } from "./subagent-notice";
 import { WorkLine } from "./work-line";
 import styles from "./transcript.module.css";
 
@@ -29,6 +30,7 @@ export function AgentTurn({
   agentImageUrl,
   model,
   childPath,
+  threadId,
   footer,
   children,
 }: {
@@ -42,6 +44,8 @@ export function AgentTurn({
   model?: ReactNode;
   /** Where a delegated child thread can be opened, when one is resolvable. */
   childPath?: string | null;
+  /** The Thread whose inbox holds the child results this run read. */
+  threadId?: string;
   /** The quiet actions that close the answer. */
   footer?: ReactNode;
   children?: ReactNode;
@@ -73,10 +77,16 @@ export function AgentTurn({
               entries={block.entries}
               childPath={childPath}
             />
+          ) : block.kind === "guidance" &&
+            block.entry.steeringSource === "async_subagent" ? (
+            <SubagentNotice
+              key={block.id}
+              threadId={threadId}
+              entryId={block.entry.sourceId}
+            />
           ) : block.kind === "guidance" ? (
             <GuidanceMessage
               sourceId={block.entry.sourceId}
-              steeringSource={block.entry.steeringSource}
               key={block.id}
               text={block.entry.text}
               itemId={block.entry.id}

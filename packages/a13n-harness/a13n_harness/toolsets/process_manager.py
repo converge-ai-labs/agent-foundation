@@ -224,9 +224,7 @@ class _ProcessController:
             async with entry.notification_lock:
                 entry.completion_observed = True
                 if self._context is not None:
-                    await self._context._steering.discard_notifications(
-                        source="background_process", references=(entry.process_id,)
-                    )
+                    await self._context._steering.discard_notifications(references=(entry.process_id,))
         return result
 
     async def info(
@@ -408,7 +406,6 @@ class _ProcessController:
                 if self._context is not None and not entry.completion_observed:
                     await self._context._steering.notify(
                         f"Background process {entry.process_id} has exited. Call shell_wait for available output.",
-                        source="background_process",
                         references=(entry.process_id,),
                     )
         except asyncio.CancelledError:

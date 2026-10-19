@@ -13,7 +13,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, UserPromptPart
 
-from a13n_harness.content import ContentItem, ContentMetadata, input_request
+from a13n_harness.content import ContentItem, ContentMetadata, content_items, input_request
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
 from a13n_harness.input import RunInputValue, SemanticRunInput, normalize_input
@@ -35,6 +35,7 @@ _NOTIFICATION_ID_METADATA_KEY = "a13n.notification-input"
 _NOTIFICATION_REFERENCES_METADATA_KEY = "a13n.notification-references"
 
 type SteeringInputSource = Literal["external", "async_subagent", "background_process"]
+type SteeringSource = Literal["steering", "async_subagent"]
 
 
 class _SteeringState(BaseModel):
@@ -124,9 +125,13 @@ class SteeringBridge:
             self._retained_requests = deepcopy(retained)
             self._prepared = True
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None) -> str:
-        """Enqueue one user steering value for the active native run.
+    async def steer(
+        self, input: RunInputValue, *, input_id: str | None = None, source: SteeringSource = "steering"
+    ) -> str:
+        """Enqueue one Host input for the active native run.
 
+        `steering` is authored user guidance. `async_subagent` is a Host-delivered lifecycle notice: it keeps
+        user-role delivery and compact replay, but carries notice provenance and hidden-display content.
         A host that needs durable evidence passes its own `input_id`; `steering_input_ids` finds it in
         exported history once the value has been delivered.
         """
@@ -135,37 +140,34 @@ class SteeringBridge:
             raise RunError("The Agent is not accepting steering.", code="run_not_active")
         if input_id is not None and not 1 <= len(input_id) <= 256:
             raise RunError("A steering input ID must have 1 to 256 characters.", code="input_invalid")
+        if source not in ("steering", "async_subagent"):
+            raise RunError("A steering source must be steering or async_subagent.", code="input_invalid")
         normalized = normalize_input(input)
         assert normalized.value is not None
         request = _request_for_input(
             normalized.value,
             source_run_id=self._run_id,
             input_id=input_id or uuid4().hex,
+            notice=None if source == "steering" else source,
         )
         enqueue_id = active.enqueue(request, priority="asap")
         if enqueue_id is None:
             raise RunError("Steering input must not be empty.", code="input_empty")
         async with self._lock:
             self._pending_requests[enqueue_id] = deepcopy(request)
-        await self._emit_enqueued(enqueue_id, source="external", references=())
+        await self._emit_enqueued(enqueue_id, source="external" if source == "steering" else source, references=())
         return enqueue_id
 
-    async def notify(
-        self,
-        message: str,
-        *,
-        source: Literal["async_subagent", "background_process"],
-        references: Sequence[str],
-    ) -> str | None:
-        """Best-effort enqueue one Harness lifecycle notice when this Run is active."""
+    async def notify(self, message: str, *, references: Sequence[str]) -> str | None:
+        """Best-effort enqueue one Harness background-process notice when this Run is active."""
         active = self._active_context
         if active is None:
             return None
         request = input_request(
-            [ContentItem(message, ContentMetadata(display=False, source_id=f"a13n.{source}"))],
+            [ContentItem(message, ContentMetadata(display=False, source_id="a13n.background_process"))],
             metadata={
                 _SOURCE_RUN_METADATA_KEY: self._run_id,
-                _NOTIFICATION_SOURCE_METADATA_KEY: source,
+                _NOTIFICATION_SOURCE_METADATA_KEY: "background_process",
                 _NOTIFICATION_ID_METADATA_KEY: uuid4().hex,
                 _NOTIFICATION_REFERENCES_METADATA_KEY: list(references),
             },
@@ -178,22 +180,17 @@ class SteeringBridge:
             return None
         async with self._lock:
             self._pending_requests[enqueue_id] = deepcopy(request)
-        await self._emit_enqueued(enqueue_id, source=source, references=tuple(references))
+        await self._emit_enqueued(enqueue_id, source="background_process", references=tuple(references))
         return enqueue_id
 
-    async def discard_notifications(
-        self,
-        *,
-        source: Literal["async_subagent", "background_process"],
-        references: Sequence[str],
-    ) -> None:
-        """Withdraw matching lifecycle hints that have not entered native history."""
+    async def discard_notifications(self, *, references: Sequence[str]) -> None:
+        """Withdraw matching background-process notices that have not entered native history."""
         async with self._lock:
             matching = {
                 enqueue_id
                 for enqueue_id, request in self._pending_requests.items()
                 if (metadata := request.metadata) is not None
-                and metadata.get(_NOTIFICATION_SOURCE_METADATA_KEY) == source
+                and metadata.get(_NOTIFICATION_SOURCE_METADATA_KEY) == "background_process"
                 and metadata.get(_NOTIFICATION_REFERENCES_METADATA_KEY) == list(references)
             }
             active = self._active_context
@@ -232,7 +229,7 @@ class SteeringBridge:
                     *(
                         self._pending_requests[enqueue_id]
                         for enqueue_id in applied_enqueue_ids
-                        if _NOTIFICATION_SOURCE_METADATA_KEY not in (self._pending_requests[enqueue_id].metadata or {})
+                        if _retained(self._pending_requests[enqueue_id])
                     ),
                 )
                 await self._write(retained)
@@ -250,7 +247,7 @@ class SteeringBridge:
             request = self._pending_requests.get(enqueue_id)
             if request is None:
                 return
-            if self._retain_inputs and _NOTIFICATION_SOURCE_METADATA_KEY not in (request.metadata or {}):
+            if self._retain_inputs and _retained(request):
                 retained = (*self._retained_requests, request)
                 await self._write(retained)
                 self._retained_requests = deepcopy(retained)
@@ -332,11 +329,25 @@ def _request_for_input(
     *,
     source_run_id: str,
     input_id: str | None = None,
+    notice: Literal["async_subagent"] | None = None,
 ) -> ModelRequest:
     metadata = {_SOURCE_RUN_METADATA_KEY: source_run_id}
     if input_id is not None:
         metadata[_INPUT_ID_METADATA_KEY] = input_id
-    return input_request(deepcopy(input), metadata=metadata)
+    if notice is None:
+        return input_request(deepcopy(input), metadata=metadata)
+    metadata[_NOTIFICATION_SOURCE_METADATA_KEY] = notice
+    # A notice reaches the model unchanged; viewers read its provenance, not its content.
+    hidden = [
+        ContentItem(item.value, item.metadata.model_copy(update={"display": False}))
+        for item in content_items(deepcopy(input))
+    ]
+    return input_request(hidden, metadata=metadata)
+
+
+def _retained(request: ModelRequest) -> bool:
+    """Host inputs accepted by `steer()` are replayed after compaction; Harness notices are only hints."""
+    return _INPUT_ID_METADATA_KEY in (request.metadata or {})
 
 
 @dataclass(init=False)
@@ -374,4 +385,4 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
             ctx.deps._steering.unbind(ctx, owned=owned)
 
 
-__all__ = ["STEERING_CAPABILITY_ID", "SteeringBridge", "SteeringCapability", "steering_input_ids"]
+__all__ = ["STEERING_CAPABILITY_ID", "SteeringBridge", "SteeringCapability", "SteeringSource", "steering_input_ids"]

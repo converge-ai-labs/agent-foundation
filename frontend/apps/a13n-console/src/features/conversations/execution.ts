@@ -66,6 +66,18 @@ export interface ModelRetry {
   maxAttempts: number | null;
   delaySeconds: number | null;
 }
+/**
+ * A child Run's result the Service steered into this Run while it worked. The
+ * model read `text`; a reader sees the result its inbox entry holds.
+ */
+export interface SubagentNotice {
+  id: string;
+  position: string;
+  occurredAt: string | null;
+  subagentRunId?: string;
+  entryId: string | null;
+  text: string;
+}
 export interface ExecutionUsage {
   /** Every model record in report order; Run totals sum these. */
   model: StepUsage[];
@@ -85,6 +97,7 @@ export interface Execution {
   steps: ExecutionStep[];
   observations: ExecutionObservation[];
   retries: ModelRetry[];
+  subagentNotices: SubagentNotice[];
   usage: ExecutionUsage;
   /** Context snapshots keyed by the model-request step they precede. */
   contextTokens: Record<string, number>;
@@ -95,6 +108,7 @@ export function emptyExecution(): Execution {
     steps: [],
     observations: [],
     retries: [],
+    subagentNotices: [],
     usage: { model: [], provider: [], recordIds: [] },
     contextTokens: {},
   };

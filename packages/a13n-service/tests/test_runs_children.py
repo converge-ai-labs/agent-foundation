@@ -99,6 +99,46 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     assert [entry["status"] for entry in await runs_kit.inbox(service, thread_id)] == ["consumed", "consumed"]
 
 
+async def test_a_child_result_steers_its_active_parent_as_a_subagent_notice(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    toolsets = {"configuration": {"enabled": True}}
+    coordinator = await runs_kit.delegating(service, scripted_model, "async", toolsets=toolsets)
+    gate = asyncio.Event()
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate, to="Role: coordinator")
+    scripted_model.say("The helper said 42", to="Role: coordinator")
+    submitted = await runs_kit.start_thread(service, coordinator, "delegate, then look around")
+    thread_id, parent_id = submitted["thread"]["id"], submitted["run"]["id"]
+    parent = await runs_kit.attempt(service)
+    # The parent's second request holds its answer until the child's result is in the parent's inbox.
+    for _ in range(2):
+        await scripted_model.request()
+    scripted_model.say("42", to="Role: worker")
+    await (await runs_kit.attempt(service))
+    await _deliver(service)
+    gate.set()
+    await parent
+
+    run = await runs_kit.get_run(service, parent_id)
+    assert (run["status"], run["output"]) == ("completed", "The helper said 42"), run
+    (result,) = [entry for entry in await runs_kit.inbox(service, thread_id) if entry["kind"] == "child_result"]
+    assert (result["status"], result["assigned_run_id"]) == ("consumed", parent_id), result
+    # The model reads the result as user-role input, the same as before.
+    requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+    assert "A delegated subagent run ended" in str(runs_kit.user_texts(requests[-1]))
+    # Viewers see a subagent notice naming its entry, never a message someone typed.
+    items = (await runs_kit.items(service, parent_id))["items"]
+    (notice,) = [item for item in items if item["content"].get("name") == "a13n.input.async_subagent"]
+    assert notice["kind"] == "observation"
+    assert notice["content"]["metadata"]["source_id"] == result["id"]
+    assert notice["content"]["metadata"]["display"] is False
+    assert not [
+        item
+        for item in items
+        if item["kind"] == "text_message" and "A delegated subagent run ended" in item["content"].get("text", "")
+    ]
+
+
 async def test_a_child_result_waits_for_room_and_is_delivered_once(serve, settings, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     tight = settings.model_copy(update={"control": settings.control.model_copy(update={"inbox_count": 1})})
     async with serve(settings=tight) as service:

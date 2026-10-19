@@ -55,6 +55,7 @@ vi.mock("../run-display", () => ({
       steps: [],
       observations: [],
       retries: [],
+      subagentNotices: [],
       usage: { model: [], provider: [], recordIds: [] },
       contextTokens: {},
       coverage: "complete",

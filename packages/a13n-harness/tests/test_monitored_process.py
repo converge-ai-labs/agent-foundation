@@ -53,22 +53,16 @@ _PROCESS_ID = re.compile(r"^process-[0-9a-f]{4}-[1-9][0-9]*$")
 
 class _Steering:
     def __init__(self) -> None:
-        self.notifications: list[tuple[str, str, tuple[str, ...]]] = []
+        self.notifications: list[tuple[str, tuple[str, ...]]] = []
         self.notified = asyncio.Event()
 
-    async def notify(
-        self,
-        message: str,
-        *,
-        source: str,
-        references: tuple[str, ...],
-    ) -> str:
-        self.notifications.append((message, source, references))
+    async def notify(self, message: str, *, references: tuple[str, ...]) -> str:
+        self.notifications.append((message, references))
         self.notified.set()
         return f"notification-{len(self.notifications)}"
 
-    async def discard_notifications(self, *, source: str, references: tuple[str, ...]) -> None:
-        self.notifications[:] = [notice for notice in self.notifications if notice[1:] != (source, references)]
+    async def discard_notifications(self, *, references: tuple[str, ...]) -> None:
+        self.notifications[:] = [notice for notice in self.notifications if notice[1] != references]
 
 
 class _ToolDeps:
@@ -265,7 +259,6 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
         assert ctx.deps._steering.notifications == [
             (
                 f"Background process {process_id} has exited. Call shell_wait for available output.",
-                "background_process",
                 (process_id,),
             )
         ]
@@ -472,16 +465,16 @@ async def test_withdrawal_preserves_other_inputs_across_attempt_rebind(discard_b
     bridge = SteeringBridge(AgentContextState(), run_id="run-test", retain_inputs=False, events=AsyncMock())
     first = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
     await bridge.bind(first)
-    await bridge.notify("observed", source="background_process", references=("process-one",))
-    await bridge.notify("other process", source="background_process", references=("process-two",))
-    await bridge.notify("other source", source="async_subagent", references=("process-one",))
+    await bridge.notify("observed", references=("process-one",))
+    await bridge.notify("other process", references=("process-two",))
+    await bridge.steer("other source", input_id="subagent-one", source="async_subagent")
     await bridge.steer("user input", input_id="user-one")
     bridge.unbind(first, owned=True)
     if discard_between_attempts:
-        await bridge.discard_notifications(source="background_process", references=("process-one",))
+        await bridge.discard_notifications(references=("process-one",))
     second = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
     await bridge.bind(second)
-    await bridge.discard_notifications(source="background_process", references=("process-one",))
+    await bridge.discard_notifications(references=("process-one",))
     assert second.pending_messages is not None
     assert len(second.pending_messages) == 3
     assert "observed" not in str(second.pending_messages)
@@ -492,7 +485,7 @@ async def test_withdrawal_preserves_other_inputs_across_attempt_rebind(discard_b
     delivered = [message for pending in second.pending_messages for message in pending.messages]
     second.pending_messages.clear()
     await bridge.resolve_delivered(delivered)
-    await bridge.discard_notifications(source="background_process", references=("process-two",))
+    await bridge.discard_notifications(references=("process-two",))
     assert "other process" in str(delivered)
     assert not bridge._pending_requests
 

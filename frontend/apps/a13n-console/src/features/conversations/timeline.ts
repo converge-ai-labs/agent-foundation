@@ -81,8 +81,8 @@ export interface ActionEntry extends EntryBase {
 export interface ContentEntry extends EntryBase {
   kind: "reasoning" | "reply" | "guidance";
   text: string;
-  /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
-  steeringSource: string | null;
+  /** Guidance that is a child result the Service steered in, not a message. */
+  steeringSource: "async_subagent" | null;
   sourceId?: string;
   protectedReasoning: boolean;
   failure: unknown;
@@ -229,6 +229,27 @@ export function runTimeline({
         },
       );
   }
+
+  // A child result the Service steered in is guidance from the subagent, read
+  // by the next request like any other guidance.
+  for (const notice of execution.subagentNotices)
+    place(childOwner(notice.position, notice.subagentRunId), {
+      position: notice.position,
+      entry: {
+        kind: "guidance",
+        id: notice.id,
+        subagentRunId: notice.subagentRunId,
+        text: notice.text,
+        steeringSource: "async_subagent",
+        ...(notice.entryId ? { sourceId: notice.entryId } : {}),
+        protectedReasoning: false,
+        failure: null,
+        startedAt: notice.occurredAt,
+        endedAt: notice.occurredAt,
+        durationMs: null,
+        state: "completed",
+      },
+    });
 
   // A later attempt starts before anything it displayed.
   for (const attempt of attempts) {
@@ -419,7 +440,7 @@ function contentEntry(
     id: item.id,
     subagentRunId: item.subagentRunId,
     text: item.text,
-    steeringSource: item.steeringSource ?? null,
+    steeringSource: null,
     sourceId: item.sourceId,
     protectedReasoning: item.protectedReasoning,
     failure: item.failure ?? null,
@@ -433,7 +454,7 @@ function contentEntry(
   if (item.role === "assistant") return { kind: "reply", ...base };
   if (item.role !== "user") return null;
   const leading = first();
-  return item.steeringSource || item.inputSource === "steering" || !leading
+  return item.inputSource === "steering" || !leading
     ? { kind: "guidance", ...base }
     : null;
 }

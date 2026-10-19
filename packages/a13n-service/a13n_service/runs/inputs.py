@@ -153,7 +153,9 @@ async def _message(
 
 def _child_result(entry: Offered) -> tuple[UserContent, ...]:
     # The parent learns that a child run it spawned has ended; its details stay readable through the tools.
-    return (_text(entry, "A delegated subagent run ended:\n" + json.dumps(entry.payload, ensure_ascii=False)),)
+    # The text is for the model: viewers read the result from the entry, as a run it starts shows its input.
+    text = "A delegated subagent run ended:\n" + json.dumps(entry.payload, ensure_ascii=False)
+    return (TextContent(text, metadata={"source_id": entry.id, "display": False}),)
 
 
 async def content(

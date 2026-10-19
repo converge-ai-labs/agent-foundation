@@ -691,7 +691,9 @@ class _Attempt:
             if not self.boundaries.accepting_steers:
                 return  # Keep the unconsumed entry for continuation after native completion.
             try:
-                await stream.steer(content, input_id=entry.id)
+                # A child result is a subagent notice, never something a person typed.
+                source = "async_subagent" if entry.kind == "child_result" else "steering"
+                await stream.steer(content, input_id=entry.id, source=source)
             except RunError as error:
                 if error.code != "run_not_active":
                     raise

@@ -313,11 +313,11 @@ async with executable.stream("Do the work", bindings=bindings) as stream:
 - `stream.context` 向可信嵌入代码提供新的 `AgentContext`；
 - `stream.usage` 返回当前本地 Context 用量的独立 `RunUsageSummary`，不是可变原生累加器；
 - `await stream.export_state()` 返回最新安全可移植状态边界；
-- `await stream.steer(input, input_id=None)` 通过 Pydantic AI 活跃执行的 `priority="asap"` 队列交付非空原生用户内容，并返回入队 ID。Host 选择的 `input_id` 记录在交付请求上。`a13n_harness.capabilities.steering` 中的 `steering_input_ids(state.message_history)` 列出导出状态中的 ID；
+- `await stream.steer(input, input_id=None, source="steering")` 通过 Pydantic AI 活跃执行的 `priority="asap"` 队列交付非空原生用户内容，并返回入队 ID。Host 选择的 `input_id` 记录在交付请求上。内容是异步子 agent 的结果而不是用户引导时，传入 `source="async_subagent"`：模型读取方式不变，但其输入事件的来源为 `async_subagent`，内容不在对话记录中显示。`a13n_harness.capabilities.steering` 中的 `steering_input_ids(state.message_history)` 列出导出状态中的 ID；
 - `stream.cancel()` 请求语义取消；
 - `stream.result` 仅在终结结果事件交付后可用。
 
-`steer()` 只在内部 Pydantic 执行活跃时可用。配置自动压缩时，Harness 还保留已接受的初始和引导输入，供后续压缩重放，保留结构化和多模态内容。这优先保留用户上下文，不保证精确一次重放；不是持久命令或回执协议。
+`steer()` 只在内部 Pydantic 执行活跃时可用。配置自动压缩时，Harness 还保留已接受的初始输入和每个 `steer()` 输入，供后续压缩重放，保留结构化和多模态内容。这优先保留用户上下文，不保证精确一次重放；不是持久命令或回执协议。
 
 始终将流作为异步上下文管理器使用。消费者提前退出、异常、任务取消或显式取消请求仍会触发 Harness 清理。
 

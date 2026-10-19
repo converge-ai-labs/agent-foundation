@@ -147,6 +147,22 @@ export function applyObservation(
       }
     }
   }
+  if (name === "a13n.input.async_subagent") {
+    const metadata = isRecord(content.metadata) ? content.metadata : {};
+    next.subagentNotices.push({
+      id: at.id,
+      position: at.position,
+      occurredAt: at.occurredAt,
+      subagentRunId: at.subagentRunId,
+      entryId:
+        typeof metadata.source_id === "string" ? metadata.source_id : null,
+      text:
+        isRecord(source) && typeof source.content === "string"
+          ? source.content
+          : "",
+    });
+    return next;
+  }
   if (name === "a13n.harness.recovery" && type === "model_retry_scheduled") {
     next.retries.push({
       id: at.id,
