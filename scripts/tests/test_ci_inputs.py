@@ -104,13 +104,14 @@ def test_bundled_service_docs_select_package_and_image_builds(path: str) -> None
             }
 
 
-def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path) -> list[dict[str, str]]:
+def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root: Path = ROOT) -> list[dict[str, str]]:
     step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     output = tmp_path / "output"
     output.write_text("")
     subprocess.run(
         ["bash", "-c", step["run"]],
         env={**os.environ, "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
+        cwd=root,
         check=True,
     )
     assert output.read_text().startswith("matrix=")
@@ -121,16 +122,69 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert {entry["name"] for entry in matrix} == {"checks", "tests"}
+    assert [entry["name"] for entry in matrix] == ["checks", "tests-1", "tests-2"]
+    shards = [entry["targets"].splitlines() for entry in matrix[1:]]
+    assert all(shards)
+    assert not set(shards[0]) & set(shards[1])
+    root = ROOT / "packages/a13n-service/tests"
+    expected = {
+        str(path.relative_to(ROOT))
+        for path in root.rglob("*.py")
+        if (path.name.startswith("test_") or path.name.endswith("_test.py"))
+        and path != root / "test_environments_envd.py"
+        and root / "environment_providers" not in path.parents
+    }
+    assert set(shards[0]) | set(shards[1]) == expected
     assert {entry["runner"] for entry in matrix} <= {"ubuntu-latest", "ubuntu-24.04"}
     assert jobs["validation"]["strategy"]["matrix"]["include"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
     steps = jobs["validation"]["steps"]
     test = next(step for step in steps if step["name"] == "Test a13n Service")
     assert "-n 3 --dist loadgroup" in test["run"]
-    assert "packages/a13n-service/tests" in test["run"]
+    assert test["if"] == "startsWith(matrix.name, 'tests-')"
+    assert test["env"]["TEST_TARGETS"] == "${{ matrix.targets }}"
+    require_execution = next(step for step in steps if step["name"] == "Require Service execution without skips")
+    assert require_execution["if"] == test["if"]
+    providers = next(step for step in steps if step["name"] == "Test native Environment management drivers")
+    assert providers["if"] == "matrix.name == 'tests-1'"
+    assert "packages/a13n-service/tests/environment_providers" in providers["run"]
+    reports = next(step for step in steps if step["name"] == "Retain Service test reports")
+    assert reports["if"] == "always()"
+    assert reports["with"]["name"] == "service-${{ matrix.name }}-${{ github.run_attempt }}"
+    assert jobs["validation"]["strategy"]["fail-fast"] is False
     assert any(step.get("run") == "make service-boundaries" for step in steps)
     assert any(step.get("run") == "make dev-state-check" for step in steps)
     assert jobs["python"]["needs"] == ["changes", "validation"]
+
+
+def test_service_shards_include_new_nested_files_and_pass_paths_literally(tmp_path: Path) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    root = tmp_path / "packages/a13n-service/tests"
+    included = ["test_first.py", "nested/test_second.py", "nested/third_test.py", "test_space $(false).py"]
+    excluded = ["conftest.py", "helper.py", "test_environments_envd.py", "environment_providers/test_native.py"]
+    for name in included + excluded:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
+    shards = [entry["targets"].splitlines() for entry in matrix[1:]]
+    expected = sorted(str((root / name).relative_to(tmp_path)) for name in included)
+    assert shards == [expected[::2], expected[1::2]]
+
+    # Execute the actual workflow command with a fake uv to check shell argument boundaries.
+    executable = tmp_path / "uv"
+    executable.write_text(f"#!{sys.executable}\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+    executable.chmod(0o755)
+    step = next(step for step in workflow["jobs"]["validation"]["steps"] if step["name"] == "Test a13n Service")
+    for entry, targets in zip(matrix[1:], shards, strict=True):
+        result = subprocess.run(
+            ["bash", "-e", "-c", step["run"]],
+            env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "TEST_TARGETS": entry["targets"]},
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert json.loads(result.stdout)[-len(targets) :] == targets
 
 
 def test_service_docs_only_changes_skip_database_tests_but_keep_checks(tmp_path: Path) -> None:

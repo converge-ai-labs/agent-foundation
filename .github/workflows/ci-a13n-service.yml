@@ -104,10 +104,27 @@ jobs:
           python - <<'PY'
           import json
           import os
+          from pathlib import Path
 
-          matrix = [{"name": "checks", "runner": "ubuntu-latest"}]
+          matrix = [{"name": "checks", "runner": "ubuntu-latest", "targets": ""}]
           if os.environ["TESTS_CHANGED"] == "true":
-              matrix.append({"name": "tests", "runner": "ubuntu-24.04"})
+              root = Path("packages/a13n-service/tests")
+              # Keep whole files together, matching loadgroup's file-local fixture isolation.
+              # Envd and management providers retain their dedicated test steps.
+              files = sorted(
+                  str(path) for path in root.rglob("*.py")
+                  if (path.match("test_*.py") or path.match("*_test.py"))
+                  and path != root / "test_environments_envd.py"
+                  and not path.is_relative_to(root / "environment_providers")
+              )
+              for shard in range(2):
+                  targets = files[shard::2]
+                  assert targets, "Service test shards must not be empty"
+                  matrix.append({
+                      "name": f"tests-{shard + 1}",
+                      "runner": "ubuntu-24.04",
+                      "targets": "\n".join(targets),
+                  })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"matrix={json.dumps(matrix, separators=(',', ':'))}\n")
           PY
@@ -170,27 +187,28 @@ jobs:
         run: make dev-state-check
 
       - name: Test a13n Service
-        if: matrix.name == 'tests'
-        # Allow the full database-backed suite to finish on slower hosted runners.
+        if: startsWith(matrix.name, 'tests-')
+        # Separate runners shorten the critical path without increasing per-runner contention.
         # Individual stalled tests still fail through faulthandler below.
         timeout-minutes: 15
-        run: >-
-          /usr/bin/time -p uv run --locked python -m pytest
-          -n 3 --dist loadgroup --max-worker-restart=0
-          -vv --tb=short --durations=30 -r a
-          --junitxml=test-results/service.xml
-          -o faulthandler_timeout=120
-          -o faulthandler_exit_on_timeout=true
-          --ignore=packages/a13n-service/tests/test_environments_envd.py
-          --ignore=packages/a13n-service/tests/environment_providers
-          packages/a13n-service/tests
+        env:
+          TEST_TARGETS: ${{ matrix.targets }}
+        run: |
+          mapfile -t targets <<< "$TEST_TARGETS"
+          /usr/bin/time -p uv run --locked python -m pytest \
+            -n 3 --dist loadgroup --max-worker-restart=0 \
+            -vv --tb=short --durations=30 -r a \
+            --junitxml=test-results/service.xml \
+            -o faulthandler_timeout=120 \
+            -o faulthandler_exit_on_timeout=true \
+            "${targets[@]}"
 
       - name: Test native Environment management drivers
-        if: matrix.name == 'tests'
+        if: matrix.name == 'tests-1'
         run: uv run --locked python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
 
       - name: Require Service execution without skips
-        if: matrix.name == 'tests'
+        if: startsWith(matrix.name, 'tests-')
         run: |
           python - <<'PYCODE'
           import xml.etree.ElementTree as ET
