@@ -1643,6 +1643,60 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/metrics-dashboards": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Dashboards */
+    get: operations["list_dashboards_api_v1_metrics_dashboards_get"];
+    put?: never;
+    /** Create Dashboard */
+    post: operations["create_dashboard_api_v1_metrics_dashboards_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/metrics-dashboards/preset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Preset */
+    get: operations["get_preset_api_v1_metrics_dashboards_preset_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/metrics-dashboards/{dashboard_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Dashboard */
+    get: operations["get_dashboard_api_v1_metrics_dashboards__dashboard_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Dashboard */
+    delete: operations["delete_dashboard_api_v1_metrics_dashboards__dashboard_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Dashboard */
+    patch: operations["update_dashboard_api_v1_metrics_dashboards__dashboard_id__patch"];
+    trace?: never;
+  };
   "/api/v1/metrics-data-sources": {
     parameters: {
       query?: never;
@@ -5415,6 +5469,77 @@ export interface components {
       date: string;
       usage: components["schemas"]["ModelMetrics"];
     };
+    /** Dashboard */
+    Dashboard: {
+      /** Builtin */
+      builtin: boolean;
+      config: components["schemas"]["DashboardConfig"];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Id */
+      updated_by_id: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** DashboardConfig */
+    DashboardConfig: {
+      /** Panels */
+      panels?: components["schemas"]["Panel"][];
+      /**
+       * Range Seconds
+       * @default 3600
+       */
+      range_seconds?: number;
+      /**
+       * Refresh Seconds
+       * @default 30
+       * @enum {integer}
+       */
+      refresh_seconds?: 0 | 10 | 30 | 60 | 300;
+      /**
+       * Schema Version
+       * @default 1
+       * @constant
+       */
+      schema_version?: 1;
+    };
+    /** DashboardCreate */
+    DashboardCreate: {
+      config: components["schemas"]["DashboardConfig"];
+      /** Name */
+      name: string;
+    };
+    /** DashboardPage */
+    DashboardPage: {
+      /** Items */
+      items: components["schemas"]["Dashboard"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** DashboardUpdate */
+    DashboardUpdate: {
+      config?: components["schemas"]["DashboardConfig"] | null;
+      /** Name */
+      name?: string | null;
+    };
     /** DataSource */
     DataSource: {
       /** Builtin */
@@ -8211,6 +8336,48 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
     };
+    /** Panel */
+    Panel: {
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
+      /** Id */
+      id: string;
+      /**
+       * Legend
+       * @default true
+       */
+      legend?: boolean;
+      position: components["schemas"]["Position"];
+      /** Queries */
+      queries: components["schemas"]["PanelQuery"][];
+      /** Title */
+      title: string;
+      /**
+       * Unit
+       * @default auto
+       * @enum {string}
+       */
+      unit?:
+        | "auto"
+        | "ratio"
+        | "bytes"
+        | "bytes_per_second"
+        | "operations_per_second"
+        | "count"
+        | "seconds";
+      /**
+       * Visualization
+       * @default timeseries
+       * @enum {string}
+       */
+      visualization?: "timeseries" | "stat";
+    };
+    PanelQuery:
+      | components["schemas"]["TypedQuery"]
+      | components["schemas"]["PromQLQuery"];
     Part:
       | components["schemas"]["TextPart"]
       | components["schemas"]["AssetPart"]
@@ -8318,6 +8485,17 @@ export interface components {
       instance_name: string;
       /** Plugin Key */
       plugin_key: string;
+    };
+    /** Position */
+    Position: {
+      /** H */
+      h: number;
+      /** W */
+      w: number;
+      /** X */
+      x: number;
+      /** Y */
+      y: number;
     };
     /** @enum {string} */
     Preset: "execution" | "recovery" | "answer";
@@ -8473,6 +8651,18 @@ export interface components {
       email?: string | null;
       /** Name */
       name?: string | null;
+    };
+    /** PromQLQuery */
+    PromQLQuery: {
+      /** Expression */
+      expression: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "promql";
+      /** Source Id */
+      source_id: string;
     };
     /** Provider */
     Provider: {
@@ -10474,6 +10664,59 @@ export interface components {
     };
     /** @enum {string} */
     Trigger: "input" | "queued" | "resume" | "child_result" | "spawned";
+    /** TypedQuery */
+    TypedQuery: {
+      /**
+       * History
+       * @default configured
+       * @enum {string}
+       */
+      history?: "configured" | "temporary";
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "metric";
+      /** Metric */
+      metric:
+        | (
+            | "system_cpu_busy_ratio"
+            | "system_memory_used_bytes"
+            | "cgroup_memory_current_bytes"
+            | "system_memory_total_bytes"
+            | "system_memory_available_bytes"
+            | "system_memory_cache_bytes"
+            | "system_memory_wired_bytes"
+            | "system_memory_compressed_bytes"
+            | "system_swap_used_bytes"
+            | "system_swap_total_bytes"
+            | "system_commit_total_bytes"
+            | "system_commit_limit_bytes"
+            | "system_processes"
+            | "system_threads"
+            | "system_handles"
+            | "cgroup_pids_current"
+            | "tcp_connections"
+            | "udp_sockets"
+            | "daemon_sessions"
+            | "daemon_processes"
+            | "daemon_connections"
+            | "daemon_transfers"
+            | "daemon_retained_output_bytes"
+          )
+        | (
+            | "network_received_bytes_per_second"
+            | "network_transmitted_bytes_per_second"
+            | "disk_read_bytes_per_second"
+            | "disk_written_bytes_per_second"
+            | "disk_read_operations_per_second"
+            | "disk_write_operations_per_second"
+            | "cgroup_io_read_bytes_per_second"
+            | "cgroup_io_written_bytes_per_second"
+            | "cgroup_io_read_operations_per_second"
+            | "cgroup_io_write_operations_per_second"
+          );
+    };
     /** UnlimitedCpuLimit */
     UnlimitedCpuLimit: {
       /**
@@ -14663,6 +14906,175 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SessionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_dashboards_api_v1_metrics_dashboards_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DashboardPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_dashboard_api_v1_metrics_dashboards_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DashboardCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Dashboard"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_preset_api_v1_metrics_dashboards_preset_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DashboardConfig"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_dashboard_api_v1_metrics_dashboards__dashboard_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        dashboard_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Dashboard"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_dashboard_api_v1_metrics_dashboards__dashboard_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        dashboard_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_dashboard_api_v1_metrics_dashboards__dashboard_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        dashboard_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DashboardUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Dashboard"];
         };
       };
       400: components["responses"]["Error"];

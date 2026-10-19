@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
 import type { Schema } from "../../shared/api";
 import { EnvironmentDetails } from "./instance-details";
 
@@ -16,7 +17,11 @@ vi.mock("../../auth/context", () => ({
   useClient: () => ({ http, workspace: () => http }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: access.can }),
+  useWorkspace: () => ({
+    workspace: { id: "ws_test" },
+    can: access.can,
+    basePath: "/workspace/ws_test",
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -97,6 +102,11 @@ function serve(
   type = providerType(true, true),
 ) {
   http.GET.mockImplementation(async (path: string) => {
+    if (path === "/api/v1/metrics-data-sources")
+      return {
+        data: { items: [], next_cursor: null },
+        response: new Response(),
+      };
     if (path === "/api/v1/provider-types/{kind}")
       return { data: { items: [type], next_cursor: null } };
     if (path.includes("environment-providers")) return { data: provider };
@@ -120,7 +130,9 @@ function open(
   });
   render(
     <QueryClientProvider client={cache}>
-      <EnvironmentDetails environment={value} />
+      <MemoryRouter>
+        <EnvironmentDetails environment={value} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return { cache, user };

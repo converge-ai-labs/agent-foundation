@@ -5,6 +5,19 @@ description: Select collection and history backends for environment and Device m
 
 Environment monitoring shows the resources used by an Envd target independently of agent runs. Select a workspace metrics data source on each environment. An unselected environment has no Service background collection or automatic exporter setup. [Service monitoring](monitoring.md) covers the health of Service itself.
 
+## Use dashboards in Console
+
+Open **Observe → Metrics dashboards** in your workspace. Select an environment or Device to view its configured metrics. The built-in **Environment overview** is editable, just like a custom dashboard.
+
+1. Select **Edit dashboard**. Add, edit or remove panels. Drag the panel handle to move a panel and its corner to resize it. The panel editor also accepts numeric position and size; small screens stack the saved layout.
+2. Choose a typed Environment / Device metric, or select a data source and write PromQL. PromQL requires workspace administrator access. Local Cache supports typed metrics, not arbitrary PromQL.
+3. Select **Run queries** to preview the panel, then **Apply panel** to update your draft. Choose a unit or statistic view as needed.
+4. Select **Save dashboard** to share the changes with the workspace. **Discard** cancels them. **Restore defaults** replaces the built-in dashboard's draft; save to persist it. If another person saved first, your draft stays available until you explicitly reload. In-app navigation retains separate drafts for each dashboard; save before reloading the page or signing out.
+
+Use the time range and auto-refresh controls to explore history. Hover a chart to inspect synchronized values. Click legend entries to show or hide series. Drag across a chart to zoom, or set an absolute range. Historical ranges pause auto-refresh; **Back to live** resumes it. A failed or pending refresh can show the previous result with a label and the query error. A different query or target starts with its own data.
+
+Charts request roughly 600 evaluation steps and display up to 32 series per panel. **Query details** reports truncation, temporary retention and actual coverage. Narrow a high-cardinality query to inspect other series. Dashboard configuration is durable; selecting Local Cache does not make its sample history durable.
+
 ## Choose a data source
 
 | Collection | Use when                                                                        | Infrastructure                                                       |

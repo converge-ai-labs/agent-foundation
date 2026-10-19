@@ -4813,6 +4813,188 @@
         "title": "DailyUsage",
         "type": "object"
       },
+      "Dashboard": {
+        "properties": {
+          "builtin": {
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/DashboardConfig"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by_id": {
+            "title": "Updated By Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "name",
+          "config",
+          "builtin",
+          "version",
+          "created_by_id",
+          "updated_by_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Dashboard",
+        "type": "object"
+      },
+      "DashboardConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "panels": {
+            "items": {
+              "$ref": "#/components/schemas/Panel"
+            },
+            "maxItems": 24,
+            "title": "Panels",
+            "type": "array"
+          },
+          "range_seconds": {
+            "default": 3600,
+            "maximum": 7776000.0,
+            "minimum": 60.0,
+            "title": "Range Seconds",
+            "type": "integer"
+          },
+          "refresh_seconds": {
+            "default": 30,
+            "enum": [
+              0,
+              10,
+              30,
+              60,
+              300
+            ],
+            "title": "Refresh Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "title": "DashboardConfig",
+        "type": "object"
+      },
+      "DashboardCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/DashboardConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "config"
+        ],
+        "title": "DashboardCreate",
+        "type": "object"
+      },
+      "DashboardPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Dashboard"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "DashboardPage",
+        "type": "object"
+      },
+      "DashboardUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "DashboardUpdate",
+        "type": "object"
+      },
       "DataSource": {
         "properties": {
           "builtin": {
@@ -12994,6 +13176,93 @@
         "title": "OutputVariant",
         "type": "object"
       },
+      "Panel": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "legend": {
+            "default": true,
+            "title": "Legend",
+            "type": "boolean"
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "queries": {
+            "items": {
+              "$ref": "#/components/schemas/PanelQuery"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Queries",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "ratio",
+              "bytes",
+              "bytes_per_second",
+              "operations_per_second",
+              "count",
+              "seconds"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "visualization": {
+            "default": "timeseries",
+            "enum": [
+              "timeseries",
+              "stat"
+            ],
+            "title": "Visualization",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "position",
+          "queries"
+        ],
+        "title": "Panel",
+        "type": "object"
+      },
+      "PanelQuery": {
+        "discriminator": {
+          "mapping": {
+            "metric": "#/components/schemas/TypedQuery",
+            "promql": "#/components/schemas/PromQLQuery"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TypedQuery"
+          },
+          {
+            "$ref": "#/components/schemas/PromQLQuery"
+          }
+        ]
+      },
       "Part": {
         "discriminator": {
           "mapping": {
@@ -13239,6 +13508,43 @@
           "plugin_key"
         ],
         "title": "PluginSelection",
+        "type": "object"
+      },
+      "Position": {
+        "additionalProperties": false,
+        "properties": {
+          "h": {
+            "maximum": 16.0,
+            "minimum": 3.0,
+            "title": "H",
+            "type": "integer"
+          },
+          "w": {
+            "maximum": 12.0,
+            "minimum": 3.0,
+            "title": "W",
+            "type": "integer"
+          },
+          "x": {
+            "maximum": 11.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "Position",
         "type": "object"
       },
       "Preset": {
@@ -13731,6 +14037,35 @@
           }
         },
         "title": "ProfileUpdate",
+        "type": "object"
+      },
+      "PromQLQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "expression": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Expression",
+            "type": "string"
+          },
+          "kind": {
+            "const": "promql",
+            "default": "promql",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 72,
+            "pattern": "^mds_[a-zA-Z0-9_-]+$",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "expression"
+        ],
+        "title": "PromQLQuery",
         "type": "object"
       },
       "Provider": {
@@ -19652,6 +19987,79 @@
           "spawned"
         ],
         "type": "string"
+      },
+      "TypedQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "history": {
+            "default": "configured",
+            "enum": [
+              "configured",
+              "temporary"
+            ],
+            "title": "History",
+            "type": "string"
+          },
+          "kind": {
+            "const": "metric",
+            "default": "metric",
+            "title": "Kind",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system_cpu_busy_ratio",
+                  "system_memory_used_bytes",
+                  "cgroup_memory_current_bytes",
+                  "system_memory_total_bytes",
+                  "system_memory_available_bytes",
+                  "system_memory_cache_bytes",
+                  "system_memory_wired_bytes",
+                  "system_memory_compressed_bytes",
+                  "system_swap_used_bytes",
+                  "system_swap_total_bytes",
+                  "system_commit_total_bytes",
+                  "system_commit_limit_bytes",
+                  "system_processes",
+                  "system_threads",
+                  "system_handles",
+                  "cgroup_pids_current",
+                  "tcp_connections",
+                  "udp_sockets",
+                  "daemon_sessions",
+                  "daemon_processes",
+                  "daemon_connections",
+                  "daemon_transfers",
+                  "daemon_retained_output_bytes"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "network_received_bytes_per_second",
+                  "network_transmitted_bytes_per_second",
+                  "disk_read_bytes_per_second",
+                  "disk_written_bytes_per_second",
+                  "disk_read_operations_per_second",
+                  "disk_write_operations_per_second",
+                  "cgroup_io_read_bytes_per_second",
+                  "cgroup_io_written_bytes_per_second",
+                  "cgroup_io_read_operations_per_second",
+                  "cgroup_io_write_operations_per_second"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Metric"
+          }
+        },
+        "required": [
+          "metric"
+        ],
+        "title": "TypedQuery",
+        "type": "object"
       },
       "UnlimitedCpuLimit": {
         "additionalProperties": false,
@@ -31550,6 +31958,457 @@
           "memory spaces"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/metrics-dashboards": {
+      "get": {
+        "operationId": "list_dashboards_api_v1_metrics_dashboards_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Dashboards",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      },
+      "post": {
+        "operationId": "create_dashboard_api_v1_metrics_dashboards_post",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-dashboards/preset": {
+      "get": {
+        "operationId": "get_preset_api_v1_metrics_dashboards_preset_get",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Preset",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-dashboards/{dashboard_id}": {
+      "delete": {
+        "operationId": "delete_dashboard_api_v1_metrics_dashboards__dashboard_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Delete Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      },
+      "get": {
+        "operationId": "get_dashboard_api_v1_metrics_dashboards__dashboard_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      },
+      "patch": {
+        "operationId": "update_dashboard_api_v1_metrics_dashboards__dashboard_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
       }
     },
     "/api/v1/metrics-data-sources": {

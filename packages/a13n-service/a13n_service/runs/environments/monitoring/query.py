@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, conflict, disabled, invalid, not_found
 from a13n_service.providers.metrics import QueryResult, RangeQuery
+from a13n_service.providers.metrics_catalog import MetricQuery, expression
 from a13n_service.resources.metrics_data_sources.schemas import Collector, Configuration
 from a13n_service.resources.metrics_data_sources.service import query_destination
 from a13n_service.resources.metrics_data_sources.tables import DataSourceRow
 from a13n_service.resources.rows import find_row
-from a13n_service.runs.environments.monitoring.catalog import MetricQuery, expression
 from a13n_service.runs.environments.monitoring.collection import selected
 from a13n_service.runs.environments.monitoring.proxy import LocalResult
 from a13n_service.runs.environments.monitoring.pull import Receipt, State, receipt_key

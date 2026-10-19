@@ -273,7 +273,7 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         (path, method)
         for path, item in schema["paths"].items()
         for method, operation in item.items()
-        if path.startswith(("/api/v1/metrics-data-sources", "/api/v1/devices"))
+        if path.startswith(("/api/v1/metrics-data-sources", "/api/v1/metrics-dashboards", "/api/v1/devices"))
         or (path.startswith("/api/v1/environments/") and "/metrics" in path)
     }
     assert monitoring

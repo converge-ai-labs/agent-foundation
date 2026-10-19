@@ -93,6 +93,21 @@ const ConnectionsPage = lazy(() =>
     default: module.ConnectionsPage,
   })),
 );
+const DataSourcesPage = lazy(() =>
+  import("./features/monitoring/sources").then((module) => ({
+    default: module.DataSourcesPage,
+  })),
+);
+const DevicesPage = lazy(() =>
+  import("./features/monitoring/devices").then((module) => ({
+    default: module.DevicesPage,
+  })),
+);
+const DashboardsPage = lazy(() =>
+  import("./features/monitoring/page").then((module) => ({
+    default: module.DashboardsPage,
+  })),
+);
 const UsagePage = lazy(() =>
   import("./features/usage/page").then((module) => ({
     default: module.UsagePage,
@@ -244,6 +259,15 @@ function AppContent() {
                       <Route
                         path="findings/:findingId"
                         element={<FindingDetail />}
+                      />
+                      <Route path="monitoring" element={<DashboardsPage />} />
+                      <Route
+                        path="monitoring/sources"
+                        element={<DataSourcesPage />}
+                      />
+                      <Route
+                        path="monitoring/devices"
+                        element={<DevicesPage />}
                       />
                       <Route path="usage" element={<UsagePage />} />
                       <Route path="traces" element={<TracesPage />} />

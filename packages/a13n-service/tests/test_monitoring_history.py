@@ -10,7 +10,7 @@ from a13n_envd_client.eip.v1 import (
     NetworkMetrics,
     SystemMetrics,
 )
-from a13n_service.runs.environments.monitoring.catalog import SCALARS, MetricQuery, expression
+from a13n_service.providers.metrics_catalog import SCALARS, MetricQuery, expression
 from a13n_service.runs.environments.monitoring.history import RETENTION_MINUTES, Cache, MinuteHistory
 
 NOW = 1_800_000_000
@@ -215,7 +215,7 @@ def test_resource_churn_is_bounded_and_snapshot_keeps_expanded_inventory():
 
 
 def test_catalog_projection_matches_scalar_columns_and_rate_expression_is_not_summed():
-    from a13n_service.runs.environments.monitoring.catalog import scalars
+    from a13n_service.providers.metrics_catalog import scalars
 
     assert len(scalars(report().sample)) == len(SCALARS)
     assert (

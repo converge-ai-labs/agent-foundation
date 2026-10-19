@@ -1,4 +1,10 @@
 {
+  "List Dashboards": "列出仪表盘",
+  "Create Dashboard": "创建仪表盘",
+  "Get Preset": "获取默认配置",
+  "Delete Dashboard": "删除仪表盘",
+  "Get Dashboard": "获取仪表盘",
+  "Update Dashboard": "更新仪表盘",
   "Create Device": "创建 Device",
   "Create Source": "创建数据源",
   "Delete Device": "删除 Device",

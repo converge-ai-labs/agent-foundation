@@ -17,7 +17,7 @@ from a13n_envd_client.eip.v1 import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from a13n_service.runs.environments.monitoring.catalog import RATE_FIELDS, SCALARS, MetricQuery, scalars
+from a13n_service.providers.metrics_catalog import RATE_FIELDS, SCALARS, MetricQuery, scalars
 
 RETENTION_MINUTES = 1440
 RESOURCE_MINUTES = 60

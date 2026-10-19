@@ -26,8 +26,8 @@ from redis.exceptions import RedisError
 
 from a13n_service.infra.errors import ServiceError, rate_limited
 from a13n_service.providers.environment.metrics import observe
+from a13n_service.providers.metrics_catalog import MetricQuery
 from a13n_service.runs.environments.monitoring import collection
-from a13n_service.runs.environments.monitoring.catalog import MetricQuery
 from a13n_service.runs.environments.monitoring.collection import ReverseTarget, Selection
 from a13n_service.runs.environments.monitoring.export import Exporter, ExportHealth, Projection
 from a13n_service.runs.environments.monitoring.history import Cache, History, Observation

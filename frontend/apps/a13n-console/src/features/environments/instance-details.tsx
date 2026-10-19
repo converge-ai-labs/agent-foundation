@@ -21,6 +21,7 @@ import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
 import { EnvironmentStatus } from "./instance-status";
 import { useEnvironmentTypes } from "./providers";
+import { EnvironmentMonitoring } from "../monitoring/environment";
 
 /**
  * Standalone entry point: a "Details" button that opens the same inspector.
@@ -273,6 +274,10 @@ export function EnvironmentPanel({
                   />
                 )}
               </section>
+              <EnvironmentMonitoring
+                environment={value}
+                etag={detail.data?.etag}
+              />
               <section className={styles.factGroup}>
                 <h3>{t("Source")}</h3>
                 <dl className={styles.facts}>

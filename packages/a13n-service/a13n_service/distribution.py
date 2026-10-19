@@ -34,6 +34,8 @@ from a13n_service.resources.connections.operations import recover_operations
 from a13n_service.resources.connections.routes import router as connections_router
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.connector_providers.routes import router as connector_providers_router
+from a13n_service.resources.dashboards.routes import router as dashboards_router
+from a13n_service.resources.dashboards.tables import DashboardRow
 from a13n_service.resources.environment_templates.routes import router as environment_templates_router
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.memories.purge import MemoryPurger
@@ -310,6 +312,7 @@ OSS = Distribution(
         ConnectionRow,
         SubscriptionRow,
         DataSourceRow,
+        DashboardRow,
         DeviceRow,
         UploadRow,
         AssetRow,
@@ -356,6 +359,7 @@ OSS = Distribution(
         skills_router,
         subscriptions_router,
         metrics_data_sources_router,
+        dashboards_router,
         devices_router,
         runs_router,
         usage_router,

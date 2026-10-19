@@ -1,0 +1,386 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { Link, MemoryRouter, Route, Routes, useNavigate } from "react-router";
+import { beforeEach, expect, it, vi } from "vitest";
+import { ApiError } from "../../service-client";
+import { DashboardsPage } from "./page";
+import type { Dashboard } from "./api";
+const state = vi.hoisted(() => ({
+  GET: vi.fn(),
+  PATCH: vi.fn(),
+  POST: vi.fn(),
+  DELETE: vi.fn(),
+  write: true,
+  admin: true,
+}));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ workspace: () => state }),
+}));
+vi.mock("../../layout/workspace", () => ({
+  useWorkspace: () => ({
+    workspace: { id: "ws_test" },
+    basePath: "/workspace/ws_test",
+    can: (verb: string) =>
+      verb === "admin" ? state.admin : verb === "write" ? state.write : true,
+  }),
+}));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+vi.mock("./chart", () => ({ MetricsChart: () => null }));
+vi.mock("react-grid-layout", () => ({
+  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  useContainerWidth: () => ({
+    width: 1200,
+    mounted: true,
+    containerRef: { current: null },
+  }),
+}));
+const dashboard: Dashboard = {
+  id: "dsh_test",
+  name: "Overview",
+  builtin: true,
+  version: 1,
+  organization_id: "org_test",
+  workspace_id: "ws_test",
+  created_by_id: "usr_test",
+  updated_by_id: "usr_test",
+  created_at: "2026-10-19T00:00:00Z",
+  updated_at: "2026-10-19T00:00:00Z",
+  config: {
+    refresh_seconds: 0,
+    panels: [
+      {
+        id: "cpu",
+        title: "CPU",
+        position: { x: 0, y: 0, w: 6, h: 5 },
+        queries: [{ kind: "metric", metric: "system_cpu_busy_ratio" }],
+      },
+    ],
+  },
+};
+beforeEach(() => {
+  vi.clearAllMocks();
+  state.write = true;
+  state.admin = true;
+  state.GET.mockImplementation(async (path: string) => ({
+    data:
+      path === "/api/v1/metrics-dashboards"
+        ? { items: [structuredClone(dashboard)], next_cursor: null }
+        : path === "/api/v1/metrics-dashboards/preset"
+          ? dashboard.config
+          : { items: [], next_cursor: null },
+    response: new Response(),
+  }));
+  state.PATCH.mockResolvedValue({ data: dashboard, response: new Response() });
+});
+function setup() {
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <DashboardsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return { cache, user: userEvent.setup() };
+}
+it("stages panel changes, saves the opening ETag and preserves drafts on conflict", async () => {
+  const { cache, user } = setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Edit dashboard" }),
+  );
+  await user.clear(screen.getByRole("textbox", { name: "Dashboard name" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Dashboard name" }),
+    "My overview",
+  );
+  cache.setQueryData(
+    ["metrics-dashboards", "ws_test"],
+    [{ ...dashboard, version: 2, name: "Other author" }],
+  );
+  state.PATCH.mockRejectedValueOnce(
+    new ApiError(412, "precondition_failed", "Changed", {}, null),
+  );
+  await user.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await screen.findByText("Dashboard changed");
+  expect(state.PATCH.mock.calls[0][1].headers).toEqual({
+    "If-Match": '"dsh_test:1"',
+  });
+  expect(state.PATCH.mock.calls[0][1].body.name).toBe("My overview");
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Dashboard name",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("My overview");
+  await user.click(screen.getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("button", { name: "Save dashboard" })).toBeNull();
+});
+it("applies panel editing to the draft and discards without a server write", async () => {
+  const { user } = setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Edit dashboard" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Add panel" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit panel" });
+  const title = within(dialog).getByRole("textbox", { name: "Title" });
+  await user.clear(title);
+  await user.type(title, "Extra CPU");
+  await user.click(within(dialog).getByRole("button", { name: "Apply panel" }));
+  await screen.findByRole("heading", { name: "Extra CPU" });
+  expect(state.PATCH).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("heading", { name: "Extra CPU" })).toBeNull();
+});
+it("does not expose writes to a reader or execute saved PromQL for a non-admin", async () => {
+  state.write = false;
+  state.admin = false;
+  state.GET.mockImplementation(async (path: string) => ({
+    data:
+      path === "/api/v1/metrics-dashboards"
+        ? {
+            items: [
+              {
+                ...dashboard,
+                config: {
+                  panels: [
+                    {
+                      ...dashboard.config.panels![0],
+                      queries: [
+                        {
+                          kind: "promql",
+                          source_id: "mds_x",
+                          expression: "up",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+            next_cursor: null,
+          }
+        : { items: [], next_cursor: null },
+    response: new Response(),
+  }));
+  setup();
+  await screen.findByRole("heading", { name: "CPU" });
+  expect(screen.queryByRole("button", { name: "Edit dashboard" })).toBeNull();
+  expect(state.POST).not.toHaveBeenCalled();
+});
+it("deduplicates identical queries and aborts the request when its panels disappear", async () => {
+  state.GET.mockImplementation(async (path: string) => ({
+    data:
+      path === "/api/v1/metrics-dashboards"
+        ? {
+            items: [
+              {
+                ...dashboard,
+                config: {
+                  refresh_seconds: 0,
+                  panels: [
+                    {
+                      ...dashboard.config.panels![0],
+                      queries: [
+                        {
+                          kind: "promql",
+                          source_id: "mds_x",
+                          expression: "up",
+                        },
+                      ],
+                    },
+                    {
+                      ...dashboard.config.panels![0],
+                      id: "copy",
+                      queries: [
+                        {
+                          kind: "promql",
+                          source_id: "mds_x",
+                          expression: "up",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+            next_cursor: null,
+          }
+        : { items: [], next_cursor: null },
+    response: new Response(),
+  }));
+  let signal: AbortSignal | undefined;
+  state.POST.mockImplementation(
+    (_path: string, args: { signal: AbortSignal }) => {
+      signal = args.signal;
+      return new Promise((_resolve, reject) =>
+        args.signal.addEventListener("abort", () => reject(args.signal.reason)),
+      );
+    },
+  );
+  const { user } = setup();
+  await waitFor(() => expect(state.POST).toHaveBeenCalledTimes(1));
+  await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
+  await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+  expect(signal!.aborted).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Remove" }));
+  await waitFor(() => expect(signal!.aborted).toBe(true));
+});
+
+it("freezes the dashboard while saving and while restoring its preset", async () => {
+  let complete!: () => void;
+  state.PATCH.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = () => resolve({ data: dashboard, response: new Response() });
+      }),
+  );
+  const { user } = setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Edit dashboard" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalled());
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Dashboard name",
+      }) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Restore defaults",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  complete();
+  await screen.findByRole("button", { name: "Edit dashboard" });
+  state.GET.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = () =>
+          resolve({ data: dashboard.config, response: new Response() });
+      }),
+  );
+  await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
+  await user.click(screen.getByRole("button", { name: "Restore defaults" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Dashboard name",
+      }) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "Discard" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  complete();
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Dashboard name",
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(false),
+  );
+});
+
+function HistoryControls() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button onClick={() => navigate(-1)}>History back</button>
+      <button onClick={() => navigate(1)}>History forward</button>
+    </>
+  );
+}
+it("retains separate drafts across history and page navigation with the original save identity", async () => {
+  const other = {
+    ...dashboard,
+    id: "dsh_other",
+    name: "Other dashboard",
+    builtin: false,
+  };
+  const base = "/workspace/ws_test/monitoring";
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  cache.setQueryData(["metrics-dashboards", "ws_test"], [dashboard, other]);
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter
+        initialEntries={[
+          `${base}?dashboard=dsh_test`,
+          `${base}?dashboard=dsh_other`,
+        ]}
+      >
+        <HistoryControls />
+        <Routes>
+          <Route path={base} element={<DashboardsPage />} />
+          <Route
+            path={`${base}/sources`}
+            element={
+              <Link to={`${base}?dashboard=dsh_other`}>Return to draft</Link>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Edit dashboard" }),
+  );
+  await user.clear(screen.getByRole("textbox", { name: "Dashboard name" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Dashboard name" }),
+    "Retained draft",
+  );
+  await user.click(screen.getByRole("button", { name: "History back" }));
+  expect(screen.queryByRole("textbox", { name: "Dashboard name" })).toBeNull();
+  expect(
+    screen.getByRole("combobox", { name: "Dashboard" }).textContent,
+  ).toContain("Overview");
+  await user.click(screen.getByRole("button", { name: "History forward" }));
+  expect(
+    (
+      (await screen.findByRole("textbox", {
+        name: "Dashboard name",
+      })) as HTMLInputElement
+    ).value,
+  ).toBe("Retained draft");
+  await user.click(screen.getByRole("link", { name: "Data sources" }));
+  await user.click(
+    await screen.findByRole("link", { name: "Return to draft" }),
+  );
+  expect(
+    (
+      (await screen.findByRole("textbox", {
+        name: "Dashboard name",
+      })) as HTMLInputElement
+    ).value,
+  ).toBe("Retained draft");
+  await user.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
+  expect(state.PATCH.mock.calls[0][1]).toMatchObject({
+    params: { path: { dashboard_id: "dsh_other" } },
+    headers: { "If-Match": '"dsh_other:1"' },
+    body: { name: "Retained draft" },
+  });
+  await waitFor(() =>
+    expect(
+      cache.getQueryData(["metrics-dashboard-draft", "ws_test", "dsh_other"]),
+    ).toBeNull(),
+  );
+});
