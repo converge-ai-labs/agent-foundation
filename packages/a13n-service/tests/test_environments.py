@@ -628,6 +628,53 @@ async def test_the_next_run_hears_once_which_mounts_changed(env, scripted_model,
     assert json.dumps((await scripted_model.request())["messages"]).count("Environment mounts changed") == 1
 
 
+async def test_a_resume_after_an_idle_delete_reads_the_change_with_its_results(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    """Waiting is not use: the resume's calls run in a new primary sandbox, and the model reads why beside them."""
+    review = {"name": "review", "description": "Ask a person to review", "parameters_json_schema": {"type": "object"}}
+    agent = await runs_kit.create_agent(
+        env, scripted_model, client_tools=[review], default_environment_template_id=env.template["id"]
+    )
+    started = await runs_kit.start_thread(env, agent, "Review it")
+    [mount] = started["run"]["environment_mounts"]
+    await maintain_environments(env.runtime, owner="sweep")
+    scripted_model.call("review", {}, call_id="review")
+    await (await runs_kit.attempt(env))
+    await scripted_model.request()
+    assert (await runs_kit.get_run(env, started["run"]["id"]))["status"] == "waiting"
+
+    await backdate(env, mount["environment_id"], last_used_at=timedelta(hours=2))
+    template = f"{env.api}/environment-templates/{env.template['id']}"
+    etag = (await env.client.get(template)).headers["etag"]
+    policy = {"config": {"delete_after_seconds": 3600}}
+    assert (await env.client.patch(template, json=policy, headers={"if-match": etag})).status_code == 200
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, mount["environment_id"]))["status"] == "deleted"
+
+    results = {"approvals": {}, "calls": {"review": {"status": "returned", "value": {"approved": True}}}}
+    resumed = await env.client.post(
+        f"{env.api}/runs/{started['run']['id']}/resume", json=results, headers=runs_kit.fresh_key()
+    )
+    assert resumed.status_code == 201, resumed.text
+    [primary] = resumed.json()["environment_mounts"]
+    assert primary["name"] == "workspace" and primary["environment_id"] != mount["environment_id"]
+    await maintain_environments(env.runtime, owner="sweep")
+    scripted_model.say("Reviewed")
+    await (await runs_kit.attempt(env))
+    assert (await runs_kit.get_run(env, resumed.json()["id"]))["status"] == "completed"
+    request = await scripted_model.request()
+    reminder = "\n".join(
+        [
+            "<system-reminder>",
+            "Environment mounts changed since the previous turn of this conversation:",
+            '- "workspace" is now a different environment. Files and processes from earlier turns are not in it.',
+            "</system-reminder>",
+        ]
+    )
+    *_, result, notice = request["messages"]
+    assert (result["role"], json.loads(result["content"])) == ("tool", {"approved": True})
+    assert notice["role"] == "user" and json.dumps(reminder) in json.dumps(notice)
+
+
 async def test_authorization_and_private_devices(env) -> None:  # type: ignore[no-untyped-def]
     client = env.client
     submitted = await start(env)

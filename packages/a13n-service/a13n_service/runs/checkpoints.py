@@ -115,7 +115,8 @@ class RunState(_Frozen):
     attempt: int = Field(ge=1)
     # The Harness deferred requests of a waiting outcome, which the successor's resume answers.
     deferred: JsonValue = None
-    # The resume's optional ordinary input has reached a model request in this checkpoint.
+    # A model request in this checkpoint carried the run's initial input: a resume's optional ordinary input and any
+    # mount reminder. Every other run's input reaches its first request before its first checkpoint.
     resume_input_consumed: bool = False
 
 

@@ -244,7 +244,7 @@ A steer whose content cannot be read, such as one naming an asset that is no lon
 
 ### Changed mounts
 
-A run's frozen mounts may differ from those of the run whose state it continues, the nearest checkpoint along its parents: a mount name may now name another instance, such as a new primary sandbox after an idle delete ([06](06-environments.md#idle-policy)), or none. The model reads the current mounts, not that the files its history wrote there are gone. The run's initial input therefore starts with one `display: false` text, with the run's ID as its source ID, that names each such mount inside `<system-reminder>` tags. Once the run's own checkpoint holds that input, a recovered attempt does not repeat it, and a run without initial input, such as a resume with only call results, carries none.
+A run's frozen mounts may differ from those of the run whose state it continues, the nearest checkpoint along its parents: a mount name may now name another instance, such as a new primary sandbox after an idle delete ([06](06-environments.md#idle-policy)), or none. The model reads the current mounts, not that the files its history wrote there are gone. The run's initial input therefore starts with one `display: false` text, with the run's ID as its source ID, that names each such mount inside `<system-reminder>` tags. A waiting run is not active use, so its resume may find a changed mount too. A resume that carries only call results takes the text as its whole input: the approved calls run in the current mounts, and the model reads the text with their results. Once a model request carries the text, a recovered attempt does not repeat it.
 
 ### How files reach the model
 
