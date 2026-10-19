@@ -101,8 +101,18 @@ pub(super) fn read(
     max: u32,
     interrupted: &dyn Fn() -> bool,
 ) -> Result<ComputerReadClipboardResult, EIPError> {
-    super::windows::ready()?;
+    read_with_readiness(max, interrupted, &super::windows::ready)
+}
+
+fn read_with_readiness(
+    max: u32,
+    interrupted: &dyn Fn() -> bool,
+    ready: &dyn Fn() -> Result<(), EIPError>,
+) -> Result<ComputerReadClipboardResult, EIPError> {
+    ready()?;
     let mut opened = Open::new(null_mut(), interrupted)?;
+    // Acquiring the clipboard after contention does not prove desktop readiness.
+    ready()?;
     let result = unsafe {
         if IsClipboardFormatAvailable(UNICODE_TEXT) == 0 {
             Ok(empty(if CountClipboardFormats() == 0 {
@@ -129,6 +139,8 @@ pub(super) fn read(
                 return Err(unavailable());
             }
             let data = std::slice::from_raw_parts(pointer, bytes / size_of::<u16>());
+            // CF_UNICODETEXT ends at the first NUL. GlobalSize bounds the allocation,
+            // not the text; bytes after the terminator need not be zero padding.
             let value = data
                 .iter()
                 .position(|v| *v == 0)
@@ -142,11 +154,21 @@ pub(super) fn read(
         return Err(unavailable());
     }
     check(interrupted)?;
+    // Delayed rendering can wait on another process while the desktop becomes unavailable.
+    ready()?;
     result
 }
 
 pub(super) fn write(value: &str, interrupted: &dyn Fn() -> bool) -> Result<Effect, EIPError> {
-    super::windows::ready()?;
+    write_with_readiness(value, interrupted, &super::windows::ready)
+}
+
+fn write_with_readiness(
+    value: &str,
+    interrupted: &dyn Fn() -> bool,
+    ready: &dyn Fn() -> Result<(), EIPError>,
+) -> Result<Effect, EIPError> {
+    ready()?;
     let data: Vec<u16> = value
         .replace('\n', "\r\n")
         .encode_utf16()
@@ -167,6 +189,8 @@ pub(super) fn write(value: &str, interrupted: &dyn Fn() -> bool) -> Result<Effec
     let window = Window::new()?;
     let mut opened = Open::new(window.0, interrupted)?;
     check(interrupted)?;
+    // Revalidate immediately before mutation, not only before the contention wait.
+    ready()?;
     let result = unsafe {
         if EmptyClipboard() == 0 {
             effect(ComputerEffect::NotExecuted)
@@ -187,7 +211,7 @@ pub(super) fn write(value: &str, interrupted: &dyn Fn() -> bool) -> Result<Effec
 mod tests {
     use super::*;
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     };
     use windows_sys::Win32::UI::Controls::{EM_GETSEL, EM_SETSEL};
@@ -283,6 +307,18 @@ mod tests {
                 read(MAX_TEXT_BYTES as u32, &|| false).unwrap().text,
                 Some(copied.replace("\r\n", "\n"))
             );
+            // Compare our interpretation with a native consumer: storage following
+            // CF_UNICODETEXT's terminator is not part of the clipboard string.
+            for data in [[97, 0, 98, 0], [97, 0, 0, 0], [97, 0, 0xd800, 0]] {
+                publish(UNICODE_TEXT, &data);
+                assert_eq!(read(1, &|| false).unwrap().text.as_deref(), Some("a"));
+                assert_ne!(SetWindowTextW(editor.0, [0_u16].as_ptr()), 0);
+                SendMessageW(editor.0, WM_PASTE, 0, 0);
+                let mut pasted = [0_u16; 8];
+                let length = GetWindowTextW(editor.0, pasted.as_mut_ptr(), pasted.len() as i32);
+                assert_eq!(length, 1);
+                assert_eq!(pasted[0], 97);
+            }
         }
     }
 
@@ -319,13 +355,9 @@ mod tests {
             ErrorType::QuotaExceeded
         );
         publish(UNICODE_TEXT, &[0xd800, 0]);
-        assert_eq!(
-            read(MAX_TEXT_BYTES as u32, &|| false)
-                .unwrap_err()
-                .data
-                .error_type,
-            ErrorType::ProviderUnavailable
-        );
+        let invalid = read(MAX_TEXT_BYTES as u32, &|| false).unwrap_err();
+        assert_eq!(invalid.data.error_type, ErrorType::ProviderUnavailable);
+        assert_eq!(invalid.data.retry_hint, crate::eip::RetryHint::Never);
         publish(UNICODE_TEXT, &vec![0; MAX_NATIVE_BYTES / 2 + 1]);
         assert_eq!(
             read(MAX_TEXT_BYTES as u32, &|| false)
@@ -378,6 +410,86 @@ mod tests {
                 Some("computer_windows_desktop_unavailable")
             );
         }
+    }
+
+    #[test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop with --test-threads=1"]
+    fn windows_clipboard_rechecks_readiness_after_contention() {
+        for writing in [false, true] {
+            write("must remain unchanged", &|| false).unwrap();
+            let window = Window::new().unwrap();
+            let mut opened = Open::new(window.0, &|| false).unwrap();
+            let available = AtomicBool::new(true);
+            let (waiting, observed_wait) = mpsc::channel();
+            std::thread::scope(|scope| {
+                let worker = scope.spawn(|| {
+                    let attempts = AtomicUsize::new(0);
+                    let interrupted = || {
+                        // The second attempt proves the worker encountered the held clipboard.
+                        if attempts.fetch_add(1, Ordering::Relaxed) == 1 {
+                            waiting.send(()).unwrap();
+                        }
+                        false
+                    };
+                    // Inject only readiness loss, keeping native contention and access real.
+                    // Locking the workstation would disrupt the user's interactive session.
+                    let ready = || {
+                        super::super::windows::ready()?;
+                        if available.load(Ordering::Acquire) {
+                            Ok(())
+                        } else {
+                            Err(unavailable())
+                        }
+                    };
+                    if writing {
+                        write_with_readiness("must not publish", &interrupted, &ready).err()
+                    } else {
+                        read_with_readiness(MAX_TEXT_BYTES as u32, &interrupted, &ready).err()
+                    }
+                });
+                observed_wait.recv_timeout(Duration::from_secs(2)).unwrap();
+                available.store(false, Ordering::Release);
+                assert!(opened.close());
+                assert_eq!(
+                    worker.join().unwrap().unwrap().data.error_type,
+                    ErrorType::ProviderUnavailable
+                );
+            });
+            // Failed writes cannot clear/publish; both paths must release their native lock.
+            assert_eq!(
+                read(MAX_TEXT_BYTES as u32, &|| false)
+                    .unwrap()
+                    .text
+                    .as_deref(),
+                Some("must remain unchanged")
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop with --test-threads=1"]
+    fn windows_clipboard_rechecks_readiness_before_returning_text() {
+        write("must not be returned", &|| false).unwrap();
+        let checks = AtomicUsize::new(0);
+        let result = read_with_readiness(MAX_TEXT_BYTES as u32, &|| false, &|| {
+            super::super::windows::ready()?;
+            // Ready at entry and acquisition, unavailable after native retrieval.
+            if checks.fetch_add(1, Ordering::Relaxed) < 2 {
+                Ok(())
+            } else {
+                Err(unavailable())
+            }
+        });
+        assert_eq!(
+            result.unwrap_err().data.error_type,
+            ErrorType::ProviderUnavailable
+        );
+        assert_eq!(checks.load(Ordering::Relaxed), 3);
+        assert!(
+            write("after rejected read", &|| false)
+                .unwrap()
+                .cleanup_complete
+        );
     }
 
     #[test]
