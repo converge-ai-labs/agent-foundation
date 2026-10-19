@@ -140,7 +140,7 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
 
 
 def test_permissions_compile_from_each_selection() -> None:
-    finding = "create_finding_api_v1_findings_post"
+    finding = "create_finding"
     selected = config(
         toolsets={
             "shell": {"tools": {"exec": {"permission": "ask"}}},
@@ -168,7 +168,7 @@ def test_permissions_compile_from_each_selection() -> None:
 
     assert rules["environment.shell_exec"] == "ask" and rules["filesystem.view"] == "inherit"
     assert "web.search" not in rules
-    assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents_api_v1_agents_get" not in rules
+    assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents" not in rules
     assert rules[f"mcp/{MCP}/*"] == "review" and rules[f"mcp/{MCP}/drop"] == "deny"
     assert rules[f"tool/{GITHUB}/issues"] == "ask" and rules[f"tool/{GITHUB}/pulls"] == "allow"
     assert rules["tool/a13n-service-client/lookup"] == "deny"

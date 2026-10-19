@@ -204,7 +204,7 @@ async def delete_file(
 
 
 @router.get("/{memory_id}/revisions", response_model=MemoryRevisionPage, openapi_extra={"x-a13n-mcp": True})
-async def list_revisions(
+async def list_memory_revisions(
     workspace_id: WorkspaceId,
     memory_id: str,
     actor: Actor,
@@ -234,14 +234,14 @@ async def purge_history(
 
 
 @router.get("/{memory_id}/revisions/{seq}", response_model=MemoryRevisionDetail, openapi_extra={"x-a13n-mcp": True})
-async def get_revision(
+async def get_memory_revision(
     workspace_id: WorkspaceId, memory_id: str, seq: int, actor: Actor, runtime: CurrentRuntime
 ) -> MemoryRevisionDetail:
     return await files.get_revision(runtime.storage, actor, workspace_id, memory_id, seq)
 
 
 @router.post("/{memory_id}/revisions/{seq}/restore", response_model=MemoryFileState, openapi_extra={"x-a13n-mcp": True})
-async def restore_revision(
+async def restore_memory_revision(
     response: Response,
     workspace_id: WorkspaceId,
     memory_id: str,

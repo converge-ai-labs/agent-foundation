@@ -41,9 +41,7 @@ async def create_agent(
 
 
 @router.post("/agents/validate", status_code=204, openapi_extra=platform_operation("agents", "read"))
-async def validate_revision(
-    workspace_id: WorkspaceId, body: AgentValidate, actor: Actor, runtime: CurrentRuntime
-) -> None:
+async def validate_agent(workspace_id: WorkspaceId, body: AgentValidate, actor: Actor, runtime: CurrentRuntime) -> None:
     """No content when creating a revision of the configuration would accept it, else the same `invalid_argument`
     error with the field's path relative to `config`; nothing is stored."""
     await service.validate_revision(
@@ -126,7 +124,7 @@ async def update_agent(
 
 
 @router.put("/agents/{agent_id}/avatar", response_model=Agent, openapi_extra=images.UPLOAD)
-async def put_avatar(
+async def put_agent_avatar(
     response: Response,
     workspace_id: WorkspaceId,
     agent_id: str,
@@ -142,7 +140,7 @@ async def put_avatar(
 
 
 @router.delete("/agents/{agent_id}/avatar", response_model=Agent, openapi_extra={"x-a13n-mcp": True})
-async def delete_avatar(
+async def delete_agent_avatar(
     response: Response,
     workspace_id: WorkspaceId,
     agent_id: str,
@@ -157,7 +155,7 @@ async def delete_avatar(
 
 
 @router.get("/agents/{agent_id}/avatar", response_class=Response, responses=images.CONTENT)
-async def get_avatar(workspace_id: WorkspaceId, agent_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
+async def get_agent_avatar(workspace_id: WorkspaceId, agent_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
     image = await service.get_avatar(runtime.storage, actor, workspace_id, agent_id)
     return await images.serve(runtime.objects, agent_id, image)
 
@@ -218,7 +216,7 @@ async def duplicate_agent(
     status_code=201,
     openapi_extra=platform_operation("agents", "write"),
 )
-async def create_revision(
+async def create_agent_revision(
     workspace_id: WorkspaceId,
     agent_id: str,
     body: AgentRevisionCreate,
@@ -244,7 +242,7 @@ async def create_revision(
     response_model=AgentRevisionPage | read_views.RevisionSummaryPage,
     openapi_extra=platform_operation("agents", "read"),
 )
-async def list_revisions(
+async def list_agent_revisions(
     workspace_id: WorkspaceId,
     agent_id: str,
     actor: Actor,
@@ -267,7 +265,7 @@ async def list_revisions(
     response_model=AgentRevision | read_views.RevisionSummary | reads.TextRead,
     openapi_extra=platform_operation("agents", "read"),
 )
-async def get_revision(
+async def get_agent_revision(
     workspace_id: WorkspaceId,
     agent_id: str,
     revision_id: str,
@@ -305,7 +303,7 @@ async def get_revision(
     response_model=Agent,
     openapi_extra=platform_operation("agents", "write"),
 )
-async def set_default(
+async def set_default_agent_revision(
     response: Response,
     workspace_id: WorkspaceId,
     agent_id: str,
@@ -381,7 +379,7 @@ async def define_toolsets(
     response_model=reads.TextRead,
     openapi_extra=platform_operation("agents", "read"),
 )
-async def compare_revisions(
+async def compare_agent_revisions(
     workspace_id: WorkspaceId,
     agent_id: str,
     revision_id: str,

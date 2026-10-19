@@ -14,7 +14,7 @@ export interface paths {
      *
      *     Refused with `model_required` while the workspace has no model the caller can use.
      */
-    post: operations["prepare_composer_api_v1_agent_composer_post"];
+    post: operations["prepare_composer"];
     delete?: never;
     options?: never;
     head?: never;
@@ -34,10 +34,10 @@ export interface paths {
      *     archived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those
      *     with a revision pinning that skill or that skill revision.
      */
-    get: operations["list_agents_api_v1_agents_get"];
+    get: operations["list_agents"];
     put?: never;
     /** Create Agent */
-    post: operations["create_agent_api_v1_agents_post"];
+    post: operations["create_agent"];
     delete?: never;
     options?: never;
     head?: never;
@@ -54,11 +54,11 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Validate Revision
+     * Validate Agent
      * @description No content when creating a revision of the configuration would accept it, else the same `invalid_argument`
      *     error with the field's path relative to `config`; nothing is stored.
      */
-    post: operations["validate_revision_api_v1_agents_validate_post"];
+    post: operations["validate_agent"];
     delete?: never;
     options?: never;
     head?: never;
@@ -73,14 +73,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Agent */
-    get: operations["get_agent_api_v1_agents__agent_id__get"];
+    get: operations["get_agent"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Agent */
-    patch: operations["update_agent_api_v1_agents__agent_id__patch"];
+    patch: operations["update_agent"];
     trace?: never;
   };
   "/api/v1/agents/{agent_id}/archive": {
@@ -93,7 +93,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Archive Agent */
-    post: operations["archive_agent_api_v1_agents__agent_id__archive_post"];
+    post: operations["archive_agent"];
     delete?: never;
     options?: never;
     head?: never;
@@ -107,13 +107,13 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Avatar */
-    get: operations["get_avatar_api_v1_agents__agent_id__avatar_get"];
-    /** Put Avatar */
-    put: operations["put_avatar_api_v1_agents__agent_id__avatar_put"];
+    /** Get Agent Avatar */
+    get: operations["get_agent_avatar"];
+    /** Put Agent Avatar */
+    put: operations["put_agent_avatar"];
     post?: never;
-    /** Delete Avatar */
-    delete: operations["delete_avatar_api_v1_agents__agent_id__avatar_delete"];
+    /** Delete Agent Avatar */
+    delete: operations["delete_agent_avatar"];
     options?: never;
     head?: never;
     patch?: never;
@@ -129,7 +129,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Duplicate Agent */
-    post: operations["duplicate_agent_api_v1_agents__agent_id__duplicate_post"];
+    post: operations["duplicate_agent"];
     delete?: never;
     options?: never;
     head?: never;
@@ -143,14 +143,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Revisions */
-    get: operations["list_revisions_api_v1_agents__agent_id__revisions_get"];
+    /** List Agent Revisions */
+    get: operations["list_agent_revisions"];
     put?: never;
     /**
-     * Create Revision
+     * Create Agent Revision
      * @description A configuration that validates to the default revision's creates nothing and returns that revision.
      */
-    post: operations["create_revision_api_v1_agents__agent_id__revisions_post"];
+    post: operations["create_agent_revision"];
     delete?: never;
     options?: never;
     head?: never;
@@ -164,8 +164,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Revision */
-    get: operations["get_revision_api_v1_agents__agent_id__revisions__revision_id__get"];
+    /** Get Agent Revision */
+    get: operations["get_agent_revision"];
     put?: never;
     post?: never;
     delete?: never;
@@ -182,10 +182,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Compare Revisions
+     * Compare Agent Revisions
      * @description Versioned unified diff of two revisions of this agent, optionally limited to one configuration section.
      */
-    get: operations["compare_revisions_api_v1_agents__agent_id__revisions__revision_id__compare_get"];
+    get: operations["compare_agent_revisions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -203,8 +203,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Set Default */
-    post: operations["set_default_api_v1_agents__agent_id__revisions__revision_id__set_default_post"];
+    /** Set Default Agent Revision */
+    post: operations["set_default_agent_revision"];
     delete?: never;
     options?: never;
     head?: never;
@@ -221,7 +221,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Unarchive Agent */
-    post: operations["unarchive_agent_api_v1_agents__agent_id__unarchive_post"];
+    post: operations["unarchive_agent"];
     delete?: never;
     options?: never;
     head?: never;
@@ -236,10 +236,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Assets */
-    get: operations["list_assets_api_v1_assets_get"];
+    get: operations["list_assets"];
     put?: never;
     /** Create Asset */
-    post: operations["create_asset_api_v1_assets_post"];
+    post: operations["create_asset"];
     delete?: never;
     options?: never;
     head?: never;
@@ -254,11 +254,11 @@ export interface paths {
       cookie?: never;
     };
     /** Get Asset */
-    get: operations["get_asset_api_v1_assets__asset_id__get"];
+    get: operations["get_asset"];
     put?: never;
     post?: never;
     /** Retire Asset */
-    delete: operations["retire_asset_api_v1_assets__asset_id__delete"];
+    delete: operations["retire_asset"];
     options?: never;
     head?: never;
     patch?: never;
@@ -272,7 +272,7 @@ export interface paths {
       cookie?: never;
     };
     /** Read Asset Content */
-    get: operations["read_asset_content_api_v1_assets__asset_id__content_get"];
+    get: operations["read_asset_content"];
     put?: never;
     post?: never;
     delete?: never;
@@ -294,7 +294,7 @@ export interface paths {
      * Bootstrap Administrator
      * @description Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in.
      */
-    post: operations["bootstrap_administrator_api_v1_auth_bootstrap_post"];
+    post: operations["bootstrap_administrator"];
     delete?: never;
     options?: never;
     head?: never;
@@ -309,7 +309,7 @@ export interface paths {
       cookie?: never;
     };
     /** Auth Configuration */
-    get: operations["auth_configuration_api_v1_auth_configuration_get"];
+    get: operations["auth_configuration"];
     put?: never;
     post?: never;
     delete?: never;
@@ -328,7 +328,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Confirm Email Change */
-    post: operations["confirm_email_change_api_v1_auth_email_change_confirm_post"];
+    post: operations["confirm_email_change"];
     delete?: never;
     options?: never;
     head?: never;
@@ -345,7 +345,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Password Login */
-    post: operations["password_login_api_v1_auth_login_post"];
+    post: operations["password_login"];
     delete?: never;
     options?: never;
     head?: never;
@@ -362,7 +362,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Logout */
-    post: operations["logout_api_v1_auth_logout_post"];
+    post: operations["logout"];
     delete?: never;
     options?: never;
     head?: never;
@@ -379,7 +379,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Request Password Reset */
-    post: operations["request_password_reset_api_v1_auth_password_reset_post"];
+    post: operations["request_password_reset"];
     delete?: never;
     options?: never;
     head?: never;
@@ -396,7 +396,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Confirm Password Reset */
-    post: operations["confirm_password_reset_api_v1_auth_password_reset_confirm_post"];
+    post: operations["confirm_password_reset"];
     delete?: never;
     options?: never;
     head?: never;
@@ -414,7 +414,7 @@ export interface paths {
      * Session Profile
      * @description Restores a browser session; the CSRF token is stable for the session's lifetime.
      */
-    get: operations["session_profile_api_v1_auth_session_get"];
+    get: operations["session_profile"];
     put?: never;
     post?: never;
     delete?: never;
@@ -431,10 +431,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Connections */
-    get: operations["list_connections_api_v1_connections_get"];
+    get: operations["list_connections"];
     put?: never;
     /** Create Connection */
-    post: operations["create_connection_api_v1_connections_post"];
+    post: operations["create_connection"];
     delete?: never;
     options?: never;
     head?: never;
@@ -455,7 +455,7 @@ export interface paths {
      *
      *     Attempts per client address share the login flows' bound.
      */
-    get: operations["complete_authorization_api_v1_connections_callback_get"];
+    get: operations["complete_authorization"];
     put?: never;
     post?: never;
     delete?: never;
@@ -475,7 +475,7 @@ export interface paths {
      * Get Redirect Uri
      * @description The deployment's callback, for registering an OAuth client in advance; the same for every connection.
      */
-    get: operations["get_redirect_uri_api_v1_connections_redirect_uri_get"];
+    get: operations["get_redirect_uri"];
     put?: never;
     post?: never;
     delete?: never;
@@ -492,14 +492,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Connection */
-    get: operations["get_connection_api_v1_connections__connection_id__get"];
+    get: operations["get_connection"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Connection */
-    patch: operations["update_connection_api_v1_connections__connection_id__patch"];
+    patch: operations["update_connection"];
     trace?: never;
   };
   "/api/v1/connections/{connection_id}/authorize": {
@@ -516,7 +516,7 @@ export interface paths {
      * @description A browser flow needs a login session and is bound to this browser by a cookie the callback checks; an API
      *     key authorizes only a client-credentials client, without a browser.
      */
-    post: operations["authorize_connection_api_v1_connections__connection_id__authorize_post"];
+    post: operations["authorize_connection"];
     delete?: never;
     options?: never;
     head?: never;
@@ -533,7 +533,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Revoke Connection */
-    post: operations["revoke_connection_api_v1_connections__connection_id__revoke_post"];
+    post: operations["revoke_connection"];
     delete?: never;
     options?: never;
     head?: never;
@@ -550,7 +550,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test Connection */
-    post: operations["test_connection_api_v1_connections__connection_id__test_post"];
+    post: operations["test_connection"];
     delete?: never;
     options?: never;
     head?: never;
@@ -564,8 +564,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Tools */
-    get: operations["list_tools_api_v1_connections__connection_id__tools_get"];
+    /** List Connection Tools */
+    get: operations["list_connection_tools"];
     put?: never;
     post?: never;
     delete?: never;
@@ -585,7 +585,7 @@ export interface paths {
      * Define Connection Tools
      * @description Read up to five exact definitions. Oversized values provide a versioned fragment reference.
      */
-    get: operations["define_connection_tools_api_v1_connections__connection_id__tools_definitions_get"];
+    get: operations["define_connection_tools"];
     put?: never;
     post?: never;
     delete?: never;
@@ -605,7 +605,7 @@ export interface paths {
      * Index Connection Tools
      * @description Search full names and descriptions; definitions are read separately by exact name.
      */
-    get: operations["index_connection_tools_api_v1_connections__connection_id__tools_index_get"];
+    get: operations["index_connection_tools"];
     put?: never;
     post?: never;
     delete?: never;
@@ -622,10 +622,10 @@ export interface paths {
       cookie?: never;
     };
     /** List connector providers */
-    get: operations["list_providers_api_v1_connector_providers_get"];
+    get: operations["list_connector_providers"];
     put?: never;
     /** Create connector provider */
-    post: operations["create_provider_api_v1_connector_providers_post"];
+    post: operations["create_connector_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -640,7 +640,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get connector provider */
-    get: operations["get_provider_api_v1_connector_providers__provider_id__get"];
+    get: operations["get_connector_provider"];
     put?: never;
     post?: never;
     delete?: never;
@@ -650,7 +650,7 @@ export interface paths {
      * Update connector provider
      * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
-    patch: operations["update_provider_api_v1_connector_providers__provider_id__patch"];
+    patch: operations["update_connector_provider"];
     trace?: never;
   };
   "/api/v1/connector-providers/{provider_id}/apps": {
@@ -660,8 +660,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Apps */
-    get: operations["list_apps_api_v1_connector_providers__provider_id__apps_get"];
+    /** List Connector Apps */
+    get: operations["list_connector_apps"];
     put?: never;
     post?: never;
     delete?: never;
@@ -677,8 +677,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get App */
-    get: operations["get_app_api_v1_connector_providers__provider_id__apps__app__get"];
+    /** Get Connector App */
+    get: operations["get_connector_app"];
     put?: never;
     post?: never;
     delete?: never;
@@ -694,8 +694,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Actions */
-    get: operations["list_actions_api_v1_connector_providers__provider_id__apps__app__actions_get"];
+    /** List Connector Actions */
+    get: operations["list_connector_actions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -715,7 +715,7 @@ export interface paths {
      * Define Connector Actions
      * @description Read up to five exact definitions. Oversized values provide a versioned fragment reference.
      */
-    get: operations["define_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_definitions_get"];
+    get: operations["define_connector_actions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -735,7 +735,7 @@ export interface paths {
      * Index Connector Actions
      * @description Search full names and descriptions; definitions are read separately by exact name.
      */
-    get: operations["index_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_index_get"];
+    get: operations["index_connector_actions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -754,7 +754,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test connector provider */
-    post: operations["test_provider_api_v1_connector_providers__provider_id__test_post"];
+    post: operations["test_connector_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -771,7 +771,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Complete Assistance */
-    post: operations["complete_assistance_api_v1_desktop_assistance__assistance_id__complete_post"];
+    post: operations["complete_assistance"];
     delete?: never;
     options?: never;
     head?: never;
@@ -788,7 +788,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Control Desktop */
-    post: operations["control_desktop_api_v1_desktop_assistance__assistance_id__control_post"];
+    post: operations["control_desktop"];
     delete?: never;
     options?: never;
     head?: never;
@@ -805,7 +805,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Disconnect Desktop */
-    post: operations["disconnect_desktop_api_v1_desktop_assistance__assistance_id__disconnect_post"];
+    post: operations["disconnect_desktop"];
     delete?: never;
     options?: never;
     head?: never;
@@ -822,7 +822,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Request Control */
-    post: operations["request_control_api_v1_desktop_assistance__assistance_id__request_control_post"];
+    post: operations["request_control"];
     delete?: never;
     options?: never;
     head?: never;
@@ -839,7 +839,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** View Desktop */
-    post: operations["view_desktop_api_v1_desktop_assistance__assistance_id__view_post"];
+    post: operations["view_desktop"];
     delete?: never;
     options?: never;
     head?: never;
@@ -854,10 +854,10 @@ export interface paths {
       cookie?: never;
     };
     /** List environment providers */
-    get: operations["list_providers_api_v1_environment_providers_get"];
+    get: operations["list_environment_providers"];
     put?: never;
     /** Create environment provider */
-    post: operations["create_provider_api_v1_environment_providers_post"];
+    post: operations["create_environment_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -872,18 +872,18 @@ export interface paths {
       cookie?: never;
     };
     /** Get environment provider */
-    get: operations["get_provider_api_v1_environment_providers__provider_id__get"];
+    get: operations["get_environment_provider"];
     put?: never;
     post?: never;
     /** Delete Environment Provider */
-    delete: operations["delete_environment_provider_api_v1_environment_providers__provider_id__delete"];
+    delete: operations["delete_environment_provider"];
     options?: never;
     head?: never;
     /**
      * Update environment provider
      * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
-    patch: operations["update_provider_api_v1_environment_providers__provider_id__patch"];
+    patch: operations["update_environment_provider"];
     trace?: never;
   };
   "/api/v1/environment-providers/{provider_id}/references": {
@@ -894,7 +894,7 @@ export interface paths {
       cookie?: never;
     };
     /** Environment Provider References */
-    get: operations["environment_provider_references_api_v1_environment_providers__provider_id__references_get"];
+    get: operations["environment_provider_references"];
     put?: never;
     post?: never;
     delete?: never;
@@ -913,7 +913,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test environment provider */
-    post: operations["test_provider_api_v1_environment_providers__provider_id__test_post"];
+    post: operations["test_environment_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -927,11 +927,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Templates */
-    get: operations["list_templates_api_v1_environment_templates_get"];
+    /** List Environment Templates */
+    get: operations["list_environment_templates"];
     put?: never;
-    /** Create Template */
-    post: operations["create_template_api_v1_environment_templates_post"];
+    /** Create Environment Template */
+    post: operations["create_environment_template"];
     delete?: never;
     options?: never;
     head?: never;
@@ -945,15 +945,15 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Template */
-    get: operations["get_template_api_v1_environment_templates__template_id__get"];
+    /** Get Environment Template */
+    get: operations["get_environment_template"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
-    /** Update Template */
-    patch: operations["update_template_api_v1_environment_templates__template_id__patch"];
+    /** Update Environment Template */
+    patch: operations["update_environment_template"];
     trace?: never;
   };
   "/api/v1/environments": {
@@ -964,13 +964,13 @@ export interface paths {
       cookie?: never;
     };
     /** List Environments */
-    get: operations["list_environments_api_v1_environments_get"];
+    get: operations["list_environments"];
     put?: never;
     /**
      * Create Environment
      * @description Reserve a managed sandbox from a template (`creating`), or register an external envd target (`ready`).
      */
-    post: operations["create_environment_api_v1_environments_post"];
+    post: operations["create_environment"];
     delete?: never;
     options?: never;
     head?: never;
@@ -985,15 +985,15 @@ export interface paths {
       cookie?: never;
     };
     /** Get Environment */
-    get: operations["get_environment_api_v1_environments__environment_id__get"];
+    get: operations["get_environment"];
     put?: never;
     post?: never;
     /** Delete Environment */
-    delete: operations["delete_environment_api_v1_environments__environment_id__delete"];
+    delete: operations["delete_environment"];
     options?: never;
     head?: never;
     /** Update Environment */
-    patch: operations["update_environment_api_v1_environments__environment_id__patch"];
+    patch: operations["update_environment"];
     trace?: never;
   };
   "/api/v1/environments/{environment_id}/computer/check": {
@@ -1009,7 +1009,7 @@ export interface paths {
      * Check Computer
      * @description Probe desktop readiness without capturing the screen, sending input or starting the instance.
      */
-    post: operations["check_computer_api_v1_environments__environment_id__computer_check_post"];
+    post: operations["check_computer"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1026,7 +1026,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Stop Environment */
-    post: operations["stop_environment_api_v1_environments__environment_id__stop_post"];
+    post: operations["stop_environment"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1043,7 +1043,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Prepare Finding Agent */
-    post: operations["prepare_finding_agent_api_v1_finding_agent_post"];
+    post: operations["prepare_finding_agent"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1057,11 +1057,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Analyses */
-    get: operations["list_analyses_api_v1_finding_analyses_get"];
+    /** List Finding Analyses */
+    get: operations["list_finding_analyses"];
     put?: never;
     /** Start Analysis */
-    post: operations["start_analysis_api_v1_finding_analyses_post"];
+    post: operations["start_analysis"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1076,14 +1076,14 @@ export interface paths {
       cookie?: never;
     };
     /** List Findings */
-    get: operations["list_findings_api_v1_findings_get"];
+    get: operations["list_findings"];
     put?: never;
     /**
      * Create Finding
      * @description Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
      *     A Run's own submission names that Run as its source; an analysis cites only selected traces it has read.
      */
-    post: operations["create_finding_api_v1_findings_post"];
+    post: operations["create_finding"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1098,14 +1098,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Finding */
-    get: operations["get_finding_api_v1_findings__finding_id__get"];
+    get: operations["get_finding"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Finding */
-    patch: operations["update_finding_api_v1_findings__finding_id__patch"];
+    patch: operations["update_finding"];
     trace?: never;
   };
   "/api/v1/invitations/{invitation_id}/accept": {
@@ -1121,7 +1121,7 @@ export interface paths {
      * Accept
      * @description Public by token: creates or joins the invited account and starts a login session.
      */
-    post: operations["accept_api_v1_invitations__invitation_id__accept_post"];
+    post: operations["accept"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1139,7 +1139,7 @@ export interface paths {
      * List Mcp Servers
      * @description Suggested Remote MCP servers, packaged and from the deployment; readable by every signed-in principal.
      */
-    get: operations["list_mcp_servers_api_v1_mcp_servers_get"];
+    get: operations["list_mcp_servers"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1156,12 +1156,12 @@ export interface paths {
       cookie?: never;
     };
     /** Get Media Defaults */
-    get: operations["get_media_defaults_api_v1_media_understanding_defaults_get"];
+    get: operations["get_media_defaults"];
     /**
      * Replace Media Defaults
      * @description Replaces all three kinds; each model must declare it understands its kind. Requires workspace admin.
      */
-    put: operations["replace_media_defaults_api_v1_media_understanding_defaults_put"];
+    put: operations["replace_media_defaults"];
     post?: never;
     delete?: never;
     options?: never;
@@ -1177,10 +1177,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Memories */
-    get: operations["list_memories_api_v1_memories_get"];
+    get: operations["list_memories"];
     put?: never;
     /** Create Memory */
-    post: operations["create_memory_api_v1_memories_post"];
+    post: operations["create_memory"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1195,15 +1195,15 @@ export interface paths {
       cookie?: never;
     };
     /** Get Memory */
-    get: operations["get_memory_api_v1_memories__memory_id__get"];
+    get: operations["get_memory"];
     put?: never;
     post?: never;
     /** Delete Memory */
-    delete: operations["delete_memory_api_v1_memories__memory_id__delete"];
+    delete: operations["delete_memory"];
     options?: never;
     head?: never;
     /** Update Memory */
-    patch: operations["update_memory_api_v1_memories__memory_id__patch"];
+    patch: operations["update_memory"];
     trace?: never;
   };
   "/api/v1/memories/{memory_id}/files": {
@@ -1214,10 +1214,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Files */
-    get: operations["list_files_api_v1_memories__memory_id__files_get"];
+    get: operations["list_files"];
     put?: never;
     /** Create File */
-    post: operations["create_file_api_v1_memories__memory_id__files_post"];
+    post: operations["create_file"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1237,7 +1237,7 @@ export interface paths {
      * Move File
      * @description Move the source file `If-Match` names; the destination must be free.
      */
-    post: operations["move_file_api_v1_memories__memory_id__files_move_post"];
+    post: operations["move_file"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1252,12 +1252,12 @@ export interface paths {
       cookie?: never;
     };
     /** Read File */
-    get: operations["read_file_api_v1_memories__memory_id__files__path__get"];
+    get: operations["read_file"];
     /** Replace File */
-    put: operations["replace_file_api_v1_memories__memory_id__files__path__put"];
+    put: operations["replace_file"];
     post?: never;
     /** Delete File */
-    delete: operations["delete_file_api_v1_memories__memory_id__files__path__delete"];
+    delete: operations["delete_file"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1271,10 +1271,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Records */
-    get: operations["list_records_api_v1_memories__memory_id__records_get"];
+    get: operations["list_records"];
     put?: never;
     /** Add Record */
-    post: operations["add_record_api_v1_memories__memory_id__records_post"];
+    post: operations["add_record"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1294,7 +1294,7 @@ export interface paths {
      * Search Records
      * @description The records most similar to the query; the query travels in the body, never the URL.
      */
-    post: operations["search_records_api_v1_memories__memory_id__records_search_post"];
+    post: operations["search_records"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1313,10 +1313,10 @@ export interface paths {
      * Update Record
      * @description Replace the record's text; records carry no version, so the last writer wins.
      */
-    put: operations["update_record_api_v1_memories__memory_id__records__record_id__put"];
+    put: operations["update_record"];
     post?: never;
     /** Delete Record */
-    delete: operations["delete_record_api_v1_memories__memory_id__records__record_id__delete"];
+    delete: operations["delete_record"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1329,15 +1329,15 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Revisions */
-    get: operations["list_revisions_api_v1_memories__memory_id__revisions_get"];
+    /** List Memory Revisions */
+    get: operations["list_memory_revisions"];
     put?: never;
     post?: never;
     /**
      * Purge History
      * @description Delete every retained revision of one file path.
      */
-    delete: operations["purge_history_api_v1_memories__memory_id__revisions_delete"];
+    delete: operations["purge_history"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1350,8 +1350,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Revision */
-    get: operations["get_revision_api_v1_memories__memory_id__revisions__seq__get"];
+    /** Get Memory Revision */
+    get: operations["get_memory_revision"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1370,10 +1370,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Restore Revision
+     * Restore Memory Revision
      * @description Set the path back to the content the change replaced; `If-Match` names the file there, if any.
      */
-    post: operations["restore_revision_api_v1_memories__memory_id__revisions__seq__restore_post"];
+    post: operations["restore_memory_revision"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1388,10 +1388,10 @@ export interface paths {
       cookie?: never;
     };
     /** List memory providers */
-    get: operations["list_providers_api_v1_memory_providers_get"];
+    get: operations["list_memory_providers"];
     put?: never;
     /** Create memory provider */
-    post: operations["create_provider_api_v1_memory_providers_post"];
+    post: operations["create_memory_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1406,7 +1406,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get memory provider */
-    get: operations["get_provider_api_v1_memory_providers__provider_id__get"];
+    get: operations["get_memory_provider"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1416,7 +1416,7 @@ export interface paths {
      * Update memory provider
      * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
-    patch: operations["update_provider_api_v1_memory_providers__provider_id__patch"];
+    patch: operations["update_memory_provider"];
     trace?: never;
   };
   "/api/v1/memory-providers/{provider_id}/test": {
@@ -1429,7 +1429,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test memory provider */
-    post: operations["test_provider_api_v1_memory_providers__provider_id__test_post"];
+    post: operations["test_memory_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1444,10 +1444,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Spaces */
-    get: operations["list_spaces_api_v1_memory_spaces_get"];
+    get: operations["list_spaces"];
     put?: never;
     /** Create Space */
-    post: operations["create_space_api_v1_memory_spaces_post"];
+    post: operations["create_space"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1462,15 +1462,15 @@ export interface paths {
       cookie?: never;
     };
     /** Get Space */
-    get: operations["get_space_api_v1_memory_spaces__space_id__get"];
+    get: operations["get_space"];
     put?: never;
     post?: never;
     /** Delete Space */
-    delete: operations["delete_space_api_v1_memory_spaces__space_id__delete"];
+    delete: operations["delete_space"];
     options?: never;
     head?: never;
     /** Update Space */
-    patch: operations["update_space_api_v1_memory_spaces__space_id__patch"];
+    patch: operations["update_space"];
     trace?: never;
   };
   "/api/v1/memory-spaces/{space_id}/organization": {
@@ -1481,7 +1481,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Space Organization */
-    get: operations["get_space_organization_api_v1_memory_spaces__space_id__organization_get"];
+    get: operations["get_space_organization"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1498,10 +1498,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Space Organizations */
-    get: operations["list_space_organizations_api_v1_memory_spaces__space_id__organizations_get"];
+    get: operations["list_space_organizations"];
     put?: never;
     /** Organize Space */
-    post: operations["organize_space_api_v1_memory_spaces__space_id__organizations_post"];
+    post: operations["organize_space"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1516,7 +1516,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Space Sessions */
-    get: operations["list_space_sessions_api_v1_memory_spaces__space_id__sessions_get"];
+    get: operations["list_space_sessions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1540,7 +1540,7 @@ export interface paths {
      *     No match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.
      *     Copy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.
      */
-    get: operations["get_model_catalog_api_v1_model_catalog_get"];
+    get: operations["get_model_catalog"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1557,10 +1557,10 @@ export interface paths {
       cookie?: never;
     };
     /** List model providers */
-    get: operations["list_providers_api_v1_model_providers_get"];
+    get: operations["list_model_providers"];
     put?: never;
     /** Create model provider */
-    post: operations["create_provider_api_v1_model_providers_post"];
+    post: operations["create_model_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1575,7 +1575,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get model provider */
-    get: operations["get_provider_api_v1_model_providers__provider_id__get"];
+    get: operations["get_model_provider"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1585,7 +1585,7 @@ export interface paths {
      * Update model provider
      * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
-    patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
+    patch: operations["update_model_provider"];
     trace?: never;
   };
   "/api/v1/model-providers/{provider_id}/authorization": {
@@ -1596,11 +1596,11 @@ export interface paths {
       cookie?: never;
     };
     /** Model Authorization */
-    get: operations["model_authorization_api_v1_model_providers__provider_id__authorization_get"];
+    get: operations["model_authorization"];
     put?: never;
     post?: never;
     /** Disconnect Model Authorization */
-    delete: operations["disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete"];
+    delete: operations["disconnect_model_authorization"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1616,7 +1616,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Complete Model Authorization */
-    post: operations["complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post"];
+    post: operations["complete_model_authorization"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1633,7 +1633,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Authorize Model */
-    post: operations["authorize_model_api_v1_model_providers__provider_id__authorize_post"];
+    post: operations["authorize_model"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1648,7 +1648,7 @@ export interface paths {
       cookie?: never;
     };
     /** Discover Model Provider Models */
-    get: operations["discover_model_provider_models_api_v1_model_providers__provider_id__models_get"];
+    get: operations["discover_model_provider_models"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1667,7 +1667,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test model provider */
-    post: operations["test_provider_api_v1_model_providers__provider_id__test_post"];
+    post: operations["test_model_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1682,13 +1682,13 @@ export interface paths {
       cookie?: never;
     };
     /** List Models */
-    get: operations["list_models_api_v1_models_get"];
+    get: operations["list_models"];
     put?: never;
     /**
      * Create Model
      * @description Needs `write` on the workspace and on the model's provider, whose credential the model spends.
      */
-    post: operations["create_model_api_v1_models_post"];
+    post: operations["create_model"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1703,7 +1703,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Model */
-    get: operations["get_model_api_v1_models__key__get"];
+    get: operations["get_model"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1713,7 +1713,7 @@ export interface paths {
      * Update Model
      * @description A configuration change also needs `write` on the model's provider.
      */
-    patch: operations["update_model_api_v1_models__key__patch"];
+    patch: operations["update_model"];
     trace?: never;
   };
   "/api/v1/organizations": {
@@ -1724,7 +1724,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Organizations */
-    get: operations["list_organizations_api_v1_organizations_get"];
+    get: operations["list_organizations"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1741,14 +1741,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Organization */
-    get: operations["get_organization_api_v1_organizations__organization_id__get"];
+    get: operations["get_organization"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Organization */
-    patch: operations["update_organization_api_v1_organizations__organization_id__patch"];
+    patch: operations["update_organization"];
     trace?: never;
   };
   "/api/v1/organizations/{organization_id}/audit-events": {
@@ -1759,7 +1759,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Organization Audit Events */
-    get: operations["list_organization_audit_events_api_v1_organizations__organization_id__audit_events_get"];
+    get: operations["list_organization_audit_events"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1776,10 +1776,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Organization Grants */
-    get: operations["list_organization_grants_api_v1_organizations__organization_id__grants_get"];
+    get: operations["list_organization_grants"];
     put?: never;
     /** Create Organization Grant */
-    post: operations["create_organization_grant_api_v1_organizations__organization_id__grants_post"];
+    post: operations["create_organization_grant"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1797,14 +1797,14 @@ export interface paths {
     put?: never;
     post?: never;
     /** Delete Organization Grant */
-    delete: operations["delete_organization_grant_api_v1_organizations__organization_id__grants__grant_id__delete"];
+    delete: operations["delete_organization_grant"];
     options?: never;
     head?: never;
     /**
      * Change Organization Grant
      * @description The grant is replaced: the result carries its new ID.
      */
-    patch: operations["change_organization_grant_api_v1_organizations__organization_id__grants__grant_id__patch"];
+    patch: operations["change_organization_grant"];
     trace?: never;
   };
   "/api/v1/organizations/{organization_id}/icon": {
@@ -1815,12 +1815,12 @@ export interface paths {
       cookie?: never;
     };
     /** Get Organization Icon */
-    get: operations["get_organization_icon_api_v1_organizations__organization_id__icon_get"];
+    get: operations["get_organization_icon"];
     /** Put Organization Icon */
-    put: operations["put_organization_icon_api_v1_organizations__organization_id__icon_put"];
+    put: operations["put_organization_icon"];
     post?: never;
     /** Delete Organization Icon */
-    delete: operations["delete_organization_icon_api_v1_organizations__organization_id__icon_delete"];
+    delete: operations["delete_organization_icon"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1834,10 +1834,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Organization Invitations */
-    get: operations["list_organization_invitations_api_v1_organizations__organization_id__invitations_get"];
+    get: operations["list_organization_invitations"];
     put?: never;
     /** Create Organization Invitation */
-    post: operations["create_organization_invitation_api_v1_organizations__organization_id__invitations_post"];
+    post: operations["create_organization_invitation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1854,7 +1854,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Resend Organization Invitation */
-    post: operations["resend_organization_invitation_api_v1_organizations__organization_id__invitations__invitation_id__resend_post"];
+    post: operations["resend_organization_invitation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1871,7 +1871,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Revoke Organization Invitation */
-    post: operations["revoke_organization_invitation_api_v1_organizations__organization_id__invitations__invitation_id__revoke_post"];
+    post: operations["revoke_organization_invitation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1886,7 +1886,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Members */
-    get: operations["list_members_api_v1_organizations__organization_id__members_get"];
+    get: operations["list_members"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1903,10 +1903,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Organization Workspaces */
-    get: operations["list_organization_workspaces_api_v1_organizations__organization_id__workspaces_get"];
+    get: operations["list_organization_workspaces"];
     put?: never;
     /** Create Workspace */
-    post: operations["create_workspace_api_v1_organizations__organization_id__workspaces_post"];
+    post: operations["create_workspace"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1921,7 +1921,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Provider Types */
-    get: operations["list_provider_types_api_v1_provider_types__kind__get"];
+    get: operations["list_provider_types"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1938,7 +1938,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Runs */
-    get: operations["list_runs_api_v1_runs_get"];
+    get: operations["list_runs"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1955,7 +1955,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Run */
-    get: operations["get_run_api_v1_runs__run_id__get"];
+    get: operations["get_run"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1965,7 +1965,7 @@ export interface paths {
      * Update Run
      * @description Labels only.
      */
-    patch: operations["update_run_api_v1_runs__run_id__patch"];
+    patch: operations["update_run"];
     trace?: never;
   };
   "/api/v1/runs/{run_id}/agent": {
@@ -1976,10 +1976,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Run Agent
+     * Get Run Agent
      * @description The frozen revision and effective configuration. Section reads are versioned fragments, never writable configs.
      */
-    get: operations["run_agent_api_v1_runs__run_id__agent_get"];
+    get: operations["get_run_agent"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1995,8 +1995,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Run Attempts */
-    get: operations["run_attempts_api_v1_runs__run_id__attempts_get"];
+    /** List Run Attempts */
+    get: operations["list_run_attempts"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2012,8 +2012,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Attempt */
-    get: operations["get_attempt_api_v1_runs__run_id__attempts__attempt_id__get"];
+    /** Get Run Attempt */
+    get: operations["get_run_attempt"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2033,7 +2033,7 @@ export interface paths {
      * List Attempt Spans
      * @description The attempt's spans, including its inline child runs.
      */
-    get: operations["list_attempt_spans_api_v1_runs__run_id__attempts__attempt_id__trace_get"];
+    get: operations["list_attempt_spans"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2050,10 +2050,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Run Content
+     * Get Run Content
      * @description The complete value behind a committed display reference.
      */
-    get: operations["run_content_api_v1_runs__run_id__contents__content_id__get"];
+    get: operations["get_run_content"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2070,7 +2070,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Assistance */
-    get: operations["get_assistance_api_v1_runs__run_id__desktop_assistance__call_id__get"];
+    get: operations["get_assistance"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2087,10 +2087,10 @@ export interface paths {
       cookie?: never;
     };
     /** Get Control */
-    get: operations["get_control_api_v1_runs__run_id__desktop_control_get"];
+    get: operations["get_control"];
     put?: never;
     /** Open Control */
-    post: operations["open_control_api_v1_runs__run_id__desktop_control_post"];
+    post: operations["open_control"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2110,7 +2110,7 @@ export interface paths {
      * Fork Run
      * @description A new thread in the run's session that continues from this run's committed history.
      */
-    post: operations["fork_run_api_v1_runs__run_id__fork_post"];
+    post: operations["fork_run"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2128,7 +2128,7 @@ export interface paths {
      * Run Image
      * @description Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.
      */
-    get: operations["run_image_api_v1_runs__run_id__images__image_id__get"];
+    get: operations["run_image"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2147,7 +2147,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Interrupt Run */
-    post: operations["interrupt_run_api_v1_runs__run_id__interrupt_post"];
+    post: operations["interrupt_run"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2162,12 +2162,12 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Run Items
+     * List Run Items
      * @description A run's committed display items by ordinal. Detailed unfiltered reads default to the newest items and full tail.
      *     Compact or filtered reads start at the oldest ordinal and strictly honor limit. Use exclusive before/after
      *     positions, then follow next_before/next_after even when a filtered page is empty.
      */
-    get: operations["run_items_api_v1_runs__run_id__items_get"];
+    get: operations["list_run_items"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2184,10 +2184,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Read Item Content
+     * Read Run Item Content
      * @description Read one display field or follow its retained content reference, under the run's existing authorization.
      */
-    get: operations["read_item_content_api_v1_runs__run_id__items__item_id__content_get"];
+    get: operations["read_run_item_content"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2204,10 +2204,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Run Lineage
+     * Get Run Lineage
      * @description The run and its ancestors, nearest first, across fork origins.
      */
-    get: operations["run_lineage_api_v1_runs__run_id__lineage_get"];
+    get: operations["get_run_lineage"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2229,7 +2229,7 @@ export interface paths {
      * Resume Run
      * @description Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them.
      */
-    post: operations["resume_run_api_v1_runs__run_id__resume_post"];
+    post: operations["resume_run"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2244,10 +2244,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Sessions */
-    get: operations["list_sessions_api_v1_sessions_get"];
+    get: operations["list_sessions"];
     put?: never;
     /** Create Session */
-    post: operations["create_session_api_v1_sessions_post"];
+    post: operations["create_session"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2262,14 +2262,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Session */
-    get: operations["get_session_api_v1_sessions__session_id__get"];
+    get: operations["get_session"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Session */
-    patch: operations["update_session_api_v1_sessions__session_id__patch"];
+    patch: operations["update_session"];
     trace?: never;
   };
   "/api/v1/sessions/{session_id}/message-authors": {
@@ -2280,7 +2280,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Message Authors */
-    get: operations["get_message_authors_api_v1_sessions__session_id__message_authors_get"];
+    get: operations["get_message_authors"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2301,7 +2301,7 @@ export interface paths {
      * @description The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
      *     frames. Every connection starts from a snapshot.
      */
-    get: operations["session_stream_api_v1_sessions__session_id__stream_get"];
+    get: operations["session_stream"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2322,10 +2322,10 @@ export interface paths {
      * @description Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of
      *     source the default revision was read from; `archived` keeps only archived skills, or only open ones.
      */
-    get: operations["list_skills_api_v1_skills_get"];
+    get: operations["list_skills"];
     put?: never;
     /** Create Skill */
-    post: operations["create_skill_api_v1_skills_post"];
+    post: operations["create_skill"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2342,11 +2342,11 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Validate Package
+     * Validate Skill
      * @description The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
      *     stored.
      */
-    post: operations["validate_package_api_v1_skills_validate_post"];
+    post: operations["validate_skill"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2361,7 +2361,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Skill */
-    get: operations["get_skill_api_v1_skills__skill_id__get"];
+    get: operations["get_skill"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2371,7 +2371,7 @@ export interface paths {
      * Update Skill
      * @description Name, description and labels; an archived skill changes only by unarchiving.
      */
-    patch: operations["update_skill_api_v1_skills__skill_id__patch"];
+    patch: operations["update_skill"];
     trace?: never;
   };
   "/api/v1/skills/{skill_id}/archive": {
@@ -2387,7 +2387,7 @@ export interface paths {
      * Archive Skill
      * @description Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins.
      */
-    post: operations["archive_skill_api_v1_skills__skill_id__archive_post"];
+    post: operations["archive_skill"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2401,14 +2401,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Revisions */
-    get: operations["list_revisions_api_v1_skills__skill_id__revisions_get"];
+    /** List Skill Revisions */
+    get: operations["list_skill_revisions"];
     put?: never;
     /**
-     * Create Revision
+     * Create Skill Revision
      * @description A package whose manifest equals the default revision's creates nothing and returns that revision.
      */
-    post: operations["create_revision_api_v1_skills__skill_id__revisions_post"];
+    post: operations["create_skill_revision"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2422,8 +2422,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Revision */
-    get: operations["get_revision_api_v1_skills__skill_id__revisions__revision_id__get"];
+    /** Get Skill Revision */
+    get: operations["get_skill_revision"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2440,10 +2440,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Read Archive
+     * Read Skill Archive
      * @description The revision's package as a zip archive.
      */
-    get: operations["read_archive_api_v1_skills__skill_id__revisions__revision_id__content_get"];
+    get: operations["read_skill_archive"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2460,10 +2460,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Read File
+     * Read Skill File
      * @description One package file, by the path the revision's manifest lists.
      */
-    get: operations["read_file_api_v1_skills__skill_id__revisions__revision_id__files__path__get"];
+    get: operations["read_skill_file"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2481,8 +2481,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Set Default Revision */
-    post: operations["set_default_revision_api_v1_skills__skill_id__revisions__revision_id__set_default_post"];
+    /** Set Default Skill Revision */
+    post: operations["set_default_skill_revision"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2499,7 +2499,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Unarchive Skill */
-    post: operations["unarchive_skill_api_v1_skills__skill_id__unarchive_post"];
+    post: operations["unarchive_skill"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2514,13 +2514,13 @@ export interface paths {
       cookie?: never;
     };
     /** List Subscriptions */
-    get: operations["list_subscriptions_api_v1_subscriptions_get"];
+    get: operations["list_subscriptions"];
     put?: never;
     /**
      * Create Subscription
      * @description The response is the only time the signing secret is returned.
      */
-    post: operations["create_subscription_api_v1_subscriptions_post"];
+    post: operations["create_subscription"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2535,15 +2535,15 @@ export interface paths {
       cookie?: never;
     };
     /** Get Subscription */
-    get: operations["get_subscription_api_v1_subscriptions__subscription_id__get"];
+    get: operations["get_subscription"];
     put?: never;
     post?: never;
     /** Delete Subscription */
-    delete: operations["delete_subscription_api_v1_subscriptions__subscription_id__delete"];
+    delete: operations["delete_subscription"];
     options?: never;
     head?: never;
     /** Update Subscription */
-    patch: operations["update_subscription_api_v1_subscriptions__subscription_id__patch"];
+    patch: operations["update_subscription"];
     trace?: never;
   };
   "/api/v1/subscriptions/{subscription_id}/deliveries": {
@@ -2554,7 +2554,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Deliveries */
-    get: operations["list_deliveries_api_v1_subscriptions__subscription_id__deliveries_get"];
+    get: operations["list_deliveries"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2573,7 +2573,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Redeliver */
-    post: operations["redeliver_api_v1_subscriptions__subscription_id__deliveries__delivery_id__redeliver_post"];
+    post: operations["redeliver"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2588,13 +2588,13 @@ export interface paths {
       cookie?: never;
     };
     /** List Threads */
-    get: operations["list_threads_api_v1_threads_get"];
+    get: operations["list_threads"];
     put?: never;
     /**
      * Create Thread
      * @description Create a thread (and its session unless one is named) with its first message.
      */
-    post: operations["create_thread_api_v1_threads_post"];
+    post: operations["create_thread"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2609,14 +2609,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Thread */
-    get: operations["get_thread_api_v1_threads__thread_id__get"];
+    get: operations["get_thread"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Thread */
-    patch: operations["update_thread_api_v1_threads__thread_id__patch"];
+    patch: operations["update_thread"];
     trace?: never;
   };
   "/api/v1/threads/{thread_id}/archive": {
@@ -2629,7 +2629,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Archive Thread */
-    post: operations["archive_thread_api_v1_threads__thread_id__archive_post"];
+    post: operations["archive_thread"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2643,11 +2643,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Mounts */
-    get: operations["list_mounts_api_v1_threads__thread_id__environments_get"];
+    /** List Environment Mounts */
+    get: operations["list_environment_mounts"];
     put?: never;
-    /** Add Mount */
-    post: operations["add_mount_api_v1_threads__thread_id__environments_post"];
+    /** Add Environment Mount */
+    post: operations["add_environment_mount"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2664,12 +2664,12 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Remove Mount */
-    delete: operations["remove_mount_api_v1_threads__thread_id__environments__name__delete"];
+    /** Remove Environment Mount */
+    delete: operations["remove_environment_mount"];
     options?: never;
     head?: never;
-    /** Update Mount */
-    patch: operations["update_mount_api_v1_threads__thread_id__environments__name__patch"];
+    /** Update Environment Mount */
+    patch: operations["update_environment_mount"];
     trace?: never;
   };
   "/api/v1/threads/{thread_id}/inbox": {
@@ -2683,13 +2683,13 @@ export interface paths {
      * List Inbox
      * @description In inbox order.
      */
-    get: operations["list_inbox_api_v1_threads__thread_id__inbox_get"];
+    get: operations["list_inbox"];
     put?: never;
     /**
      * Submit Message
      * @description Append a message; it starts a run at once when the thread can accept it, or steers the active run.
      */
-    post: operations["submit_message_api_v1_threads__thread_id__inbox_post"];
+    post: operations["submit_message"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2705,7 +2705,7 @@ export interface paths {
     };
     get?: never;
     /** Reorder Inbox */
-    put: operations["reorder_inbox_api_v1_threads__thread_id__inbox_order_put"];
+    put: operations["reorder_inbox"];
     post?: never;
     delete?: never;
     options?: never;
@@ -2721,21 +2721,21 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Get Entry
+     * Get Inbox Entry
      * @description One entry and its disposition; edits name the thread's ETag.
      */
-    get: operations["get_entry_api_v1_threads__thread_id__inbox__entry_id__get"];
+    get: operations["get_inbox_entry"];
     put?: never;
     post?: never;
     /**
      * Withdraw Entry
      * @description Withdraw a pending entry; its tombstone keeps the request key.
      */
-    delete: operations["withdraw_entry_api_v1_threads__thread_id__inbox__entry_id__delete"];
+    delete: operations["withdraw_entry"];
     options?: never;
     head?: never;
     /** Edit Entry */
-    patch: operations["edit_entry_api_v1_threads__thread_id__inbox__entry_id__patch"];
+    patch: operations["edit_entry"];
     trace?: never;
   };
   "/api/v1/threads/{thread_id}/memories": {
@@ -2745,11 +2745,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Mounts */
-    get: operations["list_mounts_api_v1_threads__thread_id__memories_get"];
+    /** List Memory Mounts */
+    get: operations["list_memory_mounts"];
     put?: never;
-    /** Add Mount */
-    post: operations["add_mount_api_v1_threads__thread_id__memories_post"];
+    /** Add Memory Mount */
+    post: operations["add_memory_mount"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2766,12 +2766,12 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Remove Mount */
-    delete: operations["remove_mount_api_v1_threads__thread_id__memories__name__delete"];
+    /** Remove Memory Mount */
+    delete: operations["remove_memory_mount"];
     options?: never;
     head?: never;
-    /** Update Mount */
-    patch: operations["update_mount_api_v1_threads__thread_id__memories__name__patch"];
+    /** Update Memory Mount */
+    patch: operations["update_memory_mount"];
     trace?: never;
   };
   "/api/v1/threads/{thread_id}/runs": {
@@ -2785,7 +2785,7 @@ export interface paths {
      * List Thread Runs
      * @description Newest first.
      */
-    get: operations["list_thread_runs_api_v1_threads__thread_id__runs_get"];
+    get: operations["list_thread_runs"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2806,7 +2806,7 @@ export interface paths {
      * @description Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
      *     Resumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.
      */
-    get: operations["thread_stream_api_v1_threads__thread_id__stream_get"];
+    get: operations["thread_stream"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2823,7 +2823,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Toolsets */
-    get: operations["list_toolsets_api_v1_toolsets_get"];
+    get: operations["list_toolsets"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2843,7 +2843,7 @@ export interface paths {
      * Define Toolsets
      * @description Read up to five exact definitions. Oversized values provide a versioned fragment reference.
      */
-    get: operations["define_toolsets_api_v1_toolsets_definitions_get"];
+    get: operations["define_toolsets"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2863,7 +2863,7 @@ export interface paths {
      * Index Toolsets
      * @description Search full names and descriptions; definitions are read separately by exact name.
      */
-    get: operations["index_toolsets_api_v1_toolsets_index_get"];
+    get: operations["index_toolsets"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2883,7 +2883,7 @@ export interface paths {
      * Get Trace Backend
      * @description The backend trace queries read, and how far back they find a trace.
      */
-    get: operations["get_trace_backend_api_v1_trace_backend_get"];
+    get: operations["get_trace_backend"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2903,7 +2903,7 @@ export interface paths {
      * List Traces
      * @description Trace root spans, one per attempt. A cursor keeps the window of the first page.
      */
-    get: operations["list_traces_api_v1_traces_get"];
+    get: operations["list_traces"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2923,7 +2923,7 @@ export interface paths {
      * Get Trace
      * @description The trace's root span.
      */
-    get: operations["get_trace_api_v1_traces__trace_id__get"];
+    get: operations["get_trace"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2943,7 +2943,7 @@ export interface paths {
      * List Trace Spans
      * @description The trace's spans.
      */
-    get: operations["list_trace_spans_api_v1_traces__trace_id__spans_get"];
+    get: operations["list_trace_spans"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2964,7 +2964,7 @@ export interface paths {
      * @description Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
      *     cursor while continuing fragments with version and next_offset.
      */
-    get: operations["read_span_content_api_v1_traces__trace_id__spans__span_id__content_get"];
+    get: operations["read_span_content"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2986,7 +2986,7 @@ export interface paths {
      * Create Upload
      * @description Repeating a request with the same `Idempotency-Key` and bytes returns the same upload.
      */
-    post: operations["create_upload_api_v1_uploads_post"];
+    post: operations["create_upload"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3001,7 +3001,7 @@ export interface paths {
       cookie?: never;
     };
     /** Summarize Usage */
-    get: operations["summarize_usage_api_v1_usage_get"];
+    get: operations["summarize_usage"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3018,7 +3018,7 @@ export interface paths {
       cookie?: never;
     };
     /** Usage Agents */
-    get: operations["usage_agents_api_v1_usage_agents_get"];
+    get: operations["usage_agents"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3035,7 +3035,7 @@ export interface paths {
       cookie?: never;
     };
     /** Context Usage */
-    get: operations["context_usage_api_v1_usage_context_get"];
+    get: operations["context_usage"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3052,7 +3052,7 @@ export interface paths {
       cookie?: never;
     };
     /** Usage Models */
-    get: operations["usage_models_api_v1_usage_models_get"];
+    get: operations["usage_models"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3069,7 +3069,7 @@ export interface paths {
       cookie?: never;
     };
     /** Usage Overview */
-    get: operations["usage_overview_api_v1_usage_overview_get"];
+    get: operations["usage_overview"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3086,7 +3086,7 @@ export interface paths {
       cookie?: never;
     };
     /** Model Request Metrics */
-    get: operations["model_request_metrics_api_v1_usage_records__record_id__metrics_get"];
+    get: operations["model_request_metrics"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3103,14 +3103,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Profile */
-    get: operations["get_profile_api_v1_users_me_get"];
+    get: operations["get_profile"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Profile */
-    patch: operations["update_profile_api_v1_users_me_patch"];
+    patch: operations["update_profile"];
     trace?: never;
   };
   "/api/v1/users/me/audit-events": {
@@ -3124,7 +3124,7 @@ export interface paths {
      * List Account Audit Events
      * @description The caller's own trail, account-wide events included; requires a login session.
      */
-    get: operations["list_account_audit_events_api_v1_users_me_audit_events_get"];
+    get: operations["list_account_audit_events"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3141,11 +3141,11 @@ export interface paths {
       cookie?: never;
     };
     get?: never;
-    /** Put Avatar */
-    put: operations["put_avatar_api_v1_users_me_avatar_put"];
+    /** Put User Avatar */
+    put: operations["put_user_avatar"];
     post?: never;
-    /** Delete Avatar */
-    delete: operations["delete_avatar_api_v1_users_me_avatar_delete"];
+    /** Delete User Avatar */
+    delete: operations["delete_user_avatar"];
     options?: never;
     head?: never;
     patch?: never;
@@ -3164,7 +3164,7 @@ export interface paths {
      * Disable Account
      * @description Disable the caller's own account, proven by the current password; no route enables it again.
      */
-    post: operations["disable_account_api_v1_users_me_disable_post"];
+    post: operations["disable_account"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3179,13 +3179,13 @@ export interface paths {
       cookie?: never;
     };
     /** List User Keys */
-    get: operations["list_user_keys_api_v1_users_me_keys_get"];
+    get: operations["list_user_keys"];
     put?: never;
     /**
      * Create User Key
      * @description Needs a login session: an API key never issues keys, so a leaked key cannot outlive its revocation.
      */
-    post: operations["create_user_key_api_v1_users_me_keys_post"];
+    post: operations["create_user_key"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3203,7 +3203,7 @@ export interface paths {
     put?: never;
     post?: never;
     /** Revoke User Key */
-    delete: operations["revoke_user_key_api_v1_users_me_keys__key_id__delete"];
+    delete: operations["revoke_user_key"];
     options?: never;
     head?: never;
     patch?: never;
@@ -3217,7 +3217,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Login Sessions */
-    get: operations["list_login_sessions_api_v1_users_me_login_sessions_get"];
+    get: operations["list_login_sessions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3237,7 +3237,7 @@ export interface paths {
     put?: never;
     post?: never;
     /** Revoke Login Session */
-    delete: operations["revoke_login_session_api_v1_users_me_login_sessions__session_id__delete"];
+    delete: operations["revoke_login_session"];
     options?: never;
     head?: never;
     patch?: never;
@@ -3253,7 +3253,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Change Password */
-    post: operations["change_password_api_v1_users_me_password_post"];
+    post: operations["change_password"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3267,8 +3267,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Avatar */
-    get: operations["get_avatar_api_v1_users__user_id__avatar_get"];
+    /** Get User Avatar */
+    get: operations["get_user_avatar"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3285,10 +3285,10 @@ export interface paths {
       cookie?: never;
     };
     /** List web providers */
-    get: operations["list_providers_api_v1_web_providers_get"];
+    get: operations["list_web_providers"];
     put?: never;
     /** Create web provider */
-    post: operations["create_provider_api_v1_web_providers_post"];
+    post: operations["create_web_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3303,7 +3303,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get web provider */
-    get: operations["get_provider_api_v1_web_providers__provider_id__get"];
+    get: operations["get_web_provider"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3313,7 +3313,7 @@ export interface paths {
      * Update web provider
      * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
      */
-    patch: operations["update_provider_api_v1_web_providers__provider_id__patch"];
+    patch: operations["update_web_provider"];
     trace?: never;
   };
   "/api/v1/web-providers/{provider_id}/test": {
@@ -3326,7 +3326,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test web provider */
-    post: operations["test_provider_api_v1_web_providers__provider_id__test_post"];
+    post: operations["test_web_provider"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3341,7 +3341,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspaces */
-    get: operations["list_workspaces_api_v1_workspaces_get"];
+    get: operations["list_workspaces"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3358,14 +3358,14 @@ export interface paths {
       cookie?: never;
     };
     /** Get Workspace */
-    get: operations["get_workspace_api_v1_workspaces__workspace_id__get"];
+    get: operations["get_workspace"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Workspace */
-    patch: operations["update_workspace_api_v1_workspaces__workspace_id__patch"];
+    patch: operations["update_workspace"];
     trace?: never;
   };
   "/api/v1/workspaces/{workspace_id}/archive": {
@@ -3378,7 +3378,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Archive Workspace */
-    post: operations["archive_workspace_api_v1_workspaces__workspace_id__archive_post"];
+    post: operations["archive_workspace"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3393,7 +3393,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspace Audit Events */
-    get: operations["list_workspace_audit_events_api_v1_workspaces__workspace_id__audit_events_get"];
+    get: operations["list_workspace_audit_events"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3410,10 +3410,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspace Grants */
-    get: operations["list_workspace_grants_api_v1_workspaces__workspace_id__grants_get"];
+    get: operations["list_workspace_grants"];
     put?: never;
     /** Create Workspace Grant */
-    post: operations["create_workspace_grant_api_v1_workspaces__workspace_id__grants_post"];
+    post: operations["create_workspace_grant"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3431,14 +3431,14 @@ export interface paths {
     put?: never;
     post?: never;
     /** Delete Workspace Grant */
-    delete: operations["delete_workspace_grant_api_v1_workspaces__workspace_id__grants__grant_id__delete"];
+    delete: operations["delete_workspace_grant"];
     options?: never;
     head?: never;
     /**
      * Change Workspace Grant
      * @description The grant is replaced: the result carries its new ID.
      */
-    patch: operations["change_workspace_grant_api_v1_workspaces__workspace_id__grants__grant_id__patch"];
+    patch: operations["change_workspace_grant"];
     trace?: never;
   };
   "/api/v1/workspaces/{workspace_id}/icon": {
@@ -3449,12 +3449,12 @@ export interface paths {
       cookie?: never;
     };
     /** Get Workspace Icon */
-    get: operations["get_workspace_icon_api_v1_workspaces__workspace_id__icon_get"];
+    get: operations["get_workspace_icon"];
     /** Put Workspace Icon */
-    put: operations["put_workspace_icon_api_v1_workspaces__workspace_id__icon_put"];
+    put: operations["put_workspace_icon"];
     post?: never;
     /** Delete Workspace Icon */
-    delete: operations["delete_workspace_icon_api_v1_workspaces__workspace_id__icon_delete"];
+    delete: operations["delete_workspace_icon"];
     options?: never;
     head?: never;
     patch?: never;
@@ -3468,10 +3468,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspace Invitations */
-    get: operations["list_workspace_invitations_api_v1_workspaces__workspace_id__invitations_get"];
+    get: operations["list_workspace_invitations"];
     put?: never;
     /** Create Workspace Invitation */
-    post: operations["create_workspace_invitation_api_v1_workspaces__workspace_id__invitations_post"];
+    post: operations["create_workspace_invitation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3488,7 +3488,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Resend Workspace Invitation */
-    post: operations["resend_workspace_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__resend_post"];
+    post: operations["resend_workspace_invitation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3505,7 +3505,7 @@ export interface paths {
     get?: never;
     put?: never;
     /** Revoke Workspace Invitation */
-    post: operations["revoke_workspace_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__revoke_post"];
+    post: operations["revoke_workspace_invitation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3520,7 +3520,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspace Keys */
-    get: operations["list_workspace_keys_api_v1_workspaces__workspace_id__keys_get"];
+    get: operations["list_workspace_keys"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3540,7 +3540,7 @@ export interface paths {
     put?: never;
     post?: never;
     /** Revoke Workspace Key */
-    delete: operations["revoke_workspace_key_api_v1_workspaces__workspace_id__keys__key_id__delete"];
+    delete: operations["revoke_workspace_key"];
     options?: never;
     head?: never;
     patch?: never;
@@ -3554,10 +3554,10 @@ export interface paths {
       cookie?: never;
     };
     /** List Service Accounts */
-    get: operations["list_service_accounts_api_v1_workspaces__workspace_id__service_accounts_get"];
+    get: operations["list_service_accounts"];
     put?: never;
     /** Create Service Account */
-    post: operations["create_service_account_api_v1_workspaces__workspace_id__service_accounts_post"];
+    post: operations["create_service_account"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3572,15 +3572,15 @@ export interface paths {
       cookie?: never;
     };
     /** Get Service Account */
-    get: operations["get_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__get"];
+    get: operations["get_service_account"];
     put?: never;
     post?: never;
     /** Delete Service Account */
-    delete: operations["delete_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__delete"];
+    delete: operations["delete_service_account"];
     options?: never;
     head?: never;
     /** Update Service Account */
-    patch: operations["update_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__patch"];
+    patch: operations["update_service_account"];
     trace?: never;
   };
   "/api/v1/workspaces/{workspace_id}/service-accounts/{account_id}/keys": {
@@ -3591,13 +3591,13 @@ export interface paths {
       cookie?: never;
     };
     /** List Service Account Keys */
-    get: operations["list_service_account_keys_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_get"];
+    get: operations["list_service_account_keys"];
     put?: never;
     /**
      * Create Service Account Key
      * @description Needs a login session: an API key never issues keys, so a leaked key cannot outlive its revocation.
      */
-    post: operations["create_service_account_key_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_post"];
+    post: operations["create_service_account_key"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3612,7 +3612,7 @@ export interface paths {
       cookie?: never;
     };
     /** Health */
-    get: operations["health_healthz_get"];
+    get: operations["health"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3633,7 +3633,7 @@ export interface paths {
      * @description Ready while started and the database holds a usable schema. Redis only speeds work up, so losing it
      *     is reported as degraded rather than taking the replica out of service.
      */
-    get: operations["ready_readyz_get"];
+    get: operations["ready"];
     put?: never;
     post?: never;
     delete?: never;
@@ -9798,7 +9798,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  prepare_composer_api_v1_agent_composer_post: {
+  prepare_composer: {
     parameters: {
       query?: never;
       header?: {
@@ -9823,7 +9823,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_agents_api_v1_agents_get: {
+  list_agents: {
     parameters: {
       query?: {
         label?: string[] | null;
@@ -9858,7 +9858,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_agent_api_v1_agents_post: {
+  create_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -9887,7 +9887,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  validate_revision_api_v1_agents_validate_post: {
+  validate_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -9914,7 +9914,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_agent_api_v1_agents__agent_id__get: {
+  get_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -9941,7 +9941,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_agent_api_v1_agents__agent_id__patch: {
+  update_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -9974,7 +9974,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  archive_agent_api_v1_agents__agent_id__archive_post: {
+  archive_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -10003,7 +10003,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_avatar_api_v1_agents__agent_id__avatar_get: {
+  get_agent_avatar: {
     parameters: {
       query?: never;
       header?: {
@@ -10032,7 +10032,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  put_avatar_api_v1_agents__agent_id__avatar_put: {
+  put_agent_avatar: {
     parameters: {
       query?: never;
       header?: {
@@ -10067,7 +10067,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_avatar_api_v1_agents__agent_id__avatar_delete: {
+  delete_agent_avatar: {
     parameters: {
       query?: never;
       header?: {
@@ -10096,7 +10096,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  duplicate_agent_api_v1_agents__agent_id__duplicate_post: {
+  duplicate_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -10127,7 +10127,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_revisions_api_v1_agents__agent_id__revisions_get: {
+  list_agent_revisions: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -10161,7 +10161,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_revision_api_v1_agents__agent_id__revisions_post: {
+  create_agent_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -10194,7 +10194,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_revision_api_v1_agents__agent_id__revisions__revision_id__get: {
+  get_agent_revision: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -10237,7 +10237,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  compare_revisions_api_v1_agents__agent_id__revisions__revision_id__compare_get: {
+  compare_agent_revisions: {
     parameters: {
       query: {
         base_revision_id: string;
@@ -10300,7 +10300,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  set_default_api_v1_agents__agent_id__revisions__revision_id__set_default_post: {
+  set_default_agent_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -10330,7 +10330,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  unarchive_agent_api_v1_agents__agent_id__unarchive_post: {
+  unarchive_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -10359,7 +10359,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_assets_api_v1_assets_get: {
+  list_assets: {
     parameters: {
       query?: {
         limit?: number;
@@ -10387,7 +10387,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_asset_api_v1_assets_post: {
+  create_asset: {
     parameters: {
       query?: never;
       header?: {
@@ -10425,7 +10425,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_asset_api_v1_assets__asset_id__get: {
+  get_asset: {
     parameters: {
       query?: never;
       header?: {
@@ -10452,7 +10452,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  retire_asset_api_v1_assets__asset_id__delete: {
+  retire_asset: {
     parameters: {
       query?: never;
       header?: {
@@ -10481,7 +10481,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  read_asset_content_api_v1_assets__asset_id__content_get: {
+  read_asset_content: {
     parameters: {
       query?: never;
       header?: {
@@ -10508,7 +10508,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  bootstrap_administrator_api_v1_auth_bootstrap_post: {
+  bootstrap_administrator: {
     parameters: {
       query?: never;
       header?: never;
@@ -10534,7 +10534,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  auth_configuration_api_v1_auth_configuration_get: {
+  auth_configuration: {
     parameters: {
       query?: never;
       header?: never;
@@ -10555,7 +10555,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  confirm_email_change_api_v1_auth_email_change_confirm_post: {
+  confirm_email_change: {
     parameters: {
       query?: never;
       header?: never;
@@ -10579,7 +10579,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  password_login_api_v1_auth_login_post: {
+  password_login: {
     parameters: {
       query?: never;
       header?: never;
@@ -10605,7 +10605,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  logout_api_v1_auth_logout_post: {
+  logout: {
     parameters: {
       query?: never;
       header?: never;
@@ -10624,7 +10624,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  request_password_reset_api_v1_auth_password_reset_post: {
+  request_password_reset: {
     parameters: {
       query?: never;
       header?: never;
@@ -10648,7 +10648,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  confirm_password_reset_api_v1_auth_password_reset_confirm_post: {
+  confirm_password_reset: {
     parameters: {
       query?: never;
       header?: never;
@@ -10672,7 +10672,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  session_profile_api_v1_auth_session_get: {
+  session_profile: {
     parameters: {
       query?: never;
       header?: never;
@@ -10693,7 +10693,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_connections_api_v1_connections_get: {
+  list_connections: {
     parameters: {
       query?: {
         limit?: number;
@@ -10721,7 +10721,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_connection_api_v1_connections_post: {
+  create_connection: {
     parameters: {
       query?: never;
       header?: {
@@ -10750,7 +10750,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  complete_authorization_api_v1_connections_callback_get: {
+  complete_authorization: {
     parameters: {
       query: {
         state: string;
@@ -10785,7 +10785,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_redirect_uri_api_v1_connections_redirect_uri_get: {
+  get_redirect_uri: {
     parameters: {
       query?: never;
       header?: never;
@@ -10806,7 +10806,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_connection_api_v1_connections__connection_id__get: {
+  get_connection: {
     parameters: {
       query?: never;
       header?: {
@@ -10833,7 +10833,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_connection_api_v1_connections__connection_id__patch: {
+  update_connection: {
     parameters: {
       query?: never;
       header?: {
@@ -10866,7 +10866,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  authorize_connection_api_v1_connections__connection_id__authorize_post: {
+  authorize_connection: {
     parameters: {
       query?: never;
       header?: {
@@ -10899,7 +10899,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  revoke_connection_api_v1_connections__connection_id__revoke_post: {
+  revoke_connection: {
     parameters: {
       query?: never;
       header?: {
@@ -10928,7 +10928,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  test_connection_api_v1_connections__connection_id__test_post: {
+  test_connection: {
     parameters: {
       query?: never;
       header?: {
@@ -10955,7 +10955,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_tools_api_v1_connections__connection_id__tools_get: {
+  list_connection_tools: {
     parameters: {
       query?: never;
       header?: {
@@ -10982,7 +10982,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  define_connection_tools_api_v1_connections__connection_id__tools_definitions_get: {
+  define_connection_tools: {
     parameters: {
       query: {
         /** @description Exact names; repeat name to select up to five definitions. */
@@ -11021,7 +11021,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  index_connection_tools_api_v1_connections__connection_id__tools_index_get: {
+  index_connection_tools: {
     parameters: {
       query?: {
         /** @description Case-insensitive substring of full names and descriptions. */
@@ -11053,7 +11053,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_providers_api_v1_connector_providers_get: {
+  list_connector_providers: {
     parameters: {
       query?: {
         limit?: number;
@@ -11081,7 +11081,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_provider_api_v1_connector_providers_post: {
+  create_connector_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11110,7 +11110,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_provider_api_v1_connector_providers__provider_id__get: {
+  get_connector_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11137,7 +11137,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_provider_api_v1_connector_providers__provider_id__patch: {
+  update_connector_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11170,7 +11170,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_apps_api_v1_connector_providers__provider_id__apps_get: {
+  list_connector_apps: {
     parameters: {
       query?: {
         query?: string | null;
@@ -11202,7 +11202,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_app_api_v1_connector_providers__provider_id__apps__app__get: {
+  get_connector_app: {
     parameters: {
       query?: never;
       header?: {
@@ -11230,7 +11230,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_actions_api_v1_connector_providers__provider_id__apps__app__actions_get: {
+  list_connector_actions: {
     parameters: {
       query?: never;
       header?: {
@@ -11258,7 +11258,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  define_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_definitions_get: {
+  define_connector_actions: {
     parameters: {
       query: {
         /** @description Exact names; repeat name to select up to five definitions. */
@@ -11298,7 +11298,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  index_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_index_get: {
+  index_connector_actions: {
     parameters: {
       query?: {
         /** @description Case-insensitive substring of full names and descriptions. */
@@ -11331,7 +11331,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  test_provider_api_v1_connector_providers__provider_id__test_post: {
+  test_connector_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11358,7 +11358,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  complete_assistance_api_v1_desktop_assistance__assistance_id__complete_post: {
+  complete_assistance: {
     parameters: {
       query?: never;
       header?: {
@@ -11389,7 +11389,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  control_desktop_api_v1_desktop_assistance__assistance_id__control_post: {
+  control_desktop: {
     parameters: {
       query?: {
         renew?: boolean;
@@ -11422,7 +11422,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  disconnect_desktop_api_v1_desktop_assistance__assistance_id__disconnect_post: {
+  disconnect_desktop: {
     parameters: {
       query?: never;
       header?: {
@@ -11453,7 +11453,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  request_control_api_v1_desktop_assistance__assistance_id__request_control_post: {
+  request_control: {
     parameters: {
       query?: never;
       header?: {
@@ -11480,7 +11480,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  view_desktop_api_v1_desktop_assistance__assistance_id__view_post: {
+  view_desktop: {
     parameters: {
       query?: {
         renew?: boolean;
@@ -11513,7 +11513,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_providers_api_v1_environment_providers_get: {
+  list_environment_providers: {
     parameters: {
       query?: {
         limit?: number;
@@ -11541,7 +11541,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_provider_api_v1_environment_providers_post: {
+  create_environment_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11570,7 +11570,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_provider_api_v1_environment_providers__provider_id__get: {
+  get_environment_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11597,7 +11597,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_environment_provider_api_v1_environment_providers__provider_id__delete: {
+  delete_environment_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11624,7 +11624,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_provider_api_v1_environment_providers__provider_id__patch: {
+  update_environment_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11657,7 +11657,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  environment_provider_references_api_v1_environment_providers__provider_id__references_get: {
+  environment_provider_references: {
     parameters: {
       query?: never;
       header?: {
@@ -11684,7 +11684,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  test_provider_api_v1_environment_providers__provider_id__test_post: {
+  test_environment_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -11711,7 +11711,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_templates_api_v1_environment_templates_get: {
+  list_environment_templates: {
     parameters: {
       query?: {
         label?: string[] | null;
@@ -11740,7 +11740,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_template_api_v1_environment_templates_post: {
+  create_environment_template: {
     parameters: {
       query?: never;
       header?: {
@@ -11769,7 +11769,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_template_api_v1_environment_templates__template_id__get: {
+  get_environment_template: {
     parameters: {
       query?: never;
       header?: {
@@ -11796,7 +11796,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_template_api_v1_environment_templates__template_id__patch: {
+  update_environment_template: {
     parameters: {
       query?: never;
       header?: {
@@ -11829,7 +11829,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_environments_api_v1_environments_get: {
+  list_environments: {
     parameters: {
       query?: {
         status?: string | null;
@@ -11858,7 +11858,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_environment_api_v1_environments_post: {
+  create_environment: {
     parameters: {
       query?: never;
       header?: {
@@ -11889,7 +11889,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_environment_api_v1_environments__environment_id__get: {
+  get_environment: {
     parameters: {
       query?: never;
       header?: {
@@ -11916,7 +11916,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_environment_api_v1_environments__environment_id__delete: {
+  delete_environment: {
     parameters: {
       query?: never;
       header?: {
@@ -11945,7 +11945,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_environment_api_v1_environments__environment_id__patch: {
+  update_environment: {
     parameters: {
       query?: never;
       header?: {
@@ -11978,7 +11978,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  check_computer_api_v1_environments__environment_id__computer_check_post: {
+  check_computer: {
     parameters: {
       query?: never;
       header?: {
@@ -12005,7 +12005,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  stop_environment_api_v1_environments__environment_id__stop_post: {
+  stop_environment: {
     parameters: {
       query?: never;
       header?: {
@@ -12034,7 +12034,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  prepare_finding_agent_api_v1_finding_agent_post: {
+  prepare_finding_agent: {
     parameters: {
       query?: never;
       header?: {
@@ -12059,7 +12059,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_analyses_api_v1_finding_analyses_get: {
+  list_finding_analyses: {
     parameters: {
       query?: {
         limit?: number;
@@ -12087,7 +12087,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  start_analysis_api_v1_finding_analyses_post: {
+  start_analysis: {
     parameters: {
       query?: never;
       header: {
@@ -12117,7 +12117,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_findings_api_v1_findings_get: {
+  list_findings: {
     parameters: {
       query?: {
         agent_id?: string | null;
@@ -12150,7 +12150,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_finding_api_v1_findings_post: {
+  create_finding: {
     parameters: {
       query?: never;
       header?: {
@@ -12179,7 +12179,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_finding_api_v1_findings__finding_id__get: {
+  get_finding: {
     parameters: {
       query?: never;
       header?: {
@@ -12206,7 +12206,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_finding_api_v1_findings__finding_id__patch: {
+  update_finding: {
     parameters: {
       query?: never;
       header?: {
@@ -12239,7 +12239,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  accept_api_v1_invitations__invitation_id__accept_post: {
+  accept: {
     parameters: {
       query?: never;
       header?: never;
@@ -12267,7 +12267,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_mcp_servers_api_v1_mcp_servers_get: {
+  list_mcp_servers: {
     parameters: {
       query?: {
         query?: string | null;
@@ -12293,7 +12293,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_media_defaults_api_v1_media_understanding_defaults_get: {
+  get_media_defaults: {
     parameters: {
       query?: never;
       header?: {
@@ -12318,7 +12318,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  replace_media_defaults_api_v1_media_understanding_defaults_put: {
+  replace_media_defaults: {
     parameters: {
       query?: never;
       header?: {
@@ -12349,7 +12349,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_memories_api_v1_memories_get: {
+  list_memories: {
     parameters: {
       query?: {
         label?: string[] | null;
@@ -12380,7 +12380,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_memory_api_v1_memories_post: {
+  create_memory: {
     parameters: {
       query?: never;
       header?: {
@@ -12409,7 +12409,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_memory_api_v1_memories__memory_id__get: {
+  get_memory: {
     parameters: {
       query?: never;
       header?: {
@@ -12436,7 +12436,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_memory_api_v1_memories__memory_id__delete: {
+  delete_memory: {
     parameters: {
       query?: never;
       header?: {
@@ -12463,7 +12463,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_memory_api_v1_memories__memory_id__patch: {
+  update_memory: {
     parameters: {
       query?: never;
       header?: {
@@ -12496,7 +12496,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_files_api_v1_memories__memory_id__files_get: {
+  list_files: {
     parameters: {
       query?: {
         /** @description A directory ending in "/"; "" lists every file */
@@ -12528,7 +12528,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_file_api_v1_memories__memory_id__files_post: {
+  create_file: {
     parameters: {
       query?: never;
       header?: {
@@ -12559,7 +12559,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  move_file_api_v1_memories__memory_id__files_move_post: {
+  move_file: {
     parameters: {
       query?: never;
       header?: {
@@ -12592,7 +12592,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  read_file_api_v1_memories__memory_id__files__path__get: {
+  read_file: {
     parameters: {
       query?: never;
       header?: {
@@ -12620,7 +12620,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  replace_file_api_v1_memories__memory_id__files__path__put: {
+  replace_file: {
     parameters: {
       query?: never;
       header?: {
@@ -12654,7 +12654,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_file_api_v1_memories__memory_id__files__path__delete: {
+  delete_file: {
     parameters: {
       query?: never;
       header?: {
@@ -12682,7 +12682,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_records_api_v1_memories__memory_id__records_get: {
+  list_records: {
     parameters: {
       query?: {
         limit?: number;
@@ -12713,7 +12713,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  add_record_api_v1_memories__memory_id__records_post: {
+  add_record: {
     parameters: {
       query?: never;
       header?: {
@@ -12744,7 +12744,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  search_records_api_v1_memories__memory_id__records_search_post: {
+  search_records: {
     parameters: {
       query?: never;
       header?: {
@@ -12775,7 +12775,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_record_api_v1_memories__memory_id__records__record_id__put: {
+  update_record: {
     parameters: {
       query?: never;
       header?: {
@@ -12807,7 +12807,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_record_api_v1_memories__memory_id__records__record_id__delete: {
+  delete_record: {
     parameters: {
       query?: never;
       header?: {
@@ -12833,7 +12833,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_revisions_api_v1_memories__memory_id__revisions_get: {
+  list_memory_revisions: {
     parameters: {
       query?: {
         path?: string | null;
@@ -12865,7 +12865,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  purge_history_api_v1_memories__memory_id__revisions_delete: {
+  purge_history: {
     parameters: {
       query: {
         path: string;
@@ -12894,7 +12894,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_revision_api_v1_memories__memory_id__revisions__seq__get: {
+  get_memory_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -12922,7 +12922,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  restore_revision_api_v1_memories__memory_id__revisions__seq__restore_post: {
+  restore_memory_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -12952,7 +12952,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_providers_api_v1_memory_providers_get: {
+  list_memory_providers: {
     parameters: {
       query?: {
         limit?: number;
@@ -12980,7 +12980,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_provider_api_v1_memory_providers_post: {
+  create_memory_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13009,7 +13009,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_provider_api_v1_memory_providers__provider_id__get: {
+  get_memory_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13036,7 +13036,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_provider_api_v1_memory_providers__provider_id__patch: {
+  update_memory_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13069,7 +13069,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  test_provider_api_v1_memory_providers__provider_id__test_post: {
+  test_memory_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13096,7 +13096,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_spaces_api_v1_memory_spaces_get: {
+  list_spaces: {
     parameters: {
       query?: {
         label?: string[] | null;
@@ -13126,7 +13126,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_space_api_v1_memory_spaces_post: {
+  create_space: {
     parameters: {
       query?: never;
       header?: {
@@ -13155,7 +13155,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_space_api_v1_memory_spaces__space_id__get: {
+  get_space: {
     parameters: {
       query?: never;
       header?: {
@@ -13182,7 +13182,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_space_api_v1_memory_spaces__space_id__delete: {
+  delete_space: {
     parameters: {
       query?: never;
       header?: {
@@ -13209,7 +13209,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_space_api_v1_memory_spaces__space_id__patch: {
+  update_space: {
     parameters: {
       query?: never;
       header?: {
@@ -13242,7 +13242,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_space_organization_api_v1_memory_spaces__space_id__organization_get: {
+  get_space_organization: {
     parameters: {
       query?: never;
       header?: {
@@ -13269,7 +13269,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_space_organizations_api_v1_memory_spaces__space_id__organizations_get: {
+  list_space_organizations: {
     parameters: {
       query?: {
         limit?: number;
@@ -13299,7 +13299,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  organize_space_api_v1_memory_spaces__space_id__organizations_post: {
+  organize_space: {
     parameters: {
       query?: never;
       header?: {
@@ -13326,7 +13326,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_space_sessions_api_v1_memory_spaces__space_id__sessions_get: {
+  list_space_sessions: {
     parameters: {
       query?: {
         limit?: number;
@@ -13356,7 +13356,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_model_catalog_api_v1_model_catalog_get: {
+  get_model_catalog: {
     parameters: {
       query?: {
         /** @description Exact catalog channel ID, such as openrouter. */
@@ -13400,7 +13400,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_providers_api_v1_model_providers_get: {
+  list_model_providers: {
     parameters: {
       query?: {
         limit?: number;
@@ -13428,7 +13428,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_provider_api_v1_model_providers_post: {
+  create_model_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13457,7 +13457,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_provider_api_v1_model_providers__provider_id__get: {
+  get_model_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13484,7 +13484,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_provider_api_v1_model_providers__provider_id__patch: {
+  update_model_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13517,7 +13517,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  model_authorization_api_v1_model_providers__provider_id__authorization_get: {
+  model_authorization: {
     parameters: {
       query?: never;
       header?: {
@@ -13544,7 +13544,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete: {
+  disconnect_model_authorization: {
     parameters: {
       query?: never;
       header?: {
@@ -13571,7 +13571,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post: {
+  complete_model_authorization: {
     parameters: {
       query?: never;
       header?: {
@@ -13602,7 +13602,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  authorize_model_api_v1_model_providers__provider_id__authorize_post: {
+  authorize_model: {
     parameters: {
       query?: never;
       header?: {
@@ -13633,7 +13633,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  discover_model_provider_models_api_v1_model_providers__provider_id__models_get: {
+  discover_model_provider_models: {
     parameters: {
       query?: never;
       header?: {
@@ -13660,7 +13660,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  test_provider_api_v1_model_providers__provider_id__test_post: {
+  test_model_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -13687,7 +13687,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_models_api_v1_models_get: {
+  list_models: {
     parameters: {
       query?: {
         limit?: number;
@@ -13715,7 +13715,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_model_api_v1_models_post: {
+  create_model: {
     parameters: {
       query?: never;
       header?: {
@@ -13744,7 +13744,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_model_api_v1_models__key__get: {
+  get_model: {
     parameters: {
       query?: never;
       header?: {
@@ -13771,7 +13771,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_model_api_v1_models__key__patch: {
+  update_model: {
     parameters: {
       query?: never;
       header?: {
@@ -13804,7 +13804,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_organizations_api_v1_organizations_get: {
+  list_organizations: {
     parameters: {
       query?: {
         limit?: number;
@@ -13829,7 +13829,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_organization_api_v1_organizations__organization_id__get: {
+  get_organization: {
     parameters: {
       query?: never;
       header?: never;
@@ -13853,7 +13853,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_organization_api_v1_organizations__organization_id__patch: {
+  update_organization: {
     parameters: {
       query?: never;
       header?: {
@@ -13884,7 +13884,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_organization_audit_events_api_v1_organizations__organization_id__audit_events_get: {
+  list_organization_audit_events: {
     parameters: {
       query?: {
         limit?: number;
@@ -13911,7 +13911,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_organization_grants_api_v1_organizations__organization_id__grants_get: {
+  list_organization_grants: {
     parameters: {
       query?: {
         limit?: number;
@@ -13938,7 +13938,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_organization_grant_api_v1_organizations__organization_id__grants_post: {
+  create_organization_grant: {
     parameters: {
       query?: never;
       header?: never;
@@ -13966,7 +13966,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_organization_grant_api_v1_organizations__organization_id__grants__grant_id__delete: {
+  delete_organization_grant: {
     parameters: {
       query?: never;
       header?: never;
@@ -13989,7 +13989,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  change_organization_grant_api_v1_organizations__organization_id__grants__grant_id__patch: {
+  change_organization_grant: {
     parameters: {
       query?: never;
       header?: never;
@@ -14018,7 +14018,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_organization_icon_api_v1_organizations__organization_id__icon_get: {
+  get_organization_icon: {
     parameters: {
       query?: never;
       header?: never;
@@ -14044,7 +14044,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  put_organization_icon_api_v1_organizations__organization_id__icon_put: {
+  put_organization_icon: {
     parameters: {
       query?: never;
       header?: {
@@ -14077,7 +14077,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_organization_icon_api_v1_organizations__organization_id__icon_delete: {
+  delete_organization_icon: {
     parameters: {
       query?: never;
       header?: {
@@ -14104,7 +14104,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_organization_invitations_api_v1_organizations__organization_id__invitations_get: {
+  list_organization_invitations: {
     parameters: {
       query?: {
         limit?: number;
@@ -14131,7 +14131,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_organization_invitation_api_v1_organizations__organization_id__invitations_post: {
+  create_organization_invitation: {
     parameters: {
       query?: never;
       header?: never;
@@ -14159,7 +14159,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  resend_organization_invitation_api_v1_organizations__organization_id__invitations__invitation_id__resend_post: {
+  resend_organization_invitation: {
     parameters: {
       query?: never;
       header?: {
@@ -14187,7 +14187,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  revoke_organization_invitation_api_v1_organizations__organization_id__invitations__invitation_id__revoke_post: {
+  revoke_organization_invitation: {
     parameters: {
       query?: never;
       header?: {
@@ -14215,7 +14215,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_members_api_v1_organizations__organization_id__members_get: {
+  list_members: {
     parameters: {
       query?: {
         kind?: ("user" | "service_account") | null;
@@ -14243,7 +14243,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_organization_workspaces_api_v1_organizations__organization_id__workspaces_get: {
+  list_organization_workspaces: {
     parameters: {
       query?: {
         limit?: number;
@@ -14270,7 +14270,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_workspace_api_v1_organizations__organization_id__workspaces_post: {
+  create_workspace: {
     parameters: {
       query?: never;
       header?: never;
@@ -14298,7 +14298,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_provider_types_api_v1_provider_types__kind__get: {
+  list_provider_types: {
     parameters: {
       query?: never;
       header?: never;
@@ -14322,7 +14322,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_runs_api_v1_runs_get: {
+  list_runs: {
     parameters: {
       query?: {
         /** @description All search terms must match one run's retained user/assistant text */
@@ -14371,7 +14371,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_run_api_v1_runs__run_id__get: {
+  get_run: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -14426,7 +14426,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_run_api_v1_runs__run_id__patch: {
+  update_run: {
     parameters: {
       query?: never;
       header?: {
@@ -14459,7 +14459,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  run_agent_api_v1_runs__run_id__agent_get: {
+  get_run_agent: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -14526,7 +14526,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  run_attempts_api_v1_runs__run_id__attempts_get: {
+  list_run_attempts: {
     parameters: {
       query?: never;
       header?: {
@@ -14553,7 +14553,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_attempt_api_v1_runs__run_id__attempts__attempt_id__get: {
+  get_run_attempt: {
     parameters: {
       query?: never;
       header?: {
@@ -14581,7 +14581,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_attempt_spans_api_v1_runs__run_id__attempts__attempt_id__trace_get: {
+  list_attempt_spans: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -14619,7 +14619,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  run_content_api_v1_runs__run_id__contents__content_id__get: {
+  get_run_content: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -14660,7 +14660,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_assistance_api_v1_runs__run_id__desktop_assistance__call_id__get: {
+  get_assistance: {
     parameters: {
       query?: never;
       header?: {
@@ -14688,7 +14688,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_control_api_v1_runs__run_id__desktop_control_get: {
+  get_control: {
     parameters: {
       query?: never;
       header?: {
@@ -14715,7 +14715,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  open_control_api_v1_runs__run_id__desktop_control_post: {
+  open_control: {
     parameters: {
       query?: never;
       header?: {
@@ -14746,7 +14746,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  fork_run_api_v1_runs__run_id__fork_post: {
+  fork_run: {
     parameters: {
       query?: never;
       header: {
@@ -14787,7 +14787,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  run_image_api_v1_runs__run_id__images__image_id__get: {
+  run_image: {
     parameters: {
       query?: never;
       header?: {
@@ -14816,7 +14816,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  interrupt_run_api_v1_runs__run_id__interrupt_post: {
+  interrupt_run: {
     parameters: {
       query?: never;
       header?: {
@@ -14843,7 +14843,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  run_items_api_v1_runs__run_id__items_get: {
+  list_run_items: {
     parameters: {
       query?: {
         /** @description Return the items just before this ordinal */
@@ -14883,7 +14883,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  read_item_content_api_v1_runs__run_id__items__item_id__content_get: {
+  read_run_item_content: {
     parameters: {
       query: {
         /** @description Ordinal returned with this item ID; both must match */
@@ -14931,7 +14931,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  run_lineage_api_v1_runs__run_id__lineage_get: {
+  get_run_lineage: {
     parameters: {
       query?: {
         cursor?: string | null;
@@ -14965,7 +14965,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  resume_run_api_v1_runs__run_id__resume_post: {
+  resume_run: {
     parameters: {
       query?: never;
       header: {
@@ -15006,7 +15006,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_sessions_api_v1_sessions_get: {
+  list_sessions: {
     parameters: {
       query?: {
         /** @description All search terms must match one run's retained user/assistant text */
@@ -15044,7 +15044,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_session_api_v1_sessions_post: {
+  create_session: {
     parameters: {
       query?: never;
       header?: {
@@ -15073,7 +15073,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_session_api_v1_sessions__session_id__get: {
+  get_session: {
     parameters: {
       query?: never;
       header?: {
@@ -15100,7 +15100,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_session_api_v1_sessions__session_id__patch: {
+  update_session: {
     parameters: {
       query?: never;
       header?: {
@@ -15133,7 +15133,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_message_authors_api_v1_sessions__session_id__message_authors_get: {
+  get_message_authors: {
     parameters: {
       query: {
         entry_id: string[];
@@ -15162,7 +15162,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  session_stream_api_v1_sessions__session_id__stream_get: {
+  session_stream: {
     parameters: {
       query?: never;
       header?: {
@@ -15189,7 +15189,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_skills_api_v1_skills_get: {
+  list_skills: {
     parameters: {
       query?: {
         label?: string[] | null;
@@ -15221,7 +15221,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_skill_api_v1_skills_post: {
+  create_skill: {
     parameters: {
       query?: never;
       header?: {
@@ -15250,7 +15250,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  validate_package_api_v1_skills_validate_post: {
+  validate_skill: {
     parameters: {
       query?: never;
       header?: {
@@ -15279,7 +15279,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_skill_api_v1_skills__skill_id__get: {
+  get_skill: {
     parameters: {
       query?: never;
       header?: {
@@ -15306,7 +15306,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_skill_api_v1_skills__skill_id__patch: {
+  update_skill: {
     parameters: {
       query?: never;
       header?: {
@@ -15339,7 +15339,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  archive_skill_api_v1_skills__skill_id__archive_post: {
+  archive_skill: {
     parameters: {
       query?: never;
       header?: {
@@ -15368,7 +15368,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_revisions_api_v1_skills__skill_id__revisions_get: {
+  list_skill_revisions: {
     parameters: {
       query?: {
         limit?: number;
@@ -15398,7 +15398,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_revision_api_v1_skills__skill_id__revisions_post: {
+  create_skill_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -15431,7 +15431,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_revision_api_v1_skills__skill_id__revisions__revision_id__get: {
+  get_skill_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -15459,7 +15459,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  read_archive_api_v1_skills__skill_id__revisions__revision_id__content_get: {
+  read_skill_archive: {
     parameters: {
       query?: never;
       header?: {
@@ -15487,7 +15487,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  read_file_api_v1_skills__skill_id__revisions__revision_id__files__path__get: {
+  read_skill_file: {
     parameters: {
       query?: never;
       header?: {
@@ -15516,7 +15516,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  set_default_revision_api_v1_skills__skill_id__revisions__revision_id__set_default_post: {
+  set_default_skill_revision: {
     parameters: {
       query?: never;
       header?: {
@@ -15546,7 +15546,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  unarchive_skill_api_v1_skills__skill_id__unarchive_post: {
+  unarchive_skill: {
     parameters: {
       query?: never;
       header?: {
@@ -15575,7 +15575,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_subscriptions_api_v1_subscriptions_get: {
+  list_subscriptions: {
     parameters: {
       query?: {
         limit?: number;
@@ -15603,7 +15603,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_subscription_api_v1_subscriptions_post: {
+  create_subscription: {
     parameters: {
       query?: never;
       header?: {
@@ -15632,7 +15632,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_subscription_api_v1_subscriptions__subscription_id__get: {
+  get_subscription: {
     parameters: {
       query?: never;
       header?: {
@@ -15659,7 +15659,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_subscription_api_v1_subscriptions__subscription_id__delete: {
+  delete_subscription: {
     parameters: {
       query?: never;
       header?: {
@@ -15686,7 +15686,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_subscription_api_v1_subscriptions__subscription_id__patch: {
+  update_subscription: {
     parameters: {
       query?: never;
       header?: {
@@ -15719,7 +15719,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_deliveries_api_v1_subscriptions__subscription_id__deliveries_get: {
+  list_deliveries: {
     parameters: {
       query?: {
         limit?: number;
@@ -15749,7 +15749,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  redeliver_api_v1_subscriptions__subscription_id__deliveries__delivery_id__redeliver_post: {
+  redeliver: {
     parameters: {
       query?: never;
       header?: {
@@ -15777,7 +15777,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_threads_api_v1_threads_get: {
+  list_threads: {
     parameters: {
       query?: {
         session_id?: string | null;
@@ -15808,7 +15808,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_thread_api_v1_threads_post: {
+  create_thread: {
     parameters: {
       query?: never;
       header: {
@@ -15847,7 +15847,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_thread_api_v1_threads__thread_id__get: {
+  get_thread: {
     parameters: {
       query?: never;
       header?: {
@@ -15874,7 +15874,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_thread_api_v1_threads__thread_id__patch: {
+  update_thread: {
     parameters: {
       query?: never;
       header?: {
@@ -15907,7 +15907,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  archive_thread_api_v1_threads__thread_id__archive_post: {
+  archive_thread: {
     parameters: {
       query?: never;
       header?: {
@@ -15936,7 +15936,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_mounts_api_v1_threads__thread_id__environments_get: {
+  list_environment_mounts: {
     parameters: {
       query?: never;
       header?: {
@@ -15963,7 +15963,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  add_mount_api_v1_threads__thread_id__environments_post: {
+  add_environment_mount: {
     parameters: {
       query?: never;
       header?: {
@@ -15996,7 +15996,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  remove_mount_api_v1_threads__thread_id__environments__name__delete: {
+  remove_environment_mount: {
     parameters: {
       query?: never;
       header?: {
@@ -16024,7 +16024,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_mount_api_v1_threads__thread_id__environments__name__patch: {
+  update_environment_mount: {
     parameters: {
       query?: never;
       header?: {
@@ -16058,7 +16058,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_inbox_api_v1_threads__thread_id__inbox_get: {
+  list_inbox: {
     parameters: {
       query?: {
         status?: components["schemas"]["EntryStatus"][] | null;
@@ -16094,7 +16094,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  submit_message_api_v1_threads__thread_id__inbox_post: {
+  submit_message: {
     parameters: {
       query?: never;
       header: {
@@ -16135,7 +16135,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  reorder_inbox_api_v1_threads__thread_id__inbox_order_put: {
+  reorder_inbox: {
     parameters: {
       query?: never;
       header?: {
@@ -16168,7 +16168,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_entry_api_v1_threads__thread_id__inbox__entry_id__get: {
+  get_inbox_entry: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -16211,7 +16211,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  withdraw_entry_api_v1_threads__thread_id__inbox__entry_id__delete: {
+  withdraw_entry: {
     parameters: {
       query?: never;
       header?: {
@@ -16241,7 +16241,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  edit_entry_api_v1_threads__thread_id__inbox__entry_id__patch: {
+  edit_entry: {
     parameters: {
       query?: never;
       header?: {
@@ -16275,7 +16275,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_mounts_api_v1_threads__thread_id__memories_get: {
+  list_memory_mounts: {
     parameters: {
       query?: never;
       header?: {
@@ -16302,7 +16302,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  add_mount_api_v1_threads__thread_id__memories_post: {
+  add_memory_mount: {
     parameters: {
       query?: never;
       header?: {
@@ -16335,7 +16335,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  remove_mount_api_v1_threads__thread_id__memories__name__delete: {
+  remove_memory_mount: {
     parameters: {
       query?: never;
       header?: {
@@ -16363,7 +16363,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_mount_api_v1_threads__thread_id__memories__name__patch: {
+  update_memory_mount: {
     parameters: {
       query?: never;
       header?: {
@@ -16397,7 +16397,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_thread_runs_api_v1_threads__thread_id__runs_get: {
+  list_thread_runs: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -16431,7 +16431,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  thread_stream_api_v1_threads__thread_id__stream_get: {
+  thread_stream: {
     parameters: {
       query?: {
         run?: string | null;
@@ -16462,7 +16462,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_toolsets_api_v1_toolsets_get: {
+  list_toolsets: {
     parameters: {
       query?: never;
       header?: {
@@ -16487,7 +16487,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  define_toolsets_api_v1_toolsets_definitions_get: {
+  define_toolsets: {
     parameters: {
       query: {
         /** @description Exact names; repeat name to select up to five definitions. */
@@ -16524,7 +16524,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  index_toolsets_api_v1_toolsets_index_get: {
+  index_toolsets: {
     parameters: {
       query?: {
         /** @description Case-insensitive substring of full names and descriptions. */
@@ -16554,7 +16554,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_trace_backend_api_v1_trace_backend_get: {
+  get_trace_backend: {
     parameters: {
       query?: never;
       header?: {
@@ -16579,7 +16579,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_traces_api_v1_traces_get: {
+  list_traces: {
     parameters: {
       query?: {
         session_id?: string | null;
@@ -16621,7 +16621,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_trace_api_v1_traces__trace_id__get: {
+  get_trace: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -16673,7 +16673,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_trace_spans_api_v1_traces__trace_id__spans_get: {
+  list_trace_spans: {
     parameters: {
       query?: {
         /** @description Use compact for discovery; detailed preserves the original response. */
@@ -16710,7 +16710,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  read_span_content_api_v1_traces__trace_id__spans__span_id__content_get: {
+  read_span_content: {
     parameters: {
       query?: {
         section?:
@@ -16757,7 +16757,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_upload_api_v1_uploads_post: {
+  create_upload: {
     parameters: {
       query?: never;
       header: {
@@ -16787,7 +16787,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  summarize_usage_api_v1_usage_get: {
+  summarize_usage: {
     parameters: {
       query?: {
         run_id?: string | null;
@@ -16818,7 +16818,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  usage_agents_api_v1_usage_agents_get: {
+  usage_agents: {
     parameters: {
       query: {
         start: string;
@@ -16848,7 +16848,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  context_usage_api_v1_usage_context_get: {
+  context_usage: {
     parameters: {
       query?: {
         thread_id?: string | null;
@@ -16877,7 +16877,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  usage_models_api_v1_usage_models_get: {
+  usage_models: {
     parameters: {
       query: {
         start: string;
@@ -16907,7 +16907,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  usage_overview_api_v1_usage_overview_get: {
+  usage_overview: {
     parameters: {
       query: {
         start: string;
@@ -16936,7 +16936,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  model_request_metrics_api_v1_usage_records__record_id__metrics_get: {
+  model_request_metrics: {
     parameters: {
       query?: never;
       header?: {
@@ -16963,7 +16963,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_profile_api_v1_users_me_get: {
+  get_profile: {
     parameters: {
       query?: never;
       header?: never;
@@ -16984,7 +16984,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_profile_api_v1_users_me_patch: {
+  update_profile: {
     parameters: {
       query?: never;
       header?: {
@@ -17013,7 +17013,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_account_audit_events_api_v1_users_me_audit_events_get: {
+  list_account_audit_events: {
     parameters: {
       query?: {
         limit?: number;
@@ -17038,7 +17038,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  put_avatar_api_v1_users_me_avatar_put: {
+  put_user_avatar: {
     parameters: {
       query?: never;
       header?: {
@@ -17069,7 +17069,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_avatar_api_v1_users_me_avatar_delete: {
+  delete_user_avatar: {
     parameters: {
       query?: never;
       header?: {
@@ -17094,7 +17094,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  disable_account_api_v1_users_me_disable_post: {
+  disable_account: {
     parameters: {
       query?: never;
       header?: never;
@@ -17118,7 +17118,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_user_keys_api_v1_users_me_keys_get: {
+  list_user_keys: {
     parameters: {
       query?: {
         workspace_id?: string | null;
@@ -17144,7 +17144,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_user_key_api_v1_users_me_keys_post: {
+  create_user_key: {
     parameters: {
       query?: never;
       header?: never;
@@ -17170,7 +17170,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  revoke_user_key_api_v1_users_me_keys__key_id__delete: {
+  revoke_user_key: {
     parameters: {
       query?: never;
       header?: {
@@ -17197,7 +17197,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_login_sessions_api_v1_users_me_login_sessions_get: {
+  list_login_sessions: {
     parameters: {
       query?: {
         limit?: number;
@@ -17222,7 +17222,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  revoke_login_session_api_v1_users_me_login_sessions__session_id__delete: {
+  revoke_login_session: {
     parameters: {
       query?: never;
       header?: never;
@@ -17244,7 +17244,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  change_password_api_v1_users_me_password_post: {
+  change_password: {
     parameters: {
       query?: never;
       header?: never;
@@ -17268,7 +17268,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_avatar_api_v1_users__user_id__avatar_get: {
+  get_user_avatar: {
     parameters: {
       query?: never;
       header?: never;
@@ -17294,7 +17294,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_providers_api_v1_web_providers_get: {
+  list_web_providers: {
     parameters: {
       query?: {
         limit?: number;
@@ -17322,7 +17322,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_provider_api_v1_web_providers_post: {
+  create_web_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -17351,7 +17351,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_provider_api_v1_web_providers__provider_id__get: {
+  get_web_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -17378,7 +17378,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_provider_api_v1_web_providers__provider_id__patch: {
+  update_web_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -17411,7 +17411,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  test_provider_api_v1_web_providers__provider_id__test_post: {
+  test_web_provider: {
     parameters: {
       query?: never;
       header?: {
@@ -17438,7 +17438,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_workspaces_api_v1_workspaces_get: {
+  list_workspaces: {
     parameters: {
       query?: {
         limit?: number;
@@ -17463,7 +17463,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_workspace_api_v1_workspaces__workspace_id__get: {
+  get_workspace: {
     parameters: {
       query?: never;
       header?: never;
@@ -17487,7 +17487,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_workspace_api_v1_workspaces__workspace_id__patch: {
+  update_workspace: {
     parameters: {
       query?: never;
       header?: {
@@ -17518,7 +17518,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  archive_workspace_api_v1_workspaces__workspace_id__archive_post: {
+  archive_workspace: {
     parameters: {
       query?: never;
       header?: {
@@ -17545,7 +17545,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_workspace_audit_events_api_v1_workspaces__workspace_id__audit_events_get: {
+  list_workspace_audit_events: {
     parameters: {
       query?: {
         limit?: number;
@@ -17572,7 +17572,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_workspace_grants_api_v1_workspaces__workspace_id__grants_get: {
+  list_workspace_grants: {
     parameters: {
       query?: {
         limit?: number;
@@ -17599,7 +17599,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_workspace_grant_api_v1_workspaces__workspace_id__grants_post: {
+  create_workspace_grant: {
     parameters: {
       query?: never;
       header?: never;
@@ -17627,7 +17627,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_workspace_grant_api_v1_workspaces__workspace_id__grants__grant_id__delete: {
+  delete_workspace_grant: {
     parameters: {
       query?: never;
       header?: never;
@@ -17650,7 +17650,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  change_workspace_grant_api_v1_workspaces__workspace_id__grants__grant_id__patch: {
+  change_workspace_grant: {
     parameters: {
       query?: never;
       header?: never;
@@ -17679,7 +17679,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_workspace_icon_api_v1_workspaces__workspace_id__icon_get: {
+  get_workspace_icon: {
     parameters: {
       query?: never;
       header?: never;
@@ -17705,7 +17705,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  put_workspace_icon_api_v1_workspaces__workspace_id__icon_put: {
+  put_workspace_icon: {
     parameters: {
       query?: never;
       header?: {
@@ -17738,7 +17738,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_workspace_icon_api_v1_workspaces__workspace_id__icon_delete: {
+  delete_workspace_icon: {
     parameters: {
       query?: never;
       header?: {
@@ -17765,7 +17765,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_workspace_invitations_api_v1_workspaces__workspace_id__invitations_get: {
+  list_workspace_invitations: {
     parameters: {
       query?: {
         limit?: number;
@@ -17792,7 +17792,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_workspace_invitation_api_v1_workspaces__workspace_id__invitations_post: {
+  create_workspace_invitation: {
     parameters: {
       query?: never;
       header?: never;
@@ -17820,7 +17820,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  resend_workspace_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__resend_post: {
+  resend_workspace_invitation: {
     parameters: {
       query?: never;
       header?: {
@@ -17848,7 +17848,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  revoke_workspace_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__revoke_post: {
+  revoke_workspace_invitation: {
     parameters: {
       query?: never;
       header?: {
@@ -17876,7 +17876,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_workspace_keys_api_v1_workspaces__workspace_id__keys_get: {
+  list_workspace_keys: {
     parameters: {
       query?: {
         principal_id?: string | null;
@@ -17904,7 +17904,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  revoke_workspace_key_api_v1_workspaces__workspace_id__keys__key_id__delete: {
+  revoke_workspace_key: {
     parameters: {
       query?: never;
       header?: {
@@ -17932,7 +17932,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_service_accounts_api_v1_workspaces__workspace_id__service_accounts_get: {
+  list_service_accounts: {
     parameters: {
       query?: {
         limit?: number;
@@ -17959,7 +17959,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_service_account_api_v1_workspaces__workspace_id__service_accounts_post: {
+  create_service_account: {
     parameters: {
       query?: never;
       header?: never;
@@ -17987,7 +17987,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__get: {
+  get_service_account: {
     parameters: {
       query?: never;
       header?: never;
@@ -18012,7 +18012,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__delete: {
+  delete_service_account: {
     parameters: {
       query?: never;
       header?: {
@@ -18040,7 +18040,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__patch: {
+  update_service_account: {
     parameters: {
       query?: never;
       header?: {
@@ -18072,7 +18072,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_service_account_keys_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_get: {
+  list_service_account_keys: {
     parameters: {
       query?: {
         limit?: number;
@@ -18100,7 +18100,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_service_account_key_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_post: {
+  create_service_account_key: {
     parameters: {
       query?: never;
       header?: never;
@@ -18129,7 +18129,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  health_healthz_get: {
+  health: {
     parameters: {
       query?: never;
       header?: never;
@@ -18151,7 +18151,7 @@ export interface operations {
       };
     };
   };
-  ready_readyz_get: {
+  ready: {
     parameters: {
       query?: never;
       header?: never;

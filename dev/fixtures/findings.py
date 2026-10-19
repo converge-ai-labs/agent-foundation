@@ -11,9 +11,9 @@ import re
 from typing import Any
 
 # The platform tools of the trace reads and the finding submission, named after their operation IDs.
-READ_TRACE = "get_trace_api_v1_traces__trace_id__get"
-READ_SPANS = "list_trace_spans_api_v1_traces__trace_id__spans_get"
-SUBMIT = "create_finding_api_v1_findings_post"
+READ_TRACE = "get_trace"
+READ_SPANS = "list_trace_spans"
+SUBMIT = "create_finding"
 
 EXAMPLES = {
     "shipping": {

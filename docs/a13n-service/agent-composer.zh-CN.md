@@ -83,7 +83,7 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
     "agents": {
       "enabled": true,
       "tools": {
-        "archive_agent_api_v1_agents__agent_id__archive_post": { "enabled": false }
+        "archive_agent": { "enabled": false }
       }
     },
     "models": { "enabled": true },

@@ -59,7 +59,7 @@ async def start_analysis(
 
 
 @router.get("/finding-analyses", response_model=AnalysisPage, openapi_extra=platform_operation("execution", "read"))
-async def list_analyses(
+async def list_finding_analyses(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, limit: PageLimit = 20, cursor: str | None = None
 ) -> AnalysisPage:
     return await analysis.list_analyses(runtime, actor, workspace_id, limit=limit, cursor=cursor)

@@ -2,7 +2,7 @@
   {
     "effect": "read",
     "group": "agents",
-    "key": "list_agents_api_v1_agents_get",
+    "key": "list_agents",
     "method": "GET",
     "path": "/api/v1/agents",
     "summary": "List Agents"
@@ -10,7 +10,7 @@
   {
     "effect": "write",
     "group": "agents",
-    "key": "create_agent_api_v1_agents_post",
+    "key": "create_agent",
     "method": "POST",
     "path": "/api/v1/agents",
     "summary": "Create Agent"
@@ -18,15 +18,15 @@
   {
     "effect": "read",
     "group": "agents",
-    "key": "validate_revision_api_v1_agents_validate_post",
+    "key": "validate_agent",
     "method": "POST",
     "path": "/api/v1/agents/validate",
-    "summary": "Validate Revision"
+    "summary": "Validate Agent"
   },
   {
     "effect": "read",
     "group": "agents",
-    "key": "get_agent_api_v1_agents__agent_id__get",
+    "key": "get_agent",
     "method": "GET",
     "path": "/api/v1/agents/{agent_id}",
     "summary": "Get Agent"
@@ -34,7 +34,7 @@
   {
     "effect": "write",
     "group": "agents",
-    "key": "update_agent_api_v1_agents__agent_id__patch",
+    "key": "update_agent",
     "method": "PATCH",
     "path": "/api/v1/agents/{agent_id}",
     "summary": "Update Agent"
@@ -42,7 +42,7 @@
   {
     "effect": "write",
     "group": "agents",
-    "key": "archive_agent_api_v1_agents__agent_id__archive_post",
+    "key": "archive_agent",
     "method": "POST",
     "path": "/api/v1/agents/{agent_id}/archive",
     "summary": "Archive Agent"
@@ -50,7 +50,7 @@
   {
     "effect": "write",
     "group": "agents",
-    "key": "duplicate_agent_api_v1_agents__agent_id__duplicate_post",
+    "key": "duplicate_agent",
     "method": "POST",
     "path": "/api/v1/agents/{agent_id}/duplicate",
     "summary": "Duplicate Agent"
@@ -58,47 +58,47 @@
   {
     "effect": "read",
     "group": "agents",
-    "key": "list_revisions_api_v1_agents__agent_id__revisions_get",
+    "key": "list_agent_revisions",
     "method": "GET",
     "path": "/api/v1/agents/{agent_id}/revisions",
-    "summary": "List Revisions"
+    "summary": "List Agent Revisions"
   },
   {
     "effect": "write",
     "group": "agents",
-    "key": "create_revision_api_v1_agents__agent_id__revisions_post",
+    "key": "create_agent_revision",
     "method": "POST",
     "path": "/api/v1/agents/{agent_id}/revisions",
-    "summary": "Create Revision"
+    "summary": "Create Agent Revision"
   },
   {
     "effect": "read",
     "group": "agents",
-    "key": "get_revision_api_v1_agents__agent_id__revisions__re_24e45e8cb6d5",
+    "key": "get_agent_revision",
     "method": "GET",
     "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}",
-    "summary": "Get Revision"
+    "summary": "Get Agent Revision"
   },
   {
     "effect": "read",
     "group": "agents",
-    "key": "compare_revisions_api_v1_agents__agent_id__revision_3fb491060adb",
+    "key": "compare_agent_revisions",
     "method": "GET",
     "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}/compare",
-    "summary": "Compare Revisions"
+    "summary": "Compare Agent Revisions"
   },
   {
     "effect": "write",
     "group": "agents",
-    "key": "set_default_api_v1_agents__agent_id__revisions__rev_fd48db7a69f3",
+    "key": "set_default_agent_revision",
     "method": "POST",
     "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default",
-    "summary": "Set Default"
+    "summary": "Set Default Agent Revision"
   },
   {
     "effect": "write",
     "group": "agents",
-    "key": "unarchive_agent_api_v1_agents__agent_id__unarchive_post",
+    "key": "unarchive_agent",
     "method": "POST",
     "path": "/api/v1/agents/{agent_id}/unarchive",
     "summary": "Unarchive Agent"
@@ -106,7 +106,7 @@
   {
     "effect": "read",
     "group": "agents",
-    "key": "list_toolsets_api_v1_toolsets_get",
+    "key": "list_toolsets",
     "method": "GET",
     "path": "/api/v1/toolsets",
     "summary": "List Toolsets"
@@ -114,7 +114,7 @@
   {
     "effect": "read",
     "group": "agents",
-    "key": "define_toolsets_api_v1_toolsets_definitions_get",
+    "key": "define_toolsets",
     "method": "GET",
     "path": "/api/v1/toolsets/definitions",
     "summary": "Define Toolsets"
@@ -122,7 +122,7 @@
   {
     "effect": "read",
     "group": "agents",
-    "key": "index_toolsets_api_v1_toolsets_index_get",
+    "key": "index_toolsets",
     "method": "GET",
     "path": "/api/v1/toolsets/index",
     "summary": "Index Toolsets"
@@ -130,7 +130,7 @@
   {
     "effect": "read",
     "group": "models",
-    "key": "get_media_defaults_api_v1_media_understanding_defaults_get",
+    "key": "get_media_defaults",
     "method": "GET",
     "path": "/api/v1/media-understanding-defaults",
     "summary": "Get Media Defaults"
@@ -138,7 +138,7 @@
   {
     "effect": "read",
     "group": "models",
-    "key": "get_model_catalog_api_v1_model_catalog_get",
+    "key": "get_model_catalog",
     "method": "GET",
     "path": "/api/v1/model-catalog",
     "summary": "Get Model Catalog"
@@ -146,7 +146,7 @@
   {
     "effect": "read",
     "group": "models",
-    "key": "list_models_api_v1_models_get",
+    "key": "list_models",
     "method": "GET",
     "path": "/api/v1/models",
     "summary": "List Models"
@@ -154,7 +154,7 @@
   {
     "effect": "write",
     "group": "models",
-    "key": "create_model_api_v1_models_post",
+    "key": "create_model",
     "method": "POST",
     "path": "/api/v1/models",
     "summary": "Create Model"
@@ -162,7 +162,7 @@
   {
     "effect": "read",
     "group": "models",
-    "key": "get_model_api_v1_models__key__get",
+    "key": "get_model",
     "method": "GET",
     "path": "/api/v1/models/{key}",
     "summary": "Get Model"
@@ -170,7 +170,7 @@
   {
     "effect": "write",
     "group": "models",
-    "key": "update_model_api_v1_models__key__patch",
+    "key": "update_model",
     "method": "PATCH",
     "path": "/api/v1/models/{key}",
     "summary": "Update Model"
@@ -178,7 +178,7 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "list_connections_api_v1_connections_get",
+    "key": "list_connections",
     "method": "GET",
     "path": "/api/v1/connections",
     "summary": "List Connections"
@@ -186,7 +186,7 @@
   {
     "effect": "write",
     "group": "connections",
-    "key": "create_connection_api_v1_connections_post",
+    "key": "create_connection",
     "method": "POST",
     "path": "/api/v1/connections",
     "summary": "Create Connection"
@@ -194,7 +194,7 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "get_connection_api_v1_connections__connection_id__get",
+    "key": "get_connection",
     "method": "GET",
     "path": "/api/v1/connections/{connection_id}",
     "summary": "Get Connection"
@@ -202,7 +202,7 @@
   {
     "effect": "write",
     "group": "connections",
-    "key": "update_connection_api_v1_connections__connection_id__patch",
+    "key": "update_connection",
     "method": "PATCH",
     "path": "/api/v1/connections/{connection_id}",
     "summary": "Update Connection"
@@ -210,7 +210,7 @@
   {
     "effect": "write",
     "group": "connections",
-    "key": "revoke_connection_api_v1_connections__connection_id__revoke_post",
+    "key": "revoke_connection",
     "method": "POST",
     "path": "/api/v1/connections/{connection_id}/revoke",
     "summary": "Revoke Connection"
@@ -218,7 +218,7 @@
   {
     "effect": "write",
     "group": "connections",
-    "key": "test_connection_api_v1_connections__connection_id__test_post",
+    "key": "test_connection",
     "method": "POST",
     "path": "/api/v1/connections/{connection_id}/test",
     "summary": "Test Connection"
@@ -226,15 +226,15 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "list_tools_api_v1_connections__connection_id__tools_get",
+    "key": "list_connection_tools",
     "method": "GET",
     "path": "/api/v1/connections/{connection_id}/tools",
-    "summary": "List Tools"
+    "summary": "List Connection Tools"
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "define_connection_tools_api_v1_connections__connect_926d72ff232f",
+    "key": "define_connection_tools",
     "method": "GET",
     "path": "/api/v1/connections/{connection_id}/tools/definitions",
     "summary": "Define Connection Tools"
@@ -242,7 +242,7 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "index_connection_tools_api_v1_connections__connecti_5bd15702e505",
+    "key": "index_connection_tools",
     "method": "GET",
     "path": "/api/v1/connections/{connection_id}/tools/index",
     "summary": "Index Connection Tools"
@@ -250,31 +250,31 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "list_apps_api_v1_connector_providers__provider_id__apps_get",
+    "key": "list_connector_apps",
     "method": "GET",
     "path": "/api/v1/connector-providers/{provider_id}/apps",
-    "summary": "List Apps"
+    "summary": "List Connector Apps"
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "get_app_api_v1_connector_providers__provider_id__apps__app__get",
+    "key": "get_connector_app",
     "method": "GET",
     "path": "/api/v1/connector-providers/{provider_id}/apps/{app}",
-    "summary": "Get App"
+    "summary": "Get Connector App"
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "list_actions_api_v1_connector_providers__provider_i_d227e8b717f5",
+    "key": "list_connector_actions",
     "method": "GET",
     "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions",
-    "summary": "List Actions"
+    "summary": "List Connector Actions"
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "define_connector_actions_api_v1_connector_providers_e99cf292e426",
+    "key": "define_connector_actions",
     "method": "GET",
     "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/definitions",
     "summary": "Define Connector Actions"
@@ -282,7 +282,7 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "index_connector_actions_api_v1_connector_providers__49f9dc3f7344",
+    "key": "index_connector_actions",
     "method": "GET",
     "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/index",
     "summary": "Index Connector Actions"
@@ -290,7 +290,7 @@
   {
     "effect": "read",
     "group": "connections",
-    "key": "list_mcp_servers_api_v1_mcp_servers_get",
+    "key": "list_mcp_servers",
     "method": "GET",
     "path": "/api/v1/mcp-servers",
     "summary": "List Mcp Servers"
@@ -298,7 +298,7 @@
   {
     "effect": "read",
     "group": "skills",
-    "key": "list_skills_api_v1_skills_get",
+    "key": "list_skills",
     "method": "GET",
     "path": "/api/v1/skills",
     "summary": "List Skills"
@@ -306,7 +306,7 @@
   {
     "effect": "write",
     "group": "skills",
-    "key": "create_skill_api_v1_skills_post",
+    "key": "create_skill",
     "method": "POST",
     "path": "/api/v1/skills",
     "summary": "Create Skill"
@@ -314,15 +314,15 @@
   {
     "effect": "read",
     "group": "skills",
-    "key": "validate_package_api_v1_skills_validate_post",
+    "key": "validate_skill",
     "method": "POST",
     "path": "/api/v1/skills/validate",
-    "summary": "Validate Package"
+    "summary": "Validate Skill"
   },
   {
     "effect": "read",
     "group": "skills",
-    "key": "get_skill_api_v1_skills__skill_id__get",
+    "key": "get_skill",
     "method": "GET",
     "path": "/api/v1/skills/{skill_id}",
     "summary": "Get Skill"
@@ -330,7 +330,7 @@
   {
     "effect": "write",
     "group": "skills",
-    "key": "update_skill_api_v1_skills__skill_id__patch",
+    "key": "update_skill",
     "method": "PATCH",
     "path": "/api/v1/skills/{skill_id}",
     "summary": "Update Skill"
@@ -338,7 +338,7 @@
   {
     "effect": "write",
     "group": "skills",
-    "key": "archive_skill_api_v1_skills__skill_id__archive_post",
+    "key": "archive_skill",
     "method": "POST",
     "path": "/api/v1/skills/{skill_id}/archive",
     "summary": "Archive Skill"
@@ -346,39 +346,39 @@
   {
     "effect": "read",
     "group": "skills",
-    "key": "list_revisions_api_v1_skills__skill_id__revisions_get",
+    "key": "list_skill_revisions",
     "method": "GET",
     "path": "/api/v1/skills/{skill_id}/revisions",
-    "summary": "List Revisions"
+    "summary": "List Skill Revisions"
   },
   {
     "effect": "write",
     "group": "skills",
-    "key": "create_revision_api_v1_skills__skill_id__revisions_post",
+    "key": "create_skill_revision",
     "method": "POST",
     "path": "/api/v1/skills/{skill_id}/revisions",
-    "summary": "Create Revision"
+    "summary": "Create Skill Revision"
   },
   {
     "effect": "read",
     "group": "skills",
-    "key": "get_revision_api_v1_skills__skill_id__revisions__re_b302d83353a3",
+    "key": "get_skill_revision",
     "method": "GET",
     "path": "/api/v1/skills/{skill_id}/revisions/{revision_id}",
-    "summary": "Get Revision"
+    "summary": "Get Skill Revision"
   },
   {
     "effect": "write",
     "group": "skills",
-    "key": "set_default_revision_api_v1_skills__skill_id__revis_54f51a99ce8b",
+    "key": "set_default_skill_revision",
     "method": "POST",
     "path": "/api/v1/skills/{skill_id}/revisions/{revision_id}/set-default",
-    "summary": "Set Default Revision"
+    "summary": "Set Default Skill Revision"
   },
   {
     "effect": "write",
     "group": "skills",
-    "key": "unarchive_skill_api_v1_skills__skill_id__unarchive_post",
+    "key": "unarchive_skill",
     "method": "POST",
     "path": "/api/v1/skills/{skill_id}/unarchive",
     "summary": "Unarchive Skill"
@@ -386,39 +386,39 @@
   {
     "effect": "read",
     "group": "environment_templates",
-    "key": "list_templates_api_v1_environment_templates_get",
+    "key": "list_environment_templates",
     "method": "GET",
     "path": "/api/v1/environment-templates",
-    "summary": "List Templates"
+    "summary": "List Environment Templates"
   },
   {
     "effect": "write",
     "group": "environment_templates",
-    "key": "create_template_api_v1_environment_templates_post",
+    "key": "create_environment_template",
     "method": "POST",
     "path": "/api/v1/environment-templates",
-    "summary": "Create Template"
+    "summary": "Create Environment Template"
   },
   {
     "effect": "read",
     "group": "environment_templates",
-    "key": "get_template_api_v1_environment_templates__template_id__get",
+    "key": "get_environment_template",
     "method": "GET",
     "path": "/api/v1/environment-templates/{template_id}",
-    "summary": "Get Template"
+    "summary": "Get Environment Template"
   },
   {
     "effect": "write",
     "group": "environment_templates",
-    "key": "update_template_api_v1_environment_templates__template_id__patch",
+    "key": "update_environment_template",
     "method": "PATCH",
     "path": "/api/v1/environment-templates/{template_id}",
-    "summary": "Update Template"
+    "summary": "Update Environment Template"
   },
   {
     "effect": "read",
     "group": "providers",
-    "key": "list_providers_api_v1_connector_providers_get",
+    "key": "list_connector_providers",
     "method": "GET",
     "path": "/api/v1/connector-providers",
     "summary": "List connector providers"
@@ -426,7 +426,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "get_provider_api_v1_connector_providers__provider_id__get",
+    "key": "get_connector_provider",
     "method": "GET",
     "path": "/api/v1/connector-providers/{provider_id}",
     "summary": "Get connector provider"
@@ -434,7 +434,7 @@
   {
     "effect": "write",
     "group": "providers",
-    "key": "test_provider_api_v1_connector_providers__provider_id__test_post",
+    "key": "test_connector_provider",
     "method": "POST",
     "path": "/api/v1/connector-providers/{provider_id}/test",
     "summary": "Test connector provider"
@@ -442,7 +442,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "list_providers_api_v1_environment_providers_get",
+    "key": "list_environment_providers",
     "method": "GET",
     "path": "/api/v1/environment-providers",
     "summary": "List environment providers"
@@ -450,7 +450,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "get_provider_api_v1_environment_providers__provider_id__get",
+    "key": "get_environment_provider",
     "method": "GET",
     "path": "/api/v1/environment-providers/{provider_id}",
     "summary": "Get environment provider"
@@ -458,7 +458,7 @@
   {
     "effect": "write",
     "group": "providers",
-    "key": "test_provider_api_v1_environment_providers__provide_03e15087e087",
+    "key": "test_environment_provider",
     "method": "POST",
     "path": "/api/v1/environment-providers/{provider_id}/test",
     "summary": "Test environment provider"
@@ -466,7 +466,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "list_providers_api_v1_model_providers_get",
+    "key": "list_model_providers",
     "method": "GET",
     "path": "/api/v1/model-providers",
     "summary": "List model providers"
@@ -474,7 +474,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "get_provider_api_v1_model_providers__provider_id__get",
+    "key": "get_model_provider",
     "method": "GET",
     "path": "/api/v1/model-providers/{provider_id}",
     "summary": "Get model provider"
@@ -482,7 +482,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "discover_model_provider_models_api_v1_model_provide_aaf91efd6e23",
+    "key": "discover_model_provider_models",
     "method": "GET",
     "path": "/api/v1/model-providers/{provider_id}/models",
     "summary": "Discover Model Provider Models"
@@ -490,7 +490,7 @@
   {
     "effect": "write",
     "group": "providers",
-    "key": "test_provider_api_v1_model_providers__provider_id__test_post",
+    "key": "test_model_provider",
     "method": "POST",
     "path": "/api/v1/model-providers/{provider_id}/test",
     "summary": "Test model provider"
@@ -498,7 +498,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "list_providers_api_v1_web_providers_get",
+    "key": "list_web_providers",
     "method": "GET",
     "path": "/api/v1/web-providers",
     "summary": "List web providers"
@@ -506,7 +506,7 @@
   {
     "effect": "read",
     "group": "providers",
-    "key": "get_provider_api_v1_web_providers__provider_id__get",
+    "key": "get_web_provider",
     "method": "GET",
     "path": "/api/v1/web-providers/{provider_id}",
     "summary": "Get web provider"
@@ -514,7 +514,7 @@
   {
     "effect": "write",
     "group": "providers",
-    "key": "test_provider_api_v1_web_providers__provider_id__test_post",
+    "key": "test_web_provider",
     "method": "POST",
     "path": "/api/v1/web-providers/{provider_id}/test",
     "summary": "Test web provider"
@@ -522,15 +522,15 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_analyses_api_v1_finding_analyses_get",
+    "key": "list_finding_analyses",
     "method": "GET",
     "path": "/api/v1/finding-analyses",
-    "summary": "List Analyses"
+    "summary": "List Finding Analyses"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_findings_api_v1_findings_get",
+    "key": "list_findings",
     "method": "GET",
     "path": "/api/v1/findings",
     "summary": "List Findings"
@@ -538,7 +538,7 @@
   {
     "effect": "write",
     "group": "execution",
-    "key": "create_finding_api_v1_findings_post",
+    "key": "create_finding",
     "method": "POST",
     "path": "/api/v1/findings",
     "summary": "Create Finding"
@@ -546,7 +546,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_finding_api_v1_findings__finding_id__get",
+    "key": "get_finding",
     "method": "GET",
     "path": "/api/v1/findings/{finding_id}",
     "summary": "Get Finding"
@@ -554,7 +554,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_runs_api_v1_runs_get",
+    "key": "list_runs",
     "method": "GET",
     "path": "/api/v1/runs",
     "summary": "List Runs"
@@ -562,7 +562,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_run_api_v1_runs__run_id__get",
+    "key": "get_run",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}",
     "summary": "Get Run"
@@ -570,31 +570,31 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "run_agent_api_v1_runs__run_id__agent_get",
+    "key": "get_run_agent",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/agent",
-    "summary": "Run Agent"
+    "summary": "Get Run Agent"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "run_attempts_api_v1_runs__run_id__attempts_get",
+    "key": "list_run_attempts",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/attempts",
-    "summary": "Run Attempts"
+    "summary": "List Run Attempts"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_attempt_api_v1_runs__run_id__attempts__attempt_id__get",
+    "key": "get_run_attempt",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/attempts/{attempt_id}",
-    "summary": "Get Attempt"
+    "summary": "Get Run Attempt"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_attempt_spans_api_v1_runs__run_id__attempts__a_e1f51e19dfb7",
+    "key": "list_attempt_spans",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/attempts/{attempt_id}/trace",
     "summary": "List Attempt Spans"
@@ -602,39 +602,39 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "run_content_api_v1_runs__run_id__contents__content_id__get",
+    "key": "get_run_content",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/contents/{content_id}",
-    "summary": "Run Content"
+    "summary": "Get Run Content"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "run_items_api_v1_runs__run_id__items_get",
+    "key": "list_run_items",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/items",
-    "summary": "Run Items"
+    "summary": "List Run Items"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "read_item_content_api_v1_runs__run_id__items__item__ca40c1d742b0",
+    "key": "read_run_item_content",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/items/{item_id}/content",
-    "summary": "Read Item Content"
+    "summary": "Read Run Item Content"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "run_lineage_api_v1_runs__run_id__lineage_get",
+    "key": "get_run_lineage",
     "method": "GET",
     "path": "/api/v1/runs/{run_id}/lineage",
-    "summary": "Run Lineage"
+    "summary": "Get Run Lineage"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_sessions_api_v1_sessions_get",
+    "key": "list_sessions",
     "method": "GET",
     "path": "/api/v1/sessions",
     "summary": "List Sessions"
@@ -642,7 +642,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_session_api_v1_sessions__session_id__get",
+    "key": "get_session",
     "method": "GET",
     "path": "/api/v1/sessions/{session_id}",
     "summary": "Get Session"
@@ -650,7 +650,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_message_authors_api_v1_sessions__session_id__me_657b60807ed1",
+    "key": "get_message_authors",
     "method": "GET",
     "path": "/api/v1/sessions/{session_id}/message-authors",
     "summary": "Get Message Authors"
@@ -658,7 +658,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_threads_api_v1_threads_get",
+    "key": "list_threads",
     "method": "GET",
     "path": "/api/v1/threads",
     "summary": "List Threads"
@@ -666,7 +666,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_thread_api_v1_threads__thread_id__get",
+    "key": "get_thread",
     "method": "GET",
     "path": "/api/v1/threads/{thread_id}",
     "summary": "Get Thread"
@@ -674,7 +674,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_inbox_api_v1_threads__thread_id__inbox_get",
+    "key": "list_inbox",
     "method": "GET",
     "path": "/api/v1/threads/{thread_id}/inbox",
     "summary": "List Inbox"
@@ -682,15 +682,15 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_entry_api_v1_threads__thread_id__inbox__entry_id__get",
+    "key": "get_inbox_entry",
     "method": "GET",
     "path": "/api/v1/threads/{thread_id}/inbox/{entry_id}",
-    "summary": "Get Entry"
+    "summary": "Get Inbox Entry"
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_thread_runs_api_v1_threads__thread_id__runs_get",
+    "key": "list_thread_runs",
     "method": "GET",
     "path": "/api/v1/threads/{thread_id}/runs",
     "summary": "List Thread Runs"
@@ -698,7 +698,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_trace_backend_api_v1_trace_backend_get",
+    "key": "get_trace_backend",
     "method": "GET",
     "path": "/api/v1/trace-backend",
     "summary": "Get Trace Backend"
@@ -706,7 +706,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_traces_api_v1_traces_get",
+    "key": "list_traces",
     "method": "GET",
     "path": "/api/v1/traces",
     "summary": "List Traces"
@@ -714,7 +714,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "get_trace_api_v1_traces__trace_id__get",
+    "key": "get_trace",
     "method": "GET",
     "path": "/api/v1/traces/{trace_id}",
     "summary": "Get Trace"
@@ -722,7 +722,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_trace_spans_api_v1_traces__trace_id__spans_get",
+    "key": "list_trace_spans",
     "method": "GET",
     "path": "/api/v1/traces/{trace_id}/spans",
     "summary": "List Trace Spans"
@@ -730,7 +730,7 @@
   {
     "effect": "read",
     "group": "execution",
-    "key": "read_span_content_api_v1_traces__trace_id__spans__s_22c99585bb45",
+    "key": "read_span_content",
     "method": "GET",
     "path": "/api/v1/traces/{trace_id}/spans/{span_id}/content",
     "summary": "Read Span Content"

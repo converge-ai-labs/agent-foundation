@@ -93,12 +93,20 @@ def _dependency_calls(dependant: Dependant) -> Iterator[Callable[..., Any] | Non
         yield from _dependency_calls(dependency)
 
 
+def operation_id(route: APIRoute) -> str:
+    """The route name: one short name for the operation and its MCP tool."""
+    return route.name
+
+
 def contract(app: FastAPI, *, locally_authenticated: Sequence[APIRouter]) -> dict[str, Any]:
     """The HTTP contract: FastAPI's document, with failures as the Service sends them, and how each authenticated
     operation of `locally_authenticated` (the routers the local authenticator protects) proves its caller."""
     if app.openapi_schema is not None:
         return app.openapi_schema
     document = FastAPI.openapi(app)  # FastAPI's own document, which it caches; completed in place
+    ids = [operation["operationId"] for operations in document["paths"].values() for operation in operations.values()]
+    if duplicates := sorted({name for name in ids if ids.count(name) > 1}):
+        raise ValueError(f"Operation names must be unique: {', '.join(duplicates)}")
     document_errors(document)
     if locally_authenticated:
         document["components"]["securitySchemes"] = SECURITY_SCHEMES
@@ -311,6 +319,7 @@ def build_app(
         docs_url="/api/v1/docs" if serves_api else None,
         swagger_ui_oauth2_redirect_url="/api/v1/docs/oauth2-redirect" if serves_api else None,
         redoc_url=None,
+        generate_unique_id_function=operation_id,
     )
     app.add_middleware(BodyLimit, max_bytes=config.server.request_bytes, timeout=config.server.request_timeout)
     documented = distribution.routers if serves_api and distribution.authenticator is None else ()

@@ -83,7 +83,7 @@ Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Fea
     "agents": {
       "enabled": true,
       "tools": {
-        "archive_agent_api_v1_agents__agent_id__archive_post": { "enabled": false }
+        "archive_agent": { "enabled": false }
       }
     },
     "models": { "enabled": true },
