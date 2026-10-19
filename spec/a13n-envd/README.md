@@ -23,7 +23,7 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 | [08-protocol-source-client-and-generation.md](08-protocol-source-client-and-generation.md) | IDL, generated Rust/Python surfaces, client and release ownership              |
 | [09-resource-lifetime-and-reclamation.md](09-resource-lifetime-and-reclamation.md)         | Session inactivity, disconnect grace, history and pressure collection          |
 
-[10-computer-use.md](10-computer-use.md) owns optional native desktop targets, observations, input effects and cleanup. [11-resource-monitoring.md](11-resource-monitoring.md) owns Device system information, optional cross-platform resource observations, Prometheus HTTP exposition, metric scopes and sampler lifecycle.
+[10-computer-use.md](10-computer-use.md) owns optional native desktop targets, observations, input effects and cleanup. [11-resource-monitoring.md](11-resource-monitoring.md) owns Device system information, optional cross-platform resource observations, Prometheus HTTP exposition, native OTLP export, metric scopes and sampler lifecycle.
 
 ## Reading Paths
 

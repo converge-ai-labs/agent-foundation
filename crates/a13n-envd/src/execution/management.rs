@@ -55,6 +55,13 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
     for path in &mut config.bootstrap_files {
         *path = fs::canonicalize(&*path)?;
     }
+    let native_export = config.monitoring.is_some()
+        && crate::monitoring::otlp::enabled().map_err(io::Error::other)?;
+    let mut telemetry = if native_export {
+        crate::monitoring::otlp::environment()
+    } else {
+        BTreeMap::new()
+    };
     let mut image = Image::default();
     image.executable(&std::env::current_exe()?, Path::new(EXECUTABLE))?;
     if config.sandbox.restricted() {
@@ -95,6 +102,7 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
         b"passwd: files\ngroup: files\nhosts: files dns\n".to_vec(),
     );
     if config.egress.controlled()
+        || native_export
         || matches!(config.transport, TransportConfig::ReverseWebSocket(_))
     {
         let bundle = [
@@ -135,6 +143,26 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
             if let Some(path) = &mut ws.tls_ca_file {
                 image.credential(path, "extra-ca", &mut config.bootstrap_files)?;
             }
+        }
+    }
+    // Resolve the effective TLS files before entering the private root. Keep
+    // secrets out of serialized bootstrap configuration and out of workers.
+    for suffix in ["CERTIFICATE", "CLIENT_CERTIFICATE", "CLIENT_KEY"] {
+        let generic = format!("OTEL_EXPORTER_OTLP_{suffix}");
+        let metrics = format!("OTEL_EXPORTER_OTLP_METRICS_{suffix}");
+        let value = telemetry
+            .remove(&metrics)
+            .filter(|v| !v.is_empty())
+            .or_else(|| telemetry.get(&generic).filter(|v| !v.is_empty()).cloned());
+        telemetry.remove(&generic);
+        if let Some(value) = value {
+            let mut path = PathBuf::from(value);
+            image.credential(
+                &mut path,
+                &format!("otlp-{}", suffix.to_ascii_lowercase()),
+                &mut config.bootstrap_files,
+            )?;
+            telemetry.insert(metrics, path.into_os_string());
         }
     }
     if let Some(monitoring) = &mut config.monitoring {
@@ -263,6 +291,7 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
     Err(Command::new(EXECUTABLE)
         .arg("--internal-managed-broker")
         .env_clear()
+        .envs(telemetry)
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
         .env("LANG", "C.UTF-8")
         .exec())

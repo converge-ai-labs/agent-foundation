@@ -18,6 +18,8 @@ use crate::{
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+pub(crate) mod otlp;
+mod projection;
 pub(crate) mod prometheus;
 mod sample;
 #[cfg(target_os = "windows")]
@@ -131,10 +133,29 @@ impl Options {
 }
 
 /// Dropped by the outer serve invocation, never by a Session or EIP connection.
-pub(crate) struct Runtime(JoinHandle<()>);
+pub(crate) struct Runtime {
+    sampling: JoinHandle<()>,
+    exporter: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
+}
+impl Runtime {
+    pub(crate) async fn shutdown(mut self) {
+        self.sampling.abort();
+        if let Some(provider) = self.exporter.take() {
+            let deadline = Duration::from_secs(5);
+            let result = tokio::time::timeout(
+                deadline,
+                tokio::task::spawn_blocking(move || provider.shutdown_with_timeout(deadline)),
+            )
+            .await;
+            if !matches!(result, Ok(Ok(Ok(())))) {
+                otlp::warning("a13n-envd.monitoring.shutdown_incomplete");
+            }
+        }
+    }
+}
 impl Drop for Runtime {
     fn drop(&mut self) {
-        self.0.abort();
+        self.sampling.abort();
     }
 }
 
@@ -154,9 +175,18 @@ impl State {
         })
     }
 
-    pub(crate) fn start(self: &Arc<Self>) -> Runtime {
+    pub(crate) fn start(
+        self: &Arc<Self>,
+        device_id: &str,
+        generation: u64,
+    ) -> Result<Runtime, ConfigError> {
+        let (exporter, mut instruments) =
+            match otlp::start(self.clone(), device_id.to_owned(), generation)? {
+                Some((provider, instruments)) => (Some(provider), Some(instruments)),
+                None => (None, None),
+            };
         let state = self.clone();
-        Runtime(tokio::spawn(async move {
+        let sampling = tokio::spawn(async move {
             let mut collector = sample::Collector::new(
                 state.options.filesystems.clone(),
                 state.options.cgroup_v2_directory.clone(),
@@ -179,6 +209,9 @@ impl State {
                         state
                             .latest
                             .send_replace(Some(Arc::new((observed_at, snapshot))));
+                        if let Some(instruments) = &mut instruments {
+                            instruments.refresh();
+                        }
                     }
                     Err(_) => {
                         eprintln!(
@@ -189,7 +222,8 @@ impl State {
                     }
                 }
             }
-        }))
+        });
+        Ok(Runtime { sampling, exporter })
     }
 
     pub(crate) fn report(&self, device_id: &str, generation: u64) -> DeviceMetricsResult {

@@ -93,7 +93,7 @@ Linux, macOS and Windows expose basic system information in the Device descripto
 
 `a13n-envd connect` enables CPU and memory sampling every 10 seconds by default, including when reconnecting with a saved Host. Existing installations need an updated Envd binary and a daemon restart to use this default; updating Harness UI alone does not change a running remote daemon.
 
-Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to disable sampling. Other daemon launches remain opt-in. Enable or customize sampling with `monitoring` in your daemon configuration:
+Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to disable sampling. Other daemon launches remain opt-in; selecting native OTLP export also enables default sampling when `monitoring` is omitted. Enable or customize sampling with `monitoring` in your daemon configuration:
 
 ```json
 {
@@ -145,13 +145,43 @@ When consuming reports:
 - Convert cumulative times to seconds, event counts to counters, byte/inode observations to gauges, and percentages to ratios as needed by your exporter.
 - Label chart peaks as sampled maxima. CPU percentages are interval averages; point observations can miss spikes.
 
-Envd retains one sample and exposes it through EIP and standard HTTP scraping. History, alerts, downstream export and product charts belong to consumers and their observability infrastructure. Session cleanup does not stop sampling; daemon shutdown does.
+Envd retains one sample and exposes it through EIP, standard HTTP scraping and optional native OTLP export. History, alerts and product charts belong to consumers and their observability infrastructure. Session cleanup does not stop sampling; daemon shutdown does.
 
 ## Prometheus and OpenTelemetry
 
 When using the [HTTP transport](#carrier-profiles), enable `"monitoring": {}` and scrape `GET /metrics` on the same address. The response uses Prometheus text format 0.0.4. It reads the same cache as `device.metrics` without EIP initialization or a Session. No additional listener, token or TLS settings are needed. Stdio and reverse-WebSocket deployments, including `connect`, do not expose an HTTP scrape endpoint; their consumers can continue reading EIP observations.
 
 Use the HTTP listener's Bearer credential and verified HTTPS. **This credential also grants the listener's EIP authority; it is not a read-only monitoring token.** Keep it in a collector-side secret file, restrict access to the collector and use a trusted network. Public links require TLS. Existing explicit loopback/provider-private plaintext settings remain available.
+
+### Native OTLP push
+
+Push metrics directly to an OTLP receiver with any EIP carrier, including outbound-only `connect` deployments:
+
+```bash
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4318
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_METRIC_EXPORT_INTERVAL=10000
+a13n-envd connect https://host.example.com
+```
+
+A generic OTLP endpoint or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` also selects export without `OTEL_METRICS_EXPORTER`. An omitted `monitoring` object then enables default CPU/memory sampling; explicit `"monitoring": null` disables both sampling and export. `OTEL_METRICS_EXPORTER=none` or `OTEL_SDK_DISABLED=true` disables export while preserving explicitly configured sampling. Restart Envd to apply changes.
+
+| Setting                                                         | Behavior                                                                                                                                                   |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                   | HTTP base URL; the exporter appends `/v1/metrics`.                                                                                                         |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`                           | Complete metrics URL, used as supplied.                                                                                                                    |
+| `OTEL_EXPORTER_OTLP[_METRICS]_PROTOCOL`                         | `http/protobuf` (default) or `grpc`. For gRPC, use the receiver's gRPC port, commonly 4317.                                                                |
+| `OTEL_EXPORTER_OTLP[_METRICS]_HEADERS`                          | Comma-separated `key=value` headers; percent-encode values, for example `authorization=Bearer%20TOKEN`. Inject the real value through your secret manager. |
+| `OTEL_EXPORTER_OTLP[_METRICS]_TIMEOUT`                          | Export request timeout in milliseconds.                                                                                                                    |
+| `OTEL_EXPORTER_OTLP[_METRICS]_CERTIFICATE`                      | PEM CA file added to system trust roots.                                                                                                                   |
+| `OTEL_EXPORTER_OTLP[_METRICS]_CLIENT_CERTIFICATE`, `CLIENT_KEY` | PEM client certificate and private key for mTLS; supply both.                                                                                              |
+| `OTEL_METRIC_EXPORT_INTERVAL`                                   | Export interval in milliseconds; defaults to 60000. Sampling keeps its own configured interval.                                                            |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`                 | Service name and resource attributes, such as `workspace.id=example`.                                                                                      |
+
+`[_METRICS]` denotes generic and metrics-specific forms. Metrics-specific settings take precedence. Use verified TLS outside a trusted local network. Export credentials are independent of the Envd HTTP listener token. Managed Linux copies TLS files into the private broker image and masks their original paths from Sessions. Daemon exporter settings are excluded from inherited Full Control command environments; payloads can supply their own OTEL settings explicitly.
+
+The exported resource's `service.instance.id` is always the actual Device ID. Data points carry `device_id` and `generation` and use the metric names below. Counters remain cumulative absolute native values, including resets. Missing or stale resource values are omitted. OTLP values are doubles, so very large integer counts can lose precision. Export errors leave EIP and sampling available; shutdown gives the exporter a bounded flush window. Configure one ingestion route per Device to avoid duplicate ingestion from simultaneous push and scrape.
 
 ### Prometheus scrape configuration
 
@@ -209,7 +239,7 @@ service:
       exporters: [otlphttp/metrics]
 ```
 
-Replace the exporter endpoint and configure its authentication for your backend. Envd itself does not push OTLP. Assign each target to one active scraper, or configure your backend's deliberate HA deduplication; identical Collector replicas otherwise duplicate scraping. The collector must be able to reach the existing Envd HTTP listener. An outbound reverse-WebSocket connection alone does not provide that route.
+Replace the exporter endpoint and configure its authentication for your backend. For native push, use an OTLP receiver instead of the Prometheus receiver. Assign each target to one active scraper, or configure your backend's deliberate HA deduplication; identical Collector replicas otherwise duplicate scraping. The collector must be able to reach the existing Envd HTTP listener. An outbound reverse-WebSocket connection alone does not provide that route.
 
 ### Metrics and freshness
 
@@ -242,7 +272,7 @@ For native shell execution with the configured execution account's authority, us
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 ```
 
-Or set `"full_control": true` in daemon JSON. `A13N_ENVD_FULL_CONTROL` overrides the JSON value; `false` or `0` disables it. Full Control creates the default native shell profile automatically: `/bin/sh` on Unix, or PowerShell on Windows. Commands inherit the launching process's environment and original `PATH` order, excluding daemon bootstrap variables (`A13N_ENVD_*` and `EIP_*`). Command-level environment changes do not modify the daemon or later commands. Shell aliases and unexported variables are not inherited.
+Or set `"full_control": true` in daemon JSON. `A13N_ENVD_FULL_CONTROL` overrides the JSON value; `false` or `0` disables it. Full Control creates the default native shell profile automatically: `/bin/sh` on Unix, or PowerShell on Windows. Commands inherit the launching process's environment and original `PATH` order, excluding daemon bootstrap variables (`A13N_ENVD_*` and `EIP_*`) and the daemon's OTLP metrics settings. Command-level environment changes do not modify the daemon or later commands. Shell aliases and unexported variables are not inherited.
 
 Envd Full Control (`full_control`) is not a sandbox. It is independent of Harness UI's local Full Control or Sandbox mode. Do not combine it with manual executable roots or shell profiles. To configure command access explicitly instead, supply trusted executable search roots and optionally fixed shell profiles:
 
