@@ -169,7 +169,7 @@ async def test_legacy_toolsets_are_removed_from_stored_rows(database, service, r
     finally:
         engine.dispose()
     with migration_connection(database, OSS) as config:
-        command.downgrade(config, "2e9655a2d223")
+        command.downgrade(config, "4d51a94777d9")
     upgrade(database, OSS)
 
     named = "?| '{configuration,traces,findings}'"
@@ -189,3 +189,24 @@ async def test_legacy_toolsets_are_removed_from_stored_rows(database, service, r
     assert executed.status_code == 200, executed.text
     assert set(executed.json()["config"]["toolsets"]) == {"files", "shell", "computer", "web", "memory", "assets"}
     assert executed.json()["config"]["toolsets"]["web"]["enabled"] is False
+
+
+@pytest.mark.parametrize("invalid_index", [False, True])
+def test_run_search_migration_retries_after_concurrent_index_build(
+    empty_database: Database, invalid_index: bool
+) -> None:
+    upgrade(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        # The additive DDL and concurrent build committed, but the process died before stamping its revision.
+        command.stamp(config, "2e9655a2d223")
+        if invalid_index:
+            connection = config.attributes["connection"]
+            connection.execute(
+                text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'ix_runs_search_vector'::regclass")
+            )
+            connection.commit()
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    assert rows(
+        empty_database, "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_runs_search_vector'::regclass"
+    ) == [("true",)]

@@ -40,6 +40,7 @@ from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount, Failure, MessagePayload, Resume, RunOptions, Trigger
+from a13n_service.runs.search import seed, vector
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
@@ -338,6 +339,13 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         trigger=source.trigger,
         lineage=lineage,
         parent_run_id=parent.id if parent is not None else None,
+        search_vector=vector(
+            seed(
+                payload.text() if payload else "",
+                source.entry.id if source.entry else run_id,
+                runtime.settings.run_search,
+            ).counts
+        ),
         status="accepted",
         available_at=current,
         max_attempts=runtime.settings.worker.max_attempts,

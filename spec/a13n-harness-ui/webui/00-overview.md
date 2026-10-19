@@ -2,7 +2,7 @@
 
 ## Design Position
 
-WebUI combines project-organized Agent conversations, configuration composition, and optional native computer access in one browser workbench. One person or a trusted small team uses one running Harness UI instance. All participants use the same instance authority; there are no tenants, per-participant execution backends, or account-based resource isolation.
+WebUI combines project-organized Agent conversations, configuration composition, and optional native computer access in one browser workbench. One person or a trusted small team uses one running Harness UI instance. Instance-key participants have full workbench authority; [sharing links](05-scoped-sharing.md) grant temporary view or prompt access to a Project or Thread. Prompt guests use the same Agent execution authority. There are no tenants, per-participant execution backends, or account-based resource isolation.
 
 The server owns one process-local `HarnessUiApp`. The browser calls its public commands and consumes detached projections and live events. It never constructs Providers, reads SQLite directly, reconstructs Harness continuation from a transcript, or owns an Agent loop. The server remains active when all browsers disconnect.
 

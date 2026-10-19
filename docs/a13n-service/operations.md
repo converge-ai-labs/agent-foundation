@@ -129,3 +129,9 @@ parallel = 2
 Environment variables follow the section convention: `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` carry JSON objects. Each variable replaces the corresponding TOML field, then each kind inherits unspecified policy fields from defaults. Unknown fields and kinds fail startup. Configuration is resolved once per process; restart to apply a change.
 
 Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking the maximum across `all` and `control` replicas. Check the failing destination and restore delivery capacity; retention does not discard pending work.
+
+## Run search rollout
+
+The search migration adds an empty-default `tsvector` column without a table rewrite or history backfill, then builds its GIN index concurrently. Brief column/trigger DDL still needs the configured migration lock; the concurrent scan uses the bounded migration statement timeout. A failed index build is safe to rerun: the migration removes an invalid index and preserves a valid completed one.
+
+Upgrade all Control/readers before enabling new Workers. New Workers write checkpoint format 2 with private search-retention metadata and can read existing format 1. Old Workers skip newer checkpoints, but old readers cannot read the new tail metadata. After format-2 writes, retain new readers during application rollback; removing the database column does not convert object content. Search data is derived and schema downgrade discards it.

@@ -247,13 +247,15 @@ async def test_two_workers_claim_a_run_once(service, scripted_model, runs_kit) -
     assert [item["status"] for item in attempts] == ["leased"]
 
 
-async def test_claim_leaves_newer_checkpoints_and_fails_older_ones(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_claim_leaves_newer_checkpoints_and_fails_unsupported_older_ones(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     newer = (await runs_kit.start_thread(service, agent, "newer"))["run"]["id"]
     older = (await runs_kit.start_thread(service, agent, "older"))["run"]["id"]
     pointer = {"key": "orgs/o/runs/r/state/1/0", "digest": "0" * 64, "size": 1}
     async with transaction(service.runtime.storage) as session:
-        for run_id, format in ((newer, FORMAT + 1), (older, FORMAT - 1)):
+        for run_id, format in ((newer, FORMAT + 1), (older, min(checkpoints.READABLE_FORMATS) - 1)):
             await session.execute(
                 update(RunRow)
                 .where(RunRow.id == run_id)
@@ -281,8 +283,9 @@ async def test_claim_leaves_newer_checkpoints_and_fails_older_ones(service, scri
     assert (await runs_kit.get_run(service, newer))["status"] == "accepted"
 
 
+@pytest.mark.parametrize("readable_format", checkpoints.READABLE_FORMATS)
 async def test_a_successor_waits_for_a_worker_that_reads_its_parents_checkpoint(
-    service, scripted_model, runs_kit
+    service, scripted_model, runs_kit, readable_format
 ) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     submitted = await runs_kit.start_thread(service, agent, "first")
@@ -304,7 +307,7 @@ async def test_a_successor_waits_for_a_worker_that_reads_its_parents_checkpoint(
         committed = (await session.get_one(RunRow, parent_id)).checkpoint
     await rewrite_parent({**committed, "format": FORMAT + 1})
     assert await claim(service.runtime, worker_id="worker-test", worker_build="test", limit=1) == []
-    await rewrite_parent(committed)
+    await rewrite_parent({**committed, "format": readable_format})
     (lease,) = await claim(service.runtime, worker_id="worker-test", worker_build="test", limit=1)
     assert lease.run_id == successor["id"]
 

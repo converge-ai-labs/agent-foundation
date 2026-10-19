@@ -365,6 +365,9 @@ class SessionQuery(_Frozen):
     """One page of the session list and its filters. Agent, status and trigger match the session's latest run,
     the one its preview shows."""
 
+    text_query: str | None = Field(
+        default=None, max_length=1024, description="All search terms must match one run's retained user/assistant text"
+    )
     q: str | None = Field(default=None, max_length=72, description="A session or thread ID")
     agent_id: str | None = Field(default=None, max_length=72)
     status: tuple[RunStatus, ...] = Field(default=(), max_length=6)
@@ -510,6 +513,9 @@ class RunView(BaseModel):
 class RunQuery(_Frozen):
     """Workspace execution search; timestamps bound creation time, newest first."""
 
+    text_query: str | None = Field(
+        default=None, max_length=1024, description="All search terms must match one run's retained user/assistant text"
+    )
     agent_id: ObjectId | None = None
     session_id: ObjectId | None = None
     thread_id: ObjectId | None = None

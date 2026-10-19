@@ -1,3 +1,15 @@
+/* One stylesheet per page, like index.css: the build links CSS shared with
+   other pages after a page's own, so shared rules imported from JS would
+   override this page's rules of equal specificity. */
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "./base.css";
+@import "./nav.css";
+@import "./foot.css";
+@import "./plate.css";
+@import "./prose.css";
+
 /* ---- blog index: the newest post leads with its plate; the rest follow in a grid ---- */
 .head {
   padding-top: clamp(150px, 15vw, 210px);

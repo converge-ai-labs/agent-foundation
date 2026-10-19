@@ -184,6 +184,10 @@ curl -X POST "$A13N_URL/api/v1/threads" \
 
 `POST …/sessions` 创建空会话，供后续作为 `session_id` 使用。`GET …/sessions` 列出会话，包含最新运行的 `preview`，可按 `q`（会话或线程 ID）、`agent_id`、`status`、`trigger`、`updated_after`、`updated_before` 和 `label` 筛选。`GET …/threads?session_id=…` 列出会话线程，`PATCH` 修改会话和线程的 `labels`。
 
+`GET …/sessions`、`GET …/threads` 和 `GET …/runs` 还支持 `text_query`，最多 1024 个字符、64 个不同词。例如，`GET …/runs?text_query=南京%20request` 查找保留文本中同时包含这两个词的 Run。Session 和 Thread 搜索也要求全部词在同一个 Run 中命中。支持中文分词和代码标识符，原有筛选、排序和分页不变；Session 的 `q` 仍用于 ID 查询。空白或只有标点的查询不返回结果。
+
+搜索范围包括已接受的用户文本和已提交的助手文本（含中间回复），不含工具及结果、思考内容、附件、系统文本或继承的历史。默认每条用户消息保留 8 KiB 的首尾文本，助手消息保留 16 KiB；达到索引上限后会移除较早的中间回复。原始消息不受影响。流式文本在完整消息的 checkpoint 或结束时的展示提交后可搜，不回填已有历史，不提供相关度排序、短语、高亮或任意子串匹配。预算配置见[设置参考](configuration-reference.md)的 `run_search` 节。
+
 会话按最近更新时间排列：新运行或标签编辑会将会话移到顶部。接收运行不改变会话 `ETag`，因此后续运行开始前读取的标签编辑 `If-Match` 仍适用。
 
 Console 中，**会话 → 新建会话** 启动会话；agent 页的 **试用 Agent** 从该 agent 启动会话。

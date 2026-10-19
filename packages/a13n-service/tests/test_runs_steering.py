@@ -38,6 +38,9 @@ async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(service, script
     assert "also count the agents" in str(runs_kit.user_texts(following))
     statuses = {entry["id"]: entry["status"] for entry in await runs_kit.inbox(service, thread_id)}
     assert statuses[steer.json()["entry"]["id"]] == "consumed"
+    matched = await service.client.get(f"{service.api}/runs", params={"text_query": "also count"})
+    assert [run["thread_id"] for run in matched.json()["items"]] == [thread_id]
+
     # The larger entry started the thread's next run.
     assert statuses[later.json()["entry"]["id"]] == "assigned"
 

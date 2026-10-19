@@ -249,7 +249,7 @@ export function Child({
   reconcile: () => void;
   live?: FocusDisplay;
 }) {
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   const [open, setOpen] = useState(false);
   const { state: controlState, update: updateControl } = useChildControlState(
     child.parent_thread_id,
@@ -334,7 +334,7 @@ export function Child({
           <ChildPresentation child={child} live={live} />
           {child.failure && <p role="alert">{child.failure.message}</p>}
           <ErrorNotice error={controlState.error} />
-          {child.available_actions?.includes("steer") && (
+          {!shareId && child.available_actions?.includes("steer") && (
             <div className={styles.form}>
               <TextField
                 label={`Instruction for ${child.subagent_name}`}
@@ -351,7 +351,7 @@ export function Child({
               </Button>
             </div>
           )}
-          {child.available_actions?.includes("cancel") && (
+          {!shareId && child.available_actions?.includes("cancel") && (
             <Button
               variant="outline"
               disabled={pending || unknown}
@@ -360,7 +360,7 @@ export function Child({
               Stop subagent
             </Button>
           )}
-          {unknown && (
+          {!shareId && unknown && (
             <div className={styles.warning}>
               <p>
                 Acknowledgement unavailable. The subagent may already have

@@ -1141,6 +1141,63 @@
       "title": "RedisSettings",
       "type": "object"
     },
+    "RunSearch": {
+      "additionalProperties": false,
+      "description": "UTF-8 excerpt budgets and stripped PostgreSQL vector retention limits.",
+      "properties": {
+        "user_head_bytes": {
+          "default": 6144,
+          "maximum": 6144,
+          "minimum": 256,
+          "title": "User Head Bytes",
+          "type": "integer"
+        },
+        "user_tail_bytes": {
+          "default": 2048,
+          "maximum": 2048,
+          "minimum": 256,
+          "title": "User Tail Bytes",
+          "type": "integer"
+        },
+        "assistant_head_bytes": {
+          "default": 4096,
+          "maximum": 4096,
+          "minimum": 256,
+          "title": "Assistant Head Bytes",
+          "type": "integer"
+        },
+        "assistant_tail_bytes": {
+          "default": 12288,
+          "maximum": 12288,
+          "minimum": 256,
+          "title": "Assistant Tail Bytes",
+          "type": "integer"
+        },
+        "vector_bytes": {
+          "default": 524288,
+          "maximum": 786432,
+          "minimum": 393216,
+          "title": "Vector Bytes",
+          "type": "integer"
+        },
+        "target_bytes": {
+          "default": 393216,
+          "maximum": 655360,
+          "minimum": 327680,
+          "title": "Target Bytes",
+          "type": "integer"
+        },
+        "messages": {
+          "default": 512,
+          "maximum": 4096,
+          "minimum": 8,
+          "title": "Messages",
+          "type": "integer"
+        }
+      },
+      "title": "RunSearch",
+      "type": "object"
+    },
     "Server": {
       "additionalProperties": false,
       "properties": {
@@ -1575,6 +1632,9 @@
     },
     "worker": {
       "$ref": "#/$defs/Worker"
+    },
+    "run_search": {
+      "$ref": "#/$defs/RunSearch"
     },
     "environments": {
       "$ref": "#/$defs/Environments"

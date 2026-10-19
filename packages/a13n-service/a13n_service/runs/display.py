@@ -28,6 +28,7 @@ from a13n_stream_protocol.display import (
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_service.runs.contents import ContentObject
+from a13n_service.runs.search import SearchState
 
 # Re-export existing Service imports while keeping the semantic contract shared.
 __all__ = [
@@ -64,6 +65,7 @@ class Tail(BaseModel):
     continuation: DisplayContinuation | None = None
     refs: tuple[ContentObject, ...] = ()
     continuation_ref: ContentObject | None = None
+    search: SearchState | None = None
 
 
 class Page(BaseModel):

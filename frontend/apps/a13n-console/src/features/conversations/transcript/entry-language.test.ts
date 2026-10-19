@@ -162,6 +162,27 @@ it("shows the reasoning excerpt at both levels", () => {
   expect(entrySubject(reasoning)).toBe("Checking the fold before editing");
 });
 
+it("names the Service's turn reminder apart from other hidden input", () => {
+  const hidden: ContentEntry = {
+    kind: "hidden",
+    id: "notice",
+    text: "<system-reminder>…</system-reminder>",
+    steeringSource: null,
+    protectedReasoning: false,
+    failure: null,
+    startedAt: null,
+    endedAt: null,
+    durationMs: null,
+    state: "completed",
+  };
+  expect(
+    entryLabel({ ...hidden, sourceId: "a13n.service.reminder" }, t).name,
+  ).toBe("System reminder");
+  expect(entryLabel({ ...hidden, sourceId: "inbox_1" }, t).name).toBe(
+    "Hidden input",
+  );
+});
+
 it("reads an unfinished step against the run that owns it", () => {
   expect(workState("completed", "running")).toBe("done");
   expect(workState("in_progress", "running")).toBe("working");

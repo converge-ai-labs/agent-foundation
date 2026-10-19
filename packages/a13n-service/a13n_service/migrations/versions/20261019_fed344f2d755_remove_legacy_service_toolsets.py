@@ -1,7 +1,7 @@
 """remove legacy service toolsets
 
 Revision ID: fed344f2d755
-Revises: 2e9655a2d223
+Revises: 4d51a94777d9
 
 Removes the configuration, traces and findings toolsets, which platform tools replace, from stored agent
 revisions and from the toolset overrides of run and inbox options. A rewritten revision also gets the digest of
@@ -21,7 +21,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "fed344f2d755"
-down_revision = "2e9655a2d223"
+down_revision = "4d51a94777d9"
 branch_labels = None
 depends_on = None
 

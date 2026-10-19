@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { SharePanel } from "../sharing";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import {
   Button,
@@ -274,6 +275,7 @@ function ProjectGroup({
   const navigate = useNavigate();
   const results = useResults();
   const [markingRead, setMarkingRead] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [recentExpanded, setRecentExpanded] = useState(true);
   const summaryId = useId();
@@ -603,6 +605,9 @@ function ProjectGroup({
                 )}
                 {group.projectId && (
                   <>
+                    <MenuItem onClick={() => setSharing(true)}>
+                      Share Project
+                    </MenuItem>
                     <MenuItem onClick={rename}>
                       <PencilSimpleIcon />
                       Rename project
@@ -643,6 +648,13 @@ function ProjectGroup({
           )}
         </div>
       </div>
+      {group.projectId && (
+        <SharePanel
+          open={sharing}
+          onClose={() => setSharing(false)}
+          projectId={group.projectId}
+        />
+      )}
       <div hidden={!expanded} className={styles.groupThreads}>
         <ErrorNotice error={owners.error} retry={() => void owners.refetch()} />
         <div>

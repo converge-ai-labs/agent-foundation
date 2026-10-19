@@ -2,7 +2,7 @@
 
 from .configuration import ApiKeyCredential, EmptyConfiguration
 from .definition import WebProviderDefinition
-from .vendors import brave, duckduckgo, exa, firecrawl, jina, parallel, perplexity, serpapi, tavily, tinyfish
+from .vendors import brave, deepseek, duckduckgo, exa, firecrawl, jina, parallel, perplexity, serpapi, tavily, tinyfish
 
 
 def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
@@ -17,6 +17,7 @@ def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
     ]
     for provider_type, display_name, setup_url, search, scrape in (
         ("brave", "Brave Search", "https://api-dashboard.search.brave.com/", brave.search, None),
+        ("deepseek", "DeepSeek", "https://platform.deepseek.com/api_keys", deepseek.search, deepseek.scrape),
         ("exa", "Exa", "https://dashboard.exa.ai/api-keys", exa.search, exa.scrape),
         ("parallel", "Parallel", "https://platform.parallel.ai/", parallel.search, parallel.scrape),
         ("tavily", "Tavily", "https://app.tavily.com/", tavily.search, tavily.scrape),
