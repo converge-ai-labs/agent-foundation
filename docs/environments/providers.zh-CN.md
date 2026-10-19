@@ -221,20 +221,19 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 
 ### E2B 桌面准备 {#e2b-desktop-preparation}
 
-E2B provider 负责创建和恢复桌面资源。Native Execution 保持 Files & Shell 范围；Agent Computer use 通过通用 Envd 路径执行。
+E2B 默认使用 `execution="native"` 提供 Files & Shell，无需 Envd。使用 Computer 时选择 `execution="envd_http"` 和 `desktop=true`，并提供预装 Envd 与桌面组件的自建模板；官方 `desktop` 模板不包含 `a13n-envd`。
 
-选择包含兼容 Envd 和桌面运行时的模板，为目标建立显式的 [Envd 连接](remote-envd.md)，再分别配置 Agent 的 Computer 工具和挂载权限。`desktop=true` 管理桌面资源，具体截图和输入能力由 EIP 方法协商。字体、桌面初始化和人工查看端点由模板及管理 provider 准备。输入行为见 [Envd Computer use](../a13n-envd/computer-use.md)。
-
-字体由沙箱模板提供。E2B 默认 `desktop` 模板可能缺少中文字形，即使文字已正确输入也会显示方框。使用[桌面模板示例](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py)构建安装了 `fonts-noto-cjk` 的兼容模板：
+[模板构建脚本](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py)打包兼容的 Linux amd64 Envd 二进制、公共桌面启动器、Noto 中文字体、Chromium 和桌面访问 supervisor。在源码检出中运行，先安全配置 `E2B_API_KEY`：
 
 ```bash
-# 先通过安全方式设置环境变量 E2B_API_KEY。
 cd examples/environment-provider
 uv sync --locked
-uv run python desktop_template.py my-desktop-cjk
+uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-在 Console 中选择自定义桌面模板后，创建新环境；已有沙箱保持不变。这个模板示例负责字体准备，Envd 的安装、启动和连接需另行配置。模板由操作者维护，字体在构建时安装。
+在 Console 填写模板名称或 ID。Service 创建沙箱时启动预装组件，为每个实例生成独立凭据，并通过 E2B 的 HTTPS 端口路由连接，无需另建 Envd 账号或填写公开 bearer URL。此模式下文件、Shell、Computer 操作全部走 EIP，工作目录为 `/workspace`；Native 的用户、根目录和 helper 限制仅用于 Native 路径。连接已有目标不会启动或修复组件，daemon 不可用或方法不兼容会明确报错。
+
+需要查看和人工接管时启用 `desktop_assistance=true`。Agent 的 Computer 工具和挂载权限仍单独配置。Supervisor 执行连接授权与撤销，Service 协调安全暂停和恢复。输入、坐标转换和截图由 Envd 统一实现。目前 Linux X11 后端支持物理按键，但不支持 Unicode 文字输入，不会回退到 E2B Desktop SDK。见 [Envd Computer use](../a13n-envd/computer-use.md)。
 
 ### Daytona
 

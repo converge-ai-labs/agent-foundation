@@ -140,10 +140,11 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `RestrictedSandbox`
 
-| 字段     | 必填  | 类型 / 可选值                 | 约束与默认值 |
-| -------- | ----- | ----------------------------- | ------------ |
-| `mode`   | true  | "restricted"                  | —            |
-| `grants` | false | 数组，元素类型为 SandboxGrant | default=[]   |
+| 字段             | 必填  | 类型 / 可选值         | 约束与默认值  |
+| ---------------- | ----- | --------------------- | ------------- |
+| `mode`           | true  | "restricted"          | —             |
+| `grants`         | false | array of SandboxGrant | default=[]    |
+| `full_disk_read` | false | boolean               | default=false |
 
 ## `SandboxGrant`
 
@@ -158,22 +159,26 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `LocalEnvdLaunchConfiguration`
 
-由 Host 选择的守护进程启动配置，由该运行时上的所有会话共享。
+Host 选择的 daemon 启动配置，由此运行时上的所有 Session 共享。
 
-| 字段                          | 必填  | 类型 / 可选值                          | 约束与默认值                                        |
-| ----------------------------- | ----- | -------------------------------------- | --------------------------------------------------- |
-| `execution`                   | false | EnvdExecutionConfiguration             | —; 默认值由模型工厂计算                             |
-| `sandbox`                     | false | SandboxPolicy                          | —; 默认值由模型工厂计算                             |
-| `egress`                      | false | EnvdNetworkConfiguration               | —; 默认值由模型工厂计算                             |
-| `default_working_directory`   | false | string 或 null                         | format="path"; default=null                         |
-| `directory_discovery`         | false | boolean                                | default=true                                        |
-| `trusted_executable_roots`    | false | string 数组                            | default=[]                                          |
-| `shell_profiles`              | false | 数组，元素类型为 LocalEnvdShellProfile | default=[]                                          |
-| `max_file_bytes`              | false | integer                                | exclusiveMinimum=0; default=16777216                |
-| `max_output_preview_bytes`    | false | integer                                | maximum=16777216; exclusiveMinimum=0; default=65536 |
-| `max_output_bytes_per_stream` | false | integer                                | exclusiveMinimum=0; default=268435456               |
-| `max_spool_bytes`             | false | integer                                | exclusiveMinimum=0; default=1073741824              |
-| `max_device_spool_bytes`      | false | integer                                | exclusiveMinimum=0; default=4294967296              |
+| 字段                                 | 必填  | 类型 / 可选值                            | 约束与默认值                                        |
+| ------------------------------------ | ----- | ---------------------------------------- | --------------------------------------------------- |
+| `execution`                          | false | EnvdExecutionConfiguration               | —; default from model factory                       |
+| `sandbox`                            | false | SandboxPolicy                            | —; default from model factory                       |
+| `egress`                             | false | EnvdNetworkConfiguration                 | —; default from model factory                       |
+| `default_working_directory`          | false | string or null                           | format="path"; default=null                         |
+| `directory_discovery`                | false | boolean                                  | default=true                                        |
+| `full_control`                       | false | boolean                                  | default=false                                       |
+| `computer_use`                       | false | boolean                                  | default=false                                       |
+| `computer_use_permission_timeout_ms` | false | integer                                  | exclusiveMinimum=0; default=120000                  |
+| `monitoring`                         | false | LocalEnvdMonitoringConfiguration or null | default=null                                        |
+| `trusted_executable_roots`           | false | array of string                          | default=[]                                          |
+| `shell_profiles`                     | false | array of LocalEnvdShellProfile           | default=[]                                          |
+| `max_file_bytes`                     | false | integer                                  | exclusiveMinimum=0; default=16777216                |
+| `max_output_preview_bytes`           | false | integer                                  | maximum=16777216; exclusiveMinimum=0; default=65536 |
+| `max_output_bytes_per_stream`        | false | integer                                  | exclusiveMinimum=0; default=268435456               |
+| `max_spool_bytes`                    | false | integer                                  | exclusiveMinimum=0; default=1073741824              |
+| `max_device_spool_bytes`             | false | integer                                  | exclusiveMinimum=0; default=4294967296              |
 
 ## `EnvdExecutionConfiguration`
 
@@ -188,6 +193,16 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | 字段   | 必填 | 类型 / 可选值                   | 约束与默认值 |
 | ------ | ---- | ------------------------------- | ------------ |
 | `mode` | true | "inherit", "deny", "controlled" | —            |
+
+## `LocalEnvdMonitoringConfiguration`
+
+可选的外层 daemon 采样，独立于 Session 执行策略。
+
+| 字段                  | 必填  | 类型 / 可选值  | 约束与默认值                               |
+| --------------------- | ----- | -------------- | ------------------------------------------ |
+| `sample_interval_ms`  | false | integer        | minimum=1000; maximum=60000; default=10000 |
+| `filesystems`         | false | object         | —; default from model factory              |
+| `cgroup_v2_directory` | false | string or null | format="path"; default=null                |
 
 ## `LocalEnvdShellProfile`
 
@@ -236,25 +251,23 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `E2BRecipe`
 
-| 字段                        | 必填  | 类型 / 可选值 | 约束与默认值                                              |
-| --------------------------- | ----- | ------------- | --------------------------------------------------------- |
-| `template`                  | false | string        | minLength=1; maxLength=256; default="base"                |
-| `desktop`                   | false | boolean       | default=false                                             |
-| `desktop_width`             | false | integer       | minimum=256; maximum=4096; default=1280                   |
-| `desktop_height`            | false | integer       | minimum=256; maximum=4096; default=800                    |
-| `desktop_dpi`               | false | integer       | minimum=48; maximum=192; default=96                       |
-| `desktop_display`           | false | string        | `pattern="^:[0-9]{1,3}$"`; default=":0"                   |
-| `root`                      | false | string        | default="/home/user"                                      |
-| `user`                      | false | string        | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false | string        | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false | number        | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false | boolean       | default=true                                              |
-| `max_file_bytes`            | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false | integer       | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000         |
-| `timeout_seconds`           | false | integer       | minimum=30; maximum=86400; default=3600                   |
+| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
+| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
+| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false | "native", "envd_http" | default="native"                                          |
+| `desktop`                   | false | boolean               | default=false                                             |
+| `root`                      | false | string                | default="/home/user"                                      |
+| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false | string                | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false | boolean               | default=true                                              |
+| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false | boolean               | default=false                                             |
+| `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`
 

@@ -8,14 +8,15 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import provider_error as envd_error
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.e2b.configuration import (
     PROVIDER_KEY,
     E2BProviderStateData,
 )
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
-from a13n_harness.providers.environment.e2b.desktop import Desktop, create_desktop
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
+from a13n_harness.providers.environment.e2b.http import http_execution
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
 
 from a13n_service.providers.environment._backend import ManagementBackend
@@ -87,10 +88,11 @@ class E2BManagement(E2BReference, ManagementBackend):
 
     async def create(self) -> None:
         from e2b import AsyncSandbox
+        from e2b.sandbox.commands.command_handle import CommandExitException
 
         target = await self._inspect()
         if target is not None:
-            if target.state.value != "running" or self._configuration.desktop:
+            if target.state.value != "running" or self._configuration.execution == "envd_http":
                 await self.start()
             return
         if self._state is not None:
@@ -99,15 +101,6 @@ class E2BManagement(E2BReference, ManagementBackend):
         metadata = {"a13n_environment": self._native_id, "a13n_configuration": config.fingerprint}
         if self._operation_id:
             metadata["a13n_operation"] = self._operation_id
-        if config.desktop:
-            await create_desktop(
-                config,
-                timeout=config.timeout_seconds,
-                metadata=metadata,
-                options=self._options(),
-                allocated=self._remember,
-            )
-            return
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.create(
                 template=config.template,
@@ -119,7 +112,21 @@ class E2BManagement(E2BReference, ManagementBackend):
                 **self._options(),
             )
             self._remember(sandbox.sandbox_id)
-            await close_sandbox(sandbox)
+            try:
+                if config.execution == "envd_http":
+                    try:
+                        await self._bootstrap_envd(sandbox)
+                    except CommandExitException:
+                        raise envd_error(
+                            "e2b",
+                            "envd_bootstrap_failed",
+                            Category.UNAVAILABLE,
+                            description="The preinstalled Envd runtime did not start. Check the template prerequisites and the sandbox's protected /var/lib/a13n-envd/startup.log.",
+                        ) from None
+            finally:
+                await close_sandbox(sandbox)
+        if config.execution == "envd_http":
+            await self._check_envd()
 
     async def start(self) -> None:
         from e2b import AsyncSandbox
@@ -127,31 +134,64 @@ class E2BManagement(E2BReference, ManagementBackend):
         target = await self._inspect()
         if target is None:
             raise provider_error("provider_target_missing", Category.MISSING)
-        if target.state.value == "running":
-            if self._configuration.desktop:
-                sandbox = await open_sandbox(target.sandbox_id, self._options(), self._validate_target)
+        if target.state.value != "running":
+            with sdk_errors(mutation=True):
+                sandbox = await AsyncSandbox.connect(
+                    target.sandbox_id, timeout=self._configuration.timeout_seconds, **self._options()
+                )
                 try:
-                    await self._check_desktop(sandbox)
+                    self._validate_target(await sandbox.get_info())
                 finally:
                     await close_sandbox(sandbox)
-            return
-        with sdk_errors(mutation=True):
-            sandbox = await AsyncSandbox.connect(
-                target.sandbox_id, timeout=self._configuration.timeout_seconds, **self._options()
-            )
-            try:
-                self._validate_target(await sandbox.get_info())
-                if self._configuration.desktop:
-                    await self._check_desktop(sandbox)
-            finally:
-                await close_sandbox(sandbox)
+        if self._configuration.execution == "envd_http":
+            await self._check_envd()
 
-    async def _check_desktop(self, sandbox: AsyncSandbox) -> None:
-        desktop = Desktop(sandbox, self._configuration)
+    async def _bootstrap_envd(self, sandbox: AsyncSandbox) -> None:
+        # Only lifecycle creation starts preinstalled services. Attachments and
+        # human grants never install, repair or restart a desktop.
+        executable = "a13n-sandbox-desktop" if self._configuration.desktop else "a13n-envd"
+        await sandbox.commands.run(
+            "umask 077; install -d -m 0700 /var/lib/a13n-envd && exec flock -n /var/lib/a13n-envd/start.lock "
+            "a13n-sandbox-entrypoint " + executable + " > /var/lib/a13n-envd/startup.log 2>&1",
+            user="root",
+            cwd="/workspace",
+            background=True,
+            timeout=0,
+            request_timeout=self._configuration.request_timeout_seconds,
+            envs={
+                "A13N_ENVD_DEVICE_ID": self._native_id,
+                "A13N_ENVD_TRANSPORT": "http",
+                "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                "A13N_ENVD_EXECUTION_UID": "1001",
+                "A13N_ENVD_EXECUTION_GID": "1001",
+                "A13N_ENVD_FULL_CONTROL": "true",
+                "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
+            },
+        )
+        # This bounded probe waits for startup only; EIP subsequently verifies
+        # authentication, identity, protocol and required capabilities.
+        probe = """import socket,time
+end=time.monotonic()+30
+while time.monotonic()<end:
+ try:
+  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
+ except OSError: time.sleep(.2)
+else: raise RuntimeError('a13n-envd did not become ready')
+"""
+        await sandbox.commands.run(
+            shlex.join(["python3", "-I", "-c", probe]), user="root", timeout=35, request_timeout=40
+        )
+
+    async def _check_envd(self) -> None:
+        execution = http_execution(self)
         try:
-            await desktop.describe()
+            await execution.open(execution_id="exec-readiness")
+            await execution.check_ready(frozenset({"computer"}) if self._configuration.desktop else frozenset())
         finally:
-            await desktop.close()
+            await execution.close()
 
     async def desktop_access(self, request: Request) -> Reply:
         if not self._configuration.desktop or self._state is None:

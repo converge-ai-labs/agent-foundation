@@ -2459,5 +2459,10 @@
   "The agent has requested desktop assistance. Switching to its assistance card…": "Agent 已请求桌面协助，正在切换到协助卡片…",
   "Environment lost": "环境已丢失",
   "Environment unavailable": "环境不可用",
-  "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.": "供应商端的沙箱已不存在，无法恢复运行。请使用新环境继续；旧沙箱中的文件可能无法找回。会话历史仍会保留。"
+  "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.": "供应商端的沙箱已不存在，无法恢复运行。请使用新环境继续；旧沙箱中的文件可能无法找回。会话历史仍会保留。",
+  "Enter an operator-built template with a13n-envd and desktop components preinstalled.": "填写预装 a13n-envd 和桌面组件的自建模板。",
+  "Enter an operator-built template with a13n-envd preinstalled.": "填写预装 a13n-envd 的自建模板。",
+  "Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.": "选择原生 E2B 文件与 Shell，或通过认证 HTTP EIP 连接预装 a13n-envd 的模板。",
+  "Require Computer operations from a13n-envd. Requires envd_http and a compatible template.": "使用 a13n-envd 提供 Computer 操作，需要 envd_http 和兼容模板。",
+  "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.": "通过 Envd 截图、操作鼠标和物理按键。Linux 暂不支持文字输入。"
 }

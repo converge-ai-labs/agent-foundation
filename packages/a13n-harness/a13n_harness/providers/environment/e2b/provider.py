@@ -19,8 +19,10 @@ from a13n_harness.providers.environment.e2b.configuration import (
 )
 from a13n_harness.providers.environment.e2b.errors import provider_error
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
+from a13n_harness.providers.environment.e2b.http import HttpReference, http_execution
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime as E2BProviderRuntime
 from a13n_harness.providers.environment.e2b.shared import descriptor
+from a13n_harness.providers.environment.eip.binding import configured_descriptor
 
 
 async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) -> E2BProviderRuntime:
@@ -30,12 +32,15 @@ async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) ->
         api_key=credential.api_key,
         domain=configuration.domain,
         api_url=configuration.api_url,
+        endpoint_policy=configuration._endpoint_policy,
     )
 
 
 def _describe(configuration: E2BEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, E2BEnvironmentConfiguration):
         raise TypeError("E2B requires E2BEnvironmentConfiguration")
+    if configuration.execution == "envd_http":
+        return configured_descriptor(working_directory="/workspace")
     return descriptor(configuration)
 
 
@@ -57,6 +62,8 @@ def _construct_execution(
 ) -> ExecutionBackend:
     if not isinstance(configuration, E2BEnvironmentConfiguration) or runtime is None:
         raise TypeError("E2B requires E2BEnvironmentConfiguration and E2BProviderRuntime")
+    if configuration.execution == "envd_http":
+        return http_execution(HttpReference(configuration, environment_id=environment_id, state=state, runtime=runtime))
     return E2BExecution(
         configuration,
         environment_id=environment_id,

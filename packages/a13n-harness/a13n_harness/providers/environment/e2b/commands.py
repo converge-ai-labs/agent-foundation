@@ -6,7 +6,6 @@ import itertools
 import json
 import shlex
 from collections.abc import AsyncIterator
-from importlib.resources import files
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
 from pydantic import JsonValue, TypeAdapter
@@ -32,10 +31,9 @@ class GuestCommands:
         self._operations = itertools.count(1)
         self._sources = {
             "files": file_helper_source(),
-            "ports": files(__package__).joinpath("guest", "ports.py").read_text(),
         }
 
-    def command(self, module: Literal["files", "ports"], arguments: dict[str, JsonValue]) -> str:
+    def command(self, module: Literal["files"], arguments: dict[str, JsonValue]) -> str:
         if self.closed:
             raise EnvironmentError("E2B operations are closed.", code="environment_closed")
         return shlex.join(
@@ -43,7 +41,7 @@ class GuestCommands:
         )
 
     async def _execute(
-        self, module: Literal["files", "ports"], arguments: dict[str, JsonValue], *, mutation: bool
+        self, module: Literal["files"], arguments: dict[str, JsonValue], *, mutation: bool
     ) -> dict[str, JsonValue]:
         from e2b.sandbox.commands.command_handle import CommandExitException
 
@@ -91,9 +89,6 @@ class GuestCommands:
             },
             mutation=mutation,
         )
-
-    async def port(self, port: int) -> dict[str, JsonValue]:
-        return await self._execute("ports", {"port": port}, mutation=False)
 
     async def read_stream(self, path: str) -> AsyncIterator[bytes]:
         with sdk_errors():

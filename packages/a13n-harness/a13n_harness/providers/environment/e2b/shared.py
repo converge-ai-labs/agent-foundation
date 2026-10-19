@@ -18,6 +18,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
     decode_target_state,
 )
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment._backend import BackendReference
 from a13n_harness.providers.environment.e2b.configuration import (
     PROVIDER_KEY,
@@ -81,10 +82,12 @@ class E2BReference(BackendReference):
 def descriptor(
     configuration: E2BEnvironmentConfiguration, generation: str = "unprepared", identity: str | None = None
 ) -> EnvironmentDescriptor:
-    actions = {action for action in FILE_EXECUTION_ACTIONS if not action.value.startswith("environment.state.")}
+    actions = {
+        action
+        for action in FILE_EXECUTION_ACTIONS
+        if not action.value.startswith(("environment.state.", "environment.port."))
+    }
     actions -= {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE}
-    if configuration.desktop:
-        actions.update(action for action in EnvironmentAction if action.value.startswith("environment.computer."))
     return EnvironmentDescriptor(
         generation=generation,
         backing_identity=identity,
@@ -105,6 +108,7 @@ class E2BProviderRuntime:
     api_key: SecretStr = field(repr=False)
     domain: str = "e2b.dev"
     api_url: str | None = None
+    endpoint_policy: EndpointPolicy = field(default_factory=EndpointPolicy)
 
     def __post_init__(self) -> None:
         E2BCredential(api_key=self.api_key)

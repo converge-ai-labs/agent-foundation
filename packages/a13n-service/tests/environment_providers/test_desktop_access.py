@@ -254,7 +254,7 @@ async def test_e2b_access_attaches_only_saved_running_desktop_and_never_starts_i
     from a13n_service.providers.environments.e2b import management as module
 
     management = E2BManagement(
-        E2BRecipe(desktop=True),
+        E2BRecipe(execution="envd_http", desktop=True, template="team-envd"),
         environment_id="env-test",
         state=None,
         runtime=E2BProviderRuntime(SecretStr("test-only")),

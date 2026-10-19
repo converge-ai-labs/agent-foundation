@@ -2459,5 +2459,10 @@
   "The agent has requested desktop assistance. Switching to its assistance card…": "The agent has requested desktop assistance. Switching to its assistance card…",
   "Environment lost": "Environment lost",
   "Environment unavailable": "Environment unavailable",
-  "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.": "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained."
+  "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.": "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.",
+  "Enter an operator-built template with a13n-envd and desktop components preinstalled.": "Enter an operator-built template with a13n-envd and desktop components preinstalled.",
+  "Enter an operator-built template with a13n-envd preinstalled.": "Enter an operator-built template with a13n-envd preinstalled.",
+  "Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.": "Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.",
+  "Require Computer operations from a13n-envd. Requires envd_http and a compatible template.": "Require Computer operations from a13n-envd. Requires envd_http and a compatible template.",
+  "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.": "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux."
 }

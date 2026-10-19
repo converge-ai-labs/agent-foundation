@@ -1,7 +1,6 @@
 """Opt-in raw-RFB enforcement tests on owned targets; never opens a user's desktop.
 
-E2B uses A13N_TEST_DESKTOP_ACCESS_TEMPLATE when provided, validating preinstalled
-endpoint startup. Without it, the test stages the helper in an owned stock desktop.
+E2B requires A13N_TEST_E2B_ENVD_TEMPLATE with preinstalled Envd and access components.
 Docker requires an image with the current desktop launcher and access dependencies.
 Actual remote routing/TLS and Service Run handoff are separate acceptance gates.
 """
@@ -12,7 +11,6 @@ import os
 import shlex
 import struct
 import time
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -20,7 +18,6 @@ from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime
 from a13n_service.providers.environment import desktop_access as protocol
-from a13n_service.providers.environment import desktop_guest
 from a13n_service.providers.environments.docker.configuration import DockerRecipe
 from a13n_service.providers.environments.docker.management import DockerManagement
 from a13n_service.providers.environments.e2b.configuration import E2BRecipe
@@ -36,13 +33,14 @@ def desktop(request, tmp_path):
             pytest.skip("Requires explicit A13N_TEST_DESKTOP_ACCESS_E2B=1 and E2B credentials")
         from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 
-        template = os.environ.get("A13N_TEST_DESKTOP_ACCESS_TEMPLATE")
+        template = os.environ.get("A13N_TEST_E2B_ENVD_TEMPLATE")
+        if not template:
+            pytest.skip("Requires A13N_TEST_E2B_ENVD_TEMPLATE")
         recipe = E2BRecipe(
-            template=template or "desktop",
-            desktop_assistance=bool(template),
+            template=template,
+            execution="envd_http",
+            desktop_assistance=True,
             desktop=True,
-            desktop_width=320,
-            desktop_height=320,
             timeout_seconds=600,
             request_timeout_seconds=60,
         )
@@ -53,7 +51,6 @@ def desktop(request, tmp_path):
             runtime=E2BProviderRuntime(SecretStr(os.environ["A13N_TEST_E2B_API_KEY"])),
             operation_id="op-access-test",
         )
-        box = None
         try:
             asyncio.run(management.create())
             assert management.state is not None
@@ -70,42 +67,15 @@ def desktop(request, tmp_path):
             def command(argv):
                 return asyncio.run(attached_command(argv))
 
-            async def stage():
-                sandbox = await open_sandbox(
-                    management._state.sandbox_id, management._options(), management._validate_target
-                )
-                try:
-                    await sandbox.files.write("/tmp/a13n-desktop-access.py", Path(desktop_guest.__file__).read_text())
-                    await sandbox.commands.run(
-                        "install -m 0755 /tmp/a13n-desktop-access.py " + protocol.SCRIPT, user="root"
-                    )
-                    proxy = (
-                        await sandbox.commands.run(
-                            "command -v websockify || test ! -x /opt/noVNC/utils/websockify/run || echo /opt/noVNC/utils/websockify/run",
-                            user="root",
-                        )
-                    ).stdout.strip()
-                    assert proxy, "Template lacks websockify; build the compatible access template first"
-                    await sandbox.commands.run(
-                        shlex.join(
-                            ["python3", "-I", protocol.SCRIPT, "serve", "--root", protocol.ROOT, "--proxy", proxy]
-                        ),
-                        user="root",
-                        background=True,
-                        timeout=0,
-                    )
-                    return "wss://" + sandbox.get_host(protocol.PORT) + "/websockify"
-                finally:
-                    await close_sandbox(sandbox)
-
-            if template:
-                description = asyncio.run(management.desktop_access(protocol.Describe()))
-                assert isinstance(description, protocol.Description) and description.revocation_fences_grants
-                assert description.websocket_url
-                endpoint = description.websocket_url
-            else:
-                endpoint = asyncio.run(stage())
-            yield management, command, endpoint, ["env", "DISPLAY=:0"]
+            description = asyncio.run(management.desktop_access(protocol.Describe()))
+            assert isinstance(description, protocol.Description) and description.revocation_fences_grants
+            assert description.websocket_url
+            yield (
+                management,
+                command,
+                description.websocket_url,
+                ["env", "DISPLAY=:99", "XAUTHORITY=/run/a13n-desktop/Xauthority"],
+            )
         finally:
             if management.state is not None:
                 recovery = tmp_path / "owned-e2b-target.json"
@@ -131,7 +101,6 @@ def desktop(request, tmp_path):
         engine = docker.from_env()
         recipe = DockerRecipe(image=image, desktop=True, execution="envd_http", pull_policy="never")
         management = DockerManagement(recipe, identity, None, DockerProviderRuntime(DockerSDKEngine(engine)))
-        box = None
         try:
             box = engine.containers.run(
                 image,

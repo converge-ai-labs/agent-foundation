@@ -221,20 +221,19 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 
 ### E2B desktop preparation
 
-The E2B provider creates and resumes desktop resources. Native Execution remains Files & Shell; Agent Computer use runs through the general Envd path.
+E2B defaults to `execution="native"` for Files & Shell without Envd. Select `execution="envd_http"` and `desktop=true` for Computer use. This requires an operator-built template containing Envd and desktop components; the stock `desktop` template does not provide `a13n-envd`.
 
-Select a template containing compatible Envd and desktop runtimes, establish an explicit [Envd connection](remote-envd.md), then configure the Agent's Computer tools and mount permissions separately. `desktop=true` manages desktop resources; EIP method negotiation determines screenshot and input capabilities. The template and management provider prepare fonts, desktop initialization, and human-viewer endpoints. See [Envd Computer use](../a13n-envd/computer-use.md) for input behavior.
-
-Fonts belong to the sandbox template. E2B's default `desktop` template may lack Chinese glyphs even when input reaches the application correctly. Build a compatible template with `fonts-noto-cjk` using the [desktop template example](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py):
+The [template builder](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py) packages a compatible Linux amd64 Envd binary, the shared desktop launcher, Noto CJK fonts, Chromium and the desktop-access supervisor. Run from a source checkout with `E2B_API_KEY` securely configured:
 
 ```bash
-# Set E2B_API_KEY securely in the environment first.
 cd examples/environment-provider
 uv sync --locked
-uv run python desktop_template.py my-desktop-cjk
+uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-Select the custom desktop template in Console and create a new environment; existing sandboxes stay unchanged. This template example prepares fonts; configure Envd installation, startup, and connection separately. The operator owns the template, and fonts are installed at build time.
+Select that template name or ID in Console. Service starts the preinstalled components on creation, generates a private credential per sandbox, and connects through E2B's HTTPS port route. No additional Envd account or public bearer URL is needed. Agent files, shell and Computer operations all use EIP in this mode, with `/workspace` as working directory. Native account/root/helper settings apply only to Native execution. Opening an existing target never starts or repairs components; unavailable daemons and incompatible methods fail explicitly.
+
+Enable `desktop_assistance=true` for viewing and human control. Configure Agent Computer tools and mount permissions separately. The viewer supervisor enforces grants and revocation; Service coordinates safe pause and resume. Envd owns input, coordinate conversion and screenshot behavior. Its current Linux X11 backend supports physical keys but rejects literal Unicode text entry; there is no E2B Desktop SDK fallback. See [Envd Computer use](../a13n-envd/computer-use.md).
 
 ### Daytona
 

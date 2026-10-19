@@ -8,6 +8,7 @@ from a13n_harness import RunConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
+from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -62,7 +63,7 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
     await runtime.registry.check_environment_endpoint(account.type, account.config, runtime.endpoint_policy)
     definition = runtime.registry.get("environment", account.type)
     connection = definition.configuration_model.model_validate(account.config)
-    if isinstance(connection, DockerConnectionConfiguration):
+    if isinstance(connection, (DockerConnectionConfiguration, E2BConnectionConfiguration)):
         connection._endpoint_policy = runtime.endpoint_policy
     return await definition.open_provider(
         configuration=connection,
@@ -87,7 +88,7 @@ async def execution_connector(
     await runtime.registry.check_environment_endpoint(account.type, account.config, policy)
     definition = runtime.registry.get("environment", account.type)
     connection = definition.configuration_model.model_validate(account.config)
-    if isinstance(connection, DockerConnectionConfiguration):
+    if isinstance(connection, (DockerConnectionConfiguration, E2BConnectionConfiguration)):
         connection._endpoint_policy = policy
     return definition.execution.execution_connector(
         definition.execution_environment(dict(target.recipe)),
