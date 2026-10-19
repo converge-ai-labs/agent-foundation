@@ -42,7 +42,7 @@ def setup_monitor(*, generation=1, observed=None):
     acquire = AsyncMock(return_value=device)
     sources = [MonitoringSource(id="build", name="Build", transport="http", revision="one", acquire=acquire)]
 
-    async def current():
+    def current():
         return iter(sources)
 
     return EnvironmentMonitoring(current), sources, device, acquire
@@ -202,7 +202,7 @@ async def test_unreadable_values_remain_absent_and_restart_drops_memory_history(
     assert (await monitor.detail("build")).history[-1].cpu_busy_percent is None
 
     # A new App/collector starts empty even for the same Device configuration.
-    async def current():
+    def current():
         return sources
 
     restarted = EnvironmentMonitoring(current)
@@ -214,7 +214,7 @@ def test_ui_sandbox_enables_sampler_while_sdk_and_explicit_launch_remain_opt_in(
     from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProfileConfiguration
 
     assert LocalEnvdLaunchConfiguration().monitoring is None
-    assert LocalEnvdProfileConfiguration().launch.monitoring.sample_interval_ms == 10_000
+    assert LocalEnvdProfileConfiguration().launch.monitoring.sample_interval_ms == 60_000
     assert LocalEnvdProfileConfiguration.model_validate({"launch": {}}).launch.monitoring is None
 
 
@@ -357,3 +357,133 @@ async def test_rate_collection_deduplicates_and_breaks_across_offline_and_genera
     clock[0] += 10
     await monitor.collect()
     assert (await monitor.detail("build")).resources[0].history[-1].rates == {}
+
+
+@pytest.mark.anyio
+async def test_minute_polling_preserves_fast_remote_rates_and_cache_freshness(monkeypatch):
+    from a13n_envd_client.eip.v1 import NetworkInterfaceMetrics, NetworkMetrics
+
+    clock = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "time", lambda: 1_800_000_000 + clock[0])
+
+    def observed(sequence, received, age=0):
+        return sample(sequence, age=age).model_copy(
+            update={
+                "network": NetworkMetrics(
+                    interfaces={"wlan0": NetworkInterfaceMetrics(identity="wifi", received_bytes=received)},
+                    truncated=False,
+                )
+            }
+        )
+
+    monitor, _, device, _ = setup_monitor(observed=observed(1, 100))
+    await monitor.collect()
+    clock[0] += 45
+    assert (await monitor.detail("build")).environment.status == "ready"
+    clock[0] += 15
+    device.metrics.return_value = device.metrics.return_value.model_copy(update={"sample": observed(7, 700)})
+    await monitor.collect()
+    detail = await monitor.detail("build")
+    assert detail.retention_minutes == 60
+    assert detail.environment.collection_interval_seconds == 60
+    assert detail.resources[0].history[-1].rates["received_bytes_per_second"].average == 10
+    # An already stale remote sample is still rejected at receipt.
+    device.metrics.return_value = device.metrics.return_value.model_copy(update={"sample": observed(8, 800, 31_000)})
+    await monitor.collect()
+    assert (await monitor.detail("build")).environment.status == "stale"
+
+
+@pytest.mark.anyio
+async def test_stalled_device_does_not_block_cached_queries_or_healthy_device(monkeypatch):
+    import a13n_harness_ui.environment_monitoring as module
+
+    monitor, sources, device, _ = setup_monitor(observed=sample())
+    await monitor.collect()
+    entered = anyio.Event()
+    exited = anyio.Event()
+
+    async def blocked():
+        entered.set()
+        try:
+            await anyio.sleep_forever()
+        finally:
+            exited.set()
+
+    sources.append(replace(sources[0], id="blocked", acquire=blocked))
+    monkeypatch.setattr(module, "COLLECTION_TIMEOUT", 0.05)
+    async with anyio.create_task_group() as group:
+        group.start_soon(monitor.collect)
+        await entered.wait()
+        with anyio.fail_after(0.5):
+            assert len((await monitor.catalog()).environments) == 2
+            assert (await monitor.detail("build")).history
+            await exited.wait()
+    assert (await monitor.detail("build")).environment.status == "ready"
+    assert (await monitor.detail("blocked")).environment.status == "offline"
+    assert device.metrics.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_collection_loop_uses_configured_pause_and_does_not_overlap(monkeypatch):
+    import a13n_harness_ui.environment_monitoring as module
+
+    monitor, _, _, _ = setup_monitor()
+    monitor._poll_seconds = 30
+    monitor.collect = AsyncMock()
+
+    async def pause(seconds):
+        assert seconds == 30
+        monitor.collect.assert_awaited_once()
+        raise StopAsyncIteration
+
+    monkeypatch.setattr(module.anyio, "sleep", pause)
+    with pytest.raises(StopAsyncIteration):
+        await monitor.run()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("profile_id", ["environment-sandbox", "environment-envd", "environment-desktop", "custom"])
+async def test_configured_monitoring_cadence_only_overrides_builtin_launches(tmp_path, monkeypatch, profile_id):
+    import a13n_harness_ui.envd_runtime as module
+    from a13n_harness_ui.composition import ResolvedEnvironmentProfile
+    from a13n_harness_ui.configuration.models import EnvdConfiguration
+    from a13n_harness_ui.environment_profiles import built_in_environment_profile
+    from a13n_harness_ui.settings import EnvdRuntimeSettings
+
+    manager = module.EnvdRuntimeManager(
+        settings=EnvdRuntimeSettings(),
+        runtime_parent=tmp_path / "runtime",
+        configuration=EnvdConfiguration(computer_use=True, monitoring_interval_seconds=30),
+    )
+    monkeypatch.setattr(manager, "resolve_executable", AsyncMock(return_value=tmp_path / "a13n-envd"))
+    launches = []
+
+    def create(executable, **kwargs):
+        launches.append(kwargs["launch"])
+        return SimpleNamespace()
+
+    monkeypatch.setattr(module, "create_sandbox_runtime", create)
+    builtin = built_in_environment_profile(profile_id)
+    provider = (
+        {"launch": {"monitoring": {"sample_interval_ms": 1000}}} if builtin is None else builtin.provider_configuration
+    )
+    profile = ResolvedEnvironmentProfile(
+        profile_id=profile_id,
+        behavior_digest="0" * 64,
+        provider_key="local-envd",
+        adapter_key="local-envd-project",
+        provider_configuration=provider,
+    )
+    await manager.runtime((tmp_path,), profile=profile)
+    assert launches[0].monitoring.sample_interval_ms == (1000 if profile_id == "custom" else 30_000)
+
+
+@pytest.mark.parametrize("seconds", [0, 9, 61])
+def test_monitoring_configuration_bounds(seconds):
+    from a13n_harness_ui.configuration.models import EnvdConfiguration
+    from pydantic import ValidationError
+
+    assert EnvdConfiguration().monitoring_interval_seconds == 60
+    with pytest.raises(ValidationError):
+        EnvdConfiguration(monitoring_interval_seconds=seconds)

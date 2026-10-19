@@ -293,21 +293,24 @@ impl Daemon {
     }
 
     /// Worker-local snapshot; the worker has no nested remote Sessions.
-    pub(crate) fn local_resources(&self) -> SessionResources {
+    pub(crate) fn local_resources(&self) -> Option<SessionResources> {
+        let sessions: Vec<_> = self.sessions.try_lock().ok()?.values().cloned().collect();
         let mut total = SessionResources::default();
-        for session in self.sessions().values() {
-            total.add(session.local_resources());
+        for session in sessions {
+            total.add(session.local_resources()?);
         }
-        total
+        Some(total)
     }
 
-    pub(crate) async fn resource_metrics(&self) -> eip::DaemonMetrics {
-        let sessions: Vec<_> = self.sessions().values().cloned().collect();
+    pub(crate) async fn resource_metrics(&self) -> Option<eip::DaemonMetrics> {
+        let sessions: Vec<_> = self.sessions.try_lock().ok()?.values().cloned().collect();
+        let mut active = 0;
+        for session in &sessions {
+            let state = session.session.state.try_lock().ok()?;
+            active += u64::from(state.lifecycle != SessionState::Closed);
+        }
         let mut metrics = eip::DaemonMetrics {
-            sessions: sessions
-                .iter()
-                .filter(|session| session.session.state().lifecycle != SessionState::Closed)
-                .count() as u64,
+            sessions: active,
             connections: self.connections.load(Ordering::Relaxed),
             processes: None,
             transfers: None,
@@ -326,15 +329,17 @@ impl Daemon {
                         .resources()
                         .await
                 });
+            } else if let Some(resources) = session.local_resources() {
+                total.add(resources);
             } else {
-                total.add(session.local_resources());
+                return Some(metrics);
             }
         }
         // One deadline for the entire worker fleet, not one timeout per Session.
         let complete = tokio::time::timeout(Duration::from_millis(500), async {
             while let Some(result) = pending.join_next().await {
                 match result {
-                    Ok(Ok(resources)) => total.add(resources),
+                    Ok(Ok(Some(resources))) => total.add(resources),
                     _ => return false,
                 }
             }
@@ -348,7 +353,7 @@ impl Daemon {
             metrics.transfers = Some(total.transfers);
             metrics.retained_output_bytes = Some(total.retained_output_bytes);
         }
-        metrics
+        Some(metrics)
     }
 
     pub(crate) fn carrier(&self, outbound: mpsc::Sender<eip::DataFrame>) -> Arc<Carrier> {
@@ -1132,15 +1137,15 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    fn local_resources(&self) -> SessionResources {
-        SessionResources {
+    fn local_resources(&self) -> Option<SessionResources> {
+        Some(SessionResources {
             processes: self
                 .execution
                 .as_ref()
-                .map_or(0, ExecutionManager::active_count),
-            transfers: self.transfers.active_count(),
-            retained_output_bytes: self.retention.retained_bytes(),
-        }
+                .map_or(Some(0), ExecutionManager::active_count)?,
+            transfers: self.transfers.active_count()?,
+            retained_output_bytes: self.retention.retained_bytes()?,
+        })
     }
 }
 
@@ -4203,13 +4208,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn monitoring_skips_busy_session_registry_and_lifecycle() {
+        use std::{
+            future::Future,
+            task::{Context, Poll, Waker},
+        };
+        let mut context = Context::from_waker(Waker::noop());
+        let fixture = Fixture::new(&Config::for_test("env-test"), 8);
+        initialize(&fixture).await;
+        {
+            let _busy_registry = fixture.device.sessions();
+            assert!(fixture.device.local_resources().is_none());
+            assert!(matches!(
+                std::pin::pin!(fixture.device.resource_metrics()).poll(&mut context),
+                Poll::Ready(None)
+            ));
+        }
+        {
+            let _busy_lifecycle = fixture.session.state();
+            assert!(matches!(
+                std::pin::pin!(fixture.device.resource_metrics()).poll(&mut context),
+                Poll::Ready(None)
+            ));
+        }
+        assert_eq!(fixture.device.resource_metrics().await.unwrap().sessions, 1);
+    }
+
+    #[tokio::test]
     async fn monitoring_counts_observed_resources_not_reserved_allowances() {
         let tree = TempTree::new();
         let mut config = Config::for_test("env-test");
         config.runtime =
             Some(crate::runtime::RuntimeState::prepare(&tree.child("runtime")).unwrap());
         let fixture = Fixture::new(&config, 8);
-        let empty = fixture.device.resource_metrics().await;
+        let empty = fixture.device.resource_metrics().await.unwrap();
         assert_eq!(
             (
                 empty.sessions,
@@ -4223,18 +4255,21 @@ mod tests {
         initialize(&fixture).await;
         let (output, other) = fixture.retention.create_live_pair().await.unwrap();
         output.append(b"hello").await;
-        let usage = fixture.device.resource_metrics().await;
+        let usage = fixture.device.resource_metrics().await.unwrap();
         assert_eq!((usage.sessions, usage.connections), (1, 1));
         assert_eq!(usage.retained_output_bytes, Some(5));
         assert!(fixture.device.retention_quota.usage().0 > 5);
         fixture.session.state().owner = None;
-        assert_eq!(fixture.device.resource_metrics().await.sessions, 1);
+        assert_eq!(fixture.device.resource_metrics().await.unwrap().sessions, 1);
         drop(connection);
-        assert_eq!(fixture.device.resource_metrics().await.connections, 0);
+        assert_eq!(
+            fixture.device.resource_metrics().await.unwrap().connections,
+            0
+        );
         output.complete().await;
         other.complete().await;
         assert!(fixture.close(Duration::from_secs(1)).await);
-        let closed = fixture.device.resource_metrics().await;
+        let closed = fixture.device.resource_metrics().await.unwrap();
         assert_eq!(closed.sessions, 0);
         assert_eq!(closed.retained_output_bytes, Some(0));
     }

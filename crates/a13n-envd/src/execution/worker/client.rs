@@ -180,7 +180,7 @@ impl Client {
         .await
     }
 
-    pub(crate) async fn resources(&self) -> io::Result<crate::daemon::SessionResources> {
+    pub(crate) async fn resources(&self) -> io::Result<Option<crate::daemon::SessionResources>> {
         let ticket = self.ticket()?;
         let response = self.call(ticket, Command::Resources { ticket }).await?;
         let resources = serde_json::from_slice(&response.payload).map_err(|_| broken())?;

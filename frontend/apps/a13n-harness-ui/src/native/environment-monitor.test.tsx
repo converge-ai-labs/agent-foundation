@@ -106,7 +106,9 @@ it("refreshes automatically, pauses browser polling and allows manual refresh", 
   const { get } = setup();
   await act(() => vi.advanceTimersByTimeAsync(100));
   get.mockClear();
-  await act(() => vi.advanceTimersByTimeAsync(10000));
+  await act(() => vi.advanceTimersByTimeAsync(59000));
+  expect(get).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(1000));
   expect(
     get.mock.calls.some(
       ([path]) => path === "/api/environment-monitoring/{target_id}",
@@ -264,8 +266,7 @@ it("switches resource views and keeps rates per source with unavailable daemon t
     queries.setQueryData(["environment-metrics", "Build"], data);
   });
   await screen.findByText("Sampling");
-  const view = screen.getByRole("combobox", { name: "Resource view" });
-  fireEvent.change(view, { target: { value: "network" } });
+  fireEvent.click(screen.getByRole("button", { name: "Network" }));
   expect(screen.getByText("512 B/s")).toBeTruthy();
   fireEvent.change(
     screen.getByRole("combobox", { name: "History interface" }),
@@ -274,10 +275,19 @@ it("switches resource views and keeps rates per source with unavailable daemon t
   expect(screen.getByText("2.0 KiB/s")).toBeTruthy();
   expect(screen.queryByText("512 B/s")).toBeNull();
   expect(screen.getByText(/2 sources exceed the history limit/)).toBeTruthy();
-  fireEvent.change(view, { target: { value: "storage" } });
-  expect(screen.getByText("auto:volume1")).toBeTruthy();
+  expect(
+    screen.getByRole("group", { name: "Transmit interactive chart" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Storage" }));
+  expect(screen.getByText("Filesystem volume1")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("meter", { name: "Filesystem volume1 used capacity" })
+      .getAttribute("value"),
+  ).toBe("1024");
   expect(screen.getByText(/16-volume limit/)).toBeTruthy();
-  fireEvent.change(view, { target: { value: "daemon" } });
+  fireEvent.click(screen.getByRole("button", { name: "Envd" }));
+  expect(screen.queryByRole("combobox", { name: "Time range" })).toBeNull();
   expect(
     screen.getByText("Command groups").nextElementSibling?.textContent,
   ).toBe("—");

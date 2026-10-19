@@ -210,7 +210,7 @@ impl State {
                         let Some(daemon) = daemon.upgrade() else {
                             break;
                         };
-                        snapshot.daemon = Some(daemon.resource_metrics().await);
+                        snapshot.daemon = daemon.resource_metrics().await;
                         snapshot.collection_duration_ms = elapsed_ms(observed_at);
                         state
                             .latest

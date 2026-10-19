@@ -32,6 +32,45 @@ async def test_api_keys_are_private_atomic_and_reference_only(tmp_path: Path) ->
         assert store.path.parent.stat().st_mode & 0o777 == 0o700
 
 
+async def test_monitoring_auth_read_is_cancellable_single_flight_and_independent(tmp_path, monkeypatch):
+    import threading
+
+    store = ApiKeyStore(tmp_path / "auth.json")
+    started = anyio.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    original = store.document._read
+
+    def stalled():
+        anyio.from_thread.run_sync(started.set)
+        release.wait()
+        finished.set()
+        return original()
+
+    monkeypatch.setattr(store.document, "_read", stalled)
+    try:
+        with anyio.fail_after(2):
+            async with anyio.create_task_group() as group:
+
+                async def observe():
+                    await store.load("key-test", observation=True)
+
+                group.start_soon(observe)
+                await started.wait()
+                group.cancel_scope.cancel()
+        # The read outlives cancellation, but later polls never start another.
+        monkeypatch.setattr(store.document, "_read", original)
+        for _ in range(10):
+            with pytest.raises(HarnessUiError) as error:
+                await store.load("key-test", observation=True)
+            assert error.value.code == "auth_observation_pending"
+        assert not finished.is_set()
+        assert await store.load("key-test") is None
+    finally:
+        release.set()
+        await anyio.to_thread.run_sync(finished.wait)
+
+
 async def test_api_key_invalid_store_is_not_overwritten(tmp_path: Path) -> None:
     store = ApiKeyStore(tmp_path / "auth.json")
     original = '{"version":2,"keys":{"key-test":"private-material"}}'

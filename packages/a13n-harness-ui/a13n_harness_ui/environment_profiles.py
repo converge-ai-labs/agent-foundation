@@ -41,7 +41,7 @@ class BuiltInEnvironmentProfile:
                     "egress": {"mode": "inherit"},
                     "full_control": True,
                     "computer_use": self.profile_id == "environment-desktop",
-                    "monitoring": {},
+                    "monitoring": {"sample_interval_ms": 60_000},
                 }
             }
         return {}

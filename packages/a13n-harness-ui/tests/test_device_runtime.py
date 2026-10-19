@@ -546,6 +546,24 @@ async def test_restart_reuses_captured_device_recipe_and_opens_a_fresh_session(t
                 assert goal is None
 
 
+async def test_monitoring_inventory_never_reads_configuration_storage(tmp_path, monkeypatch):
+    root = _write_configuration(tmp_path)
+    recipe = resource("websocket", "unused")
+    (tmp_path / "devices").mkdir()
+    (tmp_path / "devices/build.yaml").write_text(recipe.model_dump_json())
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
+
+        async def forbidden_read():
+            pytest.fail("Monitoring must use the accepted in-memory Device inventory")
+
+        monkeypatch.setattr(app._configurations, "current", forbidden_read)
+        catalog = await app._environment_monitoring.catalog()
+        assert recipe.id in {item.id for item in catalog.environments}
+        assert (await app._environment_monitoring.detail(recipe.id)).environment.status == "waiting"
+        app._devices.update_monitoring_sources(())
+        assert recipe.id not in {item.id for item in (await app._environment_monitoring.catalog()).environments}
+
+
 @requires_envd
 @pytest.mark.parametrize("carrier", ["http", "websocket"])
 async def test_device_monitoring_uses_authenticated_queries_without_sessions(tmp_path, monkeypatch, carrier):
@@ -613,7 +631,7 @@ async def test_local_monitoring_does_not_launch_and_survives_session_close(tmp_p
     async def acquire():
         return runtime.running_device()
 
-    async def sources():
+    def sources():
         return [
             MonitoringSource(id=runtime.device_id, name="Sandbox", transport="stdio", revision="one", acquire=acquire)
         ]

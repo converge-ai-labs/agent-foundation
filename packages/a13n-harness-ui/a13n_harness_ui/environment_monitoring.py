@@ -18,12 +18,12 @@ from pydantic import BaseModel, ConfigDict
 from a13n_harness_ui.errors import HarnessUiError
 
 MAX_TARGETS = 64
-HISTORY_MINUTES = 1440
-POLL_SECONDS = 10
+HISTORY_MINUTES = 60
+POLL_SECONDS = 60
 COLLECTION_CONCURRENCY = 4
 COLLECTION_TIMEOUT = 5
 MAX_OBSERVATION_BYTES = 128 * 1024
-MAX_RATE_SOURCES = 4  # Per kind, independent of the latest observation's 64-source bound.
+MAX_RATE_SOURCES = 64  # Match the native per-kind inventory bound; history retains one hour.
 _RATE_FIELDS = {
     "network": ("received_bytes", "transmitted_bytes"),
     "disk": ("read_bytes", "written_bytes", "read_operations", "write_operations"),
@@ -61,6 +61,7 @@ class EnvironmentObservation(MonitoringModel):
     system_info: SystemInfo | None = None
     sample: MetricsSample | None = None
     sample_interval_ms: int | None = None
+    collection_interval_seconds: int = POLL_SECONDS
     age_ms: int | None = None
 
 
@@ -213,6 +214,7 @@ class _ResourceRates:
 @dataclass(slots=True)
 class _Observation:
     source: MonitoringSource
+    poll_seconds: int = POLL_SECONDS
     status: Status = "waiting"
     system_info: SystemInfo | None = None
     sample: MetricsSample | None = None
@@ -231,7 +233,7 @@ class _Observation:
 
     def add_rates(self, sample: MetricsSample, minute: int) -> None:
         observed_at = self.received_at - sample.sample_age_ms / 1000
-        max_gap = max(30, 3 * (self.interval_ms or 10000) / 1000)
+        max_gap = max(30, 3 * self.poll_seconds, 3 * (self.interval_ms or 10000) / 1000)
         self.omitted_rate_sources = 0
         sources: tuple[
             tuple[Literal["network", "disk"], Mapping[str, NetworkInterfaceMetrics | DiskIoMetrics]], ...
@@ -276,7 +278,11 @@ class _Observation:
     def view(self, now: float) -> EnvironmentObservation:
         age = None if self.sample is None else self.sample.sample_age_ms + max(0, int((now - self.received_at) * 1000))
         status = self.status
-        if status == "ready" and age is not None and age > max(30_000, 3 * (self.interval_ms or 10_000)):
+        if (
+            status == "ready"
+            and age is not None
+            and age > max(30_000, 3 * self.poll_seconds * 1000, 3 * (self.interval_ms or 10_000))
+        ):
             status = "stale"
         return EnvironmentObservation(
             id=self.source.id,
@@ -287,6 +293,7 @@ class _Observation:
             system_info=self.system_info,
             sample=self.sample,
             sample_interval_ms=self.interval_ms,
+            collection_interval_seconds=self.poll_seconds,
             age_ms=age,
         )
 
@@ -294,43 +301,46 @@ class _Observation:
 class EnvironmentMonitoring:
     """One App-owned collector; queries never perform remote I/O or start a daemon."""
 
-    def __init__(self, sources: Callable[[], Awaitable[Iterable[MonitoringSource]]]) -> None:
+    def __init__(self, sources: Callable[[], Iterable[MonitoringSource]], *, poll_seconds: int = POLL_SECONDS) -> None:
         self._sources = sources
+        self._poll_seconds = poll_seconds
         self._observations: dict[str, _Observation] = {}
         self._omitted = 0
-        self._sync_lock = anyio.Lock()
 
-    async def synchronize(self) -> None:
-        async with self._sync_lock:
-            retained: dict[str, _Observation] = {}
-            omitted = 0
-            for source in await self._sources():
-                if source.id in retained:
-                    continue
-                if len(retained) >= MAX_TARGETS:
-                    omitted += 1
-                    continue
-                previous = self._observations.get(source.id)
-                if (
-                    previous is None
-                    or previous.source.revision != source.revision
-                    or previous.source.revoked != source.revoked
-                ):
-                    previous = _Observation(source=source, status="revoked" if source.revoked else "waiting")
-                previous.source = source
-                retained[source.id] = previous
-            self._observations = retained
-            self._omitted = omitted
+    def synchronize(self) -> None:
+        retained: dict[str, _Observation] = {}
+        omitted = 0
+        for source in self._sources():
+            if source.id in retained:
+                continue
+            if len(retained) >= MAX_TARGETS:
+                omitted += 1
+                continue
+            previous = self._observations.get(source.id)
+            if (
+                previous is None
+                or previous.source.revision != source.revision
+                or previous.source.revoked != source.revoked
+            ):
+                previous = _Observation(
+                    source=source,
+                    poll_seconds=self._poll_seconds,
+                    status="revoked" if source.revoked else "waiting",
+                )
+            previous.source = source
+            retained[source.id] = previous
+        self._observations = retained
+        self._omitted = omitted
 
     async def catalog(self) -> MonitoringCatalog:
-        await self.synchronize()
+        self.synchronize()
         now = time.monotonic()
         return MonitoringCatalog(
             environments=tuple(item.view(now) for item in self._observations.values()), omitted=self._omitted
         )
 
     async def detail(self, target_id: str) -> MonitoringDetail:
-        await self.synchronize()
+        self.synchronize()
         item = self._observations.get(target_id)
         if item is None:
             raise HarnessUiError(
@@ -350,12 +360,12 @@ class EnvironmentMonitoring:
             try:
                 await self.collect()
             except Exception:
-                # One unavailable configuration read must not terminate the App's other background work.
+                # A failed collection cycle must not terminate the App's other background work.
                 _LOGGER.warning("Environment monitoring collection failed")
-            await anyio.sleep(POLL_SECONDS)
+            await anyio.sleep(self._poll_seconds)
 
     async def collect(self) -> None:
-        await self.synchronize()
+        self.synchronize()
         pending = deque(self._observations.values())
 
         async def worker() -> None:
@@ -417,6 +427,7 @@ class EnvironmentMonitoring:
                 return
             item.sequence = sample.sequence
             if sample.sample_age_ms > max(30_000, 3 * result.sample_interval_ms):
+                item.status = "stale"
                 item.invalidate_rates()
                 return
             # Use Host receive time minus monotonic sample age, not an untrusted remote wall clock.

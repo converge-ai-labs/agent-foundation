@@ -10122,6 +10122,11 @@
             ],
             "title": "Sample Interval Ms"
           },
+          "collection_interval_seconds": {
+            "type": "integer",
+            "title": "Collection Interval Seconds",
+            "default": 60
+          },
           "age_ms": {
             "anyOf": [
               {
@@ -13003,7 +13008,7 @@
           "retention_minutes": {
             "type": "integer",
             "title": "Retention Minutes",
-            "default": 1440
+            "default": 60
           }
         },
         "additionalProperties": false,
@@ -13042,7 +13047,7 @@
           "retention_minutes": {
             "type": "integer",
             "title": "Retention Minutes",
-            "default": 1440
+            "default": 60
           }
         },
         "additionalProperties": false,

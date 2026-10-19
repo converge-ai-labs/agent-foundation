@@ -212,13 +212,9 @@ pub(crate) fn reset_status(error: TransferError) -> DataResetStatus {
 
 impl TransferRegistry {
     /// Admitted nonterminal transfers; pre-admission reservations are excluded.
-    pub(crate) fn active_count(&self) -> u64 {
-        let state = self
-            .inner
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        (state.records.len() - state.terminal_order.len()) as u64
+    pub(crate) fn active_count(&self) -> Option<u64> {
+        let state = self.inner.state.try_lock().ok()?;
+        Some((state.records.len() - state.terminal_order.len()) as u64)
     }
 
     pub(crate) fn new(

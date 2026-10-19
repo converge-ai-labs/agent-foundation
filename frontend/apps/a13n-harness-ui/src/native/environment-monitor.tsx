@@ -6,7 +6,7 @@ import {
   MagnifyingGlassPlusIcon,
   MagnifyingGlassMinusIcon,
 } from "@phosphor-icons/react";
-import { Button, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame, SegmentedControl } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
@@ -49,7 +49,7 @@ export function EnvironmentMonitor() {
       }
       title="Environment monitor"
       closeLabel="Close environment monitor"
-      description="App-wide Device observations. System and cgroup usage belongs to the Device, not a directory or Run."
+      description="Device resources · one hour of temporary history"
     >
       {open && <MonitorContent />}
     </ModalFrame>
@@ -59,7 +59,7 @@ export function EnvironmentMonitor() {
 export function MonitorContent() {
   const { client } = useTransport();
   const [selected, select] = useState("");
-  const [refreshInterval, setRefreshInterval] = useState(10000);
+  const [refreshInterval, setRefreshInterval] = useState(60000);
   const catalog = useQuery({
     queryKey: ["environment-monitoring"],
     queryFn: ({ signal }) =>
@@ -119,8 +119,6 @@ export function MonitorContent() {
                   setRefreshInterval(Number(event.target.value))
                 }
               >
-                <option value={10000}>Every 10s</option>
-                <option value={30000}>Every 30s</option>
                 <option value={60000}>Every 1m</option>
                 <option value={0}>Off</option>
               </select>
@@ -166,8 +164,8 @@ export function MonitorContent() {
         />
       )}
       <p className={styles.note}>
-        History is kept in this App's memory and clears on restart. Missing
-        observations remain gaps; unavailable values are shown as —.
+        Last hour · App memory only · clears on restart. Missing observations
+        remain gaps; unavailable values are shown as —.
       </p>
     </div>
   );
@@ -211,7 +209,7 @@ function Observation({
   const filesystems = [
     ...Object.entries(sample?.filesystems ?? {}),
     ...Object.entries(sample?.local_filesystems?.filesystems ?? {}).map(
-      ([name, value]) => [`auto:${name}`, value] as const,
+      ([name, value]) => [`Filesystem ${name}`, value] as const,
     ),
   ];
   const memory =
@@ -221,13 +219,43 @@ function Observation({
   return (
     <>
       <div className={styles.identity}>
-        <div>
-          <h3>{env.name}</h3>
-          <span>
-            {env.transport === "stdio" ? "Local Sandbox" : "Remote Device"} ·{" "}
-            {env.id}
-          </span>
-        </div>
+        <details className={styles.deviceInfo}>
+          <summary>Device information</summary>
+          <p>
+            {env.name} · {env.transport} · {env.id}
+          </p>
+          {info && (
+            <p>
+              {[
+                info.os,
+                info.os_version,
+                info.architecture,
+                info.cpu_model,
+                info.kernel_version,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+          <p>
+            System and cgroup metrics describe the Device, not an individual
+            Run.
+          </p>
+          <p>
+            App collection: every {env.collection_interval_seconds ?? 60}s ·
+            native sampling:{" "}
+            {env.sample_interval_ms == null
+              ? "unavailable"
+              : `every ${env.sample_interval_ms / 1000}s`}
+          </p>
+          {roots.length > 0 && (
+            <ul>
+              {roots.map((root) => (
+                <li key={root}>{root}</li>
+              ))}
+            </ul>
+          )}
+        </details>
         <div className={styles.freshness}>
           <strong>{states[env.status]}</strong>
           <span>
@@ -237,24 +265,6 @@ function Observation({
           </span>
         </div>
       </div>
-      {info && (
-        <p className={styles.note}>
-          {[info.os, info.os_version, info.architecture, info.cpu_model]
-            .filter(Boolean)
-            .join(" · ")}
-          {info.kernel_version && ` · Kernel ${info.kernel_version}`}
-        </p>
-      )}
-      {roots.length > 0 && (
-        <details>
-          <summary>Working roots ({roots.length})</summary>
-          <ul>
-            {roots.map((root) => (
-              <li key={root}>{root}</li>
-            ))}
-          </ul>
-        </details>
-      )}
       <div className={styles.gauges}>
         <div>
           <span>System CPU</span>
@@ -280,98 +290,108 @@ function Observation({
           </div>
         )}
       </div>
-      <div className={styles.chartToolbar}>
-        <div className={styles.rangeControls}>
-          <select
-            aria-label="Resource view"
-            value={view}
-            onChange={(event) => setView(event.target.value)}
-          >
-            <option value="overview">System overview</option>
-            <option value="network">Network & sockets</option>
-            <option value="storage">Storage & filesystems</option>
-            <option value="daemon">Envd usage</option>
-          </select>
-          <select
-            aria-label="Time range"
-            value={fixedRange ? "custom" : duration}
-            onChange={(event) => {
-              setDuration(Number(event.target.value));
-              selectRange(null);
-            }}
-          >
-            {fixedRange && <option value="custom">Custom range</option>}
-            <option value={15}>Last 15 minutes</option>
-            <option value={60}>Last 1 hour</option>
-            <option value={360}>Last 6 hours</option>
-            <option value={1440}>Last 24 hours</option>
-          </select>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Zoom in"
-            title="Zoom in"
-            disabled={range.end - range.start <= 2}
-            onClick={() => selectRange(zoomRange(range, 0.5, latest))}
-          >
-            <MagnifyingGlassPlusIcon />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Zoom out"
-            title="Zoom out"
-            disabled={range.end - range.start >= 1440}
-            onClick={() => selectRange(zoomRange(range, 2, latest))}
-          >
-            <MagnifyingGlassMinusIcon />
-          </Button>
-          {fixedRange && (
-            <Button variant="ghost" size="sm" onClick={() => selectRange(null)}>
-              Back to live
-            </Button>
-          )}
-        </div>
-        <span className={styles.liveState}>
-          {fixedRange
-            ? "Historical range"
-            : refreshing
-              ? "Live · auto-refreshing"
-              : "Refresh paused"}
-        </span>
-      </div>
-      <div className={styles.chartHint}>
-        <span>
-          {timeLabel(range.start)} – {timeLabel(range.end)} ·{" "}
-          {Intl.DateTimeFormat().resolvedOptions().timeZone}
-        </span>
-        <span>Drag to zoom · 1-minute averages / peaks</span>
-      </div>
+      <SegmentedControl
+        label="Resource view"
+        value={view}
+        onValueChange={setView}
+        className={styles.views}
+        options={[
+          { value: "overview", label: "Overview" },
+          { value: "network", label: "Network" },
+          { value: "storage", label: "Storage" },
+          { value: "daemon", label: "Envd" },
+        ]}
+      />
+      {view !== "daemon" && (
+        <>
+          <div className={styles.chartToolbar}>
+            <div className={styles.rangeControls}>
+              <select
+                aria-label="Time range"
+                value={fixedRange ? "custom" : duration}
+                onChange={(event) => {
+                  setDuration(Number(event.target.value));
+                  selectRange(null);
+                }}
+              >
+                {fixedRange && <option value="custom">Custom range</option>}
+                <option value={15}>Last 15 minutes</option>
+                <option value={60}>Last 1 hour</option>
+              </select>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Zoom in"
+                title="Zoom in"
+                disabled={range.end - range.start <= 2}
+                onClick={() => selectRange(zoomRange(range, 0.5, latest))}
+              >
+                <MagnifyingGlassPlusIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Zoom out"
+                title="Zoom out"
+                disabled={range.end - range.start >= 60}
+                onClick={() => selectRange(zoomRange(range, 2, latest))}
+              >
+                <MagnifyingGlassMinusIcon />
+              </Button>
+              {fixedRange && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => selectRange(null)}
+                >
+                  Back to live
+                </Button>
+              )}
+            </div>
+            <span className={styles.liveState}>
+              {fixedRange
+                ? "Historical range"
+                : refreshing
+                  ? "Live · auto-refreshing"
+                  : "Refresh paused"}
+            </span>
+          </div>
+          <div className={styles.chartHint}>
+            <span>
+              {timeLabel(range.start)} – {timeLabel(range.end)} ·{" "}
+              {Intl.DateTimeFormat().resolvedOptions().timeZone}
+            </span>
+            <span>Drag to zoom · observed minute averages / peaks</span>
+          </div>
+        </>
+      )}
       {view === "overview" && (
         <>
-          <Trend
-            {...chartProps}
-            title="System CPU"
-            metric="cpu_busy_percent"
-            history={history}
-            format={percent}
-          />
-          <Trend
-            {...chartProps}
-            title="System memory used"
-            metric="memory_used_bytes"
-            history={history}
-            format={bytes}
-          />
-          {history.some((point) => point.cgroup_memory_bytes != null) && (
+          <div className={styles.chartGrid}>
             <Trend
               {...chartProps}
-              title="Cgroup memory"
-              metric="cgroup_memory_bytes"
+              title="System CPU"
+              metric="cpu_busy_percent"
+              history={history}
+              format={percent}
+            />
+            <Trend
+              {...chartProps}
+              title="System memory used"
+              metric="memory_used_bytes"
               history={history}
               format={bytes}
             />
-          )}
+            {history.some((point) => point.cgroup_memory_bytes != null) && (
+              <Trend
+                {...chartProps}
+                title="Cgroup memory"
+                metric="cgroup_memory_bytes"
+                history={history}
+                format={bytes}
+              />
+            )}
+          </div>
           <MetricList
             title="Native memory"
             values={[
@@ -397,29 +417,37 @@ function Observation({
       )}
       {view === "network" && (
         <>
-          <MetricList
-            title="Sockets"
-            values={[
-              ["TCP", count(sample?.connections?.tcp_total)],
-              ["UDP", count(sample?.connections?.udp_sockets)],
-              ...Object.entries(sample?.connections?.tcp_states ?? {}).map(
-                ([state, value]) => [state.replaceAll("_", " "), count(value)],
-              ),
-            ]}
-          />
-          <Trend
-            {...chartProps}
-            title="TCP sockets"
-            metric="tcp_connections"
-            history={history}
-            format={count}
-          />
           <ResourceRates
             kind="network"
             resources={resources}
             chartProps={chartProps}
           />
-          <CounterTable sample={sample} kind="network" />
+          <details>
+            <summary>Connections and cumulative counters</summary>
+            <div className={styles.resourceSection}>
+              <MetricList
+                title="Sockets"
+                values={[
+                  ["TCP", count(sample?.connections?.tcp_total)],
+                  ["UDP", count(sample?.connections?.udp_sockets)],
+                  ...Object.entries(sample?.connections?.tcp_states ?? {}).map(
+                    ([state, value]) => [
+                      state.replaceAll("_", " "),
+                      count(value),
+                    ],
+                  ),
+                ]}
+              />
+              <Trend
+                {...chartProps}
+                title="TCP sockets"
+                metric="tcp_connections"
+                history={history}
+                format={count}
+              />
+              <CounterTable sample={sample} kind="network" />
+            </div>
+          </details>
         </>
       )}
       {view === "storage" && (
@@ -429,7 +457,10 @@ function Observation({
             resources={resources}
             chartProps={chartProps}
           />
-          <CounterTable sample={sample} kind="disk" />
+          <details>
+            <summary>Cumulative disk counters</summary>
+            <CounterTable sample={sample} kind="disk" />
+          </details>
           {filesystems.length > 0 && (
             <section>
               <h3>Filesystems</h3>
@@ -445,11 +476,24 @@ function Observation({
               <div className={styles.filesystems}>
                 {filesystems.map(([name, fs]) => (
                   <div key={name}>
-                    <strong>{name}</strong>
-                    <span>
-                      {bytes(fs.metrics?.available_bytes)} available /{" "}
-                      {bytes(fs.metrics?.total_bytes)}
-                    </span>
+                    <div className={styles.filesystemHeading}>
+                      <strong>{name}</strong>
+                      <span>
+                        {bytes(fs.metrics?.available_bytes)} available /{" "}
+                        {bytes(fs.metrics?.total_bytes)}
+                      </span>
+                    </div>
+                    {fs.metrics && fs.metrics.total_bytes > 0 && (
+                      <meter
+                        aria-label={`${name} used capacity`}
+                        min={0}
+                        max={fs.metrics.total_bytes}
+                        value={Math.max(
+                          0,
+                          fs.metrics.total_bytes - fs.metrics.free_bytes,
+                        )}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -479,9 +523,8 @@ function Observation({
       )}
       {omittedRateSources > 0 && (view === "network" || view === "storage") && (
         <p role="status" className={styles.note}>
-          {omittedRateSources} sources exceed the history limit of four
-          interfaces and four disks per Device. Latest counters remain available
-          below.
+          {omittedRateSources} sources exceed the history limit of 64 interfaces
+          and 64 disks per Device.
         </p>
       )}
       {sample && (
@@ -563,13 +606,10 @@ function ResourceRates({
   chartProps: ChartControls;
 }) {
   const [selected, select] = useState("");
-  const [metric, setMetric] = useState("");
   const candidates = resources.filter((item) => item.kind === kind);
   const source =
     candidates.find((item) => item.name === selected) ?? candidates[0];
   const fields = rateFields[kind];
-  const field = fields.find(([key]) => key === metric) ?? fields[0];
-  const operations = field[0].includes("operations");
   return (
     <section className={styles.resourceSection}>
       <div className={styles.toolbar}>
@@ -591,38 +631,30 @@ function ResourceRates({
             ))}
           </select>
         </label>
-        <label>
-          Metric
-          <select
-            aria-label={`${kind} rate metric`}
-            value={field[0]}
-            onChange={(event) => setMetric(event.target.value)}
-          >
-            {fields.map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
-      <Trend
-        {...chartProps}
-        title={`${kind === "network" ? "Interface" : "Disk"} ${source?.name ?? "activity"} · ${field[1]}`}
-        metric="value"
-        history={(source?.history ?? []).map((point) => ({
-          minute: point.minute,
-          segment: point.segment,
-          value: point.rates[field[0]],
-        }))}
-        format={(value) =>
-          value == null ? "—" : `${operations ? count(value) : bytes(value)}/s`
-        }
-      />
+      <div className={styles.chartGrid}>
+        {fields.map(([key, label]) => (
+          <Trend
+            key={key}
+            {...chartProps}
+            title={label}
+            metric="value"
+            history={(source?.history ?? []).map((point) => ({
+              minute: point.minute,
+              segment: point.segment,
+              value: point.rates[key],
+            }))}
+            format={(value) =>
+              value == null
+                ? "—"
+                : `${key.includes("operations") ? count(value) : bytes(value)}/s`
+            }
+          />
+        ))}
+      </div>
       <p className={styles.note}>
-        Rates use distinct samples from one source. First samples, resets and
-        missing observations remain gaps. Interfaces and stacked disks are never
-        summed.
+        Rates for the selected source between App observations; sources are
+        never summed.
       </p>
     </section>
   );

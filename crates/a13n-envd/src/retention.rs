@@ -222,18 +222,20 @@ impl RetentionQuota {
 
 impl RetentionStore {
     /// Actual retained bytes, excluding unused output allowances.
-    pub(crate) fn retained_bytes(&self) -> u64 {
-        let objects: Vec<_> = self.objects().values().cloned().collect();
-        objects
-            .iter()
-            .map(|object| {
-                object
-                    .state
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .retained_bytes
-            })
-            .sum()
+    pub(crate) fn retained_bytes(&self) -> Option<u64> {
+        let objects: Vec<_> = self
+            .inner
+            .objects
+            .try_lock()
+            .ok()?
+            .values()
+            .cloned()
+            .collect();
+        // Output state can be held across spool I/O. Observation must never wait
+        // for it, especially on the worker's control-dispatch path.
+        objects.iter().try_fold(0, |total, object| {
+            Some(total + object.state.try_lock().ok()?.retained_bytes)
+        })
     }
 
     pub(crate) fn new(
@@ -923,6 +925,25 @@ mod tests {
         assert_eq!(store.quota(), (0, 0));
         store.abort_pair([&stdout, &stderr]).await;
         assert_eq!(store.quota(), (0, 0));
+        drop((stdout, stderr));
+        cleanup(parent, config, store);
+    }
+
+    #[tokio::test]
+    async fn monitoring_skips_busy_output_and_registry_without_waiting() {
+        let (parent, config, store) = setup(4, 8, 2);
+        let (stdout, stderr) = store.create_live_pair().await.unwrap();
+        stdout.append(b"data").await;
+        {
+            let _busy_output = stdout.object.state.lock().unwrap();
+            assert_eq!(store.retained_bytes(), None);
+        }
+        {
+            let _busy_registry = store.objects();
+            assert_eq!(store.retained_bytes(), None);
+        }
+        assert_eq!(store.retained_bytes(), Some(4));
+        store.abort_pair([&stdout, &stderr]).await;
         drop((stdout, stderr));
         cleanup(parent, config, store);
     }

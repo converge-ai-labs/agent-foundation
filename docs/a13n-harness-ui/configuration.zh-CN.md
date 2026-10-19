@@ -232,11 +232,14 @@ Guardian 关联不改变审查器、凭据、端点、service tier、风险策�
 envd:
   executable: null
   computer_use: false
+  monitoring_interval_seconds: 60
 ```
 
 `executable: null` 选择已安装客户端要求的确切托管版本。源码运行或自定义构建可填写 `a13n-envd` 的绝对路径（Windows 为 `a13n-envd.exe`）；`~` 在 Host 上展开。自定义可执行文件不会自动下载。省略 `envd` 时保留嵌入应用指定的可执行文件设置，并禁用桌面访问。
 
 `computer_use` 允许在当前 Host 上运行具有桌面能力的本地运行时。Agent 还需显式选择 `environment-desktop` profile；仅开启 Host 能力不会向 Agent 暴露桌面。见[本地运行时管理](environments-and-projects.md#manage-local-envd)。
+
+`monitoring_interval_seconds` 设置 App 的监控采集间隔及内置本地 Sandbox、Envd 和 Desktop daemon 的采样间隔。支持 10–60 秒，默认 60 秒，修改后需重启 App。外部 daemon 和自定义启动配置保留各自的采样间隔。浏览器每分钟刷新，历史保留最近一小时。
 
 ### Goal 检查
 

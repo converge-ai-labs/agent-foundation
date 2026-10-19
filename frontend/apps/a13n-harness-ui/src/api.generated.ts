@@ -3487,6 +3487,11 @@ export interface components {
             sample?: components["schemas"]["MetricsSample"] | null;
             /** Sample Interval Ms */
             sample_interval_ms?: number | null;
+            /**
+             * Collection Interval Seconds
+             * @default 60
+             */
+            collection_interval_seconds?: number;
             /** Age Ms */
             age_ms?: number | null;
         };
@@ -4573,7 +4578,7 @@ export interface components {
             capacity?: number;
             /**
              * Retention Minutes
-             * @default 1440
+             * @default 60
              */
             retention_minutes?: number;
         };
@@ -4594,7 +4599,7 @@ export interface components {
             omitted_rate_sources?: number;
             /**
              * Retention Minutes
-             * @default 1440
+             * @default 60
              */
             retention_minutes?: number;
         };

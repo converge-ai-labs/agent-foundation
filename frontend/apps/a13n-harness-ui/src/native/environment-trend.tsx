@@ -26,10 +26,10 @@ export function zoomRange(
   factor: number,
   latest: number,
 ): TimeRange {
-  const width = Math.min(1440, Math.max(2, (range.end - range.start) * factor));
+  const width = Math.min(60, Math.max(2, (range.end - range.start) * factor));
   const end = Math.min(
     latest,
-    Math.max(latest - 1440 + width, (range.start + range.end + width) / 2),
+    Math.max(latest - 60 + width, (range.start + range.end + width) / 2),
   );
   return { start: end - width, end };
 }
