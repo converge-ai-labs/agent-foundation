@@ -63,6 +63,43 @@ def test_default_selection_keeps_all_packages_and_accepts_zero_workers(test_work
     assert all(command[4] == "0" for command in test_workspace)
 
 
+def test_file_shards_are_disjoint_complete_and_include_new_nested_files(test_workspace) -> None:
+    nested = Path(UI) / "nested"
+    nested.mkdir()
+    for name in ("test_new.py", "another_test.py", "test_space $(false).py", "helper.py"):
+        (nested / name).touch()
+    expected = sorted(
+        [f"{UI}/test_one.py", f"{UI}/test_two.py"]
+        + [str(nested / name) for name in ("test_new.py", "another_test.py", "test_space $(false).py")]
+    )
+    for shard in (1, 2):
+        assert main(["--shard", str(shard), "2", "--workers", "3", UI]) == 0
+    selections = [command[7:] for command in test_workspace]
+    assert selections == [expected[::2], expected[1::2]]
+    assert not set(selections[0]) & set(selections[1])
+    assert sorted(selections[0] + selections[1]) == expected
+    assert all(command[3:7] == ["-n", "3", "--dist", "loadgroup"] for command in test_workspace)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--shard", "0", "2", UI],
+        ["--shard", "3", "2", UI],
+        ["--shard", "1", "0", UI],
+        ["--shard", "1", "2"],
+        ["--shard", "1", "2", UI, SERVICE],
+        ["--shard", "1", "2", f"{UI}/test_one.py::test_case"],
+        ["--shard", "3", "3", UI],
+    ],
+)
+def test_invalid_or_empty_shards_fail_without_running_tests(test_workspace, arguments) -> None:
+    with pytest.raises(SystemExit) as error:
+        main(arguments)
+    assert error.value.code == 2
+    assert test_workspace == []
+
+
 @pytest.mark.parametrize("invalid", ["missing.py", "packages", f"{SERVICE}/missing.py"])
 def test_invalid_selection_fails_before_starting_any_suite(test_workspace, invalid) -> None:
     with pytest.raises(SystemExit) as error:

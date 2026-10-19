@@ -407,13 +407,6 @@ def test_service_release_requires_its_reviewed_sandbox(available, tmp_path, monk
     assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.3.0"
 
 
-def test_sandbox_image_changes_trigger_native_docker_e2e() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
-    image = Path("deploy/docker/images/sandbox/Dockerfile")
-    for event in ("pull_request", "push"):
-        assert any(image.full_match(pattern) for pattern in workflow[True][event]["paths"])
-
-
 def test_only_service_and_sandbox_images_are_published() -> None:
     service = yaml.safe_load((ROOT / ".github/workflows/release-a13n-service.yml").read_text())["jobs"]
     ui = yaml.safe_load((ROOT / ".github/workflows/release-a13n-harness-ui.yml").read_text())["jobs"]

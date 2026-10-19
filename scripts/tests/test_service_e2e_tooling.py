@@ -52,15 +52,13 @@ def collect_scenarios(*arguments: str) -> set[str]:
     return {line for line in result.stdout.splitlines() if "::" in line}
 
 
-def test_the_e2e_suite_collects_every_journey_module():
-    collected = {node.split("::")[0] for node in collect_scenarios()}
-    assert collected == {path.relative_to(ROOT).as_posix() for path in (ROOT / "e2e/service").glob("test_*.py")}
-
-
-def test_hosted_e2e_journeys_run_only_when_asked_for():
+def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_journeys():
     environments = "e2e/service/test_environments.py"
     lifecycle = f"{environments}::test_a_run_uses_its_environment_across_its_lifecycle"
     default = collect_scenarios()
+    assert {node.split("::")[0] for node in default} == {
+        path.relative_to(ROOT).as_posix() for path in (ROOT / "e2e/service").glob("test_*.py")
+    }
     assert f"{lifecycle}[docker]" in default
     assert not {node for node in default if "e2b" in node or "modal" in node}
     assert f"{lifecycle}[modal]" in collect_scenarios("--hosted")

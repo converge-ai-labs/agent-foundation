@@ -10,12 +10,22 @@ on:
       - "dev/fixtures/**"
       - "e2e/**"
       - "deploy/docker/images/sandbox/**"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/a13n-envd/**"
+      - "LICENSE"
       - "scripts/tests/test_service_e2e_tooling.py"
-      - "packages/a13n-service/**"
-      - "packages/a13n-harness/**"
-      - "packages/a13n-envd-client/**"
-      - "packages/a13n-stream-protocol/**"
-      - "packages/a13n-logging/**"
+      - "packages/a13n-service/*"
+      - "packages/a13n-service/a13n_service/**"
+      - "packages/a13n-harness/*"
+      - "packages/a13n-harness/a13n_harness/**"
+      - "packages/a13n-envd-client/*"
+      - "packages/a13n-envd-client/a13n_envd_client/**"
+      - "packages/a13n-stream-protocol/*"
+      - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
+      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/a13n_logging/**"
       - "pyproject.toml"
       - "uv.lock"
   push:
@@ -27,12 +37,22 @@ on:
       - "dev/fixtures/**"
       - "e2e/**"
       - "deploy/docker/images/sandbox/**"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/a13n-envd/**"
+      - "LICENSE"
       - "scripts/tests/test_service_e2e_tooling.py"
-      - "packages/a13n-service/**"
-      - "packages/a13n-harness/**"
-      - "packages/a13n-envd-client/**"
-      - "packages/a13n-stream-protocol/**"
-      - "packages/a13n-logging/**"
+      - "packages/a13n-service/*"
+      - "packages/a13n-service/a13n_service/**"
+      - "packages/a13n-harness/*"
+      - "packages/a13n-harness/a13n_harness/**"
+      - "packages/a13n-envd-client/*"
+      - "packages/a13n-envd-client/a13n_envd_client/**"
+      - "packages/a13n-stream-protocol/*"
+      - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
+      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/a13n_logging/**"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:
@@ -83,8 +103,20 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build the native Docker execution image
-        run: make image-sandbox
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/images/sandbox/Dockerfile
+          tags: a13n-sandbox:local
+          load: true
+          pull: true
+          # Reuse unchanged toolchain and Envd layers, while building this checkout.
+          # Keep the cache independent of published images; cache export is optional.
+          cache-from: type=gha,scope=service-e2e-sandbox
+          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
       - name: Run every journey but the opt-in hosted ones; an unavailable dependency fails it
         run: make service-e2e SERVICE_E2E_ARGS="--require-all --junitxml=test-results/service-e2e.xml"
       - name: Report collected, executed and skipped journeys

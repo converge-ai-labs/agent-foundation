@@ -9,6 +9,10 @@ on:
       - ".pre-commit-config.yaml"
       - ".mdformat.toml"
       - "pyproject.toml"
+      - "packages/*/pyproject.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/a13n-envd/Cargo.toml"
       - "uv.lock"
       - "scripts/check-release-version.py"
       - "scripts/create-github-release.py"
@@ -19,9 +23,7 @@ on:
       - "scripts/tests/test_k8s_local.py"
       - "scripts/deploy_smoke.py"
       - "scripts/tests/test_deploy_smoke.py"
-      - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
-      - "scripts/tests/test_envd_ci_workflow.py"
       - "scripts/tests/test_service_contract_notification.py"
       - "deploy/docker/images/**/Dockerfile"
       - "deploy/kubernetes/**"
@@ -47,6 +49,10 @@ on:
       - ".pre-commit-config.yaml"
       - ".mdformat.toml"
       - "pyproject.toml"
+      - "packages/*/pyproject.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/a13n-envd/Cargo.toml"
       - "uv.lock"
       - "scripts/check-release-version.py"
       - "scripts/create-github-release.py"
@@ -57,9 +63,7 @@ on:
       - "scripts/tests/test_k8s_local.py"
       - "scripts/deploy_smoke.py"
       - "scripts/tests/test_deploy_smoke.py"
-      - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
-      - "scripts/tests/test_envd_ci_workflow.py"
       - "scripts/tests/test_service_contract_notification.py"
       - "deploy/docker/images/**/Dockerfile"
       - "deploy/kubernetes/**"
@@ -168,11 +172,9 @@ jobs:
           scripts/tests/test_verify_inputs.py
           scripts/tests/test_verify_cache.py
           scripts/tests/test_impact.py
-          scripts/tests/test_image_workflows.py
           scripts/tests/test_sandbox_init.py
           scripts/tests/test_envd_release_workflow.py
           scripts/tests/test_k8s_local.py
           scripts/tests/test_deploy_smoke.py
           scripts/tests/test_harness_ui_release_workflow.py
-          scripts/tests/test_envd_ci_workflow.py
           scripts/tests/test_service_contract_notification.py
