@@ -179,6 +179,10 @@ Service includes Harness `FileContextCapability` for every agent, including inli
 
 Harness opens and closes Environment execution scopes, including on binding failure, cancellation, and replacement. Service marks activated instances used on completion; merely registering an unused mount does not update `last_used_at`. Frozen mounts retain active-use protection even before activation. Closing an Environment execution preserves the backing instance while applying the provider's declared Session/process cleanup; it does not select stop or delete.
 
+For external HTTP Envd targets, a running checkpoint records each activated mount's endpoint, Envd Session descriptor and requested working directory as private attachment hints. A replacement attempt of the same run uses those hints after rechecking current authority, credentials and device identity. A matching live Session is attached; a closed or expired Session, changed endpoint or generation, or incompatible directory selection opens a fresh Session. Authentication, transport and protocol failures remain failures. Controlled-egress Sessions are opened with current policy resolution. Hints stay outside portable `EnvironmentState` and Harness state, are omitted from sealing checkpoints, and are never inherited by successor runs, forks or async children.
+
+Recovery preserves normal close and abort cleanup. It does not extend Session lifetime or fence another client: delayed cleanup by an old worker can close an attached Session, after which operations fail without automatic replay. Run-local process references and output observations are not restored by Session attachment. Managed-provider and reverse-transport execution keep their existing behavior.
+
 ## External targets
 
 An external target is an envd daemon someone else operates, reached over HTTP(S) at its own endpoint with its own token. It is no provider resource: the Harness `http_envd` Environment connector reaches it, built by `providers/envd.py` from the row's values. Each executing worker connects directly to the endpoint, which must be reachable from every process that uses it.

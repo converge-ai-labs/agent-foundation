@@ -73,7 +73,7 @@ async def require_current(storage: Storage) -> None:
 def convert_display(raw: bytes, pointer: LegacyPointer) -> Tail:
     """Keep the retained items and their order; refuse already-truncated history rather than invent it."""
     display = LegacyDisplay.model_validate_json(raw)
-    if pointer.format != FORMAT or display.position != pointer.position:
+    if pointer.format != 1 or display.position != pointer.position:
         raise ValueError("Legacy display format or stream position does not match its pointer")
     if display.dropped:
         raise ValueError("Legacy display has dropped items; it needs a separate recovery plan")
@@ -205,7 +205,7 @@ async def migrate(
             parsed = RunState.model_validate_json(_json_bytes(state))
             assert state_pointer is not None
             if (
-                state_pointer.format != FORMAT
+                state_pointer.format != 1
                 or parsed.seq != state_pointer.seq
                 or parsed.attempt != state_pointer.attempt
                 or state_pointer.refs

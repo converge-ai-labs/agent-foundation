@@ -42,6 +42,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError, Environmen
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
+from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery, HttpEnvdSessionState
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -123,6 +124,7 @@ class _Plan:
     # Entries assigned to the run and not yet consumed, in position order: this attempt's input.
     assigned: list[Offered]
     state: HarnessState
+    envd_sessions: dict[str, HttpEnvdSessionState]
     resume: DeferredToolResume | None
     resume_input: Offered | None
     # What changed since the run whose history this one continues; it precedes the input, or is the input of a resume
@@ -295,6 +297,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         limit=options.max_usage.requests if options.max_usage is not None else None,
         assigned=assigned,
         state=state,
+        envd_sessions=dict(own.envd_sessions) if own is not None else {},
         resume=resume,
         resume_input=resume_input,
         reminder=reminder,
@@ -366,6 +369,7 @@ class _Attempt:
     def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan):
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
+        self.envd_sessions = {name: HttpEnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
@@ -441,6 +445,7 @@ class _Attempt:
                     self.plan.mounts,
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
+                    envd_sessions=self.envd_sessions,
                 )
             )
             models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
@@ -636,6 +641,11 @@ class _Attempt:
                 seq=self.seq + 1,
                 attempt=self.lease.number,
                 deferred=deferred,
+                envd_sessions={
+                    name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
+                }
+                if outcome is None
+                else {},
                 resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
                 or self.offers.requested,
             ),

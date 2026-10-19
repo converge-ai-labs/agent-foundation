@@ -253,7 +253,7 @@ async def test_claim_leaves_newer_checkpoints_and_fails_older_ones(service, scri
     older = (await runs_kit.start_thread(service, agent, "older"))["run"]["id"]
     pointer = {"key": "orgs/o/runs/r/state/1/0", "digest": "0" * 64, "size": 1}
     async with transaction(service.runtime.storage) as session:
-        for run_id, format in ((newer, FORMAT + 1), (older, FORMAT - 1)):
+        for run_id, format in ((newer, FORMAT + 1), (older, 0)):
             await session.execute(
                 update(RunRow)
                 .where(RunRow.id == run_id)

@@ -1,7 +1,7 @@
 """Host-owned mount sources: inert registration, first-use lifecycle and fixed-target connectors."""
 
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
@@ -20,6 +20,7 @@ from a13n_harness.environment.models import (
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
+from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionRecovery
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
@@ -74,6 +75,8 @@ class Source:
     configuration: RunConfiguration | None = None
     activated: bool = False
     skill_cache: Cache | None = None
+    stack: AsyncExitStack | None = None
+    session_recovery: HttpEnvdSessionRecovery | None = None
 
     @property
     def environment_id(self) -> str:
@@ -99,6 +102,8 @@ class Source:
                         self.runtime,
                         prepared.target,
                         configuration=self.configuration,
+                        stack=self.stack,
+                        session_recovery=self.session_recovery,
                     )
             except TimeoutError as error:
                 raise _not_ready(self.mount.environment_id) from error
@@ -219,9 +224,11 @@ async def open_mounts(
     *,
     configuration: RunConfiguration | None = None,
     skill_cache: Cache | None = None,
+    envd_sessions: dict[str, HttpEnvdSessionRecovery] | None = None,
 ) -> AsyncIterator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
+    stack = AsyncExitStack()
     async with transaction(runtime.storage) as session:
         await lock_lease(session, lease)
         for mount in mounts:
@@ -265,6 +272,10 @@ async def open_mounts(
                     state,
                     configuration,
                     skill_cache=skill_cache if mount.name == PRIMARY else None,
+                    stack=stack,
+                    session_recovery=envd_sessions.setdefault(mount.name, HttpEnvdSessionRecovery())
+                    if envd_sessions is not None and environment.template_id is None
+                    else None,
                 )
             )
     try:
@@ -280,7 +291,10 @@ async def open_mounts(
             for source in sources
         }
     finally:
-        await _mark_used(runtime, [source.mount.environment_id for source in sources if source.activated])
+        try:
+            await stack.aclose()
+        finally:
+            await _mark_used(runtime, [source.mount.environment_id for source in sources if source.activated])
 
 
 class _DirectoryConnector(EnvironmentConnector):

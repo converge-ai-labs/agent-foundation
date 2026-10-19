@@ -147,7 +147,7 @@ Host-selected working directories use the EIP Device path model. Vendor target n
 
 ### Remote Envd
 
-`http_envd` and `websocket_envd` connect to externally operated Devices. They provision, start, stop, delete, and renew nothing: their execution definitions contain no management factory, and Service registers no management lifecycle for them. EIP Session keepalive is separate from target renewal. HTTP is Host-dialed; reverse WebSocket is daemon-dialed, with envd always the responder. A Host-owned Device connection serves several fresh execution-owned Sessions, and the Harness owns each execution and its Session independently of other executions.
+`http_envd` and `websocket_envd` connect to externally operated Devices. They provision, start, stop, delete, and renew nothing: their execution definitions contain no management factory, and Service registers no management lifecycle for them. EIP Session keepalive is separate from target renewal. HTTP is Host-dialed; reverse WebSocket is daemon-dialed, with envd always the responder. By default, a Host-owned Device connection serves several fresh execution-owned Sessions, and the Harness owns each execution and its Session independently of other executions.
 
 | Concern                                                                           | Owner                     |
 | --------------------------------------------------------------------------------- | ------------------------- |
@@ -157,6 +157,8 @@ Host-selected working directories use the EIP Device path model. Vendor target n
 | Bounded process-local Device connection registry                                  | Host-owned connection SDK |
 | Fresh execution, folder configuration and provider-neutral operation translation  | Remote Provider           |
 | Cross-process routing, durable records and product policy                         | Host                      |
+
+An HTTP runtime can accept Host-private Session attachment hints for recovery within a Host-defined execution scope. It validates the current Device, boundary and Session configuration before attachment. An unavailable saved Session falls back to a fresh Session; authentication, transport and compatibility failures propagate. The Host owns checkpoint selection and scope isolation; hints remain outside portable Environment state. Attached Sessions retain normal close and abort cleanup, without fencing other clients or extending expiry. Application process references and output observations remain local to each execution.
 
 A Session is a resource owner, not a tenant sandbox. Device and working-directory selection are trusted Host inputs; operation arguments do not confer authority to select another Device. The SDK owns no listener, global registry, credential issuer, or distributed relay.
 

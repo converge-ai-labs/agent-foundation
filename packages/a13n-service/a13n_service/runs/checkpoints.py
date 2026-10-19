@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
+from a13n_harness.providers.environment.remote_envd.recovery import HttpEnvdSessionState
 from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
@@ -45,7 +46,7 @@ if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
 # Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
-FORMAT = 1
+FORMAT = 2
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -109,7 +110,7 @@ class PageRef(_Frozen):
 
 
 class RunState(_Frozen):
-    format: Literal[1] = FORMAT
+    format: Literal[1, 2] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
@@ -118,6 +119,8 @@ class RunState(_Frozen):
     # A model request in this checkpoint carried the run's initial input: a resume's optional ordinary input and any
     # turn reminder. Every other run's input reaches its first request before its first checkpoint.
     resume_input_consumed: bool = False
+    # Private same-Run attachment hints, never inherited by a successor Run.
+    envd_sessions: dict[str, HttpEnvdSessionState] = Field(default_factory=dict, repr=False)
 
 
 def run_prefix(organization_id: str, run_id: str) -> str:
@@ -156,8 +159,8 @@ def claimable() -> ColumnElement[bool]:
     """Runs this build claims: those whose checkpoint has a format no newer than its own. A run without one yet
     starts from its parent's, so that one decides, and a run without either always qualifies.
 
-    A newer format waits for a newer worker during a rolling deploy. An older one no build reads again, since
-    `FORMAT` only moves on with a plan for outstanding checkpoints, so this build claims it to fail it.
+    A newer format waits for a newer worker during a rolling deploy. Supported older formats are read and
+    upgraded on the next checkpoint; unsupported older formats are claimed and failed explicitly.
     """
     parent = aliased(RunRow)
     newer_parent = exists().where(parent.id == RunRow.parent_run_id, parent.checkpoint["format"].as_integer() > FORMAT)
@@ -168,7 +171,7 @@ def require_compatible(run: RunRow) -> StatePointer | None:
     """The run's checkpoint pointer, if it has one, in a format this build reads."""
     if run.checkpoint is None:
         return None
-    if (pointer := StatePointer.model_validate(run.checkpoint)).format != FORMAT:
+    if (pointer := StatePointer.model_validate(run.checkpoint)).format not in {1, FORMAT}:
         raise conflict("run", run.id, "checkpoint_incompatible")
     return pointer
 

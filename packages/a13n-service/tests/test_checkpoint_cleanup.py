@@ -220,3 +220,15 @@ async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runti
     finally:
         release.set()
         await asyncio.gather(publishing, return_exceptions=True)
+
+
+def test_legacy_checkpoint_defaults_to_no_session_hints():
+    legacy = RunState(harness=HarnessState.new(thread_id="thr_legacy"), seq=1, attempt=1).model_dump(mode="json")
+    legacy["format"] = 1
+    del legacy["envd_sessions"]
+    restored = RunState.model_validate(legacy)
+    assert restored.envd_sessions == {}
+    pointer = StatePointer(key="legacy", digest="0" * 64, size=1, format=1, seq=1, attempt=1)
+    assert checkpoints.require_compatible(RunRow(id="run_legacy", checkpoint=pointer.model_dump())) == pointer
+    upgraded = RunState(harness=restored.harness, seq=2, attempt=2)
+    assert upgraded.format == checkpoints.FORMAT == 2
