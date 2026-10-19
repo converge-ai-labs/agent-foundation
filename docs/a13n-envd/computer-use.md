@@ -130,6 +130,16 @@ Use `computer_zoom` when text or a small control is unclear. Pass the original `
 
 Expand **Observe desktop** or **Inspect desktop region** in WebUI to view the image. Temporary image copies can expire. Close screenshot readers promptly to release transfer capacity.
 
+## Clipboard text
+
+Enable `environment.computer.read_clipboard` and `environment.computer.write_clipboard` independently to expose `computer_read_clipboard` and `computer_write_clipboard`. Both work on macOS, Windows and Linux X11. Select the intended mount with `alias`; clipboard access does not require an observation.
+
+Read returns `status: text` with the complete text, including an empty string, or `no_content` / `no_text` without text. `max_bytes` defaults to 16384 and can be lowered. An oversized read fails instead of truncating. Write requires `text`, accepts an empty string, rejects NUL, and allows at most 16384 original UTF-8 bytes. Both directions normalize CRLF to LF. Only plain Unicode text is exchanged.
+
+To paste text, write the clipboard and then send the application's paste chord as a separate operation. To read an application's copied text, send its copy chord and then read. Check the application's state: a completed chord does not prove it published or inserted text, and another application can replace the clipboard between calls. Clipboard writes replace existing content without saving or restoring it.
+
+Keep the workflow in the same live Session. X11 serves `CLIPBOARD` while that Session remains alive and leaves `PRIMARY` unchanged. macOS and Windows publish eager native data, but persistence across Session replacement, restart or human handoff is not guaranteed. macOS clipboard consent still applies; Windows requires a signed-in, unlocked input desktop. Partial/unknown write effects and incomplete `cleanup_complete` require reconciliation, not automatic retry. These methods do not synchronize clipboard text with a human desktop viewer.
+
 ## Python client
 
 Given a ready `EIPSession`, use the verified screenshot reader:
@@ -157,3 +167,5 @@ Use a fresh operation context for each new input action. Reconcile uncertain eff
 The opt-in [Linux desktop fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) checks real GUI input and changed screenshots in a disposable container. Portable scripted-peer tests check integration, not native desktop behavior.
 
 On the target OS, try harmless input in a disposable application and verify the next screenshot. Also test permission/session loss and display-layout changes.
+
+For clipboard validation, use a disposable desktop because writes replace its current clipboard. Read text copied from a native editor, then write `café 中文 🦀` with multiple lines and paste it back into the editor. Test empty text and a read limit smaller than the copied text. Keep the Session alive throughout copy/read and write/paste. On macOS, test clipboard consent denial; on Windows, test a locked desktop and clipboard contention. The opt-in native EIP regression can also run with `cargo test -p a13n-envd --lib clipboard_eip -- --ignored --test-threads=1`; it replaces clipboard content.

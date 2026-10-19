@@ -151,6 +151,34 @@ enum ComputerEffect {
   COMPUTER_EFFECT_UNKNOWN = 4 [(eip_enum_value).json_name = "unknown"];
 }
 
+message ComputerReadClipboardParams {
+  EIPCallContext context = 1;
+  optional uint32 max_bytes = 2 [(eip_field).minimum = 1, (eip_field).maximum = 16384, (eip_field).default_uint = 16384];
+}
+
+enum ComputerClipboardStatus {
+  COMPUTER_CLIPBOARD_STATUS_UNSPECIFIED = 0;
+  COMPUTER_CLIPBOARD_STATUS_TEXT = 1 [(eip_enum_value).json_name = "text"];
+  COMPUTER_CLIPBOARD_STATUS_NO_CONTENT = 2 [(eip_enum_value).json_name = "no_content"];
+  COMPUTER_CLIPBOARD_STATUS_NO_TEXT = 3 [(eip_enum_value).json_name = "no_text"];
+}
+
+message ComputerReadClipboardResult {
+  ComputerClipboardStatus status = 1;
+  optional string text = 2;
+}
+
+message ComputerWriteClipboardParams {
+  EIPCallContext context = 1;
+  string text = 2;
+}
+
+message ComputerWriteClipboardResult {
+  OperationReceipt receipt = 1;
+  ComputerEffect effect = 2;
+  bool cleanup_complete = 3;
+}
+
 message ComputerActionResult {
   OperationReceipt receipt = 1;
   ComputerEffect effect = 2;

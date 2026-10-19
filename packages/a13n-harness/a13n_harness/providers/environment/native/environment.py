@@ -23,6 +23,7 @@ from a13n_harness.environment.models import (
     decode_target_state,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment._backend import BackendReference, ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment._guest_files import GuestFiles
@@ -208,6 +209,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime | None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> ExecutionBackend:
         if runtime is None:
             raise TypeError("Native execution construction requires a runtime")

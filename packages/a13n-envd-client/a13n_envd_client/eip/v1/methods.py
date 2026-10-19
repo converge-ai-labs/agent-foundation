@@ -15,8 +15,12 @@ from .models import (
     ComputerObserveParams,
     ComputerObserveResult,
     ComputerPressKeysParams,
+    ComputerReadClipboardParams,
+    ComputerReadClipboardResult,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerWriteClipboardParams,
+    ComputerWriteClipboardResult,
     ComputerZoomParams,
     ComputerZoomResult,
     DeviceDescribeParams,
@@ -210,6 +214,19 @@ COMPUTER_PRESS_KEYS = MethodSpec(
     device_scoped=False,
 )
 
+COMPUTER_READ_CLIPBOARD = MethodSpec(
+    name="computer.read_clipboard",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.3",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerReadClipboardParams,
+    result_type=ComputerReadClipboardResult,
+    device_scoped=False,
+)
+
 COMPUTER_SCROLL = MethodSpec(
     name="computer.scroll",
     kind="request_response",
@@ -233,6 +250,19 @@ COMPUTER_TYPE_TEXT = MethodSpec(
     transfer_direction=None,
     params_type=ComputerTypeTextParams,
     result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_WRITE_CLIPBOARD = MethodSpec(
+    name="computer.write_clipboard",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.3",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerWriteClipboardParams,
+    result_type=ComputerWriteClipboardResult,
     device_scoped=False,
 )
 
@@ -804,8 +834,10 @@ METHODS = MappingProxyType(
         COMPUTER_MOVE.name: COMPUTER_MOVE,
         COMPUTER_OBSERVE.name: COMPUTER_OBSERVE,
         COMPUTER_PRESS_KEYS.name: COMPUTER_PRESS_KEYS,
+        COMPUTER_READ_CLIPBOARD.name: COMPUTER_READ_CLIPBOARD,
         COMPUTER_SCROLL.name: COMPUTER_SCROLL,
         COMPUTER_TYPE_TEXT.name: COMPUTER_TYPE_TEXT,
+        COMPUTER_WRITE_CLIPBOARD.name: COMPUTER_WRITE_CLIPBOARD,
         COMPUTER_ZOOM.name: COMPUTER_ZOOM,
         DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,
         DEVICE_METRICS.name: DEVICE_METRICS,

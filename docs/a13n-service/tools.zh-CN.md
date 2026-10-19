@@ -17,14 +17,14 @@ Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agen
 
 `GET /api/v1/toolsets` 返回工具目录，包括各工具的 key、模型可见名称、默认状态与权限，以及配置 schema。
 
-| 工具集          | 工具（模型可见名称）                                                                                                                                                         | 默认状态                       |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `files`         | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                               | 启用                           |
-| `shell`（终端） | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                      | 启用                           |
-| `computer`      | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys` | 禁用；还需要明确的环境挂载权限 |
-| `web`           | `search`, `scrape`, `fetch`, `download`                                                                                                                                      | 各工具均禁用                   |
-| `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                | 启用                           |
-| `assets`        | `publish_asset`                                                                                                                                                              | 禁用                           |
+| 工具集          | 工具（模型可见名称）                                                                                                                                                                                                                | 默认状态                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `files`         | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                                                                                      | 启用                           |
+| `shell`（终端） | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                                                                             | 启用                           |
+| `computer`      | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys`, `computer_read_clipboard`, `computer_write_clipboard` | 禁用；还需要明确的环境挂载权限 |
+| `web`           | `search`, `scrape`, `fetch`, `download`                                                                                                                                                                                             | 各工具均禁用                   |
+| `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                                                                       | 启用                           |
+| `assets`        | `publish_asset`                                                                                                                                                                                                                     | 禁用                           |
 
 电脑工具需要兼容的桌面，以及挂载环境上明确授予的动作权限。开启方式和截图预览参阅 [Computer Use](environments.md#computer-use)。
 
@@ -67,8 +67,14 @@ Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agen
   "web": {
     "enabled": true,
     "tools": {
-      "search": {"enabled": true, "config": {"provider_id": "wprov_...", "max_results": 5}},
-      "fetch": {"enabled": true, "config": {"deny_domains": ["internal.example.com"]}}
+      "search": {
+        "enabled": true,
+        "config": { "provider_id": "wprov_...", "max_results": 5 }
+      },
+      "fetch": {
+        "enabled": true,
+        "config": { "deny_domains": ["internal.example.com"] }
+      }
     }
   }
 }
@@ -150,9 +156,18 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "tools": ["search_docs"], "permission": "allow"},
-    {"connection_id": "conn_...", "tools": null, "defer_loading": true, "permission": "ask",
-     "permissions": {"delete_page": "deny"}}
+    {
+      "connection_id": "conn_...",
+      "tools": ["search_docs"],
+      "permission": "allow"
+    },
+    {
+      "connection_id": "conn_...",
+      "tools": null,
+      "defer_loading": true,
+      "permission": "ask",
+      "permissions": { "delete_page": "deny" }
+    }
   ]
 }
 ```
@@ -171,10 +186,14 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
+    {
+      "connection_id": "conn_...",
+      "permission": "allow",
+      "defer_loading": true
+    }
   ],
   "tool_search": {
-    "config": {"mode": "native", "strategy": "bm25"},
+    "config": { "mode": "native", "strategy": "bm25" },
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",

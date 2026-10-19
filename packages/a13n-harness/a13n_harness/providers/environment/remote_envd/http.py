@@ -24,6 +24,7 @@ from a13n_harness.environment.envd_policy import (
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
@@ -121,9 +122,12 @@ class HttpEnvdProviderRuntime:
         working_directory: str | None = None,
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> AsyncIterator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
-        async with DeviceEIPSessionSource(device).open_session(
+        async with DeviceEIPSessionSource(
+            device, target=self.configuration.endpoint, session_recovery=session_recovery
+        ).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
             working_directory=working_directory,
@@ -176,6 +180,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
@@ -188,6 +193,7 @@ def _construct(
         state=state,
         session_context=runtime.open_session(
             expected_device_id=data.device_id,
+            session_recovery=session_recovery,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             egress=configuration.egress,

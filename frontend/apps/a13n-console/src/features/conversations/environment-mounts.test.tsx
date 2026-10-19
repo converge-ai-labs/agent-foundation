@@ -190,57 +190,74 @@ it("lists the Thread's mounts with their working directories", async () => {
   cache.clear();
 });
 
-it("changes only Computer permissions on the primary mount and uses the Thread version", async () => {
-  mocks.mounts = [
-    {
-      name: "workspace",
-      environment_id: "env_saved",
-      working_directory: null,
-      permission_ceiling: {
-        operations: [
-          "environment.file.read_text",
-          "environment.computer.observe",
-        ],
-      },
-    },
-  ];
-  mocks.PATCH.mockResolvedValue({ data: mocks.mounts[0] });
-  const cache = show(),
-    user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("button", { name: "Computer permissions: custom" }),
-  );
-  expect(screen.getByText(/Changes apply to later runs/)).toBeTruthy();
-  await user.click(
-    screen.getByRole("combobox", { name: "Computer permissions" }),
-  );
-  await user.click(
-    await screen.findByRole("option", {
-      name: "Computer permissions: allow observation",
-    }),
-  );
-  await user.click(screen.getByRole("button", { name: "Save" }));
-  await waitFor(() =>
-    expect(mocks.PATCH).toHaveBeenCalledWith(
-      "/api/v1/threads/{thread_id}/environments/{name}",
-      expect.objectContaining({
-        params: { path: { thread_id: "thr_1", name: "workspace" } },
-        headers: { "If-Match": '"thr_1:4"' },
-        body: {
-          permission_ceiling: {
-            operations: [
-              "environment.file.read_text",
-              "environment.computer.describe",
-              "environment.computer.observe",
-              "environment.computer.zoom",
-            ],
-          },
+it.each(["observation", "interaction"])(
+  "changes only Computer permissions to %s on the primary mount and uses the Thread version",
+  async (mode) => {
+    mocks.mounts = [
+      {
+        name: "workspace",
+        environment_id: "env_saved",
+        working_directory: null,
+        permission_ceiling: {
+          operations: [
+            "environment.file.read_text",
+            "environment.computer.observe",
+          ],
         },
+      },
+    ];
+    mocks.PATCH.mockResolvedValue({ data: mocks.mounts[0] });
+    const cache = show(),
+      user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Computer permissions: custom",
       }),
-    ),
-  );
-  cache.clear();
-});
+    );
+    expect(screen.getByText(/Changes apply to later runs/)).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Computer permissions" }),
+    );
+    await user.click(
+      await screen.findByRole("option", {
+        name: `Computer permissions: allow ${mode}`,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mocks.PATCH).toHaveBeenCalledWith(
+        "/api/v1/threads/{thread_id}/environments/{name}",
+        expect.objectContaining({
+          params: { path: { thread_id: "thr_1", name: "workspace" } },
+          headers: { "If-Match": '"thr_1:4"' },
+          body: {
+            permission_ceiling: {
+              operations: [
+                "environment.file.read_text",
+                "environment.computer.describe",
+                "environment.computer.observe",
+                "environment.computer.zoom",
+                ...(mode === "interaction"
+                  ? [
+                      "environment.computer.click",
+                      "environment.computer.move",
+                      "environment.computer.drag",
+                      "environment.computer.scroll",
+                      "environment.computer.type_text",
+                      "environment.computer.press_keys",
+                      "environment.computer.read_clipboard",
+                      "environment.computer.write_clipboard",
+                    ]
+                  : []),
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    cache.clear();
+  },
+);
 
 it("shows Computer permissions without offering edits to a reader", async () => {
   mocks.canAdd = false;

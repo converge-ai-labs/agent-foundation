@@ -221,13 +221,7 @@ async fn http_sessions_are_not_tcp_affine_and_close_is_scoped() {
     let address = listener.local_addr().unwrap();
     drop(listener);
     let device = DeviceProcess::start("http", address, json!({}));
-    timeout(Duration::from_secs(10), async {
-        while TcpStream::connect(address).await.is_err() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    wait_for_http(address).await;
     let descriptor = result(http_control(address, request(None, "initialize", initialize())).await)
         ["descriptor"]
         .clone();
@@ -600,6 +594,41 @@ async fn reverse_websocket_binary_transfer_survives_sibling_close_and_rejects_cr
     device.stop().await;
 }
 
+async fn wait_for_http(address: SocketAddr) {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    timeout(Duration::from_secs(10), async {
+        loop {
+            // A listening socket alone does not establish HTTP readiness.
+            if let Ok(response) = client.get(format!("http://{address}/metrics")).send().await {
+                assert_eq!(response.status(), 401);
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("daemon did not become HTTP-ready");
+}
+
+#[tokio::test]
+async fn http_readiness_waits_for_a_response() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let ready = tokio::spawn(wait_for_http(listener.local_addr().unwrap()));
+    let (mut stream, _) = timeout(Duration::from_secs(10), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut request = [0; 1024];
+    assert!(stream.read(&mut request).await.unwrap() > 0);
+    assert!(!ready.is_finished());
+    stream
+        .write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    ready.await.unwrap();
+}
+
 async fn scrape(
     address: SocketAddr,
     method: &str,
@@ -624,7 +653,7 @@ async fn scrape(
         let response = sender
             .send_request(request.body(Empty::<bytes::Bytes>::new()).unwrap())
             .await
-            .unwrap();
+            .unwrap_or_else(|error| panic!("{method} {path} at {address} failed: {error}"));
         let (parts, body) = response.into_parts();
         let text = String::from_utf8(body.collect().await.unwrap().to_bytes().to_vec()).unwrap();
         drop(sender);
@@ -645,13 +674,7 @@ async fn prometheus_scrapes_share_auth_and_cached_samples_without_sessions() {
         address,
         json!({"monitoring":{"sample_interval_ms":60000}}),
     );
-    timeout(Duration::from_secs(10), async {
-        while TcpStream::connect(address).await.is_err() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    wait_for_http(address).await;
     let token = format!("Bearer {}", "carrier-test-credential");
     let auth = [("Authorization", token.as_str())];
     for headers in [vec![], vec![("Authorization", "Bearer wrong")]] {
@@ -725,13 +748,7 @@ async fn prometheus_scrapes_share_auth_and_cached_samples_without_sessions() {
     device.stop().await;
 
     let device = DeviceProcess::start("http", address, json!({}));
-    timeout(Duration::from_secs(10), async {
-        while TcpStream::connect(address).await.is_err() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    wait_for_http(address).await;
     assert_eq!(scrape(address, "GET", "/metrics", &[]).await.0, 401);
     let (status, _, body) = scrape(address, "GET", "/metrics", &auth).await;
     assert_eq!(status, 404);

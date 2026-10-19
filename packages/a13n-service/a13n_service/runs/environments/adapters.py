@@ -7,6 +7,7 @@ import anyio
 from a13n_harness import RunConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
@@ -75,7 +76,11 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
 
 
 async def execution_connector(
-    runtime: Runtime, target: Target, *, configuration: RunConfiguration | None = None
+    runtime: Runtime,
+    target: Target,
+    *,
+    configuration: RunConfiguration | None = None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
     """Check Host endpoint policy, then construct an inert connector to the published target."""
     policy = runtime.endpoint_policy.for_run(configuration or RunConfiguration())
@@ -87,6 +92,7 @@ async def execution_connector(
             environment_id=target.environment_id,
             device_id=account.device_id,
             policy=policy,
+            session_recovery=session_recovery,
         )
     await runtime.registry.check_environment_endpoint(account.type, account.config, policy)
     definition = runtime.registry.get("environment", account.type)
@@ -101,6 +107,7 @@ async def execution_connector(
         credential=account.reveal_credential(runtime.keys),
         environment_id=target.environment_id,
         state=target.state,
+        session_recovery=session_recovery,
     )
 
 

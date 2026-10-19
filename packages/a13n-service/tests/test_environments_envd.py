@@ -182,3 +182,98 @@ async def test_every_connection_expects_the_registered_device(service, daemons) 
     adapter = await execution_connector(service.runtime, await target(service, environment_id))
     async with await adapter.open():
         pass
+
+
+@pytest.mark.parametrize("lost_cleanup", [False, True])
+@pytest.mark.parametrize("successor", [False, True])
+async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
+    service, daemons, scripted_model, runs_kit, monkeypatch, lost_cleanup, successor
+):
+    from a13n_envd_client import EIPSession
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs import checkpoints
+    from a13n_service.runs.seal import LeaseExpirer
+    from a13n_service.runs.tables import AttemptRow, RunRow
+    from sqlalchemy import update
+
+    await runs_kit.pause_sweeps(service)
+    laptop = await daemons.start("device-recovery")
+    environment_id = (await register(service, laptop.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.call("shell_exec", {"command": "echo first >> proof.txt"}, call_id="call_first")
+    first_gate = asyncio.Event()
+    scripted_model.say("Interrupted", gate=first_gate)
+    submitted = await runs_kit.start_thread(
+        service,
+        agent,
+        "Write proof",
+        environments=[
+            {"name": "workspace", "environment_id": environment_id, "working_directory": str(laptop.workspace)}
+        ],
+    )
+    run_id = submitted["run"]["id"]
+
+    async def saved_state():
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(RunRow, run_id)
+            pointer = checkpoints.StatePointer.model_validate(row.checkpoint)
+        result = await checkpoints.load_state(service.runtime.objects, pointer)
+        assert result is not None
+        return result
+
+    first = await runs_kit.attempt(service)
+    await scripted_model.request()
+    await scripted_model.request()
+    saved = await saved_state()
+    assert saved.format == 3
+    assert set(saved.envd_sessions) == {"workspace"}
+    original = saved.envd_sessions["workspace"].descriptor
+    assert TOKEN not in saved.model_dump_json()
+
+    async def lose_remote_cleanup(session):
+        # Simulate the remote effect of worker loss while still releasing local
+        # test tasks/carriers. Production cleanup remains unchanged.
+        session._finish()
+
+    with monkeypatch.context() as patch:
+        if lost_cleanup:
+            patch.setattr(EIPSession, "close", lose_remote_cleanup)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+    first_gate.set()
+    async with transaction(service.runtime.storage) as session:
+        await session.execute(
+            update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
+        )
+    await LeaseExpirer(service.runtime, batch=10)()
+    async with transaction(service.runtime.storage) as session:
+        await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
+
+    if successor:
+        # Interrupt keeps the last checkpoint, including hints from the previous
+        # attempt. A new user turn inherits history but must not attach its Session.
+        response = await service.client.post(f"{service.api}/runs/{run_id}/interrupt")
+        assert response.status_code == 200, response.text
+        assert (await saved_state()).envd_sessions
+        response = await runs_kit.submit(service, submitted["thread"]["id"], runs_kit.message(agent, "Continue"))
+        assert response.status_code == 201, response.text
+        run_id = response.json()["run"]["id"]
+
+    scripted_model.call("shell_exec", {"command": "echo second >> proof.txt"}, call_id="call_second")
+    gate = asyncio.Event()
+    scripted_model.say("Recovered", gate=gate)
+    second = await runs_kit.attempt(service)
+    try:
+        await scripted_model.request()
+        await scripted_model.request()
+        restored = await saved_state()
+        current = restored.envd_sessions["workspace"].descriptor
+        assert (current.session_id == original.session_id) is (lost_cleanup and not successor)
+        assert current.generation == original.generation
+        assert (laptop.workspace / "proof.txt").read_text() == "first\nsecond\n"
+    finally:
+        gate.set()
+        await second
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
+    assert (await saved_state()).envd_sessions == {}

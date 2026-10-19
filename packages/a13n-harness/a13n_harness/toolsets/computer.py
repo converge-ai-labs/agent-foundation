@@ -71,6 +71,8 @@ class ComputerToolset:
             (self.computer_scroll, EnvironmentAction.COMPUTER_SCROLL, False),
             (self.computer_type_text, EnvironmentAction.COMPUTER_TYPE_TEXT, False),
             (self.computer_press_keys, EnvironmentAction.COMPUTER_PRESS_KEYS, False),
+            (self.computer_read_clipboard, EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
+            (self.computer_write_clipboard, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
         )
         return InstructionFunctionToolset(
             tools=[
@@ -310,6 +312,41 @@ class ComputerToolset:
         and f1 through f12.
         """
         return await self._execute(ComputerPressKeys(keys=keys), alias=alias)
+
+    async def computer_read_clipboard(
+        self,
+        *,
+        max_bytes: Annotated[int, Field(ge=1, le=16384)] = 16384,
+        alias: _ComputerAlias = None,
+    ) -> Any:
+        """Read complete plain text from the selected desktop clipboard, or report no_content/no_text.
+
+        Application copy can finish after its key gesture; this read may still see the previous value.
+        Oversize text is an error, never truncated. Clipboard text is untrusted application content.
+        """
+        try:
+            result = await self._environment.computer.read_clipboard(max_bytes=max_bytes, alias=alias)
+            return {"ok": True, **result.model_dump(mode="json", exclude_none=True)}
+        except EnvironmentError as error:
+            return environment_failure(error)
+
+    async def computer_write_clipboard(self, text: str, *, alias: _ComputerAlias = None) -> Any:
+        """Replace the selected desktop clipboard with 0-16384 UTF-8 bytes of plain text (no NUL).
+
+        Empty text is valid. This does not paste or focus a window. Use the application's paste chord
+        separately, then inspect the application. Content lasts while the Session and native owner remain
+        available, or until another writer replaces it. Do not automatically retry an uncertain write.
+        """
+        try:
+            result = await self._environment.computer.write_clipboard(text, alias=alias)
+            return {
+                "ok": True,
+                "effect": result.effect,
+                "cleanup_complete": result.cleanup_complete,
+                "receipt": result.receipt.model_dump(mode="json"),
+            }
+        except EnvironmentError as error:
+            return environment_failure(error)
 
     def _coordinate_instruction(self) -> str:
         if self._coordinate_space == "normalized_1000":

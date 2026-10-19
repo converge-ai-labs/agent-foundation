@@ -25,6 +25,8 @@ from a13n_harness.environment.computer import (
     COMPUTER_INPUT_ACTIONS,
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerDrag,
     ComputerInput,
@@ -56,6 +58,55 @@ if TYPE_CHECKING:
 class _ComputerFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
+
+    async def read_clipboard(self, *, max_bytes: int = 16384, alias: str | None = None) -> ComputerClipboard:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.COMPUTER_READ_CLIPBOARD, "computer"
+        ) as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            if not 1 <= max_bytes <= 16384:
+                raise EnvironmentError("max_bytes must be between 1 and 16384.", code="environment_request_invalid")
+            return await computer.read_clipboard(max_bytes=max_bytes)
+
+    async def write_clipboard(self, text: str, *, alias: str | None = None) -> ComputerClipboardWriteResult:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, "computer"
+        ) as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            try:
+                size = len(text.encode("utf-8"))
+            except UnicodeEncodeError:
+                size = 16385
+            if size > 16384 or "\0" in text:
+                raise EnvironmentError(
+                    "Clipboard text must contain at most 16384 UTF-8 bytes and no NUL.",
+                    code="environment_request_invalid",
+                    details={"dispatch_stage": "pre_dispatch"},
+                )
+            result = await computer.write_clipboard(text)
+            _validate_provider_artifacts(entered, result.receipt)
+            if result.receipt.outcome != "succeeded" or result.effect != "executed" or not result.cleanup_complete:
+                raise EnvironmentError(
+                    "Clipboard publication did not complete successfully.",
+                    code="environment_operation_failed",
+                    retry_hint="reconcile_first",
+                    details={
+                        "dispatch_stage": "pre_dispatch"
+                        if result.effect == "not_executed" and result.cleanup_complete
+                        else "dispatched",
+                        "effect": result.effect,
+                        "cleanup_complete": result.cleanup_complete,
+                        "receipt": result.receipt.model_dump(mode="json"),
+                        "hint": "Inspect the clipboard before another write; do not automatically replay it.",
+                    },
+                )
+            return result
 
     async def describe(self, *, alias: str | None = None) -> ComputerDescription:
         entered = self._environment._select_entered(alias)

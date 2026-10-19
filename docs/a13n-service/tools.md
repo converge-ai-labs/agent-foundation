@@ -17,14 +17,14 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 
 `GET /api/v1/toolsets` returns the catalog with each tool's key, the name the model sees, its default state and permission, and its configuration schema.
 
-| Toolset            | Tools (model names)                                                                                                                                                          | Default                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                               | Enabled                                            |
-| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                      | Enabled                                            |
-| `computer`         | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys` | Disabled; also requires explicit mount permissions |
-| `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                                                      | Each tool disabled                                 |
-| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                | Enabled                                            |
-| `assets`           | `publish_asset`                                                                                                                                                              | Disabled                                           |
+| Toolset            | Tools (model names)                                                                                                                                                                                                                 | Default                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                                                                                      | Enabled                                            |
+| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                                                                             | Enabled                                            |
+| `computer`         | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys`, `computer_read_clipboard`, `computer_write_clipboard` | Disabled; also requires explicit mount permissions |
+| `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                                                                                                             | Each tool disabled                                 |
+| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                                                                       | Enabled                                            |
+| `assets`           | `publish_asset`                                                                                                                                                                                                                     | Disabled                                           |
 
 Computer tools require a compatible desktop and explicit action permissions on the mounted environment. See [Computer Use](environments.md#computer-use) for setup and screenshot previews.
 
@@ -67,8 +67,14 @@ Enable each web tool explicitly; enabling the toolset alone enables none of them
   "web": {
     "enabled": true,
     "tools": {
-      "search": {"enabled": true, "config": {"provider_id": "wprov_...", "max_results": 5}},
-      "fetch": {"enabled": true, "config": {"deny_domains": ["internal.example.com"]}}
+      "search": {
+        "enabled": true,
+        "config": { "provider_id": "wprov_...", "max_results": 5 }
+      },
+      "fetch": {
+        "enabled": true,
+        "config": { "deny_domains": ["internal.example.com"] }
+      }
     }
   }
 }
@@ -150,9 +156,18 @@ A revision lists connections in `connection_tools`:
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "tools": ["search_docs"], "permission": "allow"},
-    {"connection_id": "conn_...", "tools": null, "defer_loading": true, "permission": "ask",
-     "permissions": {"delete_page": "deny"}}
+    {
+      "connection_id": "conn_...",
+      "tools": ["search_docs"],
+      "permission": "allow"
+    },
+    {
+      "connection_id": "conn_...",
+      "tools": null,
+      "defer_loading": true,
+      "permission": "ask",
+      "permissions": { "delete_page": "deny" }
+    }
   ]
 }
 ```
@@ -171,10 +186,14 @@ In Console, open an agent's **Tool discovery** section, choose **Native tool sea
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
+    {
+      "connection_id": "conn_...",
+      "permission": "allow",
+      "defer_loading": true
+    }
   ],
   "tool_search": {
-    "config": {"mode": "native", "strategy": "bm25"},
+    "config": { "mode": "native", "strategy": "bm25" },
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",

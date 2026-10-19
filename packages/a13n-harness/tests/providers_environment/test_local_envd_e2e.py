@@ -168,3 +168,103 @@ async def test_host_shutdown_closes_remaining_adapter_sessions(binary, tmp_path)
     assert failure.value.code == "environment_unavailable"
     await adapter.close()
     assert not list(tmp_path.glob("a13n-local-envd-*"))
+
+
+@pytest.mark.parametrize("closed", [False, True])
+async def test_stdio_recovery_uses_common_session_source(binary, tmp_path, closed):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+
+    runtime = LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    )
+    async with runtime:
+        device = await runtime.acquire_device()
+        original = await device.open_session(working_directory=device_path(tmp_path))
+        recovery = EnvdSessionRecovery(
+            EnvdSessionState(
+                target=device.descriptor.device_id,
+                descriptor=original.descriptor,
+                working_directory=device_path(tmp_path),
+            )
+        )
+        if closed:
+            await original.close()
+        else:
+            # Lose only the local wrapper, retaining the Host-owned stdio carrier.
+            # EOF would terminate this daemon, tested separately below.
+            original._finish()
+        execution = await LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(working_directory=device_path(tmp_path)),
+            runtime=runtime,
+            session_recovery=recovery,
+        ).open()
+        try:
+            assert recovery.state is not None
+            assert (recovery.state.descriptor.session_id == original.session_id) is not closed
+            assert execution.operations.files is not None
+            await execution.operations.files.write_text(device_path(tmp_path / "restored"), "once", mode="create")
+        finally:
+            await execution.close()
+        assert recovery.state is None
+        assert (tmp_path / "restored").read_text() == "once"
+        with pytest.raises(EIPMethodError):
+            await device.attach_session(original.descriptor)
+
+
+async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tmp_path):
+    import json
+
+    from a13n_envd_client import EIPDeviceConnection, EIPSessionStateError, EIPTransportClosedError, StdioTransport
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"default_working_directory": str(tmp_path)}))
+    recovery = EnvdSessionRecovery()
+    previous = None
+    for index in range(2):
+        runtime = tmp_path / f"runtime-{index}"
+        runtime.mkdir()
+        process = await asyncio.create_subprocess_exec(
+            str(binary),
+            "--config",
+            str(config),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={
+                "A13N_ENVD_DEVICE_ID": "stdio-recovery",
+                "A13N_ENVD_RUNTIME_DIR": str(runtime),
+                "A13N_ENVD_TRANSPORT": "stdio",
+            },
+        )
+        transport = StdioTransport.from_process(process)
+        device = await EIPDeviceConnection.initialize(transport, expected_device_id="stdio-recovery")
+        try:
+            # Cleanup can observe either the finished Session or the closed Device,
+            # depending on when the reader propagates the carrier failure.
+            with pytest.raises(
+                (EIPSessionStateError, EIPTransportClosedError),
+                match=r"Session did not close cleanly|Device connection is closed",
+            ):
+                async with DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
+                    expected_device_id="stdio-recovery", required_methods=frozenset()
+                ) as session:
+                    assert recovery.state is not None
+                    saved = recovery.state
+                    if previous is not None:
+                        assert session.descriptor.generation != previous.descriptor.generation
+                        assert session.session_id != previous.descriptor.session_id
+                    # End the actual carrier without sending session.close first.
+                    await transport.close()
+                    await asyncio.wait_for(process.wait(), 10)
+                    assert process.returncode == 0
+        finally:
+            await device.close()
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+        previous = saved
+        recovery.state = saved

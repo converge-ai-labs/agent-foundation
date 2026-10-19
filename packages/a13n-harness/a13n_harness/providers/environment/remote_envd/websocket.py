@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
@@ -55,6 +56,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WebSocketEnvdProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("WebSocket Envd requires RemoteEnvdEnvironmentConfiguration and WebSocketEnvdProviderRuntime")
@@ -67,6 +69,7 @@ def _construct(
         state=state,
         session_context=runtime.connections.open_session(
             expected_device_id=data.device_id,
+            session_recovery=session_recovery,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             egress=configuration.egress,

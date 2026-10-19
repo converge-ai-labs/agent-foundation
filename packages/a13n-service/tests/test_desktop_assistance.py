@@ -273,6 +273,8 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
     for action in [
         Action.COMPUTER_CLICK,
         Action.COMPUTER_ZOOM,
+        Action.COMPUTER_READ_CLIPBOARD,
+        Action.COMPUTER_WRITE_CLIPBOARD,
         Action.SHELL_EXEC,
         Action.PROCESS_START,
         Action.FILE_WRITE_TEXT,
@@ -289,7 +291,7 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
     await admission.replan(service.runtime, lease)
     await execute(Action.COMPUTER_CLICK)
     # A failed read is drained; a possibly dispatched mutation remains unknown.
-    for action in [Action.COMPUTER_OBSERVE, Action.COMPUTER_ZOOM]:
+    for action in [Action.COMPUTER_OBSERVE, Action.COMPUTER_ZOOM, Action.COMPUTER_READ_CLIPBOARD]:
         with pytest.raises(ValueError):
             async with admission.operation(service.runtime, lease, view["environment_id"], state, action):
                 raise ValueError("failed screenshot")
@@ -322,6 +324,18 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
     async with transaction(service.runtime.storage) as session:
         target = await session.get(DesktopTargetRow, admission.target_key(state))
         assert target.inflight == 2
+    with pytest.raises(EnvironmentError):
+        async with admission.operation(
+            service.runtime, lease, view["environment_id"], state, Action.COMPUTER_WRITE_CLIPBOARD
+        ):
+            raise EnvironmentError(
+                "clipboard publication unknown",
+                code="environment_unknown_outcome",
+                details={"dispatch_stage": "dispatched", "effect": "unknown", "cleanup_complete": True},
+            )
+    async with transaction(service.runtime.storage) as session:
+        target = await session.get(DesktopTargetRow, admission.target_key(state))
+        assert target.inflight == 3
 
 
 @pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
