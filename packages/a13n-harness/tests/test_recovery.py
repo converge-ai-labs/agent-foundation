@@ -1052,12 +1052,14 @@ async def test_tool_retry_exhaustion_does_not_start_a_new_attempt(
 @pytest.mark.parametrize(
     ("settings", "retries"),
     [
-        ({}, 1),
-        ({"retries": None}, 1),
-        ({"retries": {"tools": 5}}, 1),
+        ({}, 3),
+        ({"retries": None}, 3),
+        ({"retries": {}}, 3),
+        ({"retries": {"tools": 5}}, 3),
         ({"retries": 0}, 0),
         ({"retries": 2}, 2),
         ({"retries": {"output": 0}}, 0),
+        ({"retries": {"output": 1}}, 1),
         ({"retries": {"output": 2}}, 2),
     ],
 )

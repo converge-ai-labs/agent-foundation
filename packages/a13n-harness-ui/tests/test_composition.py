@@ -246,7 +246,7 @@ async def test_reconstruction_run_defaults_for_root_and_children(tmp_path: Path)
         *(child.executable for child in reconstructed.executable.subagents.values()),
     ):
         assert executable._agent._max_tool_retries == 5
-        assert executable._agent._max_output_retries == 1
+        assert executable._agent._max_output_retries == 3
 
 
 async def test_resolves_release_owned_sandbox_profile_without_configuration_resource(tmp_path: Path) -> None:

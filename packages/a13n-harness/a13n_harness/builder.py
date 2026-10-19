@@ -705,7 +705,7 @@ class HarnessBuilder:
             system_prompt = _normalize_system_prompt(construction_spec)
             retries: int | AgentRetries | None = construction_spec.retries
             if not isinstance(retries, int):
-                retries = {"tools": 5, "output": 1, **(retries or {})}
+                retries = {"tools": 5, "output": 3, **(retries or {})}
             agent = Agent.from_spec(
                 construction_spec,
                 retries=retries,
