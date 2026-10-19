@@ -1,5 +1,7 @@
 # The HTTP API
 
+[Schedule management](13-schedules.md#management-api) adds HTTP configuration, preview, status and paginated trigger history. These routes intentionally have no MCP admission.
+
 ## Design position
 
 The Service exposes one HTTP namespace, `/api/v1`. The exported OpenAPI document is the exact contract for paths, parameters and request and response shapes. This chapter owns what applies across routes: authentication at the HTTP boundary, path resolution, collections, preconditions, request-key replay, errors and statuses. It also indexes every route with the chapter that owns its behavior; it does not repeat that behavior.

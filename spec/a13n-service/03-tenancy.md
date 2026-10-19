@@ -226,6 +226,8 @@ Accepting work requires `run` in the workspace and records the caller's verbs th
 
 Credential expiry, logout and API-key revocation stop further requests, not accepted work. Accepted work is stopped by interrupt, by disabling the principal, by removing its grants or by archiving the workspace. The worker rechecks authority every `worker.authority_seconds`, and a run whose principal lost it fails with `authority_revoked` ([05](05-runs.md#claim-heartbeat-and-authority)); calls already dispatched still complete.
 
+Schedule creation also persists recurring execution authority. Its creator restrictions, immutable ceiling and stop semantics are owned by [Schedule authority](13-schedules.md#authority). Schedule HTTP endpoints are not admitted to Run platform credentials or MCP.
+
 ### Run platform credentials
 
 Application assembly composes Run credential authentication with the Distribution's authenticator. All requests obtain credentials through the same `Authenticator` contract; Run credentials are handled by their execution owner, and other credentials are delegated to the Distribution. Execution owns issuance and liveness, including long-lived-request rechecks. HTTP and MCP own operation admission and audit context using the authenticated credential's restrictions and origin; they do not decode credentials or replace authentication through separate Run-specific request state.

@@ -471,5 +471,18 @@
   "Use compact for discovery; detailed preserves the original response.": "查找资源时使用 compact；detailed 保留原有响应。",
   "Versioned unified diff of two revisions of this agent, optionally limited to one configuration section.": "该 Agent 两个修订之间带版本标识的统一差异文本，可限定为一个配置部分。",
   "A run's committed display items by ordinal. Detailed unfiltered reads default to the newest items and full tail.\nCompact or filtered reads start at the oldest ordinal and strictly honor limit. Use exclusive before/after\npositions, then follow next_before/next_after even when a filtered page is empty.": "按序号读取运行已提交的显示条目。未加过滤的详细查询默认返回最新条目和完整尾部。精简或带过滤的查询从最早序号开始，并严格遵守 limit。before 和 after 互斥；即使过滤后当前页为空，也应通过 next_before 或 next_after 继续读取。",
-  "Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's\ncursor while continuing fragments with version and next_offset.": "通过限制大小的后端分页查找 Span。结果为空时使用 next_cursor 继续。找到后，保持该次请求的 cursor 不变，通过 version 和 next_offset 继续读取内容片段。"
+  "Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's\ncursor while continuing fragments with version and next_offset.": "通过限制大小的后端分页查找 Span。结果为空时使用 next_cursor 继续。找到后，保持该次请求的 cursor 不变，通过 version 和 next_offset 继续读取内容片段。",
+  "Archive Schedule": "归档定时任务",
+  "Authorize recurring execution as the creator, independently of the accepting credential's lifetime.": "以创建者身份授权周期执行，授权不受本次请求凭证有效期的限制。",
+  "Commands accept no configuration or authority overrides.": "操作不接受配置或权限覆盖。",
+  "Create Schedule": "创建定时任务",
+  "Enable Schedule": "启用定时任务",
+  "Get Schedule": "获取定时任务",
+  "Get Schedule Occurrence": "获取触发记录",
+  "Get Schedule Status": "获取定时任务状态",
+  "List Schedule Occurrences": "列出触发记录",
+  "List Schedules": "列出定时任务",
+  "Pause Schedule": "暂停定时任务",
+  "Preview Schedule": "预览触发时间",
+  "Update Schedule": "更新定时任务"
 }

@@ -11,7 +11,7 @@ The platform consists of:
 - `a13n-harness-ui`, distributed as `a13n-harness-ui`, for human-editable local Agent resources, Project-scoped roots, mutable continuation-backed Threads, trusted Capability and extension discovery, and full-terminal CLI and bundled WebUI interaction over a reusable App boundary;
 - `a13n-envd`, distributed as `a13n-envd`, for Environment Interaction Protocol operations;
 - `a13n-envd-client`, the generated low-level Python EIP client;
-- `a13n-service`, distributed as `a13n-service`, for optional durable hosting, Environment management providers, and target lifecycle orchestration;
+- `a13n-service`, distributed as `a13n-service`, for optional durable hosting, recurring Agent invocation, Environment management providers, and target lifecycle orchestration;
 - a13n Service SDKs for typed access to the Service HTTP API (`/api/v1`);
 - `a13n-service-cli`, a cross-platform remote CLI built above the `a13n` Rust SDK.
 

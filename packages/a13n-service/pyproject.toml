@@ -46,6 +46,8 @@ dependencies = [
     "starlette>=0.52,<2",
     "uvicorn>=0.35,<1",
     "zstandard>=0.25,<0.26",
+    "tzdata>=2026.3",
+    "croniter>=6,<7",
 ]
 
 [project.urls]

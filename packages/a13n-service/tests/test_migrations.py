@@ -147,6 +147,7 @@ def test_run_search_migration_retries_after_concurrent_index_build(
     upgrade(empty_database, OSS)
     with migration_connection(empty_database, OSS) as config:
         # The additive DDL and concurrent build committed, but the process died before stamping its revision.
+        command.downgrade(config, "4d51a94777d9")
         command.stamp(config, "2e9655a2d223")
         if invalid_index:
             connection = config.attributes["connection"]
