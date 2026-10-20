@@ -32,7 +32,7 @@ Schedule 按指定时间规则向 Agent 发送固定文本或 JSON。每次触�
 
 **已提交不等于执行成功。** 点击 **查看输出** 可打开原有 Run 页面，查看输出、工具和排队输入。在同一 Thread 中继续提交输入会保留该计划来源；显式分支和独立 Thread 不继承来源。
 
-较早触发的任务尚未结束时，新的触发会跳过，包括等待中的 Run 和未结束的子任务。错过多个时间点时只处理最近一个到期时间，不逐个补跑。临时提交失败会在延迟和尝试次数限制内重试；Run 执行失败不会重新提交原输入。
+较早的触发记录仍待提交，或已提交记录的主 Thread 中还没有 `completed`、`failed` 或 `cancelled` 状态的 Run 时，新的触发会跳过。waiting 及恢复后创建的 Run 都算未结束，直到出现上述状态。之后的人工续聊、分支、子任务及其结果回传不会推迟下一次触发。已提交但没有 Run 的输入仍算未结束，包括输入已被拒绝或撤回的情况；仅归档 Thread 不代表执行结束。错过多个时间点时只处理最近一个到期时间，不逐个补跑。临时提交失败会在延迟和尝试次数限制内重试；Run 执行失败不会重新提交原输入。
 
 ## 使用 HTTP API
 
@@ -59,7 +59,7 @@ Schedule 按指定时间规则向 Agent 发送固定文本或 JSON。每次触�
 
 在触发记录的列表或详情查询中添加 `?include=execution`，可以在同一响应中获得当前执行状态。每条记录的 `execution` 包含 `initial_entry_status`、`initial_run`（ID 和状态，或 null）、`has_unfinished_work` 和 `observed_at`。不提供此参数时，响应不包含该字段。列表查询按整页批量读取这些状态；Console 使用此展开结果，不再逐条查询 entry 和 run。
 
-初始 run 是触发记录的第一条输入分配到的 run，后续 run 不会替换摘要中的初始 run。`has_unfinished_work` 包括关联子任务和等待中的 run；false 不代表执行成功。尚未提交输入的记录，其初始 entry 状态和 run 都为 null。执行状态变化时，触发记录仍可能保持相同版本和 `submitted` 状态。收到 thread 变化或重新连接后，应刷新展开的历史查询。完整输出继续通过原 run items 接口读取。
+初始 run 是触发记录的第一条输入分配到的 run，后续 run 不会替换摘要中的初始 run。`has_unfinished_work` 在输入提交后为 true，直到主 thread 首次出现 completed、failed 或 cancelled 状态的 run。waiting 及多次恢复期间仍算未结束；之后的续聊和子任务不会让已结束的触发记录重新变为未结束。false 不代表执行成功。尚未提交输入的记录，其初始 entry 状态和 run 都为 null。执行状态变化时，触发记录仍可能保持相同版本和 `submitted` 状态。收到 thread 变化或重新连接后，应刷新展开的历史查询。完整输出继续通过原 run items 接口读取。
 
 完整筛选条件和字段见 API 参考。计划接口目前仅支持 HTTP；Composer 和 MCP 接入属于后续工作。
 

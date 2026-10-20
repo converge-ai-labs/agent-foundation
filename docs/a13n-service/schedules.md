@@ -32,7 +32,7 @@ The detail page separates three facts:
 
 **Submitted does not mean execution succeeded.** Select **View output** to open the usual Run view, including its output, tools and queued input. Later inputs in that Thread retain the same Schedule origin. Explicit forks and independent Threads do not.
 
-A trigger is skipped while work from an earlier trigger is unfinished, including waiting Runs and unfinished child work. Missed times are coalesced to the latest due time; the scheduler does not replay every missed tick. Transient submission failures retry within the maximum delay and attempt limit. Execution failures do not repost the input.
+A trigger is skipped while an earlier trigger is pending submission or its submitted root thread has no run with status `completed`, `failed` or `cancelled`. Waiting and resumed runs remain unfinished until one of these statuses appears. Later manual conversation, forks, child tasks and their result delivery do not delay the next trigger. Submitted input without a run remains unfinished, even if the input was rejected or withdrawn; archiving the thread alone does not complete it. Missed times are coalesced to the latest due time; the scheduler does not replay every missed tick. Transient submission failures retry within the maximum delay and attempt limit. Execution failures do not repost the input.
 
 ## Use the HTTP API
 
@@ -59,7 +59,7 @@ The response includes `id`, a fixed `session_id`, `stream_url` and an ETag. The 
 
 Add `?include=execution` to either occurrence read to include current execution facts in the same response. Each `execution` contains `initial_entry_status`, `initial_run` (an ID and status, or null), `has_unfinished_work` and `observed_at`. Without this parameter, the field is omitted. List reads batch these facts for the page; Console uses this expansion instead of querying each entry and run separately.
 
-The initial run is the run assigned to the trigger's first input. Later runs do not replace it in this summary. `has_unfinished_work` includes related child work and waiting runs; false does not mean the work succeeded. A trigger with no submitted input has null initial entry and run values. Execution can change while the occurrence remains `submitted` at the same version. Refresh the expanded history after thread changes or reconnecting. Read full output through the ordinary run items API.
+The initial run is the run assigned to the trigger's first input. Later runs do not replace it in this summary. `has_unfinished_work` is true for a submitted trigger until its root thread first contains a completed, failed or cancelled run. Waiting is unfinished, including across resumes; later conversation and child work do not reopen a finished trigger. False does not mean the work succeeded. A trigger with no submitted input has null initial entry and run values. Execution can change while the occurrence remains `submitted` at the same version. Refresh the expanded history after thread changes or reconnecting. Read full output through the ordinary run items API.
 
 The API reference contains all filters and fields. Schedule endpoints are currently HTTP-only; Composer and MCP integration are separate work.
 

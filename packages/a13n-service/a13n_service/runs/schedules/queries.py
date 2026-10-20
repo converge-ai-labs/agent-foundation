@@ -8,7 +8,6 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, now, short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.labels import label_filter
-from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs.schedules.schemas import (
     BusyOccurrence,
     BusyOccurrencePage,
@@ -24,7 +23,7 @@ from a13n_service.runs.schedules.schemas import (
     ScheduleStatus,
 )
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
-from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
@@ -63,36 +62,18 @@ async def find(session: AsyncSession, workspace_id: str, schedule_id: str, *, lo
     return row
 
 
-def unfinished_thread() -> ColumnElement[bool]:
-    """One statement sees child-run -> outbox -> inbox handoffs without an observation gap."""
-    waiting = exists(select(RunRow.id).where(RunRow.id == ThreadRow.last_run_id, RunRow.status == "waiting"))
-    queued = exists(
-        select(InboxEntryRow.id).where(
-            InboxEntryRow.thread_id == ThreadRow.id,
-            InboxEntryRow.status.in_(("pending", "assigned")),
-        )
-    )
-    delivery = exists(
-        select(OutboxRow.id).where(
-            OutboxRow.workspace_id == ThreadRow.workspace_id,
-            OutboxRow.kind == "child_result",
-            OutboxRow.status == "pending",
-            OutboxRow.target["thread_id"].astext == ThreadRow.id,
-        )
-    )
-    return or_(
-        ThreadRow.current_run_id.is_not(None), queued, and_(ThreadRow.archived_at.is_(None), or_(waiting, delivery))
-    )
-
-
 def unfinished_occurrence() -> ColumnElement[bool]:
-    return exists(
-        select(ThreadRow.id).where(
-            ThreadRow.workspace_id == OccurrenceRow.workspace_id,
-            ThreadRow.schedule_occurrence_id == OccurrenceRow.id,
-            unfinished_thread(),
+    """A submitted occurrence ends at its root Thread's first non-waiting terminal Run."""
+    finished = exists(
+        select(RunRow.id)
+        .where(
+            RunRow.workspace_id == OccurrenceRow.workspace_id,
+            RunRow.thread_id == OccurrenceRow.thread_id,
+            RunRow.status.in_(("completed", "failed", "cancelled")),
         )
+        .correlate(OccurrenceRow)
     )
+    return and_(OccurrenceRow.status == "submitted", ~finished)
 
 
 async def has_unfinished(session: AsyncSession, row: ScheduleRow) -> bool:
@@ -149,7 +130,7 @@ async def occurrence_page(session: AsyncSession, row: ScheduleRow, filters: Occu
 async def execution_summaries(
     session: AsyncSession, workspace_id: str, schedule_id: str, occurrence_ids: list[str]
 ) -> dict[str, OccurrenceExecution]:
-    """Read only the page's compact facts in one statement, including all owned unfinished work."""
+    """Read only the page's compact facts in one statement, including the shared occurrence completion predicate."""
     if not occurrence_ids:
         return {}
     rows = await session.execute(

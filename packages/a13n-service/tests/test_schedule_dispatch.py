@@ -131,17 +131,24 @@ async def test_entry_rejected_by_accept_stays_submitted(service, scripted_model,
     await dispatch.process(replace(service.runtime, admission=admission), schedule["id"])
     execution = await observed_execution(service, schedule, item["id"])
     assert execution["initial_entry_status"] == "failed" and execution["initial_run"] is None
-    assert not execution["has_unfinished_work"]
+    assert execution["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
         assert stored.status == "submitted"
         entry = await session.get_one(InboxEntryRow, stored.entry_id)
         assert entry.status == "failed" and entry.assigned_run_id is None
         row = await session.get_one(ScheduleRow, schedule["id"])
-        assert row.pause_reason == "manual" and not await queries.has_unfinished(session, row)
+        assert row.pause_reason == "manual" and await queries.has_unfinished(session, row)
     await dispatch.process(service.runtime, schedule["id"])
     async with short_session(service.runtime.storage) as session:
         assert await session.scalar(select(func.count()).select_from(InboxEntryRow)) == 1
+
+    busy = await service.client.post(
+        f"{service.api}/schedules/{schedule['id']}/dispatch",
+        json={},
+        headers={**runs_kit.if_match(schedule), **runs_kit.fresh_key()},
+    )
+    assert busy.status_code == 409 and busy.json()["error"]["details"]["reason"] == "schedule_busy"
 
 
 async def test_retry_rolls_back_candidates_and_honors_backoff(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -223,9 +230,9 @@ async def test_retry_after_and_attempt_limit(service, scripted_model, runs_kit, 
         assert stored.next_attempt_at is None
 
 
-@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled"])
 async def test_execution_summary_changes_without_changing_submission_version(
-    service, scripted_model, runs_kit, failed
+    service, scripted_model, runs_kit, outcome
 ) -> None:  # type: ignore[no-untyped-def]
     schedule, agent = await schedule_for(service, scripted_model, runs_kit)
     item = await trigger(service, schedule, runs_kit)
@@ -236,10 +243,16 @@ async def test_execution_summary_changes_without_changing_submission_version(
     before = await observed_execution(service, schedule, item["id"])
     assert before["initial_entry_status"] == "assigned"
     assert before["initial_run"]["status"] == "accepted" and before["has_unfinished_work"]
-    if failed:
+    if outcome == "failed":
         admission = AsyncMock()
         admission.proceed.side_effect = ServiceError("rate_limited", "Test execution budget exhausted")
         await (await runs_kit.attempt(service, runtime=replace(service.runtime, admission=admission)))
+    elif outcome == "cancelled":
+        archived = await service.client.post(
+            f"{service.api}/threads/{receipt['thread_id']}/archive",
+            headers=runs_kit.if_match(await runs_kit.get_thread(service, receipt["thread_id"])),
+        )
+        assert archived.status_code == 200, archived.text
     else:
         scripted_model.say("Report ready")
         await (await runs_kit.attempt(service))
@@ -248,17 +261,17 @@ async def test_execution_summary_changes_without_changing_submission_version(
     assert after == receipt
     assert execution["initial_run"] == {
         "id": before["initial_run"]["id"],
-        "status": "failed" if failed else "completed",
+        "status": outcome,
     }
     assert not execution["has_unfinished_work"]
     assert execution["observed_at"] > before["observed_at"]
-    if not failed:
+    if outcome == "completed":
         assert execution["initial_entry_status"] == "consumed"
-        # A later input starts another Run. The summary keeps the original Run and reports renewed work.
+        # Later conversation retains origin attribution but never reopens occurrence completion.
         continued = await runs_kit.submit(service, receipt["thread_id"], runs_kit.message(agent, "Follow up"))
         assert continued.status_code == 201, continued.text
         current = await observed_execution(service, schedule, item["id"])
-        assert current["initial_run"] == execution["initial_run"] and current["has_unfinished_work"]
+        assert current["initial_run"] == execution["initial_run"] and not current["has_unfinished_work"]
 
 
 async def test_execution_expansion_observes_one_snapshot_during_submission(
@@ -297,11 +310,11 @@ async def test_execution_history_batches_reads_and_preserves_pagination_and_scop
     service, scripted_model, runs_kit
 ) -> None:  # type: ignore[no-untyped-def]
     schedule, _ = await schedule_for(service, scripted_model, runs_kit)
-    admission = AsyncMock()
-    admission.accept.side_effect = ServiceError("forbidden", "Test refusal before Run creation")
     for index in range(5):
         await trigger(service, schedule, runs_kit, key=f"history-{index}")
-        await dispatch.process(replace(service.runtime, admission=admission), schedule["id"])
+        await dispatch.process(service.runtime, schedule["id"])
+        scripted_model.say("Done")
+        await (await runs_kit.attempt(service))
     url = f"{service.api}/schedules/{schedule['id']}/occurrences"
     engine = service.runtime.storage.engine.sync_engine
     statements = []
@@ -329,7 +342,7 @@ async def test_execution_history_batches_reads_and_preserves_pagination_and_scop
     for item in many["items"]:
         assert item["status"] == "submitted" and "snapshot" not in item
         execution = item["execution"]
-        assert execution["initial_entry_status"] == "failed" and execution["initial_run"] is None
+        assert execution["initial_entry_status"] == "consumed" and execution["initial_run"]["status"] == "completed"
         assert not execution["has_unfinished_work"]
     # Projection does not change page membership or invalidate a cursor.
     rest, _ = await counted(limit=5, cursor=one["next_cursor"])
@@ -346,7 +359,7 @@ async def test_execution_history_batches_reads_and_preserves_pagination_and_scop
         assert response.status_code == 404
 
 
-async def test_children_outbox_waiting_and_forks_have_precise_ownership(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_children_outbox_and_forks_do_not_reopen_completed_occurrence(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.infra.outbox import OutboxRow
 
     await runs_kit.pause_sweeps(service)
@@ -381,14 +394,14 @@ async def test_children_outbox_waiting_and_forks_have_precise_ownership(service,
     )
     scripted_model.say("Delegated", to="Role: coordinator")
     await (await runs_kit.attempt(service))
-    assert (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
+    assert not (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         row = await session.get_one(ScheduleRow, schedule["id"])
         stored = await session.get_one(OccurrenceRow, item["id"])
         root = await session.get_one(ThreadRow, stored.thread_id)
         child = (await session.scalars(select(ThreadRow).where(ThreadRow.origin_thread_id == root.id))).one()
         assert child.schedule_occurrence_id == item["id"]
-        assert await queries.has_unfinished(session, row)
+        assert not await queries.has_unfinished(session, row)
         origin_run_id = root.last_run_id
     scripted_model.say("42", to="Role: worker")
     await (await runs_kit.attempt(service))
@@ -396,8 +409,8 @@ async def test_children_outbox_waiting_and_forks_have_precise_ownership(service,
         row = await session.get_one(ScheduleRow, schedule["id"])
         delivery = (await session.scalars(select(OutboxRow).where(OutboxRow.kind == "child_result"))).one()
         delivery.available_at = await now(session) + timedelta(hours=1)
-        # A sealed parent and child still block while their result waits in the outbox.
-        assert await queries.has_unfinished(session, row)
+        # Result delivery does not reopen an occurrence whose root Run already completed.
+        assert not await queries.has_unfinished(session, row)
         webhooks = (await session.scalars(select(OutboxRow).where(OutboxRow.kind == "webhook"))).all()
         assert {hook.payload["type"] for hook in webhooks} == {"run.accepted", "run.running"}
         assert all(
@@ -413,7 +426,7 @@ async def test_children_outbox_waiting_and_forks_have_precise_ownership(service,
     assert forked.status_code == 201, forked.text
     assert forked.json()["thread"]["schedule_occurrence_id"] is None
     assert forked.json()["run"]["schedule_origin"] is None
-    # Archive the owned parent: its delayed result no longer blocks, and the independent fork cannot block.
+    # Archiving the root and creating an independent fork do not change completion.
     archived = await service.client.post(
         f"{service.api}/threads/{root.id}/archive",
         headers=runs_kit.if_match(await runs_kit.get_thread(service, root.id)),
@@ -424,7 +437,9 @@ async def test_children_outbox_waiting_and_forks_have_precise_ownership(service,
         assert not await queries.has_unfinished(session, await session.get_one(ScheduleRow, schedule["id"]))
 
 
-async def test_waiting_and_old_thread_reactivation_block_next_submission(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_resume_chain_blocks_until_terminal_but_later_conversation_does_not(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
     response = await service.client.post(
@@ -453,23 +468,48 @@ async def test_waiting_and_old_thread_reactivation_block_next_submission(service
         run = await session.get_one(RunRow, root.last_run_id)
         assert run.status == "waiting" and root.current_run_id is None
         assert await queries.has_unfinished(session, await session.get_one(ScheduleRow, schedule["id"]))
-    resumed = await service.client.post(
-        f"{service.api}/runs/{run.id}/resume",
-        json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": {"response": "blue"}}}},
-        headers=runs_kit.fresh_key(),
+    # Multiple waits preserve unfinished work despite sealed waiting Runs in the history.
+    for index, call_id in enumerate(("call_ask", "call_again")):
+        busy = await service.client.post(
+            f"{service.api}/schedules/{schedule['id']}/dispatch",
+            json={},
+            headers={**runs_kit.if_match(schedule), **runs_kit.fresh_key()},
+        )
+        assert busy.status_code == 409
+        resumed = await service.client.post(
+            f"{service.api}/runs/{run.id}/resume",
+            json={"approvals": {}, "calls": {call_id: {"status": "returned", "value": {"response": "blue"}}}},
+            headers=runs_kit.fresh_key(),
+        )
+        assert resumed.status_code == 201, resumed.text
+        assert resumed.json()["schedule_origin"]["occurrence_id"] == item["id"]
+        assert (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
+        if index == 0:
+            scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_again")
+        else:
+            scripted_model.say("Done")
+        await (await runs_kit.attempt(service))
+        async with short_session(service.runtime.storage) as session:
+            run = await session.get_one(RunRow, resumed.json()["id"])
+        assert run.status == ("waiting" if index == 0 else "completed")
+    execution = await observed_execution(service, schedule, item["id"])
+    assert execution["initial_run"]["status"] == "waiting" and not execution["has_unfinished_work"]
+    status = (await service.client.get(f"{service.api}/schedules/{schedule['id']}/status")).json()
+    assert not status["has_unfinished_work"]
+    unfinished = await service.client.get(
+        f"{service.api}/schedules/{schedule['id']}/occurrences", params={"unfinished": "true"}
     )
-    assert resumed.status_code == 201, resumed.text
-    assert resumed.json()["schedule_origin"]["occurrence_id"] == item["id"]
-    scripted_model.say("Done")
-    await (await runs_kit.attempt(service))
+    assert unfinished.json()["items"] == []
     next_item = await trigger(service, schedule, runs_kit, key="next")
-    # A manual continuation races between intent creation and its submission. B must recheck all owned Threads.
+    # Manual conversation between planning and submission must not block the new trigger.
     continued = await runs_kit.submit(service, root.id, runs_kit.message(agent, "Continue"))
     assert continued.status_code == 201, continued.text
     await dispatch.process(service.runtime, schedule["id"])
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, next_item["id"])
-        assert stored.status == "skipped" and stored.reason == "overlap" and stored.thread_id is None
+        assert stored.status == "submitted" and stored.thread_id != root.id
+        assert await queries.has_unfinished(session, await session.get_one(ScheduleRow, schedule["id"]))
+    assert not (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
 
 
 async def test_dispatch_narrows_authority_and_keys_cannot_cross_schedules(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

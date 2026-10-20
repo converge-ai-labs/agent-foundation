@@ -219,3 +219,34 @@ async def test_locked_schedule_does_not_block_other_due_work(service, scripted_m
     async with short_session(service.runtime.storage) as session:
         items = (await session.scalars(select(OccurrenceRow).where(OccurrenceRow.schedule_id == first["id"]))).all()
         assert len(items) == 1 and items[0].status == "submitted"
+
+
+@pytest.mark.parametrize("completed", [False, True])
+async def test_planning_checks_root_completion_and_ignores_later_conversation(
+    service, scripted_model, runs_kit, completed
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    schedule = await create_schedule(service, agent, runs_kit)
+    response = await service.client.post(
+        f"{service.api}/schedules/{schedule['id']}/dispatch",
+        json={},
+        headers={**runs_kit.if_match(schedule), **runs_kit.fresh_key()},
+    )
+    assert response.status_code == 202, response.text
+    await dispatch.process(service.runtime, schedule["id"])
+    if completed:
+        scripted_model.say("Done")
+        await (await runs_kit.attempt(service))
+        async with short_session(service.runtime.storage) as session:
+            previous = await session.get_one(OccurrenceRow, response.json()["id"])
+        continued = await runs_kit.submit(service, previous.thread_id, runs_kit.message(agent, "Follow up"))
+        assert continued.status_code == 201, continued.text
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ScheduleRow, schedule["id"])
+        row.next_fire_at = (await now(session)).replace(second=0, microsecond=0) - timedelta(minutes=1)
+    await plan_next(service.runtime)
+    async with short_session(service.runtime.storage) as session:
+        item = (await session.scalars(select(OccurrenceRow).where(OccurrenceRow.trigger == "scheduled"))).one()
+        assert item.status == ("pending" if completed else "skipped")
+        assert item.reason == (None if completed else "overlap")
