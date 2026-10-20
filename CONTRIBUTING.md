@@ -12,7 +12,7 @@ For suspected security vulnerabilities, follow [SECURITY.md](SECURITY.md) and re
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
 | Report a bug                             | Search existing issues; include the component, version or commit, reproduction, expected result, and actual result | Remove credentials and private content from logs and diagnostic reports |
 | Improve user documentation               | Edit `docs/` and preview with `make docs-serve`; see [Documentation Changes](#documentation-changes)               | `make docs-build` and formatting for changed Markdown                   |
-| Write a blog post                        | Add `blog/<slug>/` and preview `/blog/` with `make site-serve`; see [Blog Posts](#blog-posts)                      | Site tests, `make site-build`, and formatting for changed Markdown      |
+| Write a blog post                        | Add `frontend/apps/a13n-site/posts/<slug>/`, preview with `make site-serve`; see [Blog Posts](#blog-posts)         | Site tests, `make site-build`, and formatting for changed Markdown      |
 | Improve Harness                          | [Harness quickstart](docs/a13n-harness/getting-started.md) and [local scenarios](dev/harness/README.md)            | Focused package tests and affected consumers                            |
 | Improve Harness UI                       | [Local UI development](dev/harness-ui/README.md); `make cli` or `make webui`                                       | Checks for the affected App, terminal, or browser behavior              |
 | Improve Service or Console               | [Local Service development](dev/service/README.md); `make dev`                                                     | Relevant Service/Console checks; migration checks when applicable       |
@@ -296,7 +296,7 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 
 ## Blog Posts
 
-- `blog/` holds one folder per post, named by its slug, which is also its address: `blog/<slug>/index.md` publishes at `https://a13n.dev/blog/<slug>/`. Write the slug as lowercase words joined by hyphens, and keep a published folder's name.
+- `frontend/apps/a13n-site/posts/` holds one folder per post, named by its slug, which is also its address: `posts/<slug>/index.md` publishes at `https://a13n.dev/blog/<slug>/`. Write the slug as lowercase words joined by hyphens, and keep a published folder's name.
 - Start `index.md` with front matter: `title`; `description`, the line under the title that also describes the page to search and social previews; `date` as `YYYY-MM-DD`; and `authors` as a list of names. The build rejects a post with a missing or invalid field.
 - Write plain Markdown that also reads well on GitHub: one source line per paragraph, `##` sections, GFM tables, and footnotes for notes. The first paragraph is the lede, and a blockquote is set as a pull quote. A fence `title="path/to/file.py"` names a code block; untitled blocks show their language as on the documentation site and use its code palette.
 - An image alone in its paragraph becomes a figure captioned by the image title; a leading `Figure 1.` is the caption's label, as in `![Timeline of a session moving between workers](timeline.svg "Figure 1. Worker A stops.")`. Keep images beside `index.md`.

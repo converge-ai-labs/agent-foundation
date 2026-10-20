@@ -26,7 +26,7 @@ function pages(posts: Post[]) {
 }
 
 /**
- * Renders /blog/ and a page per post from the repository's blog/ directory.
+ * Renders /blog/ and a page per post from the site's posts/ directory.
  * A build adds them as HTML entries; the dev server renders them on each request.
  */
 export function blog(): Plugin {
@@ -61,7 +61,6 @@ export function blog(): Plugin {
           });
     },
     configureServer(server) {
-      server.watcher.add(POSTS_DIR);
       server.watcher.on("all", (_event, path) => {
         if (path.startsWith(POSTS_DIR)) server.ws.send({ type: "full-reload" });
       });
