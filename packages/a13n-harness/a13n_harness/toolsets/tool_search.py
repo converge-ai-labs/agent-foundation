@@ -262,18 +262,10 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
         matches.sort(key=lambda item: (item[0], item[1]))
         entries: list[dict[str, Any]] = []
         result: dict[str, Any] = {"tools": entries, "total": len(matches), "next_offset": None}
-        for index, (_, canonical, prepared) in enumerate(matches[offset : offset + limit], offset):
+        for index, (_, _canonical, prepared) in enumerate(matches[offset : offset + limit], offset):
             member = proxy_membership(prepared.tool_def)
             assert member is not None
-            entry = {
-                "group": member.group,
-                "tool": member.tool,
-                "description": prepared.tool_def.description,
-                "parameters_json_schema": deepcopy(prepared.tool_def.parameters_json_schema),
-                "return_schema": deepcopy(prepared.tool_def.return_schema),
-                "codeact_eligible": is_codeact_tool_eligible(canonical, prepared),
-                "instructions": await _source_instructions(ctx, prepared),
-            }
+            entry = await proxy_discovery_entry(ctx, prepared)
             entries.append(entry)
             next_offset = index + 1
             result["next_offset"] = next_offset if next_offset < len(matches) else None
@@ -347,6 +339,21 @@ def _group_summary(tools: dict[str, ToolsetTool[AgentContext]]) -> str:
         if (member := proxy_membership(tool.tool_def)) is not None
     }
     return "Available groups:\n" + "\n".join(f"- {name}: {description}" for name, description in sorted(groups.items()))
+
+
+async def proxy_discovery_entry(ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]) -> dict[str, Any]:
+    """The complete current proxy schema and source guidance, shared with retention."""
+    member = proxy_membership(tool.tool_def)
+    assert member is not None
+    return {
+        "group": member.group,
+        "tool": member.tool,
+        "description": tool.tool_def.description,
+        "parameters_json_schema": deepcopy(tool.tool_def.parameters_json_schema),
+        "return_schema": deepcopy(tool.tool_def.return_schema),
+        "codeact_eligible": is_codeact_tool_eligible(tool.tool_def.name, tool),
+        "instructions": await _source_instructions(ctx, tool),
+    }
 
 
 async def _source_instructions(ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]) -> list[str]:

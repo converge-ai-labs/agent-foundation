@@ -116,6 +116,25 @@ The summary request uses the same Agent and complete history. The summary replac
 
 Select `HandoffCapability()` when you also want the `summarize` tool for explicit handoffs. Its default reminder starts at 65% of the context window. Both Capabilities are opt-in; threshold configuration alone enables neither.
 
+### Retain discovered tools
+
+Both `summarize` and automatic compaction retain a bounded set of completed [ToolSearch](tool-search.md) discoveries. Recently discovered or successfully used tools take priority. Each search exchange stays complete, including its schemas and source instructions; ordinary business-tool results are summarized instead of replayed.
+
+Retention keeps at most 32 distinct tools within a 64 KiB estimated discovery-context budget, including native schema expansion and both CodeAct runner directories. This is a UTF-8 byte estimate, not a token limit. Removed or replaced tools are dropped. Proxy discoveries are also checked against the current schema, description, instructions, and CodeAct eligibility. Tools omitted by the budget can be searched again. Deferred Capability activation through `load_capability` is outside this retention policy.
+
+For example, after discovering `crm__customer_name` and looking up customer 42, the replacement has this order:
+
+| Position | Explicit `summarize`                                             | Automatic compaction                                                |
+| -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 1        | Stable system prefix, handoff summary, and restoration reminders | Stable system prefix and compact directive                          |
+| 2        | Retained search call and complete discovery result               | Assistant summary                                                   |
+| 3        | Current user input and delivered steering                        | Retained search call and complete discovery result                  |
+| 4        |                                                                  | Restored-context marker, current user input, and delivered steering |
+
+Current notes, tasks, and runtime context are projected again through their normal providers. The customer lookup result belongs in the summary; the retained discovery lets the Agent call `crm__customer_name` again without another search. Both CodeAct directories reflect the retained tools on the first request after replacement.
+
+A proxy search performed inside CodeAct is retained as labeled tool-output evidence with its actual arguments and result, rather than as a fabricated `run_code` exchange. Persist the returned `HarnessState` to carry discovery history and recency into another Run.
+
 ## Working State
 
 `WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:

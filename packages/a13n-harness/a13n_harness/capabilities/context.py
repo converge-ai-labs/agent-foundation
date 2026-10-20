@@ -679,7 +679,10 @@ class HandoffCapability(AbstractModelContextCapability):
     ) -> ModelRequestContext:
         prepared = await self._restore_history(ctx, request_context)
         if prepared is not request_context:
+            from a13n_harness.tools.discovery import finish_discovery_replacement
+
             ctx.messages[:] = prepared.messages
+            await finish_discovery_replacement(ctx)
         return prepared
 
     async def _restore_history(
@@ -691,10 +694,14 @@ class HandoffCapability(AbstractModelContextCapability):
         if state.summary is None or _requires_exact_boundary(ctx, request_context.messages):
             return request_context
         await ctx.deps._steering.resolve_delivered(request_context.messages)
+        from a13n_harness.tools.discovery import retain_discovery
+
         try:
+            discovery, names = await retain_discovery(ctx, request_context)
             messages = _build_restored_history(
                 request_context.messages,
                 state,
+                retained_discovery=discovery,
                 retained_requests=ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
             )
         except BaseException as exc:
@@ -705,7 +712,7 @@ class HandoffCapability(AbstractModelContextCapability):
                 raise clear_exc from exc
             await _emit_context_failure(ctx, state, phase="history_replacement", exc=exc, retryable=False)
             raise
-        replacement = _replace_messages(request_context, messages)
+        replacement = _replace_context_history(ctx, request_context, messages, names)
         try:
             await self._toolset.replace_state(_HandoffState())
         except BaseException as exc:
@@ -795,7 +802,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
     ) -> ModelRequestContext:
         prepared = await self._compact_history(ctx, request_context)
         if prepared is not request_context:
+            from a13n_harness.tools.discovery import finish_discovery_replacement
+
             ctx.messages[:] = prepared.messages
+            await finish_discovery_replacement(ctx)
         return prepared
 
     async def _compact_history(
@@ -837,10 +847,14 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 operation_id=operation_id,
             ) as span:
                 record_span_metadata(span, {"compaction.message_count_before": len(request_context.messages)})
+                from a13n_harness.tools.discovery import retain_discovery
+
                 summary = await _compact_with_same_agent(ctx, request_context)
+                discovery, names = await retain_discovery(ctx, request_context)
                 messages = _build_compacted_history(
                     request_context.messages,
                     summary,
+                    retained_discovery=discovery,
                     retained_requests=ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
                 )
                 record_span_metadata(
@@ -888,9 +902,22 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             ),
         )
         await ctx.emit(CompactionSummaryEvent(operation_id=operation_id, summary=summary))
-        replacement = _replace_messages(request_context, messages)
+        replacement = _replace_context_history(ctx, request_context, messages, names)
         await ctx.emit(ContextRestoredEvent(source="compact", operation_id=operation_id))
         return replacement
+
+
+def _replace_context_history(
+    ctx: RunContext[AgentContext],
+    request: ModelRequestContext,
+    messages: list[ModelMessage],
+    retained_names: set[str],
+) -> ModelRequestContext:
+    from a13n_harness.capabilities.codeact import refresh_codeact_descriptions
+
+    replacement = _replace_messages(request, messages)
+    refresh_codeact_descriptions(ctx, replacement, retained_names=retained_names)
+    return replacement
 
 
 async def _compact_with_same_agent(
@@ -949,6 +976,7 @@ def _build_compacted_history(
     summary: str,
     *,
     retained_requests: tuple[ModelRequest, ...],
+    retained_discovery: list[ModelMessage] | None = None,
 ) -> list[ModelMessage]:
     template = next((message for message in messages if isinstance(message, ModelRequest)), None)
     if template is None:
@@ -1009,6 +1037,7 @@ def _build_compacted_history(
     return [
         synthetic,
         ModelResponse(parts=[TextPart(summary.strip())], metadata={"keep": "compact"}),
+        *(retained_discovery or []),
         restored,
         *deepcopy(retained_requests),
     ]
@@ -1081,6 +1110,7 @@ def _build_restored_history(
     state: _HandoffState,
     *,
     retained_requests: tuple[ModelRequest, ...],
+    retained_discovery: list[ModelMessage] | None = None,
 ) -> list[ModelMessage]:
     assert state.summary is not None
     template = next((message for message in reversed(messages) if isinstance(message, ModelRequest)), None)
@@ -1135,7 +1165,7 @@ def _build_restored_history(
         metadata=metadata,
         state="complete",
     )
-    return _mark_current_restored_boundary([restored, *deepcopy(retained_requests)])
+    return _mark_current_restored_boundary([restored, *(retained_discovery or []), *deepcopy(retained_requests)])
 
 
 def restored_history_summary(messages: Sequence[ModelMessage]) -> str | None:
