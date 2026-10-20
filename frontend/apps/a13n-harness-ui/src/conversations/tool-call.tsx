@@ -256,6 +256,13 @@ function ToolDetails({ tool }: { tool: ToolView }) {
           {info.errorText}
         </p>
       )}
+      {info.executionReceipt && (
+        <p role="status">
+          Execution <code>{info.executionReceipt.execution_id}</code> was handed
+          off ({info.executionReceipt.status} at handoff). This is a receipt;
+          the retained result is retrieved separately.
+        </p>
+      )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
       <CollaborationDetails tool={tool} />
       {((tool.images?.length ?? 0) > 0 || tool.imageUnavailable) && (

@@ -1,5 +1,6 @@
 import type { ContentPart } from "@ag-ui/core";
 import { readContentParts } from "a13n-ui";
+import { toolExecutionReceipt } from "a13n-ui/display";
 import type { Schema } from "../transport/client";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
@@ -48,6 +49,7 @@ export function describeTool(tool: ToolView) {
   const args = record(input) ? input : {};
   const output = parsed(tool.result);
   const result = record(output) ? output : {};
+  const executionReceipt = toolExecutionReceipt(output);
   const path =
     tool.edit?.file_path ||
     tool.editPath ||
@@ -142,6 +144,22 @@ export function describeTool(tool: ToolView) {
       label = "Search";
       kind = "search";
       summary = text(args.pattern);
+      break;
+    case "tool_execution_info":
+      label = "Inspect tool execution";
+      summary = text(args.execution_id);
+      break;
+    case "tool_execution_result":
+      label = "Retrieve tool result";
+      summary = text(args.execution_id);
+      break;
+    case "tool_execution_wait":
+      label = "Wait for tool execution";
+      summary = text(args.execution_id);
+      break;
+    case "tool_execution_cancel":
+      label = "Cancel tool execution";
+      summary = text(args.execution_id);
       break;
     case "shell_exec":
       label = "Run";
@@ -321,7 +339,8 @@ export function describeTool(tool: ToolView) {
     !tool.failure &&
     !["failed", "denied", "interrupted"].includes(tool.outcome ?? "")
   ) {
-    if (result.accepted === false) phase = "Not accepted";
+    if (executionReceipt) phase = "Execution handed off";
+    else if (result.accepted === false) phase = "Not accepted";
     else if (
       !failed &&
       record(result.receipt) &&
@@ -381,6 +400,7 @@ export function describeTool(tool: ToolView) {
     outputIncomplete,
     threadId,
     threadTitle,
+    executionReceipt,
   };
 }
 

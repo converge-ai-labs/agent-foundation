@@ -750,7 +750,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         *,
         parent_thread_id: str,
         execution_id: str,
-        message: str,
+        message: RunInputValue,
         immediate: bool = False,
     ) -> SubagentSteerResult:
         """Steer a locally owned segment scoped to its saved parent relationship."""
@@ -843,7 +843,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             usage_limits=plan.usage_limits,
         )
 
-    async def deliver_tool_completion(self, thread_id: str, prompt: str) -> bool:
+    async def deliver_tool_completion(self, thread_id: str, prompt: RunInputValue) -> bool:
         """Continue the exact child lane without admitting a root or impersonating a parent Run."""
         retained = self._completion_continuations.get(thread_id)
         if retained is None or not self._accepting:

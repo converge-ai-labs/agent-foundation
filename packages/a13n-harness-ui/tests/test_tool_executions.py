@@ -246,6 +246,14 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         result = await app._tool_executions.runtime.result(thread.thread_id, execution_id)
         assert result.record.delivery_acknowledged
         assert calls == 1 and stage == 4
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        hints = [
+            part
+            for entry in transcript.entries
+            for part in entry.parts
+            if part.metadata.source_id == "tool_execution.completion"
+        ]
+        assert hints and all(not part.metadata.display for part in hints)
         assert (await app._tool_executions.state(thread.thread_id).snapshot()).values == {"late": 42}
         other = await app.create_thread()
         assert await app.tool_executions(other.thread_id) == ()
@@ -614,6 +622,10 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             assert child.call_args.kwargs["immediate"] is (mode != "queued")
             await app._deliver_tool_completion(thread.thread_id, "Tool completed")
             assert root.call_args.kwargs["immediate"] is False
+            content = root.call_args.kwargs["message"]
+            assert content[0].value == "Tool completed"
+            assert content[0].metadata.display is False
+            assert content[0].metadata.source_id == "tool_execution.completion"
 
 
 def test_ui_execution_defaults_do_not_change_harness_defaults():

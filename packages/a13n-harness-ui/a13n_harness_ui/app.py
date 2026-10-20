@@ -2216,15 +2216,18 @@ class HarnessUiApp:
         detail = await self._projections.detail(thread_id)
         if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
             return False
+        # Lifecycle hints are model context, not human-authored messages. Keep
+        # the annotation through active steering and idle continuation alike.
+        content = (ContentItem(prompt, ContentMetadata(display=False, source_id="tool_execution.completion")),)
         if detail.thread.parent_thread_id is not None:
-            return await self._subagent_operator.deliver_tool_completion(thread_id, prompt)
+            return await self._subagent_operator.deliver_tool_completion(thread_id, content)
         operation = await self._root_runs.active(thread_id)
         if operation is not None:
             result = await self._root_runs.steer(
-                receipt_id=operation.receipt.receipt_id, message=prompt, immediate=False
+                receipt_id=operation.receipt.receipt_id, message=content, immediate=False
             )
             return result.accepted
-        await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
+        await self._root_runs.submit_prompt(thread_id=thread_id, prompt=content)
         return True
 
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:

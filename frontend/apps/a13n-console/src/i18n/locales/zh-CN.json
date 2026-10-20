@@ -2020,6 +2020,7 @@
   "Selected trace": "选中的 trace",
   "Maximum traces": "最多分析 trace 数",
   "Built-in rules": "内置规则",
+  "Execution handed off": "已转交后台执行",
   "Execution failures": "执行失败",
   "Tool configuration, invalid arguments, unavailable resources, and unclear task intent.": "工具配置、无效参数、不可用资源，以及不明确的任务意图。",
   "Retries and recovery": "重试与恢复",

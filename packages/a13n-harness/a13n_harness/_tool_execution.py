@@ -32,6 +32,8 @@ class RunToolExecutions:
         self.unsupported_calls: set[str] = set()
         self.calls: dict[str, ToolExecutionRecord] = {}
         self.returns: dict[str, Any] = {}
+        self.observed_returns: set[str] = set()
+        self.streamed_returns: set[str] = set()
         self.deliveries: dict[str, str] = {}
         self.result_origins: dict[str, ToolExecutionRecord] = {}
         self._leases = 0
@@ -64,6 +66,7 @@ class RunToolExecutions:
 
     def receipt(self, record: ToolExecutionRecord) -> dict[str, Any]:
         value = {
+            "type": "tool_execution_receipt",
             "execution_id": record.execution_id,
             "tool_name": record.tool_name,
             "status": record.status,

@@ -102,7 +102,8 @@ function lineState(summary: WorkSummary): WorkState {
   if (summary.waiting) return "waiting";
   if (summary.running) return "working";
   if (summary.failed) return "failed";
-  return summary.interrupted ? "interrupted" : "done";
+  if (summary.interrupted) return "interrupted";
+  return summary.handedOff ? "handed_off" : "done";
 }
 
 /** The step's name, monospace only when it is a tool's own wire name. */

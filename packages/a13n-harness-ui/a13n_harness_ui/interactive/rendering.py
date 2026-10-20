@@ -1143,7 +1143,7 @@ class StreamRenderer:
                         if child:
                             brief += f" | {identity}"
                     failed = state.startswith("failed") or state in {"retry", "denied"}
-                    if name not in {"edit", "multi_edit"}:
+                    if name not in {"edit", "multi_edit"} and not state.startswith("execution handed off"):
                         semantic = (
                             preview.semantic if preview else semantic_tool_row(name, "", self.status.directory)[0]
                         )

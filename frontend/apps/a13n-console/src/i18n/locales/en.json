@@ -2021,6 +2021,7 @@
   "Selected trace": "Selected trace",
   "Maximum traces": "Maximum traces",
   "Built-in rules": "Built-in rules",
+  "Execution handed off": "Execution handed off",
   "Execution failures": "Execution failures",
   "Tool configuration, invalid arguments, unavailable resources, and unclear task intent.": "Tool configuration, invalid arguments, unavailable resources, and unclear task intent.",
   "Retries and recovery": "Retries and recovery",

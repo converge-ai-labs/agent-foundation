@@ -22,10 +22,12 @@ from pydantic_ai.exceptions import AgentRunError, ModelHTTPError, RunCancelled, 
 from pydantic_ai.messages import (
     AgentStreamEvent,
     EnqueuedMessagesEvent,
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
+    ToolReturnPart,
 )
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
@@ -1112,8 +1114,23 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
     ) -> tuple[tuple[ModelMessage, ...], int]:
         self._deferred_input.reconcile(messages)
-        messages = self.context._tool_executions.settle(messages)
-        await self.context._tool_executions.reconcile(self.context.tool_execution, self.thread_id, messages)
+        executions = self.context._tool_executions
+        messages = executions.settle(messages)
+        await executions.reconcile(self.context.tool_execution, self.thread_id, messages)
+        # Cancellation can bypass native result publication. Publish retained
+        # returns at their canonical boundary, once per observation channel.
+        for message in messages:
+            if not isinstance(message, ModelRequest):
+                continue
+            for part in message.parts:
+                if not isinstance(part, ToolReturnPart) or part.tool_call_id not in executions.returns:
+                    continue
+                event = FunctionToolResultEvent(part)
+                if part.tool_call_id not in executions.observed_returns:
+                    self._emitter.observe(event)
+                    executions.observed_returns.add(part.tool_call_id)
+                if not executions.closing and part.tool_call_id not in executions.streamed_returns:
+                    await self._emitter._put(self._adapt_event(event))
         remaining = self._deferred_input.pending
         return normalize_interrupted_history(
             messages,
@@ -1557,6 +1574,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             ) from exc
 
     def _adapt_event(self, event: AgentStreamEvent) -> HarnessEvent:
+        if isinstance(event, FunctionToolResultEvent):
+            self.context._tool_executions.streamed_returns.add(event.part.tool_call_id)
         envelope = HarnessEvent(
             thread_id=self.thread_id,
             run_id=self.run_id,

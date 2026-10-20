@@ -8,6 +8,7 @@ from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, RunError
 from a13n_harness._retained_scope import RetainedScope
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+from a13n_harness.events import HarnessEvent
 from a13n_harness.tool_execution import (
     MemoryToolExecutionStore,
     StoredToolExecution,
@@ -18,7 +19,7 @@ from anyio import create_task_group
 from pydantic_ai import Tool, ToolReturn
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.messages import ToolReturnPart
+from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 pytestmark = pytest.mark.anyio
@@ -557,7 +558,8 @@ async def test_harness_fast_result_acknowledged_only_in_canonical_history():
     await runtime.close()
 
 
-async def test_immediate_tool_handoff_keeps_single_execution_in_inline_mode():
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_tool_handoff_publishes_one_return_to_each_channel(immediate):
     entered, finish = asyncio.Event(), asyncio.Event()
     calls = 0
 
@@ -569,20 +571,36 @@ async def test_immediate_tool_handoff_keeps_single_execution_in_inline_mode():
         return 42
 
     runtime = ToolExecutionRuntime()
-    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="inline"))
-    async with executable.stream("start", bindings=RunBindings.embedded(tool_execution=runtime)) as stream:
+    produced = []
+    executable, observed = tool_agent(
+        lookup, config=ToolExecutionConfig(mode="inline" if immediate else "auto", foreground_wait_seconds=0)
+    )
+    async with executable.stream(
+        "start", bindings=RunBindings.embedded(tool_execution=runtime, producer_observer=produced.append)
+    ) as stream:
 
         async def consume():
             return [event async for event in stream]
 
         consumer = asyncio.create_task(consume())
         await entered.wait()
-        await stream.steer("continue without waiting", immediate=True)
-        await consumer
+        if immediate:
+            await stream.steer("continue without waiting", immediate=True)
+        published = await consumer
         assert stream.result.status == "completed"
         thread_id = stream.thread_id
     assert calls == 1
     receipt = observed[0].content
+    assert receipt["type"] == "tool_execution_receipt"
+    for events in (produced, published):
+        returns = [
+            item.event.part
+            for item in events
+            if isinstance(item, HarnessEvent) and isinstance(item.event, FunctionToolResultEvent)
+        ]
+        assert len(returns) == 1
+        assert returns[0].tool_call_id == "call-lookup"
+        assert returns[0].content == receipt
     finish.set()
     outcome = await runtime.wait(thread_id, receipt["execution_id"])
     assert outcome.result == 42
@@ -612,3 +630,101 @@ async def test_immediate_unsupported_tool_preserves_original_operation():
         await consumer
         assert stream.result.status == "completed"
     assert observed[0].content == 42
+
+
+async def test_immediate_settlement_publishes_completed_native_result_once(monkeypatch):
+    ready = asyncio.Event()
+    runtime = ToolExecutionRuntime()
+    wait = runtime.wait
+
+    async def pause_after_completion(*args, **kwargs):
+        result = await wait(*args, **kwargs)
+        ready.set()
+        await asyncio.Event().wait()
+        return result
+
+    monkeypatch.setattr(runtime, "wait", pause_after_completion)
+
+    async def lookup():
+        return ToolReturn(return_value={"answer": 42}, metadata={"origin": "retained"})
+
+    produced = []
+    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="inline"))
+    async with executable.stream(
+        "start", bindings=RunBindings.embedded(tool_execution=runtime, producer_observer=produced.append)
+    ) as stream:
+
+        async def consume():
+            return [event async for event in stream]
+
+        consumer = asyncio.create_task(consume())
+        await ready.wait()
+        await stream.steer("continue", immediate=True)
+        published = await consumer
+        assert stream.result.status == "completed"
+        assert (await runtime.summarize(stream.thread_id))[0].delivery_acknowledged
+    assert len(observed) == 1 and observed[0].content == {"answer": 42}
+    for events in (produced, published):
+        returns = [
+            item.event.part
+            for item in events
+            if isinstance(item, HarnessEvent) and isinstance(item.event, FunctionToolResultEvent)
+        ]
+        assert len(returns) == 1
+        assert returns[0].content == {"answer": 42}
+        assert returns[0].metadata["origin"] == "retained"
+    await runtime.close()
+
+
+async def test_early_close_observes_all_settled_returns_without_filling_public_queue():
+    from pydantic_ai.messages import FunctionToolCallEvent
+
+    count = 65  # Exceeds the public event queue capacity.
+    entered = asyncio.Event()
+    calls = 0
+
+    async def lookup():
+        nonlocal calls
+        calls += 1
+        if calls == count:
+            entered.set()
+        await asyncio.Event().wait()
+
+    async def model(messages, info):
+        yield {
+            index: DeltaToolCall(name="lookup", json_args="{}", tool_call_id=f"call-{index}") for index in range(count)
+        }
+
+    runtime = ToolExecutionRuntime(max_active=128)
+    produced = []
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            ToolExecutionCapability(),
+            Capability(tools=[Tool(lookup, metadata={TOOL_EXECUTION_METADATA_KEY: "owned"})]),
+        ),
+    )
+    try:
+        async with asyncio.timeout(10):
+            async with executable.stream(
+                "start", bindings=RunBindings.embedded(tool_execution=runtime, producer_observer=produced.append)
+            ) as stream:
+                started = 0
+                async for event in stream:
+                    if isinstance(event, HarnessEvent) and isinstance(event.event, FunctionToolCallEvent):
+                        started += 1
+                        if started == count:
+                            break
+                await entered.wait()
+        returns = [
+            item.event.part
+            for item in produced
+            if isinstance(item, HarnessEvent) and isinstance(item.event, FunctionToolResultEvent)
+        ]
+        assert len(returns) == count
+        assert len({part.tool_call_id for part in returns}) == count
+        assert all(part.content["type"] == "tool_execution_receipt" for part in returns)
+    finally:
+        await runtime.close()

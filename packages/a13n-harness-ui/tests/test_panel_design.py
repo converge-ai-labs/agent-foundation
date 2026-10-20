@@ -268,3 +268,31 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
         assert len(renderer.transcript.blocks) == (2 if mode == "detailed" else 1)
     finally:
         renderer.transcript.close()
+
+
+@pytest.mark.parametrize("name", ["lookup", "shell_exec"])
+def test_execution_receipt_is_a_handoff_not_a_completed_tool(name):
+    renderer = StreamRenderer(Status())
+    try:
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": "call", "toolCallName": name})
+        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "call", "delta": '{"command":"sleep 1"}'})
+        renderer.ingest("TOOL_CALL_END", {"toolCallId": "call"})
+        renderer.ingest(
+            "TOOL_CALL_RESULT",
+            {
+                "toolCallId": "call",
+                "content": json.dumps(
+                    {
+                        "type": "tool_execution_receipt",
+                        "execution_id": "exec-lookup",
+                        "tool_name": name,
+                        "status": "running",
+                    }
+                ),
+            },
+        )
+        text = _text(renderer.transcript, 160)
+        assert "execution handed off" in text and "exec-lookup" in text
+        assert "status unavailable" not in text
+    finally:
+        renderer.transcript.close()

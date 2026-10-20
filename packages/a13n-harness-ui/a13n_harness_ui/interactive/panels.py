@@ -158,6 +158,8 @@ def tool_result(name: str, text: str) -> str:
         value = None
     state = "returned"
     if isinstance(value, dict):
+        if value.get("type") == "tool_execution_receipt":
+            return f"execution handed off | {value['execution_id']}\n{text}"
         if value.get("ok") is False:
             state = "failed | no edit confirmed" if name in {"edit", "multi_edit"} else "failed"
         elif value.get("ok") is True and not name.startswith("shell"):
@@ -183,6 +185,8 @@ def shell_result_preview(text: str, command: str, *, separator: str = " | ") -> 
         value = None
     if not isinstance(value, dict):
         value = {}
+    if value.get("type") == "tool_execution_receipt":
+        return separator.join(("execution handed off", str(value["execution_id"]), command)).rstrip(" ·|")
     status = value.get("status")
     if not isinstance(status, dict):
         status = {}
