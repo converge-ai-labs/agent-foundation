@@ -208,6 +208,14 @@ The Service exports the Harness spans of every attempt to one trace backend and 
 
 `telemetry.trace_content` (`none`, `standard` or `full`) chooses how much prompt, output and tool content leaves the deployment with the spans; see [Harness observation](../a13n-harness/observation.md). `trace_query_timeout` bounds one backend query.
 
+## Environment monitoring
+
+`monitoring.enabled` defaults to `true`; each environment still needs an explicit metrics data source. For temporary history without a separate collector, select **Local Cache**. For pull collection, configure `monitoring.collectors.vmagent` or `monitoring.collectors.alloy`, then create and select a pull data source in Console. The collector map is empty by default.
+
+Each collector entry requires an absolute shared `directory` and an HTTP(S) reload `endpoint`. Set `writer = true` on exactly one `all` or `control` process per collector; the default is `false`. Optional `headers` authenticate reload requests. Alloy also requires `receiver`, naming an existing receiver expression. Protect settings containing credentials. The environment-variable equivalent is the JSON map `A13N_MONITORING__COLLECTORS`.
+
+Follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector) for directory mounts, permissions, collector configuration and verification. Service owns the scrape fragment; operators own collector installation, forwarding, storage and retention. Configure a data source's Prometheus HTTP query endpoint separately for historical dashboards.
+
 ## Nested bounds
 
 Startup also validates related limits together: leases must cover authority and object-store calls; shutdown must cover worker drain; request and inbox budgets must fit uploads and child output; environment scans must renew hosted sandboxes in time. If you change these limits, check the startup validation error before widening individual timeouts.

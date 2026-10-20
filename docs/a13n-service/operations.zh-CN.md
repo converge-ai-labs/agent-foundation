@@ -22,6 +22,14 @@ a13n-service --config service.toml run --role worker
 
 每个 worker 最多执行 `worker.slots` 个尝试。Worker 崩溃后，租约过期时另一 worker 在新尝试中从最后检查点继续运行；消耗 `worker.max_attempts` 次计费尝试后运行失败。关闭时，worker 停止领取任务，并最多等待 `worker.drain_seconds` 以便通过检查点交接。外部副作用不会自动回滚，也不保证可安全重复。
 
+## 环境监控采集器
+
+可选的 vmagent 和 Grafana Alloy 集成运行于 `all` 或 `control`，每个采集器只配置一个写入进程。Worker 不同步采集器配置。启用 `writer = true` 前先完成[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)；其他 API 副本以 `writer = false` 公布该采集器。
+
+替换写入进程时，采集器和新旧写入进程必须共享受保护的配置目录。备份运维管理的转发配置及凭据，保护级别与其他部署密钥相同。Service 根据当前环境绑定重新生成自己的片段。
+
+修改后检查环境的采集器状态、采集器的活动目标，以及查询后端的新鲜样本。`reload_requested` 只确认重载请求已被接受。在停止写入进程或禁用监控之前，移除托管片段并重载采集器；停止 Service 不会停用已加载的抓取任务。
+
 ## Schema 迁移
 
 ```sh

@@ -48,6 +48,14 @@ With `objects.backend: local`, every Service Pod mounts the claim `a13n-a13n-obj
 
 Control and Worker Pods serve Prometheus metrics at `/metrics` on the container port `metrics` (`metrics.port`, 9464 by default), set as `A13N_TELEMETRY__METRICS_PORT` so a `[telemetry]` section in `extraConfig` still applies. No Service or Ingress exposes that port. The Pods carry `prometheus.io` scrape annotations, and `metrics.podMonitor.enabled` adds a PodMonitor for the Prometheus or VictoriaMetrics operator, carrying `metrics.podMonitor.labels`. `metrics.enabled: false` turns metrics off. The [monitoring bundle](../monitoring/README.md) holds alert rules and dashboards for these metrics.
 
+### Environment monitoring collectors
+
+The PodMonitor above observes Service processes. Environment monitoring separately supports operator-installed **vmagent** and **Grafana Alloy** through [managed scrape fragments](../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector). The Chart installs neither a collector nor a historical metrics backend.
+
+Pull integration requires a protected writable directory shared by the Service writer and the collector, with POSIX advisory locks and atomic rename. The Chart currently has no collector volume or dedicated writer values; `extraConfig` alone cannot supply those mounts. Use deployment-owned manifest customization to add them. Keep exactly one control writer per collector and `writer = false` on other API replicas; do not enable a writer in shared configuration for an autoscaled control Deployment. Replacement writers must use the same directory. Service runs as UID 10001, and the collector must be able to read its mode-0600 fragments.
+
+Keep forwarding destinations and their credentials in operator-owned collector configuration. Configure historical storage and the workspace data source's query endpoint independently. Verify active targets and fresh backend samples after rollout. Before stopping the writer, remove the managed fragment and reload the collector. Native OTLP export and Local Cache remain available without collector directory mounts.
+
 ## Configuration and secrets
 
 The Chart renders `service.toml` from values: `[server]` (including `publicUrl` and `trustedProxies`), `[database]`, `[objects]` and, with bundled Redis, `[redis]`. `extraConfig` appends other non-secret sections such as `[providers]` or `[telemetry]`. The Secret named by `existingSecret` supplies credentials as Service settings, `A13N_<SECTION>__<FIELD>`, which override the file. Unknown `A13N_` variables stop the Service, so Pods disable Kubernetes service-link variables. See the [configuration reference](../../docs/a13n-service/configuration-reference.md).

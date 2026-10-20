@@ -76,6 +76,14 @@ Docker templates have a private `/workspace` and may bind explicitly approved ex
 
 Environment containers run on the host Engine outside this Compose project. Delete them through Console or the API before removing the stack.
 
+## Environment monitoring
+
+The stack does not install a collector or metrics database. Select **Local Cache** on an environment for temporary Service-managed history. For pull collection, use an operator-installed **vmagent** or **Grafana Alloy** and complete the [collector bootstrap](../../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector).
+
+Mount the same protected configuration directory into `service` with write access and into the collector with read access. Mount the directory, not an individual fragment, because Service replaces files atomically. The non-root processes must be able to read mode-0600 fragments. Add `A13N_MONITORING__COLLECTORS` as a complete JSON map in a Compose override, using the Service-side directory path, the reachable reload endpoint and `writer: true` for this single `all` process. Alloy also needs its existing receiver expression. Preserve the collector's operator-owned forwarding configuration.
+
+Recreate Service after changing its settings. Create a pull data source in Console, select the configured collector and bind an environment. Configure historical storage and the data source's query endpoint separately. Verify active targets and delivered samples; a successful reload request alone does not confirm ingestion. Before removing the stack or disabling its writer, remove the managed fragment and reload the collector.
+
 ## Data
 
 `postgres`, `redis` and `service-data` persist across `stop`/`up` and container recreation. `service-data` holds the Service objects under `/app/var/objects` and the credential encryption key, generated at `/app/var/encryption.key` on first start; stored provider and connection credentials cannot be decrypted without it. `down` retains the volumes; `down -v` destroys the deployment's data.

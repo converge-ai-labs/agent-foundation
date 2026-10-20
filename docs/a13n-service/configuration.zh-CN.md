@@ -208,6 +208,14 @@ Service 将每次尝试的 Harness span 导出到一个 trace 后端，并从同
 
 `telemetry.trace_content`（`none`、`standard` 或 `full`）控制多少提示词、输出和工具内容随 span 离开部署；参阅 [Harness 观测](../a13n-harness/observation.md)。`trace_query_timeout` 限制单次后端查询。
 
+## 环境监控
+
+`monitoring.enabled` 默认为 `true`，但每个环境仍需显式选择指标数据源。不需要独立采集器的临时历史可选择 **Local Cache**。使用 pull 采集时，配置 `monitoring.collectors.vmagent` 或 `monitoring.collectors.alloy`，再在 Console 创建并选择 pull 数据源。采集器配置映射默认为空。
+
+每个采集器配置必须提供绝对路径的共享 `directory` 和 HTTP(S) 重载 `endpoint`。每个采集器只在一个 `all` 或 `control` 进程上设置 `writer = true`，默认值为 `false`。可选的 `headers` 用于重载请求认证。Alloy 还必须提供 `receiver`，指向已有接收端表达式。包含凭据的设置应受保护。对应的环境变量为 JSON 映射 `A13N_MONITORING__COLLECTORS`。
+
+目录挂载、权限、采集器配置和验证步骤见[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)。Service 管理抓取片段；运维负责安装采集器、转发、存储和保留策略。历史仪表盘需要单独配置数据源的 Prometheus HTTP 查询端点。
+
 ## 关联限制
 
 启动时也联合验证相关限制：租约必须覆盖权限检查和对象存储调用；关闭时长必须覆盖 worker 排空；请求和收件箱额度必须容纳上传与子运行输出；环境扫描必须及时续期云沙箱。修改这些限制时，先检查启动验证错误，再调整单项超时。

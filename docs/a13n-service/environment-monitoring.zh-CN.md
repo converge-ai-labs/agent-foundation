@@ -66,7 +66,18 @@ description: 为环境和 Device 指标选择采集与历史查询后端，并�
 
 ## 初始化可选采集器
 
-使用已有的 vmagent 或 Alloy 安装及运维管理的导出链路。Service 只替换自己生成的采集片段。采集器必须能够访问目标的 HTTP 监听器，Service 写入进程必须能够访问采集器重载端点。
+Service 自动管理以下两种采集器的抓取配置和重载：
+
+| 采集器        | 配置键    | Service 管理的片段                                  | 实测版本 |
+| ------------- | --------- | --------------------------------------------------- | -------- |
+| vmagent       | `vmagent` | `a13n-managed.yml`，通过 `scrape_config_files` 引入 | 1.128.0  |
+| Grafana Alloy | `alloy`   | `a13n-managed.alloy`，连接已有接收端                | 1.10.2   |
+
+Linux 互操作测试覆盖带认证的 Envd 抓取、重载、租户标签、目标移除，以及保留运维已有的导出配置。测试使用 Prometheus 3.2.1 作为临时远程写入接收端。这些是实测版本，不是最低版本保证。测试需显式启用，未覆盖采集器 TLS 或云 provider 部署。
+
+OTLP 接收端（包括运维自行配置的 OpenTelemetry Collector）可独立用于 native 或 proxy 导出。Service 尚无 OpenTelemetry Collector 或 Prometheus Server 的自动抓取配置适配器。
+
+使用已有采集器安装及运维管理的导出链路。Service 只替换自己生成的采集片段。采集器必须能够访问目标的 HTTP 监听器，Service 写入进程必须能够访问采集器重载端点。历史存储和 Prometheus HTTP 查询端点需要单独配置；仅部署 pull 采集器不会提供仪表盘历史。
 
 1. 创建受保护的共享目录。将目录挂载到 Service 和采集器，不要只挂载生成的文件：更新使用原子替换。
 2. 两个进程使用能够读取 Service 的 0600 权限片段的 UID。目录仅向受信任的运维人员开放。片段包含监听器凭据，这些凭据也能访问 EIP。

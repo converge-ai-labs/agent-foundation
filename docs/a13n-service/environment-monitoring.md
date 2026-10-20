@@ -66,7 +66,18 @@ Native HTTP export uses the complete metrics URL. Native gRPC uses the receiver 
 
 ## Bootstrap an optional collector
 
-Use an existing vmagent or Alloy installation with an operator-owned delivery pipeline. Service replaces only its generated scrape fragment. The collector must reach each target's HTTP listener. The Service writer must reach the collector's reload endpoint.
+Service manages scrape configuration and reloads for these two collectors:
+
+| Collector     | Configuration key | Service-owned fragment                                     | Tested version |
+| ------------- | ----------------- | ---------------------------------------------------------- | -------------- |
+| vmagent       | `vmagent`         | `a13n-managed.yml`, included through `scrape_config_files` | 1.128.0        |
+| Grafana Alloy | `alloy`           | `a13n-managed.alloy`, connected to an existing receiver    | 1.10.2         |
+
+The Linux interoperability tests exercise authenticated Envd scraping, reload, tenant labels, target removal and preservation of the operator's delivery configuration. They use Prometheus 3.2.1 as a disposable remote-write receiver. These are tested versions, not minimum-version guarantees. The tests are opt-in and do not cover collector TLS or cloud-provider deployment.
+
+An OTLP receiver, including an operator-configured OpenTelemetry Collector, can serve native or proxy export independently. Service has no automatic scrape-configuration adapter for OpenTelemetry Collector or Prometheus Server.
+
+Use an existing collector installation with an operator-owned delivery pipeline. Service replaces only its generated scrape fragment. The collector must reach each target's HTTP listener. The Service writer must reach the collector's reload endpoint. Configure historical storage and a Prometheus HTTP query endpoint separately; a pull collector alone does not provide dashboard history.
 
 1. Create a protected shared directory. Mount the directory into Service and the collector, rather than mounting the generated file: updates use atomic replacement.
 2. Run both processes with a UID that can read Service's mode-0600 fragments. Limit directory access to trusted operators. Fragments contain listener credentials that also authorize EIP access.
