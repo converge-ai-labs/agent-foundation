@@ -1,6 +1,6 @@
 """Scoped Schedule reads and indexed unfinished-work predicates shared by dispatch and observation."""
 
-from sqlalchemy import Select, and_, exists, or_, select, text
+from sqlalchemy import Select, and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -14,6 +14,7 @@ from a13n_service.runs.schedules.schemas import (
     BusyOccurrencePage,
     CronSchedule,
     Occurrence,
+    OccurrenceExecution,
     OccurrencePage,
     OccurrenceQuery,
     OccurrenceSummary,
@@ -49,7 +50,7 @@ def view(row: ScheduleRow) -> Schedule:
             "updated_at": row.updated_at,
             "archived_at": row.archived_at,
             "schedule": CronSchedule(expression=row.cron_expression, timezone=row.timezone),
-            "stream_url": f"/api/v1/sessions/{row.session_id}/stream?view=schedule",
+            "stream_url": f"/api/v1/sessions/{row.session_id}/stream",
         }
     )
 
@@ -132,13 +133,68 @@ async def occurrence_page(session: AsyncSession, row: ScheduleRow, filters: Occu
         (OccurrenceRow.created_at, OccurrenceRow.id),
         kind="schedule_occurrences",
         owner=cursors.query_owner(
-            f"{row.workspace_id}:{row.id}", filters.model_dump(mode="json", exclude={"limit", "cursor"})
+            f"{row.workspace_id}:{row.id}", filters.model_dump(mode="json", exclude={"limit", "cursor", "include"})
         ),
         cursor=filters.cursor,
         limit=filters.limit,
         newest_first=True,
     )
-    return OccurrencePage(items=[OccurrenceSummary.model_validate(item) for item in rows], next_cursor=cursor)
+    items = [OccurrenceSummary.model_validate(item) for item in rows]
+    if filters.include == "execution":
+        executions = await execution_summaries(session, row.workspace_id, row.id, [item.id for item in items])
+        items = [item.model_copy(update={"execution": executions[item.id]}) for item in items]
+    return OccurrencePage(items=items, next_cursor=cursor)
+
+
+async def execution_summaries(
+    session: AsyncSession, workspace_id: str, schedule_id: str, occurrence_ids: list[str]
+) -> dict[str, OccurrenceExecution]:
+    """Read only the page's compact facts in one statement, including all owned unfinished work."""
+    if not occurrence_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            OccurrenceRow.id,
+            InboxEntryRow.status.label("entry_status"),
+            RunRow.id.label("run_id"),
+            RunRow.status.label("run_status"),
+            unfinished_occurrence().label("unfinished"),
+            func.statement_timestamp().label("observed_at"),
+        )
+        .select_from(OccurrenceRow)
+        .outerjoin(
+            InboxEntryRow,
+            and_(
+                InboxEntryRow.workspace_id == OccurrenceRow.workspace_id,
+                InboxEntryRow.thread_id == OccurrenceRow.thread_id,
+                InboxEntryRow.id == OccurrenceRow.entry_id,
+            ),
+        )
+        .outerjoin(
+            RunRow,
+            and_(
+                RunRow.workspace_id == OccurrenceRow.workspace_id,
+                RunRow.thread_id == OccurrenceRow.thread_id,
+                RunRow.id == InboxEntryRow.assigned_run_id,
+            ),
+        )
+        .where(
+            OccurrenceRow.workspace_id == workspace_id,
+            OccurrenceRow.schedule_id == schedule_id,
+            OccurrenceRow.id.in_(occurrence_ids),
+        )
+    )
+    return {
+        row.id: OccurrenceExecution.model_validate(
+            {
+                "initial_entry_status": row.entry_status,
+                "initial_run": {"id": row.run_id, "status": row.run_status} if row.run_id is not None else None,
+                "has_unfinished_work": row.unfinished,
+                "observed_at": row.observed_at,
+            }
+        )
+        for row in rows
+    }
 
 
 async def progress(session: AsyncSession, row: ScheduleRow) -> ScheduleStatus:
@@ -212,14 +268,24 @@ async def list_occurrences(
     storage: Storage, actor: Principal, workspace_id: str, schedule_id: str, filters: OccurrenceQuery
 ) -> OccurrencePage:
     async with short_session(storage) as session:
+        if filters.include == "execution":
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         scope = await workspace_scope(session, actor, workspace_id, "read")
         return await occurrence_page(session, await find(session, scope.workspace_id, schedule_id), filters)
 
 
 async def get_occurrence(
-    storage: Storage, actor: Principal, workspace_id: str, schedule_id: str, occurrence_id: str
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    schedule_id: str,
+    occurrence_id: str,
+    *,
+    execution: bool = False,
 ) -> Occurrence:
     async with short_session(storage) as session:
+        if execution:
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await session.scalar(
             select(OccurrenceRow).where(
@@ -230,4 +296,8 @@ async def get_occurrence(
         )
         if row is None:
             raise not_found("schedule_occurrence", occurrence_id)
-        return Occurrence.model_validate(row)
+        result = Occurrence.model_validate(row)
+        if execution:
+            summaries = await execution_summaries(session, scope.workspace_id, schedule_id, [row.id])
+            result = result.model_copy(update={"execution": summaries[row.id]})
+        return result

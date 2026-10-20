@@ -1,6 +1,6 @@
 """Recurring Agent invocation service. MCP admission is deliberately deferred."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Response
 
@@ -133,9 +133,16 @@ async def list_schedule_occurrences(
 
 @router.get("/{schedule_id}/occurrences/{occurrence_id}", response_model=Occurrence)
 async def get_schedule_occurrence(
-    workspace_id: WorkspaceId, schedule_id: str, occurrence_id: str, actor: Actor, runtime: CurrentRuntime
+    workspace_id: WorkspaceId,
+    schedule_id: str,
+    occurrence_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    include: Literal["execution"] | None = None,
 ) -> Occurrence:
-    return await queries.get_occurrence(runtime.storage, actor, workspace_id, schedule_id, occurrence_id)
+    return await queries.get_occurrence(
+        runtime.storage, actor, workspace_id, schedule_id, occurrence_id, execution=include == "execution"
+    )
 
 
 @router.post("/{schedule_id}/dispatch", response_model=Occurrence, status_code=202)

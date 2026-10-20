@@ -74,14 +74,23 @@ export function scheduleQueries(client: Client, workspaceId: string) {
             ...after,
             items: after.items.map((item) => {
               const current = held.get(item.id);
-              return current && current.version > item.version ? current : item;
+              if (!current || current.version < item.version) return item;
+              if (current.version > item.version) return current;
+              // Submission versions stop changing after dispatch. Execution observations do not.
+              const execution = current.execution;
+              return execution && !item.execution
+                ? { ...item, execution }
+                : item;
             }),
           };
         },
         queryFn: ({ signal }) =>
           api
             .GET("/api/v1/schedules/{schedule_id}/occurrences", {
-              params: { path: { schedule_id }, query: { cursor, limit: 20 } },
+              params: {
+                path: { schedule_id },
+                query: { cursor, limit: 20, include: "execution" },
+              },
               signal,
             })
             .then(data),

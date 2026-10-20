@@ -43,7 +43,9 @@ async def test_creation_replay_and_memory_are_atomic(service, scripted_model, ru
     assert sorted(item.status_code for item in responses) == [200, 201], [item.text for item in responses]
     schedule = responses[0].json()
     assert responses[1].json() == schedule
-    assert schedule["state"] == "paused" and schedule["stream_url"].endswith("?view=schedule")
+    assert (
+        schedule["state"] == "paused" and schedule["stream_url"] == f"/api/v1/sessions/{schedule['session_id']}/stream"
+    )
     assert "authority" not in schedule and "create_request_key" not in schedule
     async with short_session(service.runtime.storage) as session:
         assert await session.scalar(select(func.count()).select_from(ScheduleRow)) == 1

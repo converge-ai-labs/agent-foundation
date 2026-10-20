@@ -57,12 +57,16 @@ The response includes `id`, a fixed `session_id`, `stream_url` and an ETag. The 
 - POST an empty object to `/{id}/dispatch`, with `If-Match` and `Idempotency-Key`. HTTP 202 records a pending Occurrence. A replay returns that Occurrence with 200, even if it has since finished.
 - Read current progress from `/{id}/status` and page trigger history through `/{id}/occurrences`. Read a saved invocation snapshot at `/{id}/occurrences/{occurrence_id}`.
 
+Add `?include=execution` to either occurrence read to include current execution facts in the same response. Each `execution` contains `initial_entry_status`, `initial_run` (an ID and status, or null), `has_unfinished_work` and `observed_at`. Without this parameter, the field is omitted. List reads batch these facts for the page; Console uses this expansion instead of querying each entry and run separately.
+
+The initial run is the run assigned to the trigger's first input. Later runs do not replace it in this summary. `has_unfinished_work` includes related child work and waiting runs; false does not mean the work succeeded. A trigger with no submitted input has null initial entry and run values. Execution can change while the occurrence remains `submitted` at the same version. Refresh the expanded history after thread changes or reconnecting. Read full output through the ordinary run items API.
+
 The API reference contains all filters and fields. Schedule endpoints are currently HTTP-only; Composer and MCP integration are separate work.
 
 ## Observe live state and load history
 
-Use the returned `stream_url`: `/api/v1/sessions/{session_id}/stream?view=schedule`. The explicit view is required for a Schedule Session. It adds `schedule` and `occurrence` state frames to the existing [Session output protocol](agents-and-runs.md#follow-a-session-stream).
+Use the returned `stream_url`: `/api/v1/sessions/{session_id}/stream`. No extra query parameters are needed. Schedule Sessions add `schedule` and `occurrence` state frames to the existing [Session output protocol](agents-and-runs.md#follow-a-session-stream).
 
-Each connection starts with current plan state, the latest 20 trigger records, any pending or unfinished trigger records, recent root Threads and all active Threads. `history_limit` accepts 1–100. Older completed work is loaded through history pages and the ordinary Run items API, not all at once through the stream.
+Each connection starts with current plan state, compact trigger summaries and every Thread in the Session, then follows their changes and live output. Completed, child and independent Threads remain observable regardless of their age. Use history pages for browsing trigger records, detail queries for full intent, and the ordinary Run items API for saved output.
 
 The stream shows current state, not a durable transition log: brief intermediate states can be combined. On reconnect, also refresh the visible history page and any selected old Thread, Entry, Run and output. An old Run can finish while disconnected without changing its already-submitted Occurrence. Console performs these refreshes automatically.

@@ -1,4 +1,4 @@
-"""Schedule observation keeps recent history bounded without losing pending or final state."""
+"""Session streams add Schedule state without filtering Threads or requiring a view."""
 
 import asyncio
 
@@ -6,14 +6,16 @@ import pytest
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.runs.schedules import dispatch, lifecycle, observation
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
-from a13n_service.runs.session_state import repeatable
+from a13n_service.runs.session_state import Scope, repeatable
+from a13n_service.runs.tables import ThreadRow
 
 pytestmark = pytest.mark.anyio
 
 
-async def create_schedule(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def create_schedule(service, scripted_model, runs_kit, *, agent=None):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model)
+    if agent is None:
+        agent = await runs_kit.create_agent(service, scripted_model)
     response = await service.client.post(
         f"{service.api}/schedules",
         json={
@@ -48,18 +50,21 @@ async def history_item(service, schedule, *, status="skipped", key="history"):  
         return item.id
 
 
-async def test_schedule_stream_requires_explicit_view(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_schedule_state_is_scoped_to_its_session(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     schedule, agent = await create_schedule(service, scripted_model, runs_kit)
-    url = f"{service.api}/sessions/{schedule['session_id']}/stream"
-    response = await service.client.get(url)
-    assert response.status_code == 409
-    assert response.json()["error"]["details"]["reason"] == "schedule_stream_view_required"
+    other, _ = await create_schedule(service, scripted_model, runs_kit, agent=agent)
+    own_item = await history_item(service, schedule)
+    await history_item(service, other, key="other-history")
     ordinary = await runs_kit.start_thread(service, agent, "ordinary")
-    response = await service.client.get(
-        f"{service.api}/sessions/{ordinary['thread']['session_id']}/stream?view=schedule"
-    )
-    assert response.status_code == 400
-    assert (await service.client.get(url + "?view=schedule&history_limit=101")).status_code == 400
+    scope = Scope(schedule["workspace_id"], schedule["session_id"])
+    ordinary_scope = Scope(schedule["workspace_id"], ordinary["thread"]["session_id"])
+    async with short_session(service.runtime.storage) as session:
+        await repeatable(session)
+        snapshots = await observation.snapshots(session, [scope, ordinary_scope])
+    assert set(snapshots) == {scope}
+    assert [item.occurrence.id for item in snapshots[scope].occurrences] == [own_item]
+    operation = service.app.openapi()["paths"]["/api/v1/sessions/{session_id}/stream"]["get"]
+    assert not {"view", "history_limit"} & {parameter["name"] for parameter in operation["parameters"]}
 
 
 async def test_empty_session_observes_pending_submission_and_entry_without_exposing_intent(
@@ -68,12 +73,17 @@ async def test_empty_session_observes_pending_submission_and_entry_without_expos
     schedule, _ = await create_schedule(service, scripted_model, runs_kit)
     headers = await runs_kit.bearer(service)
     async with listen(service.app) as base:
-        url = f"{base}{service.api}/sessions/{schedule['session_id']}/stream?view=schedule"
+        url = f"{base}{service.api}/sessions/{schedule['session_id']}/stream"
         async with runs_kit.frames(url, headers) as stream:
             event, _, state = await anext(stream)
             assert event == "schedule" and state["schedule_id"] == schedule["id"]
             assert state["progress"]["pending_occurrence_id"] is None
             assert "invocation" not in state["configuration"] and "authority" not in state["configuration"]
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(ScheduleRow, schedule["id"], with_for_update=True)
+                row.name = "Updated report"
+            changed = (await runs_kit.until(stream, lambda frame: frame[0] == "schedule"))[-1][2]
+            assert changed["configuration"]["name"] == "Updated report"
             item_id = await history_item(service, schedule, status="pending")
             pending = (await runs_kit.until(stream, lambda frame: frame[0] == "occurrence"))[-1][2]
             assert pending["occurrence"]["id"] == item_id
@@ -89,20 +99,20 @@ async def test_empty_session_observes_pending_submission_and_entry_without_expos
             assert thread["current_run"]["schedule_origin"]["occurrence_id"] == item_id
 
 
-async def test_pending_outside_recent_window_sends_terminal_state_once(
+async def test_occurrences_are_not_limited_to_recent_history_and_reconnect_keeps_terminal_state(
     service, scripted_model, runs_kit, listen
 ) -> None:  # type: ignore[no-untyped-def]
     schedule, _ = await create_schedule(service, scripted_model, runs_kit)
     pending_id = await history_item(service, schedule, status="pending", key="pending")
-    recent_id = await history_item(service, schedule)
+    recent_ids = {await history_item(service, schedule, key=f"history-{index}") for index in range(24)}
     headers = await runs_kit.bearer(service)
     async with listen(service.app) as base:
-        url = f"{base}{service.api}/sessions/{schedule['session_id']}/stream?view=schedule&history_limit=1"
+        url = f"{base}{service.api}/sessions/{schedule['session_id']}/stream"
         async with runs_kit.frames(url, headers) as stream:
-            initial = [await anext(stream) for _ in range(3)]
+            initial = [await anext(stream) for _ in range(26)]
             assert {data["occurrence"]["id"] for kind, _, data in initial if kind == "occurrence"} == {
                 pending_id,
-                recent_id,
+                *recent_ids,
             }
             async with transaction(service.runtime.storage) as session:
                 row = await session.get_one(ScheduleRow, schedule["id"], with_for_update=True)
@@ -112,17 +122,15 @@ async def test_pending_outside_recent_window_sends_terminal_state_once(
             )
             assert frames[-1][2]["occurrence"]["status"] == "cancelled"
         async with runs_kit.frames(url, headers) as stream:
-            assert (await anext(stream))[0] == "schedule"
-            assert (await anext(stream))[2]["occurrence"]["id"] == recent_id
-    async with short_session(service.runtime.storage) as session:
-        await repeatable(session)
-        snapshot = await observation.snapshot(session, schedule["workspace_id"], schedule["session_id"], 1)
-        assert [item.occurrence.id for item in snapshot.occurrences] == [recent_id]
-        assert snapshot.thread_ids == [] and snapshot.departing_occurrences == []
-        assert (await session.get_one(OccurrenceRow, pending_id)).status == "cancelled"
+            reopened = [await anext(stream) for _ in range(26)]
+            records = {
+                data["occurrence"]["id"]: data["occurrence"] for kind, _, data in reopened if kind == "occurrence"
+            }
+            assert set(records) == {pending_id, *recent_ids}
+            assert records[pending_id]["status"] == "cancelled"
 
 
-async def test_active_thread_outside_window_finishes_before_retirement(
+async def test_all_session_threads_remain_observable_after_completion_and_reconnect(
     service, scripted_model, runs_kit, listen
 ) -> None:  # type: ignore[no-untyped-def]
     schedule, agent = await create_schedule(service, scripted_model, runs_kit)
@@ -130,14 +138,14 @@ async def test_active_thread_outside_window_finishes_before_retirement(
     await dispatch.process(service.runtime, schedule["id"])
     async with short_session(service.runtime.storage) as session:
         thread_id = (await session.get_one(OccurrenceRow, item_id)).thread_id
-    recent = await history_item(service, schedule, key="newer")
+    recent = {await history_item(service, schedule, key=f"newer-{index}") for index in range(24)}
     # An independent Thread is not owned by the Schedule, but its active work is observable.
     independent = await runs_kit.start_thread(service, agent, "Independent", session_id=schedule["session_id"])
     headers = await runs_kit.bearer(service)
     gate = asyncio.Event()
     scripted_model.say("Final report", gate=gate)
     async with listen(service.app) as base:
-        url = f"{base}{service.api}/sessions/{schedule['session_id']}/stream?view=schedule&history_limit=1"
+        url = f"{base}{service.api}/sessions/{schedule['session_id']}/stream"
         async with runs_kit.frames(url, headers) as stream:
             initial = await runs_kit.until(
                 stream, lambda frame: frame[0] == "items" and frame[2]["thread_id"] == independent["thread"]["id"]
@@ -157,14 +165,23 @@ async def test_active_thread_outside_window_finishes_before_retirement(
                 await task
         async with runs_kit.frames(url, headers) as stream:
             reopened = await runs_kit.until(stream, lambda frame: frame[0] == "items")
-            assert [data["occurrence"]["id"] for kind, _, data in reopened if kind == "occurrence"] == [recent]
-            assert [data["thread"]["id"] for kind, _, data in reopened if kind == "thread"] == [
+            assert {data["occurrence"]["id"] for kind, _, data in reopened if kind == "occurrence"} == {
+                item_id,
+                *recent,
+            }
+            assert {data["thread"]["id"] for kind, _, data in reopened if kind == "thread"} == {
+                thread_id,
                 independent["thread"]["id"],
-            ]
-        # A larger concurrent window may still watch the old root, but it cannot enlarge the smaller view.
-        async with runs_kit.frames(url.replace("history_limit=1", "history_limit=3"), headers) as large:
-            older = await runs_kit.until(large, lambda frame: frame[0] == "items")
-            assert thread_id in [data["thread"]["id"] for kind, _, data in older if kind == "thread"]
-            async with runs_kit.frames(url, headers) as small:
-                current = await runs_kit.until(small, lambda frame: frame[0] == "items")
-                assert thread_id not in [data["thread"]["id"] for kind, _, data in current if kind == "thread"]
+            }
+            async with transaction(service.runtime.storage) as session:
+                thread = await session.get_one(ThreadRow, thread_id)
+                thread.labels = {"observed": "after-completion"}
+            changed = await runs_kit.until(
+                stream,
+                lambda frame: (
+                    frame[0] == "thread"
+                    and frame[2]["thread"]["id"] == thread_id
+                    and frame[2]["thread"]["labels"] == {"observed": "after-completion"}
+                ),
+            )
+            assert changed[-1][2]["current_run"] is None

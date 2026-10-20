@@ -95,8 +95,6 @@ export type SessionEvent = SessionFrame | SessionConnection;
 
 export interface SessionStreamOptions {
   signal?: AbortSignal;
-  view?: "schedule";
-  historyLimit?: number;
 }
 
 /** Reconnect delays grow to this bound; a connection open this long resets them. */
@@ -220,11 +218,7 @@ export async function* sessionStream(
   const signal = options.signal
     ? AbortSignal.any([options.signal, transport.signal])
     : transport.signal;
-  const query = new URLSearchParams();
-  if (options.view) query.set("view", options.view);
-  if (options.historyLimit !== undefined)
-    query.set("history_limit", String(options.historyLimit));
-  const url = `${transport.baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/stream${query.size ? `?${query}` : ""}`;
+  const url = `${transport.baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/stream`;
   let failures = 0;
   let error: unknown;
   for (;;) {

@@ -2458,7 +2458,7 @@ export interface paths {
     /**
      * Session Stream
      * @description The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
-     *     frames. Every connection starts from a snapshot.
+     *     frames, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.
      */
     get: operations["session_stream"];
     put?: never;
@@ -6101,6 +6101,12 @@ export interface components {
       entry_ids: string[];
     };
     InitialMounts: components["schemas"]["MountCreate"][];
+    /** InitialRun */
+    InitialRun: {
+      /** Id */
+      id: string;
+      status: components["schemas"]["RunStatus"];
+    };
     /**
      * InstrumentationScope
      * @description The instrumentation library that recorded the span.
@@ -7499,6 +7505,7 @@ export interface components {
       dispatch_attempts: number;
       /** Entry Id */
       entry_id: string | null;
+      execution?: components["schemas"]["OccurrenceExecution"] | null;
       /** Finished At */
       finished_at: string | null;
       /** Id */
@@ -7533,6 +7540,21 @@ export interface components {
       updated_at: string;
       /** Version */
       version: number;
+    };
+    /**
+     * OccurrenceExecution
+     * @description Current execution facts, independent of the immutable submission result and its version.
+     */
+    OccurrenceExecution: {
+      /** Has Unfinished Work */
+      has_unfinished_work: boolean;
+      initial_entry_status: components["schemas"]["EntryStatus"] | null;
+      initial_run: components["schemas"]["InitialRun"] | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
     };
     /** OccurrencePage */
     OccurrencePage: {
@@ -7575,6 +7597,7 @@ export interface components {
       dispatch_attempts: number;
       /** Entry Id */
       entry_id: string | null;
+      execution?: components["schemas"]["OccurrenceExecution"] | null;
       /** Finished At */
       finished_at: string | null;
       /** Id */
@@ -15774,6 +15797,7 @@ export interface operations {
         created_after?: string | null;
         created_before?: string | null;
         unfinished?: boolean | null;
+        include?: "execution" | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -15801,7 +15825,9 @@ export interface operations {
   };
   get_schedule_occurrence: {
     parameters: {
-      query?: never;
+      query?: {
+        include?: "execution" | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;
@@ -16045,10 +16071,7 @@ export interface operations {
   };
   session_stream: {
     parameters: {
-      query?: {
-        view?: "schedule" | null;
-        history_limit?: number;
-      };
+      query?: never;
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;

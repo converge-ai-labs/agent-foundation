@@ -7,8 +7,8 @@ run and attempt are current.
 
 Each Control process has one `SessionHub`. For the sessions that have readers it shares one blocking XREAD over
 their threads and, every `control.stream_refresh_seconds` or sooner when a reader meets a run it does not follow,
-reads their state and each reader's authority once. Schedule view selects recent and unfinished work and adds
-compact `schedule` / `occurrence` state. Every selected Thread uses the same four output frames:
+reads their state and each reader's authority once. Schedule-owned Sessions also send compact
+`schedule` / `occurrence` state. Every Thread uses the same four output frames:
 
 - `thread`: a thread's current state, whenever it changes;
 - `items`: a run's committed items from an ordinal on, whenever the connection follows the run from a fresh base:
@@ -36,7 +36,7 @@ from redis.asyncio import Redis
 from sqlalchemy import func, select
 
 from a13n_service.infra.db import short_session
-from a13n_service.infra.errors import ServiceError, conflict, invalid
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_range, trim
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, Pointer, TailPointer
@@ -45,7 +45,6 @@ from a13n_service.runs.display import Observed, Page, Tail
 from a13n_service.runs.runs import NEWEST_ITEMS, newest
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import observation
-from a13n_service.runs.schedules.tables import ScheduleRow
 from a13n_service.runs.session_state import Progress, Scope, ThreadState, Watch, may_read, repeatable
 from a13n_service.runs.session_state import states as thread_states
 from a13n_service.runs.session_state import versions as thread_versions
@@ -246,7 +245,6 @@ class Update:
     frame: str | None
     progress: Progress | None
     cursor: str | None
-    retire: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,14 +264,13 @@ class Reader:
     credential: Authenticated
     workspace_id: str
     session_id: str
-    history_limit: int | None = None
     signals: asyncio.Queue[Signal] = field(default_factory=asyncio.Queue)
     size: int = 0
     closed: bool = False
 
     @property
     def scope(self) -> Scope:
-        return Scope(self.workspace_id, self.session_id, self.history_limit)
+        return Scope(self.workspace_id, self.session_id)
 
     def send(self, signal: Signal) -> None:
         if self.closed:
@@ -342,7 +339,7 @@ class SessionHub:
             group.create_task(self._refresh())
 
     async def join(self, reader: Reader) -> tuple[dict[str, Watch], dict[str, str], list[str]]:
-        """A shared watch is scoped by the Session and its requested history window."""
+        """Readers of the same Session share its state and output subscription."""
         async with self.lock:
             watched = self.sessions.get(reader.scope)
             if watched is None:
@@ -380,16 +377,8 @@ class SessionHub:
     async def _watch(self, scope: Scope) -> Watched:
         async with short_session(self.runtime.storage) as session:
             await repeatable(session)
-            snapshot = (
-                await observation.snapshot(session, scope.workspace_id, scope.session_id, scope.history_limit)
-                if scope.history_limit is not None
-                else None
-            )
-            versions = await thread_versions(
-                session,
-                [] if snapshot else [(scope.workspace_id, scope.session_id)],
-                snapshot.thread_ids if snapshot else [],
-            )
+            snapshot = (await observation.snapshots(session, [scope])).get(scope)
+            versions = await thread_versions(session, [(scope.workspace_id, scope.session_id)])
             states = await thread_states(session, [version.thread_id for version in versions])
         cursors = await asyncio.gather(*(self._cursor(version.thread_id) for version in versions))
         watched = self.sessions[scope] = Watched(frames=_metadata(snapshot))
@@ -454,45 +443,19 @@ class SessionHub:
                 )
 
     async def _refresh_once(self) -> None:
-        """Snapshot scoped selections, finish retiring Threads, and recheck each credential before delivery."""
+        """Snapshot Session state and recheck each credential before delivery."""
         async with self.lock:
             sessions = dict(self.sessions)
             readers = [reader for watched in sessions.values() for reader in watched.readers]
             async with short_session(self.runtime.storage) as session:
                 await repeatable(session)
-                snapshots = {
-                    scope: await observation.snapshot(
-                        session,
-                        scope.workspace_id,
-                        scope.session_id,
-                        scope.history_limit,
-                        previous_occurrences=[key for key in sessions[scope].frames if key != "schedule"],
-                    )
-                    for scope in sessions
-                    if scope.history_limit is not None
-                }
-                selected = {scope: set(snapshot.thread_ids) for scope, snapshot in snapshots.items()}
-                # Include the preceding window once more so a just-sealed Run sends its final items before retirement.
-                bounded = {
-                    thread_id for scope, ids in selected.items() for thread_id in ids | sessions[scope].threads.keys()
-                }
+                snapshots = await observation.snapshots(session, list(sessions))
                 versions = await thread_versions(
-                    session,
-                    [(scope.workspace_id, scope.session_id) for scope in sessions if scope not in selected],
-                    list(bounded),
+                    session, [(scope.workspace_id, scope.session_id) for scope in sessions]
                 )
                 scoped = {
-                    scope: [
-                        version
-                        for version in versions
-                        if version.session_id == scope.session_id
-                        and (
-                            scope not in selected
-                            or version.thread_id in selected[scope]
-                            or version.thread_id in watched.threads
-                        )
-                    ]
-                    for scope, watched in sessions.items()
+                    scope: [version for version in versions if version.session_id == scope.session_id]
+                    for scope in sessions
                 }
                 changed = {
                     version.thread_id
@@ -515,34 +478,23 @@ class SessionHub:
                 if version.thread_id not in sessions[scope].threads
             }
             new = {thread_id: await self._cursor(thread_id) for thread_id in new_ids}
-            # From here no await: updates, finalization and watch removal reach readers in this snapshot's order.
+            # From here no await: updates and finalization reach readers in this snapshot's order.
             for scope, watched in sessions.items():
                 if self.sessions.get(scope) is not watched:
                     continue
                 updates: list[Update | StateFrame] = []
                 metadata = _metadata(snapshots.get(scope))
                 updates.extend(StateFrame(frame) for key, frame in metadata.items() if watched.frames.get(key) != frame)
-                if (snapshot := snapshots.get(scope)) is not None:
-                    updates.extend(
-                        StateFrame(_frame("occurrence", item))
-                        for item in snapshot.departing_occurrences
-                        if watched.frames.get(item.occurrence.id) != _frame("occurrence", item)
-                    )
                 watched.frames = metadata
                 for version in scoped[scope]:
-                    retire = scope in selected and version.thread_id not in selected[scope]
                     frame = _frame("thread", states[version.thread_id]) if version.thread_id in states else None
                     cursor = new.get(version.thread_id)
-                    if retire:
-                        watched.threads.pop(version.thread_id, None)
-                        self._remove(version.thread_id, scope)
-                    else:
-                        if frame is not None:
-                            watched.threads[version.thread_id] = version.watch(frame)
-                        if cursor is not None:
-                            self._add(version.thread_id, scope, cursor)
-                    if frame is not None or version.progress is not None or retire:
-                        updates.append(Update(version.thread_id, frame, version.progress, cursor, retire))
+                    if frame is not None:
+                        watched.threads[version.thread_id] = version.watch(frame)
+                    if cursor is not None:
+                        self._add(version.thread_id, scope, cursor)
+                    if frame is not None or version.progress is not None:
+                        updates.append(Update(version.thread_id, frame, version.progress, cursor))
                 for reader in watched.readers:
                     if not readable[(reader.credential.credential_id, reader.workspace_id)]:
                         reader.send(Close())
@@ -647,25 +599,12 @@ async def open_stream(
     credential: Authenticated,
     workspace_id: str,
     session_id: str,
-    *,
-    view: Literal["schedule"] | None = None,
-    history_limit: int = 20,
 ) -> Reader:
-    """Authorize and select the supported view before HTTP starts."""
+    """Authorize the Session before HTTP starts."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, credential.principal, workspace_id, "read")
         found = await find_session(session, scope.workspace_id, session_id)
-        schedule_id = await session.scalar(select(ScheduleRow.id).where(ScheduleRow.session_id == found.id))
-        if schedule_id is not None and view is None:
-            raise conflict(
-                "session",
-                found.id,
-                "schedule_stream_view_required",
-                stream_url=f"/api/v1/sessions/{found.id}/stream?view=schedule",
-            )
-        if view == "schedule" and schedule_id is None:
-            raise invalid("view", "Session does not belong to a Schedule")
-    return Reader(credential, scope.workspace_id, found.id, history_limit=history_limit if view else None)
+    return Reader(credential, scope.workspace_id, found.id)
 
 
 def _metadata(snapshot: observation.Snapshot | None) -> dict[str, str]:
@@ -711,7 +650,7 @@ class _Connection:
         self.positions: dict[str, str] = {}
         self.follows: dict[str, _Follow] = {}
         # Runs whose final display this connection sent, and the run attempts it already asked a refresh for.
-        self.ended: dict[str, str] = {}
+        self.ended: set[str] = set()
         self.asked: set[tuple[str, int]] = set()
 
     async def open(self) -> list[str]:
@@ -789,15 +728,8 @@ class _Connection:
             if follow.thread_id == update.thread_id and (progress is None or run_id != progress.run_id):
                 # Sealed: its final display.
                 del self.follows[run_id]
-                self.ended[run_id] = follow.thread_id
+                self.ended.add(run_id)
                 frames.append(_frame("items", (await self.hub.base(run_id, follow.first)).snapshot))
-        if update.retire:
-            self.positions.pop(update.thread_id, None)
-            retired = {run_id for run_id, thread_id in self.ended.items() if thread_id == update.thread_id}
-            for run_id in retired:
-                del self.ended[run_id]
-            self.asked.difference_update(key for key in self.asked.copy() if key[0] in retired)
-            return frames
         if progress is None or progress.run_id in self.ended:
             return frames
         run_id = progress.run_id
@@ -830,7 +762,7 @@ class _Connection:
         frames = [_frame("items", base.snapshot)]
         if base.snapshot.complete:
             self.follows.pop(run_id, None)
-            self.ended[run_id] = thread_id
+            self.ended.add(run_id)
             return frames
         follow = self.follows[run_id] = _Follow(thread_id, base.attempt, base.sequence, base.first, base.preview)
         after, until = base.resume_after or "0-0", self.positions.get(thread_id, "0-0")

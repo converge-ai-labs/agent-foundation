@@ -320,7 +320,6 @@ function SessionContent({ scheduleId }: { scheduleId?: string }) {
     >
       <SessionStreamProvider
         sessionId={sessionId}
-        view={scheduleId ? "schedule" : undefined}
         onEvent={(event) => {
           if (
             scheduleId &&

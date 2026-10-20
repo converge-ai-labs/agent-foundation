@@ -80,6 +80,9 @@ export function ScheduleDetail() {
               }
             : previous,
       );
+    } else if (event.type === "thread") {
+      // Run and inbox changes do not advance the occurrence's submission version.
+      void cache.cancelQueries({ queryKey: keys.history(scheduleId) });
     }
     if (event.type === "connection" && event.state === "live") {
       // Every connection starts afresh; the visible historical page can have finished while disconnected.
@@ -106,7 +109,6 @@ export function ScheduleDetail() {
     <SessionStreamProvider
       key={query.data.session_id}
       sessionId={query.data.session_id}
-      view="schedule"
       onEvent={received}
     >
       <ScheduleContent schedule={query.data} error={query.error} />

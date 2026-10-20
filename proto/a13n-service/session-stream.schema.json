@@ -1420,6 +1420,24 @@
       "title": "Gap",
       "type": "object"
     },
+    "InitialRun": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "InitialRun",
+      "type": "object"
+    },
     "IsolatedSkillSync": {
       "additionalProperties": false,
       "description": "Reuse immutable package directories, with a soft count budget.",
@@ -1914,6 +1932,49 @@
       "title": "OccurrenceEvent",
       "type": "object"
     },
+    "OccurrenceExecution": {
+      "additionalProperties": false,
+      "description": "Current execution facts, independent of the immutable submission result and its version.",
+      "properties": {
+        "has_unfinished_work": {
+          "title": "Has Unfinished Work",
+          "type": "boolean"
+        },
+        "initial_entry_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntryStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initial_run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InitialRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "initial_entry_status",
+        "initial_run",
+        "has_unfinished_work",
+        "observed_at"
+      ],
+      "title": "OccurrenceExecution",
+      "type": "object"
+    },
     "OccurrenceStatus": {
       "enum": [
         "pending",
@@ -1963,6 +2024,17 @@
             }
           ],
           "title": "Entry Id"
+        },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccurrenceExecution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "finished_at": {
           "anyOf": [

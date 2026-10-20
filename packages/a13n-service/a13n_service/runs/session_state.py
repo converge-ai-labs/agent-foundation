@@ -20,7 +20,6 @@ from a13n_service.tenancy.access import Access, Authenticated, reauthenticate, w
 class Scope:
     workspace_id: str
     session_id: str
-    history_limit: int | None = None
 
 
 class ThreadState(BaseModel):
@@ -71,9 +70,7 @@ async def repeatable(session: AsyncSession) -> None:
     await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
 
 
-async def versions(
-    session: AsyncSession, sessions: Sequence[tuple[str, str]], selected_threads: Sequence[str] = ()
-) -> list[Version]:
+async def versions(session: AsyncSession, sessions: Sequence[tuple[str, str]]) -> list[Version]:
     """Every thread of the watched sessions, oldest first, with its version key and its current run's progress."""
     current, last = aliased(RunRow), aliased(RunRow)
     latest = (
@@ -98,9 +95,7 @@ async def versions(
         )
         .outerjoin(current, current.id == ThreadRow.current_run_id)
         .outerjoin(last, last.id == ThreadRow.last_run_id)
-        .where(
-            or_(tuple_(ThreadRow.workspace_id, ThreadRow.session_id).in_(sessions), ThreadRow.id.in_(selected_threads))
-        )
+        .where(tuple_(ThreadRow.workspace_id, ThreadRow.session_id).in_(sessions))
         .order_by(ThreadRow.created_at, ThreadRow.id)
     )
     return [

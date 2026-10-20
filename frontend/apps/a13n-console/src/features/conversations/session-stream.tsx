@@ -32,12 +32,10 @@ const Context = createContext<SessionStream | undefined>(undefined);
  */
 export function SessionStreamProvider({
   sessionId,
-  view,
   onEvent,
   children,
 }: {
   sessionId: string;
-  view?: "schedule";
   onEvent?: (event: SessionEvent) => void;
   children: ReactNode;
 }) {
@@ -56,7 +54,6 @@ export function SessionStreamProvider({
     async function follow() {
       for await (const event of client.streamSession(workspace.id, sessionId, {
         signal: controller.signal,
-        view,
       })) {
         received(event);
         switch (event.type) {
@@ -90,7 +87,7 @@ export function SessionStreamProvider({
       setConnection({ state: "closed", error });
     });
     return () => controller.abort();
-  }, [client, workspace.id, sessionId, view, cache, displays, generation]);
+  }, [client, workspace.id, sessionId, cache, displays, generation]);
   useEffect(() => () => displays.close(), [displays]);
   const value = useMemo(
     () => ({

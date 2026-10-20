@@ -10,7 +10,15 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.memories.schemas import MemoryMounts
 from a13n_service.runs.schedules.calendar import Calendar
-from a13n_service.runs.schemas import JsonPart, MessagePayload, RunOptions, TextPart, canonical_json
+from a13n_service.runs.schemas import (
+    EntryStatus,
+    JsonPart,
+    MessagePayload,
+    RunOptions,
+    RunStatus,
+    TextPart,
+    canonical_json,
+)
 
 type ScheduleState = Literal["paused", "enabled", "archived"]
 type OccurrenceStatus = Literal["pending", "submitted", "skipped", "failed", "cancelled"]
@@ -121,6 +129,20 @@ class OccurrenceSnapshot(_Model):
     utc_offset_seconds: int | None
 
 
+class InitialRun(_Model):
+    id: str
+    status: RunStatus
+
+
+class OccurrenceExecution(_Model):
+    """Current execution facts, independent of the immutable submission result and its version."""
+
+    initial_entry_status: EntryStatus | None
+    initial_run: InitialRun | None
+    has_unfinished_work: bool
+    observed_at: datetime
+
+
 class OccurrenceSummary(_Model):
     id: str
     schedule_id: str
@@ -141,6 +163,7 @@ class OccurrenceSummary(_Model):
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+    execution: OccurrenceExecution | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class Occurrence(OccurrenceSummary):
@@ -162,6 +185,7 @@ class OccurrenceQuery(_Model):
     created_after: AwareDatetime | None = None
     created_before: AwareDatetime | None = None
     unfinished: bool | None = None
+    include: Literal["execution"] | None = None
 
 
 class BusyOccurrence(_Model):

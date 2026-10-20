@@ -57,12 +57,16 @@ Schedule 按指定时间规则向 Agent 发送固定文本或 JSON。每次触�
 - 向 `/{id}/dispatch` POST 空对象，携带 `If-Match` 和 `Idempotency-Key`。202 表示待提交 Occurrence 已保存；重放返回原 Occurrence 和 200，即使它已经结束。
 - 通过 `/{id}/status` 读取当前进度，通过 `/{id}/occurrences` 分页读取触发记录，通过 `/{id}/occurrences/{occurrence_id}` 读取保存的调用快照。
 
+在触发记录的列表或详情查询中添加 `?include=execution`，可以在同一响应中获得当前执行状态。每条记录的 `execution` 包含 `initial_entry_status`、`initial_run`（ID 和状态，或 null）、`has_unfinished_work` 和 `observed_at`。不提供此参数时，响应不包含该字段。列表查询按整页批量读取这些状态；Console 使用此展开结果，不再逐条查询 entry 和 run。
+
+初始 run 是触发记录的第一条输入分配到的 run，后续 run 不会替换摘要中的初始 run。`has_unfinished_work` 包括关联子任务和等待中的 run；false 不代表执行成功。尚未提交输入的记录，其初始 entry 状态和 run 都为 null。执行状态变化时，触发记录仍可能保持相同版本和 `submitted` 状态。收到 thread 变化或重新连接后，应刷新展开的历史查询。完整输出继续通过原 run items 接口读取。
+
 完整筛选条件和字段见 API 参考。计划接口目前仅支持 HTTP；Composer 和 MCP 接入属于后续工作。
 
 ## 订阅状态和加载历史
 
-使用返回的 `stream_url`：`/api/v1/sessions/{session_id}/stream?view=schedule`。计划 Session 必须显式选择此视图。它在原有[会话输出协议](agents-and-runs.md#follow-a-session-stream)中增加 `schedule` 和 `occurrence` 状态帧。
+使用返回的 `stream_url`：`/api/v1/sessions/{session_id}/stream`，无需额外查询参数。计划 Session 在原有[会话输出协议](agents-and-runs.md#follow-a-session-stream)中增加 `schedule` 和 `occurrence` 状态帧。
 
-每次连接先读取计划当前状态、最近 20 条触发记录、待提交或未结束的触发记录、近期根 Thread 及所有活跃 Thread。`history_limit` 可设为 1–100。较早的已完成任务通过历史分页和原 Run items 接口按需加载，不会一次性全部加入事件流。
+每次连接先读取计划当前状态、触发记录摘要及 Session 中的所有 Thread，随后持续接收状态变化和实时输出。已完成的 Thread、子 Thread 和独立 Thread 都不会因时间较早而被排除。通过历史分页浏览触发记录，通过详情查询读取完整执行意图，通过原 Run items 接口读取已保存的输出。
 
 事件流同步当前状态，不是持久化状态变更日志，快速变化的中间状态可能被合并。重连时还应刷新当前历史页和选中的旧 Thread、Entry、Run 及输出。旧 Run 可能在断线期间完成，而已经提交的 Occurrence 不会随之变化。Console 会自动执行这些刷新。

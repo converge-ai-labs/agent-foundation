@@ -12,7 +12,7 @@ from a13n_service.runs.schedules import dispatch, queries
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.tenancy.tables import PrincipalRow
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 
 pytestmark = pytest.mark.anyio
 
@@ -47,11 +47,23 @@ async def trigger(service, schedule, runs_kit, key="manual"):  # type: ignore[no
     return response.json()
 
 
+async def observed_execution(service, schedule, occurrence_id):  # type: ignore[no-untyped-def]
+    response = await service.client.get(
+        f"{service.api}/schedules/{schedule['id']}/occurrences/{occurrence_id}", params={"include": "execution"}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["execution"]
+
+
 async def test_manual_replay_concurrent_processing_and_run_origin(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     schedule, _ = await schedule_for(service, scripted_model, runs_kit)
     item = await trigger(service, schedule, runs_kit)
     assert item["status"] == "pending" and item["thread_id"] is None
     assert item["dispatch_attempts"] == 0
+    assert "execution" not in item
+    pending = await observed_execution(service, schedule, item["id"])
+    assert pending["initial_entry_status"] is None and pending["initial_run"] is None
+    assert not pending["has_unfinished_work"]
     await asyncio.gather(*(dispatch.process(service.runtime, schedule["id"]) for _ in range(3)))
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
@@ -92,6 +104,9 @@ async def test_submitted_without_run_is_not_reposted_or_withdrawn(
     item = await trigger(service, schedule, runs_kit)
     monkeypatch.setattr(dispatch, "accept", AsyncMock(return_value=None))
     await dispatch.process(service.runtime, schedule["id"])
+    execution = await observed_execution(service, schedule, item["id"])
+    assert execution["initial_entry_status"] == "pending" and execution["initial_run"] is None
+    assert execution["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
         assert stored.status == "submitted" and stored.thread_id and stored.entry_id
@@ -114,6 +129,9 @@ async def test_entry_rejected_by_accept_stays_submitted(service, scripted_model,
     admission = AsyncMock()
     admission.accept.side_effect = ServiceError("forbidden", "Admission refused")
     await dispatch.process(replace(service.runtime, admission=admission), schedule["id"])
+    execution = await observed_execution(service, schedule, item["id"])
+    assert execution["initial_entry_status"] == "failed" and execution["initial_run"] is None
+    assert not execution["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
         assert stored.status == "submitted"
@@ -158,6 +176,9 @@ async def test_pause_cancels_pending_and_replay_survives_archive(service, script
     paused = await service.client.post(f"{url}/pause", json={}, headers=runs_kit.if_match(schedule))
     assert paused.status_code == 200
     await dispatch.process(service.runtime, schedule["id"])
+    execution = await observed_execution(service, schedule, item["id"])
+    assert execution["initial_entry_status"] is None and execution["initial_run"] is None
+    assert not execution["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
         assert stored.status == "cancelled" and stored.reason == "schedule_paused"
@@ -202,6 +223,129 @@ async def test_retry_after_and_attempt_limit(service, scripted_model, runs_kit, 
         assert stored.next_attempt_at is None
 
 
+@pytest.mark.parametrize("failed", [False, True])
+async def test_execution_summary_changes_without_changing_submission_version(
+    service, scripted_model, runs_kit, failed
+) -> None:  # type: ignore[no-untyped-def]
+    schedule, agent = await schedule_for(service, scripted_model, runs_kit)
+    item = await trigger(service, schedule, runs_kit)
+    await dispatch.process(service.runtime, schedule["id"])
+    url = f"{service.api}/schedules/{schedule['id']}/occurrences/{item['id']}"
+    receipt = (await service.client.get(url)).json()
+    assert receipt["status"] == "submitted" and "execution" not in receipt
+    before = await observed_execution(service, schedule, item["id"])
+    assert before["initial_entry_status"] == "assigned"
+    assert before["initial_run"]["status"] == "accepted" and before["has_unfinished_work"]
+    if failed:
+        admission = AsyncMock()
+        admission.proceed.side_effect = ServiceError("rate_limited", "Test execution budget exhausted")
+        await (await runs_kit.attempt(service, runtime=replace(service.runtime, admission=admission)))
+    else:
+        scripted_model.say("Report ready")
+        await (await runs_kit.attempt(service))
+    after = (await service.client.get(url, params={"include": "execution"})).json()
+    execution = after.pop("execution")
+    assert after == receipt
+    assert execution["initial_run"] == {
+        "id": before["initial_run"]["id"],
+        "status": "failed" if failed else "completed",
+    }
+    assert not execution["has_unfinished_work"]
+    assert execution["observed_at"] > before["observed_at"]
+    if not failed:
+        assert execution["initial_entry_status"] == "consumed"
+        # A later input starts another Run. The summary keeps the original Run and reports renewed work.
+        continued = await runs_kit.submit(service, receipt["thread_id"], runs_kit.message(agent, "Follow up"))
+        assert continued.status_code == 201, continued.text
+        current = await observed_execution(service, schedule, item["id"])
+        assert current["initial_run"] == execution["initial_run"] and current["has_unfinished_work"]
+
+
+async def test_execution_expansion_observes_one_snapshot_during_submission(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
+    await trigger(service, schedule, runs_kit)
+    selected, release = asyncio.Event(), asyncio.Event()
+    read = queries.execution_summaries
+
+    async def between_reads(*args, **kwargs):  # type: ignore[no-untyped-def]
+        selected.set()
+        await release.wait()
+        return await read(*args, **kwargs)
+
+    monkeypatch.setattr(queries, "execution_summaries", between_reads)
+    url = f"{service.api}/schedules/{schedule['id']}/occurrences"
+    request = asyncio.create_task(service.client.get(url, params={"include": "execution"}))
+    try:
+        async with asyncio.timeout(10):
+            await selected.wait()
+            await dispatch.process(service.runtime, schedule["id"])
+    finally:
+        release.set()
+        response = await request
+    assert response.status_code == 200, response.text
+    observed = response.json()["items"][0]
+    assert observed["status"] == "pending"
+    assert observed["execution"]["initial_entry_status"] is None
+    assert observed["execution"]["initial_run"] is None
+    current = (await service.client.get(url, params={"include": "execution"})).json()["items"][0]
+    assert current["status"] == "submitted" and current["execution"]["initial_run"]["status"] == "accepted"
+
+
+async def test_execution_history_batches_reads_and_preserves_pagination_and_scope(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
+    admission = AsyncMock()
+    admission.accept.side_effect = ServiceError("forbidden", "Test refusal before Run creation")
+    for index in range(5):
+        await trigger(service, schedule, runs_kit, key=f"history-{index}")
+        await dispatch.process(replace(service.runtime, admission=admission), schedule["id"])
+    url = f"{service.api}/schedules/{schedule['id']}/occurrences"
+    engine = service.runtime.storage.engine.sync_engine
+    statements = []
+
+    def capture(connection, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
+        if statement.startswith("SELECT"):
+            statements.append(statement)
+
+    async def counted(**params):  # type: ignore[no-untyped-def]
+        statements.clear()
+        event.listen(engine, "before_cursor_execute", capture)
+        try:
+            response = await service.client.get(url, params=params)
+        finally:
+            event.remove(engine, "before_cursor_execute", capture)
+        assert response.status_code == 200, response.text
+        return response.json(), list(statements)
+
+    plain, plain_sql = await counted(limit=5)
+    one, one_sql = await counted(limit=1, include="execution")
+    many, many_sql = await counted(limit=5, include="execution")
+    assert len(one_sql) == len(many_sql) == len(plain_sql) + 1
+    assert len(many["items"]) == 5
+    assert all("execution" not in item for item in plain["items"])
+    for item in many["items"]:
+        assert item["status"] == "submitted" and "snapshot" not in item
+        execution = item["execution"]
+        assert execution["initial_entry_status"] == "failed" and execution["initial_run"] is None
+        assert not execution["has_unfinished_work"]
+    # Projection does not change page membership or invalidate a cursor.
+    rest, _ = await counted(limit=5, cursor=one["next_cursor"])
+    assert [one["items"][0]["id"], *[item["id"] for item in rest["items"]]] == [item["id"] for item in plain["items"]]
+    assert (await service.client.get(url, params={"include": "unknown"})).status_code == 400
+    item_url = f"{url}/{one['items'][0]['id']}"
+    assert (await service.client.get(item_url, params={"include": "unknown"})).status_code == 400
+    other = await service.client.post(f"{service.organization}/workspaces", json={"name": "Other workspace"})
+    assert other.status_code == 201, other.text
+    for path in (url, item_url):
+        response = await service.client.get(
+            path, params={"include": "execution"}, headers={"x-workspace-id": other.json()["id"]}
+        )
+        assert response.status_code == 404
+
+
 async def test_children_outbox_waiting_and_forks_have_precise_ownership(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.infra.outbox import OutboxRow
 
@@ -237,6 +381,7 @@ async def test_children_outbox_waiting_and_forks_have_precise_ownership(service,
     )
     scripted_model.say("Delegated", to="Role: coordinator")
     await (await runs_kit.attempt(service))
+    assert (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         row = await session.get_one(ScheduleRow, schedule["id"])
         stored = await session.get_one(OccurrenceRow, item["id"])
@@ -274,6 +419,7 @@ async def test_children_outbox_waiting_and_forks_have_precise_ownership(service,
         headers=runs_kit.if_match(await runs_kit.get_thread(service, root.id)),
     )
     assert archived.status_code == 200, archived.text
+    assert not (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         assert not await queries.has_unfinished(session, await session.get_one(ScheduleRow, schedule["id"]))
 
@@ -299,6 +445,8 @@ async def test_waiting_and_old_thread_reactivation_block_next_submission(service
     await dispatch.process(service.runtime, schedule["id"])
     scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
     await (await runs_kit.attempt(service))
+    waiting = await observed_execution(service, schedule, item["id"])
+    assert waiting["initial_run"]["status"] == "waiting" and waiting["has_unfinished_work"]
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
         root = await session.get_one(ThreadRow, stored.thread_id)

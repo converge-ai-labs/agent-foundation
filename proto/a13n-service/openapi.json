@@ -6410,6 +6410,24 @@
         "maxItems": 32,
         "type": "array"
       },
+      "InitialRun": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "InitialRun",
+        "type": "object"
+      },
       "InstrumentationScope": {
         "description": "The instrumentation library that recorded the span.",
         "properties": {
@@ -10618,6 +10636,16 @@
             ],
             "title": "Entry Id"
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OccurrenceExecution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -10764,6 +10792,49 @@
         "title": "Occurrence",
         "type": "object"
       },
+      "OccurrenceExecution": {
+        "additionalProperties": false,
+        "description": "Current execution facts, independent of the immutable submission result and its version.",
+        "properties": {
+          "has_unfinished_work": {
+            "title": "Has Unfinished Work",
+            "type": "boolean"
+          },
+          "initial_entry_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntryStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "initial_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitialRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initial_entry_status",
+          "initial_run",
+          "has_unfinished_work",
+          "observed_at"
+        ],
+        "title": "OccurrenceExecution",
+        "type": "object"
+      },
       "OccurrencePage": {
         "additionalProperties": false,
         "properties": {
@@ -10885,6 +10956,16 @@
               }
             ],
             "title": "Entry Id"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OccurrenceExecution"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "finished_at": {
             "anyOf": [
@@ -34847,6 +34928,23 @@
             }
           },
           {
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "execution",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Include"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -34919,6 +35017,23 @@
             "schema": {
               "title": "Occurrence Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "execution",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Include"
             }
           },
           {
@@ -35677,7 +35792,7 @@
     },
     "/api/v1/sessions/{session_id}/stream": {
       "get": {
-        "description": "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes. Every connection starts from a snapshot.",
+        "description": "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.",
         "operationId": "session_stream",
         "parameters": [
           {
@@ -35687,35 +35802,6 @@
             "schema": {
               "title": "Session Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "const": "schedule",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "View"
-            }
-          },
-          {
-            "in": "query",
-            "name": "history_limit",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "History Limit",
-              "type": "integer"
             }
           },
           {

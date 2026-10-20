@@ -361,7 +361,7 @@ test("Session stream stops at a refusal or an invalid frame", async () => {
   await assert.rejects(deltas.next(), ProtocolError);
 });
 
-test("Schedule observation uses its explicit bounded view and parses both new frames", async () => {
+test("Session streams use the original URL and parse Schedule frames", async () => {
   const schedule = {
     session_id: "ses_one",
     schedule_id: "sch_one",
@@ -382,10 +382,7 @@ test("Schedule observation uses its explicit bounded view and parses both new fr
       return sse(frame("schedule", schedule) + frame("occurrence", occurrence));
     },
   });
-  const stream = client.streamSession("ws_one", "ses_one", {
-    view: "schedule",
-    historyLimit: 10,
-  });
+  const stream = client.streamSession("ws_one", "ses_one");
   await stream.next();
   await stream.next();
   assert.deepEqual((await stream.next()).value, {
@@ -397,9 +394,6 @@ test("Schedule observation uses its explicit bounded view and parses both new fr
     data: occurrence,
   });
   await stream.return();
-  assert.equal(
-    requests[0].url,
-    `${baseUrl}/api/v1/sessions/ses_one/stream?view=schedule&history_limit=10`,
-  );
+  assert.equal(requests[0].url, `${baseUrl}/api/v1/sessions/ses_one/stream`);
   client.close();
 });

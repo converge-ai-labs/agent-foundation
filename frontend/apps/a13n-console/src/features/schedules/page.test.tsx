@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { createClient, type Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import { fixtureRun } from "../conversations/transcript/fixture";
+import { fixtureThread } from "../conversations/transcript/fixture";
 import { ScheduleDetail } from "./detail";
 import { SchedulesPage } from "./list";
 
@@ -69,7 +69,7 @@ const schedule: Schema["Schedule"] = {
   created_at: at,
   updated_at: at,
   archived_at: null,
-  stream_url: "/api/v1/sessions/ses_one/stream?view=schedule",
+  stream_url: "/api/v1/sessions/ses_one/stream",
 };
 const occurrence = (
   overrides: Partial<Schema["OccurrenceSummary"]> = {},
@@ -249,11 +249,12 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
     const url = new URL(request.url),
       path = url.pathname;
     if (path.endsWith("/stream")) {
-      expect(url.searchParams.get("view")).toBe("schedule");
+      expect(url.search).toBe("");
       return live(request, controllers);
     }
     if (path.endsWith("/status")) return Response.json(status);
     if (path.endsWith("/occurrences")) {
+      expect(url.searchParams.get("include")).toBe("execution");
       const cursor = url.searchParams.get("cursor") ?? "";
       history.push(cursor);
       return Response.json({
@@ -265,6 +266,15 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
                 reason: null,
                 thread_id: "thr_old",
                 entry_id: "entry_old",
+                execution: {
+                  initial_entry_status: completed ? "consumed" : "assigned",
+                  initial_run: {
+                    id: "run_old",
+                    status: completed ? "completed" : "running",
+                  },
+                  has_unfinished_work: !completed,
+                  observed_at: completed ? "2026-10-20T00:01:00Z" : at,
+                },
               }),
             ]
           : [
@@ -275,31 +285,17 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
                 reason: null,
                 thread_id: "thr_failed",
                 entry_id: "entry_failed",
+                execution: {
+                  initial_entry_status: "failed",
+                  initial_run: null,
+                  has_unfinished_work: false,
+                  observed_at: at,
+                },
               }),
             ],
         next_cursor: cursor ? null : "older",
       });
     }
-    if (path.endsWith("entry_failed"))
-      return Response.json({
-        id: "entry_failed",
-        status: "failed",
-        assigned_run_id: null,
-      });
-    if (path.endsWith("entry_old"))
-      return Response.json({
-        id: "entry_old",
-        status: completed ? "consumed" : "assigned",
-        assigned_run_id: "run_old",
-      });
-    if (path.endsWith("run_old"))
-      return Response.json(
-        fixtureRun({
-          id: "run_old",
-          version: completed ? 2 : 1,
-          status: completed ? "completed" : "running",
-        }),
-      );
     expect(path).toBe("/api/v1/schedules/sch_one");
     return Response.json(schedule);
   });
@@ -339,6 +335,83 @@ it("allows another writer to stop a schedule without offering creator-only actio
   expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Run once" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Edit schedule" })).toBeNull();
+});
+
+it("preserves execution across occurrence frames and refreshes unchanged submission versions on thread changes", async () => {
+  const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const submitted = occurrence({
+    status: "submitted",
+    reason: null,
+    thread_id: "thr_one",
+    entry_id: "entry_one",
+  });
+  let reads = 0,
+    completed = false,
+    hold = false;
+  let resolveOld: ((response: Response) => void) | undefined;
+  function page() {
+    return {
+      items: [
+        {
+          ...submitted,
+          execution: {
+            initial_entry_status: completed ? "consumed" : "assigned",
+            initial_run: {
+              id: "run_one",
+              status: completed ? "completed" : "running",
+            },
+            has_unfinished_work: !completed,
+            observed_at: completed ? "2026-10-20T00:01:00Z" : at,
+          },
+        },
+      ],
+      next_cursor: null,
+    };
+  }
+  show("/workspace/ws_one/schedules/sch_one", (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/stream")) return live(request, controllers);
+    if (path.endsWith("/status")) return Response.json(status);
+    if (path.endsWith("/occurrences")) {
+      reads++;
+      if (hold)
+        return new Promise<Response>((resolve) => {
+          resolveOld = resolve;
+        });
+      return Response.json(page());
+    }
+    expect(path).toBe("/api/v1/schedules/sch_one");
+    return Response.json(schedule);
+  });
+  await screen.findByText("state.running");
+  await waitFor(() => expect(reads).toBeGreaterThan(1));
+  const oldPage = page();
+  await act(async () => {
+    hold = true;
+    controllers[0].enqueue(
+      new TextEncoder().encode(
+        `event: occurrence\ndata: ${JSON.stringify({ session_id: "ses_one", schedule_id: "sch_one", occurrence: submitted })}\n\n`,
+      ),
+    );
+  });
+  await waitFor(() => expect(resolveOld).toBeDefined());
+  expect(screen.getByText("state.running")).toBeTruthy();
+  await act(async () => {
+    completed = true;
+    hold = false;
+    controllers[0].enqueue(
+      new TextEncoder().encode(
+        `event: thread\ndata: ${JSON.stringify({ thread: fixtureThread({ id: "thr_one", session_id: "ses_one" }), current_run: null, last_run: null, entries: [] })}\n\n`,
+      ),
+    );
+  });
+  await screen.findByText("state.completed");
+  await act(async () => {
+    resolveOld?.(Response.json(oldPage));
+  });
+  expect(screen.queryByText("state.running")).toBeNull();
+  expect(screen.getByText("state.completed")).toBeTruthy();
+  expect(screen.getByText("state.submitted")).toBeTruthy();
 });
 
 it("keeps an open draft's original ETag after live configuration changes", async () => {

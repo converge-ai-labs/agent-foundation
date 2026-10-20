@@ -19,51 +19,35 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Section } from "../../shared/page";
-import { conversationQueries } from "../conversations/api";
 import { scheduleQueries, type Occurrence } from "./api";
 import styles from "./schedules.module.css";
 
 /** The submitted receipt is separate from the input's acceptance and its assigned Run. */
 function Execution({ occurrence }: { occurrence: Occurrence }) {
-  const client = useClient(),
-    { workspace } = useWorkspace(),
-    { t } = useTranslation();
-  const queries = conversationQueries(client, workspace.id);
-  const entry = useQuery({
-    ...queries.entry(occurrence.thread_id ?? "", occurrence.entry_id ?? ""),
-    enabled: !!occurrence.entry_id && !!occurrence.thread_id,
-  });
-  const run = useQuery({
-    ...queries.run(entry.data?.assigned_run_id ?? ""),
-    enabled: !!entry.data?.assigned_run_id,
-  });
+  const { t } = useTranslation();
+  const execution = occurrence.execution;
   if (!occurrence.entry_id)
     return <span className={styles.notice}>{t("No input submitted")}</span>;
+  if (!execution) return <span>{t("Loading…")}</span>;
   return (
     <div>
-      <ErrorNotice
-        error={entry.error ?? run.error}
-        retry={() => {
-          void entry.refetch();
-          if (entry.data?.assigned_run_id) void run.refetch();
-        }}
-      />
-      {entry.data ? (
+      {execution.initial_entry_status && (
         <div className={styles.actions}>
           <span className={styles.notice}>{t("Input")}</span>
-          <StatePill state={entry.data.status} />
+          <StatePill state={execution.initial_entry_status} />
         </div>
-      ) : (
-        !entry.error && <span>{t("Loading…")}</span>
       )}
-      {run.data && (
+      {execution.initial_run && (
         <div className={styles.actions}>
           <span className={styles.notice}>{t("Run")}</span>
-          <StatePill state={run.data.status} />
+          <StatePill state={execution.initial_run.status} />
         </div>
       )}
-      {entry.data && !entry.data.assigned_run_id && (
+      {!execution.initial_run && (
         <span className={styles.reason}>{t("No run created")}</span>
+      )}
+      {execution.has_unfinished_work && (
+        <span className={styles.reason}>{t("Pending or unfinished work")}</span>
       )}
     </div>
   );
