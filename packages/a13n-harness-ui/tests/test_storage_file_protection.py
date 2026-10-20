@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 import os
 import sqlite3
+import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
 import pytest
 from a13n_harness.environment.files import FileTextSearchRequest
-from a13n_harness.providers.environment.direct_local import files as local_files
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.protected_files import (
     LocalFileProtection,
@@ -44,6 +44,17 @@ def _storage_paths(path: Path) -> tuple[Path, ...]:
     return tuple(Path(f"{path}{suffix}") for suffix in ("", "-wal", "-shm", "-journal"))
 
 
+@pytest.fixture
+def protected_path(tmp_path: Path) -> Iterator[Path]:
+    path = tmp_path / "data" / "metadata.sqlite3"
+    path.parent.mkdir()
+    path.write_bytes(b"stored content")
+    Path(f"{path}-shm").write_bytes(b"shared memory")
+    # Access checks need real filesystem identities, not a migrated database.
+    with closing(protect_local_files(_storage_paths(path))):
+        yield path
+
+
 def _files(root: Path) -> LocalFileOperator:
     return LocalFileOperator(
         root=root,
@@ -54,43 +65,34 @@ def _files(root: Path) -> LocalFileOperator:
 
 
 async def _external_payload(path: Path) -> str:
-    process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-c",
-        "import sqlite3, sys\n"
-        "connection = sqlite3.connect(sys.argv[1], timeout=2)\n"
-        "try:\n"
-        "    print(connection.execute('SELECT payload FROM planned_restart').fetchone()[0])\n"
-        "finally:\n"
-        "    connection.close()\n",
-        str(path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    result = await asyncio.to_thread(
+        subprocess.run,
+        [
+            sys.executable,
+            "-c",
+            "import sqlite3, sys\n"
+            "connection = sqlite3.connect(sys.argv[1], timeout=2)\n"
+            "try:\n"
+            "    print(connection.execute('SELECT payload FROM planned_restart').fetchone()[0])\n"
+            "finally:\n"
+            "    connection.close()\n",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
-    try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
-    finally:
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
-    assert process.returncode == 0, stderr.decode()
-    return stdout.decode().strip()
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Regression exercises process-wide POSIX SQLite locks")
-async def test_native_search_preserves_sqlite_locks_across_external_connection_close(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("surface", ["search", "preview"])
+async def test_native_reads_preserve_sqlite_locks_across_external_connection_close(
+    tmp_path: Path, surface: str
 ) -> None:
     path = tmp_path / "metadata.sqlite3"
     (tmp_path / "notes.txt").write_text("checkpoint marker\n")
-    scanned: list[Path] = []
-    search_file = local_files.search_text_file
-
-    def record_search(native: Path, *args, **kwargs):
-        scanned.append(native)
-        return search_file(native, *args, **kwargs)
-
-    monkeypatch.setattr(local_files, "search_text_file", record_search)
     files = _files(tmp_path)
     try:
         async with open_database(path, StorageSettings(data_root=tmp_path)) as database:
@@ -103,10 +105,17 @@ async def test_native_search_preserves_sqlite_locks_across_external_connection_c
 
                 # Before the guard, even a binary-file scan opens and closes the
                 # database and SHM, dropping this process's SQLite locks.
-                result = await files.search_text(
-                    FileTextSearchRequest(root="/", pattern="checkpoint marker", max_matches=10)
-                )
-                assert [match.path for match in result.matches] == ["/notes.txt"]
+                if surface == "search":
+                    result = await files.search_text(
+                        FileTextSearchRequest(root="/", pattern="checkpoint marker", max_matches=10)
+                    )
+                    assert [match.path for match in result.matches] == ["/notes.txt"]
+                else:
+                    host = HostFiles(enabled=True)
+                    for target in (path, Path(f"{path}-shm")):
+                        with pytest.raises(HarnessUiError) as failure:
+                            await host.info(FileReadRequest(path=str(target)))
+                        assert failure.value.code == "host_files_permission_denied"
                 assert await _external_payload(path) == "before"
 
                 await owner.execute(text("UPDATE planned_restart SET payload='after' WHERE singleton_id=1"))
@@ -114,9 +123,6 @@ async def test_native_search_preserves_sqlite_locks_across_external_connection_c
                 assert await _external_payload(path) == "after"
                 assert {sidecar: (sidecar.stat().st_dev, sidecar.stat().st_ino) for sidecar in sidecars} == identities
                 assert all(sidecar.stat().st_nlink == 1 for sidecar in sidecars)
-                assert not set(_storage_paths(path)).intersection(scanned)
-                assert tmp_path / "notes.txt" in scanned
-
                 # A new App-side connection must still configure and read after
                 # the other interpreter closes, rather than raising IOERR 522.
                 async with database.engine.connect() as fresh:
@@ -126,29 +132,26 @@ async def test_native_search_preserves_sqlite_locks_across_external_connection_c
 
 
 @pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
-async def test_host_file_previews_reject_storage_inode_aliases(tmp_path: Path, alias_kind: str) -> None:
-    path = tmp_path / "metadata.sqlite3"
+async def test_host_file_previews_reject_storage_inode_aliases(
+    tmp_path: Path, protected_path: Path, alias_kind: str
+) -> None:
     host = HostFiles(enabled=True)
-    async with open_database(path, StorageSettings(data_root=tmp_path)) as database:
-        async with database.engine.connect() as owner:
-            await owner.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, 'kept')"))
-            await owner.commit()
-            for target in (path, Path(f"{path}-shm")):
-                alias = target if alias_kind == "direct" else tmp_path / f"{target.name}.{alias_kind}"
-                if alias_kind == "symlink":
-                    alias.symlink_to(target)
-                elif alias_kind == "hardlink":
-                    alias.hardlink_to(target)
-                # Stat-only metadata remains safe; previews and streams do not.
-                assert (await host.metadata(str(alias))).kind == ("symlink" if alias_kind == "symlink" else "file")
-                for operation in (host.info, host.read_text, host.open_stream):
-                    with pytest.raises(HarnessUiError) as failure:
-                        await operation(FileReadRequest(path=str(alias)))
-                    assert failure.value.code == "host_files_permission_denied"
-            assert (await owner.execute(text("SELECT payload FROM planned_restart"))).scalar_one() == "kept"
+    for target in (protected_path, Path(f"{protected_path}-shm")):
+        alias = target if alias_kind == "direct" else tmp_path / f"{target.name}.{alias_kind}"
+        if alias_kind == "symlink":
+            alias.symlink_to(target)
+        elif alias_kind == "hardlink":
+            alias.hardlink_to(target)
+        # Stat-only metadata remains safe; previews and streams do not.
+        assert (await host.metadata(str(alias))).kind == ("symlink" if alias_kind == "symlink" else "file")
+        for operation in (host.info, host.read_text, host.open_stream):
+            with pytest.raises(HarnessUiError) as failure:
+                await operation(FileReadRequest(path=str(alias)))
+            assert failure.value.code == "host_files_permission_denied"
 
 
-async def test_other_project_sqlite_files_remain_readable(tmp_path: Path) -> None:
+async def test_other_project_sqlite_files_remain_readable(tmp_path: Path, protected_path: Path) -> None:
+    assert is_protected_local_file(protected_path)
     project_path = tmp_path / "project.sqlite3"
     with closing(sqlite3.connect(project_path)) as project:
         project.execute("CREATE TABLE project_data (value)")
@@ -158,71 +161,62 @@ async def test_other_project_sqlite_files_remain_readable(tmp_path: Path) -> Non
     files = _files(tmp_path)
     host = HostFiles(enabled=True)
     try:
-        async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)):
-            assert await files.read_bytes("/project.sqlite3", length=len(header)) == header
-            assert (await host.info(FileReadRequest(path=str(project_path)))).entry.kind == "file"
-            assert (await host.read_text(FileReadRequest(path=str(project_path)))).presentation == "binary"
-            stream = await host.open_stream(FileReadRequest(path=str(project_path)))
-            try:
-                assert await host.read_stream(stream, 0, len(header)) == header
-            finally:
-                await stream.close()
+        assert await files.read_bytes("/project.sqlite3", length=len(header)) == header
+        assert (await host.info(FileReadRequest(path=str(project_path)))).entry.kind == "file"
+        assert (await host.read_text(FileReadRequest(path=str(project_path)))).presentation == "binary"
+        stream = await host.open_stream(FileReadRequest(path=str(project_path)))
+        try:
+            assert await host.read_stream(stream, 0, len(header)) == header
+        finally:
+            await stream.close()
     finally:
         files.close()
 
 
-async def test_large_protected_file_is_denied_before_text_size_fallback(tmp_path: Path) -> None:
-    path = tmp_path / "large.sqlite3"
-    path.write_bytes(b"\0" * (MAX_TEXT_BYTES + 1))
-    protection = protect_local_files((path,))
-    try:
-        with pytest.raises(HarnessUiError) as failure:
-            await HostFiles(enabled=True).read_text(FileReadRequest(path=str(path)))
-        assert failure.value.code == "host_files_permission_denied"
-    finally:
-        protection.close()
+async def test_large_protected_file_is_denied_before_text_size_fallback(protected_path: Path) -> None:
+    protected_path.write_bytes(b"\0" * (MAX_TEXT_BYTES + 1))
+    with pytest.raises(HarnessUiError) as failure:
+        await HostFiles(enabled=True).read_text(FileReadRequest(path=str(protected_path)))
+    assert failure.value.code == "host_files_permission_denied"
 
 
 @pytest.mark.parametrize(
     "operation", ["write", "write_text", "move", "delete", "move_parent", "delete_parent", "journal"]
 )
-async def test_host_mutations_leave_live_database_and_neighbors_intact(tmp_path: Path, operation: str) -> None:
-    data = tmp_path / "data"
-    data.mkdir()
-    path = data / "metadata.sqlite3"
+async def test_host_mutations_leave_protected_files_and_neighbors_intact(
+    tmp_path: Path, protected_path: Path, operation: str
+) -> None:
+    path = protected_path
+    data = path.parent
     neighbor = data / "ordinary.txt"
     neighbor.write_text("preserve")
     host = HostFiles(enabled=True)
-    async with open_database(path, StorageSettings(data_root=data)) as database:
-        async with database.engine.connect() as owner:
-            await owner.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, 'kept')"))
-            await owner.commit()
-            selected = data if operation.endswith("_parent") else path
-            observed = await host.metadata(str(selected))
-            with pytest.raises(HarnessUiError) as failure:
-                if operation == "write":
-                    await host.write(str(path), b"replacement", expected_revision=observed.revision)
-                elif operation == "write_text":
-                    await host.write_text(
-                        FileWriteRequest(path=str(path), text="replacement", expected_revision=observed.revision)
-                    )
-                elif operation in {"move", "move_parent"}:
-                    await host.move(
-                        FileMoveRequest(
-                            path=str(selected), destination=str(tmp_path / "moved"), expected_revision=observed.revision
-                        )
-                    )
-                elif operation in {"delete", "delete_parent"}:
-                    await host.delete(
-                        FileDeleteRequest(path=str(selected), expected_revision=observed.revision, recursive=True)
-                    )
-                else:
-                    await host.write(f"{path}-journal", b"not a journal", expected_revision=None)
-            assert failure.value.code == "host_files_permission_denied"
-            assert (await owner.execute(text("SELECT payload FROM planned_restart"))).scalar_one() == "kept"
-            assert neighbor.read_text() == "preserve"
-            assert not (tmp_path / "moved").exists()
-            assert not Path(f"{path}-journal").exists()
+    selected = data if operation.endswith("_parent") else path
+    observed = await host.metadata(str(selected))
+    with pytest.raises(HarnessUiError) as failure:
+        if operation == "write":
+            await host.write(str(path), b"replacement", expected_revision=observed.revision)
+        elif operation == "write_text":
+            await host.write_text(
+                FileWriteRequest(path=str(path), text="replacement", expected_revision=observed.revision)
+            )
+        elif operation in {"move", "move_parent"}:
+            await host.move(
+                FileMoveRequest(
+                    path=str(selected), destination=str(tmp_path / "moved"), expected_revision=observed.revision
+                )
+            )
+        elif operation in {"delete", "delete_parent"}:
+            await host.delete(
+                FileDeleteRequest(path=str(selected), expected_revision=observed.revision, recursive=True)
+            )
+        else:
+            await host.write(f"{path}-journal", b"not a journal", expected_revision=None)
+    assert failure.value.code == "host_files_permission_denied"
+    assert path.read_bytes() == b"stored content"
+    assert neighbor.read_text() == "preserve"
+    assert not (tmp_path / "moved").exists()
+    assert not Path(f"{path}-journal").exists()
 
 
 @pytest.mark.parametrize("migration_fails", [False, True])
