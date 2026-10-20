@@ -30,6 +30,19 @@ Agents with the `assets` toolset enabled can publish a file from their environme
 
 A subscription delivers run lifecycle events of a workspace to an HTTPS endpoint. Managing subscriptions and reading their deliveries requires workspace `admin`.
 
+### Manage in Console
+
+1. Open the workspace's **Settings → Webhooks** and select **Add Webhook**.
+2. Enter a name and endpoint URL. Select run or attempt events. **Common outcomes** selects `run.waiting`, `run.completed`, `run.failed` and `run.cancelled`.
+3. Optionally limit notifications to an agent, session or thread. All specified conditions must match.
+4. Select **Create Webhook**. Save the signing secret in your receiving application before closing the dialog. The secret is shown only once.
+
+Open a Webhook to inspect **Deliveries** or its **Configuration**. The delivery details show the saved URL, event payload, attempt count and last error. **Retry delivery** queues an eligible failed delivery with its original ID, URL, payload and secret. Refresh the list to check the result. A queued retry does not confirm receipt.
+
+Use **Edit** to change the endpoint, events, conditions or signing secret. Leave the secret field empty to keep the current secret. Configuration also offers enable, disable and delete. These changes affect future notifications; already queued deliveries continue with their saved configuration. If another administrator changes a Webhook while you edit, load the current version and review your preserved edits before saving.
+
+### Create through the API
+
 ```sh
 curl -X POST "$A13N_URL/api/v1/subscriptions" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \

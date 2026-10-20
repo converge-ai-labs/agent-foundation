@@ -324,6 +324,10 @@ function AppContent() {
                         element={<WorkspaceSettings />}
                       />
                       <Route
+                        path="settings/webhooks/:subscriptionId"
+                        element={<WorkspaceSettings />}
+                      />
+                      <Route
                         path="settings/:section?"
                         element={<WorkspaceSettings />}
                       />

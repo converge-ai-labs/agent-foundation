@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 const variants: Record<string, StatusPillVariant> = {
   active: "success",
   completed: "success",
+  delivered: "success",
+  dead: "danger",
   enabled: "success",
   error: "danger",
   failed: "danger",
