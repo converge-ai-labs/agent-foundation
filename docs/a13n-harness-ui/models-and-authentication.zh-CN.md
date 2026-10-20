@@ -415,11 +415,14 @@ Harness UI 在配置和已保存快照中接受旧名称 `context_window`。新�
 model_characteristics:
   image_input:
     support_gif: false
-    max_images: 10
+    max_images: 20
+    image_retention_ratio: 0.6
     max_image_bytes: 5242880
 ```
 
-完整的七个字段及默认值见共享的[图片输入策略参考](../a13n-harness/models.md#image-input-policy)，包括尺寸与切分控制。字节预算按**单张图片的 Base64 编码大小**计算，不是原始文件大小或整个请求的大小。对象中省略的字段保留原生默认值。GIF 支持是显式声明的策略，不会自动探测模型。
+这个示例在首次超限时保留最新的 12 张图片，随后允许数量增长到 20，再进行下一次批量回收。`image_retention_ratio` 表示保留比例，不是移除比例；设为 `1` 时仅移除超限的图片。默认上限 20 是针对请求大小的保守折中，可根据端点能力调高。
+
+完整字段及默认值见共享的[图片输入策略参考](../a13n-harness/models.md#image-input-policy)，包括尺寸与切分控制。字节预算按**单张图片的 Base64 编码大小**计算，不是原始文件大小或整个请求的大小。对象中省略的字段保留原生默认值。GIF 支持是显式声明的策略，不会自动探测模型。
 
 主模型、独立子 agent 的模型与图片理解模型各自使用自己的策略。Run 捕获会冻结完整策略；即使之后修改模型文件，恢复仍使用捕获的值。旧捕获保留原有序列化结果，不会被改写。
 

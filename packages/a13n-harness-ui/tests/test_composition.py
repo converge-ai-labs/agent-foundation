@@ -1743,7 +1743,7 @@ async def test_run_configuration_is_captured_for_root_and_children(tmp_path: Pat
     assert root.model_resolver.configuration == child.model_resolver.configuration == captured.run_configuration
 
 
-@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3}])
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3, "image_retention_ratio": 0.75}])
 async def test_image_input_policy_is_captured_per_model_and_reconstructed(tmp_path, policy):
     import yaml
     from a13n_harness import ImageInputPolicy

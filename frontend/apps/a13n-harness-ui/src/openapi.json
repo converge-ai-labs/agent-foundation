@@ -12901,8 +12901,16 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Max Images",
-            "description": "Keep the newest images; zero removes all image input.",
+            "description": "Maximum retained images; zero removes all image input.",
             "default": 20
+          },
+          "image_retention_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Image Retention Ratio",
+            "description": "Fraction of max_images retained at the first overflow; one evicts only the excess images.",
+            "default": 0.6
           },
           "support_gif": {
             "type": "boolean",

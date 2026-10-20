@@ -301,7 +301,7 @@ def test_copilot_recipe_and_terminal_use_shared_device_only_declaration():
     assert wizard.selection("/tmp")["model"]["authentication"] == {"kind": "copilot_subscription"}
 
 
-@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 4}])
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 4, "image_retention_ratio": 0.75}])
 def test_recipe_document_preserves_image_input_policy(policy):
     from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
 

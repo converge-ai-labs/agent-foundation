@@ -196,15 +196,18 @@ When selected, `HandoffCapability()` derives its summarize reminder at 65%. `Com
 
 `HarnessModelCharacteristics.image_input` uses the shared frozen `ImageInputPolicy`, available from `a13n_harness`. It controls request preparation for that selected model only; a parent Agent's model, the context budgets, and native `ModelSettings` do not change it. Omission enables the default policy; a partial object uses defaults for unspecified members; explicit `null` disables automatic preparation. An explicit `ImageFilterCapability` keeps its authored policy without a duplicate automatic instance.
 
-| Parameter                | Default   | Meaning                                                               |
-| ------------------------ | --------- | --------------------------------------------------------------------- |
-| `support_gif`            | `true`    | Allow binary GIF input; `false` replaces it with explanatory text.    |
-| `max_images`             | `20`      | Keep the newest images across the request; `0` removes all images.    |
-| `max_image_bytes`        | `5242880` | Base64-encoded bytes **per image**; `0` disables this byte limit.     |
-| `max_image_dimension`    | `8000`    | Maximum image axis in pixels; `0` disables this dimension limit.      |
-| `split_large_images`     | `true`    | Split tall static images into full-width segments before compression. |
-| `image_split_max_height` | `4096`    | Positive segment height in pixels.                                    |
-| `image_split_overlap`    | `50`      | Nonnegative overlap, strictly smaller than the segment height.        |
+| Parameter                | Default   | Meaning                                                                            |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------- |
+| `support_gif`            | `true`    | Allow binary GIF input; `false` replaces it with explanatory text.                 |
+| `max_images`             | `20`      | Maximum retained images across the request; `0` removes all images.                |
+| `image_retention_ratio`  | `0.6`     | Fraction retained at first overflow, rounded up; greater than `0` and at most `1`. |
+| `max_image_bytes`        | `5242880` | Base64-encoded bytes **per image**; `0` disables this byte limit.                  |
+| `max_image_dimension`    | `8000`    | Maximum image axis in pixels; `0` disables this dimension limit.                   |
+| `split_large_images`     | `true`    | Split tall static images into full-width segments before compression.              |
+| `image_split_max_height` | `4096`    | Positive segment height in pixels.                                                 |
+| `image_split_overlap`    | `50`      | Nonnegative overlap, strictly smaller than the segment height.                     |
+
+The default count of 20 is a conservative request-size compromise, not a provider's image limit. When the 21st image arrives, the default policy retains the newest 12 images. The retained window then grows to 20 before the next batch is removed. Earlier replacement text stays unchanged between batches, reducing repeated prompt-prefix changes. Set `image_retention_ratio: 1` to retain the newest `max_images` on every request instead. Counts apply after splitting, and image count alone does not guarantee that the whole request fits an endpoint's byte limit.
 
 The default byte limit is 5 MiB (`5 * 1024 * 1024`), not original-file size or a total request budget. Hosts store exact bytes even when an authoring form displays MiB. No model-name guessing selects GIF support or limits. Default-valued policies are omitted from serialization so legacy model captures retain their canonical bytes; explicit `null` is retained. See [request-only image preparation](context.md#filters) for transformation and history-preservation behavior.
 

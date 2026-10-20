@@ -645,7 +645,7 @@ async def test_image_policy_rejects_invalid_limits(configuration: dict[str, int]
 
 
 async def test_image_policy_has_validated_native_spec_round_trip_and_schema() -> None:
-    policy = ImageInputPolicy(max_images=3, split_large_images=False)
+    policy = ImageInputPolicy(max_images=3, split_large_images=False, image_retention_ratio=0.75)
     characteristics = HarnessModelCharacteristics(image_input=policy)
     spec = AgentSpec(model_characteristics=characteristics)
     assert AgentSpec.model_validate_json(spec.model_dump_json()).model_characteristics == characteristics
@@ -659,6 +659,7 @@ async def test_image_policy_has_validated_native_spec_round_trip_and_schema() ->
         {"type": "null"},
     ]
     assert schema["$defs"]["ImageInputPolicy"]["properties"]["max_image_bytes"]["default"] == 5 * 1024 * 1024
+    assert schema["$defs"]["ImageInputPolicy"]["properties"]["image_retention_ratio"]["default"] == 0.6
 
 
 async def test_encoder_failure_becomes_request_only_explanation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -877,3 +878,149 @@ def test_image_input_object_uses_native_defaults_and_is_frozen() -> None:
         policy.max_images = 1
     with pytest.raises(ValueError, match="frozen"):
         characteristics.image_input = None
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_batch_eviction_keeps_prefix_stable_across_reconstructed_runs(streaming: bool) -> None:
+    seen: list[list[ModelMessage]] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        seen.append(deepcopy(messages))
+        yield "done"
+
+    history: list[ModelMessage] = []
+    sources = []
+    data = _png((12, 12))
+    for count in range(1, 32):
+        native = (
+            BinaryImage(data, media_type="image/png", identifier=f"image-{count}")
+            if count % 2
+            else ImageUrl(f"https://example.com/{count}.png", identifier=f"image-{count}")
+        )
+        sources.append(native)
+
+        # Reconstructing the capability must reproduce the same eviction boundary.
+        def respond_sync(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            del info
+            seen.append(deepcopy(messages))
+            return ModelResponse(parts=[TextPart("done")])
+
+        agent = Agent(FunctionModel(respond_sync, stream_function=respond), capabilities=[ImageFilterCapability()])
+        if streaming:
+            async with agent.run_stream([native], message_history=history) as result:
+                await result.get_output()
+                history = result.all_messages()
+        else:
+            result = await agent.run([native], message_history=history)
+            history = result.all_messages()
+        removed = 0 if count <= 20 else (9 if count <= 29 else 18)
+        assert [item.identifier for item in _images(seen[-1])] == [
+            f"image-{index}" for index in range(removed + 1, count + 1)
+        ]
+        assert _images(history) == sources
+        if count > 1 and count not in {21, 30}:
+            assert seen[-1][: len(seen[-2])] == seen[-2]
+
+
+@pytest.mark.parametrize(
+    "maximum,ratio,count,expected",
+    [
+        (20, 0.6, 20, 20),
+        (20, 0.6, 21, 12),
+        (20, 0.6, 22, 13),
+        (20, 0.6, 29, 20),
+        (20, 0.6, 30, 12),
+        (20, 0.6, 100, 19),
+        (20, 1.0, 21, 20),
+        (20, 1.0, 100, 20),
+        (20, 0.5, 21, 10),
+        (20, 0.75, 21, 15),
+        (3, 0.6, 4, 2),
+        (2, 0.6, 3, 2),
+        (1, 0.6, 2, 1),
+        (20, 0.01, 21, 1),
+        (0, 0.6, 4, 0),
+    ],
+)
+def test_configured_batch_retention(maximum: int, ratio: float, count: int, expected: int) -> None:
+    images = [ImageUrl(f"https://example.com/{index}.png") for index in range(count)]
+    history = [ModelRequest(parts=[UserPromptPart(images)])]
+    policy = ImageInputPolicy(max_images=maximum, image_retention_ratio=ratio)
+    projected = _project_images(history, policy)
+    actual = _images(projected if projected is not None else history)
+    assert actual == (images[-expected:] if expected else [])
+    assert _images(history) == images
+
+
+def test_batch_count_includes_segments_and_urls_but_not_corrupt_images() -> None:
+    old = ImageUrl("https://example.com/old.png")
+    tall = BinaryImage(_png((12, 2600)), media_type="image/png", identifier="tall")
+    last = ImageUrl("https://example.com/last.png")
+    history = [
+        ModelRequest(parts=[UserPromptPart([old, BinaryContent(b"broken", media_type="image/png")])]),
+        ModelRequest(parts=[ToolReturnPart("view", tall, tool_call_id="view-1"), UserPromptPart([last])]),
+    ]
+    policy = ImageInputPolicy(max_images=4, image_split_max_height=1000, image_split_overlap=100)
+    projected = _project_images(history, policy)
+    assert projected is not None
+    assert [image.identifier for image in _images(projected)] == ["tall-segment-2", "tall-segment-3", last.identifier]
+    assert "broken or corrupted" in str(projected)
+    # Compacted/replaced history establishes a new count, not a stale cursor.
+    compacted = [ModelRequest(parts=[UserPromptPart([last])])]
+    assert _project_images(compacted, policy) is None
+
+
+@pytest.mark.parametrize("ratio", [0, -0.1, 1.01, float("nan"), float("inf")])
+def test_image_policy_rejects_invalid_retention_ratio(ratio: float) -> None:
+    with pytest.raises(ValueError):
+        ImageInputPolicy(image_retention_ratio=ratio)
+
+
+def test_image_projection_does_not_deepcopy_unrelated_tool_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {"rows": [{"values": list(range(100))} for _ in range(100)]}
+    native = BinaryImage(_png((12, 12)), media_type="image/png", vendor_metadata={"custom": {"detail": "source"}})
+    history = [
+        ModelRequest(parts=[ToolReturnPart("query", payload, tool_call_id="query-1")]),
+        ModelRequest(parts=[UserPromptPart([native])]),
+    ]
+    copied = []
+
+    def copy_image_only(value):
+        assert isinstance(value, (BinaryContent, ImageUrl))
+        copied.append(value)
+        return deepcopy(value)
+
+    monkeypatch.setattr(image_module, "deepcopy", copy_image_only)
+    projected = _project_images(history, ImageInputPolicy())
+    assert projected is not None and copied == [native]
+    assert projected[0] is not history[0]
+    assert projected[0].parts[0] is not history[0].parts[0]
+    assert projected[0].parts[0].content is payload
+    image = _images(projected)[0]
+    assert image is not native and image.data is native.data
+    image.vendor_metadata["custom"]["detail"] = "request-only"
+    assert native.vendor_metadata == {"custom": {"detail": "source"}}
+
+
+def test_image_projection_detaches_all_envelopes_for_provider_repair() -> None:
+    from a13n_harness.models.self_healing import _drop_inline_media, strip_provider_native_state
+
+    native = BinaryImage(_png((12, 12)), media_type="image/png")
+    history = [
+        ModelRequest(parts=[UserPromptPart([native])]),
+        ModelResponse(
+            parts=[ThinkingPart("reason", id="rs_old"), TextPart("answer", id="msg_old", provider_name="openai")],
+            provider_name="openai",
+            provider_response_id="resp_old",
+        ),
+        ModelRequest(parts=[ToolReturnPart("view", native, tool_call_id="view-1")]),
+    ]
+    history.append(ModelRequest(parts=[UserPromptPart([BinaryContent(b"video", media_type="video/mp4")])]))
+    original = deepcopy(history)
+    projected = _project_images(history, ImageInputPolicy())
+    assert projected is not None
+    assert strip_provider_native_state(projected) > 0
+    assert _drop_inline_media(projected) == 3
+    assert _images(projected) == []
+    assert history == original

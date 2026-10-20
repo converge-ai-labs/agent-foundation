@@ -6,6 +6,7 @@ import io
 from contextlib import ExitStack
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
+from math import ceil
 from typing import Any
 
 import anyio.to_thread
@@ -64,18 +65,18 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
 def _project_images(messages: list[ModelMessage], configuration: ImageInputPolicy) -> list[ModelMessage] | None:
     if not _needs_image_projection(messages, configuration):
         return None
-    # Bytes are immutable and shared by deepcopy; mutable native metadata and
-    # message envelopes remain detached from canonical history and original inputs.
-    projected = deepcopy(list(messages))
-    changed = False
-    has_inline_image = False
+    # Recovery assigns message/part fields, so detach every envelope, including
+    # response parts. Unrelated tool JSON and other read-only payloads are shared:
+    # recursively copying the full history on every screenshot is unnecessary.
+    projected = [replace(message, parts=[copy(part) for part in message.parts]) for message in messages]
+    image_count = 0
     for message in projected:
         if not isinstance(message, ModelRequest):
             continue
         parts = list(message.parts)
         for index, part in enumerate(parts):
             items = _image_content_items(part)
-            if items is None:
+            if items is None or not any(_is_image(item) for item in items):
                 continue
             assert isinstance(part, (UserPromptPart, ToolReturnPart))
             annotated = prompt_content(message, index) if isinstance(part, UserPromptPart) else None
@@ -83,11 +84,12 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
             prepared_annotations: list[ContentItem] = []
             for item_index, item in enumerate(items):
                 if isinstance(item, BinaryContent) and item.is_image:
-                    has_inline_image = True
-                    replacements = _prepare_binary_image(item, configuration)
-                    changed = changed or len(replacements) != 1 or replacements[0] is not item
+                    # Copy only native image envelopes/metadata; immutable bytes
+                    # stay shared. Preparation and adapters cannot modify originals.
+                    replacements = _prepare_binary_image(deepcopy(item), configuration)
                 else:
-                    replacements = [item]
+                    replacements = [deepcopy(item) if isinstance(item, ImageUrl) else item]
+                image_count += sum(_is_image(replacement) for replacement in replacements)
                 prepared.extend(replacements)
                 if annotated is not None:
                     prepared_annotations.extend(
@@ -99,6 +101,7 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
                 message.metadata = annotate_prompt(message, index, prepared_annotations).metadata
         message.parts = parts
 
+    retained_count = _retained_image_count(image_count, configuration)
     count = 0
     for message in reversed(projected):
         if not isinstance(message, ModelRequest):
@@ -112,27 +115,39 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
             assert isinstance(part, (UserPromptPart, ToolReturnPart))
             for item_index in range(len(items) - 1, -1, -1):
                 item = items[item_index]
-                if not isinstance(item, ImageUrl) and not (isinstance(item, BinaryContent) and item.is_image):
+                if not _is_image(item):
                     continue
                 count += 1
-                if count > configuration.max_images:
+                if count > retained_count:
                     items[item_index] = (
                         "<system-reminder>This image was removed because it exceeds the maximum allowed images "
                         f"(max_images={configuration.max_images}).</system-reminder>"
                     )
-                    changed = True
                 elif (
                     isinstance(item, BinaryContent) and item.media_type == "image/gif" and not configuration.support_gif
                 ):
                     # Keep reference ordering: GIF policy follows image counting.
                     items[item_index] = _REMOVED_GIF
-                    changed = True
             parts[index] = replace(part, content=_restore_shape(part.content, items))
         message.parts = parts
-    # Exact-error recovery mutates request envelopes even when size/format
-    # preparation left the inline image unchanged. Never share those envelopes
-    # with canonical history or the caller's original input.
-    return projected if changed or has_inline_image else None
+    return projected
+
+
+def _is_image(item: object) -> bool:
+    return isinstance(item, ImageUrl) or (isinstance(item, BinaryContent) and item.is_image)
+
+
+def _retained_image_count(count: int, configuration: ImageInputPolicy) -> int:
+    maximum = configuration.max_images
+    if maximum == 0 or count <= maximum:
+        return min(count, maximum)
+    target = ceil(maximum * configuration.image_retention_ratio)
+    batch = maximum - target + 1
+    # Quantize the oldest-image boundary from the complete prepared history.
+    # This reproduces it after reconstruction without persisting a cursor or
+    # reintroducing previously removed images on the next request.
+    batches = (count - maximum + batch - 1) // batch
+    return count - batches * batch
 
 
 def _needs_image_projection(messages: list[ModelMessage], configuration: ImageInputPolicy) -> bool:

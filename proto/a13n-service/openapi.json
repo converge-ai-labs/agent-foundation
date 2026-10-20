@@ -6254,6 +6254,14 @@
         "additionalProperties": false,
         "description": "Preparation limits for one model's image input, not native ModelSettings.",
         "properties": {
+          "image_retention_ratio": {
+            "default": 0.6,
+            "description": "Fraction of max_images retained at the first overflow; one evicts only the excess images.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Image Retention Ratio",
+            "type": "number"
+          },
           "image_split_max_height": {
             "default": 4096,
             "exclusiveMinimum": 0.0,
@@ -6282,7 +6290,7 @@
           },
           "max_images": {
             "default": 20,
-            "description": "Keep the newest images; zero removes all image input.",
+            "description": "Maximum retained images; zero removes all image input.",
             "minimum": 0.0,
             "title": "Max Images",
             "type": "integer"

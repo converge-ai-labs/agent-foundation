@@ -4334,10 +4334,16 @@ export interface components {
             max_image_dimension?: number;
             /**
              * Max Images
-             * @description Keep the newest images; zero removes all image input.
+             * @description Maximum retained images; zero removes all image input.
              * @default 20
              */
             max_images?: number;
+            /**
+             * Image Retention Ratio
+             * @description Fraction of max_images retained at the first overflow; one evicts only the excess images.
+             * @default 0.6
+             */
+            image_retention_ratio?: number;
             /**
              * Support Gif
              * @default true

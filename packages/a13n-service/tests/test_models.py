@@ -584,7 +584,10 @@ async def test_native_model_settings_roundtrip_and_api_validation(service) -> No
     assert switched.status_code == 400  # Responses summary does not silently survive an API change.
 
 
-@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 4, "max_image_bytes": 1234567}])
+@pytest.mark.parametrize(
+    "policy",
+    [None, {}, {"support_gif": False, "max_images": 4, "max_image_bytes": 1234567, "image_retention_ratio": 0.75}],
+)
 async def test_model_api_round_trips_shared_image_input_policy(service, policy):
     account = await provider(service)
     created = await post(service, "/models", manual(account["id"], "images", characteristics={"image_input": policy}))
