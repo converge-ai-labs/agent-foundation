@@ -15,6 +15,7 @@ import shared from "../../../shared/shared.module.css";
 import { webhookKeys, type Subscription } from "./api";
 import {
   rebaseDraft,
+  scheduleOutcomeKinds,
   subscriptionBody,
   subscriptionDraft,
   subscriptionPatch,
@@ -24,12 +25,14 @@ import styles from "./webhooks.module.css";
 
 export function WebhookEditor({
   subscription,
+  scheduleId,
   open: controlledOpen,
   onOpenChange,
   trigger,
   finalFocus,
 }: {
   subscription?: Subscription;
+  scheduleId?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   trigger?: ReactElement | false;
@@ -118,6 +121,7 @@ export function WebhookEditor({
         ) : (
           <WebhookForm
             subscription={subscription}
+            scheduleId={scheduleId}
             onPendingChange={setPending}
             onSecret={setSecret}
             onCancel={close}
@@ -139,6 +143,7 @@ export function WebhookEditor({
 
 function WebhookForm({
   subscription,
+  scheduleId,
   onSaved,
   onExisting,
   onSecret,
@@ -146,6 +151,7 @@ function WebhookForm({
   onCancel,
 }: {
   subscription?: Subscription;
+  scheduleId?: string;
   onSaved: (value: Subscription) => void;
   onExisting: (value: Subscription) => void;
   onSecret: (secret: string) => void;
@@ -159,7 +165,12 @@ function WebhookForm({
     http = client.workspace(workspace.id),
     keys = webhookKeys(workspace.id);
   const [basis, setBasis] = useState(subscription);
-  const [draft, setDraft] = useState(() => subscriptionDraft(subscription));
+  const [draft, setDraft] = useState(() => ({
+    ...subscriptionDraft(subscription),
+    ...(!subscription && scheduleId
+      ? { scheduleId, kinds: [...scheduleOutcomeKinds] }
+      : {}),
+  }));
   const [kindsError, setKindsError] = useState<string>();
   const [unconfirmed, setUnconfirmed] = useState(false);
   const reconcile = useMutation({

@@ -29,6 +29,7 @@ import {
   scheduleQueries,
   type Schedule,
 } from "./api";
+import { WebhookEditor } from "../settings/webhooks/editor";
 import { ScheduleEditor } from "./editor";
 import { ScheduleHistory } from "./history";
 import styles from "./schedules.module.css";
@@ -81,7 +82,7 @@ export function ScheduleDetail() {
             : previous,
       );
     } else if (event.type === "thread") {
-      // Run and inbox changes do not advance the occurrence's submission version.
+      // Refresh execution observations even when the occurrence itself has not changed.
       void cache.cancelQueries({ queryKey: keys.history(scheduleId) });
     }
     if (event.type === "connection" && event.state === "live") {
@@ -185,50 +186,53 @@ function ScheduleContent({
           resourceKey={schedule.id}
           description={schedule.description}
           actions={
-            open && (
-              <>
-                {editable && <ScheduleEditor schedule={schedule} />}
-                {(schedule.state === "enabled" ? can("write") : editable) && (
-                  <Button
-                    variant="outline"
-                    disabled={action.isPending}
-                    onClick={() =>
-                      action.mutate(
-                        schedule.state === "enabled" ? "pause" : "enable",
-                      )
-                    }
-                  >
-                    {t(schedule.state === "enabled" ? "Pause" : "Enable")}
-                  </Button>
-                )}
-                {schedule.state !== "completed" && creator && can("run") && (
-                  <Button
-                    disabled={action.isPending || busy || !status.data}
-                    loading={
-                      action.isPending && action.variables === "dispatch"
-                    }
-                    onClick={() => action.mutate("dispatch")}
-                  >
-                    <PlayIcon size={14} />
-                    {t("Run once")}
-                  </Button>
-                )}
-                {can("write") && (
-                  <Confirm
-                    title={t("Archive schedule")}
-                    subject={schedule.name}
-                    description={t(
-                      "Stop future triggers and cancel pending submissions. Existing runs and history remain available.",
-                    )}
-                    trigger={t("Archive")}
-                    triggerVariant="ghost"
-                    action={commands.archive}
-                    onSuccess={refresh}
-                    retry={refresh}
-                  />
-                )}
-              </>
-            )
+            <>
+              {can("admin") && <WebhookEditor scheduleId={schedule.id} />}
+              {open && (
+                <>
+                  {editable && <ScheduleEditor schedule={schedule} />}
+                  {(schedule.state === "enabled" ? can("write") : editable) && (
+                    <Button
+                      variant="outline"
+                      disabled={action.isPending}
+                      onClick={() =>
+                        action.mutate(
+                          schedule.state === "enabled" ? "pause" : "enable",
+                        )
+                      }
+                    >
+                      {t(schedule.state === "enabled" ? "Pause" : "Enable")}
+                    </Button>
+                  )}
+                  {schedule.state !== "completed" && creator && can("run") && (
+                    <Button
+                      disabled={action.isPending || busy || !status.data}
+                      loading={
+                        action.isPending && action.variables === "dispatch"
+                      }
+                      onClick={() => action.mutate("dispatch")}
+                    >
+                      <PlayIcon size={14} />
+                      {t("Run once")}
+                    </Button>
+                  )}
+                  {can("write") && (
+                    <Confirm
+                      title={t("Archive schedule")}
+                      subject={schedule.name}
+                      description={t(
+                        "Stop future triggers and cancel pending submissions. Existing runs and history remain available.",
+                      )}
+                      trigger={t("Archive")}
+                      triggerVariant="ghost"
+                      action={commands.archive}
+                      onSuccess={refresh}
+                      retry={refresh}
+                    />
+                  )}
+                </>
+              )}
+            </>
           }
         />
       }

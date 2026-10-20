@@ -28,6 +28,15 @@ function Execution({ occurrence }: { occurrence: Occurrence }) {
   const execution = occurrence.execution;
   if (!occurrence.entry_id)
     return <span className={styles.notice}>{t("No input submitted")}</span>;
+  if (occurrence.status === "completed" && occurrence.execution_outcome)
+    return (
+      <div>
+        <StatePill state={occurrence.execution_outcome} />
+        <div className={styles.notice}>
+          <Timestamp value={occurrence.completed_at} />
+        </div>
+      </div>
+    );
   if (!execution) return <span>{t("Loading…")}</span>;
   return (
     <div>
@@ -65,7 +74,7 @@ export function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
     <Section
       title={t("Trigger history")}
       description={t(
-        "Submitted means the input was saved. Input and run states show what happened next.",
+        "Submitted means the input was saved. Completed means execution ended; check its outcome for success, failure or cancellation.",
       )}
     >
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -94,10 +103,21 @@ export function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
                 ),
               },
               {
-                label: t("Submission"),
+                label: t("Status"),
                 render: (item) => (
                   <>
-                    <StatePill state={item.status} />
+                    <StatePill
+                      state={item.status}
+                      label={
+                        item.status === "failed"
+                          ? t("Submission failed")
+                          : item.status === "cancelled"
+                            ? t("Submission cancelled")
+                            : item.status === "completed"
+                              ? t("Execution finished")
+                              : undefined
+                      }
+                    />
                     {item.reason && (
                       <span className={styles.reason}>
                         {t(`schedule.reason.${item.reason}`, {

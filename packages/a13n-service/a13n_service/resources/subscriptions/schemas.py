@@ -21,6 +21,15 @@ type LifecycleKind = Literal[
     "run_attempt.yielded",
     "run_attempt.failed",
     "run_attempt.cancelled",
+    "schedule.enabled",
+    "schedule.paused",
+    "schedule.completed",
+    "schedule.archived",
+    "schedule_occurrence.submitted",
+    "schedule_occurrence.skipped",
+    "schedule_occurrence.failed",
+    "schedule_occurrence.cancelled",
+    "schedule_occurrence.completed",
 ]
 
 LIFECYCLE_KINDS: tuple[str, ...] = LifecycleKind.__value__.__args__
@@ -34,12 +43,13 @@ SigningSecret = Annotated[SecretStr, Field(min_length=16, max_length=256)]
 
 
 class SubscriptionFilter(BaseModel):
-    """Absent fields match every run."""
+    """Absent fields match every event; a specified identity must exist and match."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     agent_id: ObjectId | None = None
     session_id: ObjectId | None = None
     thread_id: ObjectId | None = None
+    schedule_id: ObjectId | None = None
 
 
 class SubscriptionCreate(BaseModel):

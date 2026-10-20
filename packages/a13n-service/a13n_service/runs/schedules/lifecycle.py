@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.ids import new_object_id
+from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules import webhooks
 from a13n_service.runs.schedules.calendar import TIMEZONE_DATA_VERSION, Calendar
 from a13n_service.runs.schedules.schemas import (
     CronSchedule,
@@ -49,6 +51,7 @@ def latest_due(row: ScheduleRow, current: datetime) -> datetime | None:
 
 async def occurrence(
     session: AsyncSession,
+    runtime: Runtime,
     row: ScheduleRow,
     current: datetime,
     *,
@@ -104,10 +107,13 @@ async def occurrence(
         row.pending_occurrence_id = result.id
     if scheduled_at is not None:
         row.last_processed_fire_at = scheduled_at
+    await webhooks.occurrence_changed(session, runtime, result, current)
     return result
 
 
-def complete_once(row: ScheduleRow, item: OccurrenceRow) -> None:
+async def complete_once(
+    session: AsyncSession, runtime: Runtime, row: ScheduleRow, item: OccurrenceRow, at: datetime
+) -> None:
     """Completion concerns automatic submission, never the resulting Run or manual dispatch."""
     if (
         row.schedule_type == "once"
@@ -116,29 +122,42 @@ def complete_once(row: ScheduleRow, item: OccurrenceRow) -> None:
         and item.status in {"submitted", "skipped", "failed"}
     ):
         row.state, row.pause_reason, row.next_fire_at = "completed", None, None
+        await webhooks.schedule_changed(session, runtime, row, at)
 
 
-def finish(
-    row: ScheduleRow, item: OccurrenceRow, current: datetime, *, status: OccurrenceStatus, reason: str | None
+async def finish(
+    session: AsyncSession,
+    runtime: Runtime,
+    row: ScheduleRow,
+    item: OccurrenceRow,
+    current: datetime,
+    *,
+    status: OccurrenceStatus,
+    reason: str | None,
 ) -> None:
     item.status, item.reason, item.finished_at = status, reason, current
     item.next_attempt_at = None
     if row.pending_occurrence_id == item.id:
         row.pending_occurrence_id = None
-    complete_once(row, item)
+    await complete_once(session, runtime, row, item, current)
+    await webhooks.occurrence_changed(session, runtime, item, current)
 
 
-async def cancel_pending(session: AsyncSession, row: ScheduleRow, current: datetime, reason: str) -> str | None:
+async def cancel_pending(
+    session: AsyncSession, runtime: Runtime, row: ScheduleRow, current: datetime, reason: str
+) -> str | None:
     if row.pending_occurrence_id is None:
         return None
     item = await session.get_one(OccurrenceRow, row.pending_occurrence_id)
-    finish(row, item, current, status="cancelled", reason=reason)
+    await finish(session, runtime, row, item, current, status="cancelled", reason=reason)
     await session.flush()
     return item.id
 
 
-async def close_due(session: AsyncSession, row: ScheduleRow, current: datetime, reason: str) -> None:
+async def close_due(session: AsyncSession, runtime: Runtime, row: ScheduleRow, current: datetime, reason: str) -> None:
     """Before replacing a timeline, retain one skipped record for its unprocessed elapsed range."""
     due = latest_due(row, current)
     if due is not None:
-        await occurrence(session, row, current, trigger="scheduled", scheduled_at=due, status="skipped", reason=reason)
+        await occurrence(
+            session, runtime, row, current, trigger="scheduled", scheduled_at=due, status="skipped", reason=reason
+        )

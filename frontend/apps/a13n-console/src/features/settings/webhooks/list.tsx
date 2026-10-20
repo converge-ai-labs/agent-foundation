@@ -98,6 +98,7 @@ export function Webhooks() {
                     item.filter.agent_id && t("Agent"),
                     item.filter.session_id && t("Session"),
                     item.filter.thread_id && t("Thread"),
+                    item.filter.schedule_id && t("Schedule"),
                   ]
                     .filter(Boolean)
                     .join(" · ") || t("Entire workspace"),

@@ -2660,5 +2660,13 @@
   "Default uses the agent's current default version for each run.": "选择“默认”时，每次运行使用 Agent 当时的默认版本。",
   "Enable immediately": "立即启用",
   "Create and enable": "创建并启用",
-  "Preview the timing, then choose whether to enable the schedule on creation.": "预览触发时间后，可选择在创建时立即启用。"
+  "Preview the timing, then choose whether to enable the schedule on creation.": "预览触发时间后，可选择在创建时立即启用。",
+  "Schedule outcomes": "计划和触发结果",
+  "Submission failed": "提交失败",
+  "Submission cancelled": "提交已取消",
+  "Execution finished": "执行已结束",
+  "Occurrence": "触发记录",
+  "Schedule ID (optional)": "计划 ID（可选）",
+  "Schedule completion ends scheduling. Occurrence completion ends execution and can report success, failure or cancellation.": "计划完成表示调度结束。触发记录完成表示执行结束，结果可能是成功、失败或取消。",
+  "Submitted means the input was saved. Completed means execution ended; check its outcome for success, failure or cancellation.": "已提交表示输入已保存。已完成表示执行结束；请查看结果以确认成功、失败或取消。"
 }

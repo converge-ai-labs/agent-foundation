@@ -1934,7 +1934,7 @@
     },
     "OccurrenceExecution": {
       "additionalProperties": false,
-      "description": "Current execution facts, independent of the immutable submission result and its version.",
+      "description": "Current execution observations alongside the durable occurrence completion facts.",
       "properties": {
         "has_unfinished_work": {
           "title": "Has Unfinished Work",
@@ -1979,6 +1979,7 @@
       "enum": [
         "pending",
         "submitted",
+        "completed",
         "skipped",
         "failed",
         "cancelled"
@@ -1988,6 +1989,31 @@
     "OccurrenceSummary": {
       "additionalProperties": false,
       "properties": {
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "completion_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion Run Id"
+        },
         "covered_from_at": {
           "anyOf": [
             {
@@ -2035,6 +2061,23 @@
             }
           ],
           "default": null
+        },
+        "execution_outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "succeeded",
+                "failed",
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Outcome"
         },
         "finished_at": {
           "anyOf": [

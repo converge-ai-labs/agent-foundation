@@ -21,7 +21,7 @@ from a13n_service.runs.schemas import (
 )
 
 type ScheduleState = Literal["paused", "enabled", "completed", "archived"]
-type OccurrenceStatus = Literal["pending", "submitted", "skipped", "failed", "cancelled"]
+type OccurrenceStatus = Literal["pending", "submitted", "completed", "skipped", "failed", "cancelled"]
 type ScheduleTrigger = Literal["scheduled", "manual"]
 
 
@@ -149,7 +149,7 @@ class InitialRun(_Model):
 
 
 class OccurrenceExecution(_Model):
-    """Current execution facts, independent of the immutable submission result and its version."""
+    """Current execution observations alongside the durable occurrence completion facts."""
 
     initial_entry_status: EntryStatus | None
     initial_run: InitialRun | None
@@ -177,6 +177,9 @@ class OccurrenceSummary(_Model):
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+    completed_at: datetime | None = None
+    completion_run_id: str | None = None
+    execution_outcome: Literal["succeeded", "failed", "cancelled"] | None = None
     execution: OccurrenceExecution | None = Field(default=None, exclude_if=lambda value: value is None)
 
 

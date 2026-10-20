@@ -19,7 +19,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, enqueue, enqueue_batch
 from a13n_service.resources.subscriptions import service as subscriptions
 from a13n_service.resources.subscriptions.delivery import (
-    RunFacts,
+    Subject,
     Transition,
     WebhookSender,
     prepare_webhooks,
@@ -271,7 +271,7 @@ async def webhook_rows(service: SimpleNamespace) -> list[OutboxRow]:
 
 async def test_staging_selects_matching_subscriptions_and_binds_each_secret(service: SimpleNamespace) -> None:
     runtime, url = service.runtime, "http://127.0.0.1:9/hook"
-    run = RunFacts(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
+    run = Subject(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
     every = await subscribe(service, url, ["run.accepted", "run.completed"])
     narrow = await subscribe(
         service, url, ["run.completed", "run.failed"], filter={"agent_id": run.agent_id, "thread_id": run.thread_id}
@@ -374,7 +374,7 @@ async def test_batch_selection_caps_each_run_after_its_filters(
     await runs_kit.pause_sweeps(service)
     runtime, url = service.runtime, "http://127.0.0.1:9/hook"
     runs = [
-        RunFacts(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
+        Subject(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
         for _ in range(2)
     ]
     subscriptions_by_run = []
@@ -406,7 +406,7 @@ async def test_batch_selection_caps_each_run_after_its_filters(
     # Identical filter identities in a different workspace must not match.
     transitions.append(
         Transition(
-            RunFacts(new_object_id("wsp"), runs[0].agent_id, runs[0].session_id, runs[0].thread_id),
+            Subject(new_object_id("wsp"), runs[0].agent_id, runs[0].session_id, runs[0].thread_id),
             ["run.running"],
             {"index": 2},
         )

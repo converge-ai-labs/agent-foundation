@@ -2660,5 +2660,13 @@
   "Default uses the agent's current default version for each run.": "Default uses the agent's current default version for each run.",
   "Enable immediately": "Enable immediately",
   "Create and enable": "Create and enable",
-  "Preview the timing, then choose whether to enable the schedule on creation.": "Preview the timing, then choose whether to enable the schedule on creation."
+  "Preview the timing, then choose whether to enable the schedule on creation.": "Preview the timing, then choose whether to enable the schedule on creation.",
+  "Schedule outcomes": "Schedule outcomes",
+  "Submission failed": "Submission failed",
+  "Submission cancelled": "Submission cancelled",
+  "Execution finished": "Execution finished",
+  "Occurrence": "Occurrence",
+  "Schedule ID (optional)": "Schedule ID (optional)",
+  "Schedule completion ends scheduling. Occurrence completion ends execution and can report success, failure or cancellation.": "Schedule completion ends scheduling. Occurrence completion ends execution and can report success, failure or cancellation.",
+  "Submitted means the input was saved. Completed means execution ended; check its outcome for success, failure or cancellation.": "Submitted means the input was saved. Completed means execution ended; check its outcome for success, failure or cancellation."
 }

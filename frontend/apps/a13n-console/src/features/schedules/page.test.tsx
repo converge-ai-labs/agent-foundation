@@ -786,7 +786,10 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
           ? [
               occurrence({
                 id: "occ_old",
-                status: "submitted",
+                status: completed ? "completed" : "submitted",
+                execution_outcome: completed ? "succeeded" : null,
+                completion_run_id: completed ? "run_resumed" : null,
+                completed_at: completed ? "2026-10-20T00:01:00Z" : null,
                 reason: null,
                 thread_id: "thr_old",
                 entry_id: "entry_old",
@@ -794,7 +797,7 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
                   initial_entry_status: completed ? "consumed" : "assigned",
                   initial_run: {
                     id: "run_old",
-                    status: completed ? "completed" : "running",
+                    status: completed ? "waiting" : "running",
                   },
                   has_unfinished_work: !completed,
                   observed_at: completed ? "2026-10-20T00:01:00Z" : at,
@@ -835,8 +838,8 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
     completed = true;
     controllers[0].close();
   });
-  expect(await screen.findByText("state.completed")).toBeTruthy();
-  expect(await screen.findByText("state.consumed")).toBeTruthy();
+  expect(await screen.findByText("Execution finished")).toBeTruthy();
+  expect(await screen.findByText("state.succeeded")).toBeTruthy();
   expect(controllers.length).toBeGreaterThan(1);
   await waitFor(() =>
     expect(
@@ -1047,12 +1050,12 @@ it("does not replace a newer streamed occurrence with an older in-flight history
       ),
     );
   });
-  await screen.findByText("state.failed");
+  await screen.findByText("Submission failed");
   await act(async () => {
     resolveOld?.(Response.json({ items: [pending], next_cursor: null }));
   });
   expect(screen.queryByText("state.pending")).toBeNull();
-  expect(screen.getByText("state.failed")).toBeTruthy();
+  expect(screen.getByText("Submission failed")).toBeTruthy();
 });
 
 it("keeps completed one-time history visible while only offering archive", async () => {

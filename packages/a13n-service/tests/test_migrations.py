@@ -318,3 +318,30 @@ def test_run_search_migration_retries_after_concurrent_index_build(
     assert rows(
         empty_database, "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_runs_search_vector'::regclass"
     ) == [("true",)]
+
+
+@pytest.mark.anyio
+async def test_completion_migration_preserves_submission_and_refuses_lossy_downgrade(
+    database, service, scripted_model, runs_kit
+):  # type: ignore[no-untyped-def]
+    from a13n_service.runs.schedules import dispatch
+
+    from .test_schedule_dispatch import schedule_for, trigger
+
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
+    await trigger(service, schedule, runs_kit)
+    await dispatch.process(service.runtime, schedule["id"])
+    query = "SELECT id, status, thread_id, entry_id, finished_at::text, version::text FROM schedule_occurrences"
+    original = rows(database, query)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "63a5d892fc55")
+    assert rows(database, query) == original
+    upgrade(database, OSS)
+    assert rows(database, query) == original
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service))
+    assert rows(database, "SELECT status, execution_outcome FROM schedule_occurrences") == [("completed", "succeeded")]
+    with pytest.raises(DBAPIError, match="cannot downgrade while completed occurrences exist"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "63a5d892fc55")
+    check(database, OSS)

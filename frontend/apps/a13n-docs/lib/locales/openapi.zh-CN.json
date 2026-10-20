@@ -1,5 +1,5 @@
 {
-  "Current execution facts, independent of the immutable submission result and its version.": "当前执行状态，独立于不可变的提交结果及其版本。",
+  "Current execution observations alongside the durable occurrence completion facts.": "当前执行观测及持久保存的触发记录完成信息。",
   "Provider-native discovery; omitted strategy uses the provider default.": "提供商原生工具发现；省略策略时使用提供商默认值。",
   "Presentation of already-selected sources, composed by Harness once per agent.": "已选工具源的展示配置，由 Harness 为每个 agent 统一组合。",
   "Names and bounded discovery settings for one Agent's proxy surface.": "单个 Agent 的代理工具命名及有界发现设置。",
@@ -107,7 +107,7 @@
   "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.": "替换调用边中所设置的字段；修订版本尚无该调用边时，至少设置 `agent_id`。",
   "A submission receipt: the entry and, when the thread was idle, the run it started.": "提交回执：条目，以及线程空闲时由它启动的运行。",
   "Without `signing_secret` the service generates one; either way it is returned only by this request.": "未提供 `signing_secret` 时由 Service 生成；无论哪种情况，只在本请求中返回。",
-  "Absent fields match every run.": "省略字段匹配全部运行。",
+  "Absent fields match every event; a specified identity must exist and match.": "省略字段匹配全部事件；指定的标识必须存在且匹配。",
   "`signing_secret` replaces the secret for deliveries queued after this change.": "`signing_secret` 替换此修改之后排队投递的密钥。",
   "Fields left out stay unchanged; `description: null` clears it.\n\nA new provider or recipe needs `write` on the provider and applies to environments created afterwards;\nexisting ones keep what they were built with, and the idle policy applies to all of them. `enabled: false`\nrefuses new environments, including reserved ones never created; created ones keep working.": "省略字段保持不变；`description: null` 清除描述。\n\n新 provider 或 recipe 需要 provider 上的 `write` 权限，仅影响后续创建环境；已有环境保留构建时配置，空闲策略应用于全部环境。`enabled: false` 拒绝新环境，包括已预留但未创建的环境；已创建环境继续可用。",
   "The resource a tool needs before it can be enabled.": "启用工具前所需的资源。",

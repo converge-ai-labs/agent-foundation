@@ -517,3 +517,40 @@ it("uses the subscription version for disable and delete", async () => {
   await waitFor(() => expect(mutations("DELETE")).toHaveLength(1));
   expect(mutations("DELETE")[0].headers.get("If-Match")).toBe('"sub_test:2"');
 });
+
+it("prefills schedule outcomes and persists the schedule filter when creating a webhook", async () => {
+  const user = userEvent.setup();
+  let sent: Record<string, unknown> | undefined;
+  fetcher.mockImplementation(async (request) => {
+    if (request.method === "POST") {
+      sent = await request.json();
+      return json(
+        { ...subscription, ...sent, signing_secret: "whsec_schedule_once" },
+        201,
+      );
+    }
+    return page([]);
+  });
+  mount(<WebhookEditor scheduleId="sch_test" />);
+  await user.click(screen.getByRole("button", { name: "Add Webhook" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Schedule ID (optional)",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("sch_test");
+  const occurrenceEvents = screen.getByRole("group", { name: "Occurrence" });
+  expect(
+    within(occurrenceEvents)
+      .getByRole("checkbox", { name: /Execution finished/ })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  await fillCreation(user);
+  await user.click(screen.getByRole("button", { name: "Create Webhook" }));
+  await screen.findByText("whsec_schedule_once");
+  expect(sent?.filter).toEqual({ schedule_id: "sch_test" });
+  expect(sent?.kinds).toContain("schedule_occurrence.completed");
+  expect(sent?.kinds).toContain("schedule.paused");
+  expect(sent?.kinds).not.toContain("run.completed");
+});

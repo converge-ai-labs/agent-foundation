@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schedules import dispatch, lifecycle, queries
+from a13n_service.runs.schedules import completion, dispatch, lifecycle, queries
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 
 
@@ -44,6 +44,7 @@ async def plan_next(runtime: Runtime) -> str | None:
                 reason = "overlap"
             item = await lifecycle.occurrence(
                 session,
+                runtime,
                 row,
                 current,
                 trigger="scheduled",
@@ -51,7 +52,7 @@ async def plan_next(runtime: Runtime) -> str | None:
                 status="skipped" if reason else "pending",
                 reason=reason,
             )
-            lifecycle.complete_once(row, item)
+            await lifecycle.complete_once(session, runtime, row, item, current)
             dispatch.log_after_commit(session, row, item)
         row.last_processed_fire_at = max(row.last_processed_fire_at, latest) if row.last_processed_fire_at else latest
         row.next_fire_at = lifecycle.next_fire(row, current)
@@ -88,6 +89,7 @@ class Scheduler:
     async def __call__(self) -> None:
         # Separate batch allowances and tasks prevent either backlog from consuming the other's allowance.
         async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(completion.backfill(self.runtime))
             tasks.create_task(self._pending())
             tasks.create_task(self._due())
 

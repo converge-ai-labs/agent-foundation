@@ -17,9 +17,27 @@ export const lifecycleLabels = {
   "run_attempt.yielded": "Yielded",
   "run_attempt.failed": "Failed",
   "run_attempt.cancelled": "Cancelled",
+  "schedule.enabled": "Enabled",
+  "schedule.paused": "Paused",
+  "schedule.completed": "Scheduling finished",
+  "schedule.archived": "Archived",
+  "schedule_occurrence.submitted": "Submitted",
+  "schedule_occurrence.skipped": "Skipped",
+  "schedule_occurrence.failed": "Submission failed",
+  "schedule_occurrence.cancelled": "Submission cancelled",
+  "schedule_occurrence.completed": "Execution finished",
 } satisfies Record<Kind, string>;
 
 export const lifecycleKinds = Object.keys(lifecycleLabels) as Kind[];
+export const scheduleOutcomeKinds: Kind[] = [
+  "schedule.paused",
+  "schedule.completed",
+  "schedule.archived",
+  "schedule_occurrence.completed",
+  "schedule_occurrence.failed",
+  "schedule_occurrence.skipped",
+  "schedule_occurrence.cancelled",
+];
 export const outcomeKinds: Kind[] = [
   "run.waiting",
   "run.completed",
@@ -34,6 +52,7 @@ export interface SubscriptionDraft {
   agentId: string;
   sessionId: string;
   threadId: string;
+  scheduleId: string;
   enabled: boolean;
   signingSecret: string;
 }
@@ -47,6 +66,7 @@ export function subscriptionDraft(value?: Subscription): SubscriptionDraft {
     agentId: value?.filter.agent_id ?? "",
     sessionId: value?.filter.session_id ?? "",
     threadId: value?.filter.thread_id ?? "",
+    scheduleId: value?.filter.schedule_id ?? "",
     enabled: value?.enabled ?? true,
     signingSecret: "",
   };
@@ -63,6 +83,9 @@ export function subscriptionBody(
       ...(draft.agentId.trim() ? { agent_id: draft.agentId.trim() } : {}),
       ...(draft.sessionId.trim() ? { session_id: draft.sessionId.trim() } : {}),
       ...(draft.threadId.trim() ? { thread_id: draft.threadId.trim() } : {}),
+      ...(draft.scheduleId.trim()
+        ? { schedule_id: draft.scheduleId.trim() }
+        : {}),
     },
     enabled: draft.enabled,
     // A blank field must never replace an existing secret.

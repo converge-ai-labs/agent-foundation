@@ -14,7 +14,7 @@ from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, RETRY_AFTER, Servi
 from a13n_service.infra.http import require_match
 from a13n_service.runs.accept import accept
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schedules import lifecycle, queries, service
+from a13n_service.runs.schedules import lifecycle, queries, service, webhooks
 from a13n_service.runs.schedules.schemas import Occurrence, OccurrenceSnapshot
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.schemas import NewThread
@@ -56,6 +56,7 @@ async def manual(
         authority = saved.model_copy(update={"verbs": saved.verbs & execution_authority(actor, scope).verbs})
         item = await lifecycle.occurrence(
             session,
+            runtime,
             row,
             current,
             trigger="manual",
@@ -121,13 +122,13 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
                 return
             current = await now(session)
             if current >= item.deadline_at:
-                lifecycle.finish(row, item, current, status="skipped", reason="missed_deadline")
+                await lifecycle.finish(session, runtime, row, item, current, status="skipped", reason="missed_deadline")
                 log_after_commit(session, row, item)
                 return
             if item.next_attempt_at is not None and item.next_attempt_at > current:
                 return
             if await queries.has_unfinished(session, row):
-                lifecycle.finish(row, item, current, status="skipped", reason="overlap")
+                await lifecycle.finish(session, runtime, row, item, current, status="skipped", reason="overlap")
                 log_after_commit(session, row, item)
                 return
             occurrence_id = item.id
@@ -151,7 +152,7 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
             assert source.entry is not None
             item.dispatch_attempts += 1
             item.thread_id, item.entry_id = thread.id, source.entry.id
-            lifecycle.finish(row, item, await now(session), status="submitted", reason=None)
+            await lifecycle.finish(session, runtime, row, item, await now(session), status="submitted", reason=None)
             await session.flush()
             log_after_commit(session, row, item, run_id=source.entry.assigned_run_id)
     except (ServiceError, DBAPIError) as error:
@@ -177,7 +178,7 @@ async def _failed_attempt(
         item.last_error = code
         retryable = isinstance(error, DBAPIError) or code in {"unavailable", "rate_limited", "request_timeout"}
         if current >= item.deadline_at:
-            lifecycle.finish(row, item, current, status="skipped", reason="missed_deadline")
+            await lifecycle.finish(session, runtime, row, item, current, status="skipped", reason="missed_deadline")
         elif retryable and item.dispatch_attempts < runtime.settings.schedules.dispatch_max_attempts:
             retry_after = error.details.get(RETRY_AFTER, 0) if isinstance(error, ServiceError) else 0
             delay = max(
@@ -185,13 +186,18 @@ async def _failed_attempt(
             )
             item.next_attempt_at = current + timedelta(seconds=delay)
         elif retryable:
-            lifecycle.finish(row, item, current, status="failed", reason="dispatch_attempts_exhausted")
+            await lifecycle.finish(
+                session, runtime, row, item, current, status="failed", reason="dispatch_attempts_exhausted"
+            )
         else:
             reason = "authority_invalid" if code in {"forbidden", "unauthenticated"} else "target_invalid"
-            lifecycle.finish(row, item, current, status="failed", reason=reason)
+            await lifecycle.finish(session, runtime, row, item, current, status="failed", reason=reason)
             if row.state != "completed":
-                await lifecycle.close_due(session, row, current, reason)
+                await lifecycle.close_due(session, runtime, row, current, reason)
+                previous_state = (row.state, row.pause_reason)
                 row.state, row.pause_reason, row.next_fire_at = "paused", reason, None
+                if previous_state != (row.state, row.pause_reason):
+                    await webhooks.schedule_changed(session, runtime, row, current)
                 record(
                     session,
                     WorkspaceScope(row.organization_id, row.workspace_id),
