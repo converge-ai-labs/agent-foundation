@@ -163,6 +163,8 @@ async def test_history_migration_preserves_existing_rows_and_guards_order(databa
 
 @pytest.mark.anyio
 async def test_legacy_toolsets_and_platform_selections_are_rewritten(database, service, runs_kit, scripted_model):  # type: ignore[no-untyped-def]
+    # Synchronous migration DDL must not compete with background transactions on this database.
+    await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     overridden = {"overrides": {"toolsets": {"web": {"enabled": False}}}}
     run = (await runs_kit.start_thread(service, agent, "hi", options=overridden))["run"]
