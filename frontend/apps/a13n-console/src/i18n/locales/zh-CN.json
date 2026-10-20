@@ -2463,7 +2463,6 @@
   "Sessions, threads, runs, traces and findings; its only write submits a finding.": "会话、线程、运行、trace 和发现项；唯一的写操作是提交发现项。",
   "Schedules": "计划",
   "Schedule": "计划",
-  "Run agents on a recurring schedule, with a separate result for each trigger.": "按计划定期运行 Agent，每次触发都有独立的结果。",
   "Search schedules": "搜索计划",
   "All states": "全部状态",
   "Timing": "时间规则",
@@ -2532,5 +2531,14 @@
   "State": "状态",
   "Scheduled execution": "由计划触发",
   "Fields require one text input. Use JSON to edit structured input.": "表单模式只支持单条文本输入，结构化输入请使用 JSON 编辑。",
-  "Reconnect": "重新连接"
+  "Reconnect": "重新连接",
+  "Run agents once or on a recurring schedule, with a separate result for each trigger.": "一次性或定期运行 Agent，每次触发都有独立的结果。",
+  "Schedule type": "计划类型",
+  "Recurring": "重复",
+  "One time": "一次性",
+  "Run at": "执行时间",
+  "Choose a valid date and time.": "请选择有效的日期和时间。",
+  "Date and time in {{timezone}}.": "日期和时间使用 {{timezone}} 时区。",
+  "Scheduling finished": "调度已结束",
+  "Scheduling has finished. Check the trigger history for submission and execution results.": "调度已结束。请查看触发历史中的提交和执行结果。"
 }

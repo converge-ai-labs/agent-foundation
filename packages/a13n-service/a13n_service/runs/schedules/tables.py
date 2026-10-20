@@ -40,8 +40,24 @@ class ScheduleRow(Stamped, Base):
             )
             for pointer in ("pending_occurrence_id", "last_occurrence_id")
         ),
-        CheckConstraint("state IN ('enabled', 'paused', 'archived')", name="state"),
-        CheckConstraint("(state = 'enabled') = (next_fire_at IS NOT NULL)", name="next_fire"),
+        CheckConstraint("state IN ('enabled', 'paused', 'completed', 'archived')", name="state"),
+        CheckConstraint(
+            "(state <> 'enabled' AND next_fire_at IS NULL) OR "
+            "(state = 'enabled' AND (next_fire_at IS NOT NULL OR "
+            "(schedule_type = 'once' AND last_processed_fire_at IS NOT NULL "
+            "AND last_processed_fire_at >= run_at)))",
+            name="next_fire",
+        ),
+        CheckConstraint(
+            "(schedule_type = 'cron' AND cron_expression IS NOT NULL AND timezone IS NOT NULL AND run_at IS NULL) OR "
+            "(schedule_type = 'once' AND cron_expression IS NULL AND timezone IS NULL AND run_at IS NOT NULL)",
+            name="time_rule",
+        ),
+        CheckConstraint(
+            "state <> 'completed' OR (schedule_type = 'once' AND last_processed_fire_at IS NOT NULL "
+            "AND last_processed_fire_at >= run_at)",
+            name="completed",
+        ),
         CheckConstraint("(state = 'paused') = (pause_reason IS NOT NULL)", name="pause_reason"),
         CheckConstraint("(state = 'archived') = (archived_at IS NOT NULL)", name="archived"),
         CheckConstraint("max_lateness_seconds BETWEEN 60 AND 86400", name="lateness"),
@@ -57,6 +73,8 @@ class ScheduleRow(Stamped, Base):
                    IS DISTINCT FROM
                    ROW(OLD.session_id, OLD.principal_id, OLD.authority, OLD.create_request_key, OLD.create_request_digest)
                 THEN RAISE EXCEPTION 'schedule identity, authority and archived state are immutable'; END IF;
+                IF OLD.state = 'completed' AND NEW.state NOT IN ('completed', 'archived')
+                THEN RAISE EXCEPTION 'completed schedules cannot restart'; END IF;
                 IF OLD.last_processed_fire_at IS NOT NULL AND
                    (NEW.last_processed_fire_at IS NULL OR NEW.last_processed_fire_at < OLD.last_processed_fire_at)
                 THEN RAISE EXCEPTION 'schedule time cannot move backwards'; END IF;
@@ -76,8 +94,10 @@ class ScheduleRow(Stamped, Base):
     labels: Mapped[dict] = mapped_column(JSONB)
     state: Mapped[str]
     pause_reason: Mapped[str | None]
-    cron_expression: Mapped[str]
-    timezone: Mapped[str]
+    schedule_type: Mapped[str] = mapped_column(default="cron", server_default="cron")
+    run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cron_expression: Mapped[str | None]
+    timezone: Mapped[str | None]
     max_lateness_seconds: Mapped[int]
     invocation: Mapped[dict] = mapped_column(JSONB)
     principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))

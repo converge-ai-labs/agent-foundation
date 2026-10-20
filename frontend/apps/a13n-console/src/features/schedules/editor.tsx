@@ -93,12 +93,22 @@ function ScheduleForm({
   >(schedule?.invocation);
   const [name, setName] = useState(schedule?.name ?? "");
   const [description, setDescription] = useState(schedule?.description ?? "");
-  const [expression, setExpression] = useState(
-    schedule?.schedule.expression ?? "0 9 * * *",
+  const cron =
+    schedule?.schedule.type === "cron" ? schedule.schedule : undefined;
+  const [timingType, setTimingType] = useState(
+    schedule?.schedule.type ?? "cron",
   );
+  const [originalRunAt] = useState(() => {
+    if (schedule?.schedule.type !== "once") return "";
+    const date = new Date(schedule.schedule.run_at);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 19);
+  });
+  const [runAt, setRunAt] = useState(originalRunAt);
+  const [expression, setExpression] = useState(cron?.expression ?? "0 9 * * *");
   const [timezone, setTimezone] = useState(
-    schedule?.schedule.timezone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    cron?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const [lateness, setLateness] = useState(
     schedule?.max_lateness_seconds ?? 300,
@@ -134,16 +144,28 @@ function ScheduleForm({
             content: [{ type: "text", text: input }],
           },
         };
+  const timing = (): Schema["ScheduleCreate"]["schedule"] => {
+    if (timingType === "once") {
+      // Preserve the saved instant's precision and offset when only other fields change.
+      if (schedule?.schedule.type === "once" && runAt === originalRunAt)
+        return schedule.schedule;
+      const date = new Date(runAt);
+      if (!runAt || !Number.isFinite(date.getTime()))
+        throw new Error(t("Choose a valid date and time."));
+      return { type: "once", run_at: date.toISOString() };
+    }
+    return {
+      type: "cron",
+      expression: expression.trim(),
+      timezone: timezone.trim(),
+    };
+  };
   const save = useMutation({
     mutationFn: async () => {
       const body: Schema["ScheduleCreate"] = {
         name: name.trim(),
         description: description.trim() || null,
-        schedule: {
-          type: "cron",
-          expression: expression.trim(),
-          timezone: timezone.trim(),
-        },
+        schedule: timing(),
         max_lateness_seconds: lateness,
         invocation: invocation(),
       };
@@ -165,15 +187,12 @@ function ScheduleForm({
     },
   });
   const preview = useMutation({
-    mutationFn: () =>
+    mutationFn: async () =>
       client
         .workspace(workspace.id)
         .POST("/api/v1/schedules/preview", {
           body: {
-            schedule: {
-              expression: expression.trim(),
-              timezone: timezone.trim(),
-            },
+            schedule: timing(),
             after: new Date().toISOString(),
             count: 5,
           },
@@ -204,34 +223,66 @@ function ScheduleForm({
         onChange={setDescription}
         maxLength={2048}
       />
-      <div className={styles.timing}>
+      <SegmentedControl
+        label={t("Schedule type")}
+        value={timingType}
+        onValueChange={(value) => {
+          setTimingType(value === "once" ? "once" : "cron");
+          preview.reset();
+        }}
+        options={[
+          { value: "cron", label: t("Recurring") },
+          { value: "once", label: t("One time") },
+        ]}
+      />
+      {timingType === "once" ? (
         <FormField
-          label={t("Cron expression")}
-          description={t("Minute, hour, day, month and weekday.")}
+          label={t("Run at")}
+          description={t("Date and time in {{timezone}}.", {
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          })}
         >
           <Input
+            type="datetime-local"
+            step="1"
             required
-            value={expression}
+            value={runAt}
             onChange={(event) => {
-              setExpression(event.target.value);
+              setRunAt(event.target.value);
               preview.reset();
             }}
           />
         </FormField>
-        <FormField
-          label={t("Time zone")}
-          description={t("Use an IANA zone, for example Asia/Shanghai.")}
-        >
-          <Input
-            required
-            value={timezone}
-            onChange={(event) => {
-              setTimezone(event.target.value);
-              preview.reset();
-            }}
-          />
-        </FormField>
-      </div>
+      ) : (
+        <div className={styles.timing}>
+          <FormField
+            label={t("Cron expression")}
+            description={t("Minute, hour, day, month and weekday.")}
+          >
+            <Input
+              required
+              value={expression}
+              onChange={(event) => {
+                setExpression(event.target.value);
+                preview.reset();
+              }}
+            />
+          </FormField>
+          <FormField
+            label={t("Time zone")}
+            description={t("Use an IANA zone, for example Asia/Shanghai.")}
+          >
+            <Input
+              required
+              value={timezone}
+              onChange={(event) => {
+                setTimezone(event.target.value);
+                preview.reset();
+              }}
+            />
+          </FormField>
+        </div>
+      )}
       <div>
         <Button
           type="button"
@@ -248,7 +299,10 @@ function ScheduleForm({
         <ol className={styles.preview} aria-label={t("Next scheduled times")}>
           {preview.data.items.map((time) => (
             <li key={time.utc}>
-              {time.local} <span className={styles.notice}>· {time.utc}</span>
+              {timingType === "once"
+                ? new Date(time.utc).toLocaleString()
+                : time.local}{" "}
+              <span className={styles.notice}>· {time.utc}</span>
             </li>
           ))}
         </ol>

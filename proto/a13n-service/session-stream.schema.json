@@ -611,7 +611,7 @@
           "type": "string"
         },
         "schedule": {
-          "$ref": "#/$defs/CronSchedule"
+          "$ref": "#/$defs/ScheduleRule"
         },
         "session_id": {
           "title": "Session Id",
@@ -2161,6 +2161,27 @@
       "title": "OccurrenceSummary",
       "type": "object"
     },
+    "OnceSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "run_at": {
+          "format": "date-time",
+          "title": "Run At",
+          "type": "string"
+        },
+        "type": {
+          "const": "once",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "run_at"
+      ],
+      "title": "OnceSchedule",
+      "type": "object"
+    },
     "OutputSpec": {
       "additionalProperties": false,
       "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
@@ -3130,10 +3151,21 @@
       "title": "ScheduleOrigin",
       "type": "object"
     },
+    "ScheduleRule": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CronSchedule"
+        },
+        {
+          "$ref": "#/$defs/OnceSchedule"
+        }
+      ]
+    },
     "ScheduleState": {
       "enum": [
         "paused",
         "enabled",
+        "completed",
         "archived"
       ],
       "type": "string"

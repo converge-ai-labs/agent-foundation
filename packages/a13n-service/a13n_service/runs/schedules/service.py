@@ -1,6 +1,7 @@
 """Authorized, versioned Schedule configuration and durable recurring delegation."""
 
 import hashlib
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -20,12 +21,14 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import lifecycle, queries
 from a13n_service.runs.schedules.calendar import Calendar
 from a13n_service.runs.schedules.schemas import (
+    OnceSchedule,
     Schedule,
     ScheduleConfig,
     ScheduleCreate,
     ScheduleInvocation,
     SchedulePreview,
     SchedulePreviewRequest,
+    ScheduleRule,
     ScheduleTime,
     ScheduleUpdate,
 )
@@ -48,8 +51,27 @@ def require_owner(row: ScheduleRow, actor: Principal) -> None:
 
 
 def require_editable(row: ScheduleRow) -> None:
-    if row.state == "archived":
-        raise conflict("schedule", row.id, "archived")
+    if row.state in {"archived", "completed"}:
+        raise conflict("schedule", row.id, row.state)
+
+
+def time_values(rule: ScheduleRule) -> dict[str, object]:
+    if isinstance(rule, OnceSchedule):
+        return {"schedule_type": "once", "run_at": rule.run_at, "cron_expression": None, "timezone": None}
+    return {
+        "schedule_type": "cron",
+        "run_at": None,
+        "cron_expression": Calendar.parse(rule.expression, rule.timezone).expression,
+        "timezone": rule.timezone,
+    }
+
+
+def first_fire(rule: ScheduleRule, after: datetime) -> datetime:
+    if isinstance(rule, OnceSchedule):
+        if rule.run_at <= after:
+            raise invalid("schedule.run_at", "must_be_in_future")
+        return rule.run_at
+    return Calendar.parse(rule.expression, rule.timezone).next(after)
 
 
 async def validate_invocation(
@@ -129,8 +151,7 @@ async def create(
             )
         await validate_invocation(session, runtime, actor, scope, body.invocation, authority)
         current = await now(session)
-        calendar = Calendar.parse(body.schedule.expression, body.schedule.timezone)
-        future = calendar.next(current)
+        future = first_fire(body.schedule, current)
         owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
         owner.memory = SessionMemorySettings(enabled=False).model_dump(mode="json")
         session.add(owner)
@@ -145,8 +166,7 @@ async def create(
             labels=dict(body.labels),
             state=body.state,
             pause_reason="manual" if body.state == "paused" else None,
-            cron_expression=calendar.expression,
-            timezone=body.schedule.timezone,
+            **time_values(body.schedule),
             max_lateness_seconds=body.max_lateness_seconds,
             invocation=body.invocation.model_dump(mode="json"),
             principal_id=actor.id,
@@ -189,25 +209,28 @@ async def update(
         )
         await validate_invocation(session, runtime, actor, scope, config.invocation, authority)
         current = await now(session)
-        calendar = Calendar.parse(config.schedule.expression, config.schedule.timezone)
-        calendar.next(current)
         values = {
             "name": config.name,
             "description": config.description,
             "labels": dict(config.labels),
-            "cron_expression": calendar.expression,
-            "timezone": config.schedule.timezone,
+            **time_values(config.schedule),
             "max_lateness_seconds": config.max_lateness_seconds,
             "invocation": config.invocation.model_dump(mode="json"),
         }
         changed = [name for name, value in values.items() if getattr(row, name) != value]
         if not changed:
             return queries.view(row)
-        if set(changed) & {"cron_expression", "timezone", "max_lateness_seconds", "invocation"}:
+        timing_changed = bool(
+            set(changed)
+            & {"schedule_type", "run_at", "cron_expression", "timezone", "max_lateness_seconds", "invocation"}
+        )
+        if timing_changed:
+            after = max(current, row.last_processed_fire_at) if row.last_processed_fire_at else current
+            first_fire(config.schedule, after)
             await lifecycle.cancel_pending(session, row, current, "schedule_changed")
             await lifecycle.close_due(session, row, current, "schedule_changed")
         assign(row, values)
-        if set(changed) & {"cron_expression", "timezone", "max_lateness_seconds", "invocation"}:
+        if timing_changed:
             row.next_fire_at = lifecycle.next_fire(row, current) if row.state == "enabled" else None
         row.updated_by_id = actor.id
         audit_row(session, actor, row, "update", {"session_id": row.session_id, "fields": list(changed)})
@@ -235,7 +258,8 @@ async def transition(
         require_match(if_match, row.id, row.version)
         if row.state == "archived" and command == "archive":
             return queries.view(row)
-        require_editable(row)
+        if command != "archive":
+            require_editable(row)
         current = await now(session)
         cancelled = None
         if command == "enable":
@@ -244,8 +268,9 @@ async def transition(
             )
             if row.state == "enabled":
                 return queries.view(row)
+            after = max(current, row.last_processed_fire_at) if row.last_processed_fire_at else current
+            row.next_fire_at = first_fire(lifecycle.rule(row), after)
             row.state, row.pause_reason = "enabled", None
-            row.next_fire_at = lifecycle.next_fire(row, current)
         else:
             reason = "schedule_paused" if command == "pause" else "schedule_archived"
             cancelled = await lifecycle.cancel_pending(session, row, current, reason)
@@ -265,6 +290,9 @@ async def preview(
 ) -> SchedulePreview:
     async with short_session(runtime.storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
+    if isinstance(body.schedule, OnceSchedule):
+        instant = body.schedule.run_at
+        return SchedulePreview(items=[ScheduleTime(utc=instant, local=instant)] if instant > body.after else [])
     calendar = Calendar.parse(body.schedule.expression, body.schedule.timezone)
     current, items = body.after, []
     for _ in range(body.count):

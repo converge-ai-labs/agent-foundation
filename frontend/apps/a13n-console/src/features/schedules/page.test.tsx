@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -161,83 +162,103 @@ function live(
   );
 }
 
-it("previews explicit timing and retries an unchanged create with the same request key", async () => {
-  const user = userEvent.setup(),
-    creates: Request[] = [],
-    bodies: unknown[] = [],
-    previews: unknown[] = [];
-  show("/workspace/ws_one/schedules", async (request) => {
-    const path = new URL(request.url).pathname;
-    if (path === "/api/v1/schedules" && request.method === "GET")
-      return Response.json({ items: [], next_cursor: null });
-    if (path === "/api/v1/agents")
-      return Response.json({
-        items: [{ id: "agt_one", name: "Reporter" }],
-        next_cursor: null,
-      });
-    if (path.endsWith("/preview")) {
-      previews.push(await request.json());
-      return Response.json({
-        items: [{ utc: at, local: "2026-10-20T08:00:00+08:00" }],
+it.each(["cron", "once"])(
+  "previews %s timing and retries an unchanged create with the same request key",
+  async (type) => {
+    const user = userEvent.setup(),
+      creates: Request[] = [],
+      bodies: unknown[] = [],
+      previews: unknown[] = [];
+    show("/workspace/ws_one/schedules", async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/schedules" && request.method === "GET")
+        return Response.json({ items: [], next_cursor: null });
+      if (path === "/api/v1/agents")
+        return Response.json({
+          items: [{ id: "agt_one", name: "Reporter" }],
+          next_cursor: null,
+        });
+      if (path.endsWith("/preview")) {
+        previews.push(await request.json());
+        return Response.json({
+          items: [{ utc: at, local: "2026-10-20T08:00:00+08:00" }],
+        });
+      }
+      if (path === "/api/v1/schedules") {
+        creates.push(request);
+        bodies.push(await request.json());
+        if (creates.length === 1)
+          return Response.json(
+            { error: { code: "unavailable", message: "Temporary outage" } },
+            { status: 503 },
+          );
+        return Response.json(schedule, { status: 201 });
+      }
+      if (path.endsWith("/status")) return Response.json(status);
+      if (path.endsWith("/occurrences"))
+        return Response.json({ items: [], next_cursor: null });
+      if (path.endsWith("/stream")) return live(request, []);
+      return Response.json(schedule);
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Create schedule" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Morning report");
+    if (type === "once") {
+      await user.click(
+        within(dialog).getByRole("button", { name: "One time" }),
+      );
+      fireEvent.change(within(dialog).getByLabelText("Run at"), {
+        target: { value: "2090-10-21T09:30:15" },
       });
     }
-    if (path === "/api/v1/schedules") {
-      creates.push(request);
-      bodies.push(await request.json());
-      if (creates.length === 1)
-        return Response.json(
-          { error: { code: "unavailable", message: "Temporary outage" } },
-          { status: 503 },
-        );
-      return Response.json(schedule, { status: 201 });
-    }
-    if (path.endsWith("/status")) return Response.json(status);
-    if (path.endsWith("/occurrences"))
-      return Response.json({ items: [], next_cursor: null });
-    if (path.endsWith("/stream")) return live(request, []);
-    return Response.json(schedule);
-  });
-  await user.click(
-    await screen.findByRole("button", { name: "Create schedule" }),
-  );
-  const dialog = screen.getByRole("dialog");
-  await user.type(within(dialog).getByLabelText("Name"), "Morning report");
-  await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
-  await user.click(await screen.findByRole("option", { name: "Reporter" }));
-  await user.type(within(dialog).getByLabelText("Input"), "Report");
-  await user.click(
-    within(dialog).getByRole("button", { name: "Preview next times" }),
-  );
-  expect(await screen.findByText(/2026-10-20T08:00:00/)).toBeTruthy();
-  expect(previews[0]).toMatchObject({
-    schedule: { expression: "0 9 * * *" },
-    count: 5,
-  });
-  await user.click(
-    within(dialog).getByRole("button", {
-      name: "Create schedule",
-    }),
-  );
-  await screen.findByText("Temporary outage");
-  await user.click(
-    within(dialog).getByRole("button", {
-      name: "Create schedule",
-    }),
-  );
-  await screen.findByRole("heading", { name: "Morning report" });
-  expect(creates).toHaveLength(2);
-  expect(creates[0].headers.get("Idempotency-Key")).toBe(
-    creates[1].headers.get("Idempotency-Key"),
-  );
-  expect(bodies[0]).toEqual(bodies[1]);
-  expect(bodies[0]).toMatchObject({
-    invocation: {
-      agent_id: "agt_one",
-      agent_revision_id: null,
-      payload: { content: [{ type: "text", text: "Report" }] },
-    },
-  });
-});
+    await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
+    await user.click(await screen.findByRole("option", { name: "Reporter" }));
+    await user.type(within(dialog).getByLabelText("Input"), "Report");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview next times" }),
+    );
+    expect(await screen.findByLabelText("Next scheduled times")).toBeTruthy();
+    expect(previews[0]).toMatchObject({
+      schedule:
+        type === "once"
+          ? {
+              type: "once",
+              run_at: new Date("2090-10-21T09:30:15").toISOString(),
+            }
+          : { expression: "0 9 * * *" },
+      count: 5,
+    });
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Create schedule",
+      }),
+    );
+    await screen.findByText("Temporary outage");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Create schedule",
+      }),
+    );
+    await screen.findByRole("heading", { name: "Morning report" });
+    expect(creates).toHaveLength(2);
+    expect(creates[0].headers.get("Idempotency-Key")).toBe(
+      creates[1].headers.get("Idempotency-Key"),
+    );
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect((bodies[0] as Schema["ScheduleCreate"]).schedule).toEqual(
+      (previews[0] as Schema["SchedulePreviewRequest"]).schedule,
+    );
+    expect(bodies[0]).toMatchObject({
+      invocation: {
+        agent_id: "agt_one",
+        agent_revision_id: null,
+        payload: { content: [{ type: "text", text: "Report" }] },
+      },
+    });
+  },
+);
 
 it("pages history, distinguishes failed input from submission, and refreshes an old result on reconnect", async () => {
   vi.spyOn(Math, "random").mockReturnValue(0);
@@ -521,4 +542,60 @@ it("does not replace a newer streamed occurrence with an older in-flight history
   });
   expect(screen.queryByText("state.pending")).toBeNull();
   expect(screen.getByText("state.failed")).toBeTruthy();
+});
+
+it("keeps completed one-time history visible while only offering archive", async () => {
+  show("/workspace/ws_one/schedules/sch_one", (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/stream")) return live(request, []);
+    if (path.endsWith("/status"))
+      return Response.json({ ...status, has_unfinished_work: true });
+    if (path.endsWith("/occurrences"))
+      return Response.json({ items: [occurrence()], next_cursor: null });
+    return Response.json({
+      ...schedule,
+      state: "completed",
+      pause_reason: null,
+      schedule: { type: "once", run_at: at },
+    });
+  });
+  expect(await screen.findByText("Scheduling finished")).toBeTruthy();
+  expect(await screen.findByText("No input submitted")).toBeTruthy();
+  expect(screen.getByText("Pending or unfinished work")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+  for (const name of ["Enable", "Pause", "Edit schedule", "Run once"])
+    expect(screen.queryByRole("button", { name })).toBeNull();
+});
+
+it("preserves an unchanged one-time instant when editing metadata after its time has passed", async () => {
+  const user = userEvent.setup();
+  const once = {
+    ...schedule,
+    schedule: { type: "once", run_at: "2020-10-21T09:30:15.123456Z" },
+  };
+  let saved: Schema["ScheduleUpdate"] | undefined;
+  show("/workspace/ws_one/schedules/sch_one", async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/stream")) return live(request, []);
+    if (path.endsWith("/status")) return Response.json(status);
+    if (path.endsWith("/occurrences"))
+      return Response.json({ items: [], next_cursor: null });
+    if (path === "/api/v1/agents")
+      return Response.json({
+        items: [{ id: "agt_one", name: "Reporter" }],
+        next_cursor: null,
+      });
+    if (request.method === "PATCH") saved = await request.json();
+    return Response.json(once);
+  });
+  await user.click(
+    await screen.findByRole("button", { name: "Edit schedule" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  await user.type(within(dialog).getByLabelText("Name"), " edited");
+  await user.click(
+    within(dialog).getByRole("button", { name: "Save changes" }),
+  );
+  await waitFor(() => expect(saved?.schedule).toEqual(once.schedule));
+  expect(saved?.name).toBe("Morning report edited");
 });

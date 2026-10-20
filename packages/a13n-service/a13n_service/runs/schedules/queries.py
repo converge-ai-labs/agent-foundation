@@ -8,10 +8,10 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, now, short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.labels import label_filter
+from a13n_service.runs.schedules.lifecycle import rule
 from a13n_service.runs.schedules.schemas import (
     BusyOccurrence,
     BusyOccurrencePage,
-    CronSchedule,
     Occurrence,
     OccurrenceExecution,
     OccurrencePage,
@@ -48,7 +48,7 @@ def view(row: ScheduleRow) -> Schedule:
             "created_at": row.created_at,
             "updated_at": row.updated_at,
             "archived_at": row.archived_at,
-            "schedule": CronSchedule(expression=row.cron_expression, timezone=row.timezone),
+            "schedule": rule(row),
             "stream_url": f"/api/v1/sessions/{row.session_id}/stream",
         }
     )

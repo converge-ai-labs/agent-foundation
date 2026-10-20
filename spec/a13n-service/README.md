@@ -8,22 +8,22 @@ The Service is a managed-agent runtime. A tenant configures resources (agents an
 
 ## How to read this
 
-| If you want to know                                    | Read                                                 |
-| ------------------------------------------------------ | ---------------------------------------------------- |
-| what the Service is, its boundaries and principles     | [00-overview.md](00-overview.md)                     |
-| where code goes, how things are named, the error codes | [02-layout.md](02-layout.md)                         |
-| who can do what                                        | [03-tenancy.md](03-tenancy.md)                       |
-| what a tenant configures                               | [04-resources.md](04-resources.md)                   |
-| how input becomes a sealed run                         | [05-runs.md](05-runs.md)                             |
-| where a run executes                                   | [06-environments.md](06-environments.md)             |
-| what agents remember across conversations              | [11-memory.md](11-memory.md)                         |
-| what the Service remembers and tells others            | [07-facts-and-delivery.md](07-facts-and-delivery.md) |
-| what the Service calls                                 | [08-providers.md](08-providers.md)                   |
-| processes, background work, assembly, extension points | [09-runtime.md](09-runtime.md)                       |
-| what the Service logs and measures about itself        | [12-observability.md](12-observability.md)           |
-| the HTTP surface                                       | [10-api.md](10-api.md)                               |
-| recurring Agent invocation and trigger history         | [13-schedules.md](13-schedules.md)                   |
-| what a word means                                      | [glossary.md](glossary.md)                           |
+| If you want to know                                         | Read                                                 |
+| ----------------------------------------------------------- | ---------------------------------------------------- |
+| what the Service is, its boundaries and principles          | [00-overview.md](00-overview.md)                     |
+| where code goes, how things are named, the error codes      | [02-layout.md](02-layout.md)                         |
+| who can do what                                             | [03-tenancy.md](03-tenancy.md)                       |
+| what a tenant configures                                    | [04-resources.md](04-resources.md)                   |
+| how input becomes a sealed run                              | [05-runs.md](05-runs.md)                             |
+| where a run executes                                        | [06-environments.md](06-environments.md)             |
+| what agents remember across conversations                   | [11-memory.md](11-memory.md)                         |
+| what the Service remembers and tells others                 | [07-facts-and-delivery.md](07-facts-and-delivery.md) |
+| what the Service calls                                      | [08-providers.md](08-providers.md)                   |
+| processes, background work, assembly, extension points      | [09-runtime.md](09-runtime.md)                       |
+| what the Service logs and measures about itself             | [12-observability.md](12-observability.md)           |
+| the HTTP surface                                            | [10-api.md](10-api.md)                               |
+| one-time and recurring Agent invocation and trigger history | [13-schedules.md](13-schedules.md)                   |
+| what a word means                                           | [glossary.md](glossary.md)                           |
 
 Start with [00-overview.md](00-overview.md), [02-layout.md](02-layout.md) and the [glossary](glossary.md), then read the chapter that owns the behavior you are changing. Authorization ([03](03-tenancy.md)), durable facts ([07](07-facts-and-delivery.md)), runtime rules ([09](09-runtime.md)) and observability ([12](12-observability.md)) apply to every feature.
 
@@ -49,7 +49,7 @@ A complete rule is defined once, in its owning section. Other chapters describe 
 
 Tests, validation gates and end-to-end scenarios are contributor workflow, owned by [CONTRIBUTING.md](../../CONTRIBUTING.md#local-validation) and [e2e/service](../../e2e/service/README.md). The glossary gives short definitions and links; it does not repeat rules.
 
-Recurring delegation, fixed Schedule Sessions, trigger records, time rules and Schedule management are owned by [13: schedules](13-schedules.md).
+Scheduled delegation, fixed Schedule Sessions, trigger records, time rules and Schedule management are owned by [13: schedules](13-schedules.md).
 
 ## Conventions in these documents
 

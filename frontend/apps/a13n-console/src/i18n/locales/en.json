@@ -2463,7 +2463,6 @@
   "Sessions, threads, runs, traces and findings; its only write submits a finding.": "Sessions, threads, runs, traces and findings; its only write submits a finding.",
   "Schedules": "Schedules",
   "Schedule": "Schedule",
-  "Run agents on a recurring schedule, with a separate result for each trigger.": "Run agents on a recurring schedule, with a separate result for each trigger.",
   "Search schedules": "Search schedules",
   "All states": "All states",
   "Timing": "Timing",
@@ -2532,5 +2531,14 @@
   "State": "State",
   "Scheduled execution": "Scheduled execution",
   "Fields require one text input. Use JSON to edit structured input.": "Fields require one text input. Use JSON to edit structured input.",
-  "Reconnect": "Reconnect"
+  "Reconnect": "Reconnect",
+  "Run agents once or on a recurring schedule, with a separate result for each trigger.": "Run agents once or on a recurring schedule, with a separate result for each trigger.",
+  "Schedule type": "Schedule type",
+  "Recurring": "Recurring",
+  "One time": "One time",
+  "Run at": "Run at",
+  "Choose a valid date and time.": "Choose a valid date and time.",
+  "Date and time in {{timezone}}.": "Date and time in {{timezone}}.",
+  "Scheduling finished": "Scheduling finished",
+  "Scheduling has finished. Check the trigger history for submission and execution results.": "Scheduling has finished. Check the trigger history for submission and execution results."
 }

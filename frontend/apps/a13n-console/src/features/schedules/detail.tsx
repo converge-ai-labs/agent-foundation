@@ -154,7 +154,12 @@ function ScheduleContent({
     !!status.data?.pending_occurrence_id || status.data?.has_unfinished_work;
   const creator = auth.data?.user.value.id === schedule.principal_id;
   const open = schedule.state !== "archived",
-    editable = open && creator && can("write") && can("run");
+    editable =
+      open &&
+      schedule.state !== "completed" &&
+      creator &&
+      can("write") &&
+      can("run");
   return (
     <DetailPage
       back={`${basePath}/schedules`}
@@ -167,7 +172,16 @@ function ScheduleContent({
             </IconTile>
           }
           name={schedule.name}
-          status={<StatePill state={schedule.state} />}
+          status={
+            <StatePill
+              state={schedule.state}
+              label={
+                schedule.state === "completed"
+                  ? t("Scheduling finished")
+                  : undefined
+              }
+            />
+          }
           resourceKey={schedule.id}
           description={schedule.description}
           actions={
@@ -187,7 +201,7 @@ function ScheduleContent({
                     {t(schedule.state === "enabled" ? "Pause" : "Enable")}
                   </Button>
                 )}
-                {creator && can("run") && (
+                {schedule.state !== "completed" && creator && can("run") && (
                   <Button
                     disabled={action.isPending || busy || !status.data}
                     loading={
@@ -256,7 +270,13 @@ function ScheduleContent({
         <div>
           <dt>{t("Timing")}</dt>
           <dd>
-            {schedule.schedule.expression} · {schedule.schedule.timezone}
+            {schedule.schedule.type === "once" ? (
+              <Timestamp value={schedule.schedule.run_at} precise />
+            ) : (
+              <>
+                {schedule.schedule.expression} · {schedule.schedule.timezone}
+              </>
+            )}
           </dd>
         </div>
         <div>
@@ -282,6 +302,13 @@ function ScheduleContent({
           </dd>
         </div>
       </dl>
+      {schedule.state === "completed" && (
+        <p className={styles.notice}>
+          {t(
+            "Scheduling has finished. Check the trigger history for submission and execution results.",
+          )}
+        </p>
+      )}
       {schedule.pause_reason && (
         <p className={styles.notice}>
           {t(`schedule.reason.${schedule.pause_reason}`, {

@@ -9,7 +9,8 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
-from a13n_service.runs.schedules.schemas import CronSchedule, OccurrenceSummary, ScheduleState
+from a13n_service.runs.schedules.lifecycle import rule
+from a13n_service.runs.schedules.schemas import OccurrenceSummary, ScheduleRule, ScheduleState
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.session_state import Scope
 
@@ -22,7 +23,7 @@ class Configuration(BaseModel):
     pause_reason: str | None
     version: int
     principal_id: str
-    schedule: CronSchedule
+    schedule: ScheduleRule
     max_lateness_seconds: int
 
 
@@ -97,7 +98,7 @@ async def snapshots(session: AsyncSession, scopes: Sequence[Scope]) -> dict[Scop
                         version=row.version,
                         session_id=row.session_id,
                         principal_id=row.principal_id,
-                        schedule=CronSchedule(expression=row.cron_expression, timezone=row.timezone),
+                        schedule=rule(row),
                         max_lateness_seconds=row.max_lateness_seconds,
                     )
                 ),
