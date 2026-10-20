@@ -20,15 +20,14 @@ from a13n_harness.providers.environment.direct_local.protected_files import (
     protect_local_files,
 )
 from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
+from a13n_harness_ui import host_files as host_files_module
 from a13n_harness_ui.errors import HarnessUiError, StoreIntegrityError
 from a13n_harness_ui.host_files import (
     MAX_TEXT_BYTES,
-    FileDeleteRequest,
-    FileMoveRequest,
     FileReadRequest,
-    FileWriteRequest,
     HostFiles,
 )
+from a13n_harness_ui.interactive import attachments
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import database as database_module
 from a13n_harness_ui.storage.database import open_database
@@ -53,6 +52,23 @@ def protected_path(tmp_path: Path) -> Iterator[Path]:
     # Access checks need real filesystem identities, not a migrated database.
     with closing(protect_local_files(_storage_paths(path))):
         yield path
+
+
+def _alias(target: Path, alias_kind: str, root: Path) -> Path:
+    if alias_kind == "direct":
+        return target
+    if alias_kind == "case":
+        alias = target.with_name(target.name.upper())
+        if not alias.exists():
+            pytest.skip("Requires a case-insensitive filesystem")
+        assert alias.samefile(target)
+    else:
+        alias = root / f"{target.name}.{alias_kind}"
+        if alias_kind == "symlink":
+            alias.symlink_to(target)
+        else:
+            alias.hardlink_to(target)
+    return alias
 
 
 def _files(root: Path) -> LocalFileOperator:
@@ -87,7 +103,7 @@ async def _external_payload(path: Path) -> str:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Regression exercises process-wide POSIX SQLite locks")
-@pytest.mark.parametrize("surface", ["search", "preview"])
+@pytest.mark.parametrize("surface", ["search", "preview", "attachment"])
 async def test_native_reads_preserve_sqlite_locks_across_external_connection_close(
     tmp_path: Path, surface: str
 ) -> None:
@@ -110,12 +126,16 @@ async def test_native_reads_preserve_sqlite_locks_across_external_connection_clo
                         FileTextSearchRequest(root="/", pattern="checkpoint marker", max_matches=10)
                     )
                     assert [match.path for match in result.matches] == ["/notes.txt"]
-                else:
+                elif surface == "preview":
                     host = HostFiles(enabled=True)
                     for target in (path, Path(f"{path}-shm")):
                         with pytest.raises(HarnessUiError) as failure:
                             await host.info(FileReadRequest(path=str(target)))
                         assert failure.value.code == "host_files_permission_denied"
+                else:
+                    for target in (path, Path(f"{path}-shm")):
+                        with pytest.raises(PermissionError):
+                            attachments.read_attachment(target)
                 assert await _external_payload(path) == "before"
 
                 await owner.execute(text("UPDATE planned_restart SET payload='after' WHERE singleton_id=1"))
@@ -131,23 +151,47 @@ async def test_native_reads_preserve_sqlite_locks_across_external_connection_clo
         files.close()
 
 
-@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink", "case"])
 async def test_host_file_previews_reject_storage_inode_aliases(
     tmp_path: Path, protected_path: Path, alias_kind: str
 ) -> None:
     host = HostFiles(enabled=True)
     for target in (protected_path, Path(f"{protected_path}-shm")):
-        alias = target if alias_kind == "direct" else tmp_path / f"{target.name}.{alias_kind}"
-        if alias_kind == "symlink":
-            alias.symlink_to(target)
-        elif alias_kind == "hardlink":
-            alias.hardlink_to(target)
+        alias = _alias(target, alias_kind, tmp_path)
         # Stat-only metadata remains safe; previews and streams do not.
         assert (await host.metadata(str(alias))).kind == ("symlink" if alias_kind == "symlink" else "file")
         for operation in (host.info, host.read_text, host.open_stream):
             with pytest.raises(HarnessUiError) as failure:
                 await operation(FileReadRequest(path=str(alias)))
             assert failure.value.code == "host_files_permission_denied"
+
+
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink", "case"])
+def test_attachment_readers_reject_storage_inode_aliases(
+    tmp_path: Path, protected_path: Path, alias_kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_open(*args, **kwargs):
+        pytest.fail("Attachment readers must reject protected files before opening them")
+
+    monkeypatch.setattr(Path, "open", unexpected_open)
+    for target in (protected_path, Path(f"{protected_path}-shm")):
+        alias = _alias(target, alias_kind, tmp_path)
+        for reader in (attachments.read_attachment, attachments.read_image):
+            with pytest.raises(PermissionError):
+                reader(alias)
+
+
+def test_clipboard_file_list_uses_attachment_protection(
+    tmp_path: Path, protected_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ordinary = tmp_path / "notes.txt"
+    ordinary.write_bytes(b"project notes")
+    monkeypatch.setattr(attachments.ImageGrab, "grabclipboard", lambda: [str(ordinary)])
+    assert attachments.clipboard_images()[0].data == b"project notes"
+    monkeypatch.setattr(attachments.ImageGrab, "grabclipboard", lambda: [str(protected_path)])
+    with pytest.raises(ValueError, match="Clipboard content could not be read") as failure:
+        attachments.clipboard_images()
+    assert isinstance(failure.value.__cause__, PermissionError)
 
 
 async def test_other_project_sqlite_files_remain_readable(tmp_path: Path, protected_path: Path) -> None:
@@ -164,6 +208,7 @@ async def test_other_project_sqlite_files_remain_readable(tmp_path: Path, protec
         assert await files.read_bytes("/project.sqlite3", length=len(header)) == header
         assert (await host.info(FileReadRequest(path=str(project_path)))).entry.kind == "file"
         assert (await host.read_text(FileReadRequest(path=str(project_path)))).presentation == "binary"
+        assert attachments.read_attachment(project_path).data.startswith(header)
         stream = await host.open_stream(FileReadRequest(path=str(project_path)))
         try:
             assert await host.read_stream(stream, 0, len(header)) == header
@@ -173,50 +218,20 @@ async def test_other_project_sqlite_files_remain_readable(tmp_path: Path, protec
         files.close()
 
 
-async def test_large_protected_file_is_denied_before_text_size_fallback(protected_path: Path) -> None:
-    protected_path.write_bytes(b"\0" * (MAX_TEXT_BYTES + 1))
-    with pytest.raises(HarnessUiError) as failure:
-        await HostFiles(enabled=True).read_text(FileReadRequest(path=str(protected_path)))
-    assert failure.value.code == "host_files_permission_denied"
-
-
-@pytest.mark.parametrize(
-    "operation", ["write", "write_text", "move", "delete", "move_parent", "delete_parent", "journal"]
-)
-async def test_host_mutations_leave_protected_files_and_neighbors_intact(
-    tmp_path: Path, protected_path: Path, operation: str
+async def test_metadata_and_oversize_text_fallback_do_not_open_protected_files(
+    protected_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = protected_path
-    data = path.parent
-    neighbor = data / "ordinary.txt"
-    neighbor.write_text("preserve")
+    protected_path.write_bytes(b"\0" * (MAX_TEXT_BYTES + 1))
+
+    def unexpected_open(*args, **kwargs):
+        pytest.fail("Metadata and an oversized text fallback must not open content")
+
+    monkeypatch.setattr(host_files_module, "_open_stream", unexpected_open)
     host = HostFiles(enabled=True)
-    selected = data if operation.endswith("_parent") else path
-    observed = await host.metadata(str(selected))
-    with pytest.raises(HarnessUiError) as failure:
-        if operation == "write":
-            await host.write(str(path), b"replacement", expected_revision=observed.revision)
-        elif operation == "write_text":
-            await host.write_text(
-                FileWriteRequest(path=str(path), text="replacement", expected_revision=observed.revision)
-            )
-        elif operation in {"move", "move_parent"}:
-            await host.move(
-                FileMoveRequest(
-                    path=str(selected), destination=str(tmp_path / "moved"), expected_revision=observed.revision
-                )
-            )
-        elif operation in {"delete", "delete_parent"}:
-            await host.delete(
-                FileDeleteRequest(path=str(selected), expected_revision=observed.revision, recursive=True)
-            )
-        else:
-            await host.write(f"{path}-journal", b"not a journal", expected_revision=None)
-    assert failure.value.code == "host_files_permission_denied"
-    assert path.read_bytes() == b"stored content"
-    assert neighbor.read_text() == "preserve"
-    assert not (tmp_path / "moved").exists()
-    assert not Path(f"{path}-journal").exists()
+    assert (await host.metadata(str(protected_path))).size == MAX_TEXT_BYTES + 1
+    assert len((await host.browse(str(protected_path.parent))).entries) == 2
+    result = await host.read_text(FileReadRequest(path=str(protected_path)))
+    assert result.presentation == "too_large" and result.text is None
 
 
 @pytest.mark.parametrize("migration_fails", [False, True])

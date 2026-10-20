@@ -1,4 +1,4 @@
-"""Process-local files that native file tools must not open or mutate.
+"""Process-local files that native read APIs must not open.
 
 On POSIX, closing any descriptor for an inode releases this process's advisory
 locks on that inode. Even a read-only preview can therefore break an embedded
@@ -39,14 +39,14 @@ def protect_local_files(paths: Iterable[Path]) -> LocalFileProtection:
     return LocalFileProtection(paths)
 
 
-def is_protected_local_file(path: Path, *, descendants: bool = False) -> bool:
+def is_protected_local_file(path: Path) -> bool:
     """Inspect names and inode aliases without opening any file."""
     with _lock:
         if not _protections:
             return False
         resolved = path.resolve()
         paths = {item for protection in _protections for item in protection._paths}
-        if resolved in paths or (descendants and any(item.is_relative_to(resolved) for item in paths)):
+        if resolved in paths:
             return True
         identity = _identity(resolved)
         # Sidecars may appear after registration. Stat current paths rather than
@@ -54,9 +54,9 @@ def is_protected_local_file(path: Path, *, descendants: bool = False) -> bool:
         return identity is not None and any(identity == _identity(item) for item in paths)
 
 
-def check_local_file_access(path: Path, *, descendants: bool = False) -> None:
-    """Reject before open/close can disturb locks or a mutation can replace data."""
-    if is_protected_local_file(path, descendants=descendants):
+def check_local_file_read(path: Path) -> None:
+    """Reject before an ordinary read opens and closes an owner's file."""
+    if is_protected_local_file(path):
         raise PermissionError(errno.EACCES, "The file is in use by host storage.")
 
 
@@ -70,7 +70,7 @@ def _identity(path: Path) -> tuple[int, int] | None:
 
 __all__ = [
     "LocalFileProtection",
-    "check_local_file_access",
+    "check_local_file_read",
     "is_protected_local_file",
     "protect_local_files",
 ]

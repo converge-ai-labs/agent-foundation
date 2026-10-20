@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, BinaryIO, Literal
 
-from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_access
+from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
 from anyio import CancelScope, Lock, to_thread
 from pydantic import Field, model_validator
 
@@ -230,7 +230,7 @@ def _expect(path: Path, revision: str | None) -> FileEntry | None:
 
 def _open_stream(request: FileReadRequest) -> FileStream:
     path = _path(request.path).resolve(strict=True)
-    check_local_file_access(path)
+    check_local_file_read(path)
     entry = _entry(path)
     if entry.kind != "file":
         raise _error("type_invalid", "Only regular files support content operations.")
@@ -372,7 +372,6 @@ class HostFiles:
     async def read_text(self, request: FileReadRequest) -> FileText:
         def read() -> FileText:
             path = _path(request.path).resolve(strict=True)
-            check_local_file_access(path)
             entry = _entry(path)
             if request.expected_revision is not None and entry.revision != request.expected_revision:
                 raise _error("conflict", "The file revision changed.")
@@ -404,7 +403,6 @@ class HostFiles:
             target = _path(path)
             # Pin the resolved parent for this operation, but never implicitly replace a final symlink.
             target = target.parent.resolve(strict=True) / target.name
-            check_local_file_access(target)
             current = _expect(target, expected_revision)
             if current is not None and current.kind != "file":
                 raise _error(
@@ -423,7 +421,6 @@ class HostFiles:
                             os.chmod(temporary, current.mode)
                     os.fsync(stream.fileno())
                 _expect(target, expected_revision)
-                check_local_file_access(target)
                 if current is None:
                     # Atomic no-clobber publication for new files, including uploads.
                     os.link(temporary, target)
@@ -451,7 +448,6 @@ class HostFiles:
     async def create_directory(self, request: DirectoryCreateRequest) -> FileEntry:
         def create() -> FileEntry:
             path = _path(request.path)
-            check_local_file_access(path)
             path.mkdir()
             return _entry(path)
 
@@ -461,8 +457,6 @@ class HostFiles:
         def move() -> FileEntry:
             source = _path(request.path)
             destination = _path(request.destination)
-            check_local_file_access(source, descendants=True)
-            check_local_file_access(destination, descendants=True)
             _expect(source, request.expected_revision)
             _rename_no_replace(source, destination)
             return _entry(destination)
@@ -472,7 +466,6 @@ class HostFiles:
     async def delete(self, request: FileDeleteRequest) -> FileDeletion:
         def delete() -> FileDeletion:
             target = _path(request.path)
-            check_local_file_access(target, descendants=True)
             entry = _expect(target, request.expected_revision)
             assert entry is not None
             plan: list[FileEntry] = []
@@ -505,7 +498,6 @@ class HostFiles:
             # Check every observed entry before the first side effect. This is not
             # a transaction with external writers; recheck each parent and child below.
             for item in plan:
-                check_local_file_access(Path(item.path))
                 _expect(Path(item.path), item.revision)
             try:
                 for item in reversed(plan):

@@ -9,7 +9,7 @@ from a13n_harness.environment.files import FileQueryRequest, FileTextSearchReque
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.protected_files import (
-    check_local_file_access,
+    check_local_file_read,
     is_protected_local_file,
     protect_local_files,
 )
@@ -27,8 +27,16 @@ def _files(root: Path) -> LocalFileOperator:
     )
 
 
-async def _bytes():
-    yield b"replacement"
+@pytest.fixture
+def prevent_protected_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_open = io.open
+
+    def checked_open(path, *args, **kwargs):
+        if not isinstance(path, int):
+            assert not is_protected_local_file(Path(path)), "protected inode reached raw open"
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(io, "open", checked_open)
 
 
 def test_independent_owners_and_late_sidecar_alias(tmp_path: Path) -> None:
@@ -43,7 +51,8 @@ def test_independent_owners_and_late_sidecar_alias(tmp_path: Path) -> None:
         alias = tmp_path / "ordinary.txt"
         os.link(sidecar, alias)
         assert is_protected_local_file(alias)
-        assert is_protected_local_file(tmp_path, descendants=True)
+        with pytest.raises(PermissionError):
+            check_local_file_read(alias)
         assert not is_protected_local_file(tmp_path)
         first.close()
         first.close()
@@ -73,7 +82,7 @@ def test_unavailable_inode_is_not_an_alias(tmp_path: Path, monkeypatch) -> None:
     try:
         monkeypatch.setattr(Path, "stat", without_inode)
         assert is_protected_local_file(protected)
-        check_local_file_access(ordinary)
+        check_local_file_read(ordinary)
     finally:
         lease.close()
 
@@ -81,9 +90,11 @@ def test_unavailable_inode_is_not_an_alias(tmp_path: Path, monkeypatch) -> None:
 @pytest.mark.parametrize("alias_kind", ["name", "symlink", "hardlink"])
 @pytest.mark.parametrize(
     "operation",
-    ["text", "bytes", "stream", "search", "patch", "append", "write", "copy", "move", "remove"],
+    ["text", "bytes", "stream", "search", "patch", "append", "copy"],
 )
-async def test_direct_file_access_denied_before_open(tmp_path: Path, monkeypatch, alias_kind, operation) -> None:
+async def test_direct_file_reads_denied_before_open(
+    tmp_path: Path, prevent_protected_open, alias_kind, operation
+) -> None:
     protected = tmp_path / "metadata.sqlite3"
     protected.write_text("private storage\n")
     alias = tmp_path / "alias.txt"
@@ -95,14 +106,6 @@ async def test_direct_file_access_denied_before_open(tmp_path: Path, monkeypatch
         alias = protected
     lease = protect_local_files((protected,))
     files = _files(tmp_path)
-    original_open = io.open
-
-    def checked_open(path, *args, **kwargs):
-        if not isinstance(path, int):
-            assert not is_protected_local_file(Path(path)), "protected inode reached raw open"
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(io, "open", checked_open)
     selected = "/" + alias.name
     try:
         with pytest.raises(EnvironmentError) as failure:
@@ -116,27 +119,21 @@ async def test_direct_file_access_denied_before_open(tmp_path: Path, monkeypatch
             elif operation == "search":
                 await files.search_text(FileTextSearchRequest(root=selected, pattern="private", max_matches=10))
             elif operation == "patch":
-                await files.patch_text(selected, "unused because access must be rejected first")
+                await files.patch_text(selected, "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-private storage\n+new\n")
             elif operation == "append":
                 await files.write_text(selected, "extra", mode="append")
-            elif operation == "write":
-                await files.write_bytes_stream(selected, _bytes(), mode="replace")
             elif operation == "copy":
                 await files.copy(selected, "/copy.txt")
-            elif operation == "move":
-                await files.move(selected, "/moved")
-            elif operation == "remove":
-                await files.remove(selected)
         assert failure.value.code == "environment_denied"
         assert not (tmp_path / "copy.txt").exists()
-        assert not (tmp_path / "moved").exists()
+        assert not list(tmp_path.glob(".a13n-write-*"))
     finally:
         files.close()
         lease.close()
     assert protected.read_text() == "private storage\n"
 
 
-async def test_recursive_search_and_gitignore_skip_protected_aliases(tmp_path: Path, monkeypatch) -> None:
+async def test_recursive_search_and_gitignore_skip_protected_aliases(tmp_path: Path, prevent_protected_open) -> None:
     data = tmp_path / "data"
     data.mkdir()
     database = data / "metadata.sqlite3"
@@ -147,14 +144,6 @@ async def test_recursive_search_and_gitignore_skip_protected_aliases(tmp_path: P
     ordinary = tmp_path / "project.sqlite3"
     ordinary.write_text("needle public\n")
     lease = protect_local_files((database,))
-    original_open = io.open
-
-    def checked_open(path, *args, **kwargs):
-        if not isinstance(path, int):
-            assert not is_protected_local_file(Path(path)), "protected inode reached raw open"
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(io, "open", checked_open)
     files = _files(tmp_path)
     try:
         result = await files.search_text(
@@ -171,33 +160,43 @@ async def test_recursive_search_and_gitignore_skip_protected_aliases(tmp_path: P
         lease.close()
 
 
-@pytest.mark.parametrize("operation", ["remove", "move", "replace-directory", "create-sidecar"])
-async def test_mutation_preflight_preserves_storage_tree(tmp_path: Path, operation) -> None:
-    data = tmp_path / "data"
-    data.mkdir()
-    database = data / "metadata.sqlite3"
-    database.write_text("storage")
-    (data / "ordinary").write_text("keep")
-    replacement = tmp_path / "replacement"
-    replacement.mkdir()
-    lease = protect_local_files((database, data / "metadata.sqlite3-journal"))
+async def test_metadata_and_filtered_reads_do_not_open_protected_files(tmp_path: Path, prevent_protected_open) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    path.write_bytes(b"x" * 1025)
+    lease = protect_local_files((path,))
     files = _files(tmp_path)
     try:
-        await files.mkdir("/data", exist_ok=True)
+        assert (await files.stat("/metadata.sqlite3")).size == 1025
+        assert [entry.path for entry in (await files.list("/", max_results=10)).entries] == ["/metadata.sqlite3"]
         with pytest.raises(EnvironmentError) as failure:
-            if operation == "remove":
-                await files.remove("/data", recursive=True)
-            elif operation == "move":
-                await files.move("/data", "/moved")
-            elif operation == "replace-directory":
-                await files.move("/replacement", "/data", replace=True)
-            else:
-                await files.write_bytes_stream("/data/metadata.sqlite3-journal", _bytes(), mode="create")
+            await files.read_bytes("/metadata.sqlite3")
+        assert failure.value.code == "environment_too_large"
+        for filters in ({"max_file_bytes": 1024}, {"include": "*.py"}):
+            result = await files.search_text(
+                FileTextSearchRequest(root="/metadata.sqlite3", pattern="x", max_matches=10, **filters)
+            )
+            assert result.matches == ()
+        with pytest.raises(EnvironmentError) as failure:
+            await files.read_bytes("/metadata.sqlite3", length=1)
         assert failure.value.code == "environment_denied"
     finally:
         files.close()
         lease.close()
-    assert database.read_text() == "storage"
-    assert (data / "ordinary").read_text() == "keep"
-    assert replacement.is_dir()
-    assert not (data / "metadata.sqlite3-journal").exists()
+
+
+async def test_existing_case_alias_is_protected(tmp_path: Path, prevent_protected_open) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    path.write_text("private storage")
+    alias = path.with_name(path.name.upper())
+    if not alias.exists():
+        pytest.skip("Requires a case-insensitive filesystem")
+    assert alias.samefile(path)
+    lease = protect_local_files((path,))
+    files = _files(tmp_path)
+    try:
+        with pytest.raises(EnvironmentError) as failure:
+            await files.read_bytes("/" + alias.name)
+        assert failure.value.code == "environment_denied"
+    finally:
+        files.close()
+        lease.close()

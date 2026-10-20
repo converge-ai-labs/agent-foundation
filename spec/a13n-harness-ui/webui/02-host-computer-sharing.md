@@ -22,8 +22,6 @@ A same-instance Host-file link in rendered assistant Markdown opens the Files dr
 
 File content, names, paths, and errors are bounded detached values; the API exposes no file descriptors or native object references. Downloads and previews do not execute arbitrary content as workbench-origin scripts. Large or binary content has explicit limits and fallback presentation rather than silent truncation represented as a complete editable file.
 
-Host Files shares the App's process-local protection of active metadata databases and their SQLite sidecars. Content access, file information that opens a handle, and mutations fail with `permission_denied` before opening or changing protected files, including resolved and hard-link aliases. Moving or deleting a containing directory is also rejected before mutation. Metadata-only listing remains available. This protects storage locks from accidental native file access; it adds no shell sandbox or guarantee against concurrent external filesystem changes.
-
 Edits made through the browser, PTY, Agents, or external editors can affect the same files. External updates do not replace an unsaved browser buffer. A stale content save reports a conflict rather than knowingly overwriting a newer observed file revision. A failed or interrupted write is not reported as saved. General filesystem operations are not presented as a transaction across multiple files or arbitrary external writers.
 
 ### Native Paths and Observations

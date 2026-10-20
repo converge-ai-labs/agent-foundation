@@ -46,7 +46,7 @@ from a13n_harness.environment.text import apply_unified_diff
 from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_harness.providers.environment._file_search import search_text_file
 from a13n_harness.providers.environment.direct_local.protected_files import (
-    check_local_file_access,
+    check_local_file_read,
     is_protected_local_file,
 )
 
@@ -298,7 +298,6 @@ class LocalFileOperator:
     def _resolve_file(self, path: str, subject: str) -> Path:
         native = self._resolve(path)
         try:
-            check_local_file_access(native)
             is_file = stat_module.S_ISREG(native.stat().st_mode)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="inspect a file") from exc
@@ -314,14 +313,10 @@ class LocalFileOperator:
             )
         return native
 
-    def _require_writable(self, path: Path, *, descendants: bool = False) -> None:
+    def _require_writable(self, path: Path) -> None:
         self._require_open()
         if path == self._root:
             raise EnvironmentError("The provider root cannot be mutated.", code="environment_denied")
-        try:
-            check_local_file_access(path, descendants=descendants)
-        except OSError as exc:
-            raise _environment_error_from_os(exc, action="mutate a file in use by host storage") from exc
 
     @staticmethod
     def _validate_writer_destination(path: Path) -> None:
@@ -664,11 +659,6 @@ class LocalFileOperator:
                     "hint": "Select a regular file or directory; special files cannot be searched.",
                 },
             )
-        if single_file:
-            try:
-                check_local_file_access(root)
-            except OSError as exc:
-                raise _environment_error_from_os(exc, action="search a file in use by host storage") from exc
         try:
             include = PathPattern(request.include, "include")
             regex = content_pattern(request.pattern, request.regex, request.case_sensitive)
@@ -698,7 +688,9 @@ class LocalFileOperator:
             if metadata is None or metadata.st_size > request.max_file_bytes:
                 continue
             try:
-                if is_protected_local_file(native):
+                if single_file:
+                    check_local_file_read(native)
+                elif is_protected_local_file(native):
                     continue
             except OSError as exc:
                 if single_file:
@@ -759,7 +751,7 @@ class LocalFileOperator:
         # Ensuring the existing writable root is a no-op, not root creation.
         if native == self._root and exist_ok and await asyncio.to_thread(native.is_dir):
             return FileMutationResult(path=path, receipt=self._receipt())
-        await asyncio.to_thread(self._require_writable, native)
+        self._require_writable(native)
         try:
             await asyncio.to_thread(native.mkdir, parents=parents, exist_ok=exist_ok)
         except OSError as exc:
@@ -786,8 +778,8 @@ class LocalFileOperator:
             follow_final=False,
             require_exists=False,
         )
-        self._require_writable(source_native, descendants=True)
-        self._require_writable(destination_native, descendants=True)
+        self._require_writable(source_native)
+        self._require_writable(destination_native)
         source_metadata = source_native.lstat()
         if source_native == destination_native:
             return
@@ -843,7 +835,7 @@ class LocalFileOperator:
 
     def _remove_native(self, path: str, recursive: bool) -> None:
         native = self._resolve(path, follow_final=False)
-        self._require_writable(native, descendants=True)
+        self._require_writable(native)
         metadata = native.lstat()
         if stat_module.S_ISLNK(metadata.st_mode) or stat_module.S_ISREG(metadata.st_mode):
             native.unlink()
@@ -864,7 +856,7 @@ class LocalFileOperator:
         validate_text_append: bool,
     ) -> AsyncGenerator[_LocalWriter]:
         native = await asyncio.to_thread(self._resolve, path, follow_final=False, require_exists=False)
-        await asyncio.to_thread(self._require_writable, native)
+        self._require_writable(native)
         await asyncio.to_thread(self._validate_writer_destination, native)
         writer = _LocalWriter(
             self,
@@ -906,7 +898,7 @@ class LocalFileOperator:
 
 
 def _open_read_stream(path: Path) -> BinaryIO:
-    check_local_file_access(path)
+    check_local_file_read(path)
     return path.open("rb")
 
 
