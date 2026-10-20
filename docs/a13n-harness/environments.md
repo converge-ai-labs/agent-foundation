@@ -172,15 +172,15 @@ On a single shell-enabled mount, `shell_exec` supersedes exactly `move`, `copy`,
 
 A foreground-only mount exposes `shell_exec` with bounded inline output; it does not need standalone retained-output permissions. Process-capable mounts can add:
 
-| Tool           | Behavior                                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------------------------- |
-| `shell_exec`   | Starts a command, waits up to `yield_time_seconds`, and returns a Run-local reference when not completed |
-| `shell_info`   | Without an ID, lists discoverable native commands; with an ID, inspects current status only              |
-| `shell_wait`   | Waits boundedly, or polls with zero, then reads available stdout/stderr at explicit offsets              |
-| `shell_input`  | Writes UTF-8 stdin and optionally closes stdin without reading output                                    |
-| `shell_signal` | Requests supported `interrupt`, `terminate`, or `kill` control without reading output                    |
+| Tool           | Behavior                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `shell_exec`   | Starts a command, waits up to the configured foreground wait, and returns a Run-local reference when not completed |
+| `shell_info`   | Without an ID, lists discoverable native commands; with an ID, inspects current status only                        |
+| `shell_wait`   | Waits boundedly, or polls with zero, then reads available stdout/stderr at explicit offsets                        |
+| `shell_input`  | Writes UTF-8 stdin and optionally closes stdin without reading output                                              |
+| `shell_signal` | Requests supported `interrupt`, `terminate`, or `kill` control without reading output                              |
 
-`execution_timeout_seconds` on `shell_exec` requests a Provider-enforced hard execution deadline. Providers such as native E2B reject it before starting when they cannot enforce it. `yield_time_seconds` and `shell_wait.timeout_seconds` only bound waiting. There is no background mode flag; `shell_info` covers listing and status, and `shell_signal` covers kill.
+`execution_timeout_seconds` on `shell_exec` requests a Provider-enforced hard execution deadline. Providers such as native E2B reject it before starting when they cannot enforce it. The shared `ToolExecutionConfig.foreground_wait_seconds` (default one second) and `shell_wait.timeout_seconds` only bound waiting. `shell_exec` no longer exposes a model-selected yield duration. Process-backed calls return their existing process reference, including after immediate steering, without a duplicate generic tool-execution record. There is no background mode flag; `shell_info` covers listing and status, and `shell_signal` covers kill.
 
 Use `shell_info(alias="workspace", limit=50)` to discover recoverable running commands only when the selected mount supports process listing. Direct Local supports inspection, not discovery: its `shell_info` schema requires a `process_id` returned by `shell_exec` in the current Run and omits `limit`. `shell_info(process_id=...)` only inspects; it does not attach, read, refresh or reset output. Listing and inspection are independently authorized. `alias` is an existing mount name from the Environment context, not a command/process label; omit it for default selection. An unknown or conflicting alias fails instead of retargeting a command or reference. Listing never exposes native PIDs, arbitrary arguments or environment variables.
 

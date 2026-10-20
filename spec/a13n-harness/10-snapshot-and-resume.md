@@ -123,6 +123,8 @@ While active, `HarnessRunStream.export_state()` delegates with the latest comple
 
 State export does not require `HarnessState.message_history` to equal a result object's private message view. Normal inner execution produces aligned values, but trusted result middleware may intentionally transfer or replace state. Structural validity is enforced; semantic provenance is part of the trusted plugin contract. A plugin that replaces `environment_states` remains trusted code but cannot make the mapping authorize or construct an Environment on resume.
 
+Accepted steering inputs that are not yet represented in canonical history are retained in the steering Capability namespace during ordinary export and graceful interrupt-save. Restoration preserves their order and omits identities already incorporated in history. This applies to ordinary and immediate steering; it adds no per-steer checkpoint. Abrupt process loss retains the Host's existing persistence limits.
+
 ## Host State Store
 
 ```python

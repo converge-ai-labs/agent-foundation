@@ -152,9 +152,9 @@ class Captures:
         self._count -= len(entries)
         return [call for call, _ in entries]
 
-    def discard_run(self, run_id: str) -> None:
+    def discard_run(self, run_id: str, *, retain: set[str] | None = None) -> None:
         for key in tuple(self._pending):
-            if key[0] == run_id:
+            if key[0] == run_id and (retain is None or key[1] not in retain):
                 self.take(*key)
 
 

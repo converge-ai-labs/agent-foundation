@@ -40,6 +40,7 @@ from a13n_harness.capabilities.context import (
 from a13n_harness.capabilities.producer import ProducerCaptureCapability
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
+    steering_input_ids,
 )
 from a13n_harness.content import (
     content_items,
@@ -358,12 +359,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._run_plugins: tuple[AbstractHarnessPlugin, ...] = ()
         self._exchange: PluginRunExchange | None = None
         self._run_attachments_closed = False
+        self._attachments_retained = False
 
         # Native attempts update the complete live history while sharing usage and cancellation.
         self._attempt_events: AgentRunEvents[OutputT | DeferredToolRequests] | None = None
         self._latest_messages: tuple[ModelMessage, ...] = self._initial_history
         self._new_message_index = len(self._latest_messages)
         self._cancel_event = asyncio.Event()
+        self._preempt_requested = False
 
         self._emitter = _RunEventEmitter(self.thread_id, self.run_id, observer=self._bindings.producer_observer)
         self._environment_change_drain = _EnvironmentChangeDrain()
@@ -507,6 +510,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 phase.set_attribute("a13n.phase.step", "context")
                 context = await self._create_context(environment)
                 self._context = context
+                context._tool_executions.owner = self._environment_lifecycle_task
                 phase.set_attribute("a13n.phase.step", "plugins")
                 run_plugins = await bind_run_plugins(self._executable._plugins, context)
                 exchange = PluginRunExchange(
@@ -561,6 +565,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._usage.tool_calls += self._usage_snapshot.tool_calls
         usage_attribution.cost_capability = bindings._inherited_model_cost or self._executable._model_cost
         await usage_attribution.save()
+        if bindings.codeact_state is not None:
+            from a13n_harness.codeact.state import CODEACT_STATE_ID, CODEACT_STATE_VERSION, CodeActStoredValues
+
+            stored_values = await context_state.read(
+                CODEACT_STATE_ID, CodeActStoredValues, version=CODEACT_STATE_VERSION
+            )
+            await bindings.codeact_state.initialize(self.thread_id, stored_values or CodeActStoredValues())
         return AgentContext(
             run_id=self.run_id,
             thread_id=self._previous_state.thread_id,
@@ -609,6 +620,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             file_media_understanding=bindings.file_media_understanding,
             skill_selection=bindings.skill_selection,
             task_state=bindings.task_state,
+            tool_execution=bindings.tool_execution,
+            codeact_state=bindings.codeact_state,
             working_state_observer=bindings.working_state_observer,
             client_toolsets=bindings.client_toolsets,
             tool_result_directory=bindings.tool_result_directory,
@@ -632,6 +645,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 if not ready.done():
                     ready.set_result(environment)
                 await self._environment_close_requested.wait()
+                if self._attachments_retained:
+                    assert self._context is not None
+                    await self._context._tool_executions.drain()
+                    await self._close_run_attachments()
         except asyncio.CancelledError:
             if not ready.done():
                 ready.cancel()
@@ -644,6 +661,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
     async def _close_environment_lifecycle(self) -> None:
         task = self._environment_lifecycle_task
+        if self._attachments_retained:
+            self._environment_close_requested.set()
+            return
         self._environment_lifecycle_task = None
         if task is None:
             return
@@ -846,7 +866,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         drain = self._environment_change_drain
         if drain.terminal_sequence is not None:
             return
-        self._environment_runtime._begin_close()
+        if not self.context._tool_executions.retained:
+            self._environment_runtime._begin_close()
         drain.terminal_sequence = self.context.environment._change_sequence
         drain.requested.set()
 
@@ -1012,7 +1033,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._attempt_events is not None:
             self._attempt_events.cancel()
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None) -> str:
+    async def steer(self, input: RunInputValue, *, input_id: str | None = None, immediate: bool = False) -> str:
         """Deliver one user steering value through native Pydantic enqueue.
 
         `input_id` is the host's identity for the value; it is recorded on the delivered request, where
@@ -1020,7 +1041,26 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         """
         if not self._entered or self._closed or self._context is None:
             raise RunError("The run is not active.", code="run_not_active")
-        return await self._context._steering.steer(input, input_id=input_id)
+        context = self._context
+
+        def check_handoff() -> None:
+            if immediate and context._tool_executions.unsupported_calls:
+                raise RunError(
+                    "An active tool does not support immediate handoff; ordinary steering remains available.",
+                    code="tool_handoff_unsupported",
+                )
+
+        def request_preemption() -> None:
+            if immediate and not self._preempt_requested and not self._cancel_event.is_set():
+                self._preempt_requested = True
+                context._steering.pause()
+                if self._attempt_events is not None:
+                    self._attempt_events.cancel()
+
+        # Validate, accept, and request preemption without yielding between them.
+        return await context._steering.steer(
+            input, input_id=input_id, before_accept=check_handoff, after_accept=request_preemption
+        )
 
     async def export_state(self) -> HarnessState:
         """Export active state or the detached checkpoint retained before shutdown."""
@@ -1072,6 +1112,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
     ) -> tuple[tuple[ModelMessage, ...], int]:
         self._deferred_input.reconcile(messages)
+        messages = self.context._tool_executions.settle(messages)
+        await self.context._tool_executions.reconcile(self.context.tool_execution, self.thread_id, messages)
         remaining = self._deferred_input.pending
         return normalize_interrupted_history(
             messages,
@@ -1096,8 +1138,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         except HarnessError as exc:
             raise PluginError("Plugin middleware supplied an invalid input.", code="plugin_input_invalid") from exc
 
-        await exchange.context._steering.prepare(
-            current_input,
+        restored_inputs = await exchange.context._steering.prepare(
             restore_retained=self._deferred_resume is not None,
         )
 
@@ -1115,11 +1156,23 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if self._tool_recovery is not None
             else None
         )
+        if deferred_results is None and restored_inputs:
+            incorporated = set(steering_input_ids(current_history))
+            current_history = (
+                *current_history,
+                *(
+                    request
+                    for request in restored_inputs
+                    if not incorporated.intersection(steering_input_ids((request,)))
+                ),
+            )
         current_history = _reconcile_system_prompt(
             current_history,
             self._executable._system_prompt,
         )
         self._latest_messages = current_history
+        await exchange.context._steering.resolve_delivered(current_history)
+        await exchange.context._steering.retain_initial(current_input)
 
         while True:
             current_history = merge_request_history(current_history)
@@ -1192,6 +1245,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         )
                         self._attempt_events = None
                         self._latest_messages = messages
+                        if self._preempt_requested and not self._cancel_event.is_set():
+                            self._preempt_requested = False
+                            current_input = normalize_input(None)
+                            current_history = messages
+                            attempt_index += 1
+                            continue
                         state = await exchange.context.export_state(messages)
                         yield self._record_inner_candidate(
                             HarnessRunResult(
@@ -1545,7 +1604,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         with observe_phase("finalize") as phase:
             fence_failure: BaseException | None = None
             try:
-                self._environment_runtime._begin_close()
+                if self._context is not None:
+                    self._context._tool_executions.closing = True
+                if self._context is None or not self._context._tool_executions.retained:
+                    self._environment_runtime._begin_close()
             except BaseException as exc:
                 fence_failure = exc
 
@@ -1596,7 +1658,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         # execution error or preventing resource cleanup.
                         self._shutdown_state_error = exc
             phase.set_attribute("a13n.phase.step", "attachments")
-            await finish_cleanup(self._close_run_attachments())
+            # Choose one cleanup owner before yielding: the last retained call may
+            # finish while foreground cleanup is progressing.
+            self._attachments_retained = self._context is not None and self._context._tool_executions.retained
+            if not self._attachments_retained:
+                await finish_cleanup(self._close_run_attachments())
             causes.extend(self._source_cleanup_failures)
             self._source_cleanup_failures.clear()
 

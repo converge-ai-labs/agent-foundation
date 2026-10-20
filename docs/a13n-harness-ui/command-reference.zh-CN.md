@@ -297,6 +297,7 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `/recover`                                                    | —       | 否         | 恢复未发送提示。                                                                                                                            |
 | `/status`                                                     | —       | 是         | 显示 Model、上下文、Environment 和订阅用量。                                                                                                |
 | `/ps`                                                         | —       | 是         | 查看观测的后台进程及其最后报告状态。                                                                                                        |
+| `/executions [offset\|cancel execution-id]`                   | —       | 是         | 分页查看保留的工具执行，或请求取消。                                                                                                        |
 | `/subagents [execution-id\|next]`                             | —       | 是         | 查看本对话子级执行和保留输出。                                                                                                              |
 | `/usage [all\|root\|subagents\|details\|subscription\|reset]` | —       | 是         | 按 all/root/subagents 查看当前 Thread 的 token、费用和各模型明细；details 补充归属和 Run。订阅限额与需确认的 Codex 重置额度单独查询或操作。 |
 | `/goal task description`                                      | —       | 否         | 朝目标工作，带完成审核和有上限的续接。                                                                                                      |
@@ -318,6 +319,8 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `/quit`                                                       | `/exit` | 是         | 退出 TUI；已保存对话仍可恢复。                                                                                                              |
 
 `/thinking` 打开所选 Model 支持的选项；命令补全使用相同列表。`default` 继承 Model 配置。按模型和适配器，显式选择可能包括 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。不支持的选项会被拒绝；未知模型仅提供 default 并解释原因。`/environment` 在支持时选择 `full-control`、`envd`、`desktop` 或 `sandbox`。`envd` 和 `desktop` 先准备运行时，再修改当前对话下一轮的 profile；检查失败保留原选择。此操作修改当前 Thread，不修改新对话默认值。原生 `/steer` 保留整个尾随消息，不拆成 shell 词语。
+
+`/steer message` 和忙碌时的 Enter 使用全局 `input.steering_mode`，默认即时送达，同时保留支持的工具执行。全局选择 `queued` 可改为等待下一个安全边界。`/executions` 只读取状态，不消耗结果。`/cancel` 停止对话，并在新输入到来前禁止工具完成事件自动唤醒；`/executions cancel execution-id` 单独请求取消保留的执行。记录只存在于当前进程。详见[工具执行控制](webui.md#tool-executions-and-immediate-steering)。
 
 ## 重要操作与限制
 

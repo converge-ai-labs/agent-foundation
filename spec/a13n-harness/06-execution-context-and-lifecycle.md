@@ -137,6 +137,14 @@ sequenceDiagram
 
 The stream is lazy: entering it performs preparation but no model or tool work. First iteration starts the async plugin invocation and, if middleware reaches the inner path, starts the first `ModelAttempt`. A plugin short-circuit starts no `ModelAttempt`.
 
+## Immediate Steering
+
+`HarnessRunStream.steer(..., immediate=False)` preserves ordinary queued steering. An explicit `immediate=True` accepts input into the ordered mailbox before preempting the native attempt. It interrupts active model output or releases a supported tool's foreground wait, drains the attempt, settles usable partial history, then continues the same logical Run with pending input. Repeated requests during drain add input without repeatedly cancelling cleanup. Run identity, usage accounting and bindings remain unchanged; this transition does not spend the model-failure retry budget.
+
+[Host-held tool execution](07-tool-execution.md#host-held-tool-executions) preserves an admitted invocation and its scope. Interruption settlement keeps an existing result, uses an available completed result, or records the accepted execution receipt. A recorded receipt remains unchanged when its result later arrives. Whole CodeAct runners use this boundary; process-backed shell calls retain their admitted process reference. Unsupported tool handoff fails explicitly rather than cancelling and reissuing an operation. Immediate scheduling and automatic timeout-based offload are independent options.
+
+Accepted input remains pending until canonical history proves incorporation. Export and graceful interrupt-save retain pending input through existing state-publication boundaries; immediate steering adds no unconditional checkpoint write. At a terminal boundary, pending input either continues the current Run or follows the Host's next-Run policy. Explicit cancellation ends the conversation Run. Hosts separately cancel retained executions and control automatic wake after Stop.
+
 ## Model Attempt Recovery
 
 `ModelRecoveryPolicy` is disabled by default. When enabled, `max_attempts` bounds consecutive failed attempts without an accepted primary model response, including the initial failed attempt. It defaults to five: one initial attempt and at most four recovery continuations in each failure streak. It does not cap the cumulative number of `ModelAttempt` values in a logical Run. The policy owns:

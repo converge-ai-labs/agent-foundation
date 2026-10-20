@@ -29,6 +29,7 @@ from a13n_harness.environment.commands import (
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 
 from .events import ShellStatusEvent
 from .output import tool_output_size
@@ -136,8 +137,52 @@ class _ProcessController:
         expected_mount_id: str | None = None,
     ) -> ShellExecSuccess:
         self._guard_execution()
-        published = False
-        entry: _ProcessEntry | None = None
+        admission = asyncio.create_task(self._admit(request, alias=alias, expected_mount_id=expected_mount_id))
+        cancellation: asyncio.CancelledError | None = None
+        # Provider admission must settle before cancellation can return a usable
+        # reference. Never replay a start whose outcome is still unknown.
+        while not admission.done():
+            try:
+                await asyncio.shield(admission)
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        entry = admission.result()
+        if cancellation is not None and _OWNED_TOOL_EXECUTION.get():
+            raise cancellation
+        try:
+            if cancellation is None:
+                await self._emit_status(entry)
+                if yield_time_seconds > 0:
+                    try:
+                        baseline = entry.latest
+                        waited = await self._environment.processes.wait(
+                            entry.handle,
+                            condition="initial_terminal",
+                            timeout_seconds=yield_time_seconds,
+                        )
+                        self._adopt_info(entry, waited, baseline=baseline)
+                    except EnvironmentError as exc:
+                        if exc.code != "environment_timeout":
+                            raise
+            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+        except asyncio.CancelledError:
+            if _OWNED_TOOL_EXECUTION.get():
+                raise
+            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+        if _is_final(observation[0]):
+            result = _shell_exec_result(None, observation, bound_output=False)
+            try:
+                await _await_cleanup_shielded(self._retire(entry))
+            except asyncio.CancelledError:
+                if _OWNED_TOOL_EXECUTION.get():
+                    raise
+            return result
+        entry.model_visible.set()
+        return _shell_exec_result(entry.process_id, observation)
+
+    async def _admit(
+        self, request: CommandRequest, *, alias: str | None, expected_mount_id: str | None
+    ) -> _ProcessEntry:
         async with self._admission_lock:
             self._assert_open()
             process_id = self._reserve_reference()
@@ -147,53 +192,14 @@ class _ProcessController:
                 required_actions=_PROCESS_OBSERVATION_ACTIONS,
                 expected_mount_id=expected_mount_id,
             )
-            entry = _ProcessEntry(
-                process_id=process_id,
-                handle=started.process.handle,
-                latest=started.process,
-            )
+            entry = _ProcessEntry(process_id=process_id, handle=started.process.handle, latest=started.process)
             try:
-                entry.watcher = asyncio.create_task(
-                    self._watch(entry),
-                    name=f"{process_id}-completion",
-                )
+                entry.watcher = asyncio.create_task(self._watch(entry), name=f"{process_id}-completion")
                 self._entries[process_id] = entry
-                published = True
             except BaseException:
                 await _await_cleanup_shielded(self._release_observation(entry))
                 raise
-
-        assert entry is not None
-        try:
-            await self._emit_status(entry)
-            if yield_time_seconds > 0:
-                try:
-                    baseline = entry.latest
-                    waited = await self._environment.processes.wait(
-                        entry.handle,
-                        condition="initial_terminal",
-                        timeout_seconds=yield_time_seconds,
-                    )
-                    self._adopt_info(entry, waited, baseline=baseline)
-                except EnvironmentError as exc:
-                    if exc.code != "environment_timeout":
-                        raise
-            observation = await self._observe(
-                entry,
-                stdout_offset=0,
-                stderr_offset=0,
-                wait_seconds=0,
-            )
-            if _is_final(observation[0]):
-                result = _shell_exec_result(None, observation, bound_output=False)
-                await _await_cleanup_shielded(self._retire(entry))
-                return result
-            entry.model_visible.set()
-            return _shell_exec_result(process_id, observation)
-        except BaseException:
-            if not published:
-                await _await_cleanup_shielded(self._release_observation(entry))
-            raise
+            return entry
 
     async def wait(
         self,

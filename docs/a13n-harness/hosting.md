@@ -46,6 +46,35 @@ result = await executable.run(
 
 Scope streams with `async with executable.stream(...)`. The executable has no `close()` method; close Host-owned clients at their own lifespan boundary.
 
+## Retain Tools Across Conversation Turns
+
+Add `ToolExecutionCapability` to the definition and hold one `ToolExecutionRuntime` for the Host lifetime. Bind the runtime to each Run; use a separate `CodeActStateOwner` per Thread when CodeAct writes must remain visible after the originating Run ends.
+
+```python
+from a13n_harness import (
+    CodeActStateOwner,
+    RunBindings,
+    ToolExecutionConfig,
+    ToolExecutionRuntime,
+)
+from a13n_harness.capabilities import ToolExecutionCapability
+
+capability = ToolExecutionCapability(
+    ToolExecutionConfig(mode="auto", foreground_wait_seconds=1.0)
+)
+runtime = ToolExecutionRuntime()
+thread_values = CodeActStateOwner()
+bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
+```
+
+Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Whole CodeAct runners can detach; their nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
+
+`await stream.steer(message, immediate=True)` preempts the current native attempt while keeping the logical Run and supported tool work alive. Ordinary steering defaults to `immediate=False`. Accepted pending input is preserved through normal state export; this does not force a checkpoint per message.
+
+The Agent can inspect, retrieve, wait for and cancel work through `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. Reads are Thread-scoped. Result delivery is acknowledged only after the real result enters canonical history. The default memory store bounds completed retention and is lost on restart. A custom `ToolExecutionStore` persists facts and results, not resumable Python tasks.
+
+Use the runtime's `on_completed` callback to schedule Host delivery without blocking execution. Before closing shared clients, stop new Host admission, settle interactive waiters, then call `await runtime.close(timeout_seconds=...)` and `await runtime.join()`. `close` bounds its cancellation wait; `join` preserves ownership until cooperative cleanup finishes. Conversation cancellation and tool cancellation are separate policies.
+
 ## Fresh Authority
 
 On every Run, select the current user/policy, model credentials, Provider state, and current Environment sources. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).

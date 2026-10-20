@@ -46,6 +46,35 @@ result = await executable.run(
 
 通过 `async with executable.stream(...)` 管理流的作用域。executable 没有 `close()` 方法；Host 自己持有的客户端，应在各自生命周期结束时关闭。
 
+## 跨对话轮次保留工具执行
+
+将 `ToolExecutionCapability` 加入定义，并在 Host 生命周期内持有一个 `ToolExecutionRuntime`。每次 Run 都绑定该运行时；如果 CodeAct 写入需要在来源 Run 结束后继续可见，则为每个 Thread 单独持有一个 `CodeActStateOwner`。
+
+```python
+from a13n_harness import (
+    CodeActStateOwner,
+    RunBindings,
+    ToolExecutionConfig,
+    ToolExecutionRuntime,
+)
+from a13n_harness.capabilities import ToolExecutionCapability
+
+capability = ToolExecutionCapability(
+    ToolExecutionConfig(mode="auto", foreground_wait_seconds=1.0)
+)
+runtime = ToolExecutionRuntime()
+thread_values = CodeActStateOwner()
+bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
+```
+
+将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。CodeAct runner 可整体转到后台，嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
+
+`await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，同时保留逻辑 Run 和支持的工具执行。普通 steering 默认为 `immediate=False`。已接受但尚未送达的输入通过正常状态导出保留，不会强制每条消息写入检查点。
+
+Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。读取限定在所属 Thread。只有真实结果进入规范历史后，才确认结果已交付。默认内存存储有界保留已完成记录，重启后丢失。自定义 `ToolExecutionStore` 持久化事实和结果，不保存可恢复的 Python 任务。
+
+通过运行时的 `on_completed` 回调安排 Host 投递，不阻塞执行。关闭共享客户端前，先停止 Host 新准入并结束交互等待，再调用 `await runtime.close(timeout_seconds=...)` 和 `await runtime.join()`。`close` 限制取消等待时间；`join` 保持所有权直到协作式清理完成。对话取消与工具取消由不同策略控制。
+
 ## 每次执行都使用当前权限
 
 每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建当前 Environment 来源。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。

@@ -23,6 +23,8 @@ The Host also owns durable acceptance, durable execution attempts, leases, check
 | Durable completion and delivery                            | Owns                                               | Returns a candidate                                               |
 | Observation providers, signal policy, and export lifecycle | Owns                                               | Uses independently selected providers when supplied               |
 
+For optional [retained tool execution](07-tool-execution.md#host-held-tool-executions), Harness implements the process-local runtime, storage interface and default memory store. The Host holds the runtime across Runs, binds exact Thread authority, selects retention/persistence and completion delivery, and joins retained scopes before closing shared collaborators. Host-owned lifecycle does not require a second executor. Persistent records do not transfer live invocation ownership to another worker. A Host can bind a per-Thread `CodeActStateOwner` for late explicit-state writes; exported checkpoints remain detached values.
+
 ## Definition Mapping
 
 ```mermaid

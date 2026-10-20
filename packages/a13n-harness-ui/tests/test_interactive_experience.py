@@ -739,3 +739,18 @@ def test_active_snapshot_raw_suffix_keeps_cli_text_and_tools_single(cut: int) ->
         == "hello world"
     )
     assert not renderer.gap
+
+
+@pytest.mark.anyio
+async def test_steer_uses_app_policy_and_rejection_keeps_draft() -> None:
+    backend = SimpleNamespace(steer=AsyncMock(return_value="Guidance sent."))
+    with create_pipe_input(), create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = backend
+        await shell.command(shell.registry.parse("/steer change direction", busy=True))
+        assert backend.steer.call_args.args[0].text == "change direction"
+        assert "immediate" not in backend.steer.call_args.kwargs
+        backend.steer.side_effect = ValueError("Unsupported handoff")
+        await shell.handle("keep my input", steering_receipt="receipt-original")
+        assert backend.steer.call_args.kwargs["receipt_id"] == "receipt-original"
+        assert shell.composer.text == "keep my input"

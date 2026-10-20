@@ -15,6 +15,8 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
+from a13n_harness._tool_execution import RunToolExecutions
+from a13n_harness.codeact.state import CODEACT_STATE_ID, CODEACT_STATE_VERSION, CodeActStateOwner
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
@@ -24,6 +26,7 @@ from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.recovery import ModelRecoveryState
 from a13n_harness.state import AgentContextState, HarnessState, StateStore
 from a13n_harness.storage import RunStorage
+from a13n_harness.tool_execution import ToolExecutionRuntime
 
 if TYPE_CHECKING:
     from a13n_harness.builder import AgentDefinition, SubagentDefinition
@@ -152,6 +155,8 @@ class RunBindings:
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    tool_execution: ToolExecutionRuntime | None = None
+    codeact_state: CodeActStateOwner | None = None
     working_state_observer: WorkingStateObserver | None = None
     producer_observer: Callable[[HarnessEvent], None] | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
@@ -175,6 +180,10 @@ class RunBindings:
             raise TypeError("RunBindings.usage_reporter must implement UsageReporter or UsageDeltaReporter")
         if self.model_call_check is not None and not isinstance(self.model_call_check, ModelCallCheck):
             raise TypeError("RunBindings.model_call_check must implement ModelCallCheck")
+        if self.codeact_state is not None and not isinstance(self.codeact_state, CodeActStateOwner):
+            raise TypeError("RunBindings.codeact_state must be a CodeActStateOwner")
+        if self.tool_execution is not None and not isinstance(self.tool_execution, ToolExecutionRuntime):
+            raise TypeError("RunBindings.tool_execution must be a ToolExecutionRuntime")
         if not isinstance(self.configuration, RunConfiguration):
             raise TypeError("RunBindings.configuration must be a RunConfiguration")
         if not isinstance(self.deferred_tools_supported, bool):
@@ -235,6 +244,8 @@ class RunBindings:
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
+        tool_execution: ToolExecutionRuntime | None = None,
+        codeact_state: CodeActStateOwner | None = None,
         working_state_observer: WorkingStateObserver | None = None,
         producer_observer: Callable[[HarnessEvent], None] | None = None,
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
@@ -264,6 +275,8 @@ class RunBindings:
             file_media_understanding=file_media_understanding,
             skill_selection=skill_selection,
             task_state=task_state,
+            tool_execution=tool_execution,
+            codeact_state=codeact_state,
             working_state_observer=working_state_observer,
             producer_observer=producer_observer,
             client_toolsets=client_toolsets,
@@ -408,6 +421,8 @@ class AgentContext:
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    tool_execution: ToolExecutionRuntime | None = None
+    codeact_state: CodeActStateOwner | None = None
     working_state_observer: WorkingStateObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
@@ -436,6 +451,7 @@ class AgentContext:
     _review_history_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
     _tool_permission_checks: dict[str, PermissionCheck] = field(default_factory=dict, repr=False, compare=False)
     _tool_pending_approvals: dict[str, dict[str, JsonValue]] = field(default_factory=dict, repr=False, compare=False)
+    _tool_executions: RunToolExecutions = field(default_factory=RunToolExecutions, repr=False, compare=False)
 
     @property
     def tool_approval(self) -> ToolApprovalContext | None:
@@ -492,7 +508,13 @@ class AgentContext:
             store = _ToolResultSpillStore(self)
             object.__setattr__(self, "_tool_result_spill_store", store)
             self._register_run_cleanup("a13n.tool-result-spills", store.close)
-        return await store.write(data, suffix=suffix)
+        path = await store.write(data, suffix=suffix)
+        if path is not None:
+            from a13n_harness.tool_execution import _TOOL_EXECUTION_ARTIFACTS, ToolExecutionArtifact
+
+            if (artifacts := _TOOL_EXECUTION_ARTIFACTS.get()) is not None:
+                artifacts.append(ToolExecutionArtifact(path, data, suffix))
+        return path
 
     @property
     def identity(self) -> AgentIdentityRef:
@@ -576,10 +598,12 @@ class AgentContext:
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope, through the run's storage, which saves large content and lists
         what the state references."""
-        # A request-boundary export can precede consumption of the native input
-        # event. Reconcile delivered steering from the same canonical history
-        # before snapshotting capability state; pending input stays unretained.
-        await self._steering.resolve_delivered(message_history)
+        # A request-boundary export can precede native input-event consumption.
+        # Save accepted pending inputs separately from incorporated history.
+        if self.codeact_state is not None:
+            await self.state.write(CODEACT_STATE_ID, await self.codeact_state.snapshot(), version=CODEACT_STATE_VERSION)
+        await self._steering.checkpoint(message_history)
+        await self._tool_executions.reconcile(self.tool_execution, self.thread_id, message_history)
         await self.usage_attribution.save()
         state = HarnessState(
             schema_version="1",

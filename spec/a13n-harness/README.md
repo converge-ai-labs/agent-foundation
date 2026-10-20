@@ -4,7 +4,7 @@
 
 This directory defines `a13n-harness`, the Pydantic AI-based process-local execution library used by embedded applications and hosted workers.
 
-The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
+The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It also supplies the optional Host-held tool execution runtime, storage interface and default memory store. Hosts own durable Agent schemas, Presets, artifact installation or trust, persistent execution adapters, queues, worker leases, product delivery and billing.
 
 ## Document Catalog
 

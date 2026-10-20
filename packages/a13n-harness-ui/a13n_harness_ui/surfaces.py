@@ -647,12 +647,30 @@ class ThreadWork(SurfaceModel):
     children: ChildStatusCounts
 
 
+class ToolExecutionView(SurfaceModel):
+    """Detached status only; native results stay behind Harness result tools."""
+
+    execution_id: str
+    thread_id: str
+    run_id: str
+    tool_call_id: str
+    tool_name: str
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"]
+    created_at: datetime
+    completed_at: datetime | None = None
+    result_available: bool = False
+    foreground_released: bool = False
+    delivery_acknowledged: bool = False
+    available_actions: tuple[Literal["cancel"], ...] = ()
+
+
 class ThreadFocusSnapshot(SurfaceModel):
     epoch: str = Field(min_length=1, max_length=80)
     cutover_sequence: int = Field(ge=0)
     thread: ThreadDetail
     root_operation: RootOperationView | None = None
     mcp_inputs: tuple[McpInputRequestView, ...] = ()
+    tool_executions: tuple[ToolExecutionView, ...] = ()
     recent_events: tuple[LiveEvent, ...] = ()
     root_stream: RootStreamSummary | None = None
 

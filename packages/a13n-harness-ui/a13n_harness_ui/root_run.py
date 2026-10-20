@@ -51,6 +51,7 @@ from a13n_harness_ui.surfaces import (
     RunModelOverrides,
     ThreadDeferredResponse,
 )
+from a13n_harness_ui.tool_executions import ToolExecutions
 
 _MAX_WAIT_SECONDS = 60.0
 _MAX_VALUE_BYTES = 64 * 1024
@@ -124,9 +125,11 @@ class RootRunCoordinator:
         on_human_admitted: Callable[[RootRunAdmission, RootOperationView], Awaitable[None]] | None = None,
         restart_coordinator: GracefulRestart | None = None,
         on_input_admitted: Callable[[str | None], None] | None = None,
+        tool_executions: ToolExecutions | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
+        self._tool_executions = tool_executions
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
@@ -160,6 +163,8 @@ class RootRunCoordinator:
             task_group = await context.__aenter__()
             self._task_group_context = context
             self._task_group = task_group
+            if self._tool_executions is not None:
+                self._tool_executions.start(task_group)
             self._accepting = True
 
     async def stop_admission(self) -> None:
@@ -522,6 +527,7 @@ class RootRunCoordinator:
         *,
         receipt_id: str,
         message: RunInputValue,
+        immediate: bool = False,
         touch: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootControlResult:
@@ -541,7 +547,7 @@ class RootRunCoordinator:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
-            enqueue_id = await stream.steer(prepared)
+            enqueue_id = await stream.steer(prepared, immediate=immediate)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:
@@ -563,6 +569,8 @@ class RootRunCoordinator:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
         if operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
+        if self._tool_executions is not None:
+            self._tool_executions.suppress(operation.receipt.thread_id)
         operation.cancel_requested = True
         if self._restart is not None:
             self._restart.active.pop(operation.receipt.thread_id, None)
@@ -734,6 +742,8 @@ class RootRunCoordinator:
             if self._restart is not None and admission.organization is None:
                 self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
             operation.done.set()
+            if self._tool_executions is not None:
+                self._tool_executions.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
             try:
@@ -837,6 +847,8 @@ class RootRunCoordinator:
         await self._publish_change(operation)
         if cancel_requested:
             stream.cancel()
+        elif self._tool_executions is not None:
+            self._tool_executions.retry(operation.receipt.thread_id)
 
     async def _persist_execution(self, operation: _RootOperation) -> None:
         if self._save_execution is None:

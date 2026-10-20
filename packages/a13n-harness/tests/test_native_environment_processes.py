@@ -148,7 +148,7 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
         )
 
     first = Source(E2B.execution_connector(configuration, environment_id="env-test", state=state, runtime=runtime))
-    await executable([lambda _: ("shell_exec", {"command": "sleep 60", "yield_time_seconds": 0})]).run(
+    await executable([lambda _: ("shell_exec", {"command": "sleep 60"})]).run(
         "start", environment=first, bindings=bindings()
     )
     assert native.running

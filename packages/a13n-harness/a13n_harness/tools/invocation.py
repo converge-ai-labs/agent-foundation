@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import hashlib
-from collections.abc import AsyncIterable, Generator, Mapping
+from collections.abc import AsyncIterable, Awaitable, Callable, Generator, Mapping
 from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 from a13n_logging import exception_details, get_logger
@@ -27,16 +27,20 @@ from a13n_harness._json import (
     dump_json_bytes,
     project_json,
 )
+from a13n_harness._retained_scope import RetainedScope
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
 )
+from a13n_harness.tools._retained_toolsets import invocation_scopes, retain_dynamic_toolsets
 from a13n_harness.tools._source import tool_call_source_scope
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
@@ -189,6 +193,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         # before any context Capability can replace that history.
         if ctx.deps._deferred_input is not None:
             ctx.deps._deferred_input.reconcile(ctx.messages)
+        await ctx.deps._tool_executions.reconcile(ctx.deps.tool_execution, ctx.deps.thread_id, ctx.messages)
         ctx.deps._tool_permission_checks.clear()
         ctx.deps._tool_pending_approvals.clear()
         # Recovery applies only before the model makes its next decision.
@@ -285,6 +290,28 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
 class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     """Normalize definitions, authorize managed calls, and bound function results."""
 
+    _context: AgentContext | None = field(default=None, repr=False)
+    _scope: RetainedScope | None = field(default=None, repr=False)
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
+        wrapped = self.wrapped
+        if ctx.deps.tool_execution is not None and ctx.deps._tool_executions.enabled:
+            wrapped = retain_dynamic_toolsets(wrapped)
+        return replace(self, wrapped=await wrapped.for_run(ctx), _context=ctx.deps, _scope=None)
+
+    async def __aenter__(self) -> Self:
+        if self._context is None or self._context.tool_execution is None or not self._context._tool_executions.enabled:
+            return await super().__aenter__()
+        self._scope = RetainedScope(self.wrapped)
+        await self._scope.ready()
+        return self
+
+    async def __aexit__(self, *args: Any) -> bool | None:
+        if self._scope is None:
+            return await super().__aexit__(*args)
+        await self._scope.close()
+        return None
+
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         _validate_final_toolset_wrapper_order(self.wrapped)
         _validate_client_run_attachment(ctx)
@@ -364,6 +391,30 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         ctx: RunContext[AgentContext],
         tool: ToolsetTool[AgentContext],
     ) -> Any:
+        state = ctx.deps._tool_executions
+        if ctx.usage_limits is not None:
+            projected = replace(ctx.usage, tool_calls=ctx.usage.tool_calls + state.usage_pending + 1)
+            ctx.usage_limits.check_before_tool_call(projected)
+        state.usage_pending += 1
+        call_id = ctx.tool_call_id or name
+        unsupported = (
+            not _OWNED_TOOL_EXECUTION.get()
+            and (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY) != "foreground"
+        )
+        if unsupported:
+            ctx.deps._tool_executions.unsupported_calls.add(call_id)
+        try:
+            return await self._authorize_and_call(name, tool_args, ctx, tool)
+        finally:
+            # Native ToolManager records success immediately after this return.
+            # Reserving here covers nested and foreground calls with one ledger.
+            state.usage_pending -= 1
+            if unsupported:
+                ctx.deps._tool_executions.unsupported_calls.discard(call_id)
+
+    async def _authorize_and_call(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
         tool = identify_tool(tool)
         check = await check_permission(ctx, tool.tool_def, tool_args)
         ctx = replace(ctx, tool_call_approved=check.approval.approved)
@@ -399,13 +450,17 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         metadata_values = tool_def.metadata or {}
         raw_metadata = metadata_values.get(HARNESS_TOOL_METADATA_KEY)
         if raw_metadata is None:
-            result = await self._call_observed(name, tool_args, ctx, tool)
-            return await _apply_result_policy(
-                result,
-                _UNMANAGED_OUTPUT_POLICY,
-                context=ctx.deps,
-                reject_non_json=False,
-            )
+
+            async def unmanaged() -> Any:
+                result = await self._call_observed(name, tool_args, ctx, tool)
+                return await _apply_result_policy(
+                    result,
+                    _UNMANAGED_OUTPUT_POLICY,
+                    context=ctx.deps,
+                    reject_non_json=False,
+                )
+
+            return await self._execute_owned(unmanaged, ctx, tool, tool_args)
         managed = normalize_harness_tool_metadata(raw_metadata)
         policy = _resolve_policy(ctx) or _DEFAULT_INVOCATION_POLICY
 
@@ -444,6 +499,20 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             }
             raise ApprovalRequired(metadata=metadata)
         await _emit(ctx, managed, "authorized", invocation_id=invocation.invocation_id)
+        return await self._execute_owned(
+            lambda: self._call_managed(name, prepared, ctx, tool, managed, policy), ctx, tool, tool_args
+        )
+
+    async def _call_managed(
+        self,
+        name: str,
+        prepared: _PreparedInvocation,
+        ctx: RunContext[AgentContext],
+        tool: ToolsetTool[AgentContext],
+        managed: HarnessToolMetadata,
+        policy: InvocationPolicyCapability,
+    ) -> Any:
+        invocation = prepared.context
         leases: list[CredentialLease] = []
         lease_stack = AsyncExitStack()
         grant = None
@@ -517,6 +586,70 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             return safe_result
         finally:
             await lease_stack.aclose()
+
+    async def _execute_owned(
+        self,
+        operation: Callable[[], Awaitable[Any]],
+        ctx: RunContext[AgentContext],
+        tool: ToolsetTool[AgentContext],
+        tool_args: dict[str, Any],
+    ) -> Any:
+        runtime = ctx.deps.tool_execution
+        state = ctx.deps._tool_executions
+        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
+        if callable(mode):
+            mode = mode(tool_args)
+        if mode in {"foreground", "process"}:
+            state.unsupported_calls.discard(ctx.tool_call_id or tool.tool_def.name)
+        sequential = tool.tool_def.sequential or (
+            ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
+        )
+        if _OWNED_TOOL_EXECUTION.get() or runtime is None or not state.enabled or mode == "foreground":
+            return await operation()
+        if self._scope is None or mode != "owned":
+            return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)
+        assert ctx.tool_call_id is not None
+        resources = AsyncExitStack()
+        resources.push_async_callback(state.retain())
+        try:
+            resources.push_async_callback(self._scope.retain())
+            for scope in invocation_scopes(tool, ctx):
+                resources.push_async_callback(scope.retain())
+        except BaseException:
+            await resources.aclose()
+            raise
+
+        release = resources.aclose
+
+        try:
+            record = runtime.admit(
+                operation,
+                thread_id=ctx.deps.thread_id,
+                run_id=ctx.deps.run_id,
+                tool_call_id=ctx.tool_call_id,
+                tool_name=tool.tool_def.name,
+                release=release,
+                sequential=sequential,
+            )
+        except BaseException:
+            await release()
+            raise
+        state.calls[ctx.tool_call_id] = record
+        state.unsupported_calls.discard(ctx.tool_call_id)
+        try:
+            result = await runtime.wait(
+                ctx.deps.thread_id,
+                record.execution_id,
+                timeout_seconds=state.config.foreground_wait_seconds if state.config.mode == "auto" else None,
+            )
+        except asyncio.CancelledError:
+            result = await runtime.result(ctx.deps.thread_id, record.execution_id)
+        if result is not None and result.record.result_available:
+            return state.delivered_result(ctx.tool_call_id, result.record, result.result)
+        if result is not None and result.record.terminal:
+            raise ToolFailed(result.record.error or f"Tool execution {result.record.status}.")
+        runtime.release_foreground(ctx.deps.thread_id, record.execution_id)
+        return state.receipt(result.record if result is not None else record)
 
     async def _call_observed(
         self,

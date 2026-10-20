@@ -358,7 +358,6 @@ async def shell_exec(
     *,
     cwd: str | None = None,
     environment: Mapping[str, str] | None = None,
-    yield_time_seconds: float = 10,
     execution_timeout_seconds: float | None = None,
     alias: str | None = None,
 ) -> ShellExecResult: ...
@@ -395,7 +394,9 @@ async def shell_signal(
 ) -> ProcessSignalResult: ...
 ```
 
-`yield_time_seconds` and `shell_wait.timeout_seconds` bound waiting only. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. There is no generic default deadline for a backend lacking that guarantee. Foreground-only mounts omit the yield argument. There is no model-selected background mode.
+The initial shell wait uses `ToolExecutionConfig.foreground_wait_seconds`, defaulting to one second even when generic automatic tool execution is disabled. The model-facing `shell_exec` schema has no `yield_time_seconds` argument. This policy and `shell_wait.timeout_seconds` bound waiting only. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. There is no generic default deadline for a backend lacking that guarantee. There is no model-selected background mode.
+
+Process-backed shell execution keeps its existing provider-owned process path and receives no duplicate generic tool-execution record. Immediate steering after process admission settles the interrupted wait with the admitted process reference. Process-backed calls still respect Thread-wide tool sequential barriers. Foreground-only shell backends use generic tool execution when their retained scope supports it.
 
 Completion inside the yield window returns observed terminal status and bounded output without a process reference. Otherwise Harness publishes a concise Run-local reference such as `process-a3f1-1`. Process completion depends on native terminal evidence, not completed output producers or tree cleanup. Missing or unknown status does not imply successful completion.
 

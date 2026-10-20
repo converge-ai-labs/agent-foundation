@@ -1493,7 +1493,9 @@ class CliShell:
                 assert self.backend is not None
                 prompt = self.inline.compile(text)
                 result = await self.backend.steer(
-                    prompt, receipt_id=steering_receipt, skill_references=self.registry.skill_references(prompt)
+                    prompt,
+                    receipt_id=steering_receipt,
+                    skill_references=self.registry.skill_references(prompt),
                 )
                 self.emit(result)
             except asyncio.CancelledError:
@@ -1825,6 +1827,11 @@ class CliShell:
                 self.emit("Goal is unavailable while preparing.")
             elif argument is not None:
                 self.send_prompt(argument.strip(), goal=True)
+        elif name == "executions":
+            if self.backend is None:
+                self.emit("Tool execution inspection is unavailable while preparing.")
+            else:
+                self.emit(await self.backend.tool_executions(invocation.arguments), kind="tool executions")
         elif name == "ps":
             self.emit(self.renderer.process_details(), kind="processes")
         elif name == "subagents":

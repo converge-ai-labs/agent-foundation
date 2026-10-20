@@ -585,6 +585,12 @@ class _RunEventEmitter:
 
     async def emit(self, event: HarnessExtensionEvent) -> None:
         if self._closed:
+            from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+
+            if _OWNED_TOOL_EXECUTION.get():
+                # Detached execution reports completion through its runtime;
+                # the original conversation stream is already terminal.
+                return
             raise RunError("The Harness event emitter is closed.", code="event_emitter_closed")
         if not isinstance(event, HarnessExtensionEvent):
             raise RunError("Harness extension event is invalid.", code="event_invalid")

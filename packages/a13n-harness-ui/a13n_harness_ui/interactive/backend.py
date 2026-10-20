@@ -613,6 +613,28 @@ class SessionBackend:
             lines.append("Review preview is incomplete; omitted content is not approval evidence.")
         return "\n".join(lines)
 
+    async def tool_executions(self, arguments: tuple[str, ...] = ()) -> str:
+        thread_id = self.thread_id
+        if thread_id is None:
+            return "No active conversation."
+        if len(arguments) == 2 and arguments[0] == "cancel":
+            item = await self.app.cancel_tool_execution(thread_id, arguments[1])
+            return f"Cancellation requested for {item.execution_id}; current status: {item.status}."
+        if len(arguments) > 1 or (arguments and not arguments[0].isdigit()):
+            raise ValueError("Usage: /executions [offset|cancel execution-id]")
+        offset = int(arguments[0]) if arguments else 0
+        records = await self.app.tool_executions(thread_id, offset=offset, limit=20)
+        lines = ["Tool executions · status only · results remain available to the agent"]
+        for item in records:
+            delivery = "received" if item.delivery_acknowledged else "available" if item.result_available else "pending"
+            lines.append(f"{item.tool_name} · {item.status} · result {delivery} · {item.execution_id}")
+        if not records:
+            lines.append("No executions on this page.")
+        if len(records) == 20:
+            lines.append(f"Next page: /executions {offset + 20}")
+        lines.append("Cancel selected work: /executions cancel <execution-id>. Stop only ends the conversation Run.")
+        return "\n".join(lines)
+
     async def subagents(self, execution_id: str | None = None) -> str:
         thread_id = self.thread_id
         if thread_id is None:

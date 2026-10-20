@@ -22,6 +22,7 @@ from a13n_harness.capabilities import (
     ProxyToolSearchConfig,
     SubagentCapability,
     SubagentOperator,
+    ToolExecutionCapability,
     ToolSearchPlan,
     ToolSearchSelection,
 )
@@ -259,7 +260,7 @@ class AgentReconstructor:
                 composition.root,
                 plugin_catalog=plugin_catalog,
                 subagent_operator=subagent_operator,
-                root_capabilities=tuple(root_capabilities),
+                root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
                 path_layout=path_layout,
                 model_recipes=model_recipes,

@@ -32,6 +32,14 @@ flowchart TB
 
 Markdown 默认以 **Preview** 打开，**Text** 切换到编辑器。预览包含未保存编辑。**Add to chat** 附加选中的源码行，未选中时附加完整文件，不会发送。Agent 的 `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` 链接打开 Files 抽屉；单独的路径和 Files API URL 不会，外部链接仍单独打开。
 
+## 工具执行与即时 steering
+
+Run 活动期间，**Steer** 默认及时中断当前回复并送达你的指引。支持的工具调用仍由原有执行方继续运行一次。根级和子级 steering 使用同一全局 `input.steering_mode`；在配置中选择 `queued`，即可改为等待下一个安全边界。输入框不需要额外的模式控件。
+
+打开 **Work → Tools**，查看保留的工具执行、来源 Run 和调用、翻页浏览记录，或取消活动执行。面板只读取状态，不消耗结果。Agent 通过 `tool_execution_result` 或 `tool_execution_wait` 获取结果；完成提示和后续输入会带上当前执行状态。[自动后台执行](configuration.md#built-in-tools-and-subagents)默认开启，可在全局配置中关闭。Shell 进程仍在独立的进程视图中。
+
+**Stop** 取消对话，并在收到新用户输入前禁止完成事件自动唤醒。它不会取消所有保留的工具；需要取消时使用该执行的 **Cancel**。取消请求被接受不代表远端操作已回滚。记录和结果属于当前进程，并受有界保留策略限制；重启 App 后，旧引用不再可用。
+
 ## 整理 Project 并在对话中工作
 
 1. 通过 **Home** 或 Project 的 **+** 开始草稿。Agent 需要使用 Project 的服务器目录时，选择对应 Project。

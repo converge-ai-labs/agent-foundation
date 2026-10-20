@@ -27,6 +27,29 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 | Client-side execution, authorization, and result production        | External executor or Service client                              |
 | Durable client-call waiting, delivery, and feedback correlation    | Host                                                             |
 
+## Host-held Tool Executions
+
+`ToolExecutionCapability` optionally integrates local function-tool dispatch with a Harness-owned `ToolExecutionRuntime`. The Host holds that runtime across Runs through `RunBindings.tool_execution`. Harness supplies `ToolExecutionStore` and `MemoryToolExecutionStore`; storage retains facts and results while the runtime owns live tasks. Persistent Host adapters own durable storage, worker routing and delivery. Persisting a record does not make its Python invocation restartable.
+
+`ToolExecutionConfig(mode="inline", foreground_wait_seconds=1.0)` is the captured wait policy. `inline` waits for the real result unless immediate steering releases the foreground wait. `auto` returns a receipt when the finite, nonnegative foreground wait expires and requires a bound runtime at Run preparation. This wait is independent of execution deadlines. A tool owner declares whether its scope can be retained; unsupported tools keep foreground execution. External client calls and provider-native tools retain their existing owners. Run-control and execution-control tools stay foreground.
+
+Admission associates the original Thread, Run, tool-call identity and prepared invocation before an effect starts. Ordinary validation and policy gates remain authoritative. The runtime executes that invocation once and retains its original Toolset, clients, credentials, Environment routes and cleanup ownership until settlement. A fast call returns its native result. Expiry or immediate steering releases only the foreground wait and returns an `execution-*` receipt for the same call. Nested calls, including CodeAct callbacks and proxy targets, await real results; only the outer invocation can return an execution receipt. Sequential barriers cover actual execution across Runs of the same Thread, including foreground-only calls.
+
+An execution record has `queued`, `running`, `succeeded`, `failed`, `cancelled` or `lost` status, originating identities, timestamps, result availability, foreground-release and delivery-acknowledgement flags, and an optional error. Execution completion, foreground return and history delivery are separate boundaries. The store publishes the terminal record and native result together. Retained spill artifacts remain retrievable after the originating Environment closes and are materialized in the retrieving Run's Environment. Native multimodal `ToolReturn` content retains its normal meaning.
+
+| Model tool                                                   | Contract                                                                  |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `tool_execution_info(execution_id=None, offset=0, limit=20)` | Inspect one execution or a bounded page in the exact owning Thread        |
+| `tool_execution_result(execution_id)`                        | Retrieve a retained result, or report pending/unavailable                 |
+| `tool_execution_wait(execution_id, timeout_seconds=1.0)`     | Wait up to 30 seconds without cancelling the operation when the wait ends |
+| `tool_execution_cancel(execution_id)`                        | Request cancellation and report current status                            |
+
+Controls never recursively offload. Missing, expired and other-Thread references are unavailable. Cancellation acceptance does not establish completion or remote rollback. Status summaries prioritize active work, undelivered results and relevant failures; they are bounded and projected before model requests without consuming results.
+
+Delivery is acknowledged only when a real result enters canonical history, on both the fast path and later result retrieval. A receipt, UI read or emitted result event does not acknowledge delivery. Interruption settlement observes the same rule. Hosts choose retention; the default memory store bounds completed records while retaining active operations. Process restart loses the default store and live tasks.
+
+The runtime emits completion observations; the Host schedules non-immediate input hints and chooses wake policy. Run cleanup releases its interest in retained resources. Host shutdown stops admission, cancels and drains owned work, and joins task-affine cleanup before closing shared collaborators. [CodeAct](18-codeact.md) owns runner/session state, [Run lifecycle](06-execution-context-and-lifecycle.md) owns immediate steering, and [Environment integration](08-environment-integration.md) owns shell process references.
+
 ## Tool Metadata
 
 ```python

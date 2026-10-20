@@ -15,6 +15,7 @@ import type { Schema, Transport } from "../transport/client";
 import { FocusDisplay } from "./stream";
 import { WorkInspector, TaskList } from "./work-inspector";
 import { Child } from "./details";
+import { ToolExecutions } from "./tool-executions";
 import { refreshThread } from "./refresh";
 import { ChildControlsProvider } from "./child-controls";
 
@@ -257,6 +258,13 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   );
   fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+  expect(POST.mock.calls[0]).toEqual([
+    "/api/threads/{thread_id}/children/{execution_id}/steer",
+    {
+      params: { path: { thread_id: "root", execution_id: "control-one" } },
+      body: { prompt: "Check once" },
+    },
+  ]);
   view.rerender(<div>Closed</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
   fireEvent.click(screen.getByText("Worker · running"));
@@ -406,4 +414,42 @@ it("inspects observed processes in place, updates status and discloses missing o
   expect(GET.mock.calls.some(([path]) => path.includes("process"))).toBe(false);
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByText("pnpm dev")).toBeNull());
+});
+
+it("inspects retained tools without consuming results and cancels the exact child execution", async () => {
+  let item = {
+    execution_id: "tool-one",
+    thread_id: "child",
+    run_id: "run-one",
+    tool_call_id: "call-one",
+    tool_name: "lookup",
+    status: "running",
+    created_at: "2026-10-20T00:00:00Z",
+    available_actions: ["cancel"],
+  } as Schema<"ToolExecutionView">;
+  const GET = vi.fn(async () => ({ data: [item] }));
+  const POST = vi.fn(async () => ({ data: item }));
+  const setup = harness(GET, POST);
+  render(<ToolExecutions threadId="child" rootThreadId="root" />, setup);
+  fireEvent.click(await screen.findByText("lookup"));
+  expect(screen.getByText("Not available")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel execution" }));
+  await screen.findByText(/Cancellation requested/);
+  expect(POST).toHaveBeenCalledWith(
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel",
+    {
+      params: { path: { thread_id: "child", execution_id: "tool-one" } },
+    },
+  );
+  item = {
+    ...item,
+    status: "succeeded",
+    result_available: true,
+    available_actions: [],
+  };
+  refreshThread(setup.queries, "root", "checkpoint");
+  await screen.findByText("Available to agent");
+  expect(screen.queryByRole("button", { name: "Cancel execution" })).toBeNull();
+  expect(POST).toHaveBeenCalledOnce();
+  expect(GET.mock.calls.length).toBeGreaterThan(1);
 });

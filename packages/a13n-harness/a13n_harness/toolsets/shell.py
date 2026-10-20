@@ -9,6 +9,7 @@ from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.commands import CommandEnvironment, CommandLimits, CommandRequest, ShellCommand
@@ -253,7 +254,6 @@ class ShellToolset:
         *,
         cwd: _CommandCwd = None,
         environment: Mapping[str, str] | None = None,
-        yield_time_seconds: _NonNegativeTimeout = 10,
         execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: _MountAlias = None,
     ) -> ShellExecToolResult:
@@ -288,9 +288,11 @@ class ShellToolset:
             result = await self._process_controller.start(
                 request,
                 alias=alias,
-                yield_time_seconds=yield_time_seconds,
+                yield_time_seconds=ctx.deps._tool_executions.config.foreground_wait_seconds,
                 expected_mount_id=mount_id,
             )
+            if ctx.tool_call_id is not None:
+                ctx.deps._tool_executions.returns[ctx.tool_call_id] = result
             return cast(
                 ShellExecToolResult,
                 await disclose_text_paths(
@@ -435,6 +437,11 @@ class ShellToolset:
         return HarnessTool(
             function,
             name=name,
+            metadata={
+                TOOL_EXECUTION_METADATA_KEY: self._execution_mode
+                if tool_id == "environment.shell_exec"
+                else "foreground"
+            },
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=frozenset(effects),
@@ -453,6 +460,21 @@ class ShellToolset:
                 ),
             ),
         )
+
+    def _execution_mode(self, arguments: dict[str, Any]) -> Literal["owned", "process"]:
+        request = self._command_request(
+            arguments["command"],
+            cwd=arguments.get("cwd"),
+            environment=arguments.get("environment"),
+            execution_timeout_seconds=arguments.get("execution_timeout_seconds"),
+            keep_stdin_open=False,
+        )
+        _, process_capable = self._environment._select_command_actions(
+            request,
+            alias=arguments.get("alias"),
+            actions=_PROCESS_OBSERVATION_ACTIONS,
+        )
+        return "process" if process_capable else "owned"
 
     @staticmethod
     def _command_request(

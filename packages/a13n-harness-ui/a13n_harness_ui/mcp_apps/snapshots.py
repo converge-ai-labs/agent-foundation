@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 
-from a13n_harness import HarnessEvent
+from a13n_harness import AgentContext, HarnessEvent
 from ag_ui.core import CustomEvent
 from anyio import fail_after
 from mcp.types import BlobResourceContents, TextResourceContents
@@ -26,19 +26,35 @@ class AppSnapshots:
         self.objects = objects
         self.connections = connections
 
-    async def observe(self, item: object, *, thread_id: str, run_id: str) -> tuple[CustomEvent, ...]:
+    async def observe(
+        self,
+        item: object,
+        *,
+        thread_id: str,
+        run_id: str,
+        context: AgentContext | None = None,
+    ) -> tuple[CustomEvent, ...]:
         if not isinstance(item, HarnessEvent) or item.run_id != run_id:
             return ()
         event = item.event
         if not isinstance(event, FunctionToolResultEvent) or not isinstance(event.part, ToolReturnPart):
             return ()
         part = event.part
-        calls = self.connections.captures.take(run_id, part.tool_call_id)
+        origin_run, origin_call = run_id, part.tool_call_id
+        if context is not None:
+            record = context._tool_executions.result_origins.get(part.tool_call_id)
+            if record is not None:
+                origin_run, origin_call = record.run_id, record.tool_call_id
+            elif part.tool_call_id in context._tool_executions.calls:
+                # A receipt is not the original result, even if nested Apps have
+                # already completed inside a still-running CodeAct invocation.
+                return ()
+        calls = self.connections.captures.take(origin_run, origin_call)
         if not calls:
             return ()
         references = []
         for call in calls:
-            reference = await self.capture(call, thread_id=thread_id, run_id=run_id, call_id=part.tool_call_id)
+            reference = await self.capture(call, thread_id=thread_id, run_id=origin_run, call_id=origin_call)
             references.append(reference.model_dump(mode="json"))
         if part.metadata is None or isinstance(part.metadata, dict):
             part.metadata = {**(part.metadata or {}), METADATA_KEY: references}
@@ -48,6 +64,11 @@ class AppSnapshots:
                 value={"run_id": run_id, "event": {"tool_call_id": part.tool_call_id, "apps": references}},
             ),
         )
+
+    def finish_run(self, context: AgentContext) -> None:
+        """Keep bounded raw captures associated with undelivered owned results."""
+        retained = set(context._tool_executions.calls) - set(context._tool_executions.result_origins)
+        self.connections.captures.discard_run(context.run_id, retain=retained)
 
     async def read(self, reference: AppReference) -> AppPresentation:
         """Reading an original never connects, activates a View, or repeats a tool."""
