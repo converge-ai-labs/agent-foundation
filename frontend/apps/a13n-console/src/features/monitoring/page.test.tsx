@@ -360,7 +360,10 @@ it("retains separate drafts across history and page navigation with the original
       })) as HTMLInputElement
     ).value,
   ).toBe("Retained draft");
-  await user.click(screen.getByRole("link", { name: "Data sources" }));
+  await user.click(screen.getByRole("button", { name: "Actions" }));
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Data sources" }),
+  );
   await user.click(
     await screen.findByRole("link", { name: "Return to draft" }),
   );
@@ -404,4 +407,23 @@ it("keeps the initial view focused and applies preset, refresh and absolute time
   await user.click(screen.getByRole("button", { name: "Back to live" }));
   expect(screen.queryByRole("button", { name: "Back to live" })).toBeNull();
   expect(state.PATCH).not.toHaveBeenCalled();
+});
+
+it("opens secondary dashboard actions from the menu and cancels creation without writing", async () => {
+  const { user } = setup();
+  await screen.findByRole("button", { name: "Edit dashboard" });
+  await user.click(screen.getByRole("button", { name: "Actions" }));
+  expect(
+    (
+      await screen.findByRole("menuitem", { name: "Data sources" })
+    ).getAttribute("href"),
+  ).toBe("/workspace/ws_test/monitoring/sources");
+  expect(
+    screen.getByRole("menuitem", { name: "Devices" }).getAttribute("href"),
+  ).toBe("/workspace/ws_test/monitoring/devices");
+  await user.click(screen.getByRole("menuitem", { name: "New dashboard" }));
+  const dialog = await screen.findByRole("dialog", { name: "New dashboard" });
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(state.POST).not.toHaveBeenCalled();
 });

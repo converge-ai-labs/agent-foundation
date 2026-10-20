@@ -1,6 +1,25 @@
-import { ArrowClockwiseIcon, ClockIcon } from "@phosphor-icons/react";
+import {
+  ArrowClockwiseIcon,
+  ClockIcon,
+  DatabaseIcon,
+  DesktopIcon,
+  DotsThreeIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  FormField,
+  Input,
+  Menu,
+  MenuItem,
+  MenuLinkItem,
+  MenuPopup,
+  MenuTrigger,
+  ModalFrame,
+} from "a13n-ui";
 import {
   useEffect,
   useMemo,
@@ -258,29 +277,13 @@ function DashboardWorkspace() {
     [panels, targetKey, range, revision, !!draft, busy, workspace.id],
   );
   return (
-    <Page title={t("Metrics dashboards")}>
+    <Page title={t("Metrics dashboards")} className={styles.dashboardPage}>
       <PageActions secondary>
-        <Button
-          variant="outline"
-          render={<Link to={`${basePath}/monitoring/sources`} />}
-        >
-          {t("Data sources")}
-        </Button>
-        <Button
-          variant="outline"
-          render={<Link to={`${basePath}/monitoring/devices`} />}
-        >
-          {t("Devices")}
-        </Button>
-      </PageActions>
-      <PageActions>
-        {!draft && can("write") && (
-          <Button variant="ghost" onClick={() => setCreating(true)}>
-            {t("New dashboard")}
-          </Button>
-        )}
         {can("write") && !draft && (
           <Button
+            className={styles.editDashboard}
+            aria-label={t("Edit dashboard")}
+            title={t("Edit dashboard")}
             disabled={!selected}
             onClick={() => {
               if (selected)
@@ -291,9 +294,44 @@ function DashboardWorkspace() {
                 });
             }}
           >
-            {t("Edit dashboard")}
+            <PencilSimpleIcon size={16} />
+            <span>{t("Edit dashboard")}</span>
           </Button>
         )}
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t("Actions")}
+                title={t("Actions")}
+              />
+            }
+          >
+            <DotsThreeIcon size={20} />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            {!draft && can("write") && (
+              <MenuItem onClick={() => setCreating(true)}>
+                <PlusIcon />
+                {t("New dashboard")}
+              </MenuItem>
+            )}
+            <MenuLinkItem
+              render={<Link to={`${basePath}/monitoring/sources`} />}
+            >
+              <DatabaseIcon />
+              {t("Data sources")}
+            </MenuLinkItem>
+            <MenuLinkItem
+              render={<Link to={`${basePath}/monitoring/devices`} />}
+            >
+              <DesktopIcon />
+              {t("Devices")}
+            </MenuLinkItem>
+          </MenuPopup>
+        </Menu>
       </PageActions>
       <ErrorNotice
         error={

@@ -325,12 +325,35 @@
 .mobile > div {
   height: 300px;
 }
-@media (max-width: 767px) {
+@media (width < 768px) {
+  .dashboardPage > header {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+  .editDashboard {
+    width: 36px;
+    padding: 0;
+  }
+  .editDashboard span {
+    display: none;
+  }
   .time {
     margin-left: 0;
+    justify-content: space-between;
   }
   .toolbar {
     align-items: stretch;
+  }
+  .toolbar > :first-child,
+  .targetTrigger,
+  .time {
+    width: 100%;
+    max-width: none;
+  }
+  .targetTrigger span {
+    flex: 1;
+    text-align: left;
   }
   .grid {
     margin: 0;

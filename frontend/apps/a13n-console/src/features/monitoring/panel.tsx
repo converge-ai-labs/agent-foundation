@@ -59,7 +59,7 @@ export function MetricsPanel({
             <summary aria-label={t("Query details")} title={t("Query details")}>
               <InfoIcon size={16} />
             </summary>
-            <div className={styles.noticeBody}>
+            <div className={`${styles.noticeBody} a13n-scrollbar`}>
               {panel.description && <p>{panel.description}</p>}
               {data.notices.map((notice) => (
                 <p key={JSON.stringify(notice)}>

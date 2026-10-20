@@ -289,7 +289,7 @@ export function MetricsChart({
     );
   if (panel.visualization === "stat")
     return (
-      <div className={styles.stats}>
+      <div className={`${styles.stats} a13n-scrollbar`}>
         {series.map((item) => (
           <div key={item.id}>
             <strong>
@@ -326,7 +326,10 @@ export function MetricsChart({
         )}
       </div>
       {panel.legend !== false && (
-        <div className={styles.legend} aria-label={t("Toggle series")}>
+        <div
+          className={`${styles.legend} a13n-scrollbar`}
+          aria-label={t("Toggle series")}
+        >
           {series.map((item, index) => (
             <button
               key={item.id}

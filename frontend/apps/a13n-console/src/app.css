@@ -1,7 +1,11 @@
 @layer base {
   /* Pages keep one content width whether or not they scroll. */
   html {
+    color-scheme: light;
     scrollbar-gutter: stable;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   .a13n-root {
     --a13n-page-gutter-mobile: 18px;

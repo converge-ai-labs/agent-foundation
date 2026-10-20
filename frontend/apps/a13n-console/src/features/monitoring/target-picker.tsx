@@ -177,7 +177,10 @@ export function TargetPicker({
               </Button>
             )}
           </div>
-          <div className={styles.targetList} aria-label={t("Targets")}>
+          <div
+            className={`${styles.targetList} a13n-scrollbar`}
+            aria-label={t("Targets")}
+          >
             {visible.map((item) => (
               <button
                 type="button"
