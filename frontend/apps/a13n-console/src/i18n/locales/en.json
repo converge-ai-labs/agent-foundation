@@ -2707,7 +2707,6 @@
   "Next scheduled times": "Next scheduled times",
   "Pending or unfinished work": "Pending or unfinished work",
   "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.": "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.",
-  "Run agents on a recurring schedule, with a separate result for each trigger.": "Run agents on a recurring schedule, with a separate result for each trigger.",
   "Use an IANA zone, for example Asia/Shanghai.": "Use an IANA zone, for example Asia/Shanghai.",
   "View output": "View output",
   "Pause": "Pause",
@@ -2746,5 +2745,17 @@
   "Preview the timing, then choose whether to enable the schedule on creation.": "Preview the timing, then choose whether to enable the schedule on creation.",
   "Expected a closing bracket.": "Expected a closing bracket.",
   "Invalid JSON syntax.": "Invalid JSON syntax.",
-  "Default uses the agent's current default version for each run.": "Default uses the agent's current default version for each run."
+  "Default uses the agent's current default version for each run.": "Default uses the agent's current default version for each run.",
+  "Second": "Second",
+  "No upcoming trigger times.": "No upcoming trigger times.",
+  "This time has already passed. Choose a future date and time.": "This time has already passed. Choose a future date and time.",
+  "Run agents once or on a recurring schedule, with a separate result for each trigger.": "Run agents once or on a recurring schedule, with a separate result for each trigger.",
+  "Schedule type": "Schedule type",
+  "Recurring": "Recurring",
+  "One time": "One time",
+  "Run at": "Run at",
+  "Choose a valid date and time.": "Choose a valid date and time.",
+  "Date and time in {{timezone}}.": "Date and time in {{timezone}}.",
+  "Scheduling finished": "Scheduling finished",
+  "Scheduling has finished. Check the trigger history for submission and execution results.": "Scheduling has finished. Check the trigger history for submission and execution results."
 }

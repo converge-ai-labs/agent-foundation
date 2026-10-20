@@ -13292,7 +13292,7 @@
             "type": "string"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           },
           "timezone_data_version": {
             "title": "Timezone Data Version",
@@ -13504,6 +13504,27 @@
           "finished_at"
         ],
         "title": "OccurrenceSummary",
+        "type": "object"
+      },
+      "OnceSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "run_at": {
+            "format": "date-time",
+            "title": "Run At",
+            "type": "string"
+          },
+          "type": {
+            "const": "once",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "run_at"
+        ],
+        "title": "OnceSchedule",
         "type": "object"
       },
       "OperatingSystem": {
@@ -16904,7 +16925,7 @@
             "type": "string"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           },
           "session_id": {
             "title": "Session Id",
@@ -17008,7 +17029,7 @@
             "type": "string"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           },
           "state": {
             "default": "paused",
@@ -17199,7 +17220,7 @@
             "type": "integer"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           }
         },
         "required": [
@@ -17209,10 +17230,21 @@
         "title": "SchedulePreviewRequest",
         "type": "object"
       },
+      "ScheduleRule": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          {
+            "$ref": "#/components/schemas/OnceSchedule"
+          }
+        ]
+      },
       "ScheduleState": {
         "enum": [
           "paused",
           "enabled",
+          "completed",
           "archived"
         ],
         "type": "string"
@@ -17390,7 +17422,7 @@
           "schedule": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CronSchedule"
+                "$ref": "#/components/schemas/ScheduleRule"
               },
               {
                 "type": "null"

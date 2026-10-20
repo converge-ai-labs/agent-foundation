@@ -1,24 +1,32 @@
 ---
 title: Schedules
-description: Run an agent periodically and inspect each trigger's input and result.
+description: Run an agent once or periodically and inspect each trigger's input and result.
 ---
 
-A Schedule sends fixed text or JSON to an Agent at recurring times. Each trigger creates a new Thread in the Schedule's dedicated Session, so it starts with an independent conversation history. The Session is a stable place to observe the work.
+A Schedule sends fixed text or JSON to an Agent once at a specified time or at recurring times. Each trigger creates a new Thread in the Schedule's dedicated Session, so it starts with an independent conversation history. The Session is a stable place to observe the work.
 
 ## Create and manage a schedule
 
 In Console, open **Schedules → Create schedule**:
 
-1. Enter a name, a five-field cron expression and an explicit IANA time zone. For example, `0 9 * * *` with `Asia/Shanghai` runs daily at 09:00 local time.
+1. Enter a name and choose **Recurring** or **One time**. For recurring work, enter a five-field cron expression and an explicit IANA time zone. For one-time work, choose a future date and time in the displayed browser time zone. For example, `0 9 * * *` with `Asia/Shanghai` runs daily at 09:00 local time.
 2. Select **Preview next times** to check the local and UTC instants. Daylight-saving gaps do not fire; a repeated local time has two distinct instants, subject to the overlap rule.
 3. Choose an Agent and enter its input. Leave the revision empty to follow the latest default revision; provide a revision ID to pin it. The JSON editor accepts the full invocation, including Run options and explicit Memory mounts.
-4. Create the Schedule. It starts paused. Select **Run once** to test it or **Enable** to begin recurring submission.
+4. Create the Schedule. It starts paused. Select **Run once** to test it or **Enable** to activate automatic submission.
 
 Creation needs Workspace `write` and `run`. Only the creator can edit, enable or manually dispatch the Schedule. Another member with `write` may pause or archive it. Archival stops future triggers but retains the history and cannot be undone. To schedule work under another identity, create a new Schedule as that identity.
 
 **The Schedule keeps its creator's execution authorization. Signing out, credential expiry or revoking the original API key does not stop it.** Pause or archive the Schedule to stop future work. Disabling the principal or revoking its execution access also stops future submission. Tool approval still applies.
 
 Changes affect future triggers. Time or invocation changes cancel input that has not yet been submitted. Pause and archive also cancel pending input; they do not cancel an input or Run that was already submitted. The maximum delay is the time allowed to submit input, not a Run completion deadline.
+
+## One-time schedules
+
+A one-time schedule submits input at one specified instant. Create it with a future time, then enable it. If you pause it until that time has passed, choose a new future time before enabling it again. **Run once** is a separate manual action; it does not consume the automatic trigger. Unfinished manual work can cause the automatic trigger to be skipped by the ordinary overlap rule.
+
+When submission succeeds, is skipped, or finally fails, the schedule becomes `completed`, displayed as **Scheduling finished**. This does not mean the agent has finished or succeeded. Inspect the trigger's submission and execution results. A completed schedule can be read or archived; it cannot be edited, enabled or manually dispatched. Create a new schedule to run again.
+
+Service recovery uses the same maximum delay as recurring work: the default is 300 seconds. A trigger recovered within that window can still submit; a later trigger is recorded as `skipped` with `missed_deadline`, and scheduling finishes. Pending submissions retry within the original window. Pausing or archiving cancels pending submission without withdrawing already submitted work.
 
 ## Read the result
 
@@ -49,6 +57,14 @@ All routes use the ordinary [Workspace and authentication headers](http.md#works
   }
 }
 ```
+
+For a one-time schedule, replace the `schedule` object with an offset-aware timestamp:
+
+```json
+{"type": "once", "run_at": "2030-10-21T09:00:00+08:00"}
+```
+
+The service stores and returns UTC. Timestamps without a timezone offset and relative delays are rejected. Preview returns zero or one instant after the supplied `after` time; both `utc` and `local` use UTC for a one-time rule. Use `?state=completed` to list finished schedules.
 
 The response includes `id`, a fixed `session_id`, `stream_url` and an ETag. The first creation returns 201; retrying the same body with the same key returns the existing Schedule with 200. Keep that key when a response is lost.
 

@@ -2707,7 +2707,6 @@
   "Next scheduled times": "后续触发时间",
   "Pending or unfinished work": "存在待提交或未结束的任务",
   "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.": "计划使用已保存的执行权限。退出登录或撤销原 API Key 不会停止计划；如需停止后续任务，请暂停或归档计划。",
-  "Run agents on a recurring schedule, with a separate result for each trigger.": "按计划定期运行 Agent，每次触发都有独立的结果。",
   "Use an IANA zone, for example Asia/Shanghai.": "填写 IANA 时区名称，例如 Asia/Shanghai。",
   "View output": "查看输出",
   "Pause": "暂停",
@@ -2746,5 +2745,17 @@
   "Preview the timing, then choose whether to enable the schedule on creation.": "预览触发时间后，可选择在创建时立即启用。",
   "Expected a closing bracket.": "缺少右方括号 ]。",
   "Invalid JSON syntax.": "JSON 格式不正确。",
-  "Default uses the agent's current default version for each run.": "选择“默认”时，每次运行使用 Agent 当时的默认版本。"
+  "Default uses the agent's current default version for each run.": "选择“默认”时，每次运行使用 Agent 当时的默认版本。",
+  "Second": "秒",
+  "No upcoming trigger times.": "没有后续触发时间。",
+  "This time has already passed. Choose a future date and time.": "该时间已过去，请选择未来的日期和时间。",
+  "Run agents once or on a recurring schedule, with a separate result for each trigger.": "一次性或定期运行 Agent，每次触发都有独立的结果。",
+  "Schedule type": "计划类型",
+  "Recurring": "重复",
+  "One time": "一次性",
+  "Run at": "执行时间",
+  "Choose a valid date and time.": "请选择有效的日期和时间。",
+  "Date and time in {{timezone}}.": "日期和时间使用 {{timezone}} 时区。",
+  "Scheduling finished": "调度已结束",
+  "Scheduling has finished. Check the trigger history for submission and execution results.": "调度已结束。请查看触发历史中的提交和执行结果。"
 }

@@ -10,25 +10,40 @@ from a13n_service.runs.schedules.schemas import (
     CronSchedule,
     OccurrenceSnapshot,
     OccurrenceStatus,
+    OnceSchedule,
     ScheduleInvocation,
+    ScheduleRule,
     ScheduleTrigger,
 )
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.tenancy.authorize import ExecutionAuthority
 
 
+def rule(row: ScheduleRow) -> ScheduleRule:
+    if row.schedule_type == "once":
+        assert row.run_at is not None
+        return OnceSchedule(type="once", run_at=row.run_at)
+    assert row.cron_expression is not None and row.timezone is not None
+    return CronSchedule(expression=row.cron_expression, timezone=row.timezone)
+
+
 def calendar(row: ScheduleRow) -> Calendar:
+    assert row.cron_expression is not None and row.timezone is not None
     return Calendar.parse(row.cron_expression, row.timezone)
 
 
-def next_fire(row: ScheduleRow, current: datetime) -> datetime:
+def next_fire(row: ScheduleRow, current: datetime) -> datetime | None:
     after = max(current, row.last_processed_fire_at) if row.last_processed_fire_at else current
+    if row.schedule_type == "once":
+        return row.run_at if row.run_at is not None and row.run_at > after else None
     return calendar(row).next(after)
 
 
 def latest_due(row: ScheduleRow, current: datetime) -> datetime | None:
     if row.next_fire_at is None or row.next_fire_at > current:
         return None
+    if row.schedule_type == "once":
+        return row.next_fire_at
     return calendar(row).previous(current + timedelta(microseconds=1))
 
 
@@ -46,10 +61,14 @@ async def occurrence(
     request_digest: str | None = None,
     authority: ExecutionAuthority | None = None,
 ) -> OccurrenceRow:
-    offset = scheduled_at.astimezone(calendar(row).timezone).utcoffset() if scheduled_at else None
+    offset = (
+        scheduled_at.astimezone(calendar(row).timezone).utcoffset()
+        if scheduled_at and row.schedule_type == "cron"
+        else None
+    )
     snapshot = OccurrenceSnapshot(
         name=row.name,
-        schedule=CronSchedule(expression=row.cron_expression, timezone=row.timezone),
+        schedule=rule(row),
         max_lateness_seconds=row.max_lateness_seconds,
         invocation=ScheduleInvocation.model_validate(row.invocation),
         timezone_data_version=TIMEZONE_DATA_VERSION,
@@ -88,6 +107,17 @@ async def occurrence(
     return result
 
 
+def complete_once(row: ScheduleRow, item: OccurrenceRow) -> None:
+    """Completion concerns automatic submission, never the resulting Run or manual dispatch."""
+    if (
+        row.schedule_type == "once"
+        and row.state == "enabled"
+        and item.trigger == "scheduled"
+        and item.status in {"submitted", "skipped", "failed"}
+    ):
+        row.state, row.pause_reason, row.next_fire_at = "completed", None, None
+
+
 def finish(
     row: ScheduleRow, item: OccurrenceRow, current: datetime, *, status: OccurrenceStatus, reason: str | None
 ) -> None:
@@ -95,6 +125,7 @@ def finish(
     item.next_attempt_at = None
     if row.pending_occurrence_id == item.id:
         row.pending_occurrence_id = None
+    complete_once(row, item)
 
 
 async def cancel_pending(session: AsyncSession, row: ScheduleRow, current: datetime, reason: str) -> str | None:

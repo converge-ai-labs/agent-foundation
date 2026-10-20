@@ -62,7 +62,7 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
 
 def test_monitoring_revision_upgrades_and_restores_main_schema(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
-        command.upgrade(config, "33e2cc388478")
+        command.upgrade(config, "63a5d892fc55")
     original_rules = rows(empty_database, RULES)
     original_objects = rows(empty_database, OBJECTS)
     columns = (
@@ -70,12 +70,13 @@ def test_monitoring_revision_upgrades_and_restores_main_schema(empty_database: D
         " WHERE table_schema = 'public' AND table_name = 'environments' ORDER BY ordinal_position"
     )
     original_columns = rows(empty_database, columns)
-    with migration_connection(empty_database, OSS) as config:
-        command.upgrade(config, "7d5bc53a5535")
+    upgrade(empty_database, OSS)
     check(empty_database, OSS)
-    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("7d5bc53a5535",)]
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("7d8eb88dd13d",)]
     with migration_connection(empty_database, OSS) as config:
-        command.downgrade(config, "33e2cc388478")
+        # Retire only the monitoring branch; keep main's one-time schedule schema.
+        command.downgrade(config, "7d5bc53a5535@33e2cc388478")
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("63a5d892fc55",)]
     assert rows(empty_database, RULES) == original_rules
     assert rows(empty_database, OBJECTS) == original_objects
     assert rows(empty_database, columns) == original_columns
@@ -101,6 +102,67 @@ def test_schedule_revision_upgrades_and_restores_main_schema(empty_database: Dat
         command.downgrade(config, "fed344f2d755")
     assert rows(empty_database, RULES) == original_rules
     assert rows(empty_database, OBJECTS) == original_objects
+
+
+@pytest.mark.anyio
+async def test_once_migration_preserves_cron_rows_and_refuses_lossy_downgrade(database, runtime, tenant):  # type: ignore[no-untyped-def]
+    from datetime import timedelta
+
+    from a13n_service.infra.db import now
+    from a13n_service.runs.schedules.tables import ScheduleRow
+
+    async with transaction(runtime.storage) as session:
+        owner = SessionRow(
+            id="ses_schedule_migration",
+            organization_id=tenant.organization_id,
+            workspace_id=tenant.workspace_id,
+            created_by_id=tenant.principal_id,
+            labels={},
+        )
+        session.add(owner)
+        await session.flush()
+        session.add(
+            ScheduleRow(
+                id="sch_migration",
+                organization_id=tenant.organization_id,
+                workspace_id=tenant.workspace_id,
+                session_id=owner.id,
+                name="Retained cron",
+                labels={},
+                state="paused",
+                pause_reason="manual",
+                cron_expression="0 9 * * *",
+                timezone="UTC",
+                max_lateness_seconds=300,
+                invocation={},
+                principal_id=tenant.principal_id,
+                authority={},
+                created_by_id=tenant.principal_id,
+                updated_by_id=tenant.principal_id,
+                create_request_key="migration",
+                create_request_digest="migration",
+            )
+        )
+    query = "SELECT id, session_id, cron_expression, timezone, version::text FROM schedules"
+    original = rows(database, query)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "33e2cc388478")
+    assert rows(database, query) == original
+    upgrade(database, OSS)
+    assert rows(database, query) == original
+    assert rows(database, "SELECT schedule_type, run_at FROM schedules") == [("cron", None)]
+    check(database, OSS)
+
+    async with transaction(runtime.storage) as session:
+        schedule = await session.get_one(ScheduleRow, "sch_migration")
+        schedule.schedule_type = "once"
+        schedule.run_at = await now(session) + timedelta(hours=1)
+        schedule.cron_expression = schedule.timezone = None
+    with pytest.raises(DBAPIError, match="cannot downgrade while one-time schedules exist"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "33e2cc388478")
+    assert rows(database, "SELECT schedule_type FROM schedules") == [("once",)]
+    check(database, OSS)
 
 
 def test_revisions_downgrade_to_an_empty_schema_and_upgrade_again(empty_database: Database) -> None:
@@ -267,8 +329,6 @@ def test_run_search_migration_retries_after_concurrent_index_build(
 ) -> None:
     upgrade(empty_database, OSS)
     with migration_connection(empty_database, OSS) as config:
-        # Isolate this revision before replaying its interrupted concurrent index build.
-        command.downgrade(config, "4d51a94777d9")
         # The additive DDL and concurrent build committed, but the process died before stamping its revision.
         command.downgrade(config, "4d51a94777d9")
         command.stamp(config, "2e9655a2d223")

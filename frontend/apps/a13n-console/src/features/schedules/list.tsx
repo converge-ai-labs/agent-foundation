@@ -45,7 +45,7 @@ export function SchedulesPage() {
     <Page
       title={t("Schedules")}
       description={t(
-        "Run agents on a recurring schedule, with a separate result for each trigger.",
+        "Run agents once or on a recurring schedule, with a separate result for each trigger.",
       )}
       actions={create}
       toolbar={
@@ -62,6 +62,7 @@ export function SchedulesPage() {
                 setState(
                   value === "enabled" ||
                     value === "paused" ||
+                    value === "completed" ||
                     value === "archived"
                     ? value
                     : undefined,
@@ -69,10 +70,16 @@ export function SchedulesPage() {
               }
               options={[
                 { value: "all", label: t("All states") },
-                ...["enabled", "paused", "archived"].map((value) => ({
-                  value,
-                  label: t(`state.${value}`),
-                })),
+                ...["enabled", "paused", "completed", "archived"].map(
+                  (value) => ({
+                    value,
+                    label: t(
+                      value === "completed"
+                        ? "Scheduling finished"
+                        : `state.${value}`,
+                    ),
+                  }),
+                ),
               ]}
             />
           }
@@ -104,16 +111,28 @@ export function SchedulesPage() {
               },
               {
                 label: t("State"),
-                render: (schedule) => <StatePill state={schedule.state} />,
+                render: (schedule) => (
+                  <StatePill
+                    state={schedule.state}
+                    label={
+                      schedule.state === "completed"
+                        ? t("Scheduling finished")
+                        : undefined
+                    }
+                  />
+                ),
               },
               {
                 label: t("Timing"),
-                render: (schedule) => (
-                  <span>
-                    {schedule.schedule.expression} ·{" "}
-                    {schedule.schedule.timezone}
-                  </span>
-                ),
+                render: (schedule) =>
+                  schedule.schedule.type === "once" ? (
+                    <Timestamp value={schedule.schedule.run_at} precise />
+                  ) : (
+                    <span>
+                      {schedule.schedule.expression} ·{" "}
+                      {schedule.schedule.timezone}
+                    </span>
+                  ),
               },
               {
                 label: t("Updated"),
