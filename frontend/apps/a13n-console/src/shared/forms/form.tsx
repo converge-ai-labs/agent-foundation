@@ -1,5 +1,5 @@
 import { Button, FormField, ReadOnlyField, Textarea } from "a13n-ui";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
 
@@ -20,6 +20,8 @@ export function TextAreaField({
   disabled = false,
   maxLength,
   error,
+  invalid,
+  ref,
 }: {
   label: string;
   value: string;
@@ -33,6 +35,8 @@ export function TextAreaField({
   disabled?: boolean;
   maxLength?: number;
   error?: string;
+  invalid?: boolean;
+  ref?: Ref<HTMLTextAreaElement>;
 }) {
   if (readOnly)
     return (
@@ -52,9 +56,12 @@ export function TextAreaField({
       description={hint}
       hideLabel={hideLabel}
       error={error}
+      invalid={invalid}
       disabled={disabled}
     >
       <Textarea
+        ref={ref}
+        aria-invalid={invalid || undefined}
         variant="soft"
         className={code ? styles.code : ""}
         value={value}
