@@ -476,8 +476,9 @@ it("loads all revision pages and resets the pinned version when the agent change
   );
   await user.click(await screen.findByRole("option", { name: "v1 Earlier" }));
   expect(reads.some((url) => url.includes("cursor=older"))).toBe(true);
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
   await user.click(dialog.getByRole("combobox", { name: "Agent" }));
-  await user.click(screen.getByRole("option", { name: "Reviewer" }));
+  await user.click(await screen.findByRole("option", { name: "Reviewer" }));
   const revision = dialog.getByRole("combobox", {
     name: "Agent revision (optional)",
   });
