@@ -15,6 +15,7 @@ from a13n_harness.capabilities import (
     ToolSearchGroup,
 )
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+from a13n_harness.content import request_input_content
 from a13n_harness.tools import discovery
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
 from pydantic_ai import FunctionToolset, Tool
@@ -25,6 +26,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolSearchCallPart,
     NativeToolSearchReturnPart,
+    TextContent,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -76,6 +78,18 @@ def _source(effects, *, proxy=False):
 
 def _call(name, args, index):
     return ModelResponse(parts=[ToolCallPart(name, args, tool_call_id=f"step-{index}")])
+
+
+@pytest.mark.parametrize("names", [set(), {"lookup"}])
+async def test_pruning_notice_is_model_context_not_authored_input(names):
+    messages = discovery._discovery_messages(names, [], None, "retained-test")
+    restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(messages))
+    items = request_input_content(restored[0])
+    assert len(items) == 1
+    assert isinstance(items[0].value, TextContent)
+    assert items[0].value.content == discovery._NOTICE
+    assert items[0].metadata.display is False
+    assert items[0].metadata.source_id == discovery._DISCOVERY_ID
 
 
 @pytest.mark.parametrize("replacement", ["summarize", "compact"])

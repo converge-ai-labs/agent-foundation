@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    TextContent,
     ToolCallPart,
     ToolReturnPart,
     ToolSearchCallPart,
@@ -182,7 +183,11 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
 def _discovery_messages(
     native: set[str], proxy: list[dict[str, Any]], proxy_search: str | None, call_id: str
 ) -> list[ModelMessage]:
-    messages: list[ModelMessage] = [ModelRequest(parts=[UserPromptPart(_NOTICE)])]
+    messages: list[ModelMessage] = [
+        ModelRequest(
+            parts=[UserPromptPart([TextContent(_NOTICE, metadata={"display": False, "source_id": _DISCOVERY_ID})])]
+        )
+    ]
     if native:
         names = sorted(native)
         messages.extend(
