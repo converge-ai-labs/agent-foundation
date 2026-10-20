@@ -31,6 +31,7 @@ export function DateTimeField({
   hint,
   disabled,
   clearable = true,
+  precision = "minute",
 }: {
   label: string;
   value: string;
@@ -38,6 +39,7 @@ export function DateTimeField({
   hint?: string;
   disabled?: boolean;
   clearable?: boolean;
+  precision?: "minute" | "second";
 }) {
   const id = useId();
   const { t, i18n } = useTranslation();
@@ -55,6 +57,7 @@ export function DateTimeField({
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+        second: precision === "second" ? "2-digit" : undefined,
         hourCycle: "h23",
       }).format(selected)
     : t("Select date and time");
@@ -66,7 +69,9 @@ export function DateTimeField({
         onOpenChange={(next) => {
           if (next) {
             setDay(selected);
-            setTime(formatLocalDateTime(selected ?? new Date()).slice(11));
+            setTime(
+              formatLocalDateTime(selected ?? new Date(), precision).slice(11),
+            );
           }
           setOpen(next);
         }}
@@ -77,18 +82,24 @@ export function DateTimeField({
           render={
             <Button
               variant="outline"
-              className="justify-start"
+              className="w-full justify-between font-normal"
               disabled={disabled}
             />
           }
           aria-label={label}
         >
-          <CalendarDotsIcon aria-hidden="true" />
-          <span>{display}</span>
+          <span className={selected ? undefined : "text-muted-foreground"}>
+            {display}
+          </span>
+          <CalendarDotsIcon
+            aria-hidden="true"
+            className="text-muted-foreground"
+          />
         </PopoverTrigger>
         <PopoverPopup
+          align="start"
           aria-label={label}
-          className="w-auto max-w-[calc(100vw-2rem)] p-4"
+          className="w-auto max-w-[calc(100vw-2rem)] [&_[data-slot=popover-viewport]]:p-4"
         >
           <div className="flex flex-col gap-4">
             <Calendar
@@ -99,29 +110,34 @@ export function DateTimeField({
               locale={locale?.startsWith("zh") ? zhCN : enUS}
               autoFocus
             />
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm">{t("Time")}</span>
-              <div className="flex items-center gap-2">
+            <div className="flex gap-2">
+              <ChoiceField
+                label={t("Hour")}
+                options={hours}
+                value={time.slice(0, 2)}
+                onValueChange={(hour) => setTime(`${hour}:${time.slice(3)}`)}
+                className="min-w-0 flex-1 [&_[data-slot=select-trigger]]:min-w-0"
+              />
+              <ChoiceField
+                label={t("Minute")}
+                options={minutes}
+                value={time.slice(3, 5)}
+                onValueChange={(minute) =>
+                  setTime(`${time.slice(0, 2)}:${minute}${time.slice(5)}`)
+                }
+                className="min-w-0 flex-1 [&_[data-slot=select-trigger]]:min-w-0"
+              />
+              {precision === "second" && (
                 <ChoiceField
-                  label={t("Hour")}
-                  hideLabel
-                  options={hours}
-                  value={time.slice(0, 2)}
-                  onValueChange={(hour) => setTime(`${hour}:${time.slice(3)}`)}
-                  className="w-20 [&_[data-slot=select-trigger]]:min-w-0"
-                />
-                <span aria-hidden="true">:</span>
-                <ChoiceField
-                  label={t("Minute")}
-                  hideLabel
+                  label={t("Second")}
                   options={minutes}
-                  value={time.slice(3)}
-                  onValueChange={(minute) =>
-                    setTime(`${time.slice(0, 2)}:${minute}`)
+                  value={time.slice(6, 8)}
+                  onValueChange={(second) =>
+                    setTime(`${time.slice(0, 5)}:${second}`)
                   }
-                  className="w-20 [&_[data-slot=select-trigger]]:min-w-0"
+                  className="min-w-0 flex-1 [&_[data-slot=select-trigger]]:min-w-0"
                 />
-              </div>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {Intl.DateTimeFormat().resolvedOptions().timeZone}

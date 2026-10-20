@@ -3,7 +3,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  fireEvent,
   render,
   screen,
   waitFor,
@@ -165,6 +164,7 @@ function live(
 it.each(["cron", "once"])(
   "previews %s timing and retries an unchanged create with the same request key",
   async (type) => {
+    let expectedRunAt: string | undefined;
     const user = userEvent.setup(),
       creates: Request[] = [],
       bodies: unknown[] = [],
@@ -209,9 +209,27 @@ it.each(["cron", "once"])(
       await user.click(
         within(dialog).getByRole("button", { name: "One time" }),
       );
-      fireEvent.change(within(dialog).getByLabelText("Run at"), {
-        target: { value: "2090-10-21T09:30:15" },
-      });
+      await user.click(within(dialog).getByRole("button", { name: "Run at" }));
+      const picker = within(screen.getByRole("dialog", { name: "Run at" }));
+      expect(
+        picker.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
+      ).toBe(true);
+      const today = new Date();
+      await user.click(picker.getByRole("button", { name: /Today,/ }));
+      for (const [label, value] of [
+        ["Hour", "09"],
+        ["Minute", "30"],
+        ["Second", "15"],
+      ]) {
+        await user.click(picker.getByRole("combobox", { name: label }));
+        await user.click(await screen.findByRole("option", { name: value }));
+      }
+      await user.click(picker.getByRole("button", { name: "Apply" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Run at" })).toBeNull(),
+      );
+      today.setHours(9, 30, 15, 0);
+      expectedRunAt = today.toISOString();
     }
     await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
     await user.click(await screen.findByRole("option", { name: "Reporter" }));
@@ -225,7 +243,7 @@ it.each(["cron", "once"])(
         type === "once"
           ? {
               type: "once",
-              run_at: new Date("2090-10-21T09:30:15").toISOString(),
+              run_at: expectedRunAt,
             }
           : { expression: "0 9 * * *" },
       count: 5,
@@ -258,6 +276,7 @@ it.each(["cron", "once"])(
       },
     });
   },
+  15_000,
 );
 
 it("pages history, distinguishes failed input from submission, and refreshes an old result on reconnect", async () => {

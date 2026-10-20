@@ -18,10 +18,15 @@ import { ConflictNotice } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import {
   FormActions,
+  DateTimeField,
   TextAreaField,
   scheduleInvocation,
 } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
+import {
+  formatLocalDateTime,
+  parseLocalDateTime,
+} from "../../shared/local-date-time";
 import shared from "../../shared/shared.module.css";
 import {
   scheduleCommands,
@@ -101,9 +106,7 @@ function ScheduleForm({
   const [originalRunAt] = useState(() => {
     if (schedule?.schedule.type !== "once") return "";
     const date = new Date(schedule.schedule.run_at);
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-      .toISOString()
-      .slice(0, 19);
+    return formatLocalDateTime(date, "second");
   });
   const [runAt, setRunAt] = useState(originalRunAt);
   const [expression, setExpression] = useState(cron?.expression ?? "0 9 * * *");
@@ -149,9 +152,8 @@ function ScheduleForm({
       // Preserve the saved instant's precision and offset when only other fields change.
       if (schedule?.schedule.type === "once" && runAt === originalRunAt)
         return schedule.schedule;
-      const date = new Date(runAt);
-      if (!runAt || !Number.isFinite(date.getTime()))
-        throw new Error(t("Choose a valid date and time."));
+      const date = parseLocalDateTime(runAt);
+      if (!date) throw new Error(t("Choose a valid date and time."));
       return { type: "once", run_at: date.toISOString() };
     }
     return {
@@ -236,23 +238,19 @@ function ScheduleForm({
         ]}
       />
       {timingType === "once" ? (
-        <FormField
+        <DateTimeField
           label={t("Run at")}
-          description={t("Date and time in {{timezone}}.", {
+          hint={t("Date and time in {{timezone}}.", {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           })}
-        >
-          <Input
-            type="datetime-local"
-            step="1"
-            required
-            value={runAt}
-            onChange={(event) => {
-              setRunAt(event.target.value);
-              preview.reset();
-            }}
-          />
-        </FormField>
+          precision="second"
+          clearable={false}
+          value={runAt}
+          onValueChange={(value) => {
+            setRunAt(value);
+            preview.reset();
+          }}
+        />
       ) : (
         <div className={styles.timing}>
           <FormField
@@ -427,7 +425,11 @@ function ScheduleForm({
       <FormActions
         onCancel={onCancel}
         pending={save.isPending}
-        disabled={stale || (mode === "fields" && (!agentId || !input.trim()))}
+        disabled={
+          stale ||
+          (timingType === "once" && !runAt) ||
+          (mode === "fields" && (!agentId || !input.trim()))
+        }
         label={t(schedule ? "Save changes" : "Create schedule")}
       />
     </form>
