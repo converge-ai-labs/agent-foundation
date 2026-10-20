@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { DisplayNormalizer, isItemRef } from "a13n-ui/display";
 import { createClient, type SessionDelta } from "../../service-client";
-import { fixtureRun, fixtureThread } from "./transcript/fixture";
+import { fixtureRun } from "./transcript/fixture";
 import {
   applyDelta,
   comparePositions,
@@ -124,12 +124,6 @@ it("does not append live deltas to a saved preview or lose the full-content refe
   expect(items.get("message")?.last_stream_id).toBe("1-2");
 });
 
-const thread = (current?: string) => ({
-  thread: fixtureThread({ id: "thread_2", current_run_id: current ?? null }),
-  current_run: current ? fixtureRun({ id: current }) : null,
-  last_run: null,
-  entries: [],
-});
 const text = (displays: SessionDisplays) =>
   displays.get("run_2")?.items.map((item) => item.content.text);
 
@@ -199,16 +193,35 @@ it("replaces unfinished displays from each new connection's snapshot", () => {
   expect(displays.get("run_2")).toMatchObject({ first: 2 });
   expect(text(displays)).toEqual(["Hello all"]);
   // A held run that ended while disconnected is dropped, so its committed display is read.
-  displays.connected();
-  expect(displays.thread(thread("run_3"))).toEqual(["run_2"]);
+  expect(displays.connected()).toEqual(["run_2"]);
   expect(displays.get("run_2")).toBeUndefined();
   expect(listener).not.toHaveBeenCalled();
   nextFrame();
   expect(listener).toHaveBeenCalledOnce();
   // On a live connection the thread frame precedes the run's final items, which keep it.
   displays.items(snapshot([item(1)]));
-  expect(displays.thread(thread("run_3"))).toEqual([]);
   expect(displays.get("run_2")).toBeDefined();
+});
+
+it("bounds completed history while keeping active and observed output", () => {
+  const displays = new SessionDisplays();
+  displays.items(snapshot([item(1)]));
+  const unsubscribe = displays.subscribe("old", () => undefined);
+  displays.items({ ...snapshot([item(1)], { complete: true }), run_id: "old" });
+  for (let index = 0; index < 25; index++)
+    displays.items({
+      ...snapshot([item(1)], { complete: true }),
+      run_id: `completed_${index}`,
+    });
+  expect(displays.get("run_2")).toBeDefined();
+  expect(displays.get("old")).toBeDefined();
+  expect(displays.get("completed_0")).toBeUndefined();
+  expect(displays.get("completed_24")).toBeDefined();
+  unsubscribe();
+  expect(displays.get("old")).toBeUndefined();
+  // No Thread frame is necessary to invalidate output that ended outside the new window.
+  expect(displays.connected()).toEqual(["run_2"]);
+  expect(displays.get("run_2")).toBeUndefined();
 });
 
 it("normalizes every intact raw suffix identically to the Python producer", async () => {

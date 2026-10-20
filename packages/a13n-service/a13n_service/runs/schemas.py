@@ -393,6 +393,7 @@ class SessionPreview(BaseModel):
 
 
 class SessionView(BaseModel):
+    schedule_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str
@@ -414,6 +415,7 @@ class SessionPage(BaseModel):
 
 
 class ThreadView(BaseModel):
+    schedule_occurrence_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     purpose: Literal["conversation", "memory_organization"] = "conversation"
     id: str
@@ -468,7 +470,13 @@ class EntryPage(BaseModel):
     next_cursor: str | None
 
 
+class ScheduleOrigin(BaseModel):
+    schedule_id: str
+    occurrence_id: str
+
+
 class RunView(BaseModel):
+    schedule_origin: ScheduleOrigin | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str

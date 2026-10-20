@@ -91,6 +91,15 @@ class ThreadRow(Stamped, Base):
         Index("ix_threads_session_created", "workspace_id", "session_id", "created_at", "id"),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),
+        UniqueConstraint("workspace_id", "session_id", "schedule_occurrence_id", "id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "session_id", "schedule_occurrence_id"],
+            ["schedule_occurrences.workspace_id", "schedule_occurrences.session_id", "schedule_occurrences.id"],
+            name="fk_threads_schedule_occurrence",
+            use_alter=True,
+        ),
+        Index("ix_threads_schedule_occurrence", "workspace_id", "schedule_occurrence_id", "created_at", "id"),
+        CheckConstraint("origin <> 'fork' OR schedule_occurrence_id IS NULL", name="fork_schedule"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "session_id"], ["sessions.workspace_id", "sessions.id"]),
         ForeignKeyConstraint(
@@ -156,6 +165,8 @@ class ThreadRow(Stamped, Base):
             BEGIN
                 IF NEW.message_history::text IS DISTINCT FROM OLD.message_history::text
                 THEN RAISE EXCEPTION 'thread initial history is immutable'; END IF;
+                IF NEW.schedule_occurrence_id IS DISTINCT FROM OLD.schedule_occurrence_id
+                THEN RAISE EXCEPTION 'thread schedule occurrence is immutable'; END IF;
                 RETURN NEW;
             END $$
             """,
@@ -166,6 +177,7 @@ class ThreadRow(Stamped, Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     session_id: Mapped[str]
+    schedule_occurrence_id: Mapped[str | None] = mapped_column(String(72))
     purpose: Mapped[str] = mapped_column(default="conversation", server_default="conversation")
     origin: Mapped[str]
     origin_thread_id: Mapped[str | None]

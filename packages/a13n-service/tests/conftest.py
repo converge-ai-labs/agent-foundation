@@ -20,7 +20,6 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-import uvicorn
 from a13n_service import api_tools as api_tools_module
 from a13n_service import app as app_module
 from a13n_service.app import build_app, open_runtime
@@ -35,6 +34,7 @@ from a13n_service.runs.claim import claim
 from a13n_service.runs.display import Tail
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.stream import stream_key
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import Database, ProcessRole, Settings
 from a13n_service.tenancy import credentials
@@ -51,6 +51,8 @@ from sqlalchemy.engine import make_url
 from testcontainers.core.config import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
+
+from .http_support import serve_http
 
 TEMPLATE = "a13n_template"
 EMAIL = "admin@example.com"
@@ -299,7 +301,7 @@ class ScriptedModel:
     Runs execute through the real provider adapter, HTTP client and endpoint policy. `requests` receives each
     request body as it arrives; a turn with a `gate` answers only once the test sets it. A turn scripted `to` a
     marker answers only a request whose body contains it, so concurrent agents each get their own turns. A reply
-    said in several pieces streams them as separate chunks, `interval` seconds apart.
+    said in several pieces streams them as separate chunks; `chunk_gate` holds the chunks after the first.
     """
 
     def __init__(self) -> None:
@@ -311,9 +313,15 @@ class ScriptedModel:
         app.post("/v1/chat/completions")(self._complete)
         self.app = app
 
-    def say(self, *pieces: str, gate: asyncio.Event | None = None, to: str | None = None, interval: float = 0) -> None:
+    def say(
+        self,
+        *pieces: str,
+        gate: asyncio.Event | None = None,
+        to: str | None = None,
+        chunk_gate: asyncio.Event | None = None,
+    ) -> None:
         deltas = [{"content": piece} for piece in pieces]
-        self._script({"deltas": deltas, "interval": interval, "finish": "stop", "gate": gate, "to": to})
+        self._script({"deltas": deltas, "chunk_gate": chunk_gate, "finish": "stop", "gate": gate, "to": to})
 
     def call(
         self,
@@ -326,7 +334,7 @@ class ScriptedModel:
     ) -> None:
         function = {"name": name, "arguments": json.dumps(arguments)}
         delta = {"tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": function}]}
-        self._script({"deltas": [delta], "interval": 0, "finish": "tool_calls", "gate": gate, "to": to})
+        self._script({"deltas": [delta], "chunk_gate": None, "finish": "tool_calls", "gate": gate, "to": to})
 
     async def request(self) -> dict[str, Any]:
         return await asyncio.wait_for(self.requests.get(), timeout=10)
@@ -356,8 +364,8 @@ class ScriptedModel:
 
         async def stream() -> AsyncIterator[str]:
             for index, delta in enumerate(deltas):
-                if index and turn["interval"]:
-                    await asyncio.sleep(turn["interval"])
+                if index and turn["chunk_gate"] is not None:
+                    await turn["chunk_gate"].wait()
                 yield f"data: {json.dumps({**base, 'choices': [{'index': 0, 'delta': delta}]})}\n\n"
             ending = [
                 {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": turn["finish"]}]},
@@ -374,18 +382,8 @@ async def listening(app: Any) -> AsyncIterator[str]:
 
     Responses still streaming when the block exits, such as a gated model turn, are cancelled after 0.1 s.
     """
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=0.1
-    )
-    server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve())
-    while not server.started:
-        await asyncio.sleep(0.01)
-    try:
-        yield f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
-    finally:
-        server.should_exit = True
-        await task
+    async with serve_http(app, lifespan="off") as url:
+        yield url
 
 
 @pytest.fixture
@@ -545,6 +543,18 @@ async def sealed(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
     return run
 
 
+async def streamed_text(runtime: Runtime, thread_id: str, text: str) -> None:
+    """Wait for an actual text delta, including output already published before subscribing."""
+    key, after = stream_key(thread_id), "0-0"
+    async with asyncio.timeout(10):
+        while True:
+            for _, entries in await runtime.redis.xread({key: after}, block=1000):
+                for entry_id, fields in entries:
+                    after = entry_id
+                    if "event" in fields and json.loads(fields["event"]).get("delta") == text:
+                        return
+
+
 async def checkpointed(service: SimpleNamespace, run_id: str) -> None:
     """Wait until the run committed its first checkpoint: the one before its first model call."""
     async with asyncio.timeout(10):
@@ -678,6 +688,7 @@ def runs_kit() -> SimpleNamespace:
         attempt=attempt,
         platform_runtime=platform_runtime,
         pause_sweeps=pause_sweeps,
+        streamed_text=streamed_text,
         bearer=bearer,
         frames=frames,
         until=until,

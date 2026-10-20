@@ -156,10 +156,10 @@ class ContextUsageQuery(BaseModel):
 
 
 class ContextUsage(BaseModel):
-    """One reported generation, compared with its currently configured window."""
+    """A Run's configured window and its latest eligible generation, when available."""
 
     run_id: str
-    record_id: str
+    record_id: str | None
     input_tokens: int | None
     output_tokens: int | None
     context_window_tokens: int | None

@@ -30,16 +30,24 @@ async def read_context_usage(
     )
     async with short_session(storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
+        selected = None
         if query.record_id is not None:
             statement = statement.where(UsageRecordRow.id == query.record_id)
         else:
             if query.thread_id is not None:
                 await get_thread(session, workspace_id, query.thread_id)
-                statement = statement.where(RunRow.thread_id == query.thread_id)
+                selected = await session.scalar(
+                    select(RunRow)
+                    .where(RunRow.workspace_id == workspace_id, RunRow.thread_id == query.thread_id)
+                    .order_by(RunRow.created_at.desc(), RunRow.id.desc())
+                    .limit(1)
+                )
+                if selected is None:
+                    return None
             else:
                 assert query.run_id is not None
-                await get_run(session, workspace_id, query.run_id)
-                statement = statement.where(RunRow.id == query.run_id)
+                selected = await get_run(session, workspace_id, query.run_id)
+            statement = statement.where(RunRow.id == selected.id)
             statement = statement.where(
                 record["parent_agent_instance_id"].astext.is_(None),
                 record["delegation_id"].astext.is_(None),
@@ -56,9 +64,13 @@ async def read_context_usage(
         if row is None:
             if query.record_id is not None:
                 raise not_found("usage_record", query.record_id)
-            return None
-        contribution, run, model, revision = row
-        observed = contribution.record
+            assert selected is not None
+            run = selected
+            revision = await session.get_one(AgentRevisionRow, run.agent_revision_id)
+            contribution, model = None, None
+        else:
+            contribution, run, model, revision = row
+        observed = contribution.record if contribution is not None else {}
         capacity = ModelConfig.model_validate(model.config).characteristics.context_window_tokens if model else None
         # An inline child does not inherit its parent's context policy.
         if (
@@ -70,7 +82,16 @@ async def read_context_usage(
             override = RunOptions.model_validate(run.options).overrides
             if override is not None:
                 config = apply_override(config, override)
-            capacity = config.model_characteristics.context_window_tokens or capacity
+            capacity = config.model_characteristics.context_window_tokens
+            if capacity is None:
+                configured_model = await session.scalar(
+                    select(ModelRow).where(ModelRow.workspace_id == workspace_id, ModelRow.key == config.model)
+                )
+                capacity = (
+                    ModelConfig.model_validate(configured_model.config).characteristics.context_window_tokens
+                    if configured_model
+                    else None
+                )
         usage = observed.get("request_usage", {})
         known = observed.get("usage_status") != "unavailable" and any(
             usage.get(key, 0) > 0
@@ -78,7 +99,7 @@ async def read_context_usage(
         )
         return ContextUsage(
             run_id=run.id,
-            record_id=contribution.id,
+            record_id=contribution.id if contribution is not None else None,
             input_tokens=usage.get("input_tokens", 0) if known else None,
             output_tokens=usage.get("output_tokens", 0) if known else None,
             context_window_tokens=capacity,

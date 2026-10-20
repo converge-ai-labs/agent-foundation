@@ -7,6 +7,7 @@ import {
   HeadCircuitIcon,
   CubeIcon,
   ChatsIcon,
+  ClockIcon,
   MonitorIcon,
   PlugIcon,
   PuzzlePieceIcon,
@@ -20,6 +21,7 @@ export const navigationGroups: {
     entries: [
       ["agents", "Agents", HeadCircuitIcon],
       ["sessions", "Sessions", ChatsIcon],
+      ["schedules", "Schedules", ClockIcon],
     ],
   },
   {
@@ -75,6 +77,7 @@ export function routeSkeleton(
   const lists: Record<string, number> = {
     "/agents": 4,
     "/sessions": 4,
+    "/schedules": 4,
     "/models": 4,
     "/skills": 3,
     "/memories": 5,
@@ -86,7 +89,7 @@ export function routeSkeleton(
   };
   if (tail in lists) return { variant: "page", columns: lists[tail] };
   if (
-    /^\/(agents|traces|environments|memories|memory-spaces|findings)\/[^/]+$/.test(
+    /^\/(agents|schedules|traces|environments|memories|memory-spaces|findings)\/[^/]+$/.test(
       tail,
     )
   )

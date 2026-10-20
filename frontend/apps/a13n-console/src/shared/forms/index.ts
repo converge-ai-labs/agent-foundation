@@ -19,6 +19,7 @@ export {
   jsonObject,
   jsonValue,
   runOverride,
+  scheduleInvocation,
   schemaErrors,
   stringValues,
   validateAgentConfig,

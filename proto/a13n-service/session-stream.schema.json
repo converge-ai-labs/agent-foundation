@@ -581,6 +581,64 @@
       "title": "ClientToolDefinition",
       "type": "object"
     },
+    "Configuration": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "max_lateness_seconds": {
+          "title": "Max Lateness Seconds",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "pause_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pause Reason"
+        },
+        "principal_id": {
+          "title": "Principal Id",
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/CronSchedule"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ScheduleState"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "name",
+        "state",
+        "pause_reason",
+        "version",
+        "principal_id",
+        "schedule",
+        "max_lateness_seconds"
+      ],
+      "title": "Configuration",
+      "type": "object"
+    },
     "ConnectionSelection": {
       "additionalProperties": false,
       "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
@@ -676,6 +734,35 @@
         "preview"
       ],
       "title": "ContentRef",
+      "type": "object"
+    },
+    "CronSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "expression": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Expression",
+          "type": "string"
+        },
+        "timezone": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Timezone",
+          "type": "string"
+        },
+        "type": {
+          "const": "cron",
+          "default": "cron",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expression",
+        "timezone"
+      ],
+      "title": "CronSchedule",
       "type": "object"
     },
     "DelegationContextPolicy": {
@@ -1333,6 +1420,24 @@
       "title": "Gap",
       "type": "object"
     },
+    "InitialRun": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "InitialRun",
+      "type": "object"
+    },
     "IsolatedSkillSync": {
       "additionalProperties": false,
       "description": "Reuse immutable package directories, with a soft count budget.",
@@ -1805,6 +1910,257 @@
       "title": "ObserverContinuation",
       "type": "object"
     },
+    "OccurrenceEvent": {
+      "properties": {
+        "occurrence": {
+          "$ref": "#/$defs/OccurrenceSummary"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "schedule_id",
+        "occurrence"
+      ],
+      "title": "OccurrenceEvent",
+      "type": "object"
+    },
+    "OccurrenceExecution": {
+      "additionalProperties": false,
+      "description": "Current execution facts, independent of the immutable submission result and its version.",
+      "properties": {
+        "has_unfinished_work": {
+          "title": "Has Unfinished Work",
+          "type": "boolean"
+        },
+        "initial_entry_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntryStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initial_run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InitialRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "initial_entry_status",
+        "initial_run",
+        "has_unfinished_work",
+        "observed_at"
+      ],
+      "title": "OccurrenceExecution",
+      "type": "object"
+    },
+    "OccurrenceStatus": {
+      "enum": [
+        "pending",
+        "submitted",
+        "skipped",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "OccurrenceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "covered_from_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Covered From At"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "deadline_at": {
+          "format": "date-time",
+          "title": "Deadline At",
+          "type": "string"
+        },
+        "dispatch_attempts": {
+          "title": "Dispatch Attempts",
+          "type": "integer"
+        },
+        "entry_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Entry Id"
+        },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccurrenceExecution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Finished At"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "last_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Error"
+        },
+        "next_attempt_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Attempt At"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "schedule_version": {
+          "title": "Schedule Version",
+          "type": "integer"
+        },
+        "scheduled_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Scheduled At"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/OccurrenceStatus"
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Thread Id"
+        },
+        "trigger": {
+          "$ref": "#/$defs/ScheduleTrigger"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "schedule_id",
+        "session_id",
+        "trigger",
+        "scheduled_at",
+        "covered_from_at",
+        "schedule_version",
+        "status",
+        "reason",
+        "thread_id",
+        "entry_id",
+        "dispatch_attempts",
+        "next_attempt_at",
+        "deadline_at",
+        "last_error",
+        "version",
+        "created_at",
+        "updated_at",
+        "finished_at"
+      ],
+      "title": "OccurrenceSummary",
+      "type": "object"
+    },
     "OutputSpec": {
       "additionalProperties": false,
       "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
@@ -2076,6 +2432,51 @@
         "plugin_key"
       ],
       "title": "PluginSelection",
+      "type": "object"
+    },
+    "Progress": {
+      "properties": {
+        "last_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Occurrence Id"
+        },
+        "next_fire_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Fire At"
+        },
+        "pending_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pending Occurrence Id"
+        }
+      },
+      "required": [
+        "next_fire_at",
+        "pending_occurrence_id",
+        "last_occurrence_id"
+      ],
+      "title": "Progress",
       "type": "object"
     },
     "ProxyToolSearchConfig": {
@@ -2549,6 +2950,17 @@
           "title": "Revision Selection",
           "type": "string"
         },
+        "schedule_origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "sealed_at": {
           "anyOf": [
             {
@@ -2673,6 +3085,65 @@
       ],
       "title": "RunView",
       "type": "object"
+    },
+    "ScheduleEvent": {
+      "properties": {
+        "configuration": {
+          "$ref": "#/$defs/Configuration"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "schedule_id",
+        "configuration",
+        "progress"
+      ],
+      "title": "ScheduleEvent",
+      "type": "object"
+    },
+    "ScheduleOrigin": {
+      "properties": {
+        "occurrence_id": {
+          "title": "Occurrence Id",
+          "type": "string"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schedule_id",
+        "occurrence_id"
+      ],
+      "title": "ScheduleOrigin",
+      "type": "object"
+    },
+    "ScheduleState": {
+      "enum": [
+        "paused",
+        "enabled",
+        "archived"
+      ],
+      "type": "string"
+    },
+    "ScheduleTrigger": {
+      "enum": [
+        "scheduled",
+        "manual"
+      ],
+      "type": "string"
     },
     "SharedSkillSync": {
       "additionalProperties": false,
@@ -3008,6 +3479,18 @@
           ],
           "title": "Purpose",
           "type": "string"
+        },
+        "schedule_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schedule Occurrence Id"
         },
         "session_id": {
           "title": "Session Id",
@@ -3591,6 +4074,12 @@
     },
     "items": {
       "$ref": "#/$defs/RunSnapshot"
+    },
+    "occurrence": {
+      "$ref": "#/$defs/OccurrenceEvent"
+    },
+    "schedule": {
+      "$ref": "#/$defs/ScheduleEvent"
     },
     "thread": {
       "$ref": "#/$defs/ThreadState"

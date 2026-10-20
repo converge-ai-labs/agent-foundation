@@ -83,6 +83,12 @@ class OutboxRow(Base):
         CheckConstraint("(status = 'delivered') = (delivered_at IS NOT NULL)", name="delivered"),
         CheckConstraint("(status <> 'pending') = (settled_at IS NOT NULL)", name="settled"),
         Index("ix_outbox_due", "kind", "available_at", postgresql_where=text("status = 'pending'")),
+        Index(
+            "ix_outbox_pending_child_thread",
+            "workspace_id",
+            text("(target ->> 'thread_id')"),
+            postgresql_where=text("kind = 'child_result' AND status = 'pending'"),
+        ),
         Index("ix_outbox_settled", "kind", "status", "settled_at", "id", postgresql_where=text("status <> 'pending'")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)

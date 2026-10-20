@@ -17,6 +17,13 @@ One word, one meaning. If a new word is needed, add it here first. Definitions a
 | **verb**         | `read`, `run`, `write` or `admin`; what `authorize` checks                                                                           | an operation name                                         |
 | **authority**    | a run's persisted execution ceiling, intersected with its principal's current grants ([03](03-tenancy.md#execution-authority))       | the worker's own credentials                              |
 
+## Recurring invocation
+
+| Word           | Meaning                                                                                                                                 | Not                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Schedule**   | Workspace-owned recurring Agent invocation and durable delegation ([13](13-schedules.md))                                               | a Worker claim or general business workflow |
+| **Occurrence** | One recorded scheduled or manual trigger, whose terminal state describes input submission ([13](13-schedules.md#objects-and-ownership)) | a Run or an execution result                |
+
 ## Resources
 
 | Word                     | Meaning                                                                                                                                                                                     | Not                                                    |

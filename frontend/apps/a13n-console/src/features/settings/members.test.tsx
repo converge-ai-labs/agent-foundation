@@ -4,8 +4,10 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
-import { Members } from "./members";
+import { MemoryRouter } from "react-router";
+import { Members, MemberSettings } from "./members";
 
+const access = vi.hoisted(() => ({ organizationAdmin: true }));
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
@@ -18,7 +20,7 @@ vi.mock("../../auth/context", () => ({
 vi.mock("../../layout/workspace", () => ({
   useAccess: () => ({
     organization: { id: "org_acme" },
-    organizationCan: () => true,
+    organizationCan: () => access.organizationAdmin,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -31,6 +33,7 @@ vi.mock("react-i18next", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  access.organizationAdmin = true;
 });
 
 const scope = { kind: "workspace", id: "ws_design" } as const;
@@ -165,4 +168,90 @@ it("offers the organization's users when adding a workspace member", async () =>
       }),
     ),
   );
+});
+
+it.each(["workspace", "organization"] as const)(
+  "invites directly from %s Members and opens invitation records",
+  async (kind) => {
+    const target = {
+      kind,
+      id: kind === "workspace" ? "ws_design" : "org_acme",
+    };
+    http.GET.mockImplementation(async (path: string) => ({
+      data: {
+        items: path.endsWith("/invitations")
+          ? [
+              {
+                id: "inv_ada",
+                email: "ada@example.com",
+                role: "viewer",
+                created_at: "2026-10-20T00:00:00Z",
+                expires_at: "2099-10-27T00:00:00Z",
+                accepted_at: null,
+                revoked_at: null,
+              },
+            ]
+          : [grant("rb_ada", "viewer", ada)],
+        next_cursor: null,
+      },
+      response: new Response(),
+    }));
+    http.POST.mockResolvedValue({
+      data: { delivery: "sent" },
+      response: new Response(),
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <MemberSettings scope={target} />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Ada");
+    await user.click(screen.getByRole("button", { name: "Invite" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "ada@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Send invitation" }));
+    await screen.findByText("Invitation sent");
+    expect(http.POST).toHaveBeenCalledWith(
+      `/api/v1/${kind}s/{${kind}_id}/invitations`,
+      {
+        params: { path: { [`${kind}_id`]: target.id } },
+        body: { email: "ada@example.com", role: "viewer" },
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("tab", { name: "Invitations" }));
+    await screen.findByText("ada@example.com");
+    expect(
+      screen
+        .getByRole("tab", { name: "Invitations" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(http.GET).toHaveBeenCalledWith(
+      `/api/v1/${kind}s/{${kind}_id}/invitations`,
+      expect.objectContaining({
+        params: {
+          path: { [`${kind}_id`]: target.id },
+          query: { cursor: undefined, limit: 30 },
+        },
+      }),
+    );
+  },
+);
+
+it("lets workspace administrators invite without organization administration", async () => {
+  access.organizationAdmin = false;
+  const user = setup(() => [grant("rb_ada", "admin", ada)]);
+  await screen.findByText("Ada");
+  expect(screen.queryByRole("button", { name: "Add member" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Invite" }));
+  expect(screen.getByRole("dialog", { name: "Invite member" })).toBeTruthy();
 });

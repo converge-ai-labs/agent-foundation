@@ -18,7 +18,7 @@ import styles from "./settings.module.css";
 /**
  * The contextual settings shell. Sections are addressable pages under the
  * scope's settings path; the navigation lists every scope the reader can
- * reach, the current one first, so moving between them takes one click.
+ * reach in a fixed order, so switching scopes never moves navigation targets.
  */
 export function SettingsLayout({
   scope,
@@ -67,10 +67,6 @@ export function SettingsLayout({
       ),
     }))
     .filter((group) => group.sections.length);
-  const ordered = [
-    ...visible.filter((group) => group.scope === scope),
-    ...visible.filter((group) => group.scope !== scope),
-  ];
   return (
     <PageEmptyAction value={setOfferedBelow}>
       <PageActionsTarget value={actionsTarget}>
@@ -110,7 +106,7 @@ export function SettingsLayout({
               />
             </FormField>
             <nav aria-label={t("Settings navigation")}>
-              {ordered.map((group) => (
+              {visible.map((group) => (
                 <section
                   className={styles.scope}
                   key={group.scope}
@@ -141,7 +137,7 @@ export function SettingsLayout({
                   ))}
                 </section>
               ))}
-              {!ordered.length && (
+              {!visible.length && (
                 <p className={styles.noResults}>{t("No matching settings")}</p>
               )}
             </nav>

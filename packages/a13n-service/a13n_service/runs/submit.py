@@ -89,10 +89,11 @@ async def _append(
     scope: WorkspaceScope,
     thread: ThreadRow,
     message: Message,
-    request: Request,
+    request: Request | None,
+    *,
+    authority: ExecutionAuthority,
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
-    authority = execution_authority(actor, scope)
     revision, overrides = await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
     entry = await append_message(
         session,
@@ -163,30 +164,54 @@ async def submit_message(
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         thread = await get_thread(session, scope.workspace_id, thread_id, lock=True)
         require_open(thread)
-        return thread, await _append(session, runtime, actor, scope, thread, message, request)
+        return thread, await _append(
+            session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
+        )
 
     return await _submit(
         runtime, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message), create
     )
 
 
+async def prepare_thread(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: NewThread,
+    *,
+    request: Request | None,
+    authority: ExecutionAuthority,
+    schedule_occurrence_id: str | None = None,
+) -> tuple[ThreadRow, Source]:
+    """Create a new Thread and validated first Entry in the caller's transaction, ready for ordinary acceptance."""
+    await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
+    if body.session_id is not None:
+        owner = await find_session(session, scope.workspace_id, body.session_id)
+        require_conversation(owner)
+    else:
+        owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
+        session.add(owner)
+    thread = new_thread(
+        owner,
+        mcp_headers=body.mcp_headers,
+        message_history=body.message_history,
+        schedule_occurrence_id=schedule_occurrence_id,
+    )
+    session.add(thread)
+    await session.flush()
+    await mount_environments(session, thread, body.environments, principal_id=actor.id)
+    await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
+    return thread, await _append(session, runtime, actor, scope, thread, body, request, authority=authority)
+
+
 async def create_thread(
     runtime: Runtime, actor: Principal, workspace_id: str, body: NewThread, *, request_key: str
 ) -> tuple[Submitted, bool]:
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
-        await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
-        if body.session_id is not None:
-            owner = await find_session(session, scope.workspace_id, body.session_id)
-            require_conversation(owner)
-        else:
-            owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
-            session.add(owner)
-        thread = new_thread(owner, mcp_headers=body.mcp_headers, message_history=body.message_history)
-        session.add(thread)
-        await session.flush()
-        await mount_environments(session, thread, body.environments, principal_id=actor.id)
-        await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
-        return thread, await _append(session, runtime, actor, scope, thread, body, request)
+        return await prepare_thread(
+            session, runtime, actor, scope, body, request=request, authority=execution_authority(actor, scope)
+        )
 
     return await _submit(
         runtime, actor, workspace_id, lambda scope: Request.of(request_key, "thread", scope.workspace_id, body), create
@@ -221,6 +246,8 @@ async def fork(
         await mount_environments(session, thread, [*shared, *body.environments], principal_id=actor.id)
         memories = [*await shared_memory_mounts(session, origin_thread), *body.memories]
         await mount_memories(session, thread, memories, limit=runtime.settings.memory.mounts_per_thread)
-        return thread, await _append(session, runtime, actor, scope, thread, body, request)
+        return thread, await _append(
+            session, runtime, actor, scope, thread, body, request, authority=execution_authority(actor, scope)
+        )
 
     return await _submit(runtime, actor, workspace_id, lambda _: Request.of(request_key, "fork", run_id, body), create)

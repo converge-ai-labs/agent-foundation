@@ -211,7 +211,7 @@ async def test_a_merged_fragment_stays_within_the_bound(runtime: Runtime) -> Non
     assert all(len(delta) <= MAX_MERGED_CHARS for delta in _contents(_events(entries)))
 
 
-async def test_a_pause_releases_held_text_within_the_window(runtime: Runtime) -> None:
+async def test_a_pause_releases_held_text_within_the_window(runtime: Runtime, runs_kit) -> None:  # type: ignore[no-untyped-def]
     thread_id = f"thr_{uuid4().hex}"
     start, hel, lo, end = _harness(_text(0, "Hel", "lo"))
     fold = DisplayFold(RUN, Tail(), attempt=1, page_items=256, page_bytes=1048576)
@@ -219,9 +219,7 @@ async def test_a_pause_releases_held_text_within_the_window(runtime: Runtime) ->
     async with live, Coalescer(fold, live, window=0.05) as output:
         output.observe(start)
         output.observe(hel)
-        async with asyncio.timeout(5):
-            while not _contents(_events(await _entries(runtime.redis, thread_id))):
-                await asyncio.sleep(0.02)
+        await runs_kit.streamed_text(runtime, thread_id, "Hel")
         output.observe(lo)
         output.observe(end)
 
@@ -267,8 +265,15 @@ async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted
     assert deltas == list(range(1, len(deltas) + 1))
 
     # Text the model pauses in the middle of reaches readers within the window instead of waiting for the rest.
-    scripted_model.say("Hello", " world", interval=0.5)
-    paused = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "slow"))["run"]["id"])
+    next_chunk = asyncio.Event()
+    scripted_model.say("Hello", " world", chunk_gate=next_chunk)
+    paused = (await runs_kit.start_thread(executing, agent, "slow"))["run"]
+    try:
+        await runs_kit.streamed_text(executing.runtime, paused["thread_id"], "Hello")
+        assert (await runs_kit.get_run(executing, paused["id"]))["status"] == "running"
+    finally:
+        next_chunk.set()
+    await runs_kit.sealed(executing, paused["id"])
     assert _replies(_events(await _entries(executing.runtime.redis, paused["thread_id"]))) == ["Hello", " world"]
 
 
@@ -450,22 +455,24 @@ async def test_a_boundary_trims_what_its_display_covers(runtime: Runtime) -> Non
         ("3", False),
     ]
 
-    # With a retention window, covered entries younger than the window stay for readers that resume.
+    # Redis IDs date the retention window. Seed entries on both sides of the cutoff without waiting for age.
     thread_id = f"thr_{uuid4().hex}"
+    for sequence, entry_id in [(1, "1000-0"), (2, "1400-0"), (3, "1600-0")]:
+        await runtime.redis.xadd(
+            stream_key(thread_id),
+            {"run_id": RUN, "attempt": "1", "sequence": str(sequence), "event": json.dumps(_delta(sequence).event)},
+            id=entry_id,
+        )
     async with ThreadStream(
         runtime.redis, _trimming(runtime.settings, 0.3), thread_id=thread_id, run_id=RUN, attempt=1
     ) as live:
-        live.delta(_delta(1))
-        await asyncio.sleep(0.6)
-        live.delta(_delta(2))
-        await live.buffer.join()
-        assert live.last_written is not None
-        live.boundary(2, resume_after=live.last_written.redis_id)
-        live.delta(_delta(3))
+        live.boundary(3, resume_after="1600-0")
+        live.delta(_delta(4))
     assert [(fields["sequence"], "boundary" in fields) for _, fields in await _entries(runtime.redis, thread_id)] == [
         ("2", False),
-        ("2", True),
         ("3", False),
+        ("3", True),
+        ("4", False),
     ]
 
 
@@ -731,9 +738,12 @@ async def test_lost_output_is_held_until_a_checkpoint_covers_it(
         async with runs_kit.frames(url, headers) as stream:
             event, _, state = await anext(stream)
             assert event == "thread" and state["current_run"] is None and state["last_run"]["id"] == run
-            with pytest.raises(TimeoutError):
-                async with asyncio.timeout(0.5):
-                    await anext(stream)
+            # A later thread snapshot is an ordered barrier: sealed-run items must not precede it.
+            resumed = await runs_kit.submit(service, submitted["thread"]["id"], runs_kit.message(agent, "next turn"))
+            assert resumed.status_code == 201, resumed.text
+            event, _, state = await anext(stream)
+            assert event == "thread" and state["current_run"] is not None
+            assert state["current_run"]["id"] != run
 
 
 async def test_a_new_attempt_restarts_its_runs_output(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]

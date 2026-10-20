@@ -16,6 +16,13 @@ from sqlalchemy import update
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+async def service(service, runs_kit):
+    """These tests drive organization and cleanup explicitly, including the disabled-Space boundary."""
+    await runs_kit.pause_sweeps(service)
+    return service
+
+
 async def create_space(service: SimpleNamespace, **fields: Any) -> dict[str, Any]:
     response = await service.client.post(f"{service.api}/memory-spaces", json={"name": "Knowledge", **fields})
     assert response.status_code == 201, response.text

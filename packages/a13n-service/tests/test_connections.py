@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, urlsplit
 import anyio
 import httpx2
 import pytest
-import uvicorn
 from a13n_harness import AgentSpec, DefinitionError, HarnessBuilder, RunBindings
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import now, short_session, transaction
@@ -45,6 +44,8 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, To
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from sqlalchemy import select
 
+from .http_support import serve_http as serve
+
 pytestmark = pytest.mark.anyio
 
 SECRET = "mcp-header-secret"
@@ -62,20 +63,6 @@ def settings(settings: Settings) -> Settings:
 
 def etag(resource: dict) -> str:
     return f'"{resource["id"]}:{resource["version"]}"'
-
-
-@asynccontextmanager
-async def serve(app: Any) -> AsyncIterator[str]:
-    """A local HTTP server on an ephemeral port for the duration of the context."""
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning"))
-    task = asyncio.create_task(server.serve())
-    while not server.started:
-        await asyncio.sleep(0.01)
-    try:
-        yield f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
-    finally:
-        server.should_exit = True
-        await task
 
 
 class RemoteServer:

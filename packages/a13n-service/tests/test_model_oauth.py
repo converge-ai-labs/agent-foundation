@@ -197,10 +197,21 @@ async def test_cross_worker_rotation_exchanges_once_and_fresh_load_adopts_public
     provider, _, source = await connect(service, monkeypatch, no_task_connection)
     expected = await source.load()
     calls, results = [], []
+    exchanging, contended = anyio.Event(), anyio.Event()
+    read_row = oauth.ChatGPTCredentialSource._row
+
+    async def observe_claim(self, session, *, lock=False):
+        row = await read_row(self, session, lock=lock)
+        if row.refresh_claim is not None:
+            contended.set()
+        return row
+
+    monkeypatch.setattr(oauth.ChatGPTCredentialSource, "_row", observe_claim)
 
     async def exchange(current):
         calls.append(current)
-        await anyio.sleep(0.03)
+        exchanging.set()
+        await contended.wait()
         return replace(current, access_token="rotated-access", refresh_token="rotated-refresh")
 
     async def rotate():
@@ -209,9 +220,12 @@ async def test_cross_worker_rotation_exchanges_once_and_fresh_load_adopts_public
         )
         results.append(await worker.rotate(expected, exchange))
 
-    async with anyio.create_task_group() as tasks:
-        tasks.start_soon(rotate)
-        tasks.start_soon(rotate)
+    with anyio.fail_after(10):
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(rotate)
+            await exchanging.wait()
+            tasks.start_soon(rotate)
+    assert contended.is_set()
     assert len(calls) == 1 and len(results) == 2
     assert results[0] == results[1] == await source.load()
 

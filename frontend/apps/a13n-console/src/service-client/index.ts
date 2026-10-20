@@ -11,5 +11,7 @@ export type {
   SessionGap,
   SessionStreamOptions,
   ThreadState,
+  ScheduleEvent,
+  OccurrenceEvent,
 } from "./streams/session-stream.js";
 export type { paths, components, operations, Binary } from "./schema.js";
