@@ -142,7 +142,7 @@ async def test_recursive_search_and_gitignore_skip_protected_aliases(tmp_path: P
     os.link(database, tmp_path / ".gitignore")
     os.link(database, tmp_path / "alias.txt")
     ordinary = tmp_path / "project.sqlite3"
-    ordinary.write_text("needle public\n")
+    ordinary.write_bytes(b"needle public\n")
     lease = protect_local_files((database,))
     files = _files(tmp_path)
     try:

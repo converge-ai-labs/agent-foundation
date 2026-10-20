@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
+from threading import Event
 
 import pytest
 from a13n_harness.environment.files import FileTextSearchRequest
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.protected_files import (
     LocalFileProtection,
+    check_local_file_read,
     is_protected_local_file,
     protect_local_files,
 )
@@ -32,7 +35,8 @@ from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import database as database_module
 from a13n_harness_ui.storage.database import open_database
 from a13n_harness_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
-from anyio import sleep_forever
+from a13n_harness_ui.thread_files import AttachmentUpload, ThreadFiles
+from anyio import fail_after, sleep, sleep_forever
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -103,13 +107,14 @@ async def _external_payload(path: Path) -> str:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Regression exercises process-wide POSIX SQLite locks")
-@pytest.mark.parametrize("surface", ["search", "preview", "attachment"])
+@pytest.mark.parametrize("surface", ["search", "preview", "attachment", "stored_attachment", "fork"])
 async def test_native_reads_preserve_sqlite_locks_across_external_connection_close(
     tmp_path: Path, surface: str
 ) -> None:
     path = tmp_path / "metadata.sqlite3"
     (tmp_path / "notes.txt").write_text("checkpoint marker\n")
     files = _files(tmp_path)
+    thread_files = ThreadFiles(tmp_path / "thread-files")
     try:
         async with open_database(path, StorageSettings(data_root=tmp_path)) as database:
             async with database.engine.connect() as owner:
@@ -132,10 +137,36 @@ async def test_native_reads_preserve_sqlite_locks_across_external_connection_clo
                         with pytest.raises(HarnessUiError) as failure:
                             await host.info(FileReadRequest(path=str(target)))
                         assert failure.value.code == "host_files_permission_denied"
-                else:
+                elif surface == "attachment":
                     for target in (path, Path(f"{path}-shm")):
                         with pytest.raises(PermissionError):
                             attachments.read_attachment(target)
+                elif surface == "stored_attachment":
+                    for target in (path, Path(f"{path}-shm")):
+                        attachment = await thread_files.stage(
+                            "source", AttachmentUpload(target.name, b"\0" * target.stat().st_size)
+                        )
+                        content = (
+                            thread_files.directory("source") / "tmp/uploads" / attachment.attachment_id / "content"
+                        )
+                        content.unlink()
+                        content.hardlink_to(target)
+                        with pytest.raises(PermissionError):
+                            await thread_files.read("source", attachment.attachment_id)
+                        with pytest.raises(PermissionError):
+                            await thread_files.validate_attachments("source", (attachment.attachment_id,))
+                        content.unlink()
+                else:
+                    source = await thread_files.touch("source")
+                    aliases = [source / "tmp" / target.name for target in (path, Path(f"{path}-shm"))]
+                    for alias, target in zip(aliases, (path, Path(f"{path}-shm")), strict=True):
+                        alias.hardlink_to(target)
+                    with pytest.raises(shutil.Error, match="in use by host storage"):
+                        async with thread_files.fork("source", "destination"):
+                            pytest.fail("A fork must reject protected source files")
+                    assert not thread_files.directory("destination").exists()
+                    for alias in aliases:
+                        alias.unlink()
                 assert await _external_payload(path) == "before"
 
                 await owner.execute(text("UPDATE planned_restart SET payload='after' WHERE singleton_id=1"))
@@ -149,6 +180,23 @@ async def test_native_reads_preserve_sqlite_locks_across_external_connection_clo
                     assert (await fresh.execute(text("SELECT payload FROM planned_restart"))).scalar_one() == "after"
     finally:
         files.close()
+        await thread_files.close()
+
+
+@pytest.mark.parametrize("filename", ["metadata.json", "content"])
+async def test_stored_attachment_reads_reject_protected_aliases(
+    tmp_path: Path, protected_path: Path, filename: str
+) -> None:
+    files = ThreadFiles(tmp_path)
+    try:
+        attachment = await files.stage("source", AttachmentUpload("notes.txt", b"stored content"))
+        target = files.directory("source") / "tmp/uploads" / attachment.attachment_id / filename
+        target.unlink()
+        target.hardlink_to(protected_path)
+        with pytest.raises(PermissionError):
+            await files.read("source", attachment.attachment_id)
+    finally:
+        await files.close()
 
 
 @pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink", "case"])
@@ -262,6 +310,52 @@ async def test_file_protection_precedes_migration_and_releases_after_cleanup(
             assert all(is_protected_local_file(item) for item in paths)
     assert migration_entered
     assert not any(is_protected_local_file(item) for item in paths)
+
+
+@pytest.mark.parametrize("operation", ["upgrade", "verify_current"])
+async def test_cancelled_startup_keeps_protection_until_sqlite_worker_closes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    paths = _storage_paths(path)
+    started, release, finished = Event(), Event(), Event()
+
+    def blocked_operation(migrator: DatabaseMigrator) -> None:
+        try:
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("BEGIN")
+                connection.execute("SELECT * FROM sqlite_master").fetchall()
+                started.set()
+                assert release.wait(10), "Test did not release the SQLite worker"
+        finally:
+            finished.set()
+
+    async def start_database() -> None:
+        async with open_database(path, StorageSettings(data_root=tmp_path)):
+            pytest.fail("Cancelled startup must not expose a database")
+
+    monkeypatch.setattr(DatabaseMigrator, operation, blocked_operation)
+    task = asyncio.create_task(start_database())
+    try:
+        assert await asyncio.to_thread(started.wait, 5), "SQLite worker did not start"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+        assert not finished.is_set()
+        for item in paths:
+            with pytest.raises(PermissionError):
+                check_local_file_read(item)
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 5), "SQLite worker did not close"
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    # The worker's finalizer can run just after its operation returns.
+    with fail_after(5):
+        while any(is_protected_local_file(item) for item in paths):
+            await sleep(0)
 
 
 @pytest.mark.parametrize("cleanup", ["timeout", "checked_out"])

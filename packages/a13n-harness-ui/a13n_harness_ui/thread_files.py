@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
 
+from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
 from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict
@@ -159,6 +160,7 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool = False) -> I
 @contextmanager
 def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[BinaryIO]:
     path, descriptor = directory
+    check_local_file_read(path / name)
     if descriptor is None:
         target = path / name
         if target.is_symlink() or not target.is_file():
@@ -183,6 +185,11 @@ def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[Binary
 def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> bytes:
     with _open_file(directory, name) as stream:
         return stream.read(limit)
+
+
+def _copy_file(source: str, destination: str) -> str:
+    check_local_file_read(Path(source))
+    return shutil.copy2(source, destination)
 
 
 def _write_file(directory: tuple[Path, int | None], name: str, data: bytes) -> None:
@@ -248,7 +255,11 @@ class ThreadFiles:
         destination = self.directory(destination_id)
         await to_thread.run_sync(lambda: destination.mkdir())
         try:
-            await to_thread.run_sync(lambda: shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True))
+            await to_thread.run_sync(
+                lambda: shutil.copytree(
+                    source, destination, symlinks=True, dirs_exist_ok=True, copy_function=_copy_file
+                )
+            )
             yield
         except BaseException:
             with CancelScope(shield=True):
