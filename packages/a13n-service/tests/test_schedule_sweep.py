@@ -91,6 +91,7 @@ async def test_overlap_retains_existing_pending_and_advances_periodic_time(servi
         row = await session.get_one(ScheduleRow, schedule["id"], with_for_update=True)
         pending = await lifecycle.occurrence(
             session,
+            service.runtime,
             row,
             current,
             trigger="manual",
@@ -122,6 +123,7 @@ async def test_each_queue_gets_its_own_batch_allowance(service, scripted_model, 
             if index < 2:
                 await lifecycle.occurrence(
                     session,
+                    service.runtime,
                     row,
                     current,
                     trigger="manual",

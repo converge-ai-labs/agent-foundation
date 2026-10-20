@@ -1,1 +1,1 @@
-"""Workspace webhook subscriptions on run lifecycle transitions."""
+"""Workspace webhook subscriptions on execution and schedule lifecycle transitions."""

@@ -40,13 +40,14 @@ SIGNATURE_HEADER = "X-A13n-Webhook-Signature"
 
 
 @dataclass(frozen=True, slots=True)
-class RunFacts:
-    """The identities of the run a lifecycle transition belongs to, as subscription filters select them."""
+class Subject:
+    """The identities available on a lifecycle event for subscription filtering."""
 
     workspace_id: str
     agent_id: str
     session_id: str
-    thread_id: str
+    thread_id: str | None
+    schedule_id: str | None = None
 
 
 def webhook_target(keys: KeyRing, subscription: SubscriptionRow, delivery_id: str) -> dict[str, JsonValue]:
@@ -59,7 +60,7 @@ def webhook_target(keys: KeyRing, subscription: SubscriptionRow, delivery_id: st
 async def stage_webhooks(
     session: AsyncSession,
     keys: KeyRing,
-    run: RunFacts,
+    subject: Subject,
     kinds: Sequence[LifecycleKind],
     payload: Mapping[str, JsonValue],
     *,
@@ -72,12 +73,12 @@ async def stage_webhooks(
     Each delivery adds its own `id` and `type` to `payload`. A subscription whose signing secret cannot be
     decrypted gets dead deliveries instead, so it never fails the transition.
     """
-    session.add_all(await prepare_webhooks(session, keys, [Transition(run, kinds, payload)], limit=limit))
+    session.add_all(await prepare_webhooks(session, keys, [Transition(subject, kinds, payload)], limit=limit))
 
 
 @dataclass(frozen=True, slots=True)
 class Transition:
-    run: RunFacts
+    subject: Subject
     kinds: Sequence[LifecycleKind]
     payload: Mapping[str, JsonValue]
 
@@ -85,7 +86,7 @@ class Transition:
 async def prepare_webhooks(
     session: AsyncSession, keys: KeyRing, transitions: Sequence[Transition], *, limit: int
 ) -> list[OutboxRow]:
-    """Select subscriptions once for the batch, applying filters and the cap separately to each run."""
+    """Select subscriptions once for the batch, applying filters and the cap separately to each subject."""
     if not transitions:
         return []
     facts = values(
@@ -94,11 +95,20 @@ async def prepare_webhooks(
         column("agent_id", String),
         column("session_id", String),
         column("thread_id", String),
+        column("schedule_id", String),
         column("kinds", ARRAY(String)),
         name="transitions",
     ).data(
         [
-            (i, t.run.workspace_id, t.run.agent_id, t.run.session_id, t.run.thread_id, list(t.kinds))
+            (
+                i,
+                t.subject.workspace_id,
+                t.subject.agent_id,
+                t.subject.session_id,
+                t.subject.thread_id,
+                t.subject.schedule_id,
+                list(t.kinds),
+            )
             for i, t in enumerate(transitions)
         ]
     )
@@ -110,7 +120,7 @@ async def prepare_webhooks(
             SubscriptionRow.kinds.has_any(facts.c.kinds),
             *(
                 or_(~SubscriptionRow.filter.has_key(name), SubscriptionRow.filter[name].astext == facts.c[name])
-                for name in ("agent_id", "session_id", "thread_id")
+                for name in ("agent_id", "session_id", "thread_id", "schedule_id")
             ),
         )
         .order_by(SubscriptionRow.id)
@@ -122,14 +132,14 @@ async def prepare_webhooks(
         select(facts.c.ordinal, matches.c.match_no, subscription).select_from(facts.join(matches, true()))
     )
     rows: list[OutboxRow] = []
-    # The per-run rank identifies the overflow row without sorting the whole batch.
+    # The per-subject rank identifies the overflow row without sorting the whole batch.
     # Outer query order is deliberately unspecified.
     for ordinal, match_no, matched in selected:
         transition = transitions[ordinal]
         if match_no > limit:
             logger.warning(
                 "Matching subscriptions exceed the workspace cap",
-                extra={"workspace_id": transition.run.workspace_id, "limit": limit},
+                extra={"workspace_id": transition.subject.workspace_id, "limit": limit},
             )
             continue
         for kind in transition.kinds:

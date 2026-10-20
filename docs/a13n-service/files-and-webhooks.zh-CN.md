@@ -57,6 +57,10 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 - `PATCH` 修改名称、URL、kinds、filter、`enabled` 或 `signing_secret`；`DELETE` 移除订阅。两者都需要 `If-Match`。修改只影响之后排队的投递。
 - 一个工作空间最多 `control.subscriptions` 个订阅（默认 32）。保存时和每次投递时，URL 都必须符合[出站策略](configuration.md#outbound-requests)。
 
+计划事件包括 `schedule.enabled`、`schedule.paused`、`schedule.completed` 和 `schedule.archived`。触发记录事件包括 `schedule_occurrence.submitted`、`.skipped`、`.failed`、`.cancelled` 和 `.completed`。调度结束与执行结束含义不同，参见[计划执行结果](schedules.md#read-the-result)。暂停状态创建不发事件；启用状态创建发送 `schedule.enabled`。重试和无状态变化的命令不重复生成通知；历史完成记录不补齐，历史事件不补发。
+
+`filter.schedule_id` 可筛选指定计划的所有事件，也适用于关联的 Run 和 Attempt 事件。它与 Agent、Session、Thread 条件同时匹配；事件缺少指定字段时不会匹配。
+
 ### 载荷与签名
 
 每个事件通过 JSON `POST` 发送：
@@ -103,6 +107,8 @@ def verify(secret: str, headers, body: bytes, *, max_age_seconds: int = 300) -> 
     expected = "v1=" + hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, received)
 ```
+
+计划事件使用 `schedule` 字段，包含 `id`、`session_id`、`agent_id`、`name`、`state`、`pause_reason` 和 `version`；触发记录事件使用 `occurrence` 字段，包含紧凑历史记录、`schedule_id`、状态及原因，不包含输入快照。执行完成还带有 `execution_outcome`、`completion_run_id` 和 `completed_at`。所有事件共有 `id`、`type`、`occurred_at` 和 `workspace_id`。Run 事件包含可为空的 `schedule_origin: {schedule_id, occurrence_id}`。
 
 ### 投递与重试
 

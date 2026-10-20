@@ -20,6 +20,7 @@ import {
   lifecycleKinds,
   lifecycleLabels,
   outcomeKinds,
+  scheduleOutcomeKinds,
   type SubscriptionDraft,
 } from "./draft";
 import styles from "./webhooks.module.css";
@@ -74,6 +75,7 @@ export function SubscriptionFields({
           <div className={styles.presets}>
             {[
               { label: "Common outcomes", kinds: outcomeKinds },
+              { label: "Schedule outcomes", kinds: scheduleOutcomeKinds },
               { label: "All events", kinds: lifecycleKinds },
               { label: "Clear", kinds: [] },
             ].map(({ label, kinds }) => (
@@ -91,9 +93,14 @@ export function SubscriptionFields({
         }
       >
         <div className={styles.eventGroups}>
-          {["run.", "run_attempt."].map((prefix) => (
+          {[
+            { prefix: "run.", label: "Run" },
+            { prefix: "run_attempt.", label: "Attempt" },
+            { prefix: "schedule.", label: "Schedule" },
+            { prefix: "schedule_occurrence.", label: "Occurrence" },
+          ].map(({ prefix, label }) => (
             <fieldset key={prefix} className={styles.eventGroup}>
-              <legend>{prefix === "run." ? t("Run") : t("Attempt")}</legend>
+              <legend>{t(label)}</legend>
               {[...new Set([...lifecycleKinds, ...draft.kinds])]
                 .filter((kind) => kind.startsWith(prefix))
                 .map((kind) => (
@@ -128,16 +135,35 @@ export function SubscriptionFields({
             "An attempt can fail while its run retries. A run waiting for action has a succeeded attempt.",
           )}
         </p>
+        <p className={styles.note}>
+          {t(
+            "Schedule completion ends scheduling. Occurrence completion ends execution and can report success, failure or cancellation.",
+          )}
+        </p>
       </FormSection>
       <DisclosureSection
         title={t("Limit notification scope (optional)")}
-        defaultOpen={!!(draft.agentId || draft.sessionId || draft.threadId)}
+        defaultOpen={
+          !!(
+            draft.agentId ||
+            draft.sessionId ||
+            draft.threadId ||
+            draft.scheduleId
+          )
+        }
       >
         <AgentFilter
           value={draft.agentId}
           onChange={(value) => set("agentId", value)}
         />
         <div className={styles.filterFields}>
+          <FormField label={t("Schedule ID (optional)")}>
+            <Input
+              value={draft.scheduleId}
+              onChange={(event) => set("scheduleId", event.target.value)}
+              placeholder="sch_…"
+            />
+          </FormField>
           <FormField label={t("Session ID (optional)")}>
             <Input
               value={draft.sessionId}

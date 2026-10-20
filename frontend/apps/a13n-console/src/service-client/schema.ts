@@ -7161,7 +7161,16 @@ export interface components {
       | "run_attempt.succeeded"
       | "run_attempt.yielded"
       | "run_attempt.failed"
-      | "run_attempt.cancelled";
+      | "run_attempt.cancelled"
+      | "schedule.enabled"
+      | "schedule.paused"
+      | "schedule.completed"
+      | "schedule.archived"
+      | "schedule_occurrence.submitted"
+      | "schedule_occurrence.skipped"
+      | "schedule_occurrence.failed"
+      | "schedule_occurrence.cancelled"
+      | "schedule_occurrence.completed";
     /** LimitedCpuLimit */
     LimitedCpuLimit: {
       /**
@@ -8466,6 +8475,10 @@ export interface components {
     };
     /** Occurrence */
     Occurrence: {
+      /** Completed At */
+      completed_at?: string | null;
+      /** Completion Run Id */
+      completion_run_id?: string | null;
       /** Covered From At */
       covered_from_at: string | null;
       /**
@@ -8483,6 +8496,8 @@ export interface components {
       /** Entry Id */
       entry_id: string | null;
       execution?: components["schemas"]["OccurrenceExecution"] | null;
+      /** Execution Outcome */
+      execution_outcome?: ("succeeded" | "failed" | "cancelled") | null;
       /** Finished At */
       finished_at: string | null;
       /** Id */
@@ -8520,7 +8535,7 @@ export interface components {
     };
     /**
      * OccurrenceExecution
-     * @description Current execution facts, independent of the immutable submission result and its version.
+     * @description Current execution observations alongside the durable occurrence completion facts.
      */
     OccurrenceExecution: {
       /** Has Unfinished Work */
@@ -8555,9 +8570,18 @@ export interface components {
     };
     /** @enum {string} */
     OccurrenceStatus:
-      "pending" | "submitted" | "skipped" | "failed" | "cancelled";
+      | "pending"
+      | "submitted"
+      | "completed"
+      | "skipped"
+      | "failed"
+      | "cancelled";
     /** OccurrenceSummary */
     OccurrenceSummary: {
+      /** Completed At */
+      completed_at?: string | null;
+      /** Completion Run Id */
+      completion_run_id?: string | null;
       /** Covered From At */
       covered_from_at: string | null;
       /**
@@ -8575,6 +8599,8 @@ export interface components {
       /** Entry Id */
       entry_id: string | null;
       execution?: components["schemas"]["OccurrenceExecution"] | null;
+      /** Execution Outcome */
+      execution_outcome?: ("succeeded" | "failed" | "cancelled") | null;
       /** Finished At */
       finished_at: string | null;
       /** Id */
@@ -10733,11 +10759,13 @@ export interface components {
     };
     /**
      * SubscriptionFilter
-     * @description Absent fields match every run.
+     * @description Absent fields match every event; a specified identity must exist and match.
      */
     SubscriptionFilter: {
       /** Agent Id */
       agent_id?: string | null;
+      /** Schedule Id */
+      schedule_id?: string | null;
       /** Session Id */
       session_id?: string | null;
       /** Thread Id */

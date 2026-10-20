@@ -18,7 +18,7 @@ from a13n_service.resources.rows import audit_row
 from a13n_service.runs.accept import run_revision
 from a13n_service.runs.inbox import payload_size
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schedules import lifecycle, queries
+from a13n_service.runs.schedules import lifecycle, queries, webhooks
 from a13n_service.runs.schedules.calendar import Calendar
 from a13n_service.runs.schedules.schemas import (
     OnceSchedule,
@@ -180,6 +180,8 @@ async def create(
         session.add(row)
         audit_row(session, actor, row, "create", {"session_id": owner.id})
         await session.flush()
+        if row.state == "enabled":
+            await webhooks.schedule_changed(session, runtime, row, current)
         return queries.view(row), True
 
 
@@ -227,8 +229,8 @@ async def update(
         if timing_changed:
             after = max(current, row.last_processed_fire_at) if row.last_processed_fire_at else current
             first_fire(config.schedule, after)
-            await lifecycle.cancel_pending(session, row, current, "schedule_changed")
-            await lifecycle.close_due(session, row, current, "schedule_changed")
+            await lifecycle.cancel_pending(session, runtime, row, current, "schedule_changed")
+            await lifecycle.close_due(session, runtime, row, current, "schedule_changed")
         assign(row, values)
         if timing_changed:
             row.next_fire_at = lifecycle.next_fire(row, current) if row.state == "enabled" else None
@@ -261,6 +263,7 @@ async def transition(
         if command != "archive":
             require_editable(row)
         current = await now(session)
+        previous_state = (row.state, row.pause_reason)
         cancelled = None
         if command == "enable":
             await validate_invocation(
@@ -273,13 +276,15 @@ async def transition(
             row.state, row.pause_reason = "enabled", None
         else:
             reason = "schedule_paused" if command == "pause" else "schedule_archived"
-            cancelled = await lifecycle.cancel_pending(session, row, current, reason)
-            await lifecycle.close_due(session, row, current, reason)
+            cancelled = await lifecycle.cancel_pending(session, runtime, row, current, reason)
+            await lifecycle.close_due(session, runtime, row, current, reason)
             row.next_fire_at = None
             row.state = "paused" if command == "pause" else "archived"
             row.pause_reason = "manual" if command == "pause" else None
             row.archived_at = current if command == "archive" else None
         row.updated_by_id = actor.id
+        if previous_state != (row.state, row.pause_reason):
+            await webhooks.schedule_changed(session, runtime, row, current)
         audit_row(session, actor, row, command, {"session_id": row.session_id, "cancelled_occurrence_id": cancelled})
         await session.flush()
         return queries.view(row)

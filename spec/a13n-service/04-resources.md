@@ -469,7 +469,7 @@ subscriptions   (sub_)
   CHECK (kinds is a non-empty array)
 ```
 
-A subscription is a webhook. `kinds` lists the lifecycle kinds it wants, any of `run.accepted`, `run.running`, `run.waiting`, `run.completed`, `run.failed`, `run.cancelled`, `run_attempt.leased`, `run_attempt.running`, `run_attempt.succeeded`, `run_attempt.yielded`, `run_attempt.failed` and `run_attempt.cancelled`; `filter` optionally narrows by `agent_id`, `session_id` and `thread_id`.
+A subscription is a webhook. `kinds` lists the lifecycle kinds it wants, any of `run.accepted`, `run.running`, `run.waiting`, `run.completed`, `run.failed`, `run.cancelled`, `run_attempt.leased`, `run_attempt.running`, `run_attempt.succeeded`, `run_attempt.yielded`, `run_attempt.failed` and `run_attempt.cancelled`, plus the Schedule and Occurrence kinds defined in [13](13-schedules.md#lifecycle-webhooks); `filter` optionally narrows by `agent_id`, `session_id`, `thread_id` and `schedule_id`. Filters combine with AND; an event without a specified identity does not match. Schedule filters also match Run/Attempt provenance, including child Threads, but not independent Threads or forks. Schedule events use the current invocation Agent; Occurrence events use the snapshotted invocation Agent.
 
 - Every operation needs workspace `admin`. A workspace holds at most `control.subscriptions` subscriptions; more are 409 `subscription_limit`.
 - `url` passes the endpoint policy when written.

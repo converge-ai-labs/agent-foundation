@@ -32,13 +32,13 @@ Service recovery uses the same maximum delay as recurring work: the default is 3
 
 The detail page separates three facts:
 
-| Fact       | What it tells you                                                                                                                             |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Submission | `pending` means intent was saved; `submitted` means a Thread and inbox Entry were saved. `skipped`, `failed` and `cancelled` can have no Run. |
-| Input      | Whether the inbox Entry is still pending, assigned to a Run, consumed or failed.                                                              |
-| Run        | The execution result, including waiting for approval or user input.                                                                           |
+| Fact       | What it tells you                                                                                                                                                                   |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Occurrence | `pending` means intent was saved; `submitted` means a Thread and inbox Entry were saved. `skipped`, `failed` and `cancelled` concern submission. `completed` means execution ended. |
+| Input      | Whether the inbox Entry is still pending, assigned to a Run, consumed or failed.                                                                                                    |
+| Run        | The execution result, including waiting for approval or user input.                                                                                                                 |
 
-**Submitted does not mean execution succeeded.** Select **View output** to open the usual Run view, including its output, tools and queued input. Later inputs in that Thread retain the same Schedule origin. Explicit forks and independent Threads do not.
+**Submitted does not mean execution succeeded, and completed does not mean success.** A trigger becomes `completed` when its root thread first reaches a completed, failed or cancelled run. `execution_outcome` is `succeeded`, `failed` or `cancelled`; `completion_run_id` and `completed_at` identify that run and time. `finished_at` keeps the submission finish time. Waiting and attempt retries do not complete the trigger. Select **View output** to open the usual Run view, including its output, tools and queued input. Later inputs in that Thread retain the same Schedule origin. Explicit forks and independent Threads do not.
 
 A trigger is skipped while an earlier trigger is pending submission or its submitted root thread has no run with status `completed`, `failed` or `cancelled`. Waiting and resumed runs remain unfinished until one of these statuses appears. Later manual conversation, forks, child tasks and their result delivery do not delay the next trigger. Submitted input without a run remains unfinished, even if the input was rejected or withdrawn; archiving the thread alone does not complete it. Missed times are coalesced to the latest due time; the scheduler does not replay every missed tick. Transient submission failures retry within the maximum delay and attempt limit. Execution failures do not repost the input.
 
@@ -75,7 +75,7 @@ The response includes `id`, a fixed `session_id`, `stream_url` and an ETag. The 
 
 Add `?include=execution` to either occurrence read to include current execution facts in the same response. Each `execution` contains `initial_entry_status`, `initial_run` (an ID and status, or null), `has_unfinished_work` and `observed_at`. Without this parameter, the field is omitted. List reads batch these facts for the page; Console uses this expansion instead of querying each entry and run separately.
 
-The initial run is the run assigned to the trigger's first input. Later runs do not replace it in this summary. `has_unfinished_work` is true for a submitted trigger until its root thread first contains a completed, failed or cancelled run. Waiting is unfinished, including across resumes; later conversation and child work do not reopen a finished trigger. False does not mean the work succeeded. A trigger with no submitted input has null initial entry and run values. Execution can change while the occurrence remains `submitted` at the same version. Refresh the expanded history after thread changes or reconnecting. Read full output through the ordinary run items API.
+The initial run is the run assigned to the trigger's first input. Later runs do not replace it in this summary. `has_unfinished_work` is true for a submitted trigger until its root thread first contains a completed, failed or cancelled run. Waiting is unfinished, including across resumes; later conversation and child work do not reopen a finished trigger. False does not mean the work succeeded. A trigger with no submitted input has null initial entry and run values. Execution observations can change at the same occurrence version. Completion changes its status to `completed` and advances its version. Refresh the expanded history after thread changes or reconnecting. Read full output through the ordinary run items API.
 
 The API reference contains all filters and fields. Schedule endpoints are currently HTTP-only; Composer and MCP integration are separate work.
 
@@ -85,4 +85,6 @@ Use the returned `stream_url`: `/api/v1/sessions/{session_id}/stream`. No extra 
 
 Each connection starts with current plan state, compact trigger summaries and every Thread in the Session, then follows their changes and live output. Completed, child and independent Threads remain observable regardless of their age. Use history pages for browsing trigger records, detail queries for full intent, and the ordinary Run items API for saved output.
 
-The stream shows current state, not a durable transition log: brief intermediate states can be combined. On reconnect, also refresh the visible history page and any selected old Thread, Entry, Run and output. An old Run can finish while disconnected without changing its already-submitted Occurrence. Console performs these refreshes automatically.
+The stream shows current state, not a durable transition log: brief intermediate states can be combined. On reconnect, also refresh the visible history page and any selected old Thread, Entry, Run and output. A Run and its Occurrence can finish while disconnected. Console performs these refreshes automatically.
+
+Workspace administrators can select **Add Webhook** on the schedule detail page to prefill its Schedule ID, or configure subscriptions in **Settings → Webhooks**. Subscribe to `schedule_occurrence.completed` for execution completion and inspect `execution_outcome`. `schedule.completed` only means a one-time schedule finished scheduling. Skips, submission failures, cancellations and automatic pauses also have events; see [webhooks](files-and-webhooks.md#webhooks).

@@ -62,7 +62,7 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
 
 def test_monitoring_revision_upgrades_and_restores_main_schema(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
-        command.upgrade(config, "63a5d892fc55")
+        command.upgrade(config, "9cc1d8d6a9c0")
     original_rules = rows(empty_database, RULES)
     original_objects = rows(empty_database, OBJECTS)
     columns = (
@@ -72,11 +72,11 @@ def test_monitoring_revision_upgrades_and_restores_main_schema(empty_database: D
     original_columns = rows(empty_database, columns)
     upgrade(empty_database, OSS)
     check(empty_database, OSS)
-    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("7d8eb88dd13d",)]
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("36c442fa1a5e",)]
     with migration_connection(empty_database, OSS) as config:
-        # Retire only the monitoring branch; keep main's one-time schedule schema.
+        # Retire only the monitoring branch; keep main's occurrence completion schema.
         command.downgrade(config, "7d5bc53a5535@33e2cc388478")
-    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("63a5d892fc55",)]
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("9cc1d8d6a9c0",)]
     assert rows(empty_database, RULES) == original_rules
     assert rows(empty_database, OBJECTS) == original_objects
     assert rows(empty_database, columns) == original_columns
@@ -343,3 +343,30 @@ def test_run_search_migration_retries_after_concurrent_index_build(
     assert rows(
         empty_database, "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_runs_search_vector'::regclass"
     ) == [("true",)]
+
+
+@pytest.mark.anyio
+async def test_completion_migration_preserves_submission_and_refuses_lossy_downgrade(
+    database, service, scripted_model, runs_kit
+):  # type: ignore[no-untyped-def]
+    from a13n_service.runs.schedules import dispatch
+
+    from .test_schedule_dispatch import schedule_for, trigger
+
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
+    await trigger(service, schedule, runs_kit)
+    await dispatch.process(service.runtime, schedule["id"])
+    query = "SELECT id, status, thread_id, entry_id, finished_at::text, version::text FROM schedule_occurrences"
+    original = rows(database, query)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "63a5d892fc55")
+    assert rows(database, query) == original
+    upgrade(database, OSS)
+    assert rows(database, query) == original
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service))
+    assert rows(database, "SELECT status, execution_outcome FROM schedule_occurrences") == [("completed", "succeeded")]
+    with pytest.raises(DBAPIError, match="cannot downgrade while completed occurrences exist"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "63a5d892fc55")
+    check(database, OSS)

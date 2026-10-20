@@ -32,13 +32,13 @@ Schedule 在指定时间一次性或定期向 Agent 发送固定文本或 JSON�
 
 详情页分别显示三种状态：
 
-| 状态     | 含义                                                                                                                           |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 提交状态 | `pending` 表示触发意图已保存，`submitted` 表示 Thread 和收件箱 Entry 已保存。`skipped`、`failed` 和 `cancelled` 可能没有 Run。 |
-| 输入状态 | Entry 是否待处理、已分配给 Run、已消费或失败。                                                                                 |
-| Run 状态 | 执行结果，包括等待审批或用户输入。                                                                                             |
+| 状态         | 含义                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 触发记录状态 | `pending` 表示触发意图已保存，`submitted` 表示 Thread 和收件箱 Entry 已保存。`skipped`、`failed` 和 `cancelled` 描述提交结果；`completed` 表示执行结束。 |
+| 输入状态     | Entry 是否待处理、已分配给 Run、已消费或失败。                                                                                                           |
+| Run 状态     | 执行结果，包括等待审批或用户输入。                                                                                                                       |
 
-**已提交不等于执行成功。** 点击 **查看输出** 可打开原有 Run 页面，查看输出、工具和排队输入。在同一 Thread 中继续提交输入会保留该计划来源；显式分支和独立 Thread 不继承来源。
+**已提交不等于执行成功，已完成也不等于成功。** 主 Thread 首次有 Run 完成、失败或取消时，触发记录变为 `completed`。`execution_outcome` 为 `succeeded`、`failed` 或 `cancelled`；`completion_run_id` 和 `completed_at` 记录该 Run 及其结束时间。`finished_at` 保留提交结束时间。等待和 Attempt 重试不会完成触发记录。 点击 **查看输出** 可打开原有 Run 页面，查看输出、工具和排队输入。在同一 Thread 中继续提交输入会保留该计划来源；显式分支和独立 Thread 不继承来源。
 
 较早的触发记录仍待提交，或已提交记录的主 Thread 中还没有 `completed`、`failed` 或 `cancelled` 状态的 Run 时，新的触发会跳过。waiting 及恢复后创建的 Run 都算未结束，直到出现上述状态。之后的人工续聊、分支、子任务及其结果回传不会推迟下一次触发。已提交但没有 Run 的输入仍算未结束，包括输入已被拒绝或撤回的情况；仅归档 Thread 不代表执行结束。错过多个时间点时只处理最近一个到期时间，不逐个补跑。临时提交失败会在延迟和尝试次数限制内重试；Run 执行失败不会重新提交原输入。
 
@@ -75,7 +75,7 @@ Schedule 在指定时间一次性或定期向 Agent 发送固定文本或 JSON�
 
 在触发记录的列表或详情查询中添加 `?include=execution`，可以在同一响应中获得当前执行状态。每条记录的 `execution` 包含 `initial_entry_status`、`initial_run`（ID 和状态，或 null）、`has_unfinished_work` 和 `observed_at`。不提供此参数时，响应不包含该字段。列表查询按整页批量读取这些状态；Console 使用此展开结果，不再逐条查询 entry 和 run。
 
-初始 run 是触发记录的第一条输入分配到的 run，后续 run 不会替换摘要中的初始 run。`has_unfinished_work` 在输入提交后为 true，直到主 thread 首次出现 completed、failed 或 cancelled 状态的 run。waiting 及多次恢复期间仍算未结束；之后的续聊和子任务不会让已结束的触发记录重新变为未结束。false 不代表执行成功。尚未提交输入的记录，其初始 entry 状态和 run 都为 null。执行状态变化时，触发记录仍可能保持相同版本和 `submitted` 状态。收到 thread 变化或重新连接后，应刷新展开的历史查询。完整输出继续通过原 run items 接口读取。
+初始 run 是触发记录的第一条输入分配到的 run，后续 run 不会替换摘要中的初始 run。`has_unfinished_work` 在输入提交后为 true，直到主 thread 首次出现 completed、failed 或 cancelled 状态的 run。waiting 及多次恢复期间仍算未结束；之后的续聊和子任务不会让已结束的触发记录重新变为未结束。false 不代表执行成功。尚未提交输入的记录，其初始 entry 状态和 run 都为 null。执行观测变化时，触发记录可能保持相同版本；执行结束会将状态改为 `completed` 并增加版本。收到 thread 变化或重新连接后，应刷新展开的历史查询。完整输出继续通过原 run items 接口读取。
 
 完整筛选条件和字段见 API 参考。计划接口目前仅支持 HTTP；Composer 和 MCP 接入属于后续工作。
 
@@ -85,4 +85,6 @@ Schedule 在指定时间一次性或定期向 Agent 发送固定文本或 JSON�
 
 每次连接先读取计划当前状态、触发记录摘要及 Session 中的所有 Thread，随后持续接收状态变化和实时输出。已完成的 Thread、子 Thread 和独立 Thread 都不会因时间较早而被排除。通过历史分页浏览触发记录，通过详情查询读取完整执行意图，通过原 Run items 接口读取已保存的输出。
 
-事件流同步当前状态，不是持久化状态变更日志，快速变化的中间状态可能被合并。重连时还应刷新当前历史页和选中的旧 Thread、Entry、Run 及输出。旧 Run 可能在断线期间完成，而已经提交的 Occurrence 不会随之变化。Console 会自动执行这些刷新。
+事件流同步当前状态，不是持久化状态变更日志，快速变化的中间状态可能被合并。重连时还应刷新当前历史页和选中的旧 Thread、Entry、Run 及输出。Run 和对应的 Occurrence 可能在断线期间完成。Console 会自动执行这些刷新。
+
+工作空间管理员可以在计划详情页点击**添加 Webhook**，自动填写该计划 ID，也可以在**设置 → Webhooks**中配置订阅。订阅 `schedule_occurrence.completed` 获取执行结束通知，并检查 `execution_outcome`。`schedule.completed` 仅表示一次性计划结束调度。跳过、提交失败、取消和自动暂停也有对应事件，详见 [webhook](files-and-webhooks.md#webhooks)。

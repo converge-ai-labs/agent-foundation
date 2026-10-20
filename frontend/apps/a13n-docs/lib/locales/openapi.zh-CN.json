@@ -131,7 +131,6 @@
   "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.": "替换调用边中所设置的字段；修订版本尚无该调用边时，至少设置 `agent_id`。",
   "A submission receipt: the entry and, when the thread was idle, the run it started.": "提交回执：条目，以及线程空闲时由它启动的运行。",
   "Without `signing_secret` the service generates one; either way it is returned only by this request.": "未提供 `signing_secret` 时由 Service 生成；无论哪种情况，只在本请求中返回。",
-  "Absent fields match every run.": "省略字段匹配全部运行。",
   "`signing_secret` replaces the secret for deliveries queued after this change.": "`signing_secret` 替换此修改之后排队投递的密钥。",
   "Fields left out stay unchanged; `description: null` clears it.\n\nA new provider or recipe needs `write` on the provider and applies to environments created afterwards;\nexisting ones keep what they were built with, and the idle policy applies to all of them. `enabled: false`\nrefuses new environments, including reserved ones never created; created ones keep working.": "省略字段保持不变；`description: null` 清除描述。\n\n新 provider 或 recipe 需要 provider 上的 `write` 权限，仅影响后续创建环境；已有环境保留构建时配置，空闲策略应用于全部环境。`enabled: false` 拒绝新环境，包括已预留但未创建的环境；已创建环境继续可用。",
   "The resource a tool needs before it can be enabled.": "启用工具前所需的资源。",
@@ -516,7 +515,6 @@
   "List Schedules": "列出定时任务",
   "A Run's configured window and its latest eligible generation, when available.": "run 配置的上下文窗口，以及该 run 最近一次符合条件的模型生成用量（若有）。",
   "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.": "通过 SSE 提供会话中的线程及其运行的实时输出：`thread`、`items`、`delta` 和 `gap` 帧。计划所属的会话还会发送 `schedule` 和 `occurrence` 状态。每个连接都从快照开始。",
-  "Current execution facts, independent of the immutable submission result and its version.": "当前执行状态，独立于不可变的提交结果及其版本。",
   "Get Schedule": "获取定时任务",
   "Pause Schedule": "暂停定时任务",
   "Get Schedule Occurrence": "获取触发记录",
@@ -525,5 +523,7 @@
   "Authorize recurring execution as the creator, independently of the accepting credential's lifetime.": "以创建者身份授权周期执行，授权不受本次请求凭证有效期的限制。",
   "Archive Schedule": "归档定时任务",
   "Update Schedule": "更新定时任务",
-  "Create Schedule": "创建定时任务"
+  "Create Schedule": "创建定时任务",
+  "Current execution observations alongside the durable occurrence completion facts.": "当前执行观测及持久保存的触发记录完成信息。",
+  "Absent fields match every event; a specified identity must exist and match.": "省略字段匹配全部事件；指定的标识必须存在且匹配。"
 }

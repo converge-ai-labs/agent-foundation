@@ -52,10 +52,12 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 ```
 
 - `kinds` selects events: `run.accepted`, `run.running`, `run.waiting`, `run.completed`, `run.failed`, `run.cancelled`, and for attempts `run_attempt.leased`, `run_attempt.running`, `run_attempt.succeeded`, `run_attempt.yielded`, `run_attempt.failed`, `run_attempt.cancelled`.
-- `filter` optionally narrows events to an `agent_id`, `session_id` or `thread_id`.
+- `filter` optionally narrows events to an `agent_id`, `session_id`, `thread_id` or `schedule_id`. Conditions combine with AND; an event lacking a specified identity does not match. The Schedule filter also applies to Run and Attempt events through their origin.
 - `signing_secret` (16–256 characters) is optional; without it the Service generates one. The secret is returned only in the creation response.
 - `PATCH` changes the name, URL, kinds, filter, `enabled` or `signing_secret`; `DELETE` removes the subscription. Both take `If-Match`. Changes affect only deliveries queued afterwards.
 - A workspace has at most `control.subscriptions` subscriptions (32 by default). The URL must pass the [outbound policy](configuration.md#outbound-requests) when saved and on every delivery.
+
+Schedule events are `schedule.enabled`, `schedule.paused`, `schedule.completed` and `schedule.archived`. Occurrence events are `schedule_occurrence.submitted`, `.skipped`, `.failed`, `.cancelled` and `.completed`. Scheduling completion and execution completion are separate: see [schedule results](schedules.md#read-the-result). Paused creation emits nothing; enabled creation emits `schedule.enabled`. Retries and unchanged commands do not create duplicate transition notices. Historical completion records are not backfilled and past events are not replayed.
 
 ### Payload and signature
 
@@ -74,6 +76,8 @@ Each event is a JSON `POST`:
 ```
 
 Run events carry `attempt: null`; attempt events add the attempt's `id`, `number`, `status`, `start_reason`, `yield_reason` and `failure`. Fetch details, such as the run's result, through the API.
+
+Schedule payloads replace `run` and `attempt` with `schedule` containing `id`, `session_id`, `agent_id`, `name`, `state`, `pause_reason` and `version`. Occurrence payloads contain `occurrence`, the compact history record with `schedule_id`, status/reason and completion fields, without the input snapshot. All event families share `id`, `type`, `occurred_at` and `workspace_id`. Completion reports `execution_outcome`, `completion_run_id` and `completed_at`. Run payloads include nullable `schedule_origin: {schedule_id, occurrence_id}`.
 
 Every request carries:
 

@@ -231,7 +231,7 @@ async def test_retry_after_and_attempt_limit(service, scripted_model, runs_kit, 
 
 
 @pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled"])
-async def test_execution_summary_changes_without_changing_submission_version(
+async def test_execution_completion_persists_outcome_and_advances_occurrence_version(
     service, scripted_model, runs_kit, outcome
 ) -> None:  # type: ignore[no-untyped-def]
     schedule, agent = await schedule_for(service, scripted_model, runs_kit)
@@ -258,7 +258,12 @@ async def test_execution_summary_changes_without_changing_submission_version(
         await (await runs_kit.attempt(service))
     after = (await service.client.get(url, params={"include": "execution"})).json()
     execution = after.pop("execution")
-    assert after == receipt
+    assert after["status"] == "completed"
+    assert after["execution_outcome"] == ("succeeded" if outcome == "completed" else outcome)
+    assert after["completion_run_id"] == before["initial_run"]["id"]
+    assert after["completed_at"] is not None
+    assert after["version"] > receipt["version"]
+    assert after["finished_at"] == receipt["finished_at"]
     assert execution["initial_run"] == {
         "id": before["initial_run"]["id"],
         "status": outcome,
@@ -340,7 +345,7 @@ async def test_execution_history_batches_reads_and_preserves_pagination_and_scop
     assert len(many["items"]) == 5
     assert all("execution" not in item for item in plain["items"])
     for item in many["items"]:
-        assert item["status"] == "submitted" and "snapshot" not in item
+        assert item["status"] == "completed" and "snapshot" not in item
         execution = item["execution"]
         assert execution["initial_entry_status"] == "consumed" and execution["initial_run"]["status"] == "completed"
         assert not execution["has_unfinished_work"]
@@ -494,6 +499,11 @@ async def test_resume_chain_blocks_until_terminal_but_later_conversation_does_no
         assert run.status == ("waiting" if index == 0 else "completed")
     execution = await observed_execution(service, schedule, item["id"])
     assert execution["initial_run"]["status"] == "waiting" and not execution["has_unfinished_work"]
+    async with short_session(service.runtime.storage) as session:
+        completed = await session.get_one(OccurrenceRow, item["id"])
+        assert completed.status == "completed" and completed.execution_outcome == "succeeded"
+        assert completed.completion_run_id == run.id
+        assert completed.completion_run_id != execution["initial_run"]["id"]
     status = (await service.client.get(f"{service.api}/schedules/{schedule['id']}/status")).json()
     assert not status["has_unfinished_work"]
     unfinished = await service.client.get(
@@ -564,6 +574,7 @@ async def test_expired_intent_is_finished_even_during_backoff(service, scripted_
         current = await now(session)
         item = await lifecycle.occurrence(
             session,
+            service.runtime,
             row,
             current - timedelta(hours=1),
             trigger="manual",
