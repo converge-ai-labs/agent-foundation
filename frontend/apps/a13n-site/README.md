@@ -21,7 +21,8 @@ make site-build
 - `src/stars.ts` shows the repository's GitHub star count beside the nav's GitHub link. It reads the count from Shields, which caches GitHub, so visitors never meet GitHub's per-address API limit.
 - `src/scene/` holds the Service scene in three acts: `build.ts`, `call.ts`, and `run.ts`. `stage.ts` maps the scroll position to the acts and their transitions.
 - `src/main.ts` shows the hero once the display face loads, then loads `src/page.ts`, which mounts everything below the hero. One frame loop drives both.
-- `blog/` renders the posts in the repository's `blog/` directory, written as [Blog Posts](../../../CONTRIBUTING.md#blog-posts) describes. `posts.ts` reads and checks each post, `markdown.ts` renders its body with the documentation site's code palette from `a13n-ui/code-theme`, `pages.ts` writes the index and post pages, and `plugin.ts` adds them to the build as HTML entries and renders them on each request in development. `src/blog.ts` runs on those pages: copy buttons, heading links, plate labels, the cover crop, and the reading progress line.
+- `posts/` holds the blog posts, one folder per post, written as [Blog Posts](../../../CONTRIBUTING.md#blog-posts) describes.
+- `blog/` renders the posts. `posts.ts` reads and checks each post, `markdown.ts` renders its body with the documentation site's code palette from `a13n-ui/code-theme`, `pages.ts` writes the index and post pages, and `plugin.ts` adds them to the build as HTML entries and renders them on each request in development. `src/blog.ts` runs on those pages: copy buttons, heading links, plate labels, the cover crop, and the reading progress line.
 
 `index.html` preloads the two faces above the fold, and `public/_headers` lets browsers cache hashed assets for a year. Reduced-motion preferences stop the loops and make transitions instant. The `Site` workflow checks, tests, builds, and deploys the site to the `a13n-site` Cloudflare Pages project.
 

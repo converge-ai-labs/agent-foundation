@@ -88,12 +88,12 @@ def test_configuration_has_canonical_idempotency_digest():
 
 @pytest.mark.parametrize("use_regex", [False, True])
 async def test_steering_retains_or_matches_the_accepted_configuration(service, scripted_model, runs_kit, use_regex):
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     host = urlsplit(scripted_model.url).hostname
     rule = f"regex:{re.escape(host)}" if use_regex else host
     configuration = {"allowed_hosts": [rule], "extensions": {"example.filter": {"images": ["keep"]}}}
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
     scripted_model.say("Done")
     started = await runs_kit.start_thread(service, agent, "start", options={"configuration": configuration})
     thread_id = started["thread"]["id"]

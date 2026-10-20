@@ -14,7 +14,9 @@ Open **Observe → Metrics dashboards** in your workspace. Select an environment
 3. Select **Run queries** to preview the panel, then **Apply panel** to update your draft. Choose a unit or statistic view as needed.
 4. Select **Save dashboard** to share the changes with the workspace. **Discard** cancels them. **Restore defaults** replaces the built-in dashboard's draft; save to persist it. If another person saved first, your draft stays available until you explicitly reload. In-app navigation retains separate drafts for each dashboard; save before reloading the page or signing out.
 
-Use the time range and auto-refresh controls to explore history. Hover a chart to inspect synchronized values. Click legend entries to show or hide series. Drag across a chart to zoom, or set an absolute range. Historical ranges pause auto-refresh; **Back to live** resumes it. A failed or pending refresh can show the previous result with a label and the query error. A different query or target starts with its own data.
+Use the target picker to search names, IDs or environment labels such as `region=west`; combine search words with type, status and data-source filters. Data-source and Device lists also offer search and status filters.
+
+Open the time-range button for presets, auto-refresh and absolute dates. Hover a chart to inspect synchronized values. Click legend entries to show or hide series. Panels with more than four series include a search field that filters the plotted lines and legend without querying again. Drag across a chart to zoom, or set an absolute range. Historical ranges pause auto-refresh; **Back to live** resumes it. A failed or pending refresh can show the previous result with a label and the query error. A different query or target starts with its own data.
 
 Charts request roughly 600 evaluation steps and display up to 32 series per panel. **Query details** reports truncation, temporary retention and actual coverage. Narrow a high-cardinality query to inspect other series. Dashboard configuration is durable; selecting Local Cache does not make its sample history durable.
 

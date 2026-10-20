@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Input } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -6,15 +7,25 @@ import type { Panel, TimeRange } from "./api";
 import { formatValue, type ChartSeries } from "./series";
 import styles from "./monitoring.module.css";
 
-const colors = [
-  "#818cf8",
-  "#2dd4bf",
-  "#fbbf24",
-  "#fb7185",
-  "#38bdf8",
-  "#c084fc",
-  "#a3e635",
-  "#fb923c",
+const lightColors = [
+  "#6252d8",
+  "#0d9488",
+  "#d97706",
+  "#dc5173",
+  "#0284c7",
+  "#9333ea",
+  "#4d7c0f",
+  "#c2410c",
+];
+const darkColors = [
+  "#a69bff",
+  "#4dd4bf",
+  "#f4bb54",
+  "#fa8ba5",
+  "#62bdf0",
+  "#ce9aff",
+  "#b1d56f",
+  "#f6a56f",
 ];
 export function MetricsChart({
   series,
@@ -41,6 +52,25 @@ export function MetricsChart({
   const zoom = useRef(onZoom);
   zoom.current = onZoom;
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const [search, setSearch] = useState("");
+  const [dark, setDark] = useState(() =>
+    document.documentElement.classList.contains("dark"),
+  );
+  const colors = dark ? darkColors : lightColors;
+  const matches = (item: ChartSeries) =>
+    `${item.label} ${item.detail ?? ""}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+  useEffect(() => {
+    const observer = new MutationObserver(() =>
+      setDark(document.documentElement.classList.contains("dark")),
+    );
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
   const { t } = useTranslation();
   // Data refreshes update the existing Canvas; only series topology rebuilds it.
   const topology = JSON.stringify(
@@ -55,26 +85,46 @@ export function MetricsChart({
       {
         width: Math.max(100, node.clientWidth),
         height: Math.max(100, node.clientHeight),
-        padding: [12, 12, 0, 0],
+        padding: [16, 12, 0, 0],
         legend: { show: false },
         scales: {
           x: { time: true, min: range.start, max: range.end },
-          y: { auto: true },
+          y: {
+            auto: true,
+            range: (_u, min, max) => {
+              const unit =
+                panel.unit === "auto" || !panel.unit
+                  ? series[0]?.unit
+                  : panel.unit;
+              if (unit === "ratio" && min >= 0 && max <= 1) return [0, 1];
+              return uPlot.rangeNum(
+                Math.min(0, min),
+                Math.max(0, max),
+                0.12,
+                true,
+              );
+            },
+          },
         },
         axes: [
           {
-            stroke: "#888899",
+            stroke: dark ? "#9da4b3" : "#697180",
             grid: { show: false },
             ticks: { show: false },
             font: "11px system-ui",
-            size: 40,
+            size: 32,
+            space: 90,
           },
           {
-            stroke: "#888899",
-            grid: { stroke: "rgba(128,128,148,.12)", width: 1 },
+            stroke: dark ? "#9da4b3" : "#697180",
+            grid: {
+              stroke: dark ? "rgba(180,190,210,.10)" : "rgba(90,105,125,.09)",
+              width: 1,
+            },
             ticks: { show: false },
             font: "11px system-ui",
             size: 64,
+            space: 42,
             values: (_u, ticks) =>
               ticks.map((value) =>
                 formatValue(
@@ -91,9 +141,21 @@ export function MetricsChart({
           ...series.map((item, index) => ({
             label: item.label,
             stroke: colors[index % colors.length],
-            width: 1.5,
+            width: 2,
+            fill:
+              series.length === 1
+                ? `${colors[index % colors.length]}12`
+                : undefined,
             spanGaps: false,
-            points: { show: false },
+            points: {
+              show: (u: uPlot, seriesIndex: number) => {
+                let count = 0;
+                for (const value of u.data[seriesIndex])
+                  if (value != null && ++count > 1) return false;
+                return count === 1;
+              },
+              size: 5,
+            },
             value: (_u: uPlot, value: number) =>
               formatValue(
                 value,
@@ -115,7 +177,7 @@ export function MetricsChart({
               if (cursorTime.current)
                 cursorTime.current.textContent = hovering
                   ? new Date(u.data[0][index] * 1000).toLocaleString()
-                  : "";
+                  : t("Latest");
               currentSeries.current.forEach((item, position) => {
                 const node = legendValues.current[position];
                 if (node)
@@ -162,7 +224,7 @@ export function MetricsChart({
     };
     // Topology owns construction; data and range have their own update below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topology, panel.visualization, panel.unit, syncKey]);
+  }, [topology, panel.visualization, panel.unit, syncKey, dark]);
   useEffect(() => {
     const chart = plot.current;
     if (!chart) return;
@@ -204,12 +266,23 @@ export function MetricsChart({
     panel.visualization,
     panel.unit,
     syncKey,
+    dark,
   ]);
   useEffect(() => {
     series.forEach((item, index) =>
-      plot.current?.setSeries(index + 1, { show: !hidden.has(item.id) }),
+      plot.current?.setSeries(index + 1, {
+        show: !hidden.has(item.id) && matches(item),
+      }),
     );
-  }, [hidden, topology, panel.visualization, panel.unit, syncKey]);
+  }, [
+    hidden,
+    search,
+    topology,
+    panel.visualization,
+    panel.unit,
+    syncKey,
+    dark,
+  ]);
   if (!series.length)
     return (
       <div className={styles.noData}>{t("No samples in this time range")}</div>
@@ -217,9 +290,9 @@ export function MetricsChart({
   if (panel.visualization === "stat")
     return (
       <div className={styles.stats}>
-        {series.map((item, index) => (
+        {series.map((item) => (
           <div key={item.id}>
-            <strong style={{ color: colors[index % colors.length] }}>
+            <strong>
               {formatValue(
                 item.points.at(-1)?.[1],
                 panel.unit === "auto" || !panel.unit ? item.unit : panel.unit,
@@ -238,7 +311,20 @@ export function MetricsChart({
         role="img"
         aria-label={`${panel.title}: ${series.length} ${t("series")}`}
       />
-      <span ref={cursorTime} className={styles.cursorTime} />
+      <div className={styles.legendHeader}>
+        <span ref={cursorTime} className={styles.cursorTime}>
+          {t("Latest")}
+        </span>
+        {series.length > 4 && (
+          <Input
+            type="search"
+            aria-label={t("Filter series")}
+            placeholder={t("Filter series…")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        )}
+      </div>
       {panel.legend !== false && (
         <div className={styles.legend} aria-label={t("Toggle series")}>
           {series.map((item, index) => (
@@ -246,7 +332,8 @@ export function MetricsChart({
               key={item.id}
               type="button"
               aria-pressed={!hidden.has(item.id)}
-              title={item.label}
+              title={item.detail ?? item.label}
+              hidden={!matches(item)}
               onClick={() =>
                 setHidden((previous) => {
                   const next = new Set(previous);

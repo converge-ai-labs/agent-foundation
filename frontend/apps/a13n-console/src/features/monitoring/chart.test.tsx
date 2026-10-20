@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { MetricsChart } from "./chart";
 import type { Panel } from "./api";
 import type { ChartSeries } from "./series";
+import uPlot from "uplot";
 
 const state = vi.hoisted(() => ({
   setData: vi.fn(),
@@ -81,4 +82,80 @@ it("retains Canvas and skips sample work for retained responses and legend chang
   expect(state.setData).toHaveBeenCalledTimes(3);
   unmount();
   expect(state.destroy).toHaveBeenCalledTimes(2);
+});
+
+it("filters plotted series without rebuilding data and preserves explicit legend toggles", async () => {
+  const user = userEvent.setup();
+  const panel: Panel = {
+    id: "network",
+    title: "Network",
+    visualization: "timeseries",
+    position: { x: 0, y: 0, w: 6, h: 5 },
+    queries: [],
+  };
+  const series: ChartSeries[] = Array.from({ length: 6 }, (_, index) => ({
+    id: `eth${index}`,
+    label: `eth${index}`,
+    detail: `interface=eth${index}`,
+    unit: "bytes_per_second",
+    points: [
+      [60, index],
+      [120, index + 1],
+    ],
+  }));
+  render(
+    <MetricsChart
+      panel={panel}
+      series={series}
+      range={{ start: 0, end: 180 }}
+      syncKey="filter"
+    />,
+  );
+  const dataCalls = state.setData.mock.calls.length;
+  const input = screen.getByRole("searchbox", { name: "Filter series" });
+  await user.type(input, "ETH3");
+  expect(screen.getAllByRole("button")).toHaveLength(1);
+  expect(state.setSeries).toHaveBeenCalledWith(4, { show: true });
+  expect(state.setSeries).toHaveBeenLastCalledWith(6, { show: false });
+  await user.click(screen.getByRole("button", { name: /eth3/ }));
+  await user.clear(input);
+  expect(screen.getAllByRole("button")).toHaveLength(6);
+  expect(state.setSeries).toHaveBeenCalledWith(4, { show: false });
+  expect(state.setSeries).toHaveBeenLastCalledWith(6, { show: true });
+  expect(state.setData).toHaveBeenCalledTimes(dataCalls);
+});
+
+it("uses a stable percentage scale and updates isolated-point visibility with current samples", () => {
+  render(
+    <MetricsChart
+      panel={{
+        id: "cpu",
+        title: "CPU",
+        visualization: "timeseries",
+        position: { x: 0, y: 0, w: 6, h: 5 },
+        queries: [],
+      }}
+      series={[{ id: "cpu", label: "CPU", unit: "ratio", points: [[60, 0.2]] }]}
+      range={{ start: 0, end: 180 }}
+      syncKey="scale"
+    />,
+  );
+  const options = vi.mocked(uPlot).mock.calls.at(-1)![0];
+  const range = options.scales!.y.range;
+  const show = options.series[1].points!.show;
+  if (typeof range !== "function" || typeof show !== "function")
+    throw new Error("Expected dynamic scale and point visibility");
+  const chart = Object.assign(Object.create(uPlot.prototype) as uPlot, {
+    data: [
+      [60, 120],
+      [0.2, null],
+    ],
+  });
+  expect(range(chart, 0.2, 0.3, "y")).toEqual([0, 1]);
+  expect(show(chart, 1, 0, 1)).toBe(true);
+  chart.data = [
+    [60, 120],
+    [0.2, 0.3],
+  ];
+  expect(show(chart, 1, 0, 1)).toBe(false);
 });

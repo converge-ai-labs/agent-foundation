@@ -288,9 +288,6 @@
               }
             ]
           },
-          "platform_tools": {
-            "$ref": "#/components/schemas/PlatformSelection"
-          },
           "plugins": {
             "default": [],
             "items": {
@@ -492,9 +489,6 @@
                 "type": "null"
               }
             ]
-          },
-          "platform_tools": {
-            "$ref": "#/components/schemas/PlatformSelection"
           },
           "plugins": {
             "default": [],
@@ -861,16 +855,6 @@
               }
             ]
           },
-          "platform_tools": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlatformSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "plugins": {
             "anyOf": [
               {
@@ -1124,16 +1108,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "platform_tools": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlatformSelection"
               },
               {
                 "type": "null"
@@ -3515,7 +3489,6 @@
           "skills",
           "skill_sync",
           "connection_tools",
-          "platform_tools",
           "tool_search",
           "builtin_skills",
           "client_tools",
@@ -8000,6 +7973,14 @@
         "additionalProperties": false,
         "description": "Preparation limits for one model's image input, not native ModelSettings.",
         "properties": {
+          "image_retention_ratio": {
+            "default": 0.6,
+            "description": "Fraction of max_images retained at the first overflow; one evicts only the excess images.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Image Retention Ratio",
+            "type": "number"
+          },
           "image_split_max_height": {
             "default": 4096,
             "exclusiveMinimum": 0.0,
@@ -8028,7 +8009,7 @@
           },
           "max_images": {
             "default": 20,
-            "description": "Keep the newest images; zero removes all image input.",
+            "description": "Maximum retained images; zero removes all image input.",
             "minimum": 0.0,
             "title": "Max Images",
             "type": "integer"
@@ -13445,43 +13426,6 @@
           "execution"
         ],
         "type": "string"
-      },
-      "PlatformSelection": {
-        "additionalProperties": false,
-        "description": "Platform MCP groups selected independently of local operating instructions.",
-        "properties": {
-          "groups": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/PlatformGroup"
-            },
-            "title": "Groups",
-            "type": "array",
-            "uniqueItems": true
-          },
-          "read_permission": {
-            "default": "allow",
-            "enum": [
-              "allow",
-              "ask",
-              "deny"
-            ],
-            "title": "Read Permission",
-            "type": "string"
-          },
-          "write_permission": {
-            "default": "ask",
-            "enum": [
-              "allow",
-              "ask",
-              "deny"
-            ],
-            "title": "Write Permission",
-            "type": "string"
-          }
-        },
-        "title": "PlatformSelection",
-        "type": "object"
       },
       "PluginSelection": {
         "additionalProperties": false,
@@ -19881,6 +19825,11 @@
           "key": {
             "$ref": "#/components/schemas/ToolsetKey"
           },
+          "platform": {
+            "default": false,
+            "title": "Platform",
+            "type": "boolean"
+          },
           "tools": {
             "items": {
               "$ref": "#/components/schemas/ToolDefinition"
@@ -19900,18 +19849,22 @@
         "type": "object"
       },
       "ToolsetKey": {
-        "enum": [
-          "files",
-          "shell",
-          "computer",
-          "web",
-          "memory",
-          "assets",
-          "configuration",
-          "traces",
-          "findings"
-        ],
-        "type": "string"
+        "anyOf": [
+          {
+            "enum": [
+              "files",
+              "shell",
+              "computer",
+              "web",
+              "memory",
+              "assets"
+            ],
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/PlatformGroup"
+          }
+        ]
       },
       "ToolsetSelection": {
         "additionalProperties": false,
@@ -20926,7 +20879,7 @@
     "/api/v1/agent-composer": {
       "post": {
         "description": "The workspace's Agent Composer, created or brought up to date with the deployment's definition.\n\nRefused with `model_required` while the workspace has no model the caller can use.",
-        "operationId": "prepare_composer_api_v1_agent_composer_post",
+        "operationId": "prepare_composer",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -20986,7 +20939,7 @@
     "/api/v1/agents": {
       "get": {
         "description": "Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only\narchived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those\nwith a revision pinning that skill or that skill revision.",
-        "operationId": "list_agents_api_v1_agents_get",
+        "operationId": "list_agents",
         "parameters": [
           {
             "in": "query",
@@ -21193,7 +21146,7 @@
         }
       },
       "post": {
-        "operationId": "create_agent_api_v1_agents_post",
+        "operationId": "create_agent",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -21267,7 +21220,7 @@
     "/api/v1/agents/validate": {
       "post": {
         "description": "No content when creating a revision of the configuration would accept it, else the same `invalid_argument`\nerror with the field's path relative to `config`; nothing is stored.",
-        "operationId": "validate_revision_api_v1_agents_validate_post",
+        "operationId": "validate_agent",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -21320,7 +21273,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Validate Revision",
+        "summary": "Validate Agent",
         "tags": [
           "agents"
         ],
@@ -21333,7 +21286,7 @@
     },
     "/api/v1/agents/{agent_id}": {
       "get": {
-        "operationId": "get_agent_api_v1_agents__agent_id__get",
+        "operationId": "get_agent",
         "parameters": [
           {
             "in": "path",
@@ -21402,7 +21355,7 @@
         }
       },
       "patch": {
-        "operationId": "update_agent_api_v1_agents__agent_id__patch",
+        "operationId": "update_agent",
         "parameters": [
           {
             "in": "path",
@@ -21503,7 +21456,7 @@
     },
     "/api/v1/agents/{agent_id}/archive": {
       "post": {
-        "operationId": "archive_agent_api_v1_agents__agent_id__archive_post",
+        "operationId": "archive_agent",
         "parameters": [
           {
             "in": "path",
@@ -21594,7 +21547,7 @@
     },
     "/api/v1/agents/{agent_id}/avatar": {
       "delete": {
-        "operationId": "delete_avatar_api_v1_agents__agent_id__avatar_delete",
+        "operationId": "delete_agent_avatar",
         "parameters": [
           {
             "in": "path",
@@ -21672,14 +21625,14 @@
             "loginSession": []
           }
         ],
-        "summary": "Delete Avatar",
+        "summary": "Delete Agent Avatar",
         "tags": [
           "agents"
         ],
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_avatar_api_v1_agents__agent_id__avatar_get",
+        "operationId": "get_agent_avatar",
         "parameters": [
           {
             "in": "path",
@@ -21750,13 +21703,13 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Avatar",
+        "summary": "Get Agent Avatar",
         "tags": [
           "agents"
         ]
       },
       "put": {
-        "operationId": "put_avatar_api_v1_agents__agent_id__avatar_put",
+        "operationId": "put_agent_avatar",
         "parameters": [
           {
             "in": "path",
@@ -21857,7 +21810,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Put Avatar",
+        "summary": "Put Agent Avatar",
         "tags": [
           "agents"
         ]
@@ -21865,7 +21818,7 @@
     },
     "/api/v1/agents/{agent_id}/duplicate": {
       "post": {
-        "operationId": "duplicate_agent_api_v1_agents__agent_id__duplicate_post",
+        "operationId": "duplicate_agent",
         "parameters": [
           {
             "in": "path",
@@ -21947,7 +21900,7 @@
     },
     "/api/v1/agents/{agent_id}/revisions": {
       "get": {
-        "operationId": "list_revisions_api_v1_agents__agent_id__revisions_get",
+        "operationId": "list_agent_revisions",
         "parameters": [
           {
             "in": "path",
@@ -22037,7 +21990,7 @@
                       "$ref": "#/components/schemas/RevisionSummaryPage"
                     }
                   ],
-                  "title": "Response List Revisions Api V1 Agents  Agent Id  Revisions Get"
+                  "title": "Response List Agent Revisions"
                 }
               }
             },
@@ -22058,7 +22011,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Revisions",
+        "summary": "List Agent Revisions",
         "tags": [
           "agents"
         ],
@@ -22070,7 +22023,7 @@
       },
       "post": {
         "description": "A configuration that validates to the default revision's creates nothing and returns that revision.",
-        "operationId": "create_revision_api_v1_agents__agent_id__revisions_post",
+        "operationId": "create_agent_revision",
         "parameters": [
           {
             "in": "path",
@@ -22158,7 +22111,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Revision",
+        "summary": "Create Agent Revision",
         "tags": [
           "agents"
         ],
@@ -22171,7 +22124,7 @@
     },
     "/api/v1/agents/{agent_id}/revisions/{revision_id}": {
       "get": {
-        "operationId": "get_revision_api_v1_agents__agent_id__revisions__revision_id__get",
+        "operationId": "get_agent_revision",
         "parameters": [
           {
             "in": "path",
@@ -22321,7 +22274,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Get Revision Api V1 Agents  Agent Id  Revisions  Revision Id  Get"
+                  "title": "Response Get Agent Revision"
                 }
               }
             },
@@ -22342,7 +22295,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Revision",
+        "summary": "Get Agent Revision",
         "tags": [
           "agents"
         ],
@@ -22356,7 +22309,7 @@
     "/api/v1/agents/{agent_id}/revisions/{revision_id}/compare": {
       "get": {
         "description": "Versioned unified diff of two revisions of this agent, optionally limited to one configuration section.",
-        "operationId": "compare_revisions_api_v1_agents__agent_id__revisions__revision_id__compare_get",
+        "operationId": "compare_agent_revisions",
         "parameters": [
           {
             "in": "path",
@@ -22401,7 +22354,6 @@
                 "skills",
                 "skill_sync",
                 "connection_tools",
-                "platform_tools",
                 "tool_search",
                 "builtin_skills",
                 "client_tools",
@@ -22535,7 +22487,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Compare Revisions",
+        "summary": "Compare Agent Revisions",
         "tags": [
           "agents"
         ],
@@ -22548,7 +22500,7 @@
     },
     "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default": {
       "post": {
-        "operationId": "set_default_api_v1_agents__agent_id__revisions__revision_id__set_default_post",
+        "operationId": "set_default_agent_revision",
         "parameters": [
           {
             "in": "path",
@@ -22635,7 +22587,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Set Default",
+        "summary": "Set Default Agent Revision",
         "tags": [
           "agents"
         ],
@@ -22648,7 +22600,7 @@
     },
     "/api/v1/agents/{agent_id}/unarchive": {
       "post": {
-        "operationId": "unarchive_agent_api_v1_agents__agent_id__unarchive_post",
+        "operationId": "unarchive_agent",
         "parameters": [
           {
             "in": "path",
@@ -22739,7 +22691,7 @@
     },
     "/api/v1/assets": {
       "get": {
-        "operationId": "list_assets_api_v1_assets_get",
+        "operationId": "list_assets",
         "parameters": [
           {
             "in": "query",
@@ -22823,7 +22775,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "create_asset_api_v1_assets_post",
+        "operationId": "create_asset",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -22902,7 +22854,7 @@
     },
     "/api/v1/assets/{asset_id}": {
       "delete": {
-        "operationId": "retire_asset_api_v1_assets__asset_id__delete",
+        "operationId": "retire_asset",
         "parameters": [
           {
             "in": "path",
@@ -22987,7 +22939,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_asset_api_v1_assets__asset_id__get",
+        "operationId": "get_asset",
         "parameters": [
           {
             "in": "path",
@@ -23054,7 +23006,7 @@
     },
     "/api/v1/assets/{asset_id}/content": {
       "get": {
-        "operationId": "read_asset_content_api_v1_assets__asset_id__content_get",
+        "operationId": "read_asset_content",
         "parameters": [
           {
             "in": "path",
@@ -23122,7 +23074,7 @@
     "/api/v1/auth/bootstrap": {
       "post": {
         "description": "Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in.",
-        "operationId": "bootstrap_administrator_api_v1_auth_bootstrap_post",
+        "operationId": "bootstrap_administrator",
         "requestBody": {
           "content": {
             "application/json": {
@@ -23159,7 +23111,7 @@
     },
     "/api/v1/auth/configuration": {
       "get": {
-        "operationId": "auth_configuration_api_v1_auth_configuration_get",
+        "operationId": "auth_configuration",
         "responses": {
           "200": {
             "content": {
@@ -23183,7 +23135,7 @@
     },
     "/api/v1/auth/email-change/confirm": {
       "post": {
-        "operationId": "confirm_email_change_api_v1_auth_email_change_confirm_post",
+        "operationId": "confirm_email_change",
         "requestBody": {
           "content": {
             "application/json": {
@@ -23213,7 +23165,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "operationId": "password_login_api_v1_auth_login_post",
+        "operationId": "password_login",
         "requestBody": {
           "content": {
             "application/json": {
@@ -23250,7 +23202,7 @@
     },
     "/api/v1/auth/logout": {
       "post": {
-        "operationId": "logout_api_v1_auth_logout_post",
+        "operationId": "logout",
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -23276,7 +23228,7 @@
     },
     "/api/v1/auth/password-reset": {
       "post": {
-        "operationId": "request_password_reset_api_v1_auth_password_reset_post",
+        "operationId": "request_password_reset",
         "requestBody": {
           "content": {
             "application/json": {
@@ -23306,7 +23258,7 @@
     },
     "/api/v1/auth/password-reset/confirm": {
       "post": {
-        "operationId": "confirm_password_reset_api_v1_auth_password_reset_confirm_post",
+        "operationId": "confirm_password_reset",
         "requestBody": {
           "content": {
             "application/json": {
@@ -23337,7 +23289,7 @@
     "/api/v1/auth/session": {
       "get": {
         "description": "Restores a browser session; the CSRF token is stable for the session's lifetime.",
-        "operationId": "session_profile_api_v1_auth_session_get",
+        "operationId": "session_profile",
         "responses": {
           "200": {
             "content": {
@@ -23369,7 +23321,7 @@
     },
     "/api/v1/connections": {
       "get": {
-        "operationId": "list_connections_api_v1_connections_get",
+        "operationId": "list_connections",
         "parameters": [
           {
             "in": "query",
@@ -23457,7 +23409,7 @@
         }
       },
       "post": {
-        "operationId": "create_connection_api_v1_connections_post",
+        "operationId": "create_connection",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -23531,7 +23483,7 @@
     "/api/v1/connections/callback": {
       "get": {
         "description": "Public: the one-use state authenticates the browser that the authorization server sends back, and the flow\ncookie the browser that started the flow.\n\nAttempts per client address share the login flows' bound.",
-        "operationId": "complete_authorization_api_v1_connections_callback_get",
+        "operationId": "complete_authorization",
         "parameters": [
           {
             "in": "query",
@@ -23643,7 +23595,7 @@
     "/api/v1/connections/redirect-uri": {
       "get": {
         "description": "The deployment's callback, for registering an OAuth client in advance; the same for every connection.",
-        "operationId": "get_redirect_uri_api_v1_connections_redirect_uri_get",
+        "operationId": "get_redirect_uri",
         "responses": {
           "200": {
             "content": {
@@ -23675,7 +23627,7 @@
     },
     "/api/v1/connections/{connection_id}": {
       "get": {
-        "operationId": "get_connection_api_v1_connections__connection_id__get",
+        "operationId": "get_connection",
         "parameters": [
           {
             "in": "path",
@@ -23744,7 +23696,7 @@
         }
       },
       "patch": {
-        "operationId": "update_connection_api_v1_connections__connection_id__patch",
+        "operationId": "update_connection",
         "parameters": [
           {
             "in": "path",
@@ -23846,7 +23798,7 @@
     "/api/v1/connections/{connection_id}/authorize": {
       "post": {
         "description": "A browser flow needs a login session and is bound to this browser by a cookie the callback checks; an API\nkey authorizes only a client-credentials client, without a browser.",
-        "operationId": "authorize_connection_api_v1_connections__connection_id__authorize_post",
+        "operationId": "authorize_connection",
         "parameters": [
           {
             "in": "path",
@@ -23942,7 +23894,7 @@
     },
     "/api/v1/connections/{connection_id}/revoke": {
       "post": {
-        "operationId": "revoke_connection_api_v1_connections__connection_id__revoke_post",
+        "operationId": "revoke_connection",
         "parameters": [
           {
             "in": "path",
@@ -24033,7 +23985,7 @@
     },
     "/api/v1/connections/{connection_id}/test": {
       "post": {
-        "operationId": "test_connection_api_v1_connections__connection_id__test_post",
+        "operationId": "test_connection",
         "parameters": [
           {
             "in": "path",
@@ -24105,7 +24057,7 @@
     },
     "/api/v1/connections/{connection_id}/tools": {
       "get": {
-        "operationId": "list_tools_api_v1_connections__connection_id__tools_get",
+        "operationId": "list_connection_tools",
         "parameters": [
           {
             "in": "path",
@@ -24163,7 +24115,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Tools",
+        "summary": "List Connection Tools",
         "tags": [
           "connections"
         ],
@@ -24177,7 +24129,7 @@
     "/api/v1/connections/{connection_id}/tools/definitions": {
       "get": {
         "description": "Read up to five exact definitions. Oversized values provide a versioned fragment reference.",
-        "operationId": "define_connection_tools_api_v1_connections__connection_id__tools_definitions_get",
+        "operationId": "define_connection_tools",
         "parameters": [
           {
             "in": "path",
@@ -24308,7 +24260,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Define Connection Tools Api V1 Connections  Connection Id  Tools Definitions Get"
+                  "title": "Response Define Connection Tools"
                 }
               }
             },
@@ -24343,7 +24295,7 @@
     "/api/v1/connections/{connection_id}/tools/index": {
       "get": {
         "description": "Search full names and descriptions; definitions are read separately by exact name.",
-        "operationId": "index_connection_tools_api_v1_connections__connection_id__tools_index_get",
+        "operationId": "index_connection_tools",
         "parameters": [
           {
             "in": "path",
@@ -24462,7 +24414,7 @@
     },
     "/api/v1/connector-providers": {
       "get": {
-        "operationId": "list_providers_api_v1_connector_providers_get",
+        "operationId": "list_connector_providers",
         "parameters": [
           {
             "in": "query",
@@ -24550,7 +24502,7 @@
         }
       },
       "post": {
-        "operationId": "create_provider_api_v1_connector_providers_post",
+        "operationId": "create_connector_provider",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -24619,7 +24571,7 @@
     },
     "/api/v1/connector-providers/{provider_id}": {
       "get": {
-        "operationId": "get_provider_api_v1_connector_providers__provider_id__get",
+        "operationId": "get_connector_provider",
         "parameters": [
           {
             "in": "path",
@@ -24689,7 +24641,7 @@
       },
       "patch": {
         "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
-        "operationId": "update_provider_api_v1_connector_providers__provider_id__patch",
+        "operationId": "update_connector_provider",
         "parameters": [
           {
             "in": "path",
@@ -24786,7 +24738,7 @@
     },
     "/api/v1/connector-providers/{provider_id}/apps": {
       "get": {
-        "operationId": "list_apps_api_v1_connector_providers__provider_id__apps_get",
+        "operationId": "list_connector_apps",
         "parameters": [
           {
             "in": "path",
@@ -24899,7 +24851,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Apps",
+        "summary": "List Connector Apps",
         "tags": [
           "connections"
         ],
@@ -24912,7 +24864,7 @@
     },
     "/api/v1/connector-providers/{provider_id}/apps/{app}": {
       "get": {
-        "operationId": "get_app_api_v1_connector_providers__provider_id__apps__app__get",
+        "operationId": "get_connector_app",
         "parameters": [
           {
             "in": "path",
@@ -24979,7 +24931,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get App",
+        "summary": "Get Connector App",
         "tags": [
           "connections"
         ],
@@ -24992,7 +24944,7 @@
     },
     "/api/v1/connector-providers/{provider_id}/apps/{app}/actions": {
       "get": {
-        "operationId": "list_actions_api_v1_connector_providers__provider_id__apps__app__actions_get",
+        "operationId": "list_connector_actions",
         "parameters": [
           {
             "in": "path",
@@ -25059,7 +25011,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Actions",
+        "summary": "List Connector Actions",
         "tags": [
           "connections"
         ],
@@ -25073,7 +25025,7 @@
     "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/definitions": {
       "get": {
         "description": "Read up to five exact definitions. Oversized values provide a versioned fragment reference.",
-        "operationId": "define_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_definitions_get",
+        "operationId": "define_connector_actions",
         "parameters": [
           {
             "in": "path",
@@ -25213,7 +25165,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Define Connector Actions Api V1 Connector Providers  Provider Id  Apps  App  Actions Definitions Get"
+                  "title": "Response Define Connector Actions"
                 }
               }
             },
@@ -25248,7 +25200,7 @@
     "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/index": {
       "get": {
         "description": "Search full names and descriptions; definitions are read separately by exact name.",
-        "operationId": "index_connector_actions_api_v1_connector_providers__provider_id__apps__app__actions_index_get",
+        "operationId": "index_connector_actions",
         "parameters": [
           {
             "in": "path",
@@ -25376,7 +25328,7 @@
     },
     "/api/v1/connector-providers/{provider_id}/test": {
       "post": {
-        "operationId": "test_provider_api_v1_connector_providers__provider_id__test_post",
+        "operationId": "test_connector_provider",
         "parameters": [
           {
             "in": "path",
@@ -25448,7 +25400,7 @@
     },
     "/api/v1/desktop-assistance/{assistance_id}/complete": {
       "post": {
-        "operationId": "complete_assistance_api_v1_desktop_assistance__assistance_id__complete_post",
+        "operationId": "complete_assistance",
         "parameters": [
           {
             "in": "path",
@@ -25525,7 +25477,7 @@
     },
     "/api/v1/desktop-assistance/{assistance_id}/control": {
       "post": {
-        "operationId": "control_desktop_api_v1_desktop_assistance__assistance_id__control_post",
+        "operationId": "control_desktop",
         "parameters": [
           {
             "in": "path",
@@ -25612,7 +25564,7 @@
     },
     "/api/v1/desktop-assistance/{assistance_id}/disconnect": {
       "post": {
-        "operationId": "disconnect_desktop_api_v1_desktop_assistance__assistance_id__disconnect_post",
+        "operationId": "disconnect_desktop",
         "parameters": [
           {
             "in": "path",
@@ -25689,7 +25641,7 @@
     },
     "/api/v1/desktop-assistance/{assistance_id}/request-control": {
       "post": {
-        "operationId": "request_control_api_v1_desktop_assistance__assistance_id__request_control_post",
+        "operationId": "request_control",
         "parameters": [
           {
             "in": "path",
@@ -25756,7 +25708,7 @@
     },
     "/api/v1/desktop-assistance/{assistance_id}/view": {
       "post": {
-        "operationId": "view_desktop_api_v1_desktop_assistance__assistance_id__view_post",
+        "operationId": "view_desktop",
         "parameters": [
           {
             "in": "path",
@@ -25843,7 +25795,7 @@
     },
     "/api/v1/devices": {
       "get": {
-        "operationId": "list_devices_api_v1_devices_get",
+        "operationId": "list_devices",
         "parameters": [
           {
             "in": "query",
@@ -25927,7 +25879,7 @@
         "x-a13n-mcp": false
       },
       "post": {
-        "operationId": "create_device_api_v1_devices_post",
+        "operationId": "create_device",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -25996,7 +25948,7 @@
     },
     "/api/v1/devices/{device_id}": {
       "delete": {
-        "operationId": "delete_device_api_v1_devices__device_id__delete",
+        "operationId": "delete_device",
         "parameters": [
           {
             "in": "path",
@@ -26074,7 +26026,7 @@
         "x-a13n-mcp": false
       },
       "get": {
-        "operationId": "get_device_api_v1_devices__device_id__get",
+        "operationId": "get_device",
         "parameters": [
           {
             "in": "path",
@@ -26139,7 +26091,7 @@
         "x-a13n-mcp": false
       },
       "patch": {
-        "operationId": "update_device_api_v1_devices__device_id__patch",
+        "operationId": "update_device",
         "parameters": [
           {
             "in": "path",
@@ -26236,7 +26188,7 @@
     },
     "/api/v1/devices/{device_id}/metrics/query": {
       "post": {
-        "operationId": "metrics_api_v1_devices__device_id__metrics_query_post",
+        "operationId": "metrics",
         "parameters": [
           {
             "in": "path",
@@ -26291,7 +26243,7 @@
                       "$ref": "#/components/schemas/LocalResult"
                     }
                   ],
-                  "title": "Response Metrics Api V1 Devices  Device Id  Metrics Query Post"
+                  "title": "Response Metrics"
                 }
               }
             },
@@ -26322,7 +26274,7 @@
     },
     "/api/v1/devices/{device_id}/rotate-credential": {
       "post": {
-        "operationId": "rotate_api_v1_devices__device_id__rotate_credential_post",
+        "operationId": "rotate",
         "parameters": [
           {
             "in": "path",
@@ -26409,7 +26361,7 @@
     },
     "/api/v1/environment-providers": {
       "get": {
-        "operationId": "list_providers_api_v1_environment_providers_get",
+        "operationId": "list_environment_providers",
         "parameters": [
           {
             "in": "query",
@@ -26497,7 +26449,7 @@
         }
       },
       "post": {
-        "operationId": "create_provider_api_v1_environment_providers_post",
+        "operationId": "create_environment_provider",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -26566,7 +26518,7 @@
     },
     "/api/v1/environment-providers/{provider_id}": {
       "delete": {
-        "operationId": "delete_environment_provider_api_v1_environment_providers__provider_id__delete",
+        "operationId": "delete_environment_provider",
         "parameters": [
           {
             "in": "path",
@@ -26644,7 +26596,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_provider_api_v1_environment_providers__provider_id__get",
+        "operationId": "get_environment_provider",
         "parameters": [
           {
             "in": "path",
@@ -26714,7 +26666,7 @@
       },
       "patch": {
         "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
-        "operationId": "update_provider_api_v1_environment_providers__provider_id__patch",
+        "operationId": "update_environment_provider",
         "parameters": [
           {
             "in": "path",
@@ -26811,7 +26763,7 @@
     },
     "/api/v1/environment-providers/{provider_id}/references": {
       "get": {
-        "operationId": "environment_provider_references_api_v1_environment_providers__provider_id__references_get",
+        "operationId": "environment_provider_references",
         "parameters": [
           {
             "in": "path",
@@ -26878,7 +26830,7 @@
     },
     "/api/v1/environment-providers/{provider_id}/test": {
       "post": {
-        "operationId": "test_provider_api_v1_environment_providers__provider_id__test_post",
+        "operationId": "test_environment_provider",
         "parameters": [
           {
             "in": "path",
@@ -26950,7 +26902,7 @@
     },
     "/api/v1/environment-templates": {
       "get": {
-        "operationId": "list_templates_api_v1_environment_templates_get",
+        "operationId": "list_environment_templates",
         "parameters": [
           {
             "in": "query",
@@ -27046,7 +26998,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Templates",
+        "summary": "List Environment Templates",
         "tags": [
           "environments"
         ],
@@ -27057,7 +27009,7 @@
         }
       },
       "post": {
-        "operationId": "create_template_api_v1_environment_templates_post",
+        "operationId": "create_environment_template",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -27117,7 +27069,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Template",
+        "summary": "Create Environment Template",
         "tags": [
           "environments"
         ],
@@ -27130,7 +27082,7 @@
     },
     "/api/v1/environment-templates/{template_id}": {
       "get": {
-        "operationId": "get_template_api_v1_environment_templates__template_id__get",
+        "operationId": "get_environment_template",
         "parameters": [
           {
             "in": "path",
@@ -27188,7 +27140,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Template",
+        "summary": "Get Environment Template",
         "tags": [
           "environments"
         ],
@@ -27199,7 +27151,7 @@
         }
       },
       "patch": {
-        "operationId": "update_template_api_v1_environment_templates__template_id__patch",
+        "operationId": "update_environment_template",
         "parameters": [
           {
             "in": "path",
@@ -27287,7 +27239,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Template",
+        "summary": "Update Environment Template",
         "tags": [
           "environments"
         ],
@@ -27300,7 +27252,7 @@
     },
     "/api/v1/environments": {
       "get": {
-        "operationId": "list_environments_api_v1_environments_get",
+        "operationId": "list_environments",
         "parameters": [
           {
             "in": "query",
@@ -27402,7 +27354,7 @@
       },
       "post": {
         "description": "Reserve a managed sandbox from a template (`creating`), or register an external envd target (`ready`).",
-        "operationId": "create_environment_api_v1_environments_post",
+        "operationId": "create_environment",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -27479,7 +27431,7 @@
     },
     "/api/v1/environments/{environment_id}": {
       "delete": {
-        "operationId": "delete_environment_api_v1_environments__environment_id__delete",
+        "operationId": "delete_environment",
         "parameters": [
           {
             "in": "path",
@@ -27564,7 +27516,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_environment_api_v1_environments__environment_id__get",
+        "operationId": "get_environment",
         "parameters": [
           {
             "in": "path",
@@ -27629,7 +27581,7 @@
         "x-a13n-mcp": true
       },
       "patch": {
-        "operationId": "update_environment_api_v1_environments__environment_id__patch",
+        "operationId": "update_environment",
         "parameters": [
           {
             "in": "path",
@@ -27727,7 +27679,7 @@
     "/api/v1/environments/{environment_id}/computer/check": {
       "post": {
         "description": "Probe desktop readiness without capturing the screen, sending input or starting the instance.",
-        "operationId": "check_computer_api_v1_environments__environment_id__computer_check_post",
+        "operationId": "check_computer",
         "parameters": [
           {
             "in": "path",
@@ -27795,7 +27747,7 @@
     },
     "/api/v1/environments/{environment_id}/metrics-binding": {
       "put": {
-        "operationId": "select_metrics_source_api_v1_environments__environment_id__metrics_binding_put",
+        "operationId": "select_metrics_source",
         "parameters": [
           {
             "in": "path",
@@ -27892,7 +27844,7 @@
     },
     "/api/v1/environments/{environment_id}/metrics/collector": {
       "get": {
-        "operationId": "get_collector_status_api_v1_environments__environment_id__metrics_collector_get",
+        "operationId": "get_collector_status",
         "parameters": [
           {
             "in": "path",
@@ -27959,7 +27911,7 @@
     },
     "/api/v1/environments/{environment_id}/metrics/query": {
       "post": {
-        "operationId": "query_metrics_api_v1_environments__environment_id__metrics_query_post",
+        "operationId": "query_metrics",
         "parameters": [
           {
             "in": "path",
@@ -28014,7 +27966,7 @@
                       "$ref": "#/components/schemas/LocalResult"
                     }
                   ],
-                  "title": "Response Query Metrics Api V1 Environments  Environment Id  Metrics Query Post"
+                  "title": "Response Query Metrics"
                 }
               }
             },
@@ -28045,7 +27997,7 @@
     },
     "/api/v1/environments/{environment_id}/stop": {
       "post": {
-        "operationId": "stop_environment_api_v1_environments__environment_id__stop_post",
+        "operationId": "stop_environment",
         "parameters": [
           {
             "in": "path",
@@ -28132,7 +28084,7 @@
     },
     "/api/v1/finding-agent": {
       "post": {
-        "operationId": "prepare_finding_agent_api_v1_finding_agent_post",
+        "operationId": "prepare_finding_agent",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -28190,7 +28142,7 @@
     },
     "/api/v1/finding-analyses": {
       "get": {
-        "operationId": "list_analyses_api_v1_finding_analyses_get",
+        "operationId": "list_finding_analyses",
         "parameters": [
           {
             "in": "query",
@@ -28267,7 +28219,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Analyses",
+        "summary": "List Finding Analyses",
         "tags": [
           "findings"
         ],
@@ -28278,7 +28230,7 @@
         }
       },
       "post": {
-        "operationId": "start_analysis_api_v1_finding_analyses_post",
+        "operationId": "start_analysis",
         "parameters": [
           {
             "in": "header",
@@ -28358,7 +28310,7 @@
     },
     "/api/v1/findings": {
       "get": {
-        "operationId": "list_findings_api_v1_findings_get",
+        "operationId": "list_findings",
         "parameters": [
           {
             "in": "query",
@@ -28526,7 +28478,8 @@
         }
       },
       "post": {
-        "operationId": "create_finding_api_v1_findings_post",
+        "description": "Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.\nA Run's own submission names that Run as its source; an analysis cites only selected traces it has read.",
+        "operationId": "create_finding",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -28589,12 +28542,17 @@
         "summary": "Create Finding",
         "tags": [
           "findings"
-        ]
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "write",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/findings/{finding_id}": {
       "get": {
-        "operationId": "get_finding_api_v1_findings__finding_id__get",
+        "operationId": "get_finding",
         "parameters": [
           {
             "in": "path",
@@ -28663,7 +28621,7 @@
         }
       },
       "patch": {
-        "operationId": "update_finding_api_v1_findings__finding_id__patch",
+        "operationId": "update_finding",
         "parameters": [
           {
             "in": "path",
@@ -28760,7 +28718,7 @@
     "/api/v1/invitations/{invitation_id}/accept": {
       "post": {
         "description": "Public by token: creates or joins the invited account and starts a login session.",
-        "operationId": "accept_api_v1_invitations__invitation_id__accept_post",
+        "operationId": "accept",
         "parameters": [
           {
             "in": "path",
@@ -28809,7 +28767,7 @@
     "/api/v1/mcp-servers": {
       "get": {
         "description": "Suggested Remote MCP servers, packaged and from the deployment; readable by every signed-in principal.",
-        "operationId": "list_mcp_servers_api_v1_mcp_servers_get",
+        "operationId": "list_mcp_servers",
         "parameters": [
           {
             "in": "query",
@@ -28896,7 +28854,7 @@
     },
     "/api/v1/media-understanding-defaults": {
       "get": {
-        "operationId": "get_media_defaults_api_v1_media_understanding_defaults_get",
+        "operationId": "get_media_defaults",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -28957,7 +28915,7 @@
       },
       "put": {
         "description": "Replaces all three kinds; each model must declare it understands its kind. Requires workspace admin.",
-        "operationId": "replace_media_defaults_api_v1_media_understanding_defaults_put",
+        "operationId": "replace_media_defaults",
         "parameters": [
           {
             "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
@@ -29045,7 +29003,7 @@
     },
     "/api/v1/memories": {
       "get": {
-        "operationId": "list_memories_api_v1_memories_get",
+        "operationId": "list_memories",
         "parameters": [
           {
             "in": "query",
@@ -29181,7 +29139,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "create_memory_api_v1_memories_post",
+        "operationId": "create_memory",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -29250,7 +29208,7 @@
     },
     "/api/v1/memories/{memory_id}": {
       "delete": {
-        "operationId": "delete_memory_api_v1_memories__memory_id__delete",
+        "operationId": "delete_memory",
         "parameters": [
           {
             "in": "path",
@@ -29328,7 +29286,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_memory_api_v1_memories__memory_id__get",
+        "operationId": "get_memory",
         "parameters": [
           {
             "in": "path",
@@ -29393,7 +29351,7 @@
         "x-a13n-mcp": true
       },
       "patch": {
-        "operationId": "update_memory_api_v1_memories__memory_id__patch",
+        "operationId": "update_memory",
         "parameters": [
           {
             "in": "path",
@@ -29490,7 +29448,7 @@
     },
     "/api/v1/memories/{memory_id}/files": {
       "get": {
-        "operationId": "list_files_api_v1_memories__memory_id__files_get",
+        "operationId": "list_files",
         "parameters": [
           {
             "in": "path",
@@ -29596,7 +29554,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "create_file_api_v1_memories__memory_id__files_post",
+        "operationId": "create_file",
         "parameters": [
           {
             "in": "path",
@@ -29675,7 +29633,7 @@
     "/api/v1/memories/{memory_id}/files/move": {
       "post": {
         "description": "Move the source file `If-Match` names; the destination must be free.",
-        "operationId": "move_file_api_v1_memories__memory_id__files_move_post",
+        "operationId": "move_file",
         "parameters": [
           {
             "in": "path",
@@ -29772,7 +29730,7 @@
     },
     "/api/v1/memories/{memory_id}/files/{path}": {
       "delete": {
-        "operationId": "delete_file_api_v1_memories__memory_id__files__path__delete",
+        "operationId": "delete_file",
         "parameters": [
           {
             "in": "path",
@@ -29859,7 +29817,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "read_file_api_v1_memories__memory_id__files__path__get",
+        "operationId": "read_file",
         "parameters": [
           {
             "in": "path",
@@ -29933,7 +29891,7 @@
         "x-a13n-mcp": true
       },
       "put": {
-        "operationId": "replace_file_api_v1_memories__memory_id__files__path__put",
+        "operationId": "replace_file",
         "parameters": [
           {
             "in": "path",
@@ -30039,7 +29997,7 @@
     },
     "/api/v1/memories/{memory_id}/records": {
       "get": {
-        "operationId": "list_records_api_v1_memories__memory_id__records_get",
+        "operationId": "list_records",
         "parameters": [
           {
             "in": "path",
@@ -30135,7 +30093,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "add_record_api_v1_memories__memory_id__records_post",
+        "operationId": "add_record",
         "parameters": [
           {
             "in": "path",
@@ -30214,7 +30172,7 @@
     "/api/v1/memories/{memory_id}/records/search": {
       "post": {
         "description": "The records most similar to the query; the query travels in the body, never the URL.",
-        "operationId": "search_records_api_v1_memories__memory_id__records_search_post",
+        "operationId": "search_records",
         "parameters": [
           {
             "in": "path",
@@ -30292,7 +30250,7 @@
     },
     "/api/v1/memories/{memory_id}/records/{record_id}": {
       "delete": {
-        "operationId": "delete_record_api_v1_memories__memory_id__records__record_id__delete",
+        "operationId": "delete_record",
         "parameters": [
           {
             "in": "path",
@@ -30362,7 +30320,7 @@
       },
       "put": {
         "description": "Replace the record's text; records carry no version, so the last writer wins.",
-        "operationId": "update_record_api_v1_memories__memory_id__records__record_id__put",
+        "operationId": "update_record",
         "parameters": [
           {
             "in": "path",
@@ -30451,7 +30409,7 @@
     "/api/v1/memories/{memory_id}/revisions": {
       "delete": {
         "description": "Delete every retained revision of one file path.",
-        "operationId": "purge_history_api_v1_memories__memory_id__revisions_delete",
+        "operationId": "purge_history",
         "parameters": [
           {
             "in": "path",
@@ -30528,7 +30486,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "list_revisions_api_v1_memories__memory_id__revisions_get",
+        "operationId": "list_memory_revisions",
         "parameters": [
           {
             "in": "path",
@@ -30648,7 +30606,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Revisions",
+        "summary": "List Memory Revisions",
         "tags": [
           "memories"
         ],
@@ -30657,7 +30615,7 @@
     },
     "/api/v1/memories/{memory_id}/revisions/{seq}": {
       "get": {
-        "operationId": "get_revision_api_v1_memories__memory_id__revisions__seq__get",
+        "operationId": "get_memory_revision",
         "parameters": [
           {
             "in": "path",
@@ -30724,7 +30682,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Revision",
+        "summary": "Get Memory Revision",
         "tags": [
           "memories"
         ],
@@ -30734,7 +30692,7 @@
     "/api/v1/memories/{memory_id}/revisions/{seq}/restore": {
       "post": {
         "description": "Set the path back to the content the change replaced; `If-Match` names the file there, if any.",
-        "operationId": "restore_revision_api_v1_memories__memory_id__revisions__seq__restore_post",
+        "operationId": "restore_memory_revision",
         "parameters": [
           {
             "in": "path",
@@ -30821,7 +30779,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Restore Revision",
+        "summary": "Restore Memory Revision",
         "tags": [
           "memories"
         ],
@@ -30830,7 +30788,7 @@
     },
     "/api/v1/memory-providers": {
       "get": {
-        "operationId": "list_providers_api_v1_memory_providers_get",
+        "operationId": "list_memory_providers",
         "parameters": [
           {
             "in": "query",
@@ -30914,7 +30872,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "create_provider_api_v1_memory_providers_post",
+        "operationId": "create_memory_provider",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -30983,7 +30941,7 @@
     },
     "/api/v1/memory-providers/{provider_id}": {
       "get": {
-        "operationId": "get_provider_api_v1_memory_providers__provider_id__get",
+        "operationId": "get_memory_provider",
         "parameters": [
           {
             "in": "path",
@@ -31049,7 +31007,7 @@
       },
       "patch": {
         "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
-        "operationId": "update_provider_api_v1_memory_providers__provider_id__patch",
+        "operationId": "update_memory_provider",
         "parameters": [
           {
             "in": "path",
@@ -31146,7 +31104,7 @@
     },
     "/api/v1/memory-providers/{provider_id}/test": {
       "post": {
-        "operationId": "test_provider_api_v1_memory_providers__provider_id__test_post",
+        "operationId": "test_memory_provider",
         "parameters": [
           {
             "in": "path",
@@ -31214,7 +31172,7 @@
     },
     "/api/v1/memory-spaces": {
       "get": {
-        "operationId": "list_spaces_api_v1_memory_spaces_get",
+        "operationId": "list_spaces",
         "parameters": [
           {
             "in": "query",
@@ -31333,7 +31291,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "create_space_api_v1_memory_spaces_post",
+        "operationId": "create_space",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -31402,7 +31360,7 @@
     },
     "/api/v1/memory-spaces/{space_id}": {
       "delete": {
-        "operationId": "delete_space_api_v1_memory_spaces__space_id__delete",
+        "operationId": "delete_space",
         "parameters": [
           {
             "in": "path",
@@ -31480,7 +31438,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_space_api_v1_memory_spaces__space_id__get",
+        "operationId": "get_space",
         "parameters": [
           {
             "in": "path",
@@ -31545,7 +31503,7 @@
         "x-a13n-mcp": true
       },
       "patch": {
-        "operationId": "update_space_api_v1_memory_spaces__space_id__patch",
+        "operationId": "update_space",
         "parameters": [
           {
             "in": "path",
@@ -31642,7 +31600,7 @@
     },
     "/api/v1/memory-spaces/{space_id}/organization": {
       "get": {
-        "operationId": "get_space_organization_api_v1_memory_spaces__space_id__organization_get",
+        "operationId": "get_space_organization",
         "parameters": [
           {
             "in": "path",
@@ -31709,7 +31667,7 @@
     },
     "/api/v1/memory-spaces/{space_id}/organizations": {
       "get": {
-        "operationId": "list_space_organizations_api_v1_memory_spaces__space_id__organizations_get",
+        "operationId": "list_space_organizations",
         "parameters": [
           {
             "in": "path",
@@ -31802,7 +31760,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "organize_space_api_v1_memory_spaces__space_id__organizations_post",
+        "operationId": "organize_space",
         "parameters": [
           {
             "in": "path",
@@ -31869,7 +31827,7 @@
     },
     "/api/v1/memory-spaces/{space_id}/sessions": {
       "get": {
-        "operationId": "list_space_sessions_api_v1_memory_spaces__space_id__sessions_get",
+        "operationId": "list_space_sessions",
         "parameters": [
           {
             "in": "path",
@@ -31964,7 +31922,7 @@
     },
     "/api/v1/metrics-dashboards": {
       "get": {
-        "operationId": "list_dashboards_api_v1_metrics_dashboards_get",
+        "operationId": "list_dashboards",
         "parameters": [
           {
             "in": "query",
@@ -32048,7 +32006,7 @@
         "x-a13n-mcp": false
       },
       "post": {
-        "operationId": "create_dashboard_api_v1_metrics_dashboards_post",
+        "operationId": "create_dashboard",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32117,7 +32075,7 @@
     },
     "/api/v1/metrics-dashboards/preset": {
       "get": {
-        "operationId": "get_preset_api_v1_metrics_dashboards_preset_get",
+        "operationId": "get_preset",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32175,7 +32133,7 @@
     },
     "/api/v1/metrics-dashboards/{dashboard_id}": {
       "delete": {
-        "operationId": "delete_dashboard_api_v1_metrics_dashboards__dashboard_id__delete",
+        "operationId": "delete_dashboard",
         "parameters": [
           {
             "in": "path",
@@ -32253,7 +32211,7 @@
         "x-a13n-mcp": false
       },
       "get": {
-        "operationId": "get_dashboard_api_v1_metrics_dashboards__dashboard_id__get",
+        "operationId": "get_dashboard",
         "parameters": [
           {
             "in": "path",
@@ -32318,7 +32276,7 @@
         "x-a13n-mcp": false
       },
       "patch": {
-        "operationId": "update_dashboard_api_v1_metrics_dashboards__dashboard_id__patch",
+        "operationId": "update_dashboard",
         "parameters": [
           {
             "in": "path",
@@ -32415,7 +32373,7 @@
     },
     "/api/v1/metrics-data-sources": {
       "get": {
-        "operationId": "list_sources_api_v1_metrics_data_sources_get",
+        "operationId": "list_sources",
         "parameters": [
           {
             "in": "query",
@@ -32499,7 +32457,7 @@
         "x-a13n-mcp": false
       },
       "post": {
-        "operationId": "create_source_api_v1_metrics_data_sources_post",
+        "operationId": "create_source",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32568,7 +32526,7 @@
     },
     "/api/v1/metrics-data-sources/capabilities": {
       "get": {
-        "operationId": "get_capabilities_api_v1_metrics_data_sources_capabilities_get",
+        "operationId": "get_capabilities",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32626,7 +32584,7 @@
     },
     "/api/v1/metrics-data-sources/{source_id}": {
       "delete": {
-        "operationId": "delete_source_api_v1_metrics_data_sources__source_id__delete",
+        "operationId": "delete_source",
         "parameters": [
           {
             "in": "path",
@@ -32704,7 +32662,7 @@
         "x-a13n-mcp": false
       },
       "get": {
-        "operationId": "get_source_api_v1_metrics_data_sources__source_id__get",
+        "operationId": "get_source",
         "parameters": [
           {
             "in": "path",
@@ -32769,7 +32727,7 @@
         "x-a13n-mcp": false
       },
       "patch": {
-        "operationId": "update_source_api_v1_metrics_data_sources__source_id__patch",
+        "operationId": "update_source",
         "parameters": [
           {
             "in": "path",
@@ -32866,7 +32824,7 @@
     },
     "/api/v1/metrics-data-sources/{source_id}/query": {
       "post": {
-        "operationId": "query_source_api_v1_metrics_data_sources__source_id__query_post",
+        "operationId": "query_source",
         "parameters": [
           {
             "in": "path",
@@ -32960,7 +32918,7 @@
     "/api/v1/model-catalog": {
       "get": {
         "description": "Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.\n\nBoth filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.\nNo match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.\nCopy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving.",
-        "operationId": "get_model_catalog_api_v1_model_catalog_get",
+        "operationId": "get_model_catalog",
         "parameters": [
           {
             "description": "Exact catalog channel ID, such as openrouter.",
@@ -33167,7 +33125,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Get Model Catalog Api V1 Model Catalog Get"
+                  "title": "Response Get Model Catalog"
                 }
               }
             },
@@ -33201,7 +33159,7 @@
     },
     "/api/v1/model-providers": {
       "get": {
-        "operationId": "list_providers_api_v1_model_providers_get",
+        "operationId": "list_model_providers",
         "parameters": [
           {
             "in": "query",
@@ -33289,7 +33247,7 @@
         }
       },
       "post": {
-        "operationId": "create_provider_api_v1_model_providers_post",
+        "operationId": "create_model_provider",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -33358,7 +33316,7 @@
     },
     "/api/v1/model-providers/{provider_id}": {
       "get": {
-        "operationId": "get_provider_api_v1_model_providers__provider_id__get",
+        "operationId": "get_model_provider",
         "parameters": [
           {
             "in": "path",
@@ -33428,7 +33386,7 @@
       },
       "patch": {
         "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
-        "operationId": "update_provider_api_v1_model_providers__provider_id__patch",
+        "operationId": "update_model_provider",
         "parameters": [
           {
             "in": "path",
@@ -33525,7 +33483,7 @@
     },
     "/api/v1/model-providers/{provider_id}/authorization": {
       "delete": {
-        "operationId": "disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete",
+        "operationId": "disconnect_model_authorization",
         "parameters": [
           {
             "in": "path",
@@ -33590,7 +33548,7 @@
         ]
       },
       "get": {
-        "operationId": "model_authorization_api_v1_model_providers__provider_id__authorization_get",
+        "operationId": "model_authorization",
         "parameters": [
           {
             "in": "path",
@@ -33656,7 +33614,7 @@
     },
     "/api/v1/model-providers/{provider_id}/authorization/callback": {
       "post": {
-        "operationId": "complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post",
+        "operationId": "complete_model_authorization",
         "parameters": [
           {
             "in": "path",
@@ -33733,7 +33691,7 @@
     },
     "/api/v1/model-providers/{provider_id}/authorize": {
       "post": {
-        "operationId": "authorize_model_api_v1_model_providers__provider_id__authorize_post",
+        "operationId": "authorize_model",
         "parameters": [
           {
             "in": "path",
@@ -33810,7 +33768,7 @@
     },
     "/api/v1/model-providers/{provider_id}/models": {
       "get": {
-        "operationId": "discover_model_provider_models_api_v1_model_providers__provider_id__models_get",
+        "operationId": "discover_model_provider_models",
         "parameters": [
           {
             "in": "path",
@@ -33850,7 +33808,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ProviderModel"
                   },
-                  "title": "Response Discover Model Provider Models Api V1 Model Providers  Provider Id  Models Get",
+                  "title": "Response Discover Model Provider Models",
                   "type": "array"
                 }
               }
@@ -33885,7 +33843,7 @@
     },
     "/api/v1/model-providers/{provider_id}/test": {
       "post": {
-        "operationId": "test_provider_api_v1_model_providers__provider_id__test_post",
+        "operationId": "test_model_provider",
         "parameters": [
           {
             "in": "path",
@@ -33957,7 +33915,7 @@
     },
     "/api/v1/models": {
       "get": {
-        "operationId": "list_models_api_v1_models_get",
+        "operationId": "list_models",
         "parameters": [
           {
             "in": "query",
@@ -34046,7 +34004,7 @@
       },
       "post": {
         "description": "Needs `write` on the workspace and on the model's provider, whose credential the model spends.",
-        "operationId": "create_model_api_v1_models_post",
+        "operationId": "create_model",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -34119,7 +34077,7 @@
     },
     "/api/v1/models/{key}": {
       "get": {
-        "operationId": "get_model_api_v1_models__key__get",
+        "operationId": "get_model",
         "parameters": [
           {
             "in": "path",
@@ -34189,7 +34147,7 @@
       },
       "patch": {
         "description": "A configuration change also needs `write` on the model's provider.",
-        "operationId": "update_model_api_v1_models__key__patch",
+        "operationId": "update_model",
         "parameters": [
           {
             "in": "path",
@@ -34290,7 +34248,7 @@
     },
     "/api/v1/organizations": {
       "get": {
-        "operationId": "list_organizations_api_v1_organizations_get",
+        "operationId": "list_organizations",
         "parameters": [
           {
             "in": "query",
@@ -34355,7 +34313,7 @@
     },
     "/api/v1/organizations/{organization_id}": {
       "get": {
-        "operationId": "get_organization_api_v1_organizations__organization_id__get",
+        "operationId": "get_organization",
         "parameters": [
           {
             "in": "path",
@@ -34399,7 +34357,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_organization_api_v1_organizations__organization_id__patch",
+        "operationId": "update_organization",
         "parameters": [
           {
             "in": "path",
@@ -34475,7 +34433,7 @@
     },
     "/api/v1/organizations/{organization_id}/audit-events": {
       "get": {
-        "operationId": "list_organization_audit_events_api_v1_organizations__organization_id__audit_events_get",
+        "operationId": "list_organization_audit_events",
         "parameters": [
           {
             "in": "path",
@@ -34549,7 +34507,7 @@
     },
     "/api/v1/organizations/{organization_id}/grants": {
       "get": {
-        "operationId": "list_organization_grants_api_v1_organizations__organization_id__grants_get",
+        "operationId": "list_organization_grants",
         "parameters": [
           {
             "in": "path",
@@ -34621,7 +34579,7 @@
         ]
       },
       "post": {
-        "operationId": "create_organization_grant_api_v1_organizations__organization_id__grants_post",
+        "operationId": "create_organization_grant",
         "parameters": [
           {
             "in": "path",
@@ -34678,7 +34636,7 @@
     },
     "/api/v1/organizations/{organization_id}/grants/{grant_id}": {
       "delete": {
-        "operationId": "delete_organization_grant_api_v1_organizations__organization_id__grants__grant_id__delete",
+        "operationId": "delete_organization_grant",
         "parameters": [
           {
             "in": "path",
@@ -34726,7 +34684,7 @@
       },
       "patch": {
         "description": "The grant is replaced: the result carries its new ID.",
-        "operationId": "change_organization_grant_api_v1_organizations__organization_id__grants__grant_id__patch",
+        "operationId": "change_organization_grant",
         "parameters": [
           {
             "in": "path",
@@ -34792,7 +34750,7 @@
     },
     "/api/v1/organizations/{organization_id}/icon": {
       "delete": {
-        "operationId": "delete_organization_icon_api_v1_organizations__organization_id__icon_delete",
+        "operationId": "delete_organization_icon",
         "parameters": [
           {
             "in": "path",
@@ -34856,7 +34814,7 @@
         ]
       },
       "get": {
-        "operationId": "get_organization_icon_api_v1_organizations__organization_id__icon_get",
+        "operationId": "get_organization_icon",
         "parameters": [
           {
             "in": "path",
@@ -34913,7 +34871,7 @@
         ]
       },
       "put": {
-        "operationId": "put_organization_icon_api_v1_organizations__organization_id__icon_put",
+        "operationId": "put_organization_icon",
         "parameters": [
           {
             "in": "path",
@@ -35002,7 +34960,7 @@
     },
     "/api/v1/organizations/{organization_id}/invitations": {
       "get": {
-        "operationId": "list_organization_invitations_api_v1_organizations__organization_id__invitations_get",
+        "operationId": "list_organization_invitations",
         "parameters": [
           {
             "in": "path",
@@ -35074,7 +35032,7 @@
         ]
       },
       "post": {
-        "operationId": "create_organization_invitation_api_v1_organizations__organization_id__invitations_post",
+        "operationId": "create_organization_invitation",
         "parameters": [
           {
             "in": "path",
@@ -35131,7 +35089,7 @@
     },
     "/api/v1/organizations/{organization_id}/invitations/{invitation_id}/resend": {
       "post": {
-        "operationId": "resend_organization_invitation_api_v1_organizations__organization_id__invitations__invitation_id__resend_post",
+        "operationId": "resend_organization_invitation",
         "parameters": [
           {
             "in": "path",
@@ -35206,7 +35164,7 @@
     },
     "/api/v1/organizations/{organization_id}/invitations/{invitation_id}/revoke": {
       "post": {
-        "operationId": "revoke_organization_invitation_api_v1_organizations__organization_id__invitations__invitation_id__revoke_post",
+        "operationId": "revoke_organization_invitation",
         "parameters": [
           {
             "in": "path",
@@ -35281,7 +35239,7 @@
     },
     "/api/v1/organizations/{organization_id}/members": {
       "get": {
-        "operationId": "list_members_api_v1_organizations__organization_id__members_get",
+        "operationId": "list_members",
         "parameters": [
           {
             "in": "path",
@@ -35375,7 +35333,7 @@
     },
     "/api/v1/organizations/{organization_id}/workspaces": {
       "get": {
-        "operationId": "list_organization_workspaces_api_v1_organizations__organization_id__workspaces_get",
+        "operationId": "list_organization_workspaces",
         "parameters": [
           {
             "in": "path",
@@ -35447,7 +35405,7 @@
         ]
       },
       "post": {
-        "operationId": "create_workspace_api_v1_organizations__organization_id__workspaces_post",
+        "operationId": "create_workspace",
         "parameters": [
           {
             "in": "path",
@@ -35504,7 +35462,7 @@
     },
     "/api/v1/provider-types/{kind}": {
       "get": {
-        "operationId": "list_provider_types_api_v1_provider_types__kind__get",
+        "operationId": "list_provider_types",
         "parameters": [
           {
             "in": "path",
@@ -35558,7 +35516,7 @@
     },
     "/api/v1/runs": {
       "get": {
-        "operationId": "list_runs_api_v1_runs_get",
+        "operationId": "list_runs",
         "parameters": [
           {
             "description": "All search terms must match one run's retained user/assistant text",
@@ -35791,7 +35749,7 @@
                       "$ref": "#/components/schemas/RunSummaryPage"
                     }
                   ],
-                  "title": "Response List Runs Api V1 Runs Get"
+                  "title": "Response List Runs"
                 }
               }
             },
@@ -35825,7 +35783,7 @@
     },
     "/api/v1/runs/{run_id}": {
       "get": {
-        "operationId": "get_run_api_v1_runs__run_id__get",
+        "operationId": "get_run",
         "parameters": [
           {
             "in": "path",
@@ -35978,7 +35936,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Get Run Api V1 Runs  Run Id  Get"
+                  "title": "Response Get Run"
                 }
               }
             },
@@ -36011,7 +35969,7 @@
       },
       "patch": {
         "description": "Labels only.",
-        "operationId": "update_run_api_v1_runs__run_id__patch",
+        "operationId": "update_run",
         "parameters": [
           {
             "in": "path",
@@ -36108,7 +36066,7 @@
     "/api/v1/runs/{run_id}/agent": {
       "get": {
         "description": "The frozen revision and effective configuration. Section reads are versioned fragments, never writable configs.",
-        "operationId": "run_agent_api_v1_runs__run_id__agent_get",
+        "operationId": "get_run_agent",
         "parameters": [
           {
             "in": "path",
@@ -36167,7 +36125,6 @@
                 "skills",
                 "skill_sync",
                 "connection_tools",
-                "platform_tools",
                 "tool_search",
                 "builtin_skills",
                 "client_tools",
@@ -36291,7 +36248,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Run Agent Api V1 Runs  Run Id  Agent Get"
+                  "title": "Response Get Run Agent"
                 }
               }
             },
@@ -36312,7 +36269,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Run Agent",
+        "summary": "Get Run Agent",
         "tags": [
           "runs"
         ],
@@ -36325,7 +36282,7 @@
     },
     "/api/v1/runs/{run_id}/attempts": {
       "get": {
-        "operationId": "run_attempts_api_v1_runs__run_id__attempts_get",
+        "operationId": "list_run_attempts",
         "parameters": [
           {
             "in": "path",
@@ -36383,7 +36340,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Run Attempts",
+        "summary": "List Run Attempts",
         "tags": [
           "runs"
         ],
@@ -36396,7 +36353,7 @@
     },
     "/api/v1/runs/{run_id}/attempts/{attempt_id}": {
       "get": {
-        "operationId": "get_attempt_api_v1_runs__run_id__attempts__attempt_id__get",
+        "operationId": "get_run_attempt",
         "parameters": [
           {
             "in": "path",
@@ -36463,7 +36420,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Attempt",
+        "summary": "Get Run Attempt",
         "tags": [
           "runs"
         ],
@@ -36477,7 +36434,7 @@
     "/api/v1/runs/{run_id}/attempts/{attempt_id}/trace": {
       "get": {
         "description": "The attempt's spans, including its inline child runs.",
-        "operationId": "list_attempt_spans_api_v1_runs__run_id__attempts__attempt_id__trace_get",
+        "operationId": "list_attempt_spans",
         "parameters": [
           {
             "in": "path",
@@ -36630,7 +36587,7 @@
                       "$ref": "#/components/schemas/SpanReadPage"
                     }
                   ],
-                  "title": "Response List Attempt Spans Api V1 Runs  Run Id  Attempts  Attempt Id  Trace Get"
+                  "title": "Response List Attempt Spans"
                 }
               }
             },
@@ -36665,7 +36622,7 @@
     "/api/v1/runs/{run_id}/contents/{content_id}": {
       "get": {
         "description": "The complete value behind a committed display reference.",
-        "operationId": "run_content_api_v1_runs__run_id__contents__content_id__get",
+        "operationId": "get_run_content",
         "parameters": [
           {
             "in": "path",
@@ -36803,7 +36760,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Run Content Api V1 Runs  Run Id  Contents  Content Id  Get"
+                  "title": "Response Get Run Content"
                 }
               }
             },
@@ -36824,7 +36781,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Run Content",
+        "summary": "Get Run Content",
         "tags": [
           "runs"
         ],
@@ -36837,7 +36794,7 @@
     },
     "/api/v1/runs/{run_id}/desktop-assistance/{call_id}": {
       "get": {
-        "operationId": "get_assistance_api_v1_runs__run_id__desktop_assistance__call_id__get",
+        "operationId": "get_assistance",
         "parameters": [
           {
             "in": "path",
@@ -36913,7 +36870,7 @@
     },
     "/api/v1/runs/{run_id}/desktop-control": {
       "get": {
-        "operationId": "get_control_api_v1_runs__run_id__desktop_control_get",
+        "operationId": "get_control",
         "parameters": [
           {
             "in": "path",
@@ -36958,7 +36915,7 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Get Control Api V1 Runs  Run Id  Desktop Control Get"
+                  "title": "Response Get Control"
                 }
               }
             },
@@ -36986,7 +36943,7 @@
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "open_control_api_v1_runs__run_id__desktop_control_post",
+        "operationId": "open_control",
         "parameters": [
           {
             "in": "path",
@@ -37064,7 +37021,7 @@
     "/api/v1/runs/{run_id}/fork": {
       "post": {
         "description": "A new thread in the run's session that continues from this run's committed history.",
-        "operationId": "fork_run_api_v1_runs__run_id__fork_post",
+        "operationId": "fork_run",
         "parameters": [
           {
             "in": "path",
@@ -37164,7 +37121,7 @@
     "/api/v1/runs/{run_id}/images/{image_id}": {
       "get": {
         "description": "Read a retained screenshot from committed Run history. Binary media is not an MCP query endpoint.",
-        "operationId": "run_image_api_v1_runs__run_id__images__image_id__get",
+        "operationId": "run_image",
         "parameters": [
           {
             "in": "path",
@@ -37246,7 +37203,7 @@
     },
     "/api/v1/runs/{run_id}/interrupt": {
       "post": {
-        "operationId": "interrupt_run_api_v1_runs__run_id__interrupt_post",
+        "operationId": "interrupt_run",
         "parameters": [
           {
             "in": "path",
@@ -37314,7 +37271,7 @@
     "/api/v1/runs/{run_id}/items": {
       "get": {
         "description": "A run's committed display items by ordinal. Detailed unfiltered reads default to the newest items and full tail.\nCompact or filtered reads start at the oldest ordinal and strictly honor limit. Use exclusive before/after\npositions, then follow next_before/next_after even when a filtered page is empty.",
-        "operationId": "run_items_api_v1_runs__run_id__items_get",
+        "operationId": "list_run_items",
         "parameters": [
           {
             "in": "path",
@@ -37476,7 +37433,7 @@
                       "$ref": "#/components/schemas/ItemPage"
                     }
                   ],
-                  "title": "Response Run Items Api V1 Runs  Run Id  Items Get"
+                  "title": "Response List Run Items"
                 }
               }
             },
@@ -37497,7 +37454,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Run Items",
+        "summary": "List Run Items",
         "tags": [
           "runs"
         ],
@@ -37511,7 +37468,7 @@
     "/api/v1/runs/{run_id}/items/{item_id}/content": {
       "get": {
         "description": "Read one display field or follow its retained content reference, under the run's existing authorization.",
-        "operationId": "read_item_content_api_v1_runs__run_id__items__item_id__content_get",
+        "operationId": "read_run_item_content",
         "parameters": [
           {
             "in": "path",
@@ -37676,7 +37633,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Read Item Content",
+        "summary": "Read Run Item Content",
         "tags": [
           "runs"
         ],
@@ -37690,7 +37647,7 @@
     "/api/v1/runs/{run_id}/lineage": {
       "get": {
         "description": "The run and its ancestors, nearest first, across fork origins.",
-        "operationId": "run_lineage_api_v1_runs__run_id__lineage_get",
+        "operationId": "get_run_lineage",
         "parameters": [
           {
             "in": "path",
@@ -37780,7 +37737,7 @@
                       "$ref": "#/components/schemas/RunSummaryPage"
                     }
                   ],
-                  "title": "Response Run Lineage Api V1 Runs  Run Id  Lineage Get"
+                  "title": "Response Get Run Lineage"
                 }
               }
             },
@@ -37801,7 +37758,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Run Lineage",
+        "summary": "Get Run Lineage",
         "tags": [
           "runs"
         ],
@@ -37815,7 +37772,7 @@
     "/api/v1/runs/{run_id}/resume": {
       "post": {
         "description": "Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them.",
-        "operationId": "resume_run_api_v1_runs__run_id__resume_post",
+        "operationId": "resume_run",
         "parameters": [
           {
             "in": "path",
@@ -37914,7 +37871,7 @@
     },
     "/api/v1/sessions": {
       "get": {
-        "operationId": "list_sessions_api_v1_sessions_get",
+        "operationId": "list_sessions",
         "parameters": [
           {
             "description": "All search terms must match one run's retained user/assistant text",
@@ -38133,7 +38090,7 @@
         }
       },
       "post": {
-        "operationId": "create_session_api_v1_sessions_post",
+        "operationId": "create_session",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -38201,7 +38158,7 @@
     },
     "/api/v1/sessions/{session_id}": {
       "get": {
-        "operationId": "get_session_api_v1_sessions__session_id__get",
+        "operationId": "get_session",
         "parameters": [
           {
             "in": "path",
@@ -38270,7 +38227,7 @@
         }
       },
       "patch": {
-        "operationId": "update_session_api_v1_sessions__session_id__patch",
+        "operationId": "update_session",
         "parameters": [
           {
             "in": "path",
@@ -38366,7 +38323,7 @@
     },
     "/api/v1/sessions/{session_id}/message-authors": {
       "get": {
-        "operationId": "get_message_authors_api_v1_sessions__session_id__message_authors_get",
+        "operationId": "get_message_authors",
         "parameters": [
           {
             "in": "path",
@@ -38454,7 +38411,7 @@
     "/api/v1/sessions/{session_id}/stream": {
       "get": {
         "description": "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes. Every connection starts from a snapshot.",
-        "operationId": "session_stream_api_v1_sessions__session_id__stream_get",
+        "operationId": "session_stream",
         "parameters": [
           {
             "in": "path",
@@ -38517,7 +38474,7 @@
     "/api/v1/skills": {
       "get": {
         "description": "Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of\nsource the default revision was read from; `archived` keeps only archived skills, or only open ones.",
-        "operationId": "list_skills_api_v1_skills_get",
+        "operationId": "list_skills",
         "parameters": [
           {
             "in": "query",
@@ -38678,7 +38635,7 @@
         }
       },
       "post": {
-        "operationId": "create_skill_api_v1_skills_post",
+        "operationId": "create_skill",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -38752,7 +38709,7 @@
     "/api/v1/skills/validate": {
       "post": {
         "description": "The manifest the package would give a new skill or revision, checked as creation checks it; nothing is\nstored.",
-        "operationId": "validate_package_api_v1_skills_validate_post",
+        "operationId": "validate_skill",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -38812,7 +38769,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Validate Package",
+        "summary": "Validate Skill",
         "tags": [
           "skills"
         ],
@@ -38825,7 +38782,7 @@
     },
     "/api/v1/skills/{skill_id}": {
       "get": {
-        "operationId": "get_skill_api_v1_skills__skill_id__get",
+        "operationId": "get_skill",
         "parameters": [
           {
             "in": "path",
@@ -38895,7 +38852,7 @@
       },
       "patch": {
         "description": "Name, description and labels; an archived skill changes only by unarchiving.",
-        "operationId": "update_skill_api_v1_skills__skill_id__patch",
+        "operationId": "update_skill",
         "parameters": [
           {
             "in": "path",
@@ -38997,7 +38954,7 @@
     "/api/v1/skills/{skill_id}/archive": {
       "post": {
         "description": "Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins.",
-        "operationId": "archive_skill_api_v1_skills__skill_id__archive_post",
+        "operationId": "archive_skill",
         "parameters": [
           {
             "in": "path",
@@ -39088,7 +39045,7 @@
     },
     "/api/v1/skills/{skill_id}/revisions": {
       "get": {
-        "operationId": "list_revisions_api_v1_skills__skill_id__revisions_get",
+        "operationId": "list_skill_revisions",
         "parameters": [
           {
             "in": "path",
@@ -39174,7 +39131,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Revisions",
+        "summary": "List Skill Revisions",
         "tags": [
           "skills"
         ],
@@ -39186,7 +39143,7 @@
       },
       "post": {
         "description": "A package whose manifest equals the default revision's creates nothing and returns that revision.",
-        "operationId": "create_revision_api_v1_skills__skill_id__revisions_post",
+        "operationId": "create_skill_revision",
         "parameters": [
           {
             "in": "path",
@@ -39274,7 +39231,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Revision",
+        "summary": "Create Skill Revision",
         "tags": [
           "skills"
         ],
@@ -39287,7 +39244,7 @@
     },
     "/api/v1/skills/{skill_id}/revisions/{revision_id}": {
       "get": {
-        "operationId": "get_revision_api_v1_skills__skill_id__revisions__revision_id__get",
+        "operationId": "get_skill_revision",
         "parameters": [
           {
             "in": "path",
@@ -39354,7 +39311,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Revision",
+        "summary": "Get Skill Revision",
         "tags": [
           "skills"
         ],
@@ -39368,7 +39325,7 @@
     "/api/v1/skills/{skill_id}/revisions/{revision_id}/content": {
       "get": {
         "description": "The revision's package as a zip archive.",
-        "operationId": "read_archive_api_v1_skills__skill_id__revisions__revision_id__content_get",
+        "operationId": "read_skill_archive",
         "parameters": [
           {
             "in": "path",
@@ -39436,7 +39393,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Read Archive",
+        "summary": "Read Skill Archive",
         "tags": [
           "skills"
         ]
@@ -39445,7 +39402,7 @@
     "/api/v1/skills/{skill_id}/revisions/{revision_id}/files/{path}": {
       "get": {
         "description": "One package file, by the path the revision's manifest lists.",
-        "operationId": "read_file_api_v1_skills__skill_id__revisions__revision_id__files__path__get",
+        "operationId": "read_skill_file",
         "parameters": [
           {
             "in": "path",
@@ -39522,7 +39479,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Read File",
+        "summary": "Read Skill File",
         "tags": [
           "skills"
         ]
@@ -39530,7 +39487,7 @@
     },
     "/api/v1/skills/{skill_id}/revisions/{revision_id}/set-default": {
       "post": {
-        "operationId": "set_default_revision_api_v1_skills__skill_id__revisions__revision_id__set_default_post",
+        "operationId": "set_default_skill_revision",
         "parameters": [
           {
             "in": "path",
@@ -39617,7 +39574,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Set Default Revision",
+        "summary": "Set Default Skill Revision",
         "tags": [
           "skills"
         ],
@@ -39630,7 +39587,7 @@
     },
     "/api/v1/skills/{skill_id}/unarchive": {
       "post": {
-        "operationId": "unarchive_skill_api_v1_skills__skill_id__unarchive_post",
+        "operationId": "unarchive_skill",
         "parameters": [
           {
             "in": "path",
@@ -39721,7 +39678,7 @@
     },
     "/api/v1/subscriptions": {
       "get": {
-        "operationId": "list_subscriptions_api_v1_subscriptions_get",
+        "operationId": "list_subscriptions",
         "parameters": [
           {
             "in": "query",
@@ -39806,7 +39763,7 @@
       },
       "post": {
         "description": "The response is the only time the signing secret is returned.",
-        "operationId": "create_subscription_api_v1_subscriptions_post",
+        "operationId": "create_subscription",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -39875,7 +39832,7 @@
     },
     "/api/v1/subscriptions/{subscription_id}": {
       "delete": {
-        "operationId": "delete_subscription_api_v1_subscriptions__subscription_id__delete",
+        "operationId": "delete_subscription",
         "parameters": [
           {
             "in": "path",
@@ -39953,7 +39910,7 @@
         "x-a13n-mcp": true
       },
       "get": {
-        "operationId": "get_subscription_api_v1_subscriptions__subscription_id__get",
+        "operationId": "get_subscription",
         "parameters": [
           {
             "in": "path",
@@ -40018,7 +39975,7 @@
         "x-a13n-mcp": true
       },
       "patch": {
-        "operationId": "update_subscription_api_v1_subscriptions__subscription_id__patch",
+        "operationId": "update_subscription",
         "parameters": [
           {
             "in": "path",
@@ -40115,7 +40072,7 @@
     },
     "/api/v1/subscriptions/{subscription_id}/deliveries": {
       "get": {
-        "operationId": "list_deliveries_api_v1_subscriptions__subscription_id__deliveries_get",
+        "operationId": "list_deliveries",
         "parameters": [
           {
             "in": "path",
@@ -40210,7 +40167,7 @@
     },
     "/api/v1/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver": {
       "post": {
-        "operationId": "redeliver_api_v1_subscriptions__subscription_id__deliveries__delivery_id__redeliver_post",
+        "operationId": "redeliver",
         "parameters": [
           {
             "in": "path",
@@ -40287,7 +40244,7 @@
     },
     "/api/v1/threads": {
       "get": {
-        "operationId": "list_threads_api_v1_threads_get",
+        "operationId": "list_threads",
         "parameters": [
           {
             "in": "query",
@@ -40428,7 +40385,7 @@
       },
       "post": {
         "description": "Create a thread (and its session unless one is named) with its first message.",
-        "operationId": "create_thread_api_v1_threads_post",
+        "operationId": "create_thread",
         "parameters": [
           {
             "in": "header",
@@ -40518,7 +40475,7 @@
     },
     "/api/v1/threads/{thread_id}": {
       "get": {
-        "operationId": "get_thread_api_v1_threads__thread_id__get",
+        "operationId": "get_thread",
         "parameters": [
           {
             "in": "path",
@@ -40587,7 +40544,7 @@
         }
       },
       "patch": {
-        "operationId": "update_thread_api_v1_threads__thread_id__patch",
+        "operationId": "update_thread",
         "parameters": [
           {
             "in": "path",
@@ -40683,7 +40640,7 @@
     },
     "/api/v1/threads/{thread_id}/archive": {
       "post": {
-        "operationId": "archive_thread_api_v1_threads__thread_id__archive_post",
+        "operationId": "archive_thread",
         "parameters": [
           {
             "in": "path",
@@ -40769,7 +40726,7 @@
     },
     "/api/v1/threads/{thread_id}/environments": {
       "get": {
-        "operationId": "list_mounts_api_v1_threads__thread_id__environments_get",
+        "operationId": "list_environment_mounts",
         "parameters": [
           {
             "in": "path",
@@ -40827,14 +40784,14 @@
             "loginSession": []
           }
         ],
-        "summary": "List Mounts",
+        "summary": "List Environment Mounts",
         "tags": [
           "environments"
         ],
         "x-a13n-mcp": true
       },
       "post": {
-        "operationId": "add_mount_api_v1_threads__thread_id__environments_post",
+        "operationId": "add_environment_mount",
         "parameters": [
           {
             "in": "path",
@@ -40922,7 +40879,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Add Mount",
+        "summary": "Add Environment Mount",
         "tags": [
           "environments"
         ],
@@ -40931,7 +40888,7 @@
     },
     "/api/v1/threads/{thread_id}/environments/{name}": {
       "delete": {
-        "operationId": "remove_mount_api_v1_threads__thread_id__environments__name__delete",
+        "operationId": "remove_environment_mount",
         "parameters": [
           {
             "in": "path",
@@ -41011,14 +40968,14 @@
             "loginSession": []
           }
         ],
-        "summary": "Remove Mount",
+        "summary": "Remove Environment Mount",
         "tags": [
           "environments"
         ],
         "x-a13n-mcp": true
       },
       "patch": {
-        "operationId": "update_mount_api_v1_threads__thread_id__environments__name__patch",
+        "operationId": "update_environment_mount",
         "parameters": [
           {
             "in": "path",
@@ -41115,7 +41072,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Mount",
+        "summary": "Update Environment Mount",
         "tags": [
           "environments"
         ],
@@ -41125,7 +41082,7 @@
     "/api/v1/threads/{thread_id}/inbox": {
       "get": {
         "description": "In inbox order.",
-        "operationId": "list_inbox_api_v1_threads__thread_id__inbox_get",
+        "operationId": "list_inbox",
         "parameters": [
           {
             "in": "path",
@@ -41254,7 +41211,7 @@
                       "$ref": "#/components/schemas/EntrySummaryPage"
                     }
                   ],
-                  "title": "Response List Inbox Api V1 Threads  Thread Id  Inbox Get"
+                  "title": "Response List Inbox"
                 }
               }
             },
@@ -41287,7 +41244,7 @@
       },
       "post": {
         "description": "Append a message; it starts a run at once when the thread can accept it, or steers the active run.",
-        "operationId": "submit_message_api_v1_threads__thread_id__inbox_post",
+        "operationId": "submit_message",
         "parameters": [
           {
             "in": "path",
@@ -41386,7 +41343,7 @@
     },
     "/api/v1/threads/{thread_id}/inbox/order": {
       "put": {
-        "operationId": "reorder_inbox_api_v1_threads__thread_id__inbox_order_put",
+        "operationId": "reorder_inbox",
         "parameters": [
           {
             "in": "path",
@@ -41483,7 +41440,7 @@
     "/api/v1/threads/{thread_id}/inbox/{entry_id}": {
       "delete": {
         "description": "Withdraw a pending entry; its tombstone keeps the request key.",
-        "operationId": "withdraw_entry_api_v1_threads__thread_id__inbox__entry_id__delete",
+        "operationId": "withdraw_entry",
         "parameters": [
           {
             "in": "path",
@@ -41577,7 +41534,7 @@
       },
       "get": {
         "description": "One entry and its disposition; edits name the thread's ETag.",
-        "operationId": "get_entry_api_v1_threads__thread_id__inbox__entry_id__get",
+        "operationId": "get_inbox_entry",
         "parameters": [
           {
             "in": "path",
@@ -41732,7 +41689,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Get Entry Api V1 Threads  Thread Id  Inbox  Entry Id  Get"
+                  "title": "Response Get Inbox Entry"
                 }
               }
             },
@@ -41753,7 +41710,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Entry",
+        "summary": "Get Inbox Entry",
         "tags": [
           "runs"
         ],
@@ -41764,7 +41721,7 @@
         }
       },
       "patch": {
-        "operationId": "edit_entry_api_v1_threads__thread_id__inbox__entry_id__patch",
+        "operationId": "edit_entry",
         "parameters": [
           {
             "in": "path",
@@ -41869,7 +41826,7 @@
     },
     "/api/v1/threads/{thread_id}/memories": {
       "get": {
-        "operationId": "list_mounts_api_v1_threads__thread_id__memories_get",
+        "operationId": "list_memory_mounts",
         "parameters": [
           {
             "in": "path",
@@ -41927,13 +41884,13 @@
             "loginSession": []
           }
         ],
-        "summary": "List Mounts",
+        "summary": "List Memory Mounts",
         "tags": [
           "memories"
         ]
       },
       "post": {
-        "operationId": "add_mount_api_v1_threads__thread_id__memories_post",
+        "operationId": "add_memory_mount",
         "parameters": [
           {
             "in": "path",
@@ -42021,7 +41978,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Add Mount",
+        "summary": "Add Memory Mount",
         "tags": [
           "memories"
         ]
@@ -42029,7 +41986,7 @@
     },
     "/api/v1/threads/{thread_id}/memories/{name}": {
       "delete": {
-        "operationId": "remove_mount_api_v1_threads__thread_id__memories__name__delete",
+        "operationId": "remove_memory_mount",
         "parameters": [
           {
             "in": "path",
@@ -42109,13 +42066,13 @@
             "loginSession": []
           }
         ],
-        "summary": "Remove Mount",
+        "summary": "Remove Memory Mount",
         "tags": [
           "memories"
         ]
       },
       "patch": {
-        "operationId": "update_mount_api_v1_threads__thread_id__memories__name__patch",
+        "operationId": "update_memory_mount",
         "parameters": [
           {
             "in": "path",
@@ -42212,7 +42169,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Mount",
+        "summary": "Update Memory Mount",
         "tags": [
           "memories"
         ]
@@ -42221,7 +42178,7 @@
     "/api/v1/threads/{thread_id}/runs": {
       "get": {
         "description": "Newest first.",
-        "operationId": "list_thread_runs_api_v1_threads__thread_id__runs_get",
+        "operationId": "list_thread_runs",
         "parameters": [
           {
             "in": "path",
@@ -42311,7 +42268,7 @@
                       "$ref": "#/components/schemas/RunSummaryPage"
                     }
                   ],
-                  "title": "Response List Thread Runs Api V1 Threads  Thread Id  Runs Get"
+                  "title": "Response List Thread Runs"
                 }
               }
             },
@@ -42346,7 +42303,7 @@
     "/api/v1/threads/{thread_id}/stream": {
       "get": {
         "description": "Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.\nResumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.",
-        "operationId": "thread_stream_api_v1_threads__thread_id__stream_get",
+        "operationId": "thread_stream",
         "parameters": [
           {
             "in": "path",
@@ -42458,7 +42415,7 @@
     },
     "/api/v1/toolsets": {
       "get": {
-        "operationId": "list_toolsets_api_v1_toolsets_get",
+        "operationId": "list_toolsets",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -42521,7 +42478,7 @@
     "/api/v1/toolsets/definitions": {
       "get": {
         "description": "Read up to five exact definitions. Oversized values provide a versioned fragment reference.",
-        "operationId": "define_toolsets_api_v1_toolsets_definitions_get",
+        "operationId": "define_toolsets",
         "parameters": [
           {
             "description": "Exact names; repeat name to select up to five definitions.",
@@ -42643,7 +42600,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Define Toolsets Api V1 Toolsets Definitions Get"
+                  "title": "Response Define Toolsets"
                 }
               }
             },
@@ -42678,7 +42635,7 @@
     "/api/v1/toolsets/index": {
       "get": {
         "description": "Search full names and descriptions; definitions are read separately by exact name.",
-        "operationId": "index_toolsets_api_v1_toolsets_index_get",
+        "operationId": "index_toolsets",
         "parameters": [
           {
             "description": "Case-insensitive substring of full names and descriptions.",
@@ -42789,7 +42746,7 @@
     "/api/v1/trace-backend": {
       "get": {
         "description": "The backend trace queries read, and how far back they find a trace.",
-        "operationId": "get_trace_backend_api_v1_trace_backend_get",
+        "operationId": "get_trace_backend",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -42852,7 +42809,7 @@
     "/api/v1/traces": {
       "get": {
         "description": "Trace root spans, one per attempt. A cursor keeps the window of the first page.",
-        "operationId": "list_traces_api_v1_traces_get",
+        "operationId": "list_traces",
         "parameters": [
           {
             "in": "query",
@@ -43096,7 +43053,7 @@
                       "$ref": "#/components/schemas/SpanReadPage"
                     }
                   ],
-                  "title": "Response List Traces Api V1 Traces Get"
+                  "title": "Response List Traces"
                 }
               }
             },
@@ -43131,7 +43088,7 @@
     "/api/v1/traces/{trace_id}": {
       "get": {
         "description": "The trace's root span.",
-        "operationId": "get_trace_api_v1_traces__trace_id__get",
+        "operationId": "get_trace",
         "parameters": [
           {
             "in": "path",
@@ -43282,7 +43239,7 @@
                       "$ref": "#/components/schemas/TextRead"
                     }
                   ],
-                  "title": "Response Get Trace Api V1 Traces  Trace Id  Get"
+                  "title": "Response Get Trace"
                 }
               }
             },
@@ -43317,7 +43274,7 @@
     "/api/v1/traces/{trace_id}/spans": {
       "get": {
         "description": "The trace's spans.",
-        "operationId": "list_trace_spans_api_v1_traces__trace_id__spans_get",
+        "operationId": "list_trace_spans",
         "parameters": [
           {
             "in": "path",
@@ -43462,7 +43419,7 @@
                       "$ref": "#/components/schemas/SpanReadPage"
                     }
                   ],
-                  "title": "Response List Trace Spans Api V1 Traces  Trace Id  Spans Get"
+                  "title": "Response List Trace Spans"
                 }
               }
             },
@@ -43497,7 +43454,7 @@
     "/api/v1/traces/{trace_id}/spans/{span_id}/content": {
       "get": {
         "description": "Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's\ncursor while continuing fragments with version and next_offset.",
-        "operationId": "read_span_content_api_v1_traces__trace_id__spans__span_id__content_get",
+        "operationId": "read_span_content",
         "parameters": [
           {
             "in": "path",
@@ -43682,7 +43639,7 @@
     "/api/v1/uploads": {
       "post": {
         "description": "Repeating a request with the same `Idempotency-Key` and bytes returns the same upload.",
-        "operationId": "create_upload_api_v1_uploads_post",
+        "operationId": "create_upload",
         "parameters": [
           {
             "in": "header",
@@ -43762,7 +43719,7 @@
     },
     "/api/v1/usage": {
       "get": {
-        "operationId": "summarize_usage_api_v1_usage_get",
+        "operationId": "summarize_usage",
         "parameters": [
           {
             "in": "query",
@@ -43908,7 +43865,7 @@
     },
     "/api/v1/usage/agents": {
       "get": {
-        "operationId": "usage_agents_api_v1_usage_agents_get",
+        "operationId": "usage_agents",
         "parameters": [
           {
             "in": "query",
@@ -44014,7 +43971,7 @@
     },
     "/api/v1/usage/context": {
       "get": {
-        "operationId": "context_usage_api_v1_usage_context_get",
+        "operationId": "context_usage",
         "parameters": [
           {
             "in": "query",
@@ -44104,7 +44061,7 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Context Usage Api V1 Usage Context Get"
+                  "title": "Response Context Usage"
                 }
               }
             },
@@ -44134,7 +44091,7 @@
     },
     "/api/v1/usage/models": {
       "get": {
-        "operationId": "usage_models_api_v1_usage_models_get",
+        "operationId": "usage_models",
         "parameters": [
           {
             "in": "query",
@@ -44240,7 +44197,7 @@
     },
     "/api/v1/usage/overview": {
       "get": {
-        "operationId": "usage_overview_api_v1_usage_overview_get",
+        "operationId": "usage_overview",
         "parameters": [
           {
             "in": "query",
@@ -44328,7 +44285,7 @@
     },
     "/api/v1/usage/records/{record_id}/metrics": {
       "get": {
-        "operationId": "model_request_metrics_api_v1_usage_records__record_id__metrics_get",
+        "operationId": "model_request_metrics",
         "parameters": [
           {
             "in": "path",
@@ -44395,7 +44352,7 @@
     },
     "/api/v1/users/me": {
       "get": {
-        "operationId": "get_profile_api_v1_users_me_get",
+        "operationId": "get_profile",
         "responses": {
           "200": {
             "content": {
@@ -44426,7 +44383,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_profile_api_v1_users_me_patch",
+        "operationId": "update_profile",
         "parameters": [
           {
             "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
@@ -44495,7 +44452,7 @@
     "/api/v1/users/me/audit-events": {
       "get": {
         "description": "The caller's own trail, account-wide events included; requires a login session.",
-        "operationId": "list_account_audit_events_api_v1_users_me_audit_events_get",
+        "operationId": "list_account_audit_events",
         "parameters": [
           {
             "in": "query",
@@ -44561,7 +44518,7 @@
     },
     "/api/v1/users/me/avatar": {
       "delete": {
-        "operationId": "delete_avatar_api_v1_users_me_avatar_delete",
+        "operationId": "delete_user_avatar",
         "parameters": [
           {
             "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
@@ -44610,14 +44567,14 @@
             "loginSession": []
           }
         ],
-        "summary": "Delete Avatar",
+        "summary": "Delete User Avatar",
         "tags": [
           "auth",
           "tenancy"
         ]
       },
       "put": {
-        "operationId": "put_avatar_api_v1_users_me_avatar_put",
+        "operationId": "put_user_avatar",
         "parameters": [
           {
             "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
@@ -44689,7 +44646,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Put Avatar",
+        "summary": "Put User Avatar",
         "tags": [
           "auth",
           "tenancy"
@@ -44699,7 +44656,7 @@
     "/api/v1/users/me/disable": {
       "post": {
         "description": "Disable the caller's own account, proven by the current password; no route enables it again.",
-        "operationId": "disable_account_api_v1_users_me_disable_post",
+        "operationId": "disable_account",
         "requestBody": {
           "content": {
             "application/json": {
@@ -44739,7 +44696,7 @@
     },
     "/api/v1/users/me/keys": {
       "get": {
-        "operationId": "list_user_keys_api_v1_users_me_keys_get",
+        "operationId": "list_user_keys",
         "parameters": [
           {
             "in": "query",
@@ -44820,7 +44777,7 @@
       },
       "post": {
         "description": "Needs a login session: an API key never issues keys, so a leaked key cannot outlive its revocation.",
-        "operationId": "create_user_key_api_v1_users_me_keys_post",
+        "operationId": "create_user_key",
         "requestBody": {
           "content": {
             "application/json": {
@@ -44867,7 +44824,7 @@
     },
     "/api/v1/users/me/keys/{key_id}": {
       "delete": {
-        "operationId": "revoke_user_key_api_v1_users_me_keys__key_id__delete",
+        "operationId": "revoke_user_key",
         "parameters": [
           {
             "in": "path",
@@ -44934,7 +44891,7 @@
     },
     "/api/v1/users/me/login-sessions": {
       "get": {
-        "operationId": "list_login_sessions_api_v1_users_me_login_sessions_get",
+        "operationId": "list_login_sessions",
         "parameters": [
           {
             "in": "query",
@@ -45000,7 +44957,7 @@
     },
     "/api/v1/users/me/login-sessions/{session_id}": {
       "delete": {
-        "operationId": "revoke_login_session_api_v1_users_me_login_sessions__session_id__delete",
+        "operationId": "revoke_login_session",
         "parameters": [
           {
             "in": "path",
@@ -45041,7 +44998,7 @@
     },
     "/api/v1/users/me/password": {
       "post": {
-        "operationId": "change_password_api_v1_users_me_password_post",
+        "operationId": "change_password",
         "requestBody": {
           "content": {
             "application/json": {
@@ -45081,7 +45038,7 @@
     },
     "/api/v1/users/{user_id}/avatar": {
       "get": {
-        "operationId": "get_avatar_api_v1_users__user_id__avatar_get",
+        "operationId": "get_user_avatar",
         "parameters": [
           {
             "in": "path",
@@ -45132,7 +45089,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Avatar",
+        "summary": "Get User Avatar",
         "tags": [
           "auth",
           "tenancy"
@@ -45141,7 +45098,7 @@
     },
     "/api/v1/web-providers": {
       "get": {
-        "operationId": "list_providers_api_v1_web_providers_get",
+        "operationId": "list_web_providers",
         "parameters": [
           {
             "in": "query",
@@ -45229,7 +45186,7 @@
         }
       },
       "post": {
-        "operationId": "create_provider_api_v1_web_providers_post",
+        "operationId": "create_web_provider",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -45298,7 +45255,7 @@
     },
     "/api/v1/web-providers/{provider_id}": {
       "get": {
-        "operationId": "get_provider_api_v1_web_providers__provider_id__get",
+        "operationId": "get_web_provider",
         "parameters": [
           {
             "in": "path",
@@ -45368,7 +45325,7 @@
       },
       "patch": {
         "description": "Omitted credentials and extra headers keep their saved values, including when `config` changes.",
-        "operationId": "update_provider_api_v1_web_providers__provider_id__patch",
+        "operationId": "update_web_provider",
         "parameters": [
           {
             "in": "path",
@@ -45465,7 +45422,7 @@
     },
     "/api/v1/web-providers/{provider_id}/test": {
       "post": {
-        "operationId": "test_provider_api_v1_web_providers__provider_id__test_post",
+        "operationId": "test_web_provider",
         "parameters": [
           {
             "in": "path",
@@ -45537,7 +45494,7 @@
     },
     "/api/v1/workspaces": {
       "get": {
-        "operationId": "list_workspaces_api_v1_workspaces_get",
+        "operationId": "list_workspaces",
         "parameters": [
           {
             "in": "query",
@@ -45602,7 +45559,7 @@
     },
     "/api/v1/workspaces/{workspace_id}": {
       "get": {
-        "operationId": "get_workspace_api_v1_workspaces__workspace_id__get",
+        "operationId": "get_workspace",
         "parameters": [
           {
             "in": "path",
@@ -45646,7 +45603,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_workspace_api_v1_workspaces__workspace_id__patch",
+        "operationId": "update_workspace",
         "parameters": [
           {
             "in": "path",
@@ -45722,7 +45679,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/archive": {
       "post": {
-        "operationId": "archive_workspace_api_v1_workspaces__workspace_id__archive_post",
+        "operationId": "archive_workspace",
         "parameters": [
           {
             "in": "path",
@@ -45788,7 +45745,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/audit-events": {
       "get": {
-        "operationId": "list_workspace_audit_events_api_v1_workspaces__workspace_id__audit_events_get",
+        "operationId": "list_workspace_audit_events",
         "parameters": [
           {
             "in": "path",
@@ -45862,7 +45819,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/grants": {
       "get": {
-        "operationId": "list_workspace_grants_api_v1_workspaces__workspace_id__grants_get",
+        "operationId": "list_workspace_grants",
         "parameters": [
           {
             "in": "path",
@@ -45934,7 +45891,7 @@
         ]
       },
       "post": {
-        "operationId": "create_workspace_grant_api_v1_workspaces__workspace_id__grants_post",
+        "operationId": "create_workspace_grant",
         "parameters": [
           {
             "in": "path",
@@ -45991,7 +45948,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/grants/{grant_id}": {
       "delete": {
-        "operationId": "delete_workspace_grant_api_v1_workspaces__workspace_id__grants__grant_id__delete",
+        "operationId": "delete_workspace_grant",
         "parameters": [
           {
             "in": "path",
@@ -46039,7 +45996,7 @@
       },
       "patch": {
         "description": "The grant is replaced: the result carries its new ID.",
-        "operationId": "change_workspace_grant_api_v1_workspaces__workspace_id__grants__grant_id__patch",
+        "operationId": "change_workspace_grant",
         "parameters": [
           {
             "in": "path",
@@ -46105,7 +46062,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/icon": {
       "delete": {
-        "operationId": "delete_workspace_icon_api_v1_workspaces__workspace_id__icon_delete",
+        "operationId": "delete_workspace_icon",
         "parameters": [
           {
             "in": "path",
@@ -46169,7 +46126,7 @@
         ]
       },
       "get": {
-        "operationId": "get_workspace_icon_api_v1_workspaces__workspace_id__icon_get",
+        "operationId": "get_workspace_icon",
         "parameters": [
           {
             "in": "path",
@@ -46226,7 +46183,7 @@
         ]
       },
       "put": {
-        "operationId": "put_workspace_icon_api_v1_workspaces__workspace_id__icon_put",
+        "operationId": "put_workspace_icon",
         "parameters": [
           {
             "in": "path",
@@ -46315,7 +46272,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/invitations": {
       "get": {
-        "operationId": "list_workspace_invitations_api_v1_workspaces__workspace_id__invitations_get",
+        "operationId": "list_workspace_invitations",
         "parameters": [
           {
             "in": "path",
@@ -46387,7 +46344,7 @@
         ]
       },
       "post": {
-        "operationId": "create_workspace_invitation_api_v1_workspaces__workspace_id__invitations_post",
+        "operationId": "create_workspace_invitation",
         "parameters": [
           {
             "in": "path",
@@ -46444,7 +46401,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/resend": {
       "post": {
-        "operationId": "resend_workspace_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__resend_post",
+        "operationId": "resend_workspace_invitation",
         "parameters": [
           {
             "in": "path",
@@ -46519,7 +46476,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/revoke": {
       "post": {
-        "operationId": "revoke_workspace_invitation_api_v1_workspaces__workspace_id__invitations__invitation_id__revoke_post",
+        "operationId": "revoke_workspace_invitation",
         "parameters": [
           {
             "in": "path",
@@ -46594,7 +46551,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/keys": {
       "get": {
-        "operationId": "list_workspace_keys_api_v1_workspaces__workspace_id__keys_get",
+        "operationId": "list_workspace_keys",
         "parameters": [
           {
             "in": "path",
@@ -46684,7 +46641,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/keys/{key_id}": {
       "delete": {
-        "operationId": "revoke_workspace_key_api_v1_workspaces__workspace_id__keys__key_id__delete",
+        "operationId": "revoke_workspace_key",
         "parameters": [
           {
             "in": "path",
@@ -46759,7 +46716,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/service-accounts": {
       "get": {
-        "operationId": "list_service_accounts_api_v1_workspaces__workspace_id__service_accounts_get",
+        "operationId": "list_service_accounts",
         "parameters": [
           {
             "in": "path",
@@ -46831,7 +46788,7 @@
         ]
       },
       "post": {
-        "operationId": "create_service_account_api_v1_workspaces__workspace_id__service_accounts_post",
+        "operationId": "create_service_account",
         "parameters": [
           {
             "in": "path",
@@ -46888,7 +46845,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/service-accounts/{account_id}": {
       "delete": {
-        "operationId": "delete_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__delete",
+        "operationId": "delete_service_account",
         "parameters": [
           {
             "in": "path",
@@ -46961,7 +46918,7 @@
         ]
       },
       "get": {
-        "operationId": "get_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__get",
+        "operationId": "get_service_account",
         "parameters": [
           {
             "in": "path",
@@ -47014,7 +46971,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_service_account_api_v1_workspaces__workspace_id__service_accounts__account_id__patch",
+        "operationId": "update_service_account",
         "parameters": [
           {
             "in": "path",
@@ -47099,7 +47056,7 @@
     },
     "/api/v1/workspaces/{workspace_id}/service-accounts/{account_id}/keys": {
       "get": {
-        "operationId": "list_service_account_keys_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_get",
+        "operationId": "list_service_account_keys",
         "parameters": [
           {
             "in": "path",
@@ -47181,7 +47138,7 @@
       },
       "post": {
         "description": "Needs a login session: an API key never issues keys, so a leaked key cannot outlive its revocation.",
-        "operationId": "create_service_account_key_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_post",
+        "operationId": "create_service_account_key",
         "parameters": [
           {
             "in": "path",
@@ -47247,7 +47204,7 @@
     },
     "/healthz": {
       "get": {
-        "operationId": "health_healthz_get",
+        "operationId": "health",
         "responses": {
           "200": {
             "content": {
@@ -47256,7 +47213,7 @@
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "title": "Response Health Healthz Get",
+                  "title": "Response Health",
                   "type": "object"
                 }
               }
@@ -47270,7 +47227,7 @@
     "/readyz": {
       "get": {
         "description": "Ready while started and the database holds a usable schema. Redis only speeds work up, so losing it\nis reported as degraded rather than taking the replica out of service.",
-        "operationId": "ready_readyz_get",
+        "operationId": "ready",
         "responses": {
           "200": {
             "content": {

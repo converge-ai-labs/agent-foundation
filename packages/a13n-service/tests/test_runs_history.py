@@ -238,9 +238,9 @@ async def test_sessions_list_most_recently_updated_first_and_refuse_malformed_fi
 
 
 async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"tools": {"find": {}}}})
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     for number in range(16):
-        scripted_model.call("find_resources", {"kind": "model"}, call_id=f"call_{number}")
+        runs_kit.lookup(scripted_model, call_id=f"call_{number}")
     scripted_model.say("Found them")
     run_id = (await runs_kit.start_thread(service, agent, "find"))["run"]["id"]
     settings = service.runtime.settings

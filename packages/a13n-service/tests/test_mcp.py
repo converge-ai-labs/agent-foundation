@@ -219,6 +219,21 @@ async def test_distribution_authentication_and_explicit_operation_admission(
             assert (await http.get("/api/v1/extension/selected")).status_code == 403
 
 
+def test_operations_take_route_names_and_a_duplicate_fails_assembly() -> None:
+    settings = Settings()
+    schema = build_app(role="control", settings=settings).openapi()
+    assert schema["paths"]["/api/v1/agents/{agent_id}/revisions"]["get"]["operationId"] == "list_agent_revisions"
+    router = APIRouter(prefix="/api/v1/extension")
+
+    @router.get("/agents")
+    async def list_agents() -> dict[str, str]:
+        return {}
+
+    distribution = OSS.extend(Distribution(name="extension", routers=(router,), authenticator=LocalAuthenticator()))
+    with pytest.raises(ValueError, match="list_agents"):
+        build_app(distribution, role="control", settings=settings)
+
+
 def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     settings = Settings()
     worker = build_app(role="worker", settings=settings)
@@ -251,11 +266,11 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     } <= selected
     assert {
         ("/api/v1/findings", "get"),
+        ("/api/v1/findings", "post"),
         ("/api/v1/findings/{finding_id}", "get"),
         ("/api/v1/finding-analyses", "get"),
     } <= selected
     assert {
-        ("/api/v1/findings", "post"),
         ("/api/v1/findings/{finding_id}", "patch"),
         ("/api/v1/finding-analyses", "post"),
         ("/api/v1/finding-agent", "post"),

@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1/environment-templates", tags=["environments"]
 @router.post(
     "", response_model=Template, status_code=201, openapi_extra=platform_operation("environment_templates", "write")
 )
-async def create_template(
+async def create_environment_template(
     response: Response, workspace_id: WorkspaceId, body: TemplateCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     result = await service.create_template(runtime.storage, actor, workspace_id, body, registry=runtime.registry)
@@ -25,7 +25,7 @@ async def create_template(
 
 
 @router.get("", response_model=TemplatePage, openapi_extra=platform_operation("environment_templates", "read"))
-async def list_templates(
+async def list_environment_templates(
     workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -41,7 +41,7 @@ async def list_templates(
 @router.get(
     "/{template_id}", response_model=Template, openapi_extra=platform_operation("environment_templates", "read")
 )
-async def get_template(
+async def get_environment_template(
     response: Response, workspace_id: WorkspaceId, template_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     return tagged(response, await service.get_template(runtime.storage, actor, workspace_id, template_id))
@@ -50,7 +50,7 @@ async def get_template(
 @router.patch(
     "/{template_id}", response_model=Template, openapi_extra=platform_operation("environment_templates", "write")
 )
-async def update_template(
+async def update_environment_template(
     response: Response,
     workspace_id: WorkspaceId,
     template_id: str,

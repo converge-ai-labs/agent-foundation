@@ -1,7 +1,7 @@
 """Fictional Findings scenarios and a deterministic analyst for the local scripted model.
 
-The analyst reads the selected real traces before submitting through ordinary builtin tools. It recognizes
-only these explicit preview markers; other local traces receive no canned diagnosis.
+The analyst reads the selected real traces before submitting through the Finding Agent's platform tools. It
+recognizes only these explicit preview markers; other local traces receive no canned diagnosis.
 """
 
 from __future__ import annotations
@@ -9,6 +9,11 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+
+# The platform tools of the trace reads and the finding submission, named after their operation IDs.
+READ_TRACE = "get_trace"
+READ_SPANS = "list_trace_spans"
+SUBMIT = "create_finding"
 
 EXAMPLES = {
     "shipping": {
@@ -61,8 +66,8 @@ def steps(messages: list[dict], prompt: str) -> list[tuple[str, dict]]:
     selected, targets = parsed
     analysis_id = re.search(r"Analysis (fan_\w+)", prompt)
     assert analysis_id is not None
-    reads = [("read_trace", {"trace_id": item["trace_id"]}) for item in selected]
-    reads += [("read_trace_spans", {"trace_id": item["trace_id"]}) for item in selected]
+    reads = [(READ_TRACE, {"trace_id": item["trace_id"]}) for item in selected]
+    reads += [(READ_SPANS, {"trace_id": item["trace_id"]}) for item in selected]
     roots: dict[str, dict] = {}
     for message in messages:
         if message.get("role") != "tool":
@@ -71,6 +76,8 @@ def steps(messages: list[dict], prompt: str) -> list[tuple[str, dict]]:
             value = json.loads(message.get("content") or "{}")
         except (TypeError, ValueError):
             continue
+        # A platform tool result carries the HTTP response body.
+        value = value.get("body") if isinstance(value, dict) else None
         if isinstance(value, dict) and "trace_id" in value and "attributes" in value:
             roots[value["trace_id"]] = value
     submissions = []
@@ -91,5 +98,5 @@ def steps(messages: list[dict], prompt: str) -> list[tuple[str, dict]]:
                 "limitations": "Fictional local scripted example; one selected execution is cited. This is deterministic preview data, not a model-quality benchmark.",
                 "source_key": f"{analysis_id[1]}:{key}",
             }
-            submissions.append(("submit_finding", {"finding": finding}))
+            submissions.append((SUBMIT, {"request_body": finding}))
     return reads + submissions

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/v1/threads/{thread_id}/memories", tags=["memorie
 
 
 @router.get("", response_model=MemoryMountPage)
-async def list_mounts(
+async def list_memory_mounts(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, thread_id: str, actor: Actor
 ) -> MemoryMountPage:
     page, version = await mounts.list_mounts(runtime.storage, actor, workspace_id, thread_id)
@@ -22,7 +22,7 @@ async def list_mounts(
 
 
 @router.post("", response_model=MemoryMount, status_code=201)
-async def add_mount(
+async def add_memory_mount(
     runtime: CurrentRuntime,
     response: Response,
     workspace_id: WorkspaceId,
@@ -45,7 +45,7 @@ async def add_mount(
 
 
 @router.patch("/{name}", response_model=MemoryMount)
-async def update_mount(
+async def update_memory_mount(
     runtime: CurrentRuntime,
     response: Response,
     workspace_id: WorkspaceId,
@@ -63,7 +63,7 @@ async def update_mount(
 
 
 @router.delete("/{name}", status_code=204)
-async def remove_mount(
+async def remove_memory_mount(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     thread_id: str,

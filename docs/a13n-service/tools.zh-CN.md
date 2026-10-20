@@ -3,9 +3,10 @@ title: 工具与连接
 description: 为 agent 配置内置工具集、MCP 和应用连接、客户端工具以及 skill。
 ---
 
-Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agent-configuration)中选择：
+Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agent-configuration)中选择：
 
-- **内置工具集：** 由 Service 自身执行，包括文件、终端、web、记忆、资产发布、agent 配置、trace 查询和发现项。
+- **内置工具集：** 由 Service 自身执行，包括文件、终端、电脑、web、记忆和资产发布。
+- **平台工具：** Service API 操作，例如 agent 配置、运行查询和发现项提交。参阅[平台工具](#platform-tools)。
 - **连接：** 远程 MCP 服务器，以及 Composio 等 connector provider 的应用账号。
 - **客户端工具：** 由你的应用执行，并通过[恢复](agents-and-runs.md#waits-approvals-and-questions)提交结果。
 - **Skill：** 添加指令和文件；参阅 [Skill](skills.md)。
@@ -16,25 +17,34 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 
 `GET /api/v1/toolsets` 返回工具目录，包括各工具的 key、模型可见名称、默认状态与权限，以及配置 schema。
 
-| 工具集          | 工具（模型可见名称）                                                                                                                                                                                                                | 默认状态                                       |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `files`         | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                                                                                      | 启用                                           |
-| `shell`（终端） | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                                                                             | 启用                                           |
-| `computer`      | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys`, `computer_read_clipboard`, `computer_write_clipboard` | 禁用；还需要明确的环境挂载权限                 |
-| `web`           | `search`, `scrape`, `fetch`, `download`                                                                                                                                                                                             | 各工具均禁用                                   |
-| `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                                                                       | 启用                                           |
-| `assets`        | `publish_asset`                                                                                                                                                                                                                     | 禁用                                           |
-| `configuration` | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                                                                                                                 | 禁用；参阅 [Agent Composer](agent-composer.md) |
-| `traces`        | `list_traces`, `read_trace`, `read_trace_spans`                                                                                                                                                                                     | 禁用                                           |
-| `findings`      | `read_finding`, `submit_finding`                                                                                                                                                                                                    | 禁用                                           |
+| 工具集          | 工具（模型可见名称）                                                                                                                                                                                                                | 默认状态                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `files`         | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                                                                                      | 启用                           |
+| `shell`（终端） | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                                                                             | 启用                           |
+| `computer`      | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys`, `computer_read_clipboard`, `computer_write_clipboard` | 禁用；还需要明确的环境挂载权限 |
+| `web`           | `search`, `scrape`, `fetch`, `download`                                                                                                                                                                                             | 各工具均禁用                   |
+| `memory`        | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                                                                       | 启用                           |
+| `assets`        | `publish_asset`                                                                                                                                                                                                                     | 禁用                           |
 
 电脑工具需要兼容的桌面，以及挂载环境上明确授予的动作权限。开启方式和截图预览参阅 [Computer Use](environments.md#computer-use)。
 
-发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。不支持的值返回校验错误。发现类型与分析规则预设相互独立。
-
-配置、trace 查询和发现项提交工具位于 **高级 / 平台功能**下。工具集开关会保留各平台工具的独立选择。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
-
 文件和终端工具操作运行挂载的[环境](environments.md)，只有挂载环境时才提供给模型。记忆工具操作挂载的[记忆](memory.md)：文件工具用于文件型记忆，记录工具用于记录型记忆；`read` 挂载只提供查看、列出和搜索。`publish_asset` 将环境文件转换为工作空间[资产](files-and-webhooks.md#assets)。
+
+## 平台工具
+
+平台工具是 Service API 操作。运行使用自己的短期凭据调用它们，权限不超过启动运行的人或 key。每个组是 `toolsets` 中的一个工具集，组内每个操作是一个工具，键为它的 MCP 工具名。在 agent 工具的 **高级 / 平台功能**下选择。各组默认禁用；启用一个组会启用组内全部工具，然后可以关掉 agent 不需要的工具：
+
+| 组                      | 操作                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| `agents`                | Agent、其版本和工具集目录                                                                   |
+| `models`                | 模型和模型目录                                                                              |
+| `connections`           | 连接、其工具和 connector 应用                                                               |
+| `skills`                | Skill 及其版本                                                                              |
+| `environment_templates` | 环境模板                                                                                    |
+| `providers`             | Provider，以及对其已保存连接的测试                                                          |
+| `execution`             | Session、thread、run、trace 和发现项；唯一的写入操作是提交发现项（`POST /api/v1/findings`） |
+
+每个工具都有自己的权限，和内置工具一样。`inherit` 取操作的默认值：读取为 `allow`，写入为 `ask`。运行只会获得已启用的工具。[Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) 给出配置示例，以及向模型说明这些工具的操作 skill。发现项提交使用九种[发现类型](agents-and-runs.md#find-and-improve-execution-issues)，每个问题选择一种主要类型。
 
 ## Web 搜索与抓取
 
@@ -57,8 +67,14 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
   "web": {
     "enabled": true,
     "tools": {
-      "search": {"enabled": true, "config": {"provider_id": "wprov_...", "max_results": 5}},
-      "fetch": {"enabled": true, "config": {"deny_domains": ["internal.example.com"]}}
+      "search": {
+        "enabled": true,
+        "config": { "provider_id": "wprov_...", "max_results": 5 }
+      },
+      "fetch": {
+        "enabled": true,
+        "config": { "deny_domains": ["internal.example.com"] }
+      }
     }
   }
 }
@@ -140,9 +156,18 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "tools": ["search_docs"], "permission": "allow"},
-    {"connection_id": "conn_...", "tools": null, "defer_loading": true, "permission": "ask",
-     "permissions": {"delete_page": "deny"}}
+    {
+      "connection_id": "conn_...",
+      "tools": ["search_docs"],
+      "permission": "allow"
+    },
+    {
+      "connection_id": "conn_...",
+      "tools": null,
+      "defer_loading": true,
+      "permission": "ask",
+      "permissions": { "delete_page": "deny" }
+    }
   ]
 }
 ```
@@ -161,10 +186,14 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
+    {
+      "connection_id": "conn_...",
+      "permission": "allow",
+      "defer_loading": true
+    }
   ],
   "tool_search": {
-    "config": {"mode": "native", "strategy": "bm25"},
+    "config": { "mode": "native", "strategy": "bm25" },
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",
@@ -177,7 +206,7 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 模型通过提供商的原生搜索发现单个工具，再调用 `knowledge__search_docs` 等名称。Service 沿用已有连接执行，保留凭据、调用方请求头和工具权限。不支持的模型会在发送模型请求前以 `native_tool_search_unsupported` 失败。
 
-分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已选的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
+分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已启用的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
 
 - **原生工具搜索**（`config.mode: native`）使用提供商原生发现和普通工具调用。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。
 - **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `search_proxy_tools` 和 `call_proxy_tool`。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。

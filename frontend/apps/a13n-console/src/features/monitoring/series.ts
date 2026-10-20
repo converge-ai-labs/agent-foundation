@@ -4,6 +4,7 @@ export type Point = [number, number | null];
 export type ChartSeries = {
   id: string;
   label: string;
+  detail?: string;
   points: Point[];
   unit: Panel["unit"];
 };
@@ -29,6 +30,18 @@ const labelsText = (labels: Record<string, unknown>) =>
     .join(", ");
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+export function metricLabel(metric: string): string {
+  const name = metric
+    .replace(/^system_/, "")
+    .replace(/_(bytes_per_second|operations_per_second|bytes|ratio)$/, "")
+    .replaceAll("_", " ")
+    .replace(/\bcpu\b/g, "CPU")
+    .replace(/\btcp\b/g, "TCP")
+    .replace(/\budp\b/g, "UDP")
+    .replace(/\bio\b/g, "I/O");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 export function metricUnit(metric: string): Panel["unit"] {
   if (metric.endsWith("_ratio")) return "ratio";
@@ -83,10 +96,20 @@ export function normalizeResult(
           points.push([point[0], point[2]]);
           previous = point;
         }
-        const suffix = labelsText(series.labels ?? {});
+        const labels = series.labels ?? {};
+        const suffix = labelsText(labels);
+        const displayLabels = Object.fromEntries(
+          Object.entries(labels).filter(
+            ([key]) => key !== "identity" || !(labels.interface || labels.disk),
+          ),
+        );
+        const displaySuffix = labelsText(displayLabels);
         return {
           id: JSON.stringify([name, series.labels]),
-          label: suffix ? `${name} · ${suffix}` : name,
+          label: displaySuffix
+            ? `${metricLabel(name)} · ${displaySuffix}`
+            : metricLabel(name),
+          detail: suffix ? `${name} · ${suffix}` : name,
           points,
           unit,
         };
@@ -122,7 +145,11 @@ export function normalizeResult(
     const suffix = labelsText(labels);
     series.push({
       id: JSON.stringify([name, labels]),
-      label: suffix ? `${name} · ${suffix}` : name,
+      label:
+        query.kind === "metric"
+          ? `${metricLabel(name)}${suffix ? ` · ${suffix}` : ""}`
+          : suffix || String(labels.__name__ ?? name),
+      detail: suffix ? `${name} · ${suffix}` : name,
       points,
       unit,
     });

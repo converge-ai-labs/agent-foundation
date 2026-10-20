@@ -367,3 +367,33 @@ async def test_filters_copy_only_changed_history_and_detach_all_nested_values(ki
         annotation.model_extra["nested"]["values"].append(2)
         assert prompt_content(messages[1], 1)[0].metadata.model_extra["nested"] == {"values": [1]}
         assert image.vendor_metadata == {"detail": "high"}
+
+
+@pytest.mark.parametrize("container", [list, tuple, dict])
+def test_cold_start_inspection_reuses_unchanged_containers(container) -> None:
+    from a13n_harness.filters.cold_start import _trim_value
+
+    values = [{"values": [1, 2], "hint": "short"}, {"nested": ("unchanged",)}]
+    original = dict(enumerate(values)) if container is dict else container(values)
+    trimmed, changed = _trim_value(original, ColdStartFilterConfiguration())
+    assert not changed
+    assert trimmed is original
+
+
+@pytest.mark.parametrize("container", [list, tuple, dict])
+@pytest.mark.parametrize("changed_index", [0, 1, 2])
+def test_cold_start_inspection_copies_only_the_changed_path(container, changed_index) -> None:
+    from a13n_harness.filters.cold_start import _trim_value
+
+    values = [{"text": "short"} for _ in range(3)]
+    values[changed_index] = {"text": "x" * 4000}
+    original = dict(enumerate(values)) if container is dict else container(values)
+    trimmed, changed = _trim_value(original, ColdStartFilterConfiguration())
+    assert changed
+    assert type(trimmed) is container
+    assert trimmed is not original
+    assert "chars removed after cold start" in trimmed[changed_index]["text"]
+    assert original[changed_index]["text"] == "x" * 4000
+    for index in range(3):
+        if index != changed_index:
+            assert trimmed[index] is original[index]

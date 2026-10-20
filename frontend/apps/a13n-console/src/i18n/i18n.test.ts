@@ -44,16 +44,14 @@ test("programmatic language changes do not persist a manual choice", async () =>
 });
 
 test("translates catalogue text and shows new English text until translated", async () => {
-  const groupLabel = "Trace queries";
-  const description = "Read execution traces and steps.";
+  const groupLabel = "Files";
+  const description = "Read, write, and organize files.";
   const newDescription = "Inspect a newly installed catalogue tool.";
   for (const language of ["en", "zh-CN"]) {
     await i18n.changeLanguage(language);
-    expect(i18n.t(groupLabel)).toBe(
-      language === "zh-CN" ? "Trace 查询" : groupLabel,
-    );
+    expect(i18n.t(groupLabel)).toBe(language === "zh-CN" ? "文件" : groupLabel);
     expect(i18n.t(description)).toBe(
-      language === "zh-CN" ? "读取执行轨迹及步骤。" : description,
+      language === "zh-CN" ? "读取、写入和整理文件。" : description,
     );
     expect(i18n.t(newDescription)).toBe(newDescription);
   }

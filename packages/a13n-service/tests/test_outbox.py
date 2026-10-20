@@ -8,7 +8,7 @@ from a13n_service.infra import outbox
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, claim, enqueue, purge_settled, settle
 from a13n_service.runs.backlog import BacklogReporter
-from sqlalchemy import event, select, update
+from sqlalchemy import event, func, select, update
 
 pytestmark = pytest.mark.anyio
 
@@ -126,7 +126,9 @@ async def test_dead_at_enqueue_and_expired_final_claim_get_settlement_timestamps
     (first,) = await claim(runtime.storage, "email", owner="one", limit=1, lease_seconds=60, max_attempts=1)
     async with transaction(runtime.storage) as session:
         await session.execute(
-            update(OutboxRow).where(OutboxRow.id == pending).values(lease_expires_at=datetime.now(UTC))
+            update(OutboxRow)
+            .where(OutboxRow.id == pending)
+            .values(lease_expires_at=func.clock_timestamp() - timedelta(seconds=1))
         )
     assert await claim(runtime.storage, "email", owner="two", limit=1, lease_seconds=60, max_attempts=1) == []
     async with transaction(runtime.storage) as session:

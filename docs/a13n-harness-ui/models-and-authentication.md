@@ -415,11 +415,14 @@ Model files accept `model_characteristics.image_input`, independently of context
 model_characteristics:
   image_input:
     support_gif: false
-    max_images: 10
+    max_images: 20
+    image_retention_ratio: 0.6
     max_image_bytes: 5242880
 ```
 
-All seven fields and defaults are documented in the shared [image input policy reference](../a13n-harness/models.md#image-input-policy), including dimension and splitting controls. The byte budget is **base64-encoded size per image**, not original file size or total request size. Unspecified object fields retain native defaults. GIF support is a declared policy, not automatic model detection.
+This example retains the newest 12 images at the first overflow, then lets the window grow to 20 before another batch is removed. `image_retention_ratio` controls the retained fraction, not the fraction removed. Set it to `1` to evict only the excess images. The default maximum of 20 is a conservative request-size compromise and can be raised for a suitable endpoint.
+
+All fields and defaults are documented in the shared [image input policy reference](../a13n-harness/models.md#image-input-policy), including dimension and splitting controls. The byte budget is **base64-encoded size per image**, not original file size or total request size. Unspecified object fields retain native defaults. GIF support is a declared policy, not automatic model detection.
 
 The selected root, independent child and image-understanding Model each use their own policy. Run capture freezes the complete policy; reconstruction uses it even after you edit the Model file. Historical captures retain their serialization without being rewritten.
 

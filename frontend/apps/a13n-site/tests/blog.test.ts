@@ -70,7 +70,7 @@ describe("posts", () => {
   ])("reject front matter %o", async (front, message) => {
     const dir = await blogDir({ post: { front } });
     await expect(loadPosts(dir)).rejects.toThrow(
-      `blog/post/index.md: ${message}`,
+      `posts/post/index.md: ${message}`,
     );
   });
 

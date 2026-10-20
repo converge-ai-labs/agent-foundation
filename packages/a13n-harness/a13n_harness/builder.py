@@ -109,6 +109,7 @@ from a13n_harness.recovery import (
 )
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import ImageInputPolicy
+from a13n_harness.tools.discovery import ToolDiscoveryCapability
 from a13n_harness.tools.invocation import (
     ToolExecutionBoundaryCapability,
 )
@@ -684,6 +685,7 @@ class HarnessBuilder:
                 *self._observation.pydantic_capabilities,
                 ToolExecutionBoundaryCapability(),
                 ToolSurfaceCapability(),
+                ToolDiscoveryCapability(),
                 MessageIntegrityFilterCapability(),
                 LifecycleEventCapability(),
                 SteeringCapability(),

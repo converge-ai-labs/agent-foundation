@@ -193,7 +193,7 @@ it("defaults provisioning selection to no monitoring and reports native pending 
     screen.getByRole("combobox", { name: "Metrics data source" }).textContent,
   ).toContain("No monitoring");
   await screen.findByText(
-    "Native exporter change pending. Provision a new target to apply it.",
+    "Pending: provision a new target to apply this change.",
   );
   expect(change).not.toHaveBeenCalled();
 });

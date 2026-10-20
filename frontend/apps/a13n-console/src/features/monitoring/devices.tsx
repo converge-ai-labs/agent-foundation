@@ -39,21 +39,50 @@ export function DevicesPage() {
           .then(data),
       ),
   });
-  const items = (devices.data ?? []).filter((item) =>
-    item.name.toLowerCase().includes(search.toLowerCase()),
+  const [status, setStatus] = useState("");
+  const items = (devices.data ?? []).filter(
+    (item) =>
+      [item.name, item.id, item.device_id]
+        .join(" ")
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (!status || item.enabled === (status === "enabled")),
   );
   return (
     <Page
       title={t("Monitoring devices")}
-      description={t(
-        "Register reverse-connected devices independently of executable Environments.",
-      )}
       back={`${basePath}/monitoring`}
       toolbar={
         <Toolbar
           search={search}
           onSearchChange={setSearch}
           searchLabel={t("Search devices")}
+          filters={
+            <>
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={status}
+                options={[
+                  { value: "", label: t("All") },
+                  { value: "enabled", label: t("Enabled") },
+                  { value: "disabled", label: t("Disabled") },
+                ]}
+                onValueChange={setStatus}
+              />
+              {(search || status) && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setStatus("");
+                  }}
+                >
+                  {t("Clear filters")}
+                </Button>
+              )}
+            </>
+          }
         />
       }
     >
@@ -111,10 +140,14 @@ export function DevicesPage() {
         </>
       ) : (
         <Empty
-          title={t("No devices")}
-          description={t(
-            "Register a device to receive metrics through its reverse carrier.",
-          )}
+          title={t(search || status ? "No matching targets" : "No devices")}
+          description={
+            search || status
+              ? t("Clear filters")
+              : t(
+                  "Register a device to receive metrics through its reverse carrier.",
+                )
+          }
         />
       )}
       {editing && (

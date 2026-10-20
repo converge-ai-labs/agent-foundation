@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { render } from "./markdown.ts";
 
-/** The repository's blog/ directory: one folder per post, named by its slug. */
-export const POSTS_DIR = join(import.meta.dirname, "../../../../blog");
+/** The site's posts/ directory: one folder per post, named by its slug. */
+export const POSTS_DIR = join(import.meta.dirname, "../posts");
 
 export interface Post {
   slug: string;
@@ -39,7 +39,7 @@ export async function loadPosts(dir = POSTS_DIR): Promise<Post[]> {
 }
 
 async function loadPost(dir: string, slug: string): Promise<Post> {
-  const source = `blog/${slug}/index.md`;
+  const source = `posts/${slug}/index.md`;
   if (!SLUG.test(slug))
     throw new Error(`${source}: the folder name must be a lowercase slug`);
   const text = await readFile(join(dir, "index.md"), "utf8");

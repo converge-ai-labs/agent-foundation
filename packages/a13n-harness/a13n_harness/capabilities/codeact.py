@@ -131,29 +131,7 @@ class CodeActCapability(AbstractModelContextCapability):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         self._require_context(ctx)
-        manager = ctx.tool_manager
-        if manager is None or manager.tools is None:
-            return request_context
-        projected = []
-        for definition in request_context.model_request_parameters.function_tools:
-            metadata = definition.metadata or {}
-            if metadata.get("a13n.codeact.runner") is not True:
-                projected.append(definition)
-                continue
-            projected.append(
-                replace(
-                    definition,
-                    description=render_codeact_runner_description(
-                        manager.tools,
-                        ctx=ctx,
-                        program=metadata.get("a13n.codeact.program") is True,
-                    ),
-                )
-            )
-        request_context.model_request_parameters = replace(
-            request_context.model_request_parameters,
-            function_tools=projected,
-        )
+        refresh_codeact_descriptions(ctx, request_context)
         return request_context
 
     async def after_model_request(
@@ -194,6 +172,38 @@ class CodeActCapability(AbstractModelContextCapability):
             raise DefinitionError(
                 "The finalized CodeAct Capability has incompatible identity.", code="capability_scope_invalid"
             )
+
+
+def refresh_codeact_descriptions(
+    ctx: RunContext[AgentContext],
+    request_context: ModelRequestContext,
+    *,
+    retained_names: set[str] | None = None,
+) -> None:
+    """Refresh presentation after replacement without changing native dispatch state."""
+    from a13n_harness.tools.discovery import replacement_tools
+
+    manager = ctx.tool_manager
+    if manager is None or manager.tools is None:
+        return
+    tools = manager.tools if retained_names is None else replacement_tools(ctx, retained_names)
+    projected = []
+    for definition in request_context.model_request_parameters.function_tools:
+        metadata = definition.metadata or {}
+        if metadata.get("a13n.codeact.runner") is True:
+            definition = replace(
+                definition,
+                description=render_codeact_runner_description(
+                    tools,
+                    ctx=ctx,
+                    program=metadata.get("a13n.codeact.program") is True,
+                ),
+            )
+        projected.append(definition)
+    request_context.model_request_parameters = replace(
+        request_context.model_request_parameters,
+        function_tools=projected,
+    )
 
 
 __all__ = ["CODEACT_CAPABILITY_ID", "CodeActCapability", "CodeActConfig"]

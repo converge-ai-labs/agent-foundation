@@ -51,9 +51,6 @@ export function MetricsSourcePicker({
           })),
         ]}
         onValueChange={onChange}
-        description={t(
-          "No selection means no platform-managed collection or exporter injection.",
-        )}
       />
       <ErrorNotice error={sources.error} />
     </>
@@ -113,26 +110,26 @@ export function EnvironmentMonitoring({
         <p>
           {t(
             applied
-              ? "Native exporter applied at provisioning; delivery is reported by the receiver."
+              ? "Native exporter configured. Check delivery at the receiver."
               : environment.template_id
-                ? "Native exporter change pending. Provision a new target to apply it."
-                : "Configure the native exporter on this external target manually.",
+                ? "Pending: provision a new target to apply this change."
+                : "Manual exporter setup required.",
           )}
         </p>
       )}
       {source?.config.collection === "pull" && (
         <p>
           {t("Collector")}: {collector.data?.state ?? t("Pending")}.{" "}
-          {t("Reload acceptance does not confirm scrape or export health.")}
+          <span
+            title={t(
+              "Reload acceptance does not confirm scrape or export health.",
+            )}
+          >
+            {t("Check delivery at the receiver.")}
+          </span>
         </p>
       )}
-      {source?.config.collection === "proxy" && (
-        <p>
-          {t(
-            "Temporary history is collected while this target is available and within proxy capacity.",
-          )}
-        </p>
-      )}
+      {source?.config.collection === "proxy" && <p>{t("Temporary history")}</p>}
       {editing && (
         <BindingEditor
           environment={environment}

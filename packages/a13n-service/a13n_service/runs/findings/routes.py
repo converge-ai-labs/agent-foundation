@@ -20,7 +20,7 @@ from a13n_service.runs.findings.schemas import (
     Severity,
 )
 from a13n_service.runs.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor, WorkspaceId
+from a13n_service.tenancy.requests import Actor, OriginRun, WorkspaceId
 
 router = APIRouter(prefix="/api/v1", tags=["findings"])
 
@@ -59,17 +59,28 @@ async def start_analysis(
 
 
 @router.get("/finding-analyses", response_model=AnalysisPage, openapi_extra=platform_operation("execution", "read"))
-async def list_analyses(
+async def list_finding_analyses(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, limit: PageLimit = 20, cursor: str | None = None
 ) -> AnalysisPage:
     return await analysis.list_analyses(runtime, actor, workspace_id, limit=limit, cursor=cursor)
 
 
-@router.post("/findings", response_model=Finding, status_code=201)
+@router.post(
+    "/findings", response_model=Finding, status_code=201, openapi_extra=platform_operation("execution", "write")
+)
 async def create_finding(
-    response: Response, runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, body: FindingCreate
+    response: Response,
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    origin: OriginRun,
+    body: FindingCreate,
 ) -> Finding:
-    return tagged(response, await service.create_finding(runtime.storage, actor, workspace_id, body))
+    """Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
+    A Run's own submission names that Run as its source; an analysis cites only selected traces it has read."""
+    return tagged(
+        response, await service.create_finding(runtime.storage, actor, workspace_id, body, source_run_id=origin)
+    )
 
 
 @router.get("/findings", response_model=FindingPage, openapi_extra=platform_operation("execution", "read"))

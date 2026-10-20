@@ -3,9 +3,10 @@ title: Tools and connections
 description: Give agents built-in toolsets, MCP and app connections, client tools, and skills.
 ---
 
-An agent's tools come from four places, all selected in its [revision](agents-and-runs.md#agent-configuration):
+An agent's tools come from five places, all selected in its [revision](agents-and-runs.md#agent-configuration):
 
-- **Built-in toolsets**, which the Service runs itself: files, terminal, computer, web, memory, asset publication, agent configuration, trace queries and findings.
+- **Built-in toolsets**, which the Service runs itself: files, terminal, computer, web, memory and asset publication.
+- **Platform tools**: Service API operations, such as agent configuration, run queries and finding submission. See [Platform tools](#platform-tools).
 - **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
 - **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
 - **Skills**, which add instructions and files; see [Skills](skills.md).
@@ -24,17 +25,26 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 | `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                                                                                                             | Each tool disabled                                 |
 | `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                                                                       | Enabled                                            |
 | `assets`           | `publish_asset`                                                                                                                                                                                                                     | Disabled                                           |
-| `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                                                                                                                 | Disabled; see [Agent Composer](agent-composer.md)  |
-| `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                                                                                                                     | Disabled                                           |
-| `findings`         | `read_finding`, `submit_finding`                                                                                                                                                                                                    | Disabled                                           |
 
 Computer tools require a compatible desktop and explicit action permissions on the mounted environment. See [Computer Use](environments.md#computer-use) for setup and screenshot previews.
 
-Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), with one primary category per issue. Unsupported values return a validation error. Categories are separate from the analysis rule presets.
-
-Configuration, trace queries and finding submission appear under **Advanced / Platform Features**. Group switches preserve individual platform-tool choices. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
-
 The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md): file tools on file memories and record tools on record memories, and a `read` mount offers only viewing, listing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
+
+## Platform tools
+
+Platform tools are Service API operations that a run calls with its own short-lived credential, within the permissions of the person or key that started it. Each group is a toolset in `toolsets`, and each of its operations is a tool, keyed by its MCP tool name. Select them under **Advanced / Platform Features** in an agent's tools. The groups are disabled by default; enabling one enables all its tools, and you can then turn off the ones the agent does not need:
+
+| Group                   | Operations                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `agents`                | Agents, their versions and the toolset catalog                                                           |
+| `models`                | Models and the model catalog                                                                             |
+| `connections`           | Connections, their tools and connector apps                                                              |
+| `skills`                | Skills and their versions                                                                                |
+| `environment_templates` | Environment templates                                                                                    |
+| `providers`             | Providers, and tests of their saved connections                                                          |
+| `execution`             | Sessions, threads, runs, traces and findings; its only write submits a finding (`POST /api/v1/findings`) |
+
+Each tool has its own permission, as built-in tools do. `inherit` takes the operation's default: `allow` for a read and `ask` for a write. A run is offered only the enabled tools. [Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) shows the configuration and the operating skill that explains these tools to the model. Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), one primary category per issue.
 
 ## Web search and scrape
 
@@ -57,8 +67,14 @@ Enable each web tool explicitly; enabling the toolset alone enables none of them
   "web": {
     "enabled": true,
     "tools": {
-      "search": {"enabled": true, "config": {"provider_id": "wprov_...", "max_results": 5}},
-      "fetch": {"enabled": true, "config": {"deny_domains": ["internal.example.com"]}}
+      "search": {
+        "enabled": true,
+        "config": { "provider_id": "wprov_...", "max_results": 5 }
+      },
+      "fetch": {
+        "enabled": true,
+        "config": { "deny_domains": ["internal.example.com"] }
+      }
     }
   }
 }
@@ -140,9 +156,18 @@ A revision lists connections in `connection_tools`:
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "tools": ["search_docs"], "permission": "allow"},
-    {"connection_id": "conn_...", "tools": null, "defer_loading": true, "permission": "ask",
-     "permissions": {"delete_page": "deny"}}
+    {
+      "connection_id": "conn_...",
+      "tools": ["search_docs"],
+      "permission": "allow"
+    },
+    {
+      "connection_id": "conn_...",
+      "tools": null,
+      "defer_loading": true,
+      "permission": "ask",
+      "permissions": { "delete_page": "deny" }
+    }
   ]
 }
 ```
@@ -161,10 +186,14 @@ In Console, open an agent's **Tool discovery** section, choose **Native tool sea
 ```json
 {
   "connection_tools": [
-    {"connection_id": "conn_...", "permission": "allow", "defer_loading": true}
+    {
+      "connection_id": "conn_...",
+      "permission": "allow",
+      "defer_loading": true
+    }
   ],
   "tool_search": {
-    "config": {"mode": "native", "strategy": "bm25"},
+    "config": { "mode": "native", "strategy": "bm25" },
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",
@@ -177,7 +206,7 @@ In Console, open an agent's **Tool discovery** section, choose **Native tool sea
 
 The model discovers individual tools through its provider's native search, then calls names such as `knowledge__search_docs`. Service executes them through the existing connection, with its credentials, caller headers and tool permissions. An unsupported model fails before a model request with `native_tool_search_unsupported`.
 
-Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's selected platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
+Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's enabled platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
 
 - **Native tool search** (`config.mode: native`) uses provider-native discovery and ordinary tool calls. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default.
 - **Grouped proxy search** (`config.mode: proxy`) uses Harness's `search_proxy_tools` and `call_proxy_tool`. Optional `config` settings follow [Harness ToolSearch](../a13n-harness/tool-search.md).

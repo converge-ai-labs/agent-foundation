@@ -30,21 +30,71 @@ export function DataSourcesPage() {
   const [search, setSearch] = useState(""),
     [editing, setEditing] = useState<Source | "new">();
   const sources = useQuery(monitoringApi(client, workspace.id).sources());
-  const items = (sources.data ?? []).filter((source) =>
-    source.name.toLowerCase().includes(search.toLowerCase()),
+  const [route, setRoute] = useState("");
+  const [status, setStatus] = useState("");
+  const items = (sources.data ?? []).filter(
+    (source) =>
+      [
+        source.name,
+        source.id,
+        source.config.query?.endpoint,
+        source.config.export?.endpoint,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (!route || source.config.collection === route) &&
+      (!status || source.enabled === (status === "enabled")),
   );
   return (
     <Page
       title={t("Metrics data sources")}
-      description={t(
-        "Configure collection, export and historical queries independently.",
-      )}
       back={`${basePath}/monitoring`}
       toolbar={
         <Toolbar
           search={search}
           onSearchChange={setSearch}
           searchLabel={t("Search data sources")}
+          filters={
+            <>
+              <ChoiceField
+                label={t("Collection")}
+                variant="filter"
+                value={route}
+                options={[
+                  { value: "", label: t("All") },
+                  ...["native", "pull", "proxy", "external"].map((value) => ({
+                    value,
+                    label: t(value),
+                  })),
+                ]}
+                onValueChange={setRoute}
+              />
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={status}
+                options={[
+                  { value: "", label: t("All") },
+                  { value: "enabled", label: t("Enabled") },
+                  { value: "disabled", label: t("Disabled") },
+                ]}
+                onValueChange={setStatus}
+              />
+              {(search || route || status) && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setRoute("");
+                    setStatus("");
+                  }}
+                >
+                  {t("Clear filters")}
+                </Button>
+              )}
+            </>
+          }
         />
       }
     >
@@ -75,8 +125,7 @@ export function DataSourcesPage() {
                     description={
                       source.builtin
                         ? t("Built-in temporary cache")
-                        : (source.config.query?.endpoint ??
-                          t("No historical query endpoint"))
+                        : source.config.query?.endpoint
                     }
                   />
                 ),
@@ -316,9 +365,7 @@ function SourceEditor({
       description={
         source?.builtin
           ? t("Local Cache is temporary history owned by the Service.")
-          : t(
-              "Credentials stay on the Service. Query access and export delivery are separate capabilities.",
-            )
+          : undefined
       }
       closeLabel={t("Close")}
       size="lg"
@@ -390,11 +437,7 @@ function SourceEditor({
                   setCollector(value === "alloy" ? "alloy" : "vmagent")
                 }
               />
-              <p>
-                {t(
-                  "The collector uses its operator-configured export pipeline. Missing deployment configuration disables selection.",
-                )}
-              </p>
+              <small>{t("Export is configured on the collector.")}</small>
             </>
           )}
           {exporting && (
@@ -402,7 +445,9 @@ function SourceEditor({
               <FormField
                 label={t("OTLP endpoint")}
                 description={t(
-                  "HTTP uses the full metrics URL; gRPC uses the receiver origin. Managed native changes apply on new targets.",
+                  protocol === "grpc"
+                    ? "Receiver origin, for example https://otel.example.com:4317"
+                    : "Full metrics URL, for example https://otel.example.com/v1/metrics",
                 )}
               >
                 <Input
@@ -449,9 +494,7 @@ function SourceEditor({
           )}
           <FormField
             label={t("Prometheus query endpoint")}
-            description={t(
-              "API base URL before /api/v1/query. Leave empty for collection without historical queries.",
-            )}
+            description={t("Base URL before /api/v1/query.")}
           >
             <Input
               type="url"
@@ -490,6 +533,9 @@ function SourceEditor({
               {t("Query credentials")}:{" "}
               {t(source?.has_query_credentials ? "Saved" : "Not configured")}
             </p>
+          )}
+          {collection === "native" && basis && !readonly && (
+            <small>{t("Changes apply to newly provisioned targets.")}</small>
           )}
           <ErrorNotice error={save.error ?? probe.error} />
           {probe.isSuccess && (

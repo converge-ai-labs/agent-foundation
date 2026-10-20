@@ -1,4 +1,4 @@
-import { DotsSixVerticalIcon } from "@phosphor-icons/react";
+import { DotsSixVerticalIcon, InfoIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../shared/feedback";
@@ -54,6 +54,23 @@ export function MetricsPanel({
             {t(stale ? "Previous result" : "Loading…")}
           </small>
         )}
+        {(!!data.notices.length || !!panel.description) && (
+          <details className={styles.notices}>
+            <summary aria-label={t("Query details")} title={t("Query details")}>
+              <InfoIcon size={16} />
+            </summary>
+            <div className={styles.noticeBody}>
+              {panel.description && <p>{panel.description}</p>}
+              {data.notices.map((notice) => (
+                <p key={JSON.stringify(notice)}>
+                  {typeof notice === "string"
+                    ? t(notice)
+                    : t(notice.message, notice.values)}
+                </p>
+              ))}
+            </div>
+          </details>
+        )}
         {onEdit && (
           <Button size="xs" variant="ghost" onClick={onEdit}>
             {t("Edit")}
@@ -65,9 +82,6 @@ export function MetricsPanel({
           </Button>
         )}
       </div>
-      {panel.description && (
-        <p className={styles.panelDescription}>{panel.description}</p>
-      )}
       {errors.map((error, index) => (
         <ErrorNotice key={index} error={error} />
       ))}
@@ -78,20 +92,6 @@ export function MetricsPanel({
         syncKey={syncKey}
         onZoom={onZoom}
       />
-      {!!data.notices.length && (
-        <details className={styles.notices}>
-          <summary>
-            {t("Query details")} · {data.notices.length}
-          </summary>
-          {data.notices.map((notice) => (
-            <p key={JSON.stringify(notice)}>
-              {typeof notice === "string"
-                ? t(notice)
-                : t(notice.message, notice.values)}
-            </p>
-          ))}
-        </details>
-      )}
     </section>
   );
 }

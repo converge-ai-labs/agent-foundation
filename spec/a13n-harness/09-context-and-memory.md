@@ -208,6 +208,20 @@ An explicit `summarize` handoff uses its own validated history-replacement path.
 
 Handoff reminder thresholds consult only the latest provider-reported usage and never replace provider enforcement. Automatic plain-text compaction is the independent Capability contract below. [Events and Usage](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context observations for both paths.
 
+### Tool Discovery Across History Replacement
+
+Harness retains a bounded working set of called tools across both explicit handoff and automatic compaction. A completed target-tool invocation admits a native deferred or proxy member tool and refreshes its recency, including canonical targets invoked through CodeAct and proxy calls. Searches alone, runner envelopes and calls rejected before execution do not admit tools. A returned business-error value still represents a completed invocation. Retention is installed by the builder and uses the current prepared tool directory; it adds no execution registry or dispatch path.
+
+The working set contains at most 32 distinct tools. Its versioned Capability-state namespace stores only canonical names and prepared source identities in call-recency order, capped at 128 KiB. Repeated calls update one entry; search results, schemas and business outputs are not cached there. State eviction leaves ordinary discovery history usable until history replacement. The nested compaction-summary run does not execute tools or update the working set.
+
+At replacement, Harness considers tools from most recently called to least recently called, revalidates their source identities and current availability, and rebuilds discovery from current definitions. Selection is per tool, independently of the original search's other results. Removed or changed-source tools and tools belonging to deferred Capabilities are omitted; retention does not preserve `load_capability` lifecycle. Current schemas, descriptions, CodeAct eligibility and proxy source instructions replace earlier presentation. Ordinary permissions, approval and argument validation continue to apply on every invocation.
+
+The selected tools have a 64 KiB estimated attributable context budget. Accounting includes synthetic discovery content, one complete native schema expansion per selected tool, proxy source instructions, and the additional callable-directory text in both CodeAct runner descriptions. Recovery metadata is excluded. Each selected tool has a complete schema; tools that do not fit are omitted. This is a UTF-8 retention budget, not a tokenizer or a guarantee about the complete provider request window. Once replacement history is installed, the working set is reduced to the selected tools, so omitted entries cannot reappear on a later replacement without another invocation.
+
+Replacement history contains an explicit notice and synthetic search-call/search-return pairs: one aggregated typed native search exchange and one aggregated proxy exchange when that mode has retained tools. The notice states that these are reconstructed results for a partial set of previously called tools, that no search was executed, and that the Agent can search again for other tools. Original search queries are not retained; both native and proxy synthetic search arguments use an explicit query-omission marker rather than tool names or invented search terms, and the notice explains the omission. Proxy results mark the retained set as partial. An empty retained set still receives the notice. The exchanges use fresh call IDs and carry neither old usage nor provider response-continuation IDs. They are model context, not new execution or user-input events.
+
+Handoff places this projection after the user-role continuation summary and before replayed semantic inputs. Compaction places it after the assistant summary and before the restored-context request and replayed inputs. Both paths refresh CodeAct's descriptions for the selected set before the first outgoing replacement request, without mutating framework-managed discovery state. Upstream derives native reveal and execution availability from the replacement history.
+
 ## Working State Capability
 
 Tasks and notes form one optional Working State Capability. It owns their model tools, bounded request-time presentation, and one versioned `AgentContextState` namespace; it is coordination context rather than execution authority, a scheduler, or a durable business workflow. Notes remain a `dict[str, str]` in the existing namespace and state version.
@@ -377,8 +391,9 @@ A successful replacement has this fixed order:
 
 1. one synthetic compact request preserving the stable system and instruction prefix;
 2. one plain-text summary response marked as compact-retained content;
-3. one restored-context request with a bounded reference to the immediately preceding visible assistant response when needed to resolve references;
-4. the current logical run's initial semantic input and every public user steering input whose delivery into native message history has been observed.
+3. bounded retained ToolSearch discovery under [Tool Discovery Across History Replacement](#tool-discovery-across-history-replacement);
+4. one restored-context request with a bounded reference to the immediately preceding visible assistant response when needed to resolve references;
+5. the current logical run's initial semantic input and every public user steering input whose delivery into native message history has been observed.
 
 The previous-assistant reference contains only non-empty visible text parts from the most recent applicable response. Multiple text parts are separated by blank lines. The reference is informational rather than a new instruction and is limited to 32,000 characters by retaining at most the first 24,000 and last 6,000 characters with an explicit truncation marker between them.
 

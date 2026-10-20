@@ -57,7 +57,7 @@ async def create_skill(
 
 
 @router.post("/validate", response_model=SkillManifest, openapi_extra=platform_operation("skills", "read"))
-async def validate_package(
+async def validate_skill(
     request: Request, workspace_id: WorkspaceId, body: SkillValidate, actor: Actor, runtime: CurrentRuntime
 ) -> SkillManifest:
     """The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
@@ -152,7 +152,7 @@ async def unarchive_skill(
     status_code=201,
     openapi_extra=platform_operation("skills", "write"),
 )
-async def create_revision(
+async def create_skill_revision(
     request: Request,
     workspace_id: WorkspaceId,
     skill_id: str,
@@ -171,7 +171,7 @@ async def create_revision(
 @router.get(
     "/{skill_id}/revisions", response_model=SkillRevisionPage, openapi_extra=platform_operation("skills", "read")
 )
-async def list_revisions(
+async def list_skill_revisions(
     workspace_id: WorkspaceId,
     skill_id: str,
     actor: Actor,
@@ -187,7 +187,7 @@ async def list_revisions(
     response_model=SkillRevision,
     openapi_extra=platform_operation("skills", "read"),
 )
-async def get_revision(
+async def get_skill_revision(
     workspace_id: WorkspaceId, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> SkillRevision:
     return await service.get_revision(runtime.storage, actor, workspace_id, skill_id, revision_id)
@@ -198,7 +198,7 @@ async def get_revision(
     response_model=Skill,
     openapi_extra=platform_operation("skills", "write"),
 )
-async def set_default_revision(
+async def set_default_skill_revision(
     response: Response,
     workspace_id: WorkspaceId,
     skill_id: str,
@@ -223,7 +223,7 @@ async def set_default_revision(
         }
     },
 )
-async def read_archive(
+async def read_skill_archive(
     workspace_id: WorkspaceId, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
     """The revision's package as a zip archive."""
@@ -247,7 +247,7 @@ async def read_archive(
         }
     },
 )
-async def read_file(
+async def read_skill_file(
     workspace_id: WorkspaceId, skill_id: str, revision_id: str, path: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
     """One package file, by the path the revision's manifest lists."""

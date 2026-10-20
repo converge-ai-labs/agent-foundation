@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from a13n_service.infra.db import Storage
 from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.agents.schemas import Agent, AgentConfig, PlatformSelection
+from a13n_service.resources.agents.schemas import Agent, AgentConfig
 from a13n_service.resources.agents.toolsets import ToolSelection, ToolsetSelection, default_toolsets
 from a13n_service.tenancy.authorize import Principal
 
@@ -90,11 +90,8 @@ def configuration(model: str) -> AgentConfig:
             ),
             "shell": ToolsetSelection(enabled=False),
             "memory": ToolsetSelection(enabled=False),
-            "configuration": ToolsetSelection(enabled=False),
-            "traces": ToolsetSelection(enabled=False),
-            "findings": ToolsetSelection(enabled=False),
+            **{group: ToolsetSelection() for group in PLATFORM_GROUPS},
         },
-        platform_tools=PlatformSelection(groups=frozenset(PLATFORM_GROUPS)),
         builtin_skills=frozenset({"platform-operations"}),
         user_questions=True,
         client_tools=(provider_tool(),),

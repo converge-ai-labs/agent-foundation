@@ -384,3 +384,24 @@ it("retains separate drafts across history and page navigation with the original
     ).toBeNull(),
   );
 });
+
+it("keeps the initial view focused and applies preset, refresh and absolute time controls", async () => {
+  const { user } = setup();
+  await screen.findByText("Select a target to explore metrics");
+  expect(screen.queryByRole("region", { name: "CPU" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.click(screen.getByRole("button", { name: "6h" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.click(screen.getByRole("combobox", { name: "Auto refresh" }));
+  await user.click(screen.getByRole("option", { name: "10s" }));
+  await user.clear(screen.getByLabelText("From"));
+  await user.type(screen.getByLabelText("From"), "2026-10-19T10:00");
+  await user.clear(screen.getByLabelText("To"));
+  await user.type(screen.getByLabelText("To"), "2026-10-19T12:00");
+  await user.click(screen.getByRole("button", { name: "Apply range" }));
+  await user.click(screen.getByRole("button", { name: "Zoom out" }));
+  await user.click(screen.getByRole("button", { name: "Back to live" }));
+  expect(screen.queryByRole("button", { name: "Back to live" })).toBeNull();
+  expect(state.PATCH).not.toHaveBeenCalled();
+});

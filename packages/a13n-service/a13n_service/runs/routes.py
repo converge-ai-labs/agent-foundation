@@ -334,7 +334,7 @@ async def submit_message(
     response_model=EntryView | read_views.EntrySummary | reads.TextRead,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def get_entry(
+async def get_inbox_entry(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     thread_id: str,
@@ -533,7 +533,7 @@ async def resume_run(
     response_model=RunItems | item_reads.ItemPage,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def run_items(
+async def list_run_items(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     run_id: str,
@@ -579,7 +579,7 @@ async def run_items(
     response_model=RunAgent | agent_reads.RunAgentSummary | reads.TextRead,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def run_agent(
+async def get_run_agent(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     run_id: str,
@@ -622,7 +622,7 @@ async def run_agent(
     response_model=RunPage | read_views.RunSummaryPage,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def run_lineage(
+async def get_run_lineage(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     run_id: str,
@@ -642,7 +642,7 @@ async def run_lineage(
     response_model=RunContent | read_views.ContentSummary | reads.TextRead,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def run_content(
+async def get_run_content(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     run_id: str,
@@ -674,7 +674,7 @@ async def run_content(
 
 
 @router.get("/runs/{run_id}/attempts", response_model=Attempts, openapi_extra=platform_operation("execution", "read"))
-async def run_attempts(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> Attempts:
+async def list_run_attempts(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> Attempts:
     return await runs.list_attempts(runtime.storage, actor, workspace_id, run_id)
 
 
@@ -705,7 +705,7 @@ async def run_image(
     response_model=AttemptView,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def get_attempt(
+async def get_run_attempt(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, run_id: str, attempt_id: str
 ) -> AttemptView:
     return await runs.get_attempt(runtime.storage, actor, workspace_id, run_id, attempt_id)
@@ -716,7 +716,7 @@ async def get_attempt(
     response_model=reads.TextRead,
     openapi_extra=platform_operation("execution", "read"),
 )
-async def read_item_content(
+async def read_run_item_content(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
     run_id: str,

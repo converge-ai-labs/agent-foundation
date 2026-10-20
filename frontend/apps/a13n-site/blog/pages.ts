@@ -105,7 +105,7 @@ const card = (post: Post, level: 2 | 3) => `<li class="item">
 export function indexPage(posts: Post[]) {
   const [lead, ...rest] = posts;
   // the nav links every page to /blog/, so the index needs a post to lead
-  if (!lead) throw new Error("blog/ has no posts");
+  if (!lead) throw new Error("posts/ has no posts");
   const description =
     "Notes from the team building a13n, the open-source foundation for AI agents.";
   const body = `    <main>

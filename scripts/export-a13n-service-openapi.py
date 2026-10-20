@@ -4,7 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
+from a13n_service.api_tools import tool_name
 from a13n_service.app import build_app
+from a13n_service.infra.platform import PLATFORM_GROUPS, PLATFORM_METADATA
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.runs.stream import frames_schema
 from a13n_service.runs.thread_stream import frames_schema as thread_frames_schema
@@ -12,13 +14,33 @@ from a13n_service.runs.thread_stream import frames_schema as thread_frames_schem
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "proto/a13n-service"
 SKILL_SCHEMA = ROOT / "packages/a13n-service/a13n_service/builtin_skills/platform-operations/schemas/agent-config.json"
+PLATFORM_TOOLS = ROOT / "packages/a13n-service/a13n_service/infra/platform_tools.json"
 
 
-def documents() -> dict[str, dict]:
+def platform_tools(openapi: dict) -> list[dict]:
+    """Every platform operation as the agent tool its MCP name identifies, ordered by group and path."""
+    tools = [
+        {
+            "key": tool_name(operation["operationId"]),
+            **operation[PLATFORM_METADATA],
+            "method": method.upper(),
+            "path": path,
+            "summary": operation["summary"],
+        }
+        for path, item in openapi["paths"].items()
+        for method, operation in item.items()
+        if isinstance(operation, dict) and PLATFORM_METADATA in operation
+    ]
+    return sorted(tools, key=lambda tool: (PLATFORM_GROUPS.index(tool["group"]), tool["path"], tool["method"]))
+
+
+def documents() -> dict[Path, object]:
+    openapi = build_app().openapi()
     return {
-        "openapi.json": build_app().openapi(),
-        "session-stream.schema.json": frames_schema(),
-        "thread-stream.schema.json": thread_frames_schema(),
+        TARGET / "openapi.json": openapi,
+        TARGET / "session-stream.schema.json": frames_schema(),
+        TARGET / "thread-stream.schema.json": thread_frames_schema(),
+        PLATFORM_TOOLS: platform_tools(openapi),
     }
 
 
@@ -28,7 +50,7 @@ def main() -> None:
     parser.add_argument("--skills-only", action="store_true", help="Prepare only release-bundled Skill schemas")
     args = parser.parse_args()
     changed = []
-    outputs = {} if args.skills_only else {TARGET / name: schema for name, schema in documents().items()}
+    outputs = {} if args.skills_only else documents()
     outputs[SKILL_SCHEMA] = AgentConfig.model_json_schema()
     for target, schema in outputs.items():
         if args.check:

@@ -545,3 +545,51 @@ async def test_google_wire_inline_video_payload_repair_preserves_canonical_annot
         if isinstance(item.value, BinaryContent)
     ]
     assert saved == [ContentItem(native, annotation)] and native.vendor_metadata is None
+
+
+@pytest.mark.parametrize("trigger", ["inline", "rejected-url"])
+def test_video_projection_detaches_recovery_envelopes_without_copying_tool_json(monkeypatch, trigger):
+    from a13n_harness.filters import video_url
+    from a13n_harness.models.self_healing import _drop_inline_media, strip_provider_native_state
+    from pydantic_ai.messages import ThinkingPart, ToolCallPart
+
+    payload = {"rows": [{"values": list(range(20))} for _ in range(100)]}
+    native = BinaryContent(b"video", media_type="video/mp4", vendor_metadata={"nested": {"fps": 1}})
+    source = native if trigger == "inline" else VideoUrl(VIDEO)
+    history = [
+        ModelResponse(
+            parts=[ThinkingPart("reasoning"), ToolCallPart("lookup", {"nested": [1]}, id="provider-call")],
+            provider_name="provider",
+            provider_response_id="provider-response",
+        ),
+        ModelRequest(parts=[ToolReturnPart("lookup", payload)]),
+        ModelRequest(parts=[UserPromptPart([source])], metadata={"application": {"source": "original"}}),
+    ]
+    snapshot = deepcopy(history)
+    copied = []
+
+    def copy_native_only(value):
+        assert isinstance(value, (BinaryContent, VideoUrl))
+        copied.append(value)
+        return deepcopy(value)
+
+    monkeypatch.setattr(video_url, "deepcopy", copy_native_only)
+    projected = project_video_urls(history, characteristics())
+    assert projected is not None
+    assert projected[1].parts[0].content is payload
+    for original, detached in zip(history, projected, strict=True):
+        assert detached is not original
+        assert detached.parts is not original.parts
+        assert all(a is not b for a, b in zip(original.parts, detached.parts, strict=True))
+    if trigger == "inline":
+        assert copied == [native]
+        projected_native = binary_videos(projected)[0]
+        assert projected_native is not native
+        assert projected_native.data is native.data
+        projected_native.vendor_metadata["nested"]["fps"] = 2
+        assert native.vendor_metadata["nested"]["fps"] == 1
+        assert _drop_inline_media(projected) == 1
+    else:
+        assert not copied
+    assert strip_provider_native_state(projected) > 0
+    assert history == snapshot

@@ -181,17 +181,6 @@
           ],
           "default": null
         },
-        "platform_tools": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PlatformSelection"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "plugins": {
           "anyOf": [
             {
@@ -2060,43 +2049,6 @@
       ],
       "type": "string"
     },
-    "PlatformSelection": {
-      "additionalProperties": false,
-      "description": "Platform MCP groups selected independently of local operating instructions.",
-      "properties": {
-        "groups": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/PlatformGroup"
-          },
-          "title": "Groups",
-          "type": "array",
-          "uniqueItems": true
-        },
-        "read_permission": {
-          "default": "allow",
-          "enum": [
-            "allow",
-            "ask",
-            "deny"
-          ],
-          "title": "Read Permission",
-          "type": "string"
-        },
-        "write_permission": {
-          "default": "ask",
-          "enum": [
-            "allow",
-            "ask",
-            "deny"
-          ],
-          "title": "Write Permission",
-          "type": "string"
-        }
-      },
-      "title": "PlatformSelection",
-      "type": "object"
-    },
     "PluginSelection": {
       "additionalProperties": false,
       "description": "One instance of a Harness plugin factory the deployment installed.",
@@ -3280,18 +3232,22 @@
       "type": "object"
     },
     "ToolsetKey": {
-      "enum": [
-        "files",
-        "shell",
-        "computer",
-        "web",
-        "memory",
-        "assets",
-        "configuration",
-        "traces",
-        "findings"
-      ],
-      "type": "string"
+      "anyOf": [
+        {
+          "enum": [
+            "files",
+            "shell",
+            "computer",
+            "web",
+            "memory",
+            "assets"
+          ],
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/PlatformGroup"
+        }
+      ]
     },
     "ToolsetSelection": {
       "additionalProperties": false,

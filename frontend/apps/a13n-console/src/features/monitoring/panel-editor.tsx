@@ -14,6 +14,7 @@ import {
   type TimeRange,
 } from "./api";
 import { MetricsPanel } from "./panel";
+import { metricLabel } from "./series";
 import { PromQLEditor } from "./promql-editor";
 import styles from "./monitoring.module.css";
 
@@ -119,9 +120,6 @@ export function PanelEditor({
       }}
       size="lg"
       title={t("Edit panel")}
-      description={t(
-        "Configure queries and preview their results before applying.",
-      )}
       closeLabel={t("Close")}
     >
       <form
@@ -137,13 +135,6 @@ export function PanelEditor({
             maxLength={128}
             value={draft.title}
             onChange={(e) => update({ title: e.target.value })}
-          />
-        </FormField>
-        <FormField label={t("Description (optional)")}>
-          <Input
-            maxLength={2048}
-            value={draft.description ?? ""}
-            onChange={(e) => update({ description: e.target.value })}
           />
         </FormField>
         <div className={styles.row}>
@@ -186,6 +177,16 @@ export function PanelEditor({
             onValueChange={(value) => update({ legend: value === "on" })}
           />
         </div>
+        <details>
+          <summary>{t("Description (optional)")}</summary>
+          <FormField label={t("Description (optional)")}>
+            <Input
+              maxLength={2048}
+              value={draft.description ?? ""}
+              onChange={(e) => update({ description: e.target.value })}
+            />
+          </FormField>
+        </details>
         <details>
           <summary>{t("Panel position and size")}</summary>
           <div className={styles.row}>
@@ -276,7 +277,10 @@ export function PanelEditor({
                 <ChoiceField
                   label={t("Metric")}
                   value={query.metric}
-                  options={metrics.map((value) => ({ value, label: value }))}
+                  options={metrics.map((value) => ({
+                    value,
+                    label: metricLabel(value),
+                  }))}
                   onValueChange={(metric) =>
                     queryChange(index, {
                       ...query,
