@@ -100,3 +100,57 @@ def test_e2b_projects_management_recipe_without_changing_fingerprint(inputs, fin
     assert E2B.execution.execution_connector(execution, credential={"api_key": "secret"}, state=state).state == state
     with pytest.raises(EnvironmentProviderError):
         E2B.execution.validate_environment(recipe.model_dump(mode="json"))
+
+
+@pytest.mark.parametrize("execution_mode", ["native", "envd_http"])
+def test_service_e2b_wrapper_forwards_per_execution_recovery(execution_mode):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+    from a13n_harness.providers.environment._backend_factory import BackendConnector
+    from a13n_service.providers.environments.e2b import E2B as SERVICE_E2B
+
+    recipe = SERVICE_E2B.execution_environment({"execution": execution_mode, "template": "operator-envd"})
+    state = EnvironmentState(
+        provider_key="e2b",
+        state_version="1",
+        state={
+            "environment_id": "env-existing",
+            "sandbox_id": "sandbox-existing",
+            "configuration_fingerprint": recipe.fingerprint,
+        },
+    )
+    recovery = EnvdSessionRecovery()
+    connector = SERVICE_E2B.execution.execution_connector(
+        recipe,
+        credential={"api_key": "test-key"},
+        state=state,
+        session_recovery=recovery,
+    )
+    assert isinstance(connector, BackendConnector)
+    assert connector.session_recovery is recovery
+    assert connector.state == state
+    assert recovery.state is None
+
+
+@pytest.mark.anyio
+async def test_service_local_wrapper_opens_with_empty_recovery(tmp_path):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+    from a13n_service.infra.ids import new_object_id
+    from a13n_service.providers.environments.local import LOCAL
+
+    environment_id = new_object_id("env")
+    root = tmp_path / environment_id
+    root.mkdir()
+    recovery = EnvdSessionRecovery()
+    connector = LOCAL.execution.execution_connector(
+        {"root": {"path": str(tmp_path)}},
+        environment_id=environment_id,
+        session_recovery=recovery,
+    )
+    execution = await connector.open()
+    try:
+        assert execution.operations.files is not None
+        await execution.operations.files.write_text("/proof.txt", "native", mode="create")
+        assert (root / "proof.txt").read_text() == "native"
+        assert recovery.state is None
+    finally:
+        await execution.close()

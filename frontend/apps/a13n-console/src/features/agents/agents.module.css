@@ -161,6 +161,12 @@
   gap: 12px;
   min-height: 55px;
 }
+/* Platform tool names are longer than built-in ones. */
+@media (min-width: 621px) {
+  .toolsetToolPlatform .toolsetToolMain {
+    grid-template-columns: minmax(100px, 1.6fr) minmax(0, 1fr) auto;
+  }
+}
 .toolsetToolName {
   display: flex;
   align-items: center;

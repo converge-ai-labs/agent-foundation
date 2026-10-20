@@ -11,7 +11,6 @@ import pytest
 from a13n_harness.usage import USAGE_CAPABILITY_ID, ModelUsageRecord
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.resources.models import service as models_service
 from a13n_service.runs import checkpoints
 from a13n_service.runs import execute as execute_module
 from a13n_service.runs import seal as seal_module
@@ -23,6 +22,7 @@ from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Outcome
 from a13n_service.runs.seal import LeaseExpirer, seal_attempt
+from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import AttemptRow, RunRow, UsageRecordRow
 from a13n_service.runs.usage import UsageBuffer, UsageReport, ingest_late
 from a13n_service.runs.worker import Worker
@@ -325,13 +325,13 @@ async def test_a_cancelled_attempt_still_records_its_usage(service, scripted_mod
             both.set()
 
     monkeypatch.setattr(UsageBuffer, "ingested_records", watched)
-    worker = {"toolsets": {"configuration": {"enabled": True}}}
+    worker = runs_kit.LOOKUP
     agent = await runs_kit.delegating(service, scripted_model, "inline", worker=worker)
     gate = asyncio.Event()
     scripted_model.call(
         "delegate", {"subagent": "helper", "prompt": "compute"}, call_id="call_d", to="Role: coordinator"
     )
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_w", to="Role: worker")
+    runs_kit.lookup(scripted_model, call_id="call_w", to="Role: worker")
     scripted_model.say("42", gate=gate, to="Role: worker")
     run_id = (await runs_kit.start_thread(service, agent, "ask the helper"))["run"]["id"]
     running = await runs_kit.attempt(service)
@@ -619,14 +619,14 @@ async def test_an_unavailable_dependency_ends_a_tool_calls_attempt(
 ) -> None:  # type: ignore[no-untyped-def]
     """An outage is not the tool call's failure for the model to read: the attempt ends, and a later one retries."""
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find")
+    agent = await runs_kit.delegating(service, scripted_model, "async")
+    scripted_model.call("subagent_info", {}, call_id="call_info", to="Role: coordinator")
     run_id = (await runs_kit.start_thread(service, agent, "look around"))["run"]["id"]
 
     async def unavailable(*args: object, **kwargs: object) -> None:
         raise ServiceError("unavailable", "The database is unavailable")
 
-    monkeypatch.setattr(models_service, "list_models", unavailable)
+    monkeypatch.setattr(ChildRuns, "_page", unavailable)
     await (await runs_kit.attempt(service))
 
     attempts = await _released(service, run_id)
@@ -701,10 +701,11 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
         model,
         user_questions=question,
         client_tools=[{"name": "lookup", "description": "External fact", "parameters_json_schema": {"type": "object"}}],
-        toolsets={"configuration": {"enabled": True}},
+        builtin_skills=["platform-operations"],
+        toolsets={"files": {"tools": {"view": {"permission": "ask"}}}, "shell": {"enabled": False}},
     )
     calls = [
-        ("create_agent", {"name": "Created", "config": {"model": model}}, "call_create"),
+        ("view", {"file_path": runs_kit.GUIDE}, "call_view"),
         ("ask_user_question", {"questions": [runs_kit.QUESTION]}, "call_lookup")
         if question
         else ("lookup", {}, "call_lookup"),
@@ -737,7 +738,7 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     response = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/resume",
         json={
-            "approvals": {"call_create": {"action": "approve"}},
+            "approvals": {"call_view": {"action": "approve"}},
             "calls": {
                 "call_lookup": (
                     {"status": "failed", "message": "accepted once"}
@@ -755,7 +756,7 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
 
     async def stop_after_commit(self, ctx, *, call, tool_def, args):
         args = await before(self, ctx, call=call, tool_def=tool_def, args=args)
-        if call.tool_call_id == "call_create":
+        if call.tool_call_id == "call_view":
             committed.set()
             await asyncio.Event().wait()
         return args
@@ -783,23 +784,23 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     await (await runs_kit.attempt(service))
     result = await runs_kit.get_run(service, run_id)
     assert result["status"] == "completed" and result["attempts"] == 2, result
-    agents = (await service.client.get(f"{service.api}/agents", params={"source": "custom"})).json()["items"]
-    assert [item["name"] for item in agents] == ["Mixed"]
     await scripted_model.request()
     resumed = await scripted_model.request()
     returns = [message for message in resumed["messages"] if message["role"] == "tool"]
     external = [message for message in returns if message["tool_call_id"] == "call_lookup"]
     assert len(external) == 1 and "accepted once" in external[0]["content"]
-    assert len([message for message in returns if message["tool_call_id"] == "call_create"]) == 1
+    # The approved local call reached execution before the takeover, so it reports an unknown outcome once.
+    (local,) = [message for message in returns if message["tool_call_id"] == "call_view"]
+    assert "execution was interrupted" in local["content"]
 
 
 async def test_slow_object_deletion_does_not_block_tool_boundaries_or_successor_acceptance(
     service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     gate, deleting, finish_delete = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
     scripted_model.say("Done")
     submitted = await runs_kit.start_thread(service, agent, "look around")
     run_id, thread_id = submitted["run"]["id"], submitted["thread"]["id"]

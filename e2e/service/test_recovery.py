@@ -6,13 +6,10 @@ import signal
 import pytest
 
 from .api import eventually
-from .scripted import tool_results, user_texts
+from .scripted import GUIDE, LOOKUP, tool_results, user_texts
 from .stack import DRAIN_SECONDS, LEASE_SECONDS, read_rows
 
 pytestmark = pytest.mark.anyio
-
-# A tool without effects outside the Service, allowed by default once its toolset is enabled.
-LOOKUP = {"toolsets": {"configuration": {"enabled": True}}}
 
 
 def attempt_rows(stack, run_id: str) -> list[dict]:  # type: ignore[no-untyped-def]
@@ -39,12 +36,12 @@ async def tool_committed(api, run_id: str) -> None:  # type: ignore[no-untyped-d
 async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
-    await model.call("find_resources", {"kind": "model"}, call_id="call_find", to="[crash]")
+    await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[crash]")
     # The worker dies while this request is outstanding; its answer never comes.
     await model.say("Lost with the worker.", to="[crash]", hold="never")
     doomed = stack.workers[0]
     with stack.only(doomed):
-        receipt = await api.start(agent, "[crash] Look the models up")
+        receipt = await api.start(agent, "[crash] Read the platform guide")
         run_id = receipt["run"]["id"]
         await model.arrived("[crash]", status="held")
     await tool_committed(api, run_id)
@@ -67,7 +64,7 @@ async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack) -> Non
     requests = await model.requests("[crash]")
     assert [request["status"] for request in requests] == ["answered", "abandoned", "answered"]
     lost, retried = requests[1], requests[2]
-    assert user_texts(retried) == user_texts(lost) == ["[crash] Look the models up"]
+    assert user_texts(retried) == user_texts(lost) == ["[crash] Read the platform guide"]
     assert len(tool_results(retried)) == 1 and tool_results(retried) == tool_results(lost)
     entries = await api.inbox(receipt["thread"]["id"])
     assert [(entry["status"], entry["assigned_run_id"]) for entry in entries] == [("consumed", run_id)]
@@ -101,10 +98,10 @@ async def test_heartbeats_keep_one_attempt_through_a_slow_model(stack) -> None: 
 async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
-    await model.call("find_resources", {"kind": "model"}, call_id="call_find", to="[drain]", hold="drain")
+    await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[drain]", hold="drain")
     draining, successor = stack.workers
     with stack.only(draining):
-        receipt = await api.start(agent, "[drain] Look the models up")
+        receipt = await api.start(agent, "[drain] Read the platform guide")
         run_id = receipt["run"]["id"]
         await model.arrived("[drain]", status="held")
 
@@ -138,4 +135,4 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
     # The tool ran once on the draining worker; the successor asked only for the next step.
     answered = [request for request in await model.requests("[drain]") if request["status"] == "answered"]
     assert len(answered) == 2 and len(tool_results(answered[1])) == 1
-    assert user_texts(answered[1]) == ["[drain] Look the models up"]
+    assert user_texts(answered[1]) == ["[drain] Read the platform guide"]

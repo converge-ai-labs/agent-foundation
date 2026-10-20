@@ -1,0 +1,738 @@
+[
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_agents",
+    "method": "GET",
+    "path": "/api/v1/agents",
+    "summary": "List Agents"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "create_agent",
+    "method": "POST",
+    "path": "/api/v1/agents",
+    "summary": "Create Agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "validate_agent",
+    "method": "POST",
+    "path": "/api/v1/agents/validate",
+    "summary": "Validate Agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_agent",
+    "method": "GET",
+    "path": "/api/v1/agents/{agent_id}",
+    "summary": "Get Agent"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "update_agent",
+    "method": "PATCH",
+    "path": "/api/v1/agents/{agent_id}",
+    "summary": "Update Agent"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "archive_agent",
+    "method": "POST",
+    "path": "/api/v1/agents/{agent_id}/archive",
+    "summary": "Archive Agent"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "duplicate_agent",
+    "method": "POST",
+    "path": "/api/v1/agents/{agent_id}/duplicate",
+    "summary": "Duplicate Agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_agent_revisions",
+    "method": "GET",
+    "path": "/api/v1/agents/{agent_id}/revisions",
+    "summary": "List Agent Revisions"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "create_agent_revision",
+    "method": "POST",
+    "path": "/api/v1/agents/{agent_id}/revisions",
+    "summary": "Create Agent Revision"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_agent_revision",
+    "method": "GET",
+    "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}",
+    "summary": "Get Agent Revision"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "compare_agent_revisions",
+    "method": "GET",
+    "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}/compare",
+    "summary": "Compare Agent Revisions"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "set_default_agent_revision",
+    "method": "POST",
+    "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default",
+    "summary": "Set Default Agent Revision"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "unarchive_agent",
+    "method": "POST",
+    "path": "/api/v1/agents/{agent_id}/unarchive",
+    "summary": "Unarchive Agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_toolsets",
+    "method": "GET",
+    "path": "/api/v1/toolsets",
+    "summary": "List Toolsets"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "define_toolsets",
+    "method": "GET",
+    "path": "/api/v1/toolsets/definitions",
+    "summary": "Define Toolsets"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "index_toolsets",
+    "method": "GET",
+    "path": "/api/v1/toolsets/index",
+    "summary": "Index Toolsets"
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_media_defaults",
+    "method": "GET",
+    "path": "/api/v1/media-understanding-defaults",
+    "summary": "Get Media Defaults"
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_model_catalog",
+    "method": "GET",
+    "path": "/api/v1/model-catalog",
+    "summary": "Get Model Catalog"
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "list_models",
+    "method": "GET",
+    "path": "/api/v1/models",
+    "summary": "List Models"
+  },
+  {
+    "effect": "write",
+    "group": "models",
+    "key": "create_model",
+    "method": "POST",
+    "path": "/api/v1/models",
+    "summary": "Create Model"
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_model",
+    "method": "GET",
+    "path": "/api/v1/models/{key}",
+    "summary": "Get Model"
+  },
+  {
+    "effect": "write",
+    "group": "models",
+    "key": "update_model",
+    "method": "PATCH",
+    "path": "/api/v1/models/{key}",
+    "summary": "Update Model"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connections",
+    "method": "GET",
+    "path": "/api/v1/connections",
+    "summary": "List Connections"
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "create_connection",
+    "method": "POST",
+    "path": "/api/v1/connections",
+    "summary": "Create Connection"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "get_connection",
+    "method": "GET",
+    "path": "/api/v1/connections/{connection_id}",
+    "summary": "Get Connection"
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "update_connection",
+    "method": "PATCH",
+    "path": "/api/v1/connections/{connection_id}",
+    "summary": "Update Connection"
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "revoke_connection",
+    "method": "POST",
+    "path": "/api/v1/connections/{connection_id}/revoke",
+    "summary": "Revoke Connection"
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "test_connection",
+    "method": "POST",
+    "path": "/api/v1/connections/{connection_id}/test",
+    "summary": "Test Connection"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connection_tools",
+    "method": "GET",
+    "path": "/api/v1/connections/{connection_id}/tools",
+    "summary": "List Connection Tools"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "define_connection_tools",
+    "method": "GET",
+    "path": "/api/v1/connections/{connection_id}/tools/definitions",
+    "summary": "Define Connection Tools"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "index_connection_tools",
+    "method": "GET",
+    "path": "/api/v1/connections/{connection_id}/tools/index",
+    "summary": "Index Connection Tools"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connector_apps",
+    "method": "GET",
+    "path": "/api/v1/connector-providers/{provider_id}/apps",
+    "summary": "List Connector Apps"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "get_connector_app",
+    "method": "GET",
+    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}",
+    "summary": "Get Connector App"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connector_actions",
+    "method": "GET",
+    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions",
+    "summary": "List Connector Actions"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "define_connector_actions",
+    "method": "GET",
+    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/definitions",
+    "summary": "Define Connector Actions"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "index_connector_actions",
+    "method": "GET",
+    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/index",
+    "summary": "Index Connector Actions"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_mcp_servers",
+    "method": "GET",
+    "path": "/api/v1/mcp-servers",
+    "summary": "List Mcp Servers"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "list_skills",
+    "method": "GET",
+    "path": "/api/v1/skills",
+    "summary": "List Skills"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "create_skill",
+    "method": "POST",
+    "path": "/api/v1/skills",
+    "summary": "Create Skill"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "validate_skill",
+    "method": "POST",
+    "path": "/api/v1/skills/validate",
+    "summary": "Validate Skill"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "get_skill",
+    "method": "GET",
+    "path": "/api/v1/skills/{skill_id}",
+    "summary": "Get Skill"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "update_skill",
+    "method": "PATCH",
+    "path": "/api/v1/skills/{skill_id}",
+    "summary": "Update Skill"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "archive_skill",
+    "method": "POST",
+    "path": "/api/v1/skills/{skill_id}/archive",
+    "summary": "Archive Skill"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "list_skill_revisions",
+    "method": "GET",
+    "path": "/api/v1/skills/{skill_id}/revisions",
+    "summary": "List Skill Revisions"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "create_skill_revision",
+    "method": "POST",
+    "path": "/api/v1/skills/{skill_id}/revisions",
+    "summary": "Create Skill Revision"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "get_skill_revision",
+    "method": "GET",
+    "path": "/api/v1/skills/{skill_id}/revisions/{revision_id}",
+    "summary": "Get Skill Revision"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "set_default_skill_revision",
+    "method": "POST",
+    "path": "/api/v1/skills/{skill_id}/revisions/{revision_id}/set-default",
+    "summary": "Set Default Skill Revision"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "unarchive_skill",
+    "method": "POST",
+    "path": "/api/v1/skills/{skill_id}/unarchive",
+    "summary": "Unarchive Skill"
+  },
+  {
+    "effect": "read",
+    "group": "environment_templates",
+    "key": "list_environment_templates",
+    "method": "GET",
+    "path": "/api/v1/environment-templates",
+    "summary": "List Environment Templates"
+  },
+  {
+    "effect": "write",
+    "group": "environment_templates",
+    "key": "create_environment_template",
+    "method": "POST",
+    "path": "/api/v1/environment-templates",
+    "summary": "Create Environment Template"
+  },
+  {
+    "effect": "read",
+    "group": "environment_templates",
+    "key": "get_environment_template",
+    "method": "GET",
+    "path": "/api/v1/environment-templates/{template_id}",
+    "summary": "Get Environment Template"
+  },
+  {
+    "effect": "write",
+    "group": "environment_templates",
+    "key": "update_environment_template",
+    "method": "PATCH",
+    "path": "/api/v1/environment-templates/{template_id}",
+    "summary": "Update Environment Template"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_connector_providers",
+    "method": "GET",
+    "path": "/api/v1/connector-providers",
+    "summary": "List connector providers"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_connector_provider",
+    "method": "GET",
+    "path": "/api/v1/connector-providers/{provider_id}",
+    "summary": "Get connector provider"
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_connector_provider",
+    "method": "POST",
+    "path": "/api/v1/connector-providers/{provider_id}/test",
+    "summary": "Test connector provider"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_environment_providers",
+    "method": "GET",
+    "path": "/api/v1/environment-providers",
+    "summary": "List environment providers"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_environment_provider",
+    "method": "GET",
+    "path": "/api/v1/environment-providers/{provider_id}",
+    "summary": "Get environment provider"
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_environment_provider",
+    "method": "POST",
+    "path": "/api/v1/environment-providers/{provider_id}/test",
+    "summary": "Test environment provider"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_model_providers",
+    "method": "GET",
+    "path": "/api/v1/model-providers",
+    "summary": "List model providers"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_model_provider",
+    "method": "GET",
+    "path": "/api/v1/model-providers/{provider_id}",
+    "summary": "Get model provider"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "discover_model_provider_models",
+    "method": "GET",
+    "path": "/api/v1/model-providers/{provider_id}/models",
+    "summary": "Discover Model Provider Models"
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_model_provider",
+    "method": "POST",
+    "path": "/api/v1/model-providers/{provider_id}/test",
+    "summary": "Test model provider"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_web_providers",
+    "method": "GET",
+    "path": "/api/v1/web-providers",
+    "summary": "List web providers"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_web_provider",
+    "method": "GET",
+    "path": "/api/v1/web-providers/{provider_id}",
+    "summary": "Get web provider"
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_web_provider",
+    "method": "POST",
+    "path": "/api/v1/web-providers/{provider_id}/test",
+    "summary": "Test web provider"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_finding_analyses",
+    "method": "GET",
+    "path": "/api/v1/finding-analyses",
+    "summary": "List Finding Analyses"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_findings",
+    "method": "GET",
+    "path": "/api/v1/findings",
+    "summary": "List Findings"
+  },
+  {
+    "effect": "write",
+    "group": "execution",
+    "key": "create_finding",
+    "method": "POST",
+    "path": "/api/v1/findings",
+    "summary": "Create Finding"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_finding",
+    "method": "GET",
+    "path": "/api/v1/findings/{finding_id}",
+    "summary": "Get Finding"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_runs",
+    "method": "GET",
+    "path": "/api/v1/runs",
+    "summary": "List Runs"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}",
+    "summary": "Get Run"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_agent",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/agent",
+    "summary": "Get Run Agent"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_run_attempts",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/attempts",
+    "summary": "List Run Attempts"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_attempt",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/attempts/{attempt_id}",
+    "summary": "Get Run Attempt"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_attempt_spans",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/attempts/{attempt_id}/trace",
+    "summary": "List Attempt Spans"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_content",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/contents/{content_id}",
+    "summary": "Get Run Content"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_run_items",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/items",
+    "summary": "List Run Items"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "read_run_item_content",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/items/{item_id}/content",
+    "summary": "Read Run Item Content"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_lineage",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}/lineage",
+    "summary": "Get Run Lineage"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_sessions",
+    "method": "GET",
+    "path": "/api/v1/sessions",
+    "summary": "List Sessions"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_session",
+    "method": "GET",
+    "path": "/api/v1/sessions/{session_id}",
+    "summary": "Get Session"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_message_authors",
+    "method": "GET",
+    "path": "/api/v1/sessions/{session_id}/message-authors",
+    "summary": "Get Message Authors"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_threads",
+    "method": "GET",
+    "path": "/api/v1/threads",
+    "summary": "List Threads"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_thread",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}",
+    "summary": "Get Thread"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_inbox",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}/inbox",
+    "summary": "List Inbox"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_inbox_entry",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}/inbox/{entry_id}",
+    "summary": "Get Inbox Entry"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_thread_runs",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}/runs",
+    "summary": "List Thread Runs"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_trace_backend",
+    "method": "GET",
+    "path": "/api/v1/trace-backend",
+    "summary": "Get Trace Backend"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_traces",
+    "method": "GET",
+    "path": "/api/v1/traces",
+    "summary": "List Traces"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_trace",
+    "method": "GET",
+    "path": "/api/v1/traces/{trace_id}",
+    "summary": "Get Trace"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_trace_spans",
+    "method": "GET",
+    "path": "/api/v1/traces/{trace_id}/spans",
+    "summary": "List Trace Spans"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "read_span_content",
+    "method": "GET",
+    "path": "/api/v1/traces/{trace_id}/spans/{span_id}/content",
+    "summary": "Read Span Content"
+  }
+]

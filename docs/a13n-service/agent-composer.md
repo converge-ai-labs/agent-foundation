@@ -32,15 +32,15 @@ Use the existing Console pages for connection credentials, custom secret headers
 
 ## What it can do
 
-| Group                 | Available work                                                                                |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| Agents                | Create, read, rename, label, archive and manage configuration revisions and defaults.         |
-| Models                | Read, create and update configured models.                                                    |
-| Connections           | Read, create, update, discover tools and test connections.                                    |
-| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions. |
-| Environment templates | Read, create and update templates for later instances.                                        |
-| Providers             | Read, create and update providers through private Console credential cards.                   |
-| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings. |
+| Group                 | Available work                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Agents                | Create, read, rename, label, archive and manage configuration revisions and defaults.                               |
+| Models                | Read, create and update configured models.                                                                          |
+| Connections           | Read, create, update, discover tools and test connections.                                                          |
+| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions.                       |
+| Environment templates | Read, create and update templates for later instances.                                                              |
+| Providers             | Read, create and update providers through private Console credential cards.                                         |
+| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings, and submit a finding. |
 
 Composer uses platform MCP tools with a short-lived credential supplied for the run. Reads run directly by default; writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions). Operations remain within your current permissions, the run's accepted authority and its workspace. Approval grants no additional platform permissions.
 
@@ -75,26 +75,30 @@ Preparation owns Composer's configuration and model selection. Editing, revising
 
 ## Use the toolset in your own agents
 
-Select platform groups and the local operating skill in advanced configuration JSON:
+Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Features** in the agent's tools, and the local operating skill in advanced configuration JSON. In the configuration, this agent can manage agents, models and skills and read executions, but cannot archive agents:
 
 ```json
 {
-  "platform_tools": {
-    "groups": ["agents", "models", "skills", "execution"],
-    "read_permission": "allow",
-    "write_permission": "ask"
+  "toolsets": {
+    "agents": {
+      "enabled": true,
+      "tools": {
+        "archive_agent": { "enabled": false }
+      }
+    },
+    "models": { "enabled": true },
+    "skills": { "enabled": true },
+    "execution": { "enabled": true }
   },
   "builtin_skills": ["platform-operations"]
 }
 ```
 
-Both selections default to empty. Permissions can be `allow`, `ask` or `deny`. Select tool groups to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
+Platform groups and the skill are not selected by default. Each tool keeps its own `permission`; `inherit` lets reads run and asks before writes. Select tools to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
 
 The `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. It shares the Harness Skills catalog and read lifecycle with user Skills. The Agent configuration schema is under `/platform-skills/platform-operations/schemas`; the deployment catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
 
 Enable `view`, `ls`, `glob` and `grep` to read the skill. Composer enables only these four file tools. Built-in document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
-
-Existing agents can use the legacy `configuration` toolset. Its `create_agent_revision` requires `expected_version` from the original resource read. Calls missing it must read again and submit a new request. Historical runs retain their original tools.
 
 ### Computer coordinate mode
 

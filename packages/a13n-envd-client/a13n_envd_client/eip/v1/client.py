@@ -11,8 +11,10 @@ from .methods import (
     COMPUTER_MOVE,
     COMPUTER_OBSERVE,
     COMPUTER_PRESS_KEYS,
+    COMPUTER_READ_CLIPBOARD,
     COMPUTER_SCROLL,
     COMPUTER_TYPE_TEXT,
+    COMPUTER_WRITE_CLIPBOARD,
     COMPUTER_ZOOM,
     DEVICE_DESCRIBE,
     DEVICE_METRICS,
@@ -68,8 +70,12 @@ from .models import (
     ComputerObserveParams,
     ComputerObserveResult,
     ComputerPressKeysParams,
+    ComputerReadClipboardParams,
+    ComputerReadClipboardResult,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerWriteClipboardParams,
+    ComputerWriteClipboardResult,
     ComputerZoomParams,
     ComputerZoomResult,
     DeviceDescribeParams,
@@ -187,11 +193,17 @@ class EIPClient:
     async def computer_press_keys(self, params: ComputerPressKeysParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_PRESS_KEYS, params)
 
+    async def computer_read_clipboard(self, params: ComputerReadClipboardParams) -> ComputerReadClipboardResult:
+        return await self._requester.request(COMPUTER_READ_CLIPBOARD, params)
+
     async def computer_scroll(self, params: ComputerScrollParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_SCROLL, params)
 
     async def computer_type_text(self, params: ComputerTypeTextParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_TYPE_TEXT, params)
+
+    async def computer_write_clipboard(self, params: ComputerWriteClipboardParams) -> ComputerWriteClipboardResult:
+        return await self._requester.request(COMPUTER_WRITE_CLIPBOARD, params)
 
     async def computer_zoom(self, params: ComputerZoomParams) -> ComputerZoomResult:
         return await self._requester.request(COMPUTER_ZOOM, params)

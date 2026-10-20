@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.shared import DockerReference, _missing
@@ -32,7 +33,9 @@ class HttpReference(DockerReference):
 
 
 @asynccontextmanager
-async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
+async def http_session(
+    reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> AsyncIterator[EIPSession]:
     if reference.target is None:
         raise _missing()
     with engine_errors(mutation=False):
@@ -67,6 +70,7 @@ async def http_session(reference: DockerReference) -> AsyncIterator[EIPSession]:
         raise provider_error("docker", "envd_http_binding_invalid", Category.INVALID) from None
     async with managed_http_session(
         provider_key="docker",
+        session_recovery=session_recovery,
         connection=configuration,
         endpoint_policy=reference.runtime.endpoint_policy,
         load_credential=lambda: _credential(reference),
@@ -104,7 +108,9 @@ async def _credential(reference: DockerReference) -> HttpEnvdCredential:
         raise provider_error("docker", "envd_credential_invalid", Category.UNAVAILABLE) from None
 
 
-def http_execution(reference: DockerReference) -> RemoteEnvdExecution:
+def http_execution(
+    reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> RemoteEnvdExecution:
     if reference.state is None:
         raise EnvironmentError("Docker target state is required", code="environment_not_found")
     return RemoteEnvdExecution(
@@ -112,5 +118,5 @@ def http_execution(reference: DockerReference) -> RemoteEnvdExecution:
         environment_id=reference.environment_id,
         state=reference.state,
         working_directory="/workspace",
-        session_context=http_session(reference),
+        session_context=http_session(reference, session_recovery=session_recovery),
     )

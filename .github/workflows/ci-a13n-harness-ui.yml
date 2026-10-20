@@ -12,10 +12,17 @@ on:
       - "frontend/**"
       - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
-      - "packages/a13n-envd-client/**"
-      - "packages/a13n-logging/**"
-      - "packages/a13n-harness/**"
-      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-envd-client/*"
+      - "packages/a13n-envd-client/a13n_envd_client/**"
+      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/a13n_logging/**"
+      - "packages/a13n-harness/*"
+      - "packages/a13n-harness/a13n_harness/**"
+      - "packages/a13n-harness/tests/providers_environment/test_direct_local.py"
+      - "packages/a13n-harness/tests/**/conftest.py"
+      - "packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py"
+      - "packages/a13n-stream-protocol/*"
+      - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
       - "packages/a13n-harness-ui/**"
       - "docs/a13n-harness-ui/**"
       - "pyproject.toml"
@@ -29,7 +36,6 @@ on:
       - "scripts/prepare_a13n_harness_ui_assets.py"
       - "scripts/release_version.py"
       - "scripts/tests/test_check_a13n_harness_ui_distribution.py"
-      - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_prepare_a13n_harness_ui_assets.py"
       - "uv.lock"
   push:
@@ -43,10 +49,17 @@ on:
       - "frontend/**"
       - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
-      - "packages/a13n-envd-client/**"
-      - "packages/a13n-logging/**"
-      - "packages/a13n-harness/**"
-      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-envd-client/*"
+      - "packages/a13n-envd-client/a13n_envd_client/**"
+      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/a13n_logging/**"
+      - "packages/a13n-harness/*"
+      - "packages/a13n-harness/a13n_harness/**"
+      - "packages/a13n-harness/tests/providers_environment/test_direct_local.py"
+      - "packages/a13n-harness/tests/**/conftest.py"
+      - "packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py"
+      - "packages/a13n-stream-protocol/*"
+      - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
       - "packages/a13n-harness-ui/**"
       - "docs/a13n-harness-ui/**"
       - "pyproject.toml"
@@ -60,7 +73,6 @@ on:
       - "scripts/prepare_a13n_harness_ui_assets.py"
       - "scripts/release_version.py"
       - "scripts/tests/test_check_a13n_harness_ui_distribution.py"
-      - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_prepare_a13n_harness_ui_assets.py"
       - "uv.lock"
   # Full Windows coverage is a backstop, not a second sweep after every merge.
@@ -108,10 +120,17 @@ jobs:
               - '.pre-commit-config.yaml'
               - 'Makefile'
               - 'packages/*/pyproject.toml'
-              - 'packages/a13n-envd-client/**'
-              - 'packages/a13n-logging/**'
-              - 'packages/a13n-harness/**'
-              - 'packages/a13n-stream-protocol/**'
+              - 'packages/a13n-envd-client/*'
+              - 'packages/a13n-envd-client/a13n_envd_client/**'
+              - 'packages/a13n-logging/*'
+              - 'packages/a13n-logging/a13n_logging/**'
+              - 'packages/a13n-harness/*'
+              - 'packages/a13n-harness/a13n_harness/**'
+              - 'packages/a13n-harness/tests/providers_environment/test_direct_local.py'
+              - 'packages/a13n-harness/tests/**/conftest.py'
+              - 'packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py'
+              - 'packages/a13n-stream-protocol/*'
+              - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
               - 'packages/a13n-harness-ui/**'
               - 'docs/a13n-harness-ui/**'
               - 'pyproject.toml'
@@ -169,14 +188,17 @@ jobs:
               - 'scripts/prepare_a13n_harness_ui_assets.py'
               - 'scripts/release_version.py'
               - 'scripts/tests/test_check_a13n_harness_ui_distribution.py'
-              - 'scripts/tests/test_prepare_release_version.py'
               - 'scripts/tests/test_prepare_a13n_harness_ui_assets.py'
 
   tests:
-    name: UI Python tests
+    name: UI Python tests (${{ matrix.shard }}/2)
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     timeout-minutes: 12
     steps:
       - name: Checkout
@@ -203,6 +225,7 @@ jobs:
         run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
       - name: Type-check UI
+        if: matrix.shard == 1
         run: >-
           uv run --locked --no-sync pyright
           packages/a13n-harness-ui/a13n_harness_ui
@@ -220,9 +243,11 @@ jobs:
           PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 3
+          --shard ${{ matrix.shard }} 2
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
+        if: matrix.shard == 1
         timeout-minutes: 2
         run: >-
           uv run --locked --no-sync python -m pytest --junitxml=test-results/native-lifecycle.xml
@@ -233,7 +258,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-python-${{ github.run_attempt }}
+          name: ui-python-${{ matrix.shard }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 
@@ -280,7 +305,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: console-shared-${{ github.run_attempt }}
-          path: frontend/**/test-results/*.xml
+          # Avoid walking pnpm's node_modules links and uploading each shared report repeatedly.
+          path: |
+            frontend/apps/*/test-results/*.xml
+            frontend/packages/*/test-results/*.xml
           retention-days: 7
 
       - name: Build frontend workspace
@@ -363,8 +391,6 @@ jobs:
           uv run --locked --no-sync python -m scripts.run_python_tests --workers 2
           scripts/tests/test_check_a13n_harness_ui_distribution.py
           scripts/tests/test_prepare_a13n_harness_ui_assets.py
-          scripts/tests/test_prepare_release_version.py
-          scripts/tests/test_harness_ui_ci_workflow.py
 
       - name: Build UI distribution
         run: uv build --package a13n-harness-ui --out-dir dist/a13n-harness-ui

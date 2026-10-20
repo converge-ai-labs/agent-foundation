@@ -130,6 +130,16 @@ flowchart TB
 
 在 WebUI 展开**观测桌面**或 **Inspect desktop region** 查看图像。临时图像副本可能过期。及时关闭截图 reader，释放传输容量。
 
+## 剪贴板文本
+
+分别启用 `environment.computer.read_clipboard` 和 `environment.computer.write_clipboard`，即可使用 `computer_read_clipboard` 和 `computer_write_clipboard`。两者均支持 macOS、Windows 和 Linux X11。通过 `alias` 选择目标挂载；剪贴板访问不需要观察引用。
+
+读取返回 `status: text` 和完整文本（包括空字符串），或返回不带文本的 `no_content` / `no_text`。`max_bytes` 默认为 16384，可以降低。超限读取报错，不会截断。写入必须提供 `text`，允许空字符串，拒绝 NUL，原始 UTF-8 文本最多 16384 字节。读写均将 CRLF 规范化为 LF，只交换 Unicode 纯文本。
+
+粘贴时先写入剪贴板，再单独发送应用的粘贴组合键。读取应用复制的内容时，先发送复制组合键，再读取剪贴板。检查应用状态：组合键完成不代表应用已发布或插入文本，其他应用也可能在两次调用之间替换剪贴板。写入会替换原内容，不会保存或恢复旧内容。
+
+在同一个存活的 Session 内完成流程。X11 在 Session 存活期间提供 `CLIPBOARD` 内容，保持 `PRIMARY` 不变。macOS 和 Windows 立即向原生剪贴板发布数据，但不保证内容跨 Session 更换、重启或人工接管保留。macOS 仍受剪贴板同意机制约束；Windows 要求已登录且未锁定的输入桌面。写入结果为 partial/unknown 或 `cleanup_complete` 未完成时，先核对状态，不要自动重试。这些方法不与人工桌面查看器同步剪贴板文本。
+
 ## Python 客户端
 
 已有就绪 `EIPSession` 时，使用带验证的截图 reader：
@@ -157,3 +167,5 @@ async with session.zoom_computer(
 可选 [Linux 桌面 fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) 在临时容器中检查真实 GUI 输入和截图变化。可移植脚本化对端测试检查集成，不验证原生桌面行为。
 
 在目标 OS 的临时应用中尝试无害输入，检查下一张截图。也要测试权限/会话丢失和显示布局变化。
+
+验证剪贴板时使用可丢弃的桌面，因为写入会替换当前剪贴板。从原生编辑器复制文本并读取，再写入包含 `café 中文 🦀` 的多行文本并粘贴回编辑器。测试空文本，以及小于复制内容的读取上限。复制/读取和写入/粘贴期间保持 Session 存活。macOS 上测试拒绝剪贴板授权；Windows 上测试锁屏和剪贴板占用。也可运行原生 EIP 回归测试 `cargo test -p a13n-envd --lib clipboard_eip -- --ignored --test-threads=1`；该测试会替换剪贴板内容。

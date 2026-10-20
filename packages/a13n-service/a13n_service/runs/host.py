@@ -16,17 +16,18 @@ from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfigu
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
+from a13n_harness.tools import ToolIdentity
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import ServiceError
-from a13n_service.resources.agents.schemas import PlatformSelection, SharedSkillSync
+from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
-    enabled_tools,
     memory_file_tools,
     memory_record_tools,
+    platform_tools,
     web_tools,
 )
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
@@ -34,9 +35,7 @@ from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.calls import CallCheck
-from a13n_service.runs.configuration import ConfigurationCapability
 from a13n_service.runs.environments.mounts import PRIMARY
-from a13n_service.runs.findings.tools import FindingCapability
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
     file_memory,
@@ -59,7 +58,7 @@ class _Parts:
     connections: tuple[SelectedConnection, ...]
     web: ResolvedWeb | None
     skills: tuple[PinnedSkill, ...]
-    platform: PlatformSelection
+    platform: Mapping[str, ToolIdentity]
     builtin_skill: bool
 
 
@@ -102,7 +101,7 @@ async def resolve_host(
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
             skills=await resolve_skills(session, run, config.skills, sync=config.skill_sync),
-            platform=config.platform_tools,
+            platform=platform_tools(config.toolsets),
             builtin_skill="platform-operations" in config.builtin_skills,
         )
     return HostPlan(
@@ -129,7 +128,7 @@ class Host:
     environment: EnvironmentRuntime
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
-        """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
+        """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
         parts = self.plan.parts[agent.revision_id]
         skills = parts.skills
@@ -148,16 +147,6 @@ class Host:
             )
         if enabled_tool(agent.config.toolsets, "assets", "publish") is not None:
             features.append(AssetsCapability(self.runtime, self.lease, self.principal, self.authority))
-        if configuration := enabled_tools(agent.config.toolsets, "configuration"):
-            features.append(
-                ConfigurationCapability(self.runtime, self.lease, self.principal, self.authority, configuration)
-            )
-        trace_tools = enabled_tools(agent.config.toolsets, "traces")
-        finding_tools = enabled_tools(agent.config.toolsets, "findings")
-        if trace_tools or finding_tools:
-            features.append(
-                FindingCapability(self.runtime, self.lease, self.principal, self.authority, trace_tools, finding_tools)
-            )
         return features
 
     def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:
@@ -209,7 +198,7 @@ async def open_host(
                 )
             )
             tools[revision_id] = dict(zip((item.connection.id for item in parts.connections), connections, strict=True))
-            if parts.platform.groups:
+            if parts.platform:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
                 tools[revision_id]["platform"] = platform
             if parts.web is not None:

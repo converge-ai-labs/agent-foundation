@@ -1928,6 +1928,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn candidate_count(tree: &TempTree) -> usize {
         fs::read_dir(tree.child("native"))
             .expect("lists native root")

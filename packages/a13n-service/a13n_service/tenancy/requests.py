@@ -45,8 +45,14 @@ async def current_principal(credential: Annotated[Authenticated, Depends(current
     return credential.principal
 
 
+async def origin_run(credential: Annotated[Authenticated, Depends(current_credential)]) -> str | None:
+    """The Run whose platform credential sent the request; none for any other credential."""
+    return credential.platform.run_id if credential.platform is not None else None
+
+
 Credential = Annotated[Authenticated, Depends(current_credential)]
 Actor = Annotated[Principal, Depends(current_principal)]
+OriginRun = Annotated[str | None, Depends(origin_run)]
 
 
 async def current_workspace(

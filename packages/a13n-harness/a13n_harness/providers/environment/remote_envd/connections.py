@@ -22,6 +22,7 @@ from a13n_harness.environment.envd_policy import (
 )
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.remote_envd.configuration import (
     RemoteEnvdConnectionConfiguration,
     RemoteEnvdStateData,
@@ -176,9 +177,10 @@ class WebSocketEnvdConnections:
         timeout: float = 10,
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> AsyncIterator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id, timeout=timeout)
-        async with DeviceEIPSessionSource(device).open_session(
+        async with DeviceEIPSessionSource(device, session_recovery=session_recovery).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
             working_directory=working_directory,

@@ -10,6 +10,7 @@ from pydantic import BaseModel, JsonValue
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState, decode_target_state
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
@@ -77,13 +78,16 @@ def _construct_execution(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: DockerProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, DockerEnvironmentConfiguration) or runtime is None:
         raise TypeError("Docker requires typed configuration and runtime")
     if configuration.execution == "envd_http":
         from a13n_harness.providers.environment.docker.http import HttpReference, http_execution
 
-        return http_execution(HttpReference(configuration, environment_id, state, runtime))
+        return http_execution(
+            HttpReference(configuration, environment_id, state, runtime), session_recovery=session_recovery
+        )
     return DockerExecution(configuration, environment_id, state, runtime)
 
 

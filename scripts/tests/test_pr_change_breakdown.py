@@ -50,7 +50,7 @@ def node(script, data):
         ("scripts/verify.py", "Developer tools & examples"),
         ("examples/demo/main.py", "Developer tools & examples"),
         ("examples/demo/README.md", "Documentation"),
-        ("blog/hello-world/cover.svg", "Documentation"),
+        ("frontend/apps/a13n-site/posts/hello-world/cover.svg", "Documentation"),
         ("packages/a13n-harness/pyproject.toml", "Dependencies & lockfiles"),
         ("frontend/pnpm-lock.yaml", "Dependencies & lockfiles"),
         ("crates/a13n-envd/build_support/mod.rs", "Build, CI & deployment"),

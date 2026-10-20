@@ -1,6 +1,6 @@
 {
   "generated": true,
-  "method_count": 52,
+  "method_count": 54,
   "methods": [
     {
       "device_scoped": false,
@@ -96,6 +96,19 @@
     {
       "device_scoped": false,
       "error_family": "resource",
+      "introduced": "0.3",
+      "jsonrpc_method": "computer.read_clipboard",
+      "kind": "request_response",
+      "params_type": "ComputerReadClipboardParams",
+      "replay_class": "active_only",
+      "result_type": "ComputerReadClipboardResult",
+      "rpc_name": "ComputerReadClipboard",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "computer.scroll",
       "kind": "request_response",
@@ -116,6 +129,19 @@
       "replay_class": "terminal_evidence",
       "result_type": "ComputerActionResult",
       "rpc_name": "ComputerTypeText",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "resource",
+      "introduced": "0.3",
+      "jsonrpc_method": "computer.write_clipboard",
+      "kind": "request_response",
+      "params_type": "ComputerWriteClipboardParams",
+      "replay_class": "terminal_evidence",
+      "result_type": "ComputerWriteClipboardResult",
+      "rpc_name": "ComputerWriteClipboard",
       "transfer_action": null,
       "transfer_direction": null
     },

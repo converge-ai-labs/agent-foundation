@@ -93,7 +93,10 @@ async def legacy_run(service, scripted_model, runs_kit):
         state_pointer = StatePointer.model_validate(row.checkpoint)
         organization_id = row.organization_id
     tail = await checkpoints.load_tail(service.runtime.objects, tail_pointer)
-    state_bytes = await checkpoints.load(service.runtime.objects, state_pointer)
+    state = json.loads(await checkpoints.load(service.runtime.objects, state_pointer))
+    state["format"] = 1
+    state.pop("envd_sessions")
+    state_bytes = json.dumps(state).encode()
     old_display = {
         "items": [item.model_dump(mode="json", exclude={"ordinal", "content_refs"}) for item in tail.items],
         "position": tail.position.model_dump(),

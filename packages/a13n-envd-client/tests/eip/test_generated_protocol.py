@@ -57,6 +57,24 @@ GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/testdata/golde
 DATA_FRAME_GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/testdata/data-frame-golden.json"
 
 
+def test_clipboard_wire_requires_text_and_preserves_empty():
+    from a13n_envd_client.eip.v1.models import ComputerReadClipboardParams, ComputerWriteClipboardParams
+
+    context = {"operation_id": "clipboard-wire", "timeout_ms": 1000}
+    assert ComputerWriteClipboardParams.model_validate({"context": context, "text": ""}).text == ""
+    for text in [None, 42]:
+        with pytest.raises(ValidationError):
+            ComputerWriteClipboardParams.model_validate({"context": context, "text": text})
+    with pytest.raises(ValidationError):
+        ComputerWriteClipboardParams.model_validate({"context": context})
+    assert ComputerReadClipboardParams.model_validate({"context": context}).max_bytes == 16384
+    for maximum in [0, 16385]:
+        with pytest.raises(ValidationError):
+            ComputerReadClipboardParams.model_validate({"context": context, "max_bytes": maximum})
+    assert METHODS["computer.read_clipboard"].replay_class == "active_only"
+    assert METHODS["computer.write_clipboard"].replay_class == "terminal_evidence"
+
+
 def valid_eip_limits() -> dict[str, int]:
     return {
         "max_request_bytes": 1,
@@ -117,17 +135,24 @@ def test_monitoring_percentages_preserve_fractional_values(value: float) -> None
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.3"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 52
+    assert len(METHODS) == 54
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
     assert all(
-        method.introduced == ("0.2" if method.name in {"device.metrics", "computer.zoom"} else "0.1")
+        method.introduced
+        == (
+            "0.3"
+            if method.name in {"computer.read_clipboard", "computer.write_clipboard"}
+            else "0.2"
+            if method.name in {"device.metrics", "computer.zoom"}
+            else "0.1"
+        )
         for method in METHODS.values()
     )
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
-    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 22
-    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 21
+    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 23
+    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 22
     assert {method.name for method in METHODS.values() if method.replay_class == "ledger_external"} == {
         "initialize",
         "device.describe",

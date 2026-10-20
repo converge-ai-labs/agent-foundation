@@ -22,10 +22,11 @@ async def mixed_wait(service, scripted_model, runs_kit, *, options=None):  # typ
                 "parameters_json_schema": {"type": "object"},
             }
         ],
-        toolsets={"configuration": {"enabled": True}},
+        builtin_skills=["platform-operations"],
+        toolsets={"files": {"tools": {"view": {"permission": "ask"}}}, "shell": {"enabled": False}},
     )
     calls = [
-        ("create_agent", {"name": "Must not create", "config": {"model": model}}, "approve"),
+        ("view", {"file_path": runs_kit.GUIDE}, "approve"),
         ("review_invoice", {}, "review"),
         ("ask_user_question", {"questions": [runs_kit.QUESTION]}, "question"),
     ]
@@ -64,7 +65,7 @@ async def mixed_wait(service, scripted_model, runs_kit, *, options=None):  # typ
 
 def results():
     return {
-        "approvals": {"approve": {"action": "deny", "reason": "Keep the current agent"}},
+        "approvals": {"approve": {"action": "deny", "reason": "Keep the guide closed"}},
         "calls": {
             "review": {"status": "returned", "value": {"approved": False}},
             "question": {"status": "returned", "value": {"response": "Blue"}},
@@ -122,7 +123,7 @@ async def test_custom_human_results_and_native_failures_share_the_same_resume(
         if failed
         else json.loads(tool_results["review"]) == {"approved": False}
     )
-    assert "Keep the current agent" in tool_results["approve"]
+    assert "Keep the guide closed" in tool_results["approve"]
     assert json.loads(tool_results["question"]) == {"answers": {}, "response": "Blue"}
     assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1
 
@@ -149,8 +150,6 @@ async def test_fork_discards_inherited_wait_only_in_the_new_branch(service, scri
     assert all("No response was given" in tool_results[cid] for cid in ("review", "question"))
     assert request["messages"][-1]["role"] == "user"
     assert "Do something else" in str(request["messages"][-1]["content"])
-    agents = (await service.client.get(f"{service.api}/agents", params={"source": "custom"})).json()["items"]
-    assert [a["name"] for a in agents] == ["Mixed"]
 
 
 async def test_application_resume_ignores_retired_answer_storage(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]

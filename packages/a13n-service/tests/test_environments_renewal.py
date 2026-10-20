@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_service.distribution import OSS
-from a13n_service.infra.db import transaction
+from a13n_service.infra.db import now, transaction
 from a13n_service.runs.environments import lifecycle, renewal
 from a13n_service.runs.environments.lifecycle import advance
 from a13n_service.runs.environments.maintenance import maintain_environments, renew_environments, renewal_sweep
@@ -120,11 +120,16 @@ async def test_renewals_have_their_own_sweep_and_fall_due_halfway_to_the_expiry(
     path = f"{env.api}/environments/{expiring}"
     etag = (await env.client.get(path)).headers["etag"]
 
+    async with transaction(env.runtime.storage) as session:
+        before = await now(session)
     await renew_environments(env.runtime)
+    async with transaction(env.runtime.storage) as session:
+        after = await now(session)
     assert BACKEND.renewals == [expiring]
-    # The next renewal is due halfway to the expiry the provider reports, a keepalive horizon of 300 s away.
-    assert (await schedule(env, expiring))[1] == BACKEND.expiries[expiring]
-    assert timedelta(seconds=140) < await due_in(env, expiring) <= timedelta(seconds=150)
+    # Bound the midpoint with the database clock used to publish it; the provider's host clock may differ.
+    renew_at, expiry = await schedule(env, expiring)
+    assert expiry == BACKEND.expiries[expiring] and renew_at is not None
+    assert before + (expiry - before) / 2 <= renew_at <= after + (expiry - after) / 2
     assert (await env.client.get(path)).headers["etag"] == etag, "renewal is invisible to clients"
     await renew_environments(env.runtime)
     assert BACKEND.renewals == [expiring], "not due yet"
@@ -171,11 +176,17 @@ async def test_a_failed_renewal_backs_off_and_one_the_provider_cannot_grant_wait
     # A transient failure is recorded without refusing use, and retried halfway to the expiry still known.
     BACKEND.renewal_error = provider_error("fake", "provider_unavailable", EnvironmentProviderErrorCategory.UNAVAILABLE)
     await due_now(env, sandbox)
+    async with transaction(env.runtime.storage) as session:
+        before = await now(session)
     await renew_environments(env.runtime)
+    async with transaction(env.runtime.storage) as session:
+        after = await now(session)
     failed = await environment(env, sandbox)
     assert failed["status"] == "ready" and failed["failure"]["code"] == "provider_unavailable"
     assert not failed["failure"]["permanent"] and failed["failure"]["operation_id"] is None
-    assert timedelta(seconds=140) < await due_in(env, sandbox) <= timedelta(seconds=150)
+    renew_at, expiry = await schedule(env, sandbox)
+    assert renew_at is not None and expiry is not None
+    assert before + (expiry - before) / 2 <= renew_at <= after + (expiry - after) / 2
     submitted = await start(env, environments=[{"name": "workspace", "environment_id": sandbox}])
     await interrupt(env, submitted["run"]["id"])
 

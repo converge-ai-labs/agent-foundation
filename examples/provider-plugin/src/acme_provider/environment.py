@@ -4,6 +4,7 @@ from pathlib import Path
 
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -40,12 +41,14 @@ def connector(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
     del credential, runtime
     return DIRECT_LOCAL.execution_connector(
         {"root": {"path": str(workspace(configuration, environment, environment_id))}},
         environment_id=environment_id,
         state=state,
+        session_recovery=session_recovery,
     )
 
 

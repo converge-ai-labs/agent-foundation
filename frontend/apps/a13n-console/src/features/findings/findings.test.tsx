@@ -263,7 +263,7 @@ it("reviews impact independently and sends the exact revision and evidence to Co
       agent: { id: "ap_target", name: "Research" },
       revision: { id: "apr_cited", number: 3 },
       context: expect.stringContaining(
-        "Review finding fnd_test using read_finding",
+        "Review finding fnd_test: read it (GET /api/v1/findings/{finding_id})",
       ),
     }),
   );

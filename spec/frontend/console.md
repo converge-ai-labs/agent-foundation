@@ -142,9 +142,7 @@ Writers who may run Agents start bounded analysis from Findings or an ended trac
 
 Review with Composer is unavailable for expected or false-positive Findings. Otherwise it opens a normal conversation containing the finding ID and exact cited revision; Composer reads the durable evidence through the unified platform MCP queries. The editable initial message includes the originating Console page, workspace, selected Agent ID and exact base Revision ID. This context resolves references only; Composer rereads resource state and the original ETag through authorized tools. The user sends the proposed initial message and reviews subsequent configuration writes; navigation does not repair or publish the target. No experiment or dataset workflow is required.
 
-Agent tool settings place configuration, trace-query and finding tools under a collapsed Advanced / Platform Features disclosure. Opening it changes no selection. Group toggles preserve platform tools' individual enabled settings and permissions; configuration writes default to asking even when the draft omits a permission.
-
-Platform MCP groups and builtin operating Skills are independent `AgentConfig` selections, editable through advanced configuration JSON. Existing editors preserve both fields. Their permissions use the same tool review interface, displaying the exact operation and request arguments before approval; approval cannot widen the Run's server-enforced authority.
+Agent tool settings place the catalogue's platform toolsets under a collapsed Advanced / Platform Features disclosure, with the same group switch, per-tool rows and permissions as built-in toolsets. Opening it changes no selection, and an `inherit` permission shows the tool's catalogue default. Builtin operating Skills are an independent `AgentConfig` selection, editable through advanced configuration JSON, which existing editors preserve. Platform tool permissions use the same tool review interface, displaying the exact operation and request arguments before approval; approval cannot widen the Run's server-enforced authority.
 
 ## Computer Use configuration and observations
 

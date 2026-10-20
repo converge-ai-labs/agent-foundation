@@ -106,9 +106,9 @@ def test_configuration_fragment_versions_are_stable_across_worker_hash_seeds() -
     code = """
 from a13n_service.infra.reads import read_value
 from a13n_service.resources.agents.schemas import AgentConfig
-config = AgentConfig(model="model", platform_tools={"groups": {"agents", "models", "execution"}})
+config = AgentConfig(model="model", toolsets={group: {"enabled": True} for group in ("agents", "models", "execution")})
 print(read_value(config, source="config").version)
-print(read_value(config.platform_tools, source="config/platform_tools").version)
+print(read_value(config.toolsets, source="config/toolsets").version)
 """
     versions = [
         subprocess.check_output([sys.executable, "-c", code], env={**os.environ, "PYTHONHASHSEED": seed}, text=True)

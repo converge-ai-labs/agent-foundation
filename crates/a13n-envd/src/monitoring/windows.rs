@@ -316,48 +316,6 @@ pub(super) fn filesystem(path: &Path) -> Option<FilesystemMetrics> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn native_machine_codes_distinguish_arm64_from_x64() {
-        assert_eq!(
-            machine_architecture(IMAGE_FILE_MACHINE_ARM64).as_deref(),
-            Some("aarch64")
-        );
-        assert_eq!(
-            machine_architecture(IMAGE_FILE_MACHINE_AMD64).as_deref(),
-            Some("x86_64")
-        );
-        assert_eq!(
-            machine_architecture(IMAGE_FILE_MACHINE_I386).as_deref(),
-            Some("x86")
-        );
-        assert_eq!(machine_architecture(0), None);
-        assert!(native_architecture().is_some());
-    }
-
-    #[test]
-    fn utilization_excludes_idle_once_and_resets_after_topology_change() {
-        let first = Cpu {
-            user: 10,
-            system: 10,
-            idle: 80,
-            count: 8,
-        };
-        let next = Cpu {
-            user: 20,
-            system: 20,
-            idle: 160,
-            count: 8,
-        };
-        assert_eq!(next.percent(first), Some(20.0));
-        assert_eq!(first.percent(next), None);
-        assert_eq!(Cpu { count: 16, ..next }.percent(first), None);
-        assert_eq!(first.percent(first), None);
-    }
-}
-
 use crate::eip::{
     ConnectionMetrics, DiskIoMetrics, DiskMetrics, FilesystemInventory, FilesystemObservation,
     NetworkInterfaceMetrics, NetworkMetrics,
@@ -615,7 +573,7 @@ pub(super) fn disks() -> Option<DiskMetrics> {
             // Native item names live inside the caller-owned buffer. Retain only the physical disk number.
             let start = row.szName as usize;
             let end = buffer.as_ptr() as usize + bytes as usize;
-            if start < buffer.as_ptr() as usize || start >= end || start % 2 != 0 {
+            if start < buffer.as_ptr() as usize || start >= end || !start.is_multiple_of(2) {
                 continue;
             }
             let name = unsafe { std::slice::from_raw_parts(row.szName, (end - start) / 2) };
@@ -657,4 +615,46 @@ pub(super) fn disks() -> Option<DiskMetrics> {
         }
     }
     Some(DiskMetrics { devices, truncated })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_machine_codes_distinguish_arm64_from_x64() {
+        assert_eq!(
+            machine_architecture(IMAGE_FILE_MACHINE_ARM64).as_deref(),
+            Some("aarch64")
+        );
+        assert_eq!(
+            machine_architecture(IMAGE_FILE_MACHINE_AMD64).as_deref(),
+            Some("x86_64")
+        );
+        assert_eq!(
+            machine_architecture(IMAGE_FILE_MACHINE_I386).as_deref(),
+            Some("x86")
+        );
+        assert_eq!(machine_architecture(0), None);
+        assert!(native_architecture().is_some());
+    }
+
+    #[test]
+    fn utilization_excludes_idle_once_and_resets_after_topology_change() {
+        let first = Cpu {
+            user: 10,
+            system: 10,
+            idle: 80,
+            count: 8,
+        };
+        let next = Cpu {
+            user: 20,
+            system: 20,
+            idle: 160,
+            count: 8,
+        };
+        assert_eq!(next.percent(first), Some(20.0));
+        assert_eq!(first.percent(next), None);
+        assert_eq!(Cpu { count: 16, ..next }.percent(first), None);
+        assert_eq!(first.percent(first), None);
+    }
 }

@@ -122,8 +122,8 @@ async def test_handoff_keeps_model_cut_when_tool_checkpoint_is_already_queued(
     from a13n_service.runs.tables import RunRow
 
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_handoff")
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
+    runs_kit.lookup(scripted_model, call_id="call_handoff")
     submitted = await runs_kit.start_thread(service, agent, "look around")
     run_id = submitted["run"]["id"]
     queued = asyncio.Event()

@@ -25,6 +25,8 @@ from a13n_harness.environment.commands import (
 )
 from a13n_harness.environment.computer import (
     ComputerActionResult,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerInput,
     ComputerObservation,
@@ -77,6 +79,10 @@ class FileScopeProvider(Protocol):
 
 
 class BoundComputerOperations(Protocol):
+    async def read_clipboard(self, *, max_bytes: int = 16384, alias: str | None = None) -> ComputerClipboard: ...
+
+    async def write_clipboard(self, text: str, *, alias: str | None = None) -> ComputerClipboardWriteResult: ...
+
     async def describe(self, *, alias: str | None = None) -> ComputerDescription: ...
 
     async def observe(

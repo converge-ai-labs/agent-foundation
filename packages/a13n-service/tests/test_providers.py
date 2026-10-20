@@ -460,11 +460,6 @@ async def test_provider_test_probes_without_paid_calls(service) -> None:  # type
         assert unsupported["status"] == "unsupported"
         assert len(requests) == 2
 
-    # Outside the operator's endpoint allowlist, the probe is refused before any connection.
-    private = await create(service, "model", openai("Private", "http://10.1.2.3/v1"))
-    denied = (await service.client.post(f"{service.api}/model-providers/{private['id']}/test")).json()
-    assert denied["status"] == "failed"
-
 
 @pytest.mark.parametrize("header_updates", [None, {}], ids=["omitted-headers", "empty-headers"])
 async def test_configuration_changes_keep_saved_credentials_and_headers(service, header_updates) -> None:  # type: ignore[no-untyped-def]
@@ -655,18 +650,30 @@ async def test_environment_provider_tests_only_read_the_engine(  # type: ignore[
     assert (transient["status"], transient["message"]) == ("failed", "provider_unavailable")
 
 
-async def test_environment_provider_policy_refuses_http_before_dialing(  # type: ignore[no-untyped-def]
+async def test_provider_policy_refuses_http_before_dialing(  # type: ignore[no-untyped-def]
     serve, settings: Settings
 ) -> None:
-    # Without an exact HTTP exception, the strict operator policy refuses TCP before dialing.
     providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
-    with docker_engine() as (docker_host, requests):
+    with models_endpoint() as (base_url, requests, _):
         async with serve(settings=settings.model_copy(update={"providers": providers})) as strict:
-            created = await create(
-                strict, "environment", {"type": "docker", "name": "Docker", "config": {"docker_host": docker_host}}
-            )
-            denied = (await strict.client.post(f"{strict.api}/environment-providers/{created['id']}/test")).json()
-    assert (denied["status"], denied["message"]) == ("failed", "provider_endpoint_denied")
+            for kind, body, reason in (
+                (
+                    "model",
+                    {"type": "openai", "config": {"base_url": base_url}, "credential": {"api_key": "good"}},
+                    "Configuration, credential or endpoint was rejected",
+                ),
+                (
+                    "environment",
+                    {
+                        "type": "docker",
+                        "config": {"docker_host": base_url.removesuffix("/v1").replace("http://", "tcp://")},
+                    },
+                    "provider_endpoint_denied",
+                ),
+            ):
+                created = await create(strict, kind, {"name": "Refused HTTP", **body})
+                denied = (await strict.client.post(f"{strict.api}/{kind}-providers/{created['id']}/test")).json()
+                assert (denied["status"], denied["message"]) == ("failed", reason)
     assert requests == []
 
 
@@ -691,12 +698,6 @@ async def test_docker_accounts_name_only_remote_engines_the_endpoint_policy_allo
             assert refused.status_code == 400, (docker_host, refused.text)
             assert refused.json()["error"]["details"]["field"] == "config" and "hunter2" not in refused.text
         assert (await create(service, "environment", docker))["config"] == {}
-
-        with docker_engine() as (docker_host, requests):
-            remote = await create(service, "environment", {**docker, "config": {"docker_host": docker_host}})
-            tested = (await service.client.post(f"{collection}/{remote['id']}/test")).json()
-        assert (tested["status"], tested["message"]) == ("failed", "provider_endpoint_denied")
-        assert requests == []
 
 
 async def _docker_template(service: SimpleNamespace, name: str, recipe: dict) -> httpx2.Response:

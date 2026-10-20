@@ -7,6 +7,7 @@ from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
 from a13n_harness.providers.environment.e2b.shared import E2BReference
@@ -27,7 +28,9 @@ class HttpReference(E2BReference):
 
 
 @asynccontextmanager
-async def http_session(reference: E2BReference) -> AsyncIterator[EIPSession]:
+async def http_session(
+    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> AsyncIterator[EIPSession]:
     if reference._state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     sandbox = await open_sandbox(reference._state.sandbox_id, reference._options(), reference._validate_target)
@@ -54,6 +57,7 @@ async def http_session(reference: E2BReference) -> AsyncIterator[EIPSession]:
 
         async with managed_http_session(
             provider_key="e2b",
+            session_recovery=session_recovery,
             connection=connection,
             endpoint_policy=reference._runtime.endpoint_policy,
             load_credential=credential,
@@ -68,7 +72,9 @@ async def http_session(reference: E2BReference) -> AsyncIterator[EIPSession]:
         await close_sandbox(sandbox)
 
 
-def http_execution(reference: E2BReference) -> RemoteEnvdExecution:
+def http_execution(
+    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> RemoteEnvdExecution:
     if reference.state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     return RemoteEnvdExecution(
@@ -76,5 +82,5 @@ def http_execution(reference: E2BReference) -> RemoteEnvdExecution:
         environment_id=reference.environment_id,
         state=reference.state,
         working_directory="/workspace",
-        session_context=http_session(reference),
+        session_context=http_session(reference, session_recovery=session_recovery),
     )

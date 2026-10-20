@@ -13,9 +13,9 @@ pytestmark = pytest.mark.anyio
 
 async def _tool_turn(service, scripted_model, runs_kit) -> tuple[dict, str, asyncio.Event]:  # type: ignore[no-untyped-def]
     """A thread whose run first calls a tool, once `gate` opens, and then ends; steers join after the tool."""
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
     scripted_model.say("Done")
     thread_id = (await runs_kit.start_thread(service, agent, "look around"))["thread"]["id"]
     return agent, thread_id, gate
@@ -90,10 +90,9 @@ async def test_a_steer_a_recovered_attempt_cannot_read_fails_alone(service, scri
 
 async def test_a_steer_joins_with_the_default_options_or_the_runs_own(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Acceptance freezes a run's options with their pins resolved; a steer names them as submitted, or none."""
-    toolsets = {"configuration": {"enabled": True}}
-    agent = await runs_kit.delegating(service, scripted_model, "inline", toolsets=toolsets)
+    agent = await runs_kit.delegating(service, scripted_model, "inline", **runs_kit.LOOKUP)
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate, to="Role: coordinator")
+    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate, to="Role: coordinator")
     scripted_model.say("Done", to="Role: coordinator")
     options = {"labels": {"team": "a"}, "overrides": {"subagents": {"helper": {"description": "Overridden helper"}}}}
     submitted = await runs_kit.start_thread(service, agent, "look around", options=options)

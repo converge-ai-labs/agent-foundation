@@ -93,13 +93,13 @@ Saving validates the whole configuration against the workspace: every referenced
 
 Every built-in tool, connection tool and client tool has a permission:
 
-| Permission | Effect                                                                                                                                                            |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow`    | The tool runs when the model calls it.                                                                                                                            |
-| `ask`      | The run [waits](#waits-approvals-and-questions) for a person to approve or deny the call.                                                                         |
-| `review`   | The `reviewer` assesses risk; its policy allows, denies or asks a person. Review failures default to asking a person; timeouts deny. Requires `reviewer`.         |
-| `deny`     | The call is refused.                                                                                                                                              |
-| `inherit`  | The default: the tool's own default permission, which is `allow` except where a tool declares another, such as `ask` for the configuration toolset's write tools. |
+| Permission | Effect                                                                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow`    | The tool runs when the model calls it.                                                                                                                    |
+| `ask`      | The run [waits](#waits-approvals-and-questions) for a person to approve or deny the call.                                                                 |
+| `review`   | The `reviewer` assesses risk; its policy allows, denies or asks a person. Review failures default to asking a person; timeouts deny. Requires `reviewer`. |
+| `deny`     | The call is refused.                                                                                                                                      |
+| `inherit`  | The default: the tool's own default permission, which is `allow` for every built-in tool.                                                                 |
 
 ```mermaid
 flowchart TB
@@ -120,7 +120,7 @@ flowchart TB
     class Reviewer ext
 ```
 
-Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_tools[].permission` (`inherit`, `allow` or `deny`). The configuration toolset's writing tools default to `ask`.
+Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_tools[].permission` (`inherit`, `allow` or `deny`). [Platform tools](tools.md#platform-tools) are toolsets too, and use the same field.
 
 ### Client tools and questions
 
@@ -461,7 +461,7 @@ With a trace backend configured (`telemetry.trace_backend`, see [logs, metrics a
 - `GET …/traces/{trace_id}` returns a trace's root span, and `…/spans` its spans, each with name, kind, timing, status, model, usage, cost, input, output and attributes.
 - `GET …/trace-backend` returns the backend `type` (`null` when none) and `queryable_since`.
 
-Queries return only the workspace's spans. Without a backend they answer `503 unavailable`. How much content the spans hold depends on `telemetry.trace_content`.
+Queries return only the workspace's spans. Without a backend they answer `503 unavailable`. How much content the spans hold depends on `telemetry.trace_content`. A Finding Agent analysis run reads only the traces its analysis selected, each by `trace_id`: its own requests cannot list traces or an attempt's spans, and each trace it reads is recorded as evidence it may cite.
 
 ## Find and improve execution issues
 
@@ -491,4 +491,4 @@ Selection scans at most 100 roots and selects at most 20 matching traces. Execut
 
 For findings other than expected or false positive, **Review with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only platform queries. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
 
-Custom Agents can enable configuration, trace-query and finding-submission tools under **Advanced / Platform Features**. Configuration writes default to asking; Finding Agent's managed preset has read access to configuration and no Agent write tools. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.
+Finding Agent enables only six `execution` [platform tools](tools.md#platform-tools), each allowed: it reads the selected traces, their spans and span content, the run's executed configuration and a finding, and its only write submits a finding. Its findings cite only selected traces that it read, and name its run as their source. Custom agents can select the same tools; their writes default to asking. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.

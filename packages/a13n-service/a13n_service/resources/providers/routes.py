@@ -45,12 +45,13 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
     collection = f"/{kind}-providers"
     item = collection + "/{provider_id}"
 
-    # Every kind shares these handlers; name the kind so each operation stays distinguishable.
+    # Every kind shares these handlers; the summary and operation name carry the kind.
     @router.post(
         collection,
         response_model=Provider,
         status_code=201,
         summary=f"Create {kind} provider",
+        name=f"create_{kind}_provider",
         openapi_extra={"x-a13n-mcp": True},
     )
     async def create_provider(
@@ -65,6 +66,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         collection,
         response_model=ProviderPage,
         summary=f"List {kind} providers",
+        name=f"list_{kind}_providers",
         openapi_extra=platform_operation("providers", "read") if kind != "memory" else {"x-a13n-mcp": True},
     )
     async def list_providers(
@@ -80,6 +82,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         item,
         response_model=Provider,
         summary=f"Get {kind} provider",
+        name=f"get_{kind}_provider",
         openapi_extra=platform_operation("providers", "read") if kind != "memory" else {"x-a13n-mcp": True},
     )
     async def get_provider(
@@ -88,7 +91,13 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         result = await service.get_provider(runtime.storage, actor, row_type, workspace_id, provider_id)
         return tagged(response, result)
 
-    @router.patch(item, response_model=Provider, summary=f"Update {kind} provider", openapi_extra={"x-a13n-mcp": True})
+    @router.patch(
+        item,
+        response_model=Provider,
+        summary=f"Update {kind} provider",
+        name=f"update_{kind}_provider",
+        openapi_extra={"x-a13n-mcp": True},
+    )
     async def update_provider(
         response: Response,
         workspace_id: WorkspaceId,
@@ -116,6 +125,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         item + "/test",
         response_model=ProviderTest,
         summary=f"Test {kind} provider",
+        name=f"test_{kind}_provider",
         openapi_extra=platform_operation("providers", "write") if kind != "memory" else {"x-a13n-mcp": True},
     )
     async def test_provider(

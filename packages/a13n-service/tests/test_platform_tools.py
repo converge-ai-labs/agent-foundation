@@ -9,7 +9,7 @@ from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.resources.agents.composer import configuration
+from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.runs.claim import claim
 from a13n_service.runs.platform_tokens import issue
 from a13n_service.runs.seal import LeaseExpirer
@@ -280,7 +280,7 @@ async def test_run_query_filters_pages_and_attempt_ownership(service, scripted_m
 async def test_composer_discovers_and_calls_message_text_search(service, scripted_model, runs_kit):
     lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
     matching = (await runs_kit.start_thread(service, agent, "南京部署故障"))["run"]
-    token = await issue(service.runtime, lease, configuration("model").platform_tools.groups)
+    token = await issue(service.runtime, lease, frozenset(PLATFORM_GROUPS))
     async with client(service, {"secret": token}) as http:
         discovery = await rpc(http, "tools/list")
         assert discovery.status_code == 200, discovery.text
@@ -297,37 +297,6 @@ async def test_composer_discovers_and_calls_message_text_search(service, scripte
             assert [row["id"] for row in result["body"]["items"]] == [matching[field]]
             missing = await call(http, service, "GET", f"/{resource}", text_query="南京 missing", **projection)
             assert missing["status"] == 200 and missing["body"]["items"] == []
-
-
-async def test_legacy_revision_tool_requires_original_version(service, scripted_model, runs_kit):
-    from a13n_service.runs.attempts import authorize_execution
-    from a13n_service.runs.configuration import ConfigurationCapability
-    from a13n_service.tenancy.authorize import ExecutionAuthority
-    from pydantic_ai.exceptions import ToolFailed
-
-    lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
-    async with transaction(service.runtime.storage) as session:
-        run = await session.get_one(RunRow, lease.run_id)
-        principal = await authorize_execution(session, service.runtime.access, run)
-        authority = ExecutionAuthority.model_validate(run.authority)
-    capability = ConfigurationCapability(service.runtime, lease, principal, authority, frozenset({"create_revision"}))
-    revision = await service.client.get(f"/api/v1/agents/{agent['id']}/revisions/{agent['default_revision_id']}")
-    config = revision.json()["config"]
-    config["instructions"] = "Proposed change"
-    with pytest.raises(ToolFailed, match="original version"):
-        await capability.create_agent_revision(agent["id"], config)
-    changed = await service.client.patch(
-        f"/api/v1/agents/{agent['id']}",
-        json={"description": "Concurrent edit"},
-        headers={"If-Match": f'"{agent["id"]}:{agent["version"]}"'},
-    )
-    assert changed.status_code == 200, changed.text
-    with pytest.raises(ToolFailed):
-        await capability.create_agent_revision(agent["id"], config, expected_version=agent["version"])
-    unchanged = (await service.client.get(f"/api/v1/agents/{agent['id']}")).json()
-    assert unchanged["default_revision_id"] == agent["default_revision_id"]
-    saved = await capability.create_agent_revision(agent["id"], config, expected_version=unchanged["version"])
-    assert saved["revision_id"] != agent["default_revision_id"]
 
 
 async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, runs_kit):
@@ -364,16 +333,20 @@ async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, run
 
 async def test_native_platform_read_and_write_review_survive_resume(service, scripted_model, runs_kit, listen):
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(
-        service,
-        scripted_model,
-        platform_tools={"groups": ["agents"]},
-        builtin_skills=["platform-operations"],
-        toolsets={"files": {"enabled": True}, "shell": {"enabled": False}},
-    )
     schema = service.app.openapi()["paths"]
     read_name = tool_name(schema["/api/v1/agents"]["get"]["operationId"])
     write_name = tool_name(schema["/api/v1/agents/{agent_id}"]["patch"]["operationId"])
+    disabled = tool_name(schema["/api/v1/agents/{agent_id}/archive"]["post"]["operationId"])
+    agent = await runs_kit.create_agent(
+        service,
+        scripted_model,
+        builtin_skills=["platform-operations"],
+        toolsets={
+            "files": {"enabled": True},
+            "shell": {"enabled": False},
+            "agents": {"enabled": True, "tools": {disabled: {"enabled": False}}},
+        },
+    )
     scripted_model.call("view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide")
     scripted_model.call(read_name, {}, call_id="read")
     scripted_model.call(
@@ -395,6 +368,8 @@ async def test_native_platform_read_and_write_review_survive_resume(service, scr
         await (await runs_kit.attempt(service, runtime=runtime))
         run = await runs_kit.get_run(service, submitted["run"]["id"])
         assert run["status"] == "waiting", run
+        offered = {tool["function"]["name"] for tool in scripted_model.requests.get_nowait()["tools"]}
+        assert {read_name, write_name} <= offered and disabled not in offered
         unchanged = (await service.client.get(f"/api/v1/agents/{agent['id']}")).json()
         assert unchanged["description"] != "Reviewed change"
         scripted_model.say("Saved")
@@ -414,7 +389,7 @@ async def test_provider_probe_waits_for_review_and_returns_saved_credential_stat
     service, scripted_model, runs_kit, listen
 ):
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model, platform_tools={"groups": ["providers"]})
+    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"providers": {"enabled": True}})
     with models_endpoint() as (base_url, requests, received):
         created = await service.client.post(
             "/api/v1/model-providers",

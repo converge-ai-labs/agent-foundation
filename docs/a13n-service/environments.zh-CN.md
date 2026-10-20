@@ -148,6 +148,8 @@ curl -X PATCH "$A13N_URL/api/v1/environments/$ENVIRONMENT" \
 
 Service 先验证新连接；设备 ID 不同时返回 `409 conflict`，原因为 `provider_device_mismatch`。外部目标是**私有** 的：只有注册它的主体（用户或服务账号）可以挂载，只有该主体或工作空间管理员可以修改、删除。Service 不会停止或删除守护进程所在计算机；删除环境只会忘记 token。
 
+Worker 在运行中重启时，Service 会尽力复用该运行检查点中记录的 Envd 会话。外部 HTTP 目标，以及托管 Docker、E2B 和 Daytona 目标上的 Envd 执行使用相同机制；原生执行没有 Envd 会话。会话已关闭、已过期或守护进程已重启时，会创建新会话。正常清理仍会关闭会话；后续运行使用独立会话。恢复不会还原运行内的进程引用或输出观测。旧 Worker 延迟执行的清理可能关闭已恢复的会话，此后的操作会失败，不会自动重放。
+
 ### 停止、重命名与删除
 
 这些操作需要环境的 `If-Match` 和 `write` 权限：

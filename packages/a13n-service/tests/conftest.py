@@ -11,7 +11,7 @@ import json
 import os
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from copy import deepcopy
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +21,7 @@ from uuid import uuid4
 import httpx2
 import pytest
 import uvicorn
+from a13n_service import api_tools as api_tools_module
 from a13n_service import app as app_module
 from a13n_service.app import build_app, open_runtime
 from a13n_service.distribution import OSS, Distribution
@@ -43,6 +44,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from fastmcp.server.http import StarletteWithLifespan
+from fastmcp.utilities.openapi import HTTPRoute
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
@@ -186,30 +188,50 @@ async def tenant(runtime: Runtime) -> Bootstrapped:
 
 @pytest.fixture(scope="session")
 def service_app() -> Callable[..., FastAPI]:
-    """Compile the fixed OSS contract once per worker, not once per database-backed test.
+    """Compile fixed OSS definitions once per worker.
 
-    Only schema data is reused; applications, MCP tools and lifespans remain independent. Extensions and
-    direct build_app calls (including contract tests) still compile their own contracts through production code.
+    JSON snapshots restore independent OpenAPI and parsed MCP schemas without repeatedly compiling them.
+    Only definitions and migration head IDs are reused; apps, tools, runtimes and lifespans are always fresh.
+    Extensions and direct build_app calls still use the unpatched production builders.
     """
-    schema: dict[str, Any] | None = None
+    schema: str | None = None
+    operations: list[str] | None = None
+    expected = heads(OSS)
 
-    def build(distribution: Distribution = OSS, *, role: ProcessRole = "control", settings: Settings) -> FastAPI:
+    def build(
+        distribution: Distribution = OSS,
+        *,
+        role: ProcessRole = "control",
+        settings: Settings,
+        console: Path = app_module.CONSOLE,
+    ) -> FastAPI:
         if distribution is not OSS or role == "worker":
-            return build_app(distribution, role=role, settings=settings)
+            return build_app(distribution, role=role, settings=settings, console=console)
 
         def assemble(app: FastAPI, config: Settings, routes: Sequence[APIRoute]) -> StarletteWithLifespan:
             nonlocal schema
             if schema is not None:
-                app.openapi_schema = deepcopy(schema)
-            mcp = build_mcp(app, config, routes)
+                app.openapi_schema = json.loads(schema)
+            parse = api_tools_module.parse_openapi_to_http_routes
+
+            def parsed(document: dict[str, Any]) -> list[HTTPRoute]:
+                nonlocal operations
+                if operations is None:
+                    operations = [route.model_dump_json(by_alias=True) for route in parse(document)]
+                return [HTTPRoute.model_validate_json(route) for route in operations]
+
+            with pytest.MonkeyPatch.context() as patch:
+                patch.setattr(api_tools_module, "parse_openapi_to_http_routes", parsed)
+                mcp = build_mcp(app, config, routes)
             if schema is None:
-                schema = deepcopy(app.openapi())
+                schema = json.dumps(app.openapi())
             return mcp
 
         # Assembly is synchronous: restore the production builder before entering any asynchronous lifespan.
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(app_module, "build_mcp", assemble)
-            return build_app(distribution, role=role, settings=settings)
+            patch.setattr(app_module, "heads", lambda _: expected)
+            return build_app(distribution, role=role, settings=settings, console=console)
 
     return build
 
@@ -371,6 +393,15 @@ def listen() -> Any:
     return listening
 
 
+@asynccontextmanager
+async def platform_runtime(service: SimpleNamespace, runtime: Runtime | None = None) -> AsyncIterator[Runtime]:
+    """`runtime`, by default the service's, whose runs reach their platform tools at the service served on loopback."""
+    base = runtime or service.runtime
+    async with listening(service.app) as url:
+        server = base.settings.server.model_copy(update={"control_url": url})
+        yield replace(base, settings=base.settings.model_copy(update={"server": server}))
+
+
 @pytest.fixture
 async def scripted_model() -> AsyncIterator[ScriptedModel]:
     model = ScriptedModel()
@@ -389,6 +420,20 @@ QUESTION = {
     "options": [{"label": "red", "description": "Red"}, {"label": "blue", "description": "Blue"}],
     "multiSelect": False,
 }
+
+
+# The builtin platform guide, and the configuration for `lookup`: a server-side tool that needs no environment
+# and changes nothing.
+GUIDE = "/platform-skills/platform-operations/SKILL.md"
+LOOKUP: dict[str, Any] = {
+    "builtin_skills": ["platform-operations"],
+    "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
+}
+
+
+def lookup(model: ScriptedModel, *, call_id: str, gate: asyncio.Event | None = None, to: str | None = None) -> None:
+    """Script a call that reads the builtin platform guide, the tool an agent configured with `LOOKUP` has."""
+    model.call("view", {"file_path": GUIDE}, call_id=call_id, gate=gate, to=to)
 
 
 async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
@@ -609,6 +654,9 @@ def runs_kit() -> SimpleNamespace:
     return SimpleNamespace(
         SEALED=SEALED,
         QUESTION=QUESTION,
+        GUIDE=GUIDE,
+        LOOKUP=LOOKUP,
+        lookup=lookup,
         create_model=create_model,
         add_agent=add_agent,
         create_agent=create_agent,
@@ -628,6 +676,7 @@ def runs_kit() -> SimpleNamespace:
         texts=texts,
         user_texts=user_texts,
         attempt=attempt,
+        platform_runtime=platform_runtime,
         pause_sweeps=pause_sweeps,
         bearer=bearer,
         frames=frames,

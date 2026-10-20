@@ -34,7 +34,22 @@ import styles from "./agents.module.css";
 
 type Toolsets = NonNullable<AgentConfig["toolsets"]>;
 type Definition = Schema["ToolsetDefinition"];
-const platform = new Set(["configuration", "traces", "findings"]);
+
+/** The built-in and platform toolsets this deployment offers. */
+export function useToolsetCatalog() {
+  const client = useClient();
+  const { workspace } = useWorkspace();
+  return useQuery({
+    queryKey: ["toolset-catalog", workspace.id],
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/toolsets", {
+          signal,
+        })
+        .then(data),
+  });
+}
 
 export function AgentToolsets({
   value,
@@ -62,16 +77,7 @@ export function AgentToolsets({
   const client = useClient();
   const { workspace, basePath } = useWorkspace();
   const [selected, setSelected] = useState<Definition["key"] | null>(null);
-  const catalog = useQuery({
-    queryKey: ["toolset-catalog", workspace.id],
-    queryFn: ({ signal }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/toolsets", {
-          signal,
-        })
-        .then(data),
-  });
+  const catalog = useToolsetCatalog();
   const webProviders = useQuery({
     queryKey: ["web-providers", workspace.id, "choices"],
     queryFn: ({ signal }) =>
@@ -152,9 +158,7 @@ export function AgentToolsets({
               {
                 permission: tool.default_permission,
                 ...selection,
-                enabled: platform.has(group.key)
-                  ? (selection?.enabled ?? tool.default_enabled)
-                  : enabled && !providerMissing,
+                enabled: enabled && !providerMissing,
                 ...(provider && {
                   config: { ...selection?.config, provider_id: provider.id },
                 }),
@@ -257,9 +261,9 @@ export function AgentToolsets({
               {group.tools.map((tool) => {
                 const selection = value[group.key]?.tools?.[tool.key];
                 const selectedPermission =
-                  selection?.permission === "inherit"
-                    ? "allow"
-                    : (selection?.permission ?? tool.default_permission);
+                  !selection?.permission || selection.permission === "inherit"
+                    ? tool.default_permission
+                    : selection.permission;
                 const {
                   provider,
                   providerMissing,
@@ -286,7 +290,7 @@ export function AgentToolsets({
                   : undefined;
                 return (
                   <div
-                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""}`}
+                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""} ${group.platform ? styles.toolsetToolPlatform : ""}`}
                     key={tool.key}
                   >
                     <Collapsible>
@@ -431,6 +435,8 @@ export function AgentToolsets({
       </section>
     );
   };
+  const groups = catalog.data?.items ?? [];
+  const platform = groups.filter((group) => group.platform);
   return (
     <Section
       title={t("Tools")}
@@ -440,20 +446,16 @@ export function AgentToolsets({
       actions={mark}
     >
       <div className={styles.toolsetCard}>
-        {catalog.data?.items
-          .filter((group) => !platform.has(group.key))
-          .map(renderGroup)}
+        {groups.filter((group) => !group.platform).map(renderGroup)}
       </div>
-      <DisclosureSection
-        title={t("Advanced / Platform Features")}
-        defaultOpen={false}
-      >
-        <div className={styles.toolsetCard}>
-          {catalog.data?.items
-            .filter((group) => platform.has(group.key))
-            .map(renderGroup)}
-        </div>
-      </DisclosureSection>
+      {platform.length > 0 && (
+        <DisclosureSection
+          title={t("Advanced / Platform Features")}
+          defaultOpen={false}
+        >
+          <div className={styles.toolsetCard}>{platform.map(renderGroup)}</div>
+        </DisclosureSection>
+      )}
       <ErrorNotice error={catalog.error} />
       {validation.error && !refusal && <ErrorNotice error={validation.error} />}
       {refusal && candidate?.text === configText && (

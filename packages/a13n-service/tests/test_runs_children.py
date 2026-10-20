@@ -143,7 +143,7 @@ async def test_a_child_result_waits_for_room_and_is_delivered_once(serve, settin
 async def test_a_parent_steers_its_usage_limited_child(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     edge = {"usage_limits": {"request_limit": 5}}
-    worker = {"toolsets": {"configuration": {"enabled": True}}}
+    worker = runs_kit.LOOKUP
     coordinator = await runs_kit.delegating(service, scripted_model, "async", edge=edge, worker=worker)
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
     scripted_model.say("Delegated", to="Role: coordinator")
@@ -167,7 +167,7 @@ async def test_a_parent_steers_its_usage_limited_child(service, scripted_model, 
         await session.execute(held.values(available_at=RunRow.created_at))
 
     # Steers join at the child's next boundary: after its tool call it reads the steer, or asks once more for it.
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", to="Role: worker")
+    runs_kit.lookup(scripted_model, call_id="call_find", to="Role: worker")
     scripted_model.say("42", to="Role: worker")
     scripted_model.say("42 metres", to="Role: worker")
     await (await runs_kit.attempt(service))

@@ -3,11 +3,9 @@
 import pytest
 
 from .api import expect, transcript
-from .scripted import tool_results, user_texts
+from .scripted import GUIDE, LOOKUP, tool_results, user_texts
 
 pytestmark = pytest.mark.anyio
-
-CONFIGURATION = {"toolsets": {"configuration": {"enabled": True}}}
 
 
 async def test_interrupt_cancels_a_running_run_once(stack) -> None:  # type: ignore[no-untyped-def]
@@ -68,48 +66,43 @@ async def test_revoking_the_grant_stops_the_run(stack) -> None:  # type: ignore[
 
 async def test_an_approval_waits_and_resumes_once(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    model_key = await api.create_model(model.base_url)
-    agent = await api.create_agent("Builder", model_key, **CONFIGURATION)
-    config = {"model": model_key, "instructions": "Greet people."}
-    await model.call("create_agent", {"name": "Greeter", "config": config}, call_id="call_create", to="[build]")
-
-    async def greeters() -> list[dict]:
-        return expect(await api.client.get("/api/v1/agents", params={"q": "Greeter"}), 200)["items"]
-
-    receipt = await api.start(agent, "[build] Make a greeter")
+    asked = {"files": {"tools": {"view": {"permission": "ask"}}}, "shell": {"enabled": False}}
+    agent = await api.create_agent(
+        "Reader", await api.create_model(model.base_url), builtin_skills=["platform-operations"], toolsets=asked
+    )
+    await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[read]")
+    receipt = await api.start(agent, "[read] Read the platform guide")
     waiting = await api.sealed(receipt["run"]["id"])
     assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "approval")
-    assert [item["tool_call_id"] for item in waiting["pending"]["approvals"]] == ["call_create"]
-    assert await greeters() == []
+    assert [item["tool_call_id"] for item in waiting["pending"]["approvals"]] == ["call_view"]
 
-    await model.say("Created the greeter.", to="[build]")
-    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
+    await model.say("Read the guide.", to="[read]")
+    approve = {"approvals": {"call_view": {"action": "approve"}}, "calls": {}}
     successor = expect(await api.resume(waiting["id"], approve, key="approve-1"), 201)
     replayed = expect(await api.resume(waiting["id"], approve, key="approve-1"), 200)
     assert replayed["id"] == successor["id"]
     changed = await api.resume(
-        waiting["id"], {"approvals": {"call_create": {"action": "deny"}}, "calls": {}}, key="approve-1"
+        waiting["id"], {"approvals": {"call_view": {"action": "deny"}}, "calls": {}}, key="approve-1"
     )
     assert expect(changed, 409)["error"]["code"] == "conflict"
 
     done = await api.sealed(successor["id"])
-    assert (done["status"], done["output"], done["trigger"]) == ("completed", "Created the greeter.", "resume")
+    assert (done["status"], done["output"], done["trigger"]) == ("completed", "Read the guide.", "resume")
     assert done["parent_run_id"] == waiting["id"]
-    [greeter] = await greeters()
-    assert greeter["name"] == "Greeter"
     # The wait is answered: it is no longer the thread's head, so another resume conflicts even with a new key.
     stale = await api.resume(waiting["id"], approve, key="approve-2")
     assert expect(stale, 409)["error"]["code"] == "conflict"
-    requests = await model.requests("[build]")
+    # The approved call ran once, after the approval.
+    requests = await model.requests("[read]")
     assert len(requests) == 2 and len(tool_results(requests[1])) == 1
-    assert greeter["id"] in tool_results(requests[1])[0]
+    assert "# Platform operations" in tool_results(requests[1])[0]
 
 
 async def test_a_steer_joins_the_running_run(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **CONFIGURATION)
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
     # The steer arrives while the first request is outstanding and joins at the tool boundary that follows it.
-    await model.call("find_resources", {"kind": "model"}, call_id="call_find", to="[steer]", hold="steer")
+    await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[steer]", hold="steer")
     await model.say("Answered both.", to="[steer]")
     receipt = await api.start(agent, "[steer] First question")
     thread_id, run_id = receipt["thread"]["id"], receipt["run"]["id"]

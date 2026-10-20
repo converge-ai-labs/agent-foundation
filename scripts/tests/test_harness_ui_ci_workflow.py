@@ -92,6 +92,13 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert jobs["tests"]["runs-on"] == "ubuntu-24.04"
     assert jobs["distribution"]["runs-on"] == "ubuntu-24.04"
     assert int(arguments[arguments.index("--workers") + 1]) == 3
+    assert "--shard ${{ matrix.shard }} 2" in tests["run"]
+    assert jobs["tests"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2]}}
+    assert by_name["Type-check UI"]["if"] == "matrix.shard == 1"
+    assert by_name["Test native command lifecycle"]["if"] == "matrix.shard == 1"
+    assert (
+        by_name["Retain UI test reports"]["with"]["name"] == "ui-python-${{ matrix.shard }}-${{ github.run_attempt }}"
+    )
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
     options = shlex.split(tests["env"]["PYTEST_ADDOPTS"])
@@ -124,7 +131,11 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "--maxWorkers=2" in distribution["Test WebUI"]["run"]
     assert webui.index("run check") < webui.index("run test") < webui.index("run build")
     assert not any("playwright" in step.get("run", "").lower() for step in jobs["distribution"]["steps"])
-    assert "scripts/tests/test_harness_ui_ci_workflow.py" in distribution["Test distribution tooling"]["run"]
+    tooling = shlex.split(distribution["Test distribution tooling"]["run"])
+    assert {arg for arg in tooling if arg.startswith("scripts/tests/")} == {
+        "scripts/tests/test_check_a13n_harness_ui_distribution.py",
+        "scripts/tests/test_prepare_a13n_harness_ui_assets.py",
+    }
     for name in (
         "Prepare bundled WebUI assets",
         "Build UI distribution",
@@ -180,6 +191,13 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["packages/a13n-harness-ui/tests/test_cli_interactions.py"], {"tests"}),
         (["packages/a13n-harness-ui/tests/conftest.py"], {"tests"}),
         (["packages/a13n-harness/tests/providers_environment/test_direct_local.py"], {"tests"}),
+        (["packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py"], {"tests"}),
+        (["packages/a13n-harness/tests/test_agent.py"], set()),
+        (["packages/a13n-harness/tests/conftest.py"], {"tests"}),
+        (["packages/a13n-harness/tests/providers_environment/conftest.py"], {"tests"}),
+        (["packages/a13n-envd-client/tests/conftest.py"], set()),
+        (["packages/a13n-stream-protocol/tests/test_projection.py"], set()),
+        (["packages/a13n-logging/tests/test_logging.py"], set()),
         (["packages/a13n-harness-ui/a13n_harness_ui/app.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/build_skills.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/pyproject.toml"], {"tests", "distribution"}),
@@ -192,7 +210,7 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["docs/a13n-harness-ui/configuration.md"], {"tests", "distribution"}),
         (["docs/a13n-harness-ui/meta.json"], {"tests", "distribution"}),
         (["scripts/export-a13n-harness-ui-openapi.py"], {"distribution"}),
-        (["scripts/tests/test_prepare_release_version.py"], {"distribution"}),
+        (["scripts/tests/test_prepare_release_version.py"], set()),
         (["scripts/check_a13n_harness_ui_distribution.py"], {"tests", "distribution"}),
         ([".github/workflows/ci-a13n-harness-ui.yml"], {"tests", "frontend", "distribution"}),
         (["scripts/tests/test_harness_ui_ci_workflow.py"], {"tests", "frontend", "distribution"}),

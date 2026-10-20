@@ -93,13 +93,13 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 
 每个内置工具、连接工具和客户端工具都有权限：
 
-| 权限      | 作用                                                                                                   |
-| --------- | ------------------------------------------------------------------------------------------------------ |
-| `allow`   | 模型调用时执行工具。                                                                                   |
-| `ask`     | 运行[等待](#waits-approvals-and-questions)用户批准或拒绝调用。                                         |
-| `review`  | `reviewer` 评估风险，策略决定允许、拒绝或转人工。审查失败默认转人工，超时拒绝。必须设置 `reviewer`。   |
-| `deny`    | 拒绝调用。                                                                                             |
-| `inherit` | 默认值：使用工具自身的默认权限。该权限为 `allow`，除非工具另行声明，例如配置工具集的写入工具为 `ask`。 |
+| 权限      | 作用                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------- |
+| `allow`   | 模型调用时执行工具。                                                                                 |
+| `ask`     | 运行[等待](#waits-approvals-and-questions)用户批准或拒绝调用。                                       |
+| `review`  | `reviewer` 评估风险，策略决定允许、拒绝或转人工。审查失败默认转人工，超时拒绝。必须设置 `reviewer`。 |
+| `deny`    | 拒绝调用。                                                                                           |
+| `inherit` | 默认值：使用工具自身的默认权限；所有内置工具均为 `allow`。                                           |
 
 ```mermaid
 flowchart TB
@@ -120,7 +120,7 @@ flowchart TB
     class Reviewer ext
 ```
 
-内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。配置工具集中的写入工具默认 `ask`。
+内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。[平台工具](tools.md#platform-tools)也是工具集，使用同一个字段。
 
 ### 客户端工具与问题
 
@@ -461,7 +461,7 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 - `GET …/traces/{trace_id}` 返回根 span，`…/spans` 返回其 span，每项包含名称、类别、时间、状态、模型、用量、成本、输入、输出和属性。
 - `GET …/trace-backend` 返回后端 `type`（没有时为 `null`）和 `queryable_since`。
 
-查询仅返回工作空间的 span。没有后端时返回 `503 unavailable`。Span 包含多少内容由 `telemetry.trace_content` 决定。
+查询仅返回工作空间的 span。没有后端时返回 `503 unavailable`。Span 包含多少内容由 `telemetry.trace_content` 决定。Finding Agent 的分析运行只读取分析所选的 trace，并且逐个按 `trace_id` 读取：它自己的请求不能列出 trace 或尝试的 span，读取的每条 trace 都会记录为可引用的证据。
 
 ## 发现并改进执行问题
 
@@ -491,4 +491,4 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读平台查询读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
 
-自定义 Agent 可以在 **高级 / 平台功能**下启用配置、trace 查询和发现项提交工具。配置写入默认需要询问用户；Finding Agent 的内置配置仅提供配置读取工具，不提供 Agent 写入工具。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。
+Finding Agent 只启用 `execution` 组中的六个[平台工具](tools.md#platform-tools)，均为允许：它读取所选 trace、其 span 和 span 内容、run 实际执行的配置和发现项，唯一的写入操作是提交发现项。它的发现项只引用已读取的所选 trace，并以其运行作为来源。自定义 Agent 可以选择相同的工具，写入默认需要询问用户。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。

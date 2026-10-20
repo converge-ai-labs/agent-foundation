@@ -8,6 +8,8 @@ from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerObservation,
     ComputerPoint,
@@ -39,6 +41,28 @@ class Computer:
         self.binding = None
         self.inputs = []
         self.zooms = []
+        self.clipboard = None
+        self.clipboard_effect = "executed"
+        self.clipboard_cleanup = True
+
+    async def read_clipboard(self, *, max_bytes=16384):
+        if self.clipboard is None:
+            return ComputerClipboard(status="no_content")
+        return ComputerClipboard(status="text", text=self.clipboard)
+
+    async def write_clipboard(self, text):
+        self.clipboard = text
+        return ComputerClipboardWriteResult(
+            receipt=EnvironmentOperationReceipt(
+                execution_id=self.binding.bound.execution_id,
+                observed_generation=self.binding.bound.descriptor.generation,
+                operation_id="op-clipboard",
+                stage="completed",
+                outcome="succeeded" if self.clipboard_effect == "executed" and self.clipboard_cleanup else "failed",
+            ),
+            effect=self.clipboard_effect,
+            cleanup_complete=self.clipboard_cleanup,
+        )
 
     async def describe(self):
         return ComputerDescription(targets=(), observe_ready=True, input_ready=True)
@@ -318,7 +342,8 @@ async def test_incomplete_input_explains_reconciliation_and_never_replays(monkey
         assert "private text" not in str(result)
 
 
-async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch):
+@pytest.mark.parametrize("clipboard", [False, True])
+async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch, clipboard):
     from a13n_envd_client import EIPTransportClosedError
     from a13n_harness.providers.environment.eip import computer as adapter
 
@@ -329,14 +354,19 @@ async def test_eip_computer_transport_loss_requires_inspection_not_new_run_repla
             sent.append(request)
             raise EIPTransportClosedError("private connection detail")
 
+        computer_write_clipboard = computer_type_text
+
     monkeypatch.setattr(adapter, "session_client", lambda _: Client())
     provider = adapter.EIPComputerOperations(None, execution_id="desktop", generation="one")
     with pytest.raises(EnvironmentError) as caught:
-        await provider.execute(ComputerTypeText(text="private text"))
+        if clipboard:
+            await provider.write_clipboard("private text")
+        else:
+            await provider.execute(ComputerTypeText(text="private text"))
     projection = caught.value.safe_projection()
     assert projection["retry_hint"] == "reconcile_first"
     assert projection["details"]["dispatch_stage"] == "unknown"
-    assert "Do not automatically replay" in projection["details"]["hint"]
+    assert "do not automatically replay" in projection["details"]["hint"].lower()
     assert "private" not in str(projection)
     assert len(sent) == 1
 
@@ -503,6 +533,8 @@ async def test_zoom_permission_binding_and_invalid_regions_reject_before_provide
     [
         (("computer.observe", "computer.close_observation"), {EnvironmentAction.COMPUTER_OBSERVE}),
         (("computer.zoom",), set()),
+        (("computer.read_clipboard",), {EnvironmentAction.COMPUTER_READ_CLIPBOARD}),
+        (("computer.write_clipboard",), {EnvironmentAction.COMPUTER_WRITE_CLIPBOARD}),
         (("computer.zoom", "computer.close_observation"), {EnvironmentAction.COMPUTER_ZOOM}),
         (
             ("computer.observe", "computer.zoom", "computer.close_observation"),
@@ -552,3 +584,56 @@ def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods
         ),
     )
     assert _convert_descriptor(descriptor).permissions.operations == expected
+
+
+async def test_clipboard_permissions_are_independent_and_empty_text_is_content():
+    read = EnvironmentAction.COMPUTER_READ_CLIPBOARD
+    write = EnvironmentAction.COMPUTER_WRITE_CLIPBOARD
+    runtime, computer = mount(frozenset({read, write}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        assert set(tools.get_toolset().tools) == {"computer_read_clipboard", "computer_write_clipboard"}
+        assert await tools.computer_read_clipboard() == {"ok": True, "status": "no_content"}
+        assert (await tools.computer_write_clipboard(""))["ok"]
+        assert await tools.computer_read_clipboard() == {"ok": True, "status": "text", "text": ""}
+        assert computer.inputs == []
+    runtime, _ = mount(frozenset({read}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        assert set(tools.get_toolset().tools) == {"computer_read_clipboard"}
+        assert (await tools.computer_write_clipboard("blocked"))["error"]["code"] == "environment_denied"
+
+
+@pytest.mark.parametrize("text", ["é" * 8193, "bad\0text", "\ud800"])
+async def test_clipboard_invalid_text_is_rejected_before_provider(text):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        result = await ComputerToolset(environment).computer_write_clipboard(text)
+        assert result["error"]["code"] == "environment_request_invalid"
+        assert result["error"]["details"]["dispatch_stage"] == "pre_dispatch"
+        assert computer.clipboard is None
+
+
+@pytest.mark.parametrize("effect,cleanup", [("partial", True), ("unknown", True), ("executed", False)])
+async def test_clipboard_uncertainty_reaches_operation_guard(effect, cleanup):
+    from contextlib import asynccontextmanager
+
+    failures = []
+
+    @asynccontextmanager
+    async def guard(request):
+        try:
+            yield
+        except EnvironmentError as error:
+            failures.append(error)
+            raise
+
+    runtime, computer = mount(COMPUTER_ACTIONS, guard=guard)
+    computer.clipboard_effect = effect
+    computer.clipboard_cleanup = cleanup
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        result = await ComputerToolset(environment).computer_write_clipboard("new text")
+        assert not result["ok"]
+        assert failures[-1].details["dispatch_stage"] == "dispatched"
+        assert failures[-1].details["effect"] == effect
+        assert failures[-1].details["cleanup_complete"] == cleanup

@@ -9,6 +9,7 @@ from a13n_envd_client import EIPSession
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -28,6 +29,7 @@ async def managed_http_session(
     load_credential: Callable[[], Awaitable[HttpEnvdCredential]],
     expected_device_id: str,
     configuration: RemoteEnvdEnvironmentConfiguration,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> AsyncIterator[EIPSession]:
     """Own one connection and Session on an already resolved, fixed target.
 
@@ -48,6 +50,7 @@ async def managed_http_session(
     async with HttpEnvdProviderRuntime(connection, credential) as runtime:
         async with runtime.open_session(
             expected_device_id=expected_device_id,
+            session_recovery=session_recovery,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             egress=configuration.egress,

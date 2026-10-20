@@ -178,19 +178,21 @@ async def update_profile(
 
 
 @router.put("/users/me/avatar", response_model=Profile, tags=["tenancy"], openapi_extra=images.UPLOAD)
-async def put_avatar(
+async def put_user_avatar(
     response: Response, data: ImageBody, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
 ) -> Profile:
     return tagged(response, await users.change_avatar(runtime.storage, runtime.objects, actor, data, if_match=if_match))
 
 
 @router.delete("/users/me/avatar", response_model=Profile, tags=["tenancy"])
-async def delete_avatar(response: Response, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None) -> Profile:
+async def delete_user_avatar(
+    response: Response, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
+) -> Profile:
     return tagged(response, await users.change_avatar(runtime.storage, runtime.objects, actor, None, if_match=if_match))
 
 
 @router.get("/users/{user_id}/avatar", response_class=Response, responses=images.CONTENT, tags=["tenancy"])
-async def get_avatar(user_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
+async def get_user_avatar(user_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
     return await images.serve(runtime.objects, user_id, await users.get_avatar(runtime.storage, actor, user_id))
 
 

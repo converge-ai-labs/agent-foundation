@@ -23,7 +23,6 @@ type ConfigSection = Literal[
     "skills",
     "skill_sync",
     "connection_tools",
-    "platform_tools",
     "tool_search",
     "builtin_skills",
     "client_tools",

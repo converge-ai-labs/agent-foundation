@@ -35,6 +35,7 @@ vi.mock("./toolsets", () => ({
   AgentToolsets: ({ readOnly }: { readOnly: boolean }) => (
     <button disabled={readOnly}>Change tools</button>
   ),
+  useToolsetCatalog: () => ({}),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),

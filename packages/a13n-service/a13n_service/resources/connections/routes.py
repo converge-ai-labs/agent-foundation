@@ -183,7 +183,9 @@ async def test_connection(
 
 
 @router.get(ITEM + "/tools", response_model=ToolPage, openapi_extra=platform_operation("connections", "read"))
-async def list_tools(workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime) -> ToolPage:
+async def list_connection_tools(
+    workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime
+) -> ToolPage:
     return await discovery.list_tools(
         runtime.storage,
         actor,
@@ -276,7 +278,7 @@ async def index_connection_tools(
     cursor: str | None = None,
 ) -> catalog_reads.CatalogIndex:
     """Search full names and descriptions; definitions are read separately by exact name."""
-    values = await list_tools(workspace_id, connection_id, actor, runtime)
+    values = await list_connection_tools(workspace_id, connection_id, actor, runtime)
     return catalog_reads.index(
         values.items, scope=f"/connections/{connection_id}/tools", query=query, limit=limit, cursor=cursor
     )
@@ -299,7 +301,7 @@ async def define_connection_tools(
     query: reads.Search = None,
 ) -> reads.Definitions | reads.TextRead:
     """Read up to five exact definitions. Oversized values provide a versioned fragment reference."""
-    values = await list_tools(workspace_id, connection_id, actor, runtime)
+    values = await list_connection_tools(workspace_id, connection_id, actor, runtime)
     return reads.definitions(
         {value.name: value for value in values.items},
         name,
