@@ -2481,6 +2481,8 @@
   "Use an IANA zone, for example Asia/Shanghai.": "填写 IANA 时区名称，例如 Asia/Shanghai。",
   "Preview next times": "预览触发时间",
   "Next scheduled times": "后续触发时间",
+  "No upcoming trigger times.": "没有后续触发时间。",
+  "This time has already passed. Choose a future date and time.": "该时间已过去，请选择未来的日期和时间。",
   "Maximum delay (seconds)": "最大延迟（秒）",
   "Skip a trigger when it cannot be submitted within this time.": "超过此时长仍未提交输入时，跳过该次触发。",
   "Invocation editor": "调用配置编辑方式",

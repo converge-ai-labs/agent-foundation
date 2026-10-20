@@ -293,7 +293,16 @@ function ScheduleForm({
         </Button>
       </div>
       <ErrorNotice error={preview.error} />
-      {preview.data && (
+      {preview.data?.items.length === 0 && (
+        <p role="status" className={styles.notice}>
+          {t(
+            timingType === "once"
+              ? "This time has already passed. Choose a future date and time."
+              : "No upcoming trigger times.",
+          )}
+        </p>
+      )}
+      {!!preview.data?.items.length && (
         <ol className={styles.preview} aria-label={t("Next scheduled times")}>
           {preview.data.items.map((time) => (
             <li key={time.utc}>

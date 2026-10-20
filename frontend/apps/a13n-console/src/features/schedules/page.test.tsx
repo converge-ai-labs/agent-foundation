@@ -279,6 +279,46 @@ it.each(["cron", "once"])(
   15_000,
 );
 
+it("explains an empty one-time preview and clears the message when timing changes", async () => {
+  const user = userEvent.setup();
+  const past = "2000-01-10T09:30:15Z";
+  show("/workspace/ws_one/schedules/sch_one", async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/stream")) return live(request, []);
+    if (path.endsWith("/status")) return Response.json(status);
+    if (path.endsWith("/occurrences") || path === "/api/v1/agents")
+      return Response.json({ items: [], next_cursor: null });
+    if (path.endsWith("/preview")) {
+      const body = (await request.json()) as Schema["SchedulePreviewRequest"];
+      if (body.schedule.type === "once") {
+        expect(body.schedule.run_at).toBe(past);
+        return Response.json({ items: [] });
+      }
+      return Response.json({ items: [{ utc: at, local: at }] });
+    }
+    return Response.json({
+      ...schedule,
+      schedule: { type: "once", run_at: past },
+    });
+  });
+  await user.click(
+    await screen.findByRole("button", { name: "Edit schedule" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Preview next times" }));
+  const message =
+    "This time has already passed. Choose a future date and time.";
+  expect(await screen.findByText(message)).toBeTruthy();
+  expect(
+    screen.queryByRole("list", { name: "Next scheduled times" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Recurring" }));
+  expect(screen.queryByText(message)).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Preview next times" }));
+  expect(
+    await screen.findByRole("list", { name: "Next scheduled times" }),
+  ).toBeTruthy();
+});
+
 it("pages history, distinguishes failed input from submission, and refreshes an old result on reconnect", async () => {
   vi.spyOn(Math, "random").mockReturnValue(0);
   const controllers: ReadableStreamDefaultController<Uint8Array>[] = [],
