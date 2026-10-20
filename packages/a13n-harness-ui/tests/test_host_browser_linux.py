@@ -384,6 +384,16 @@ async def test_real_novnc_panel_login_handback_and_viewer_closure(tmp_path, site
                         # Undo isn't intercepted by our clipboard bridge; noVNC forwards it with the mapped modifier.
                         await page.keyboard.press(f"{modifier}+z")
                         await expect(session.page.locator("#clipboard-fixture")).to_have_value("远端 clipboard ✨")
+                        # Keyup follows local focus. Moving to the toolbar while
+                        # Ctrl is held must not leave Ctrl pressed on the Host.
+                        for control_key in ("ControlLeft", "ControlRight"):
+                            await page.keyboard.press(f"{modifier}+a")
+                            await page.keyboard.down(control_key)
+                            await page.get_by_role("combobox", name="Browser viewport size").focus()
+                            await page.keyboard.up(control_key)
+                            await page.locator("[data-browser-screen] canvas").focus()
+                            await page.keyboard.type("a")
+                            await expect(session.page.locator("#clipboard-fixture")).to_have_value("a")
                         if platform == "MacIntel":
                             # High-entropy Unicode exceeds a single WebSocket input frame and must
                             # survive noVNC's native extended-clipboard compression and chunking.

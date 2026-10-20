@@ -13,11 +13,17 @@ export function bindKeyboard({
   const mac = /mac|ipad|iphone|ipod/i.test(navigator.platform);
   const commands = new Set<string>();
   const controls = new Set<string>();
+  const pressed = new Map<string, KeyboardEvent>();
   const sendControl = (down: boolean) =>
     connection.sendKey(0xffe3, "ControlLeft", down);
   const release = () => {
     if (commands.size) sendControl(false);
     commands.clear();
+    // Keyup follows focus, so noVNC's canvas can miss it. Release through
+    // its own listener to settle AltGr detection and clear its key state too.
+    for (const event of pressed.values())
+      event.target?.dispatchEvent(new KeyboardEvent("keyup", event));
+    pressed.clear();
     controls.clear();
   };
   const key = (event: KeyboardEvent) => {
@@ -39,6 +45,11 @@ export function bindKeyboard({
       if (down) controls.add(event.code);
       else controls.delete(event.code);
       // Let noVNC keep its platform-specific Ctrl/AltGr handling.
+    }
+    if (!(mac && event.key === "Meta")) {
+      const code = event.code || event.key;
+      if (down) pressed.set(code, event);
+      else pressed.delete(code);
     }
   };
   const focusout = (event: FocusEvent) => {

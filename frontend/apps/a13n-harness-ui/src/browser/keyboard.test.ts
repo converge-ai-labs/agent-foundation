@@ -87,3 +87,59 @@ it("leaves Windows Ctrl/AltGr with noVNC and never sends without authority", () 
   binding.shortcut("paste");
   expect(sendKey).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["Control", "ControlLeft"],
+  ["Control", "ControlRight"],
+  ["AltGraph", "AltRight"],
+  ["Shift", "ShiftLeft"],
+  ["a", "KeyA"],
+])(
+  "releases held %s through noVNC when focus leaves the desktop",
+  (value, code) => {
+    const released = vi.fn();
+    canvas.addEventListener("keyup", released);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    canvas.focus();
+    key("keydown", value, code);
+    outside.focus();
+    expect(released).toHaveBeenCalledOnce();
+    expect(released.mock.calls[0][0]).toMatchObject({ key: value, code });
+    // The real release can arrive outside the desktop after its focusout.
+    outside.dispatchEvent(new KeyboardEvent("keyup", { key: value, code }));
+    binding.stop();
+    expect(released).toHaveBeenCalledOnce();
+    outside.remove();
+  },
+);
+
+it.each(["blur", "hidden", "dispose"])(
+  "releases physical keys on %s",
+  (kind) => {
+    const released = vi.fn();
+    canvas.addEventListener("keyup", released);
+    key("keydown", "Control", "ControlLeft");
+    if (kind === "blur") window.dispatchEvent(new Event("blur"));
+    else if (kind === "hidden") {
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    } else binding.stop();
+    expect(released).toHaveBeenCalledOnce();
+  },
+);
+
+it("retains keys when focus stays inside the desktop and forgets normal releases", () => {
+  const released = vi.fn();
+  canvas.addEventListener("keyup", released);
+  const inside = document.createElement("button");
+  root.append(inside);
+  canvas.focus();
+  key("keydown", "a", "KeyA");
+  inside.focus();
+  expect(released).not.toHaveBeenCalled();
+  canvas.focus();
+  key("keyup", "a", "KeyA");
+  binding.stop();
+  expect(released).toHaveBeenCalledOnce();
+});
