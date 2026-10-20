@@ -8,10 +8,9 @@ import { ProvidersPage } from "../providers/page";
 import { MediaUnderstandingDefaults } from "../models/media-understanding";
 import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
-import { Invitations } from "./invitations";
 import { ApiKeys } from "./keys";
 import { SettingsLayout } from "./layout";
-import { Members } from "./members";
+import { MemberSettings } from "./members";
 import { Profile } from "./profile";
 import { DeleteWorkspace, Workspaces } from "./workspaces";
 
@@ -48,8 +47,7 @@ export function WorkspaceSettings() {
         "media-understanding": (
           <MediaUnderstandingDefaults key={workspace.id} />
         ),
-        members: <Members scope={scope} />,
-        invitations: <Invitations scope={scope} />,
+        members: <MemberSettings scope={scope} />,
         "api-keys": <ApiKeys />,
         "member-keys": <ApiKeys memberKeys />,
         "service-accounts": accountId ? (
@@ -83,8 +81,7 @@ export function OrganizationSettings() {
       scope="organization"
       content={{
         general: <Profile target={scope} />,
-        members: <Members scope={scope} />,
-        invitations: <Invitations scope={scope} />,
+        members: <MemberSettings scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,
       }}

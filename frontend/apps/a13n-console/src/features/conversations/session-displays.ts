@@ -1,9 +1,5 @@
 import { DisplayNormalizer } from "a13n-ui/display";
-import type {
-  RunSnapshot,
-  SessionDelta,
-  ThreadState,
-} from "../../service-client";
+import type { RunSnapshot, SessionDelta } from "../../service-client";
 import { applyDelta, isOmitted, type DisplayItem } from "./display";
 
 /** What a session stream shows of one run it follows. */
@@ -20,7 +16,6 @@ export interface HeldDisplay {
 }
 
 interface Held {
-  threadId: string;
   items: Map<string, DisplayItem>;
   first: number;
   normalizer: DisplayNormalizer;
@@ -29,8 +24,6 @@ interface Held {
   gap: boolean;
   /** A delta failed to apply here, so items may differ from the committed ones. */
   diverged: boolean;
-  /** Received on an earlier connection: this connection's snapshot replaces or drops it. */
-  stale: boolean;
 }
 
 const byOrdinal = (a: DisplayItem, b: DisplayItem) => a.ordinal - b.ordinal;
@@ -48,25 +41,11 @@ export class SessionDisplays {
   private changed = new Set<string>();
   private frame?: number;
 
-  /** A new connection starts from a snapshot that replaces every unfinished display. */
+  /** Unfinished output may have ended outside the new watch window. Read it afresh on reconnect. */
   connected() {
-    for (const held of this.runs.values())
-      if (!held.complete) held.stale = true;
-  }
-
-  /**
-   * A thread's state. A run held from an earlier connection that is no
-   * longer current ended while disconnected; its display is dropped, and the
-   * runs returned are read again.
-   */
-  thread({ thread, current_run }: ThreadState): string[] {
     const dropped: string[] = [];
     for (const [runId, held] of this.runs)
-      if (
-        held.threadId === thread.id &&
-        held.stale &&
-        runId !== current_run?.id
-      ) {
+      if (!held.complete) {
         this.runs.delete(runId);
         dropped.push(runId);
         this.notify(runId);
@@ -79,13 +58,12 @@ export class SessionDisplays {
     // Items before `first` are final when this connection delivered them and
     // they applied; an earlier connection's may have missed output.
     const kept =
-      previous && !previous.stale && !previous.diverged
+      previous && !previous.diverged
         ? [...previous.items.values()].filter(
             (item) => item.ordinal < snapshot.first,
           )
         : [];
     this.runs.set(snapshot.run_id, {
-      threadId: snapshot.thread_id,
       items: new Map(
         [...kept, ...snapshot.items].map((item) => [item.id, item]),
       ),
@@ -94,14 +72,14 @@ export class SessionDisplays {
       complete: snapshot.complete,
       gap: false,
       diverged: false,
-      stale: false,
     });
     this.notify(snapshot.run_id);
+    this.prune();
   }
 
   delta(delta: SessionDelta) {
     const held = this.runs.get(delta.run_id);
-    if (!held || held.complete || held.gap || held.stale) return;
+    if (!held || held.complete || held.gap) return;
     try {
       applyDelta(held.items, delta, held.normalizer);
     } catch {
@@ -157,12 +135,24 @@ export class SessionDisplays {
     return () => {
       listeners.delete(listener);
       if (!listeners.size) this.listeners.delete(runId);
+      this.prune();
     };
   }
 
   close() {
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
+  }
+
+  /** Keep active work and observed output, plus a small cache of recently completed Runs. */
+  private prune() {
+    const unused = [...this.runs].filter(
+      ([id, held]) => held.complete && !this.listeners.has(id),
+    );
+    for (const [id] of unused.slice(0, Math.max(0, unused.length - 20))) {
+      this.runs.delete(id);
+      this.published.delete(id);
+    }
   }
 
   private notify(runId: string) {

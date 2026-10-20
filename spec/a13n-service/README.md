@@ -23,6 +23,7 @@ The Service is a managed-agent runtime. A tenant configures resources (agents an
 | what the Service logs and measures about itself         | [12-observability.md](12-observability.md)                   |
 | Environment metric collection, data sources and queries | [13-environment-monitoring.md](13-environment-monitoring.md) |
 | the HTTP surface                                        | [10-api.md](10-api.md)                                       |
+| recurring Agent invocation and trigger history          | [13-schedules.md](13-schedules.md)                           |
 | what a word means                                       | [glossary.md](glossary.md)                                   |
 
 Start with [00-overview.md](00-overview.md), [02-layout.md](02-layout.md) and the [glossary](glossary.md), then read the chapter that owns the behavior you are changing. Authorization ([03](03-tenancy.md)), durable facts ([07](07-facts-and-delivery.md)), runtime rules ([09](09-runtime.md)) and observability ([12](12-observability.md)) apply to every feature.
@@ -50,6 +51,8 @@ A complete rule is defined once, in its owning section. Other chapters describe 
 [Environment monitoring](13-environment-monitoring.md) owns Metrics Data Source configuration and credentials, Environment selection and monitoring launch state, collection and export boundaries, and historical query authorization.
 
 Tests, validation gates and end-to-end scenarios are contributor workflow, owned by [CONTRIBUTING.md](../../CONTRIBUTING.md#local-validation) and [e2e/service](../../e2e/service/README.md). The glossary gives short definitions and links; it does not repeat rules.
+
+Recurring delegation, fixed Schedule Sessions, trigger records, time rules and Schedule management are owned by [13: schedules](13-schedules.md).
 
 ## Conventions in these documents
 

@@ -48,6 +48,7 @@ a13n_service/
 
   runs/               how input becomes sealed runs
     tables.py         sessions, threads, inbox_entries, runs, run_attempts, usage_records
+    schedules/        recurring configuration, calendar, occurrence persistence and input submission
     sessions.py  threads.py  archive.py  inbox.py  entries.py  inputs.py  attachments.py  placement.py
     submit.py  accept.py  admission.py  resume.py  claim.py  worker.py  attempts.py  execute.py  seal.py
     agent.py  host.py  calls.py  boundaries.py  checkpoints.py  display.py  deferred.py  children.py  subagents.py
@@ -122,6 +123,8 @@ skills, assets  ->  uploads
 ```
 
 A package uses another's service functions, schemas and focused queries, and may import its row class where a query needs it. Cross-package references are IDs and detached values, never live ORM rows held across a session.
+
+`runs/schedules/` owns recurring input submission and its configuration API; it can reuse Session, Thread and ordinary message operations without reversing the resource-layer dependency. Schedule IDs use `sch_` and Occurrence IDs use `occ_`, both with the default 128-bit random suffix.
 
 ## Infrastructure
 

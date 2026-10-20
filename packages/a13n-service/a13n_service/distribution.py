@@ -98,6 +98,9 @@ from a13n_service.runs.memories.space_routes import router as space_execution_ro
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules.routes import router as schedules_router
+from a13n_service.runs.schedules.sweep import schedule_sweep
+from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
     AttemptRow,
@@ -314,6 +317,8 @@ OSS = Distribution(
         DataSourceRow,
         DashboardRow,
         DeviceRow,
+        ScheduleRow,
+        OccurrenceRow,
         UploadRow,
         AssetRow,
         SkillRow,
@@ -361,6 +366,7 @@ OSS = Distribution(
         metrics_data_sources_router,
         dashboards_router,
         devices_router,
+        schedules_router,
         runs_router,
         usage_router,
         traces_router,
@@ -377,6 +383,7 @@ OSS = Distribution(
     ),
     migrations=(Path(__file__).parent / "migrations" / "versions",),
     sweeps=(
+        schedule_sweep,
         _advance_threads,
         organization_sweep,
         _expire_leases,

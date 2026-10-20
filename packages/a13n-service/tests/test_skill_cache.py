@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from a13n_harness.environment.archives import FileArchive
+from a13n_harness.environment.files import FileWriteTextOperation
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
@@ -35,6 +36,22 @@ def files(tmp_path: Path) -> Iterator[LocalFileOperator]:
         yield operator
     finally:
         operator.close()
+
+
+@pytest.fixture
+def pin_published(files, monkeypatch):
+    """Signal a completed pin batch, preserving the real filesystem writes and eviction checks."""
+    published = asyncio.Event()
+    batch = files.batch
+
+    async def observe(operations):
+        results = await batch(operations)
+        if any(isinstance(op, FileWriteTextOperation) and "/.cache/pins/" in op.path for op in operations):
+            published.set()
+        return results
+
+    monkeypatch.setattr(files, "batch", observe)
+    return published
 
 
 async def prove() -> None:
@@ -283,7 +300,7 @@ async def test_active_packages_can_exceed_capacity(files, monkeypatch) -> None: 
     assert await published(files, again)
 
 
-async def test_reader_arriving_after_eviction_check_waits_for_completion(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_reader_arriving_after_eviction_check_waits_for_completion(files, monkeypatch, pin_published) -> None:  # type: ignore[no-untyped-def]
     source, pinned = materializer(monkeypatch)
     await source.materialize(files=files)
     await source.cache.release(files)
@@ -299,10 +316,9 @@ async def test_reader_arriving_after_eviction_check_waits_for_completion(files, 
     monkeypatch.setattr(files, "remove", pause)
     eviction = asyncio.create_task(evict(files, pinned.digest))
     await asyncio.wait_for(deleting.wait(), 10)
+    pin_published.clear()
     reader = asyncio.create_task(source.materialize(files=files))
-    # Observe the reader's durable pin rather than sleeping for an assumed scheduling interval.
-    while not (await files.list(f"{skills._ROOT}/.cache/pins/{pinned.digest}", max_results=1)).entries:
-        await asyncio.sleep(0)
+    await asyncio.wait_for(pin_published.wait(), 10)
     assert not reader.done()
     finish.set()
     await asyncio.wait_for(asyncio.gather(eviction, reader), 10)
@@ -310,7 +326,7 @@ async def test_reader_arriving_after_eviction_check_waits_for_completion(files, 
     assert await files.read_bytes(f"{pinned.cached_directory}/scripts/check.py") == b"first"
 
 
-async def test_pin_published_before_collector_check_prevents_eviction(files, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_pin_published_before_collector_check_prevents_eviction(files, monkeypatch, pin_published) -> None:  # type: ignore[no-untyped-def]
     source, pinned = materializer(monkeypatch)
     await source.materialize(files=files)
     await source.cache.release(files)
@@ -327,9 +343,9 @@ async def test_pin_published_before_collector_check_prevents_eviction(files, mon
     monkeypatch.setattr(files, "list", pause)
     eviction = asyncio.create_task(evict(files, pinned.digest))
     await asyncio.wait_for(checking.wait(), 10)
+    pin_published.clear()
     reader = asyncio.create_task(source.materialize(files=files))
-    while not (await listing(pins, max_results=1)).entries:
-        await asyncio.sleep(0)
+    await asyncio.wait_for(pin_published.wait(), 10)
     proceed.set()
     await asyncio.wait_for(asyncio.gather(eviction, reader), 10)
     assert await published(files, pinned)

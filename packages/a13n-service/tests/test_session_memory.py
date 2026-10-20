@@ -168,6 +168,7 @@ async def test_revocation_blocks_pending_admission(service, scripted_model, runs
     from a13n_service.tenancy.tables import GrantRow
     from sqlalchemy import delete
 
+    await runs_kit.pause_sweeps(service)
     model = await runs_kit.create_model(service, scripted_model)
     space = await create_space(service, organization={"enabled": True, "model": model})
     await save(service, space)
@@ -181,6 +182,7 @@ async def test_revocation_blocks_pending_admission(service, scripted_model, runs
 
 
 async def test_organization_session_rejects_business_input_and_selection(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
     model = await runs_kit.create_model(service, scripted_model)
     agent = await runs_kit.add_agent(service, "Business", model)
     space = await create_space(service, organization={"enabled": True, "model": model})

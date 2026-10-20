@@ -1,5 +1,7 @@
 # The HTTP API
 
+[Schedule management](13-schedules.md#management-api) adds HTTP configuration, preview, status and paginated trigger history. These routes intentionally have no MCP admission.
+
 ## Design position
 
 The Service exposes one HTTP namespace, `/api/v1`. The exported OpenAPI document is the exact contract for paths, parameters and request and response shapes. This chapter owns what applies across routes: authentication at the HTTP boundary, path resolution, collections, preconditions, request-key replay, errors and statuses. It also indexes every route with the chapter that owns its behavior; it does not repeat that behavior.
@@ -391,7 +393,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 `proto/a13n-service/` holds the two wire contracts generated from the code:
 
 - `openapi.json`, the OpenAPI document the application serves at `/api/v1/openapi.json`;
-- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`).
+- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`, plus `schedule` and `occurrence` in Schedule view).
 - `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.

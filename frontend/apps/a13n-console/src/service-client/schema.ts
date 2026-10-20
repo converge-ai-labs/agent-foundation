@@ -2483,6 +2483,165 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/schedules": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Schedules */
+    get: operations["list_schedules"];
+    put?: never;
+    /**
+     * Create Schedule
+     * @description Authorize recurring execution as the creator, independently of the accepting credential's lifetime.
+     */
+    post: operations["create_schedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Preview Schedule */
+    post: operations["preview_schedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Schedule */
+    get: operations["get_schedule"];
+    put?: never;
+    post?: never;
+    /** Archive Schedule */
+    delete: operations["archive_schedule"];
+    options?: never;
+    head?: never;
+    /** Update Schedule */
+    patch: operations["update_schedule"];
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}/dispatch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Dispatch Schedule */
+    post: operations["dispatch_schedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}/enable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Enable Schedule */
+    post: operations["enable_schedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}/occurrences": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Schedule Occurrences */
+    get: operations["list_schedule_occurrences"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}/occurrences/{occurrence_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Schedule Occurrence */
+    get: operations["get_schedule_occurrence"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}/pause": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Pause Schedule */
+    post: operations["pause_schedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/schedules/{schedule_id}/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Schedule Status */
+    get: operations["get_schedule_status"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/sessions": {
     parameters: {
       query?: never;
@@ -2546,7 +2705,7 @@ export interface paths {
     /**
      * Session Stream
      * @description The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
-     *     frames. Every connection starts from a snapshot.
+     *     frames, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.
      */
     get: operations["session_stream"];
     put?: never;
@@ -4785,6 +4944,22 @@ export interface components {
        */
       password: string;
     };
+    /** BusyOccurrence */
+    BusyOccurrence: {
+      /** Entry Id */
+      entry_id: string;
+      /** Occurrence Id */
+      occurrence_id: string;
+      /** Root Thread Id */
+      root_thread_id: string;
+    };
+    /** BusyOccurrencePage */
+    BusyOccurrencePage: {
+      /** Items */
+      items: components["schemas"]["BusyOccurrence"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
     CallResult:
       components["schemas"]["Returned"] | components["schemas"]["Failed"];
     /** CallbackOutcome */
@@ -5357,7 +5532,7 @@ export interface components {
     };
     /**
      * ContextUsage
-     * @description One reported generation, compared with its currently configured window.
+     * @description A Run's configured window and its latest eligible generation, when available.
      */
     ContextUsage: {
       /** Context Window Tokens */
@@ -5367,7 +5542,7 @@ export interface components {
       /** Output Tokens */
       output_tokens: number | null;
       /** Record Id */
-      record_id: string;
+      record_id: string | null;
       /** Run Id */
       run_id: string;
     };
@@ -5445,6 +5620,19 @@ export interface components {
       headers?: {
         [key: string]: string;
       };
+    };
+    /** CronSchedule */
+    CronSchedule: {
+      /** Expression */
+      expression: string;
+      /** Timezone */
+      timezone: string;
+      /**
+       * Type
+       * @default cron
+       * @constant
+       */
+      type?: "cron";
     };
     /** DaemonMetrics */
     DaemonMetrics: {
@@ -6694,6 +6882,12 @@ export interface components {
       entry_ids: string[];
     };
     InitialMounts: components["schemas"]["MountCreate"][];
+    /** InitialRun */
+    InitialRun: {
+      /** Id */
+      id: string;
+      status: components["schemas"]["RunStatus"];
+    };
     /** InstantQuery */
     InstantQuery: {
       /** Expression */
@@ -8236,6 +8430,147 @@ export interface components {
       status: components["schemas"]["Status"];
       system_info?: components["schemas"]["SystemInfo"] | null;
     };
+    /** Occurrence */
+    Occurrence: {
+      /** Covered From At */
+      covered_from_at: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Deadline At
+       * Format: date-time
+       */
+      deadline_at: string;
+      /** Dispatch Attempts */
+      dispatch_attempts: number;
+      /** Entry Id */
+      entry_id: string | null;
+      execution?: components["schemas"]["OccurrenceExecution"] | null;
+      /** Finished At */
+      finished_at: string | null;
+      /** Id */
+      id: string;
+      /** Last Error */
+      last_error: string | null;
+      /** Next Attempt At */
+      next_attempt_at: string | null;
+      /** Principal Id */
+      principal_id: string;
+      /** Reason */
+      reason: string | null;
+      /** Requested By Id */
+      requested_by_id: string | null;
+      /** Schedule Id */
+      schedule_id: string;
+      /** Schedule Version */
+      schedule_version: number;
+      /** Scheduled At */
+      scheduled_at: string | null;
+      /** Session Id */
+      session_id: string;
+      snapshot: components["schemas"]["OccurrenceSnapshot"];
+      status: components["schemas"]["OccurrenceStatus"];
+      /** Thread Id */
+      thread_id: string | null;
+      trigger: components["schemas"]["ScheduleTrigger"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+    };
+    /**
+     * OccurrenceExecution
+     * @description Current execution facts, independent of the immutable submission result and its version.
+     */
+    OccurrenceExecution: {
+      /** Has Unfinished Work */
+      has_unfinished_work: boolean;
+      initial_entry_status: components["schemas"]["EntryStatus"] | null;
+      initial_run: components["schemas"]["InitialRun"] | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+    };
+    /** OccurrencePage */
+    OccurrencePage: {
+      /** Items */
+      items: components["schemas"]["OccurrenceSummary"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** OccurrenceSnapshot */
+    OccurrenceSnapshot: {
+      invocation: components["schemas"]["ScheduleInvocation-Output"];
+      /** Max Lateness Seconds */
+      max_lateness_seconds: number;
+      /** Name */
+      name: string;
+      schedule: components["schemas"]["CronSchedule"];
+      /** Timezone Data Version */
+      timezone_data_version: string;
+      /** Utc Offset Seconds */
+      utc_offset_seconds: number | null;
+    };
+    /** @enum {string} */
+    OccurrenceStatus:
+      "pending" | "submitted" | "skipped" | "failed" | "cancelled";
+    /** OccurrenceSummary */
+    OccurrenceSummary: {
+      /** Covered From At */
+      covered_from_at: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Deadline At
+       * Format: date-time
+       */
+      deadline_at: string;
+      /** Dispatch Attempts */
+      dispatch_attempts: number;
+      /** Entry Id */
+      entry_id: string | null;
+      execution?: components["schemas"]["OccurrenceExecution"] | null;
+      /** Finished At */
+      finished_at: string | null;
+      /** Id */
+      id: string;
+      /** Last Error */
+      last_error: string | null;
+      /** Next Attempt At */
+      next_attempt_at: string | null;
+      /** Reason */
+      reason: string | null;
+      /** Schedule Id */
+      schedule_id: string;
+      /** Schedule Version */
+      schedule_version: number;
+      /** Scheduled At */
+      scheduled_at: string | null;
+      /** Session Id */
+      session_id: string;
+      status: components["schemas"]["OccurrenceStatus"];
+      /** Thread Id */
+      thread_id: string | null;
+      trigger: components["schemas"]["ScheduleTrigger"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+    };
     /**
      * OperatingSystem
      * @enum {string}
@@ -9277,6 +9612,7 @@ export interface components {
        * @enum {string}
        */
       revision_selection: "pinned" | "default" | "inherited";
+      schedule_origin?: components["schemas"]["ScheduleOrigin"] | null;
       /** Sealed At */
       sealed_at: string | null;
       /** Session Id */
@@ -9376,6 +9712,7 @@ export interface components {
        * @enum {string}
        */
       revision_selection: "pinned" | "default" | "inherited";
+      schedule_origin?: components["schemas"]["ScheduleOrigin"] | null;
       /** Sealed At */
       sealed_at: string | null;
       /** Session Id */
@@ -9402,6 +9739,198 @@ export interface components {
       wait_reason: components["schemas"]["WaitReason"] | null;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** Schedule */
+    Schedule: {
+      /** Archived At */
+      archived_at: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Description */
+      description?: string | null;
+      /** Id */
+      id: string;
+      invocation: components["schemas"]["ScheduleInvocation-Output"];
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      };
+      /**
+       * Max Lateness Seconds
+       * @default 300
+       */
+      max_lateness_seconds?: number;
+      /** Name */
+      name: string;
+      /** Pause Reason */
+      pause_reason: ("manual" | "authority_invalid" | "target_invalid") | null;
+      /** Principal Id */
+      principal_id: string;
+      schedule: components["schemas"]["CronSchedule"];
+      /** Session Id */
+      session_id: string;
+      state: components["schemas"]["ScheduleState"];
+      /** Stream Url */
+      stream_url: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Id */
+      updated_by_id: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /**
+     * ScheduleCommand
+     * @description Commands accept no configuration or authority overrides.
+     */
+    ScheduleCommand: Record<string, never>;
+    /** ScheduleCreate */
+    ScheduleCreate: {
+      /** Description */
+      description?: string | null;
+      invocation: components["schemas"]["ScheduleInvocation-Input"];
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      };
+      /**
+       * Max Lateness Seconds
+       * @default 300
+       */
+      max_lateness_seconds?: number;
+      /** Name */
+      name: string;
+      schedule: components["schemas"]["CronSchedule"];
+      /**
+       * State
+       * @default paused
+       * @enum {string}
+       */
+      state?: "paused" | "enabled";
+    };
+    /** ScheduleInvocation */
+    "ScheduleInvocation-Input": {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string | null;
+      /**
+       * Memories
+       * @default []
+       */
+      memories?: components["schemas"]["MemoryMount"][];
+      options?: components["schemas"]["RunOptions-Input"];
+      payload: components["schemas"]["MessagePayload"];
+    };
+    /** ScheduleInvocation */
+    "ScheduleInvocation-Output": {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string | null;
+      /**
+       * Memories
+       * @default []
+       */
+      memories?: components["schemas"]["MemoryMount"][];
+      options?: components["schemas"]["RunOptions-Output"];
+      payload: components["schemas"]["MessagePayload"];
+    };
+    /** ScheduleOrigin */
+    ScheduleOrigin: {
+      /** Occurrence Id */
+      occurrence_id: string;
+      /** Schedule Id */
+      schedule_id: string;
+    };
+    /** SchedulePage */
+    SchedulePage: {
+      /** Items */
+      items: components["schemas"]["Schedule"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** SchedulePreview */
+    SchedulePreview: {
+      /** Items */
+      items: components["schemas"]["ScheduleTime"][];
+    };
+    /** SchedulePreviewRequest */
+    SchedulePreviewRequest: {
+      /**
+       * After
+       * Format: date-time
+       */
+      after: string;
+      /**
+       * Count
+       * @default 5
+       */
+      count?: number;
+      schedule: components["schemas"]["CronSchedule"];
+    };
+    /** @enum {string} */
+    ScheduleState: "paused" | "enabled" | "archived";
+    /** ScheduleStatus */
+    ScheduleStatus: {
+      busy_occurrences: components["schemas"]["BusyOccurrencePage"];
+      /** Has Unfinished Work */
+      has_unfinished_work: boolean;
+      /** Last Occurrence Id */
+      last_occurrence_id: string | null;
+      /** Next Fire At */
+      next_fire_at: string | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Pending Occurrence Id */
+      pending_occurrence_id: string | null;
+      /** Schedule Id */
+      schedule_id: string;
+      /** Session Id */
+      session_id: string;
+    };
+    /** ScheduleTime */
+    ScheduleTime: {
+      /**
+       * Local
+       * Format: date-time
+       */
+      local: string;
+      /**
+       * Utc
+       * Format: date-time
+       */
+      utc: string;
+    };
+    /** @enum {string} */
+    ScheduleTrigger: "scheduled" | "manual";
+    /** ScheduleUpdate */
+    ScheduleUpdate: {
+      /** Description */
+      description?: string | null;
+      invocation?: components["schemas"]["ScheduleInvocation-Input"] | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      } | null;
+      /** Max Lateness Seconds */
+      max_lateness_seconds?: number | null;
+      /** Name */
+      name?: string | null;
+      schedule?: components["schemas"]["CronSchedule"] | null;
     };
     /** SelectedTrace */
     SelectedTrace: {
@@ -9593,6 +10122,8 @@ export interface components {
        * @default 0
        */
       run_count?: number;
+      /** Schedule Id */
+      schedule_id?: string | null;
       /**
        * Updated At
        * Format: date-time
@@ -10434,6 +10965,8 @@ export interface components {
        * @enum {string}
        */
       purpose?: "conversation" | "memory_organization";
+      /** Schedule Occurrence Id */
+      schedule_occurrence_id?: string | null;
       /** Session Id */
       session_id: string;
       /** Subagent */
@@ -16913,6 +17446,378 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_schedules: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        state?: components["schemas"]["ScheduleState"] | null;
+        agent_id?: string | null;
+        principal_id?: string | null;
+        label?: string[];
+        q?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SchedulePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_schedule: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Schedule"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  preview_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SchedulePreviewRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SchedulePreview"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Schedule"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  archive_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Schedule"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  dispatch_schedule: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleCommand"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Occurrence"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  enable_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleCommand"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Schedule"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_schedule_occurrences: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        status?: components["schemas"]["OccurrenceStatus"] | null;
+        trigger?: components["schemas"]["ScheduleTrigger"] | null;
+        created_after?: string | null;
+        created_before?: string | null;
+        unfinished?: boolean | null;
+        include?: "execution" | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OccurrencePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_schedule_occurrence: {
+    parameters: {
+      query?: {
+        include?: "execution" | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+        occurrence_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Occurrence"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  pause_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleCommand"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Schedule"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_schedule_status: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScheduleStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_sessions: {
     parameters: {
       query?: {
@@ -17688,6 +18593,7 @@ export interface operations {
     parameters: {
       query?: {
         session_id?: string | null;
+        occurrence_id?: string | null;
         text_query?: string | null;
         label?: string[] | null;
         limit?: number;

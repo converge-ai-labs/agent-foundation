@@ -34,6 +34,7 @@ import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
 import { SessionStreamProvider } from "./session-stream";
+import { useSession } from "./queries";
 import {
   defaultSessionMemory,
   SessionMemoryFields,
@@ -260,12 +261,47 @@ export function NewConversation() {
 }
 
 export function SessionLayout() {
+  const { sessionId = "", threadId } = useParams(),
+    { basePath } = useWorkspace();
+  const session = useSession(sessionId);
+  if (session.isPending) return <Loading variant="detail" />;
+  if (!session.data)
+    return (
+      <ErrorNotice error={session.error} retry={() => void session.refetch()} />
+    );
+  if (session.data.schedule_id && !threadId)
+    return (
+      <Navigate
+        to={`${basePath}/schedules/${session.data.schedule_id}`}
+        replace
+      />
+    );
+  return <SessionContent scheduleId={session.data.schedule_id ?? undefined} />;
+}
+
+function SessionContent({ scheduleId }: { scheduleId?: string }) {
   const { t } = useTranslation(),
-    { sessionId = "", threadId } = useParams(),
+    { sessionId = "", threadId, runId } = useParams(),
     { workspace } = useWorkspace(),
     client = useClient(),
+    cache = useQueryClient(),
     queries = conversationQueries(client, workspace.id);
-  const threads = useQuery(queries.threads(sessionId));
+  const ordinary = useQuery({
+    ...queries.threads(sessionId),
+    enabled: !scheduleId,
+  });
+  const selectedThread = useQuery({
+    ...queries.thread(threadId ?? ""),
+    enabled: !!scheduleId && !!threadId,
+  });
+  const threads = scheduleId
+    ? {
+        data: selectedThread.data ? [selectedThread.data] : undefined,
+        error: selectedThread.error,
+        isPending: selectedThread.isPending,
+        refetch: selectedThread.refetch,
+      }
+    : ordinary;
   // Chat returns to the main conversation, never the most recently listed child.
   // An explicit Thread URL remains authoritative, including forks and children.
   const { search } = useLocation();
@@ -282,7 +318,23 @@ export function SessionLayout() {
       key={`${workspace.id}:${sessionId}`}
       sessionId={sessionId}
     >
-      <SessionStreamProvider sessionId={sessionId}>
+      <SessionStreamProvider
+        sessionId={sessionId}
+        onEvent={(event) => {
+          if (
+            scheduleId &&
+            event.type === "connection" &&
+            event.state === "live"
+          )
+            void invalidateConversation(cache, workspace.id, {
+              threadId,
+              runId:
+                runId ??
+                selectedThread.data?.current_run_id ??
+                selectedThread.data?.last_run_id,
+            });
+        }}
+      >
         <RunCollapseProvider>
           <div className={styles.sessionDetail}>
             <SessionHeader threads={threads.data ?? []} />
