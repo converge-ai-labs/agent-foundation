@@ -1,0 +1,132 @@
+.note {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  overflow-wrap: anywhere;
+}
+.fields {
+  display: grid;
+  gap: 16px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.eventGroups,
+.filterFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.eventGroup {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.eventGroup legend {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  margin-bottom: 8px;
+}
+.eventChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: var(--a13n-text-sm);
+}
+.eventChoice > span {
+  min-width: 0;
+}
+.eventChoice code {
+  display: block;
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+.error {
+  color: var(--a13n-danger);
+  margin: 0;
+  font-size: var(--a13n-text-xs);
+}
+.events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.events code,
+.eventName {
+  font-family: var(--font-mono);
+  font-size: var(--a13n-text-xs);
+  overflow-wrap: anywhere;
+}
+.events code {
+  padding: 3px 6px;
+  background: var(--a13n-elevated);
+  border-radius: var(--a13n-radius-chip);
+}
+.stacked {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.facts {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) minmax(0, 1fr);
+  gap: 12px 20px;
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+}
+.facts dt {
+  color: var(--a13n-secondary);
+}
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.link {
+  color: var(--a13n-text);
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.link:hover {
+  text-decoration: underline;
+}
+@media (max-width: 560px) {
+  .presets {
+    max-width: 220px;
+  }
+  .eventGroups,
+  .filterFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .events {
+    justify-content: flex-start;
+  }
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .facts dd {
+    margin-bottom: 12px;
+  }
+}

@@ -13,6 +13,7 @@ import {
   SlidersHorizontalIcon,
   UserIcon,
   UsersIcon,
+  WebhooksLogoIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { workspacePath } from "../../shared/paths";
@@ -123,6 +124,15 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Service accounts",
       description: "Dedicated identities for applications and automation.",
       icon: RobotIcon,
+      permission: "admin",
+    },
+    {
+      value: "webhooks",
+      label: "Webhooks",
+      description:
+        "Send Run and Attempt lifecycle changes to your application.",
+      layout: "collection",
+      icon: WebhooksLogoIcon,
       permission: "admin",
     },
     {
