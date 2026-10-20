@@ -29,7 +29,7 @@ async def list_dashboards(
 
 
 @router.get("/preset", response_model=DashboardConfig, openapi_extra={"x-a13n-mcp": False})
-async def get_preset(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> DashboardConfig:
+async def get_dashboard_preset(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> DashboardConfig:
     return await service.get_preset(runtime.storage, actor, workspace_id)
 
 

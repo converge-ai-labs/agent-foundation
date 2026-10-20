@@ -20,6 +20,7 @@ import anyio
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.providers.environment.remote_envd.configuration import RemoteEnvdConnectionConfiguration
 from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel, ConfigDict, Field
 from redis.exceptions import RedisError
@@ -76,6 +77,7 @@ class Response(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: Nonce
     result: LocalResult | None
+    error: Literal["payload_too_large"] | None = None
 
 
 @dataclass(slots=True)
@@ -86,6 +88,7 @@ class Entry:
     projection: Projection
     last_export: float = 0
     export_health: ExportHealth = field(default_factory=ExportHealth)
+    credential_cache: ManagedCredentialCache = field(default_factory=ManagedCredentialCache, repr=False)
 
 
 class Proxy:
@@ -176,7 +179,7 @@ class Proxy:
                 selection = await collection.resolve(self.runtime, target_id)
                 if self.entries.get(target_id) is not entry:
                     return
-                if selection is None:
+                if selection is None or selection.target is None:
                     await self.drop(target_id, expected=entry)
                     return
                 if isinstance(selection.target, ReverseTarget):
@@ -219,16 +222,15 @@ class Proxy:
                     )
                     self.entries[target_id] = entry
                 entry.cache.status = selection.status
-                if selection.target is None:
-                    entry.cache.invalidate_rates()
-                    return
                 try:
                     with anyio.fail_after(self.config.request_seconds):
                         if isinstance(selection.target, ReverseTarget):
                             assert reverse is not None
                             observation = await observe(reverse, selection.device_id)
                         else:
-                            observation = await collection.read(self.runtime, selection)
+                            observation = await collection.read(
+                                self.runtime, selection, credential_cache=entry.credential_cache
+                            )
                     if not await self.current(entry):
                         await self.drop(target_id, expected=entry)
                         return
@@ -264,8 +266,14 @@ class Proxy:
                     )
                 finally:
                     if entry.cache.status in {"offline", "unsupported"}:
+                        entry.credential_cache.clear()
                         entry.cache.invalidate_rates()
-            except RedisError:
+            except Exception as error:
+                # Failed selection/ownership checks retire this target without cancelling siblings.
+                logger.warning(
+                    "Environment monitoring target failed",
+                    extra={"environment_id": target_id, "exception_details": exception_details(error)},
+                )
                 # A cache retained after ownership uncertainty must never answer or export.
                 with anyio.move_on_after(self.config.request_seconds, shield=True):
                     try:
@@ -357,10 +365,14 @@ class Proxy:
         try:
             with anyio.fail_after(self.config.query_seconds):
                 owner = await self.runtime.redis.get(lease_key(selection.target_id))
-                if owner is None:
-                    # No owner is an explicit waiting/capacity state, not a fabricated observation.
+                if owner is None or selection.target is None:
+                    # Ineligible targets report their state without reserving a cache or lease.
                     cache = Cache(selection.device_id)
-                    cache.status = "capacity" if len(self.entries) >= self.config.max_devices else "waiting"
+                    cache.status = (
+                        selection.status
+                        if selection.target is None
+                        else ("capacity" if len(self.entries) >= self.config.max_devices else "waiting")
+                    )
                     return LocalResult(
                         observation=cache.observation(
                             monotonic=time.monotonic(), include_snapshot=query.include_snapshot
@@ -400,9 +412,9 @@ class Proxy:
     async def reply(self, request: Request) -> None:
         try:
             result = await self.local(request.target_id, request.revision, request)
-            response = Response(id=request.id, result=result).model_dump_json()
+            response = Response(id=request.id, result=result).model_dump_json(exclude={"error"})
             if len(response.encode()) > self.config.query_bytes:
-                response = Response(id=request.id, result=None).model_dump_json()
+                response = Response(id=request.id, result=None, error="payload_too_large").model_dump_json()
             await self.runtime.redis.publish(channel(request.sender), response)
         except Exception as error:
             logger.warning("Temporary metrics reply failed", extra={"exception_details": exception_details(error)})
@@ -435,7 +447,15 @@ class Proxy:
                                 response = Response.model_validate(data)
                                 future = self.pending.get(response.id)
                                 if future is not None and not future.done():
-                                    future.set_result(response.result)
+                                    if response.error == "payload_too_large":
+                                        future.set_exception(
+                                            ServiceError(
+                                                "payload_too_large",
+                                                "Temporary metrics reply exceeds the transport limit; reduce the range or omit the snapshot",
+                                            )
+                                        )
+                                    else:
+                                        future.set_result(response.result)
                         except ValueError:
                             continue
             except (RedisError, ExceptionGroup) as error:

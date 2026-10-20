@@ -41,8 +41,10 @@ async def select_source(
             raise invalid("metrics_labels", "selection cannot override source scope labels")
     elif labels:
         raise invalid("metrics_labels", "metric identity requires a data source")
-    if labels:
-        # Relabeling an operator pipeline is administrative mapping, not permission
-        # for an Environment writer to select another private Device's series.
+    if source_id is not None and (
+        labels != (environment.metrics_labels or {}) or (labels and source_id != environment.metrics_data_source_id)
+    ):
+        # Replacing or clearing a mapping is administrative; retaining the same
+        # binding is not a relabel. Ordinary managers may still remove a binding.
         authorize(actor, scope, "admin")
     return bool(assign(environment, {"metrics_data_source_id": source_id, "metrics_labels": labels}))

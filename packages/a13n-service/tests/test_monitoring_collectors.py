@@ -22,9 +22,10 @@ from a13n_service.runs.environments.monitoring import collection, pull
 from a13n_service.runs.environments.monitoring.query import collector_status
 from a13n_service.settings import Monitoring
 from pydantic import SecretStr, ValidationError
+from sqlalchemy import text
 
 from .test_metrics_queries import backend, builder
-from .test_monitoring_proxy import controlled, external_row
+from .test_monitoring_proxy import controlled, external_row, ineligible_rows
 
 pytestmark = [pytest.mark.anyio, pytest.mark.skipif(os.name != "posix", reason="collector writers use POSIX locks")]
 POLICY = EndpointPolicy()
@@ -166,6 +167,36 @@ async def source(service):
     return result.json()["id"]
 
 
+async def test_ineligible_targets_do_not_consume_collector_capacity(service, tmp_path):
+    await configure_service(service, tmp_path, "http://127.0.0.1:9")
+    runtime = service.runtime
+    runtime = replace(
+        runtime,
+        settings=runtime.settings.model_copy(
+            update={
+                "monitoring": runtime.settings.monitoring.model_copy(update={"collector_targets": 1}),
+            }
+        ),
+    )
+    source_id = await source(service)
+    ineligible = await ineligible_rows(service, source_id)
+    ready = await external_row(service, source_id)
+    selected, truncated, failures = await pull.selections(runtime, "vmagent")
+    assert not failures
+    assert [item.target_id for item in selected] == [ready]
+    assert not truncated
+    for identity, expected in zip(
+        ineligible, ("not_ready", "not_ready", "unsupported", "unsupported", "unsupported"), strict=True
+    ):
+        status = await service.client.get(f"{service.api}/environments/{identity}/metrics/collector")
+        assert status.status_code == 200, status.text
+        assert status.json()["state"] == expected
+    await external_row(service, source_id)
+    selected, truncated, failures = await pull.selections(runtime, "vmagent")
+    assert not failures
+    assert len(selected) == 1 and truncated
+
+
 async def test_missing_config_is_discoverable_without_fallback(service):
     await controlled(service)
     response = await service.client.get(f"{service.api}/metrics-data-sources/capabilities")
@@ -232,3 +263,82 @@ async def test_reload_failure_is_explicit_and_reader_does_not_write(service, tmp
         await pull.reconcile(replace(service.runtime, settings=settings), "vmagent")
         assert len(calls) == 1
         assert not service.runtime.metrics_proxy.entries
+
+
+@pytest.mark.parametrize("failure", ["sql", "config", "recheck"])
+async def test_bad_selection_does_not_poison_healthy_target_or_publish_bad_job(service, tmp_path, monkeypatch, failure):
+    async with backend() as (endpoint, calls):
+        config = await configure_service(service, tmp_path, endpoint)
+        source_id = await source(service)
+        ids = sorted([await external_row(service, source_id), await external_row(service, source_id)])
+        bad, healthy = ids
+        real_selected = collection.selected
+        attempts = 0
+
+        async def selected(runtime, session, env, source):
+            nonlocal attempts
+            if env.id == bad:
+                attempts += 1
+                if failure == "sql":
+                    await session.execute(text("SELECT 1 / 0"))
+                if failure != "recheck" or attempts > 1:
+                    raise ValueError("private-broken-configuration")
+            # This query fails if another target left this session's transaction aborted.
+            assert (await session.execute(text("SELECT 1"))).scalar_one() == 1
+            return await real_selected(runtime, session, env, source)
+
+        monkeypatch.setattr(collection, "selected", selected)
+        await pull.reconcile(service.runtime, "vmagent")
+        jobs = json.loads(collectors.fragment_path(config, "vmagent").read_text())
+        assert [job["static_configs"][0]["labels"]["environment_id"] for job in jobs] == [healthy]
+        receipt = pull.Receipt.model_validate_json(await service.runtime.redis.get(pull.receipt_key("vmagent")))
+        assert receipt.state == "reload_requested"
+        assert receipt.targets[bad].state == "discovery_failed"
+        assert receipt.targets[healthy].state == "reload_requested"
+        assert len(calls) == 1
+        # Status retains the owner check and reports selection failures without exposing details.
+        from a13n_service.runs.environments.monitoring import query as query_module
+
+        monkeypatch.setattr(query_module, "selected", selected)
+        response = await service.client.get(f"{service.api}/environments/{bad}/metrics/collector")
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == "discovery_failed"
+        assert "private-broken" not in response.text
+
+
+async def test_writer_setup_failure_records_failed_and_cancellation_propagates(service, tmp_path, monkeypatch):
+    await configure_service(service, tmp_path / "missing", "http://127.0.0.1:9")
+    identity = await external_row(service, await source(service))
+    await pull.reconcile(service.runtime, "vmagent")
+    response = await service.client.get(f"{service.api}/environments/{identity}/metrics/collector")
+    assert response.status_code == 200, response.text
+    assert response.json()["state"] == "failed"
+    await service.runtime.redis.delete(pull.receipt_key("vmagent"))
+    await configure_service(service, tmp_path, "http://127.0.0.1:9")
+
+    async def cancelled(*args):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(collection, "selected", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await pull.reconcile(service.runtime, "vmagent")
+    assert await service.runtime.redis.get(pull.receipt_key("vmagent")) is None
+    async with collectors.writer_lock(service.runtime.settings.monitoring.collectors["vmagent"], "vmagent") as acquired:
+        assert acquired
+
+
+async def test_fragment_replacement_recovers_only_its_own_crash_staging_files(tmp_path):
+    config = configuration(tmp_path)
+    path = collectors.fragment_path(config, "vmagent")
+    abandoned = tmp_path / f".{path.name}.write-crashed"
+    other = tmp_path / ".a13n-managed.alloy.write-active"
+    operator = tmp_path / "operator.yml"
+    for file in (abandoned, other, operator):
+        file.write_text("protected-fixture")
+    async with collectors.writer_lock(config, "vmagent") as acquired:
+        assert acquired
+        await collectors._file_io(collectors._replace, path, "[]\n")
+    assert not abandoned.exists()
+    assert other.read_text() == operator.read_text() == "protected-fixture"
+    assert path.read_text() == "[]\n"
+    assert path.stat().st_mode & 0o777 == 0o600

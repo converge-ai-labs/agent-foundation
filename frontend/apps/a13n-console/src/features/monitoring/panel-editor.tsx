@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -14,50 +14,57 @@ import {
   type TimeRange,
 } from "./api";
 import { MetricsPanel } from "./panel";
+import { unitOptions } from "./labels";
 import { metricLabel } from "./series";
-import { PromQLEditor } from "./promql-editor";
+const PromQLEditor = lazy(() =>
+  import("./promql-editor").then((module) => ({
+    default: module.PromQLEditor,
+  })),
+);
 import styles from "./monitoring.module.css";
 
 type Metric = Extract<PanelQuery, { kind: "metric" }>["metric"];
-export const metrics: Metric[] = [
-  "system_cpu_busy_ratio",
-  "system_memory_used_bytes",
-  "system_memory_total_bytes",
-  "system_memory_available_bytes",
-  "system_memory_cache_bytes",
-  "system_memory_wired_bytes",
-  "system_memory_compressed_bytes",
-  "system_swap_used_bytes",
-  "system_swap_total_bytes",
-  "system_commit_total_bytes",
-  "system_commit_limit_bytes",
-  "system_processes",
-  "system_threads",
-  "system_handles",
-  "cgroup_memory_current_bytes",
-  "cgroup_pids_current",
-  "tcp_connections",
-  "udp_sockets",
-  "daemon_sessions",
-  "daemon_processes",
-  "daemon_connections",
-  "daemon_transfers",
-  "daemon_retained_output_bytes",
-  "network_received_bytes_per_second",
-  "network_transmitted_bytes_per_second",
-  "disk_read_bytes_per_second",
-  "disk_written_bytes_per_second",
-  "disk_read_operations_per_second",
-  "disk_write_operations_per_second",
-  "cgroup_io_read_bytes_per_second",
-  "cgroup_io_written_bytes_per_second",
-  "cgroup_io_read_operations_per_second",
-  "cgroup_io_write_operations_per_second",
-];
-export function newPanel(panels: Panel[]): Panel {
+// Exhaustive against the generated API union: new backend metrics require a UI entry.
+const metricCatalog: Record<Metric, null> = {
+  system_cpu_busy_ratio: null,
+  system_memory_used_bytes: null,
+  system_memory_total_bytes: null,
+  system_memory_available_bytes: null,
+  system_memory_cache_bytes: null,
+  system_memory_wired_bytes: null,
+  system_memory_compressed_bytes: null,
+  system_swap_used_bytes: null,
+  system_swap_total_bytes: null,
+  system_commit_total_bytes: null,
+  system_commit_limit_bytes: null,
+  system_processes: null,
+  system_threads: null,
+  system_handles: null,
+  cgroup_memory_current_bytes: null,
+  cgroup_pids_current: null,
+  tcp_connections: null,
+  udp_sockets: null,
+  daemon_sessions: null,
+  daemon_processes: null,
+  daemon_connections: null,
+  daemon_transfers: null,
+  daemon_retained_output_bytes: null,
+  network_received_bytes_per_second: null,
+  network_transmitted_bytes_per_second: null,
+  disk_read_bytes_per_second: null,
+  disk_written_bytes_per_second: null,
+  disk_read_operations_per_second: null,
+  disk_write_operations_per_second: null,
+  cgroup_io_read_bytes_per_second: null,
+  cgroup_io_written_bytes_per_second: null,
+  cgroup_io_read_operations_per_second: null,
+  cgroup_io_write_operations_per_second: null,
+};
+export const metrics = Object.keys(metricCatalog) as Metric[];
+export function newPanel(panels: Panel[], title: string): Panel {
   return {
     id: crypto.randomUUID(),
-    title: "New panel",
+    title,
     position: {
       x: 0,
       y: Math.min(
@@ -95,16 +102,24 @@ export function PanelEditor({
   const { t } = useTranslation(),
     client = useClient(),
     { workspace, can } = useWorkspace();
+  const [queryKeys, setQueryKeys] = useState(() =>
+    panel.queries.map(() => crypto.randomUUID()),
+  );
   const [draft, setDraft] = useState(panel),
-    [preview, setPreview] = useState<Panel>(),
+    [preview, setPreview] = useState<{
+      panel: Panel;
+      target: Target | null;
+      range: TimeRange;
+    }>(),
     [revision, setRevision] = useState(0);
   const sources = useQuery(monitoringApi(client, workspace.id).sources());
   const update = (change: Partial<Panel>) =>
     setDraft((value) => ({ ...value, ...change }));
   const queryChange = (index: number, query: PanelQuery) =>
-    update({
-      queries: draft.queries.map((item, i) => (i === index ? query : item)),
-    });
+    setDraft((current) => ({
+      ...current,
+      queries: current.queries.map((item, i) => (i === index ? query : item)),
+    }));
   const valid =
     !!draft.title.trim() &&
     draft.queries.every(
@@ -154,17 +169,7 @@ export function PanelEditor({
           <ChoiceField
             label={t("Unit")}
             value={draft.unit ?? "auto"}
-            options={(
-              [
-                "auto",
-                "ratio",
-                "bytes",
-                "bytes_per_second",
-                "operations_per_second",
-                "count",
-                "seconds",
-              ] as const
-            ).map((value) => ({ value, label: t(value) }))}
+            options={unitOptions(t)}
             onValueChange={(value) => update({ unit: value as Panel["unit"] })}
           />
           <ChoiceField
@@ -226,7 +231,7 @@ export function PanelEditor({
         </details>
         <ErrorNotice error={sources.error} />
         {draft.queries.map((query, index) => (
-          <div className={styles.query} key={index}>
+          <div className={styles.query} key={queryKeys[index]}>
             <div className={styles.queryHeading}>
               <strong>
                 {t("Query")} {String.fromCharCode(65 + index)}
@@ -236,11 +241,13 @@ export function PanelEditor({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
-                    update({
-                      queries: draft.queries.filter((_, i) => i !== index),
-                    })
-                  }
+                  onClick={() => {
+                    setQueryKeys((keys) => keys.filter((_, i) => i !== index));
+                    setDraft((current) => ({
+                      ...current,
+                      queries: current.queries.filter((_, i) => i !== index),
+                    }));
+                  }}
                 >
                   {t("Remove query")}
                 </Button>
@@ -265,8 +272,9 @@ export function PanelEditor({
                     : {
                         kind: "promql",
                         source_id:
-                          sources.data?.find((source) => source.config.query)
-                            ?.id ?? "",
+                          sources.data?.find(
+                            (source) => source.enabled && source.config.query,
+                          )?.id ?? "",
                         expression: "",
                       },
                 )
@@ -337,13 +345,15 @@ export function PanelEditor({
                     queryChange(index, { ...query, source_id })
                   }
                 />
-                <PromQLEditor
-                  label={`${t("PromQL expression")} ${index + 1}`}
-                  value={query.expression}
-                  onChange={(expression) =>
-                    queryChange(index, { ...query, expression })
-                  }
-                />
+                <Suspense fallback={<p>{t("Loading…")}</p>}>
+                  <PromQLEditor
+                    label={`${t("PromQL expression")} ${index + 1}`}
+                    value={query.expression}
+                    onChange={(expression) =>
+                      queryChange(index, { ...query, expression })
+                    }
+                  />
+                </Suspense>
                 {!can("admin") && (
                   <p>
                     {t(
@@ -360,14 +370,16 @@ export function PanelEditor({
             type="button"
             variant="outline"
             disabled={draft.queries.length >= 4}
-            onClick={() =>
-              update({
+            onClick={() => {
+              setQueryKeys((keys) => [...keys, crypto.randomUUID()]);
+              setDraft((current) => ({
+                ...current,
                 queries: [
-                  ...draft.queries,
+                  ...current.queries,
                   { kind: "metric", metric: metrics[0] },
                 ],
-              })
-            }
+              }));
+            }}
           >
             {t("Add query")}
           </Button>
@@ -376,7 +388,11 @@ export function PanelEditor({
             variant="outline"
             disabled={!valid}
             onClick={() => {
-              setPreview(structuredClone(draft));
+              setPreview({
+                panel: structuredClone(draft),
+                target,
+                range: { ...range },
+              });
               setRevision((value) => value + 1);
             }}
           >
@@ -386,9 +402,9 @@ export function PanelEditor({
         {preview && (
           <div className={styles.preview}>
             <MetricsPanel
-              panel={preview}
-              target={target}
-              range={range}
+              panel={preview.panel}
+              target={preview.target}
+              range={preview.range}
               revision={revision}
               syncKey="panel-preview"
             />

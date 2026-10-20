@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import type { Source } from "./api";
+import { statusLabels } from "./labels";
 import styles from "./monitoring.module.css";
 
 export type TargetOption = {
@@ -83,6 +84,7 @@ export function TargetPicker({
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
+  const statuses = statusLabels(t);
   const [open, setOpen] = useState(false);
   const [filters, setFilters] = useState({
     search: "",
@@ -148,7 +150,10 @@ export function TargetPicker({
                 { value: "", label: t("All") },
                 ...[...new Set(items.map((item) => item.status))]
                   .sort()
-                  .map((status) => ({ value: status, label: t(status) })),
+                  .map((status) => ({
+                    value: status,
+                    label: statuses[status] ?? status,
+                  })),
               ]}
               onValueChange={(status) => setFilters({ ...filters, status })}
             />
@@ -201,7 +206,8 @@ export function TargetPicker({
                   <strong>{item.name}</strong>
                   <small>
                     {t(item.kind === "device" ? "Device" : "Environment")} ·{" "}
-                    {t(item.status)} · {sourceName(item.source)}
+                    {statuses[item.status] ?? item.status} ·{" "}
+                    {sourceName(item.source)}
                   </small>
                   {!!Object.keys(item.labels).length && (
                     <small>

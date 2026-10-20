@@ -892,8 +892,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Metrics */
-    post: operations["metrics"];
+    /** Query Device Metrics */
+    post: operations["query_device_metrics"];
     delete?: never;
     options?: never;
     head?: never;
@@ -909,8 +909,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Rotate */
-    post: operations["rotate"];
+    /** Rotate Device Credential */
+    post: operations["rotate_device_credential"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1130,8 +1130,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Query Metrics */
-    post: operations["query_metrics"];
+    /** Query Environment Metrics */
+    post: operations["query_environment_metrics"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1672,8 +1672,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Preset */
-    get: operations["get_preset"];
+    /** Get Dashboard Preset */
+    get: operations["get_dashboard_preset"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1708,11 +1708,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Sources */
-    get: operations["list_sources"];
+    /** List Metrics Data Sources */
+    get: operations["list_metrics_data_sources"];
     put?: never;
-    /** Create Source */
-    post: operations["create_source"];
+    /** Create Metrics Data Source */
+    post: operations["create_metrics_data_source"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1726,8 +1726,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Capabilities */
-    get: operations["get_capabilities"];
+    /** Get Metrics Capabilities */
+    get: operations["get_metrics_capabilities"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1743,16 +1743,16 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Source */
-    get: operations["get_source"];
+    /** Get Metrics Data Source */
+    get: operations["get_metrics_data_source"];
     put?: never;
     post?: never;
-    /** Delete Source */
-    delete: operations["delete_source"];
+    /** Delete Metrics Data Source */
+    delete: operations["delete_metrics_data_source"];
     options?: never;
     head?: never;
-    /** Update Source */
-    patch: operations["update_source"];
+    /** Update Metrics Data Source */
+    patch: operations["update_metrics_data_source"];
     trace?: never;
   };
   "/api/v1/metrics-data-sources/{source_id}/query": {
@@ -1764,8 +1764,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Query Source */
-    post: operations["query_source"];
+    /** Query Metrics Data Source */
+    post: operations["query_metrics_data_source"];
     delete?: never;
     options?: never;
     head?: never;
@@ -12894,7 +12894,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  metrics: {
+  query_device_metrics: {
     parameters: {
       query?: never;
       header?: {
@@ -12927,7 +12927,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  rotate: {
+  rotate_device_credential: {
     parameters: {
       query?: never;
       header?: {
@@ -13508,7 +13508,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  query_metrics: {
+  query_environment_metrics: {
     parameters: {
       query?: never;
       header?: {
@@ -14949,7 +14949,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_preset: {
+  get_dashboard_preset: {
     parameters: {
       query?: never;
       header?: {
@@ -15061,7 +15061,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  list_sources: {
+  list_metrics_data_sources: {
     parameters: {
       query?: {
         limit?: number;
@@ -15089,7 +15089,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  create_source: {
+  create_metrics_data_source: {
     parameters: {
       query?: never;
       header?: {
@@ -15118,7 +15118,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_capabilities: {
+  get_metrics_capabilities: {
     parameters: {
       query?: never;
       header?: {
@@ -15143,7 +15143,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  get_source: {
+  get_metrics_data_source: {
     parameters: {
       query?: never;
       header?: {
@@ -15170,7 +15170,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  delete_source: {
+  delete_metrics_data_source: {
     parameters: {
       query?: never;
       header?: {
@@ -15197,7 +15197,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  update_source: {
+  update_metrics_data_source: {
     parameters: {
       query?: never;
       header?: {
@@ -15230,7 +15230,7 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  query_source: {
+  query_metrics_data_source: {
     parameters: {
       query?: never;
       header?: {

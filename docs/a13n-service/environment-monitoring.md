@@ -50,6 +50,9 @@ Use the API's workspace context and authentication described in [HTTP API](http.
 
 Use backend-scoped read credentials. Scope labels filter built-in queries; they do not restrict arbitrary PromQL. Custom PromQL requires workspace administration authority. Private environment queries also check environment ownership. Monitoring endpoints are human-facing and are excluded from agent tools and MCP.
 
+> [!WARNING]
+> A native source delivers its write credential to the target process. Environment managers can select that source, and users or agents executing on the target can read and reuse the credential. Use receiver-scoped, write-only credentials and trust those executors within the permitted ingestion boundary. Resource labels do not prevent forged sample identities. Use pull or proxy collection when receiver credentials must stay outside targets.
+
 ## Bind and verify an environment
 
 1. Select `metrics_data_source_id` when creating or updating the environment. Use `null` to clear the selection. External identity mappings and custom sources require administrator approval.
@@ -119,7 +122,7 @@ To remove a source while the writer runs, disable or unbind it and verify the ne
 
 A monitoring Device registration is separate from an executable environment. Workspace administrators create it with an expected native Device identity and select a proxy source. Creation returns a one-time attachment token. Store it securely; metadata reads cannot retrieve it.
 
-Connect an Envd reverse carrier to `/api/v1/devices/{device_id}/connect` using WSS, the `eip.v1` subprotocol and the attachment token as Bearer authentication. Direct loopback WS is permitted for development. Query-string credentials, browser Origins and cookie-only authentication are refused. Configure the Envd sampler before connecting.
+Connect an Envd reverse carrier to `/api/v1/devices/{device_id}/connect` using WSS, the `eip.v1` subprotocol and the attachment token as Bearer authentication. Direct loopback WS requires the explicit development setting `A13N_MONITORING__ALLOW_LOOPBACK_WS=true` (default false). Keep it disabled behind a reverse proxy: a loopback peer may be a proxy carrying remote traffic. For TLS termination, configure `server.trusted_proxies` so the trusted proxy's secure scheme reaches Service. Query-string credentials, browser Origins and cookie-only authentication are refused. Configure the Envd sampler before connecting.
 
 The receiving replica owns the socket and temporary history. Other API replicas route authorized queries to that owner. Token rotation, disablement, source removal and lost ownership retire the carrier. Reverse Devices cannot select pull collection because the carrier does not supply a collector-reachable HTTP endpoint. Native/external Device history can be queried independently of a connected carrier.
 

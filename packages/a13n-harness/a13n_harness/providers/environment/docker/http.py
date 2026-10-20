@@ -22,7 +22,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_runtime
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache, managed_http_runtime
 
 
 class HttpReference(DockerReference):
@@ -33,7 +33,9 @@ class HttpReference(DockerReference):
 
 
 @asynccontextmanager
-async def http_runtime(reference: DockerReference) -> AsyncIterator[HttpEnvdProviderRuntime]:
+async def http_runtime(
+    reference: DockerReference, *, credential_cache: ManagedCredentialCache | None = None
+) -> AsyncIterator[HttpEnvdProviderRuntime]:
     if reference.target is None:
         raise _missing()
     with engine_errors(mutation=False):
@@ -71,6 +73,8 @@ async def http_runtime(reference: DockerReference) -> AsyncIterator[HttpEnvdProv
         connection=configuration,
         endpoint_policy=reference.runtime.endpoint_policy,
         load_credential=lambda: _credential(reference),
+        credential_cache=credential_cache,
+        target_id=reference.target.container_id,
     ) as runtime:
         yield runtime
 

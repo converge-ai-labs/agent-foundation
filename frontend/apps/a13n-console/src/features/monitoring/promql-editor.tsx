@@ -17,6 +17,7 @@ export function PromQLEditor({
 }) {
   const host = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null);
+  const initialValue = useRef(value);
   const change = useRef(onChange);
   change.current = onChange;
   useEffect(() => {
@@ -24,12 +25,11 @@ export function PromQLEditor({
     const editor = new EditorView({
       parent: host.current!,
       state: EditorState.create({
-        doc: value,
+        doc: initialValue.current,
         extensions: [
           basicSetup,
           promql.asExtension(),
           EditorView.lineWrapping,
-          EditorView.contentAttributes.of({ "aria-label": label }),
           EditorView.theme({
             "&": {
               background: "var(--a13n-surface)",
@@ -52,6 +52,9 @@ export function PromQLEditor({
       editor.destroy();
       promql.destroy();
     };
+  }, []);
+  useEffect(() => {
+    view.current?.contentDOM.setAttribute("aria-label", label);
   }, [label]);
   useEffect(() => {
     const editor = view.current;

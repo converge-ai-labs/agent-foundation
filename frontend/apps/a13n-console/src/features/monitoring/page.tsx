@@ -21,6 +21,7 @@ import {
   ModalFrame,
 } from "a13n-ui";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -53,10 +54,6 @@ import { newPanel, PanelEditor } from "./panel-editor";
 import { targetInventory, TargetPicker } from "./target-picker";
 import styles from "./monitoring.module.css";
 
-const liveRange = (seconds: number): TimeRange => {
-  const end = Math.floor(Date.now() / 1000);
-  return { start: end - seconds, end };
-};
 type Draft = { basis: Dashboard; name: string; config: DashboardConfig };
 export function DashboardsPage() {
   const { workspace } = useWorkspace();
@@ -159,17 +156,22 @@ function DashboardWorkspace() {
       return next;
     });
   }
-  function refreshNow() {
+  const refreshNow = useCallback(() => {
     setNow(Math.floor(Date.now() / 1000));
     setRevision((value) => value + 1);
-  }
+  }, []);
   useEffect(() => {
     if (!interval || pinned) return;
-    const timer = window.setInterval(() => {
+    const refreshVisible = () => {
       if (!document.hidden) refreshNow();
-    }, interval * 1000);
-    return () => window.clearInterval(timer);
-  }, [interval, pinned]);
+    };
+    const timer = window.setInterval(refreshVisible, interval * 1000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [interval, pinned, refreshNow]);
   useEffect(() => {
     if (!draft) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -186,11 +188,7 @@ function DashboardWorkspace() {
         draft.basis.id,
         {
           name: draft.name,
-          config: {
-            ...draft.config,
-            range_seconds: duration,
-            refresh_seconds: interval as DashboardConfig["refresh_seconds"],
-          },
+          config: draft.config,
         },
         rowTag(draft.basis),
       );
@@ -217,6 +215,9 @@ function DashboardWorkspace() {
     if (busy) return;
     setDraft(undefined);
     setEditing(undefined);
+    setSeconds(undefined);
+    setRefresh(undefined);
+    setPinned(undefined);
     save.reset();
     reset.reset();
   }
@@ -286,6 +287,8 @@ function DashboardWorkspace() {
             title={t("Edit dashboard")}
             disabled={!selected}
             onClick={() => {
+              setSeconds(undefined);
+              setRefresh(undefined);
               if (selected)
                 setDraft({
                   basis: selected,
@@ -448,7 +451,7 @@ function DashboardWorkspace() {
               <Button
                 variant="outline"
                 disabled={busy || panels.length >= 24}
-                onClick={() => setEditing(newPanel(panels))}
+                onClick={() => setEditing(newPanel(panels, t("New panel")))}
               >
                 {t("Add panel")}
               </Button>

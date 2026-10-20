@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   setScale: vi.fn(),
   setSeries: vi.fn(),
   destroy: vi.fn(),
+  t: (key: string) => key,
 }));
 vi.mock("uplot", () => ({
   default: Object.assign(
@@ -25,7 +26,7 @@ vi.mock("uplot", () => ({
   ),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: state.t }),
 }));
 
 it("retains Canvas and skips sample work for retained responses and legend changes", async () => {
@@ -103,7 +104,7 @@ it("filters plotted series without rebuilding data and preserves explicit legend
       [120, index + 1],
     ],
   }));
-  render(
+  const { rerender } = render(
     <MetricsChart
       panel={panel}
       series={series}
@@ -121,6 +122,19 @@ it("filters plotted series without rebuilding data and preserves explicit legend
   await user.clear(input);
   expect(screen.getAllByRole("button")).toHaveLength(6);
   expect(state.setSeries).toHaveBeenCalledWith(4, { show: false });
+  expect(state.setSeries).toHaveBeenLastCalledWith(6, { show: true });
+  expect(state.setData).toHaveBeenCalledTimes(dataCalls);
+  await user.type(input, "renamed");
+  expect(screen.queryAllByRole("button")).toHaveLength(0);
+  rerender(
+    <MetricsChart
+      panel={panel}
+      series={series.map((item) => ({ ...item, detail: "renamed" }))}
+      range={{ start: 0, end: 180 }}
+      syncKey="filter"
+    />,
+  );
+  expect(screen.getAllByRole("button")).toHaveLength(6);
   expect(state.setSeries).toHaveBeenLastCalledWith(6, { show: true });
   expect(state.setData).toHaveBeenCalledTimes(dataCalls);
 });
@@ -158,4 +172,60 @@ it("uses a stable percentage scale and updates isolated-point visibility with cu
     [0.2, 0.3],
   ];
   expect(show(chart, 1, 0, 1)).toBe(false);
+});
+
+it("expires latest values in statistics and legends while retaining historical cursor values", () => {
+  const panel: Panel = {
+    id: "cpu",
+    title: "CPU",
+    position: { x: 0, y: 0, w: 6, h: 5 },
+    queries: [],
+  };
+  const series: ChartSeries[] = [
+    { id: "cpu", label: "CPU", unit: "ratio", points: [[120, 0.5]] },
+  ];
+  const props = {
+    panel,
+    series,
+    range: { start: 0, end: 210 },
+    syncKey: "stale",
+  };
+  const { rerender } = render(<MetricsChart {...props} />);
+  expect(screen.getByRole("button", { name: /CPU/ }).textContent).toContain(
+    "50%",
+  );
+  const options = vi.mocked(uPlot).mock.calls.at(-1)![0];
+  rerender(<MetricsChart {...props} range={{ start: 0, end: 211 }} />);
+  expect(screen.getByRole("button", { name: /CPU/ }).textContent).toContain(
+    "—",
+  );
+  const chart = Object.assign(Object.create(uPlot.prototype) as uPlot, {
+    data: [[120], [0.5]],
+    cursor: { idx: 0, left: 10 },
+  });
+  options.hooks!.setCursor![0]!(chart);
+  expect(screen.getByRole("button", { name: /CPU/ }).textContent).toContain(
+    "50%",
+  );
+  state.t = (key) => (key === "Latest" ? "最新" : key);
+  rerender(<MetricsChart {...props} range={{ start: 0, end: 211 }} />);
+  chart.cursor.left = -1;
+  options.hooks!.setCursor![0]!(chart);
+  expect(screen.getByText("最新")).toBeDefined();
+  state.t = (key) => key;
+  expect(screen.getByRole("button", { name: /CPU/ }).textContent).toContain(
+    "—",
+  );
+  rerender(
+    <MetricsChart
+      {...props}
+      panel={{ ...panel, visualization: "stat" }}
+      range={{ start: 0, end: 211 }}
+    />,
+  );
+  expect(screen.getByText("—")).toBeDefined();
+  rerender(
+    <MetricsChart {...props} panel={{ ...panel, visualization: "stat" }} />,
+  );
+  expect(screen.getByText("50%")).toBeDefined();
 });

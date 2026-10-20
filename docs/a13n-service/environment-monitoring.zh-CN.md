@@ -50,6 +50,9 @@ description: 为环境和 Device 指标选择采集与历史查询后端，并�
 
 读取凭据必须在后端限定可访问的数据范围。范围标签只过滤内置查询，不能限制任意 PromQL。自定义 PromQL 需要工作空间管理权限。私有环境查询还会检查环境所有权。监控端点面向用户，不向 agent 工具和 MCP 开放。
 
+> [!WARNING]
+> Native 数据源会将写入凭据交付给目标进程。环境管理者可以选择该数据源，在目标上执行代码的用户或 agent 可以读取并复用凭据。请使用接收端限定范围的只写凭据，并确保这些执行者在允许的摄取范围内可信。资源标签不能防止伪造样本身份。如果接收端凭据必须保留在目标之外，请使用 pull 或 proxy 采集。
+
 ## 绑定并验证环境
 
 1. 创建或更新环境时选择 `metrics_data_source_id`，使用 `null` 清除选择。外部身份映射和自定义数据源需要管理员批准。
@@ -119,7 +122,7 @@ Service 只写入 `a13n-managed.alloy`。将同一目录挂载到 Alloy 的配�
 
 监控 Device 注册独立于可执行环境。工作空间管理员指定预期的原生 Device 身份并选择 proxy 数据源。创建时返回一次性连接令牌。请安全保存；元数据读取无法取回令牌。
 
-Envd 反向连接使用 WSS、`eip.v1` 子协议和 Bearer 连接令牌，连接到 `/api/v1/devices/{device_id}/connect`。开发时允许直接回环 WS。拒绝查询字符串凭据、浏览器 Origin 和仅使用 cookie 的认证。连接前配置 Envd 采样器。
+Envd 反向连接使用 WSS、`eip.v1` 子协议和 Bearer 连接令牌，连接到 `/api/v1/devices/{device_id}/connect`。开发时使用直接回环 WS，需显式设置 `A13N_MONITORING__ALLOW_LOOPBACK_WS=true`（默认关闭）。反向代理后方保持关闭：回环地址的对端可能正在转发远程流量。代理终止 TLS 时，配置 `server.trusted_proxies`，让 Service 接受可信代理提供的安全协议标记。拒绝查询字符串凭据、浏览器 Origin 和仅使用 cookie 的认证。连接前配置 Envd 采样器。
 
 接收副本拥有连接和临时历史，其他 API 副本将授权后的查询路由到该副本。令牌轮换、禁用、移除数据源和所有权丢失会关闭连接。反向 Device 不提供采集器可达的 HTTP 端点，因此不能选择 pull。Native/external Device 历史查询不依赖活动连接。
 

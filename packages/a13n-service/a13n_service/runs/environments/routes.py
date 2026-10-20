@@ -92,7 +92,7 @@ async def update_environment(
     response_model=QueryResult | LocalResult,
     openapi_extra={"x-a13n-mcp": False},
 )
-async def query_metrics(
+async def query_environment_metrics(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, environment_id: str, body: EnvironmentQuery, actor: Actor
 ) -> QueryResult | LocalResult:
     return await query_environment(runtime, actor, workspace_id, environment_id, body)

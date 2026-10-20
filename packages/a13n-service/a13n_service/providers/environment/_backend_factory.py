@@ -15,6 +15,7 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as 
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._runtime import ClosableRuntime, RuntimeFactory, _release
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import BaseModel
 
 from ._backend import ManagementBackend
@@ -198,14 +199,19 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
             await _release(target, None)
 
     async def observe_device(
-        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        credential_cache: ManagedCredentialCache | None = None,
     ) -> DeviceObservation:
         # Observation has no lifecycle operation or publication. Preserve its errors
         # and cancellation rather than wrapping them as uncertain mutations.
         target = self._target(environment, environment_id, state, "op-" + uuid4().hex)
         try:
             target.validate_management()
-            return await target.observe_device()
+            return await target.observe_device(credential_cache=credential_cache)
         finally:
             await _release(target, None)
 

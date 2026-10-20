@@ -9,6 +9,7 @@ import { data, ifMatch, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, TextAreaField } from "../../shared/forms";
 import { monitoringApi } from "./api";
+import { statusLabels } from "./labels";
 import styles from "./monitoring.module.css";
 
 export function MetricsSourcePicker({
@@ -25,7 +26,9 @@ export function MetricsSourcePicker({
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation();
-  const sources = useQuery(monitoringApi(client, workspace.id).sources());
+  const api = monitoringApi(client, workspace.id);
+  const sources = useQuery(api.sources());
+  const capabilities = useQuery(api.capabilities());
   return (
     <>
       <ChoiceField
@@ -47,12 +50,21 @@ export function MetricsSourcePicker({
             value: source.id,
             label: source.name,
             disabled:
-              !source.enabled || (external && !source.builtin && !can("admin")),
+              !source.enabled ||
+              (external && !source.builtin && !can("admin")) ||
+              (source.config.collection === "proxy" &&
+                !capabilities.data?.proxy) ||
+              (source.config.collection === "pull" &&
+                !capabilities.data?.collectors.some(
+                  (collector) =>
+                    collector.kind === source.config.collector &&
+                    collector.available,
+                )),
           })),
         ]}
         onValueChange={onChange}
       />
-      <ErrorNotice error={sources.error} />
+      <ErrorNotice error={sources.error ?? capabilities.error} />
     </>
   );
 }
@@ -119,7 +131,10 @@ export function EnvironmentMonitoring({
       )}
       {source?.config.collection === "pull" && (
         <p>
-          {t("Collector")}: {collector.data?.state ?? t("Pending")}.{" "}
+          {t("Collector")}:{" "}
+          {statusLabels(t)[collector.data?.state ?? "pending"] ??
+            collector.data?.state}
+          .{" "}
           <span
             title={t(
               "Reload acceptance does not confirm scrape or export health.",

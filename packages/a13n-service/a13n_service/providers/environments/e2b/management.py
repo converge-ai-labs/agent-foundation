@@ -19,6 +19,7 @@ from a13n_harness.providers.environment.e2b.connection import close_sandbox, ope
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
 from a13n_harness.providers.environment.e2b.http import http_execution, http_runtime
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
@@ -48,10 +49,10 @@ class E2BManagement(E2BReference, ManagementBackend):
         async with http_runtime(self) as runtime:
             return scrape_target(runtime)
 
-    async def observe_device(self) -> DeviceObservation:
+    async def observe_device(self, *, credential_cache: ManagedCredentialCache | None = None) -> DeviceObservation:
         if self._configuration.execution != "envd_http":
             raise self._unsupported()
-        async with http_runtime(self) as runtime:
+        async with http_runtime(self, credential_cache=credential_cache) as runtime:
             return await observe(runtime, self._native_id)
 
     def configure_metrics(self, metrics: MetricsLaunch) -> None:

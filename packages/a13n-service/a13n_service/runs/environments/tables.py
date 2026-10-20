@@ -91,6 +91,11 @@ class EnvironmentRow(Stamped, Base):
             postgresql_where=text("template_id IS NOT NULL AND status IN ('reserved', 'ready', 'stopped')"),
         ),
         Index("ix_environments_renewals", "renew_at", postgresql_where=text("renew_at IS NOT NULL")),
+        Index(
+            "ix_environments_metrics_data_source",
+            "metrics_data_source_id",
+            postgresql_where=text("metrics_data_source_id IS NOT NULL"),
+        ),
         rules(
             identity_guarded("environments"),
             # Renewals reschedule themselves every few minutes without changing what a client sees.

@@ -169,6 +169,8 @@ function credentialPayload(
 ): Schema["Credentials"] | null | undefined {
   if (value.mode === "keep") return undefined;
   if (value.mode === "clear") return null;
+  if (!value.rows.length)
+    throw new Error("Add at least one header to replace credentials.");
   const headers: Record<string, string> = {};
   for (const row of value.rows) {
     const name = row.name.trim().toLowerCase();
@@ -279,13 +281,9 @@ function SourceEditor({
   );
   const [exportCredential, setExportCredential] = useState(untouched),
     [queryCredential, setQueryCredential] = useState(untouched);
-  const capabilities = useQuery({
-    queryKey: ["metrics-capabilities", workspace.id],
-    queryFn: ({ signal }) =>
-      http
-        .GET("/api/v1/metrics-data-sources/capabilities", { signal })
-        .then(data),
-  });
+  const capabilities = useQuery(
+    monitoringApi(client, workspace.id).capabilities(),
+  );
   const exporting = collection === "native" || collection === "proxy";
   const done = () => {
     void cache.invalidateQueries({

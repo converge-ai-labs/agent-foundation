@@ -94,6 +94,7 @@ async def http_session(
 
         async with managed_http_runtime(
             provider_key="daytona",
+            target_id=target.id,
             connection=connection,
             endpoint_policy=reference.backend._endpoint_policy,
             load_credential=credential,

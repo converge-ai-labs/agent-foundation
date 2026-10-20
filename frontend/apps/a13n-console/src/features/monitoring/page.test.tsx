@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { Link, MemoryRouter, Route, Routes, useNavigate } from "react-router";
@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   DELETE: vi.fn(),
   write: true,
   admin: true,
+  width: 1200,
 }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ workspace: () => state }),
@@ -33,7 +34,7 @@ vi.mock("./chart", () => ({ MetricsChart: () => null }));
 vi.mock("react-grid-layout", () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   useContainerWidth: () => ({
-    width: 1200,
+    width: state.width,
     mounted: true,
     containerRef: { current: null },
   }),
@@ -65,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.write = true;
   state.admin = true;
+  state.width = 1200;
   state.GET.mockImplementation(async (path: string) => ({
     data:
       path === "/api/v1/metrics-dashboards"
@@ -122,6 +124,54 @@ it("stages panel changes, saves the opening ETag and preserves drafts on conflic
   await user.click(screen.getByRole("button", { name: "Discard" }));
   expect(screen.queryByRole("button", { name: "Save dashboard" })).toBeNull();
 });
+it("discards edited time defaults without leaking them into a later name-only save", async () => {
+  const { cache, user } = setup();
+  await screen.findByText("Select a target to explore metrics");
+  cache.setQueryData(
+    ["metrics-dashboards", "ws_test"],
+    [
+      {
+        ...dashboard,
+        config: {
+          ...dashboard.config,
+          range_seconds: 3600,
+          refresh_seconds: 30,
+        },
+      },
+    ],
+  );
+  await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.click(screen.getByRole("button", { name: "15m" }));
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.click(screen.getByRole("combobox", { name: "Auto refresh" }));
+  await user.click(screen.getByRole("option", { name: "Off" }));
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await user.click(screen.getByRole("button", { name: "Discard" }));
+  await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Dashboard name" }),
+    " renamed",
+  );
+  await user.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
+  expect(state.PATCH.mock.calls[0][1].body.config).toMatchObject({
+    range_seconds: 3600,
+    refresh_seconds: 30,
+  });
+}, 15000);
+
+it("keeps viewer time overrides separate from saved dashboard defaults", async () => {
+  const { user } = setup();
+  await screen.findByText("Select a target to explore metrics");
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.click(screen.getByRole("button", { name: "6h" }));
+  await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
+  await user.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
+  expect(state.PATCH.mock.calls[0][1].body.config).toEqual(dashboard.config);
+});
+
 it("applies panel editing to the draft and discards without a server write", async () => {
   const { user } = setup();
   await user.click(
@@ -409,6 +459,32 @@ it("keeps the initial view focused and applies preset, refresh and absolute time
   expect(state.PATCH).not.toHaveBeenCalled();
 });
 
+it.each(["2026-03-08", "2026-11-01"])(
+  "round-trips an absolute range across the %s daylight-saving boundary",
+  async (date) => {
+    const { user } = setup();
+    await screen.findByText("Select a target to explore metrics");
+    await user.click(screen.getByRole("button", { name: /Time range:/ }));
+    const start = `${date}T00:30`;
+    const end = `${date}T03:30`;
+    await user.clear(screen.getByLabelText("From"));
+    await user.type(screen.getByLabelText("From"), start);
+    await user.clear(screen.getByLabelText("To"));
+    await user.type(screen.getByLabelText("To"), end);
+    await user.click(screen.getByRole("button", { name: "Apply range" }));
+    const trigger = screen.getByRole("button", { name: /Time range:/ });
+    expect(trigger.getAttribute("title")).toBe(
+      `${new Date(start).toLocaleString()} – ${new Date(end).toLocaleString()}`,
+    );
+    await user.click(trigger);
+    expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe(
+      start,
+    );
+    expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe(end);
+    expect(state.PATCH).not.toHaveBeenCalled();
+  },
+);
+
 it("opens secondary dashboard actions from the menu and cancels creation without writing", async () => {
   const { user } = setup();
   await screen.findByRole("button", { name: "Edit dashboard" });
@@ -426,4 +502,79 @@ it("opens secondary dashboard actions from the menu and cancels creation without
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(state.POST).not.toHaveBeenCalled();
+});
+
+it("refreshes a live dashboard when visible again and reuses results across responsive remounts", async () => {
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  state.POST.mockResolvedValue({
+    data: { status: "success", data: { resultType: "matrix", result: [] } },
+    response: new Response(),
+  });
+  const { cache } = setup();
+  await screen.findByText("Select a target to explore metrics");
+  const live: Dashboard = {
+    ...dashboard,
+    config: {
+      refresh_seconds: 300,
+      panels: [
+        {
+          ...dashboard.config.panels![0],
+          queries: [
+            { kind: "promql", source_id: "mds_test", expression: "up" },
+          ],
+        },
+      ],
+    },
+  };
+  try {
+    await act(async () => {
+      cache.setQueryData(["metrics-dashboards", "ws_test"], [live]);
+    });
+    await waitFor(() => expect(state.POST).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "CPU" }).getAttribute("aria-busy"),
+      ).toBe("false"),
+    );
+    hidden.mockReturnValue(true);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(state.POST).toHaveBeenCalledTimes(1);
+    hidden.mockReturnValue(false);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => expect(state.POST).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "CPU" }).getAttribute("aria-busy"),
+      ).toBe("false"),
+    );
+    for (const width of [390, 1200]) {
+      state.width = width;
+      await act(async () => {
+        cache.setQueryData(
+          ["metrics-dashboards", "ws_test"],
+          [{ ...live, name: `Width ${width}` }],
+        );
+      });
+      await screen.findByText(`Width ${width}`);
+      expect(state.POST).toHaveBeenCalledTimes(2);
+    }
+    await act(async () => {
+      cache.setQueryData(
+        ["metrics-dashboards", "ws_test"],
+        [{ ...live, config: { ...live.config, refresh_seconds: 0 } }],
+      );
+    });
+    await screen.findByText("Paused");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(state.POST).toHaveBeenCalledTimes(2);
+  } finally {
+    hidden.mockRestore();
+    cache.clear();
+  }
 });

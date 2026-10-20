@@ -17,7 +17,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_runtime
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache, managed_http_runtime
 
 
 class HttpReference(E2BReference):
@@ -28,7 +28,9 @@ class HttpReference(E2BReference):
 
 
 @asynccontextmanager
-async def http_runtime(reference: E2BReference) -> AsyncIterator[HttpEnvdProviderRuntime]:
+async def http_runtime(
+    reference: E2BReference, *, credential_cache: ManagedCredentialCache | None = None
+) -> AsyncIterator[HttpEnvdProviderRuntime]:
     if reference._state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     sandbox = await open_sandbox(reference._state.sandbox_id, reference._options(), reference._validate_target)
@@ -58,6 +60,8 @@ async def http_runtime(reference: E2BReference) -> AsyncIterator[HttpEnvdProvide
             connection=connection,
             endpoint_policy=reference._runtime.endpoint_policy,
             load_credential=credential,
+            credential_cache=credential_cache,
+            target_id=reference._state.sandbox_id,
         ) as runtime:
             yield runtime
     finally:

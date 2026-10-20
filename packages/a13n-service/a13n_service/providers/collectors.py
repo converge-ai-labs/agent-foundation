@@ -180,7 +180,12 @@ async def writer_lock(config: Configuration, kind: Kind) -> AsyncIterator[bool]:
 def _replace(path: Path, content: str) -> None:
     # mkstemp creates mode 0600 before writing any listener credentials. Mount
     # the directory, not this file: replacement must be visible to the collector.
-    fd, name = tempfile.mkstemp(prefix=".a13n-write-", dir=path.parent)
+    # The caller holds this collector's writer lock. Recover only its own staging
+    # files after a process crash; another collector may share the directory.
+    prefix = f".{path.name}.write-"
+    for abandoned in path.parent.glob(f"{prefix}*"):
+        abandoned.unlink()
+    fd, name = tempfile.mkstemp(prefix=prefix, dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             stream.write(content)

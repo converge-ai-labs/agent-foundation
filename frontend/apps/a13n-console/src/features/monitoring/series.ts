@@ -1,4 +1,10 @@
-import type { MetricsResult, Panel, PanelQuery } from "./api";
+import {
+  queryStep,
+  type MetricsResult,
+  type Panel,
+  type PanelQuery,
+  type TimeRange,
+} from "./api";
 
 export type Point = [number, number | null];
 export type ChartSeries = {
@@ -155,6 +161,16 @@ export function normalizeResult(
     });
   }
   return { series, notices: [...new Set(notices)] };
+}
+
+export function latestValue(series: ChartSeries, range: TimeRange) {
+  const point = series.points.at(-1);
+  return point &&
+    point[0] >= range.start &&
+    point[0] <= range.end &&
+    range.end - point[0] <= queryStep(range) * 1.5
+    ? point[1]
+    : null;
 }
 
 export function formatValue(

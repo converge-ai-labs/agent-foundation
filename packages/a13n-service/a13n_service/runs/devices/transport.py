@@ -57,9 +57,11 @@ class DeviceWebSocket:
         await self.closed.wait()
 
 
-def secure(socket: WebSocket) -> bool:
+def secure(socket: WebSocket, *, allow_loopback_ws: bool = False) -> bool:
     if socket.url.scheme == "wss":
         return True
+    if not allow_loopback_ws:
+        return False
     try:
         return socket.client is not None and ipaddress.ip_address(socket.client.host).is_loopback
     except ValueError:
@@ -68,13 +70,14 @@ def secure(socket: WebSocket) -> bool:
 
 async def connect(socket: WebSocket, device_id: str) -> None:
     carrier = DeviceWebSocket(socket)
+    runtime: Runtime = socket.app.state.runtime
     try:
         values = socket.headers.getlist("authorization")
         scheme, _, token = values[0].partition(" ") if len(values) == 1 else ("", "", "")
         if (
             socket.query_params
             or socket.headers.get("origin") is not None
-            or not secure(socket)
+            or not secure(socket, allow_loopback_ws=runtime.settings.monitoring.allow_loopback_ws)
             or "eip.v1" not in socket.scope.get("subprotocols", [])
             or len(values) != 1
             or scheme.lower() != "bearer"
@@ -82,7 +85,6 @@ async def connect(socket: WebSocket, device_id: str) -> None:
         ):
             await carrier.close(1008)
             return
-        runtime: Runtime = socket.app.state.runtime
         proxy = runtime.metrics_proxy
         if proxy is None:
             raise ServiceError("unavailable", "Monitoring is unavailable")

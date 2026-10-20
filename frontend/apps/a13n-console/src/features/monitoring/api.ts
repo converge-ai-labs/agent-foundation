@@ -51,6 +51,14 @@ export function monitoringApi(client: Client, workspaceId: string) {
               .then(data),
           ),
       }),
+    capabilities: () =>
+      queryOptions({
+        queryKey: ["metrics-capabilities", workspaceId],
+        queryFn: ({ signal }) =>
+          http
+            .GET("/api/v1/metrics-data-sources/capabilities", { signal })
+            .then(data),
+      }),
     preset: () => http.GET("/api/v1/metrics-dashboards/preset").then(data),
     save: (id: string, body: Schema["DashboardUpdate"], etag: string) =>
       http

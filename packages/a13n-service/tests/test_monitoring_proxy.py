@@ -68,6 +68,72 @@ async def external_row(service, source_id, *, owner_id=None, endpoint="http://12
     return environment_id
 
 
+async def ineligible_rows(service, source_id):
+    provider = await service.client.post(
+        f"{service.api}/environment-providers",
+        json={"name": "Monitoring test", "type": "e2b", "credential": {"api_key": "test-only"}},
+    )
+    assert provider.status_code == 201, provider.text
+    template = await service.client.post(
+        f"{service.api}/environment-templates",
+        json={
+            "name": "Monitoring test",
+            "provider_id": provider.json()["id"],
+            "config": {"recipe": {"execution": "native"}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    ids = []
+    async with transaction(service.runtime.storage) as session:
+        for index, status in enumerate(("reserved", "stopped", "ready", "ready", "ready")):
+            identity = f"env_{index:024d}"
+            ids.append(identity)
+            session.add(
+                EnvironmentRow(
+                    id=identity,
+                    organization_id=service.tenant.organization_id,
+                    workspace_id=service.tenant.workspace_id,
+                    name="Ineligible",
+                    provider_id=provider.json()["id"],
+                    template_id=template.json()["id"],
+                    status=status,
+                    metrics_data_source_id=source_id,
+                    handle=None if status == "reserved" else {"recipe": {"execution": "native"}, "state": None},
+                    created_by_id=service.tenant.principal_id,
+                )
+            )
+    return ids
+
+
+async def test_ineligible_targets_do_not_reserve_proxy_capacity(service, monkeypatch):
+    proxy = await controlled(service, max_devices=1)
+    source = await local_source(service)
+    ineligible = await ineligible_rows(service, source)
+    ready = await external_row(service, source)
+    read = AsyncMock(return_value=fake_observation())
+    monkeypatch.setattr(collection, "read", read)
+    candidates = await collection.candidates(service.runtime, after="", limit=64)
+    assert not set(ineligible[:2]) & set(candidates)
+    for identity in ineligible:
+        await proxy.poll(identity)
+        assert not proxy.entries
+        assert await service.runtime.redis.get(lease_key(identity)) is None
+    # The candidate cursor traverses unsupported rows without retaining a slot.
+    for _ in range(len(ineligible) + 1):
+        await proxy.tick()
+    assert set(proxy.entries) == {ready}
+    selection = await collection.resolve(service.runtime, ineligible[1])
+    result = await proxy.query(selection, query())
+    assert result.observation.status == "not_ready"
+    selection = await collection.resolve(service.runtime, ready)
+    monkeypatch.setattr(
+        collection, "resolve", AsyncMock(return_value=replace(selection, target=None, status="not_ready"))
+    )
+    await proxy.poll(ready)
+    assert not proxy.entries
+    assert await service.runtime.redis.get(lease_key(ready)) is None
+
+
 def query():
     now = time.time()
     return EnvironmentQuery(metric="system_cpu_busy_ratio", start=now - 3600, end=now + 1, step=60)
@@ -84,7 +150,7 @@ async def test_private_caches_do_not_merge_self_reported_device_id(service, monk
     first = await external_row(service, source, owner_id=owner.id)
     second = await external_row(service, source, owner_id=other.id)
 
-    async def read(runtime, selection):
+    async def read(runtime, selection, *, credential_cache=None):
         assert runtime.storage.engine.pool.checkedout() == 0
         return fake_observation(cpu=25 if selection.target_id == first else 75)
 
@@ -129,6 +195,13 @@ async def test_two_replicas_route_reads_and_fence_owner_takeover(service, monkey
         assert result.observation.sample is None and result.observation.age_ms is not None
         snapshot = await reader.query(selection, query().model_copy(update={"include_snapshot": True}))
         assert snapshot.observation.sample is not None
+        config = owner.config
+        owner.config = config.model_copy(update={"query_bytes": 1024})
+        with pytest.raises(ServiceError) as error:
+            await reader.query(selection, query().model_copy(update={"include_snapshot": True}))
+        assert error.value.code == "payload_too_large"
+        owner.config = config
+        assert (await reader.query(selection, query())).history.series
         old = owner.entries[environment]
         await service.runtime.redis.delete(lease_key(environment))  # Explicitly simulate expiry/loss.
         await reader.poll(environment)
@@ -147,7 +220,7 @@ async def test_binding_change_during_poll_discards_in_flight_sample(service, mon
     source = await local_source(service)
     environment = await external_row(service, source)
 
-    async def changed(runtime, selection):
+    async def changed(runtime, selection, *, credential_cache=None):
         assert runtime.storage.engine.pool.checkedout() == 0
         async with transaction(runtime.storage) as session:
             row = await session.get(EnvironmentRow, environment)
@@ -162,7 +235,8 @@ async def test_binding_change_during_poll_discards_in_flight_sample(service, mon
     assert await collection.candidates(service.runtime, after="", limit=64) == []
 
 
-async def test_source_rotation_fences_queued_export_and_starts_new_cache(service, monkeypatch):
+@pytest.mark.parametrize("change", ["credentials", "endpoint", "target"])
+async def test_collection_changes_fence_exports_but_metadata_preserves_history(service, monkeypatch, change):
     proxy = await controlled(service)
     created = await service.client.post(
         f"{service.api}/metrics-data-sources",
@@ -185,6 +259,29 @@ async def test_source_rotation_fences_queued_export_and_starts_new_cache(service
     async with transaction(service.runtime.storage) as session:
         row = await session.get(DataSourceRow, source)
         row.name = "Edited"
+        row.config = {**row.config, "query": {"endpoint": "http://127.0.0.1:9/query"}}
+    assert await pending.current()
+    await proxy.poll(environment)
+    assert proxy.entries[environment] is previous
+    assert len((await proxy.query(previous.selection, query())).history.series[0].points) == 1
+    if change == "target":
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(EnvironmentRow, environment)
+            row.endpoint = "http://127.0.0.1:8"
+    else:
+        path = f"{service.api}/metrics-data-sources/{source}"
+        current_source = await service.client.get(path)
+        updated = await service.client.patch(
+            path,
+            headers={"if-match": current_source.headers["etag"]},
+            json={"export_credentials": {"headers": {"authorization": "Bearer rotated"}}}
+            if change == "credentials"
+            else {
+                "config": {"collection": "proxy", "export": {"endpoint": "http://127.0.0.1:8/v1/metrics"}},
+                "export_credentials": None,
+            },
+        )
+        assert updated.status_code == 200, updated.text
     assert not await pending.current()
     await proxy.poll(environment)
     assert proxy.entries[environment] is not previous
@@ -231,3 +328,66 @@ async def test_duplicate_and_stale_samples_are_not_reexported(service, monkeypat
     read.side_effect = TimeoutError()
     await proxy.poll(environment)
     assert (await proxy.query(entry.selection, query())).observation.status == "offline"
+
+
+async def test_selection_failure_retires_only_bad_target_and_preserves_cancellation(service, monkeypatch):
+    proxy = await controlled(service)
+    source = await local_source(service)
+    bad, healthy = await external_row(service, source), await external_row(service, source)
+    read = AsyncMock(return_value=fake_observation())
+    monkeypatch.setattr(collection, "read", read)
+    await proxy.tick()
+    old = proxy.entries[bad]
+    real_resolve = collection.resolve
+
+    async def resolve(runtime, identity):
+        if identity == bad:
+            raise ValueError("private-broken-configuration")
+        await asyncio.sleep(0)
+        return await real_resolve(runtime, identity)
+
+    monkeypatch.setattr(collection, "resolve", resolve)
+    read.reset_mock()
+    await proxy.tick()
+    assert set(proxy.entries) == {healthy}
+    assert await service.runtime.redis.get(lease_key(bad)) is None
+    assert [call.args[1].target_id for call in read.await_args_list] == [healthy]
+    assert not await proxy.current(old)
+    assert await proxy.local(bad, old.selection.revision, query()) is None
+    monkeypatch.setattr(collection, "resolve", AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        await proxy.poll(healthy)
+
+
+async def test_proxy_credential_cache_is_per_entry_and_cleared_after_failure(service, monkeypatch):
+    from a13n_harness.providers.environment.remote_envd.configuration import HttpEnvdCredential
+    from pydantic import SecretStr
+
+    proxy = await controlled(service)
+    environment = await external_row(service, await local_source(service))
+    seen = []
+    fail = False
+
+    async def read(runtime, selection, *, credential_cache):
+        seen.append(credential_cache)
+        if fail:
+            raise TimeoutError()
+        credential_cache.credential = HttpEnvdCredential(token=SecretStr("cached-token"))
+        return fake_observation()
+
+    monkeypatch.setattr(collection, "read", read)
+    await proxy.poll(environment)
+    await proxy.poll(environment)
+    assert seen[0] is seen[1]
+    fail = True
+    await proxy.poll(environment)
+    assert seen[0].credential is None
+    assert proxy.entries[environment].cache.status == "offline"
+    fail = False
+    await proxy.poll(environment)
+    assert seen[-1] is seen[0]
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment)
+        row.endpoint = "http://127.0.0.1:10"
+    await proxy.poll(environment)
+    assert seen[-1] is not seen[0]

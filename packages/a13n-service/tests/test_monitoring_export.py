@@ -386,3 +386,48 @@ async def test_full_inventory_export_obeys_byte_budget_including_inflight(monkey
         assert exporter.buffered_bytes == size
         await exporter.close()
         assert exporter.buffered_bytes == 0
+
+
+@pytest.mark.anyio
+async def test_slow_destination_does_not_block_others_and_shutdown_accounts_in_flight():
+    from a13n_service.runs.environments.monitoring.export import ExportHealth
+
+    exporter = Exporter(EndpointPolicy())
+    data = Projection("ws_test", "env_test", "device-test").encode(report(), observed_at=NOW)
+    blocked, fast = ExportHealth(), ExportHealth()
+    started, delivered, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    arrivals = 0
+
+    async def slow():
+        nonlocal arrivals
+        arrivals += 1
+        if arrivals == 2:
+            started.set()
+        await release.wait()
+
+    async def quick():
+        delivered.set()
+
+    async with receiver(wait=slow) as (slow_url, _), receiver(wait=quick) as (fast_url, _):
+        for _ in range(16):
+            exporter.submit(data, Destination(slow_url), current, blocked)
+        exporter.submit(data, Destination(fast_url), current, fast)
+        task = asyncio.create_task(exporter.run())
+        try:
+            await asyncio.wait_for(asyncio.gather(started.wait(), delivered.wait()), 2)
+            assert arrivals == 2
+            assert not release.is_set()
+            # Wait for the fast response to complete, not just reach its receiver.
+            async with asyncio.timeout(2):
+                while fast.exported != 1:
+                    await asyncio.sleep(0)
+            assert blocked.queued == 16 and fast.queued == 0
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await exporter.close()
+        assert exporter.buffered_bytes == 0
+        assert exporter.health().queued == 0
+        assert blocked.queued == 0 and blocked.dropped == 16
+        assert fast.exported == 1 and fast.dropped == 0
+        await asyncio.wait_for(exporter.queue.join(), 1)

@@ -25,6 +25,13 @@ from .test_monitoring_proxy import controlled, fake_observation, local_source
 pytestmark = pytest.mark.anyio
 
 
+def allow_loopback(service, monkeypatch):
+    settings = service.runtime.settings.model_copy(
+        update={"monitoring": service.runtime.settings.monitoring.model_copy(update={"allow_loopback_ws": True})}
+    )
+    monkeypatch.setattr(service.app.state, "runtime", replace(service.runtime, settings=settings))
+
+
 async def registration(service, *, source=None, identity="device-test"):
     response = await service.client.post(
         f"{service.api}/devices",
@@ -284,7 +291,7 @@ async def test_previous_renewal_cannot_retire_replacement_after_eligibility_read
         await old_context.__aexit__(None, None, None)
 
 
-async def test_reverse_websocket_rejects_non_device_auth_and_browser_inputs(service):
+async def test_reverse_websocket_rejects_non_device_auth_and_browser_inputs(service, monkeypatch):
     from websockets.asyncio.client import connect
     from websockets.exceptions import InvalidStatus
 
@@ -295,6 +302,16 @@ async def test_reverse_websocket_rejects_non_device_auth_and_browser_inputs(serv
     identity, token = registered["device"]["id"], registered["token"]
     async with listening(service.app) as endpoint:
         url = endpoint.replace("http://", "ws://") + f"/api/v1/devices/{identity}/connect"
+        with pytest.raises(InvalidStatus) as denied:
+            async with connect(
+                url,
+                additional_headers={"authorization": f"Bearer {token}"},
+                subprotocols=["eip.v1"],
+            ):
+                pytest.fail("Plaintext loopback admission must require explicit development consent")
+        assert denied.value.response.status_code == 403
+        assert not proxy.entries
+        allow_loopback(service, monkeypatch)
         cases = [
             ({}, "", ["eip.v1"]),
             ({"authorization": "Bearer wrong"}, "", ["eip.v1"]),
@@ -319,19 +336,24 @@ async def test_reverse_websocket_rejects_non_device_auth_and_browser_inputs(serv
         assert response.status_code == 401
 
 
-async def test_reverse_initialization_deadline_releases_slot_and_lease(service):
+@pytest.mark.parametrize("development", [False, True])
+async def test_reverse_initialization_deadline_releases_slot_and_lease(service, monkeypatch, development):
     from websockets.asyncio.client import connect
 
     from .conftest import listening
 
     proxy = await controlled(service)
     proxy.config = proxy.config.model_copy(update={"request_seconds": 0.1})
+    if development:
+        allow_loopback(service, monkeypatch)
+    # The loopback test server trusts its loopback peer's forwarded scheme, as a TLS proxy would.
+    headers = {} if development else {"x-forwarded-proto": "https"}
     registered = (await registration(service, source=await local_source(service))).json()
     identity, token = registered["device"]["id"], registered["token"]
     async with listening(service.app) as endpoint:
         url = endpoint.replace("http://", "ws://") + f"/api/v1/devices/{identity}/connect"
         async with connect(
-            url, subprotocols=["eip.v1"], additional_headers={"authorization": f"bearer {token}"}
+            url, subprotocols=["eip.v1"], additional_headers={"authorization": f"bearer {token}", **headers}
         ) as socket:
             request = json.loads(await socket.recv())
             assert request["method"] == "initialize" and "eip_session" not in request
@@ -396,3 +418,60 @@ async def test_source_changed_to_pull_retires_reverse_carrier_and_refuses_typed_
             json={"name": "Cannot scrape", "device_id": "new-device", "metrics_data_source_id": source.json()["id"]},
         )
         assert rejected.status_code == 400
+
+
+async def test_device_rename_preserves_stream_but_rotation_changes_revision(service, monkeypatch):
+    proxy = await controlled(service)
+    created = await registration(service, source=await local_source(service))
+    identity = created.json()["device"]["id"]
+    selection = await collection.resolve(service.runtime, identity)
+    monkeypatch.setattr(proxy_module, "observe", AsyncMock(return_value=fake_observation()))
+    async with proxy.reverse_connection(selection):
+        await proxy.poll(identity)
+        entry = proxy.entries[identity]
+        path = f"{service.api}/devices/{identity}"
+        renamed = await service.client.patch(
+            path, json={"name": "Renamed device"}, headers={"if-match": created.headers["etag"]}
+        )
+        assert renamed.status_code == 200, renamed.text
+        await proxy.poll(identity)
+        assert proxy.entries[identity] is entry
+        assert await proxy.current(entry)
+        assert entry.cache.status == "ready"
+        rotated = await service.client.post(f"{path}/rotate-credential", headers={"if-match": renamed.headers["etag"]})
+        assert rotated.status_code == 200, rotated.text
+        assert not await proxy.current(entry)
+        assert (await collection.resolve(service.runtime, identity)).revision != selection.revision
+        await proxy.poll(identity)
+        assert identity not in proxy.entries
+
+
+@pytest.mark.parametrize(
+    "scheme,host,development,expected",
+    [
+        ("wss", "192.0.2.10", False, True),
+        ("ws", "127.0.0.1", False, False),
+        ("ws", "::1", False, False),
+        ("ws", "127.0.0.1", True, True),
+        ("ws", "::1", True, True),
+        ("ws", "192.0.2.10", True, False),
+    ],
+)
+def test_reverse_transport_requires_wss_unless_explicit_loopback_development(scheme, host, development, expected):
+    from a13n_service.runs.devices.transport import secure
+    from starlette.websockets import WebSocket
+
+    socket = WebSocket(
+        {
+            "type": "websocket",
+            "scheme": scheme,
+            "path": "/connect",
+            "query_string": b"",
+            "headers": [(b"x-forwarded-proto", b"https")],
+            "client": (host, 1234),
+            "server": ("service.example", 80),
+        },
+        AsyncMock(),
+        AsyncMock(),
+    )
+    assert secure(socket, allow_loopback_ws=development) is expected

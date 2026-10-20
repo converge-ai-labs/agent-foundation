@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../shared/feedback";
 import type { Panel, Target, TimeRange } from "./api";
 import { MetricsChart } from "./chart";
+import { statusLabels } from "./labels";
 import { usePanelData } from "./queries";
 import styles from "./monitoring.module.css";
 
@@ -64,7 +65,7 @@ export function MetricsPanel({
               {data.notices.map((notice) => (
                 <p key={JSON.stringify(notice)}>
                   {typeof notice === "string"
-                    ? t(notice)
+                    ? (statusLabels(t)[notice] ?? t(notice))
                     : t(notice.message, notice.values)}
                 </p>
               ))}

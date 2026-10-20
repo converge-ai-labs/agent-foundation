@@ -785,6 +785,11 @@
           "title": "Enabled",
           "type": "boolean"
         },
+        "allow_loopback_ws": {
+          "default": false,
+          "title": "Allow Loopback Ws",
+          "type": "boolean"
+        },
         "max_devices": {
           "default": 64,
           "maximum": 512,

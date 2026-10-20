@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
-from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.docker import http
 from a13n_harness.providers.environment.docker.configuration import (
@@ -165,3 +165,22 @@ def test_network_disabled_and_native_desktop_are_rejected():
         DockerEnvironmentConfiguration(execution="envd_http", disable_network=True)
     with pytest.raises(ValueError, match="requires envd_http"):
         DockerEnvironmentConfiguration(desktop=True)
+
+
+async def test_monitoring_cache_skips_exec_but_rechecks_owned_container_and_route(peer):
+    ref, container = reference()
+    cache = managed.ManagedCredentialCache()
+    for _ in range(3):
+        async with http.http_runtime(ref, credential_cache=cache):
+            pass
+    assert ref.runtime.engine.client.containers.get.call_count == 3
+    assert http.DockerCommands.execute.await_count == 2  # Initialization check and token read, once.
+    container.attrs["NetworkSettings"]["Ports"]["8888/tcp"][0]["HostPort"] = "32100"
+    async with http.http_runtime(ref, credential_cache=cache) as runtime:
+        assert runtime.configuration.endpoint.endswith(":32100")
+    assert http.DockerCommands.execute.await_count == 4
+    container.labels = {}
+    with pytest.raises(EnvironmentError, match="another configuration"):
+        async with http.http_runtime(ref, credential_cache=cache):
+            pytest.fail("Cached credentials cannot bypass ownership checks")
+    assert http.DockerCommands.execute.await_count == 4

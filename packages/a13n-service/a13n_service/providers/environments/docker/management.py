@@ -14,6 +14,7 @@ from a13n_harness.providers.environment.docker.configuration import DockerProvid
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.http import http_execution, http_runtime
 from a13n_harness.providers.environment.docker.shared import _KEY, DockerReference, _missing
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
@@ -62,10 +63,10 @@ class DockerManagement(DockerReference, ManagementBackend):
         async with http_runtime(self) as runtime:
             return scrape_target(runtime)
 
-    async def observe_device(self) -> DeviceObservation:
+    async def observe_device(self, *, credential_cache: ManagedCredentialCache | None = None) -> DeviceObservation:
         if self.config.execution != "envd_http":
             raise self._unsupported()
-        async with http_runtime(self) as runtime:
+        async with http_runtime(self, credential_cache=credential_cache) as runtime:
             return await observe(runtime, self.allocation_id)
 
     def validate_management(self) -> None:

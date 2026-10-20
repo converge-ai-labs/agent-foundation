@@ -521,6 +521,7 @@ class Monitoring(Section):
     """Small-deployment Device monitoring; external export and history query are independent."""
 
     enabled: bool = True
+    allow_loopback_ws: bool = False
     max_devices: int = Field(default=64, ge=1, le=512)
     poll_seconds: float = Field(default=10, ge=5, le=60)
     request_seconds: float = Field(default=5, ge=1, le=30)

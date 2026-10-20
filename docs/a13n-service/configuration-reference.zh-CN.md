@@ -261,6 +261,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | 设置                           | 环境变量                             | 类型 / 选项 | 约束与默认值                                     |
 | ------------------------------ | ------------------------------------ | ----------- | ------------------------------------------------ |
 | `monitoring.enabled`           | `A13N_MONITORING__ENABLED`           | 布尔值      | default=true                                     |
+| `monitoring.allow_loopback_ws` | `A13N_MONITORING__ALLOW_LOOPBACK_WS` | 布尔值      | default=false                                    |
 | `monitoring.max_devices`       | `A13N_MONITORING__MAX_DEVICES`       | 整数        | minimum=1; maximum=512; default=64               |
 | `monitoring.poll_seconds`      | `A13N_MONITORING__POLL_SECONDS`      | 数值        | minimum=5; maximum=60; default=10                |
 | `monitoring.request_seconds`   | `A13N_MONITORING__REQUEST_SECONDS`   | 数值        | minimum=1; maximum=30; default=5                 |

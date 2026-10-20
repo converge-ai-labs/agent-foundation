@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel
 from redis.exceptions import RedisError
 from sqlalchemy import select
@@ -22,6 +23,8 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope, allowed_verbs
+
+logger = get_logger(__name__)
 
 
 class EnvironmentQuery(MetricQuery):
@@ -60,7 +63,10 @@ async def collector_status(
         if environment.metrics_data_source_id is None:
             return CollectorStatus(state="not_selected")
         source = await find_row(session, actor, DataSourceRow, scope, environment.metrics_data_source_id, "read")
-        config = Configuration.model_validate(source.config)
+        try:
+            config = Configuration.model_validate(source.config)
+        except ValueError:
+            return CollectorStatus(state="discovery_failed")
         kind = config.collector
         if kind is None:
             return CollectorStatus(state="not_selected")
@@ -68,7 +74,21 @@ async def collector_status(
             return CollectorStatus(collector=kind, state="disabled")
         if kind not in runtime.settings.monitoring.collectors:
             return CollectorStatus(collector=kind, state="not_configured")
-        selection = await selected(runtime, session, environment, source)
+        try:
+            selection = await selected(runtime, session, environment, source)
+        except Exception as error:
+            logger.warning(
+                "Collector target selection failed",
+                extra={"environment_id": environment_id, "exception_details": exception_details(error)},
+            )
+            return CollectorStatus(collector=kind, state="discovery_failed")
+        if selection.target is None:
+            return CollectorStatus(
+                collector=kind,
+                state="disabled"
+                if selection.status == "disabled"
+                else ("not_ready" if selection.status == "not_ready" else "unsupported"),
+            )
     try:
         value = await runtime.redis.get(receipt_key(kind))
     except RedisError:

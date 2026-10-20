@@ -261,6 +261,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | Setting                        | Environment variable                 | Type / choices | Constraints and default                          |
 | ------------------------------ | ------------------------------------ | -------------- | ------------------------------------------------ |
 | `monitoring.enabled`           | `A13N_MONITORING__ENABLED`           | boolean        | default=true                                     |
+| `monitoring.allow_loopback_ws` | `A13N_MONITORING__ALLOW_LOOPBACK_WS` | boolean        | default=false                                    |
 | `monitoring.max_devices`       | `A13N_MONITORING__MAX_DEVICES`       | integer        | minimum=1; maximum=512; default=64               |
 | `monitoring.poll_seconds`      | `A13N_MONITORING__POLL_SECONDS`      | number         | minimum=5; maximum=60; default=10                |
 | `monitoring.request_seconds`   | `A13N_MONITORING__REQUEST_SECONDS`   | number         | minimum=1; maximum=30; default=5                 |

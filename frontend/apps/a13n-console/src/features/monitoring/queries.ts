@@ -48,7 +48,8 @@ export function usePanelData(
       enabled: query.kind === "promql" ? can("admin") : !!target,
       retry: false,
       staleTime: Infinity,
-      gcTime: 0,
+      // Retain completed results through responsive grid remounts, not whole refresh cycles.
+      gcTime: 1000,
       refetchOnWindowFocus: false,
     })),
   });

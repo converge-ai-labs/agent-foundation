@@ -25,7 +25,13 @@ vi.mock("react-i18next", () => ({
 
 const collections: Record<string, unknown[]> = {
   "/api/v1/metrics-data-sources": [
-    { id: "mds_local", name: "Local Cache", enabled: true, builtin: true },
+    {
+      id: "mds_local",
+      name: "Local Cache",
+      enabled: true,
+      builtin: true,
+      config: { collection: "proxy" },
+    },
   ],
   "/api/v1/environment-providers": [
     { id: "eprov_docker", name: "Docker host", type: "docker", enabled: true },
@@ -50,7 +56,10 @@ const collections: Record<string, unknown[]> = {
 
 beforeEach(() => {
   http.GET.mockImplementation(async (path: string) => ({
-    data: { items: collections[path] ?? [], next_cursor: null },
+    data:
+      path === "/api/v1/metrics-data-sources/capabilities"
+        ? { proxy: true, native: true, pull: false, collectors: [] }
+        : { items: collections[path] ?? [], next_cursor: null },
   }));
   http.POST.mockReset().mockResolvedValue({ data: { id: "env_test" } });
 });

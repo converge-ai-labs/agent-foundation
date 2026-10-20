@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { Panel, TimeRange } from "./api";
-import { formatValue, type ChartSeries } from "./series";
+import { formatValue, latestValue, type ChartSeries } from "./series";
 import styles from "./monitoring.module.css";
 
 const lightColors = [
@@ -49,6 +49,8 @@ export function MetricsChart({
   const cursorTime = useRef<HTMLSpanElement>(null);
   const currentSeries = useRef(series);
   currentSeries.current = series;
+  const currentRange = useRef(range);
+  currentRange.current = range;
   const zoom = useRef(onZoom);
   zoom.current = onZoom;
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -72,6 +74,8 @@ export function MetricsChart({
     return () => observer.disconnect();
   }, []);
   const { t } = useTranslation();
+  const translate = useRef(t);
+  translate.current = t;
   // Data refreshes update the existing Canvas; only series topology rebuilds it.
   const topology = JSON.stringify(
     series.map(({ id, label, unit }) => [id, label, unit]),
@@ -177,14 +181,14 @@ export function MetricsChart({
               if (cursorTime.current)
                 cursorTime.current.textContent = hovering
                   ? new Date(u.data[0][index] * 1000).toLocaleString()
-                  : t("Latest");
+                  : translate.current("Latest");
               currentSeries.current.forEach((item, position) => {
                 const node = legendValues.current[position];
                 if (node)
                   node.textContent = formatValue(
                     hovering
                       ? u.data[position + 1][index]
-                      : item.points.at(-1)?.[1],
+                      : latestValue(item, currentRange.current),
                     panel.unit === "auto" || !panel.unit
                       ? item.unit
                       : panel.unit,
@@ -277,6 +281,7 @@ export function MetricsChart({
   }, [
     hidden,
     search,
+    series,
     topology,
     panel.visualization,
     panel.unit,
@@ -294,7 +299,7 @@ export function MetricsChart({
           <div key={item.id}>
             <strong>
               {formatValue(
-                item.points.at(-1)?.[1],
+                latestValue(item, range),
                 panel.unit === "auto" || !panel.unit ? item.unit : panel.unit,
               )}
             </strong>
@@ -354,7 +359,7 @@ export function MetricsChart({
                 }}
               >
                 {formatValue(
-                  item.points.at(-1)?.[1],
+                  latestValue(item, range),
                   panel.unit === "auto" || !panel.unit ? item.unit : panel.unit,
                 )}
               </b>

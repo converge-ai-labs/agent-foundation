@@ -5,6 +5,8 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
+from typing import Literal
 
 import anyio
 from a13n_envd_client.eip.v1 import DeviceMetricsResult, DiskMetrics, LimitedCpuLimit, LimitedMemoryLimit, Pressures
@@ -30,6 +32,7 @@ from a13n_service.infra.outbound import open_http
 from a13n_service.providers.metrics import Destination
 
 logger = get_logger(__name__)
+type Outcome = Literal["exported", "failed", "dropped"]
 
 
 @dataclass(slots=True)
@@ -272,6 +275,7 @@ class Exporter:
         self.buffered_bytes = 0
         self.last_success: float | None = None
         self.closed = False
+        self.wake = asyncio.Event()
 
     def submit(
         self,
@@ -299,6 +303,7 @@ class Exporter:
             health.queued += 1
         self.queue.put_nowait(Pending(body, destination, current, health))
         self.buffered_bytes += len(body)
+        self.wake.set()
 
     def health(self) -> ExportHealth:
         return ExportHealth(
@@ -310,51 +315,69 @@ class Exporter:
         )
 
     async def run(self) -> None:
-        while True:
-            item = await self.queue.get()
-            succeeded = failed = False
-            try:
-                with anyio.fail_after(self.timeout):
-                    if not await item.current():
-                        self.dropped += 1
+        active: dict[str, int] = {}
+
+        def finished(item: Pending, task: asyncio.Task[Outcome]) -> None:
+            # Completion callbacks also account for cancellation before a task first runs.
+            outcome = "dropped" if task.cancelled() else task.result()
+            succeeded, failed = outcome == "exported", outcome == "failed"
+            self.exported += int(succeeded)
+            self.failed += int(failed)
+            self.dropped += int(not succeeded)
+            if succeeded:
+                self.last_success = time.time()
+            if item.health is not None:
+                item.health.queued -= 1
+                item.health.exported += int(succeeded)
+                item.health.failed += int(failed)
+                item.health.dropped += int(not succeeded)
+                if succeeded:
+                    item.health.last_success_at = datetime.now(UTC)
+            self.buffered_bytes -= len(item.body)
+            self.queue.task_done()
+            endpoint = item.destination.endpoint
+            active[endpoint] -= 1
+            if not active[endpoint]:
+                del active[endpoint]
+            self.wake.set()
+
+        async with asyncio.TaskGroup() as tasks:
+            while True:
+                await self.wake.wait()
+                self.wake.clear()
+                # Scan at most one bounded queue lap. Busy destinations cannot occupy
+                # every worker or hide another destination behind their queued items.
+                for _ in range(self.queue.qsize()):
+                    if sum(active.values()) >= 8:
+                        break
+                    item = self.queue.get_nowait()
+                    endpoint = item.destination.endpoint
+                    if active.get(endpoint, 0) >= 2:
+                        self.queue.put_nowait(item)
+                        self.queue.task_done()
                         continue
-                    async with open_http(self.policy, timeout=self.timeout, max_bytes=65536) as client:
-                        response = await client.post(
-                            item.destination.endpoint,
-                            content=item.body,
-                            headers={**item.destination.headers, "content-type": "application/x-protobuf"},
-                        )
-                        response.raise_for_status()
-                        receipt = ExportMetricsServiceResponse.FromString(response.content)
-                        if receipt.partial_success.rejected_data_points or receipt.partial_success.error_message:
-                            failed = True
-                            self.failed += 1
-                            self.dropped += 1
-                        else:
-                            succeeded = True
-                            self.exported += 1
-                            self.last_success = time.time()
-            except asyncio.CancelledError:
-                self.dropped += 1
-                raise
-            except Exception as error:
-                failed = True
-                self.failed += 1
-                self.dropped += 1
-                logger.warning(
-                    "Environment metrics export failed", extra={"exception_details": exception_details(error)}
-                )
-            finally:
-                if item.health is not None:
-                    item.health.queued -= 1
-                    if succeeded:
-                        item.health.exported += 1
-                        item.health.last_success_at = datetime.now(UTC)
-                    else:
-                        item.health.dropped += 1
-                        item.health.failed += int(failed)
-                self.buffered_bytes -= len(item.body)
-                self.queue.task_done()
+                    active[endpoint] = active.get(endpoint, 0) + 1
+                    task = tasks.create_task(self.deliver(item))
+                    task.add_done_callback(partial(finished, item))
+
+    async def deliver(self, item: Pending) -> Outcome:
+        try:
+            with anyio.fail_after(self.timeout):
+                if not await item.current():
+                    return "dropped"
+                async with open_http(self.policy, timeout=self.timeout, max_bytes=65536) as client:
+                    response = await client.post(
+                        item.destination.endpoint,
+                        content=item.body,
+                        headers={**item.destination.headers, "content-type": "application/x-protobuf"},
+                    )
+                    response.raise_for_status()
+                    receipt = ExportMetricsServiceResponse.FromString(response.content)
+                    failed = bool(receipt.partial_success.rejected_data_points or receipt.partial_success.error_message)
+                    return "failed" if failed else "exported"
+        except Exception as error:
+            logger.warning("Environment metrics export failed", extra={"exception_details": exception_details(error)})
+            return "failed"
 
     async def close(self) -> None:
         # The lifespan owner cancels run() first. Discard queued samples and their credentials.

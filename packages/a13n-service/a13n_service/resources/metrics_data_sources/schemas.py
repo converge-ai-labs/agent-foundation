@@ -27,6 +27,8 @@ Labels = Annotated[dict[LabelName, LabelValue], Field(max_length=16)]
 
 def endpoint(value: str) -> str:
     parsed = urlsplit(value)
+    # urlsplit defers malformed and out-of-range port validation until access.
+    _ = parsed.port
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.hostname

@@ -26188,7 +26188,7 @@
     },
     "/api/v1/devices/{device_id}/metrics/query": {
       "post": {
-        "operationId": "metrics",
+        "operationId": "query_device_metrics",
         "parameters": [
           {
             "in": "path",
@@ -26243,7 +26243,7 @@
                       "$ref": "#/components/schemas/LocalResult"
                     }
                   ],
-                  "title": "Response Metrics"
+                  "title": "Response Query Device Metrics"
                 }
               }
             },
@@ -26265,7 +26265,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Metrics",
+        "summary": "Query Device Metrics",
         "tags": [
           "monitoring-devices"
         ],
@@ -26274,7 +26274,7 @@
     },
     "/api/v1/devices/{device_id}/rotate-credential": {
       "post": {
-        "operationId": "rotate",
+        "operationId": "rotate_device_credential",
         "parameters": [
           {
             "in": "path",
@@ -26352,7 +26352,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Rotate",
+        "summary": "Rotate Device Credential",
         "tags": [
           "monitoring-devices"
         ],
@@ -27911,7 +27911,7 @@
     },
     "/api/v1/environments/{environment_id}/metrics/query": {
       "post": {
-        "operationId": "query_metrics",
+        "operationId": "query_environment_metrics",
         "parameters": [
           {
             "in": "path",
@@ -27966,7 +27966,7 @@
                       "$ref": "#/components/schemas/LocalResult"
                     }
                   ],
-                  "title": "Response Query Metrics"
+                  "title": "Response Query Environment Metrics"
                 }
               }
             },
@@ -27988,7 +27988,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Query Metrics",
+        "summary": "Query Environment Metrics",
         "tags": [
           "environments"
         ],
@@ -32075,7 +32075,7 @@
     },
     "/api/v1/metrics-dashboards/preset": {
       "get": {
-        "operationId": "get_preset",
+        "operationId": "get_dashboard_preset",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32124,7 +32124,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Preset",
+        "summary": "Get Dashboard Preset",
         "tags": [
           "metrics-dashboards"
         ],
@@ -32373,7 +32373,7 @@
     },
     "/api/v1/metrics-data-sources": {
       "get": {
-        "operationId": "list_sources",
+        "operationId": "list_metrics_data_sources",
         "parameters": [
           {
             "in": "query",
@@ -32450,14 +32450,14 @@
             "loginSession": []
           }
         ],
-        "summary": "List Sources",
+        "summary": "List Metrics Data Sources",
         "tags": [
           "metrics-data-sources"
         ],
         "x-a13n-mcp": false
       },
       "post": {
-        "operationId": "create_source",
+        "operationId": "create_metrics_data_source",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32517,7 +32517,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Source",
+        "summary": "Create Metrics Data Source",
         "tags": [
           "metrics-data-sources"
         ],
@@ -32526,7 +32526,7 @@
     },
     "/api/v1/metrics-data-sources/capabilities": {
       "get": {
-        "operationId": "get_capabilities",
+        "operationId": "get_metrics_capabilities",
         "parameters": [
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
@@ -32575,7 +32575,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Capabilities",
+        "summary": "Get Metrics Capabilities",
         "tags": [
           "metrics-data-sources"
         ],
@@ -32584,7 +32584,7 @@
     },
     "/api/v1/metrics-data-sources/{source_id}": {
       "delete": {
-        "operationId": "delete_source",
+        "operationId": "delete_metrics_data_source",
         "parameters": [
           {
             "in": "path",
@@ -32655,14 +32655,14 @@
             "loginSession": []
           }
         ],
-        "summary": "Delete Source",
+        "summary": "Delete Metrics Data Source",
         "tags": [
           "metrics-data-sources"
         ],
         "x-a13n-mcp": false
       },
       "get": {
-        "operationId": "get_source",
+        "operationId": "get_metrics_data_source",
         "parameters": [
           {
             "in": "path",
@@ -32720,14 +32720,14 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Source",
+        "summary": "Get Metrics Data Source",
         "tags": [
           "metrics-data-sources"
         ],
         "x-a13n-mcp": false
       },
       "patch": {
-        "operationId": "update_source",
+        "operationId": "update_metrics_data_source",
         "parameters": [
           {
             "in": "path",
@@ -32815,7 +32815,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Source",
+        "summary": "Update Metrics Data Source",
         "tags": [
           "metrics-data-sources"
         ],
@@ -32824,7 +32824,7 @@
     },
     "/api/v1/metrics-data-sources/{source_id}/query": {
       "post": {
-        "operationId": "query_source",
+        "operationId": "query_metrics_data_source",
         "parameters": [
           {
             "in": "path",
@@ -32908,7 +32908,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Query Source",
+        "summary": "Query Metrics Data Source",
         "tags": [
           "metrics-data-sources"
         ],

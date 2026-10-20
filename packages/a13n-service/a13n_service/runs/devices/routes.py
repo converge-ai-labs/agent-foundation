@@ -55,7 +55,7 @@ async def update_device(
 
 
 @router.post("/{device_id}/rotate-credential", response_model=DeviceCredential, openapi_extra={"x-a13n-mcp": False})
-async def rotate(
+async def rotate_device_credential(
     response: Response,
     workspace_id: WorkspaceId,
     device_id: str,
@@ -80,7 +80,7 @@ async def delete_device(
 @router.post(
     "/{device_id}/metrics/query", response_model=QueryResult | LocalResult, openapi_extra={"x-a13n-mcp": False}
 )
-async def metrics(
+async def query_device_metrics(
     workspace_id: WorkspaceId, device_id: str, body: EnvironmentQuery, actor: Actor, runtime: CurrentRuntime
 ) -> QueryResult | LocalResult:
     return await query_device(runtime, actor, workspace_id, device_id, body)

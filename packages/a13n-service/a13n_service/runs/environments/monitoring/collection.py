@@ -12,6 +12,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdCredential,
 )
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +57,18 @@ class Selection:
     export_interval: float
 
 
+def source_inputs(source: DataSourceRow, config: Configuration) -> dict:
+    """Only collection/export inputs fence the stream; metadata and query settings are independent."""
+    return {
+        "id": source.id,
+        "enabled": source.enabled,
+        "collection": config.collection,
+        "collector": config.collector,
+        "export": None if config.export is None else config.export.model_dump(mode="json"),
+        "export_credentials": source.export_credentials,
+    }
+
+
 async def selected(
     runtime: Runtime, session: AsyncSession, environment: EnvironmentRow, source: DataSourceRow
 ) -> Selection:
@@ -64,14 +77,19 @@ async def selected(
     assert config.collection in {"proxy", "pull"} and source.enabled
     target = None
     status: Status = "not_ready" if environment.status != "ready" else "unsupported"
-    provider_version = None
+    provider_inputs = None
     if environment.status == "ready":
         if environment.template_id is None:
             target = Target(environment.id, external.account(environment), {}, None)
         elif environment.provider_id is not None:
             provider_row = await session.get(EnvironmentProviderRow, environment.provider_id)
             if provider_row is not None and provider_row.enabled:
-                provider_version = provider_row.version
+                provider_inputs = {
+                    "id": provider_row.id,
+                    "type": provider_row.type,
+                    "config": provider_row.config,
+                    "credential": provider_row.credential,
+                }
                 provider = await read_provider(session, EnvironmentProviderRow, provider_row.id)
                 handle = Handle.model_validate(environment.handle)
                 if (
@@ -85,13 +103,13 @@ async def selected(
         if target is not None:
             status = "waiting"
     identity = {
-        "source": source.id,
-        "source_version": source.version,
+        "source": source_inputs(source, config),
         "generation": environment.generation,
+        "device_id": environment.device_id,
         "endpoint": environment.endpoint,
         "token": environment.token,
         "handle": environment.handle,
-        "provider_version": provider_version,
+        "provider": provider_inputs,
     }
     revision = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     return Selection(
@@ -155,7 +173,7 @@ async def candidates(runtime: Runtime, *, after: str, limit: int) -> list[str]:
                 .join(WorkspaceRow, WorkspaceRow.id == EnvironmentRow.workspace_id)
                 .where(
                     EnvironmentRow.id > after,
-                    EnvironmentRow.status != "deleted",
+                    EnvironmentRow.status == "ready",
                     DataSourceRow.enabled.is_(True),
                     DataSourceRow.config["collection"].astext == "proxy",
                     WorkspaceRow.archived_at.is_(None),
@@ -182,7 +200,9 @@ async def scrape(runtime: Runtime, selection: Selection) -> ScrapeTarget:
         await close(provider)
 
 
-async def read(runtime: Runtime, selection: Selection) -> DeviceObservation:
+async def read(
+    runtime: Runtime, selection: Selection, *, credential_cache: ManagedCredentialCache | None = None
+) -> DeviceObservation:
     target = selection.target
     assert isinstance(target, Target)
     if isinstance(target.account, ExternalAccount):
@@ -197,7 +217,9 @@ async def read(runtime: Runtime, selection: Selection) -> DeviceObservation:
             return await observe(carrier, account.device_id)
     provider = await open_provider(runtime, target)
     try:
-        return await provider.observe_device(target.recipe, environment_id=target.environment_id, state=target.state)
+        return await provider.observe_device(
+            target.recipe, environment_id=target.environment_id, state=target.state, credential_cache=credential_cache
+        )
     finally:
         await close(provider)
 
@@ -205,7 +227,13 @@ async def read(runtime: Runtime, selection: Selection) -> DeviceObservation:
 def selected_device(runtime: Runtime, device: DeviceRow, source: DataSourceRow) -> Selection:
     config = Configuration.model_validate(source.config)
     assert config.collection == "proxy" and source.enabled
-    identity = {"source": source.id, "source_version": source.version, "device": device.id, "version": device.version}
+    identity = {
+        "source": source_inputs(source, config),
+        "device": device.id,
+        "device_id": device.device_id,
+        "enabled": device.enabled,
+        "token_hash": device.token_hash,
+    }
     return Selection(
         device.organization_id,
         device.workspace_id,

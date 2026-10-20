@@ -181,6 +181,80 @@ it("keeps missing bindings visible and writes null only after an explicit no-mon
     body: { metrics_data_source_id: null, metrics_labels: {} },
   });
 });
+it("disables unavailable collection routes while retaining and clearing an existing binding", async () => {
+  const pull = {
+    ...source,
+    id: "mds_pull",
+    name: "Pull source",
+    config: { collection: "pull", collector: "alloy" },
+  };
+  const proxy = {
+    ...source,
+    id: "mds_proxy",
+    name: "Proxy source",
+    config: { collection: "proxy" },
+  };
+  state.GET.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("capabilities")
+        ? {
+            proxy: false,
+            collectors: [
+              { kind: "alloy", available: false },
+              { kind: "vmagent", available: true },
+            ],
+          }
+        : { items: [source, pull, proxy], next_cursor: null },
+    ),
+  );
+  const { user, cache } = setup(
+    <EnvironmentMonitoring
+      environment={{ ...environment, metrics_data_source_id: pull.id }}
+      etag={'"env_test:1"'}
+    />,
+  );
+  await screen.findByText(pull.name);
+  await user.click(screen.getByRole("button", { name: "Configure" }));
+  const picker = screen.getByRole("combobox", { name: "Metrics data source" });
+  expect(picker.textContent).toContain(pull.name);
+  await user.click(picker);
+  expect(
+    (await screen.findByRole("option", { name: pull.name })).getAttribute(
+      "aria-disabled",
+    ),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("option", { name: proxy.name })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("option", { name: source.name })
+      .getAttribute("aria-disabled"),
+  ).not.toBe("true");
+  cache.setQueryData(["metrics-capabilities", "ws_test"], {
+    proxy: true,
+    collectors: [{ kind: "alloy", available: true }],
+  });
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("option", { name: pull.name })
+        .getAttribute("aria-disabled"),
+    ).not.toBe("true"),
+  );
+  expect(
+    screen
+      .getByRole("option", { name: proxy.name })
+      .getAttribute("aria-disabled"),
+  ).not.toBe("true");
+  await user.click(screen.getByRole("option", { name: "No monitoring" }));
+  await user.click(screen.getByRole("button", { name: "Save selection" }));
+  await waitFor(() => expect(state.PUT).toHaveBeenCalledOnce());
+  expect(state.PUT.mock.calls[0][1].body.metrics_data_source_id).toBeNull();
+});
+
 it("defaults provisioning selection to no monitoring and reports native pending accurately", async () => {
   const change = vi.fn();
   setup(
@@ -246,4 +320,26 @@ it("reveals a device token once without putting it in React Query caches", async
   ).not.toContain("test-only-attachment-token");
   await user.click(screen.getByRole("button", { name: "Done" }));
   expect(screen.queryByText("test-only-attachment-token")).toBeNull();
+});
+
+it("rejects an empty credential replacement and allows keeping saved credentials", async () => {
+  const { user } = setup(<DataSourcesPage />);
+  await user.click(await screen.findByText(source.name));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(
+    within(dialog).getAllByRole("button", { name: "Replace" })[0],
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "Save data source" }),
+  );
+  await screen.findByText("Add at least one header to replace credentials.");
+  expect(state.PATCH).not.toHaveBeenCalled();
+  await user.click(
+    within(dialog).getByRole("button", { name: "Keep saved credentials" }),
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "Save data source" }),
+  );
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalledTimes(1));
+  expect(state.PATCH.mock.calls[0][1].body.export_credentials).toBeUndefined();
 });

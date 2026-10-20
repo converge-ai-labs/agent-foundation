@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import BaseModel
 
 from .desktop_access import Reply, Request
@@ -84,7 +85,12 @@ class EnvironmentProvider[E: BaseModel](ABC):
         raise NotImplementedError("HTTP metric scraping is unavailable for this provider")
 
     async def observe_device(
-        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        credential_cache: ManagedCredentialCache | None = None,
     ) -> DeviceObservation:
         """Read cached Device observations; never create a Session or change target lifecycle."""
         raise NotImplementedError("Device observation is unavailable for this provider")
