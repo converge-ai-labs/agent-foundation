@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
 
-from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
 from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict
@@ -159,6 +158,8 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool = False) -> I
 
 @contextmanager
 def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[BinaryIO]:
+    from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
+
     path, descriptor = directory
     check_local_file_read(path / name)
     if descriptor is None:
@@ -188,6 +189,8 @@ def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> byt
 
 
 def _copy_file(source: str, destination: str) -> str:
+    from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
+
     check_local_file_read(Path(source))
     return shutil.copy2(source, destination)
 
