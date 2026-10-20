@@ -10,6 +10,7 @@
   "Delete Device": "删除 Device",
   "Delete Metrics Data Source": "删除指标数据源",
   "Get Metrics Capabilities": "获取可用监控能力",
+  "Get Metrics Deployment Preset": "获取指标部署预设",
   "Get Collector Status": "获取采集器状态",
   "Get Device": "获取 Device",
   "Get Metrics Data Source": "获取指标数据源",

@@ -11,6 +11,7 @@ from a13n_service.resources.metrics_data_sources.schemas import (
     DataSourceCreate,
     DataSourcePage,
     DataSourceUpdate,
+    DeploymentPreset,
 )
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, WorkspaceId
@@ -35,6 +36,13 @@ async def create_metrics_data_source(
 @router.get("/capabilities", response_model=Capabilities, openapi_extra={"x-a13n-mcp": False})
 async def get_metrics_capabilities(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> Capabilities:
     return await service.capabilities(runtime, actor, workspace_id)
+
+
+@router.get("/deployment-preset", response_model=DeploymentPreset | None, openapi_extra={"x-a13n-mcp": False})
+async def get_metrics_deployment_preset(
+    workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime
+) -> DeploymentPreset | None:
+    return await service.deployment_preset(runtime, actor, workspace_id)
 
 
 @router.get("/{source_id}", response_model=DataSource, openapi_extra={"x-a13n-mcp": False})

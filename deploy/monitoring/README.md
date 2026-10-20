@@ -12,7 +12,7 @@ Prometheus and VictoriaMetrics both work: vmagent scrapes the same endpoint, vma
 
 ## Monitor environments
 
-Environment metrics use a separate path from this bundle's Service-process metrics. Service can manage scrape fragments for **vmagent** and **Grafana Alloy**, while operators retain collector installation, forwarding, storage and retention. See [environment monitoring](../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector) for tested versions, shared-directory setup, single-writer configuration and reload verification.
+Environment metrics use a separate path from this bundle's Service-process metrics. The [Helm chart](../kubernetes/README.md#environment-monitoring-collectors) can install an optional managed **vmagent** with a singleton writer and persistent forwarding queue. Service also manages scrape fragments for external **vmagent** and **Grafana Alloy** installations. Operators choose forwarding destinations and retain storage and retention responsibilities. See [environment monitoring](../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector) for tested versions, shared-directory setup, single-writer configuration and reload verification.
 
 The Console dashboards query each environment's selected metrics data source. Configure a Prometheus HTTP query backend independently of the pull collector, or select **Local Cache** for temporary Service-managed history. An OTLP receiver can serve native or proxy export without a pull adapter. This bundle does not install any of those backends.
 

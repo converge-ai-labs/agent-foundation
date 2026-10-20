@@ -1,4 +1,8 @@
 {
+  "Configure manually": "Configure manually",
+  "Deployment defaults are prefilled. Confirm to create a source in this workspace; Environments remain unchanged.": "Deployment defaults are prefilled. Confirm to create a source in this workspace; Environments remain unchanged.",
+  "Use deployment query credentials": "Use deployment query credentials",
+  "The server saves a credential snapshot. Later deployment changes do not update this source.": "The server saves a credential snapshot. Later deployment changes do not update this source.",
   "Native search strategy": "Native search strategy",
   "Regex": "Regex",
   "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.": "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.",

@@ -148,14 +148,56 @@ export function DataSourcesPage() {
           <CollectionFooter count={items.length} />
         </>
       )}
-      {editing && (
+      {editing === "new" ? (
+        <NewSourceEditor onClose={() => setEditing(undefined)} />
+      ) : editing ? (
         <SourceEditor
-          key={editing === "new" ? "new" : editing.id}
-          source={editing === "new" ? undefined : editing}
+          key={editing.id}
+          source={editing}
           onClose={() => setEditing(undefined)}
         />
-      )}
+      ) : null}
     </Page>
+  );
+}
+
+function NewSourceEditor({ onClose }: { onClose: () => void }) {
+  const client = useClient(),
+    { workspace } = useWorkspace(),
+    { t } = useTranslation();
+  const preset = useQuery(
+    monitoringApi(client, workspace.id).deploymentPreset(),
+  );
+  const [manual, setManual] = useState(false);
+  if (manual || preset.data !== undefined)
+    return (
+      <SourceEditor
+        preset={manual ? undefined : (preset.data ?? undefined)}
+        onClose={onClose}
+      />
+    );
+  return (
+    <ModalFrame
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={t("Add data source")}
+      closeLabel={t("Close")}
+      size="lg"
+    >
+      {preset.isPending ? (
+        <Loading />
+      ) : (
+        <>
+          <ErrorNotice error={preset.error} />
+          <Button onClick={() => void preset.refetch()}>{t("Retry")}</Button>
+          <Button variant="ghost" onClick={() => setManual(true)}>
+            {t("Configure manually")}
+          </Button>
+        </>
+      )}
+    </ModalFrame>
   );
 }
 
@@ -246,9 +288,11 @@ function CredentialEditor({
 }
 function SourceEditor({
   source,
+  preset: initialPreset,
   onClose,
 }: {
   source?: Source;
+  preset?: Schema["DeploymentPreset"];
   onClose: () => void;
 }) {
   const client = useClient(),
@@ -257,19 +301,22 @@ function SourceEditor({
     { t } = useTranslation();
   const http = client.workspace(workspace.id),
     readonly = !!source?.builtin || !can("admin");
+  const [preset] = useState(initialPreset);
   const [basis] = useState(source),
-    [name, setName] = useState(source?.name ?? ""),
+    [name, setName] = useState(source?.name ?? preset?.name ?? ""),
     [enabled, setEnabled] = useState(source?.enabled ?? true);
   const [collection, setCollection] = useState<
     Schema["Configuration"]["collection"]
-  >(source?.config.collection ?? "native");
+  >(source?.config.collection ?? preset?.config.collection ?? "native");
   const [collector, setCollector] = useState<"vmagent" | "alloy">(
-    source?.config.collector ?? "vmagent",
+    source?.config.collector ?? preset?.config.collector ?? "vmagent",
   );
   const [exportUrl, setExportUrl] = useState(
       source?.config.export?.endpoint ?? "",
     ),
-    [queryUrl, setQueryUrl] = useState(source?.config.query?.endpoint ?? "");
+    [queryUrl, setQueryUrl] = useState(
+      source?.config.query?.endpoint ?? preset?.config.query?.endpoint ?? "",
+    );
   const [protocol, setProtocol] = useState(
       source?.config.export?.protocol ?? "http/protobuf",
     ),
@@ -281,6 +328,10 @@ function SourceEditor({
   );
   const [exportCredential, setExportCredential] = useState(untouched),
     [queryCredential, setQueryCredential] = useState(untouched);
+  const [useDeploymentCredential, setUseDeploymentCredential] = useState(false);
+  const deploymentCredentialAvailable =
+    !!preset?.has_query_credentials &&
+    queryUrl.replace(/\/+$/, "") === preset.config.query?.endpoint;
   const capabilities = useQuery(
     monitoringApi(client, workspace.id).capabilities(),
   );
@@ -328,16 +379,25 @@ function SourceEditor({
           exporting && exportUrl
             ? credentialPayload(exportCredential)
             : undefined,
-        query_credentials: queryUrl
-          ? credentialPayload(queryCredential)
-          : undefined,
+        deployment_preset_revision: preset?.revision,
+        use_deployment_query_credentials: useDeploymentCredential,
+        query_credentials:
+          queryUrl && !useDeploymentCredential
+            ? credentialPayload(queryCredential)
+            : undefined,
       };
       if (basis)
         return http
           .PATCH("/api/v1/metrics-data-sources/{source_id}", {
             params: { path: { source_id: basis.id } },
             headers: ifMatch(rowTag(basis)),
-            body,
+            body: {
+              name: body.name,
+              enabled: body.enabled,
+              config: body.config,
+              export_credentials: body.export_credentials,
+              query_credentials: body.query_credentials,
+            },
           })
           .then(data);
       return http.POST("/api/v1/metrics-data-sources", { body }).then(data);
@@ -376,6 +436,13 @@ function SourceEditor({
         }}
       >
         <fieldset disabled={save.isPending} className={styles.fields}>
+          {preset && (
+            <p>
+              {t(
+                "Deployment defaults are prefilled. Confirm to create a source in this workspace; Environments remain unchanged.",
+              )}
+            </p>
+          )}
           <FormField label={t("Name")}>
             <Input
               required
@@ -499,7 +566,10 @@ function SourceEditor({
               required={collection === "external"}
               readOnly={readonly}
               value={queryUrl}
-              onChange={(e) => setQueryUrl(e.target.value)}
+              onChange={(e) => {
+                setQueryUrl(e.target.value);
+                setUseDeploymentCredential(false);
+              }}
             />
           </FormField>
           {queryUrl && (
@@ -514,7 +584,31 @@ function SourceEditor({
                   code
                 />
               </details>
-              {!readonly && (
+              {!readonly && preset?.has_query_credentials && (
+                <ChoiceField
+                  label={t("Use deployment query credentials")}
+                  value={useDeploymentCredential ? "yes" : "no"}
+                  options={[
+                    { value: "no", label: t("No") },
+                    {
+                      value: "yes",
+                      label: t("Yes"),
+                      disabled: !deploymentCredentialAvailable,
+                    },
+                  ]}
+                  onValueChange={(value) =>
+                    setUseDeploymentCredential(value === "yes")
+                  }
+                />
+              )}
+              {useDeploymentCredential && (
+                <small>
+                  {t(
+                    "The server saves a credential snapshot. Later deployment changes do not update this source.",
+                  )}
+                </small>
+              )}
+              {!readonly && !useDeploymentCredential && (
                 <CredentialEditor
                   label={t("Query credentials")}
                   saved={source?.has_query_credentials ?? false}

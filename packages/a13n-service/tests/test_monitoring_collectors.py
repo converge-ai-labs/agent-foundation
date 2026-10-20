@@ -4,10 +4,11 @@ import asyncio
 import json
 import os
 import threading
+from contextlib import asynccontextmanager
 from dataclasses import replace
 
 import pytest
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -99,6 +100,35 @@ async def test_atomic_file_reload_uses_protected_credentials_and_preserves_opera
         assert calls[0][0] == "POST /-/reload HTTP/1.1"
         assert calls[0][1]["authorization"] == "reload-secret"
         assert calls[0][2] == {}  # reload reads the shared file; it is not an upload.
+
+
+async def test_http_reload_exception_is_explicit_and_scoped_to_this_origin(tmp_path, monkeypatch):
+    policy = EndpointPolicy.from_http_origins(require_https=True, http_origins=["http://existing.example"])
+    async with backend() as (endpoint, calls):
+        config = configuration(tmp_path, endpoint)
+        with pytest.raises(EndpointPolicyError, match="HTTPS"):
+            await collectors.apply(policy, config, "vmagent", "[]\n", timeout=2)
+        assert not calls
+        original = collectors.open_http
+
+        @asynccontextmanager
+        async def checked(scoped, **kwargs):
+            await scoped.validate(endpoint + "/-/reload")
+            await scoped.validate("http://existing.example")
+            with pytest.raises(EndpointPolicyError, match="HTTPS"):
+                await scoped.validate("http://other.example")
+            with pytest.raises(EndpointPolicyError, match="HTTPS"):
+                await scoped.validate_redirect(endpoint, "http://other.example")
+            async with original(scoped, **kwargs) as client:
+                yield client
+
+        monkeypatch.setattr(collectors, "open_http", checked)
+        await collectors.apply(
+            policy, config.model_copy(update={"allow_http_reload": True}), "vmagent", "[]\n", timeout=2
+        )
+        assert calls[0][0] == "POST /-/reload HTTP/1.1"
+        with pytest.raises(EndpointPolicyError, match="HTTPS"):
+            await policy.validate(endpoint)  # Shared policy and target/query callers remain unchanged.
 
 
 @pytest.mark.parametrize("phase", ["acquire", "replace"])

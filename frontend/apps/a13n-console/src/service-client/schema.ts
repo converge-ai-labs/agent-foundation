@@ -1736,6 +1736,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/metrics-data-sources/deployment-preset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Metrics Deployment Preset */
+    get: operations["get_metrics_deployment_preset"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/metrics-data-sources/{source_id}": {
     parameters: {
       query?: never;
@@ -5766,6 +5783,8 @@ export interface components {
     /** DataSourceCreate */
     DataSourceCreate: {
       config: components["schemas"]["Configuration"];
+      /** Deployment Preset Revision */
+      deployment_preset_revision?: string | null;
       /**
        * Enabled
        * @default true
@@ -5775,6 +5794,11 @@ export interface components {
       /** Name */
       name: string;
       query_credentials?: components["schemas"]["Credentials"] | null;
+      /**
+       * Use Deployment Query Credentials
+       * @default false
+       */
+      use_deployment_query_credentials?: boolean;
     };
     /** DataSourcePage */
     DataSourcePage: {
@@ -5863,6 +5887,16 @@ export interface components {
       action: "deny";
       /** Reason */
       reason?: string | null;
+    };
+    /** DeploymentPreset */
+    DeploymentPreset: {
+      config: components["schemas"]["Configuration"];
+      /** Has Query Credentials */
+      has_query_credentials: boolean;
+      /** Name */
+      name: string;
+      /** Revision */
+      revision: string;
     };
     /** Device */
     Device: {
@@ -15670,6 +15704,31 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Capabilities"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_metrics_deployment_preset: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeploymentPreset"] | null;
         };
       };
       400: components["responses"]["Error"];

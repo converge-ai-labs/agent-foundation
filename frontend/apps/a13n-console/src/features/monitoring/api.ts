@@ -51,6 +51,15 @@ export function monitoringApi(client: Client, workspaceId: string) {
               .then(data),
           ),
       }),
+    deploymentPreset: () =>
+      queryOptions({
+        queryKey: ["metrics-deployment-preset", workspaceId],
+        queryFn: ({ signal }) =>
+          http
+            .GET("/api/v1/metrics-data-sources/deployment-preset", { signal })
+            .then(data),
+        staleTime: 0,
+      }),
     capabilities: () =>
       queryOptions({
         queryKey: ["metrics-capabilities", workspaceId],

@@ -1,5 +1,6 @@
 """Source administration, encrypted credentials and secret-free discovery."""
 
+import hashlib
 import json
 from typing import Literal
 
@@ -25,6 +26,8 @@ from a13n_service.resources.metrics_data_sources.schemas import (
     DataSourceCreate,
     DataSourcePage,
     DataSourceUpdate,
+    DeploymentPreset,
+    Query,
 )
 from a13n_service.resources.metrics_data_sources.tables import DataSourceRow
 from a13n_service.resources.rows import audit_row, find_row, given, record_update
@@ -117,6 +120,52 @@ async def capabilities(runtime: Runtime, actor: Principal, workspace_id: str) ->
     )
 
 
+def _deployment_preset(runtime: Runtime, workspace_id: str) -> DeploymentPreset | None:
+    settings = runtime.settings.monitoring
+    preset = settings.deployment_preset
+    if (
+        not settings.enabled
+        or preset is None
+        or workspace_id not in preset.workspace_ids
+        or preset.collector not in settings.collectors
+    ):
+        return None
+    config = Configuration(collection="pull", collector=preset.collector, query=Query(endpoint=preset.query_endpoint))
+    public = {
+        "name": preset.name,
+        "config": config.model_dump(mode="json"),
+        "has_query_credentials": settings.deployment_query_bearer_token is not None,
+    }
+    revision = hashlib.sha256(json.dumps(public, sort_keys=True).encode()).hexdigest()
+    return DeploymentPreset.model_validate({**public, "revision": revision})
+
+
+async def deployment_preset(runtime: Runtime, actor: Principal, workspace_id: str) -> DeploymentPreset | None:
+    async with administering_workspace(
+        runtime.storage, runtime.access, actor, workspace_id, action="metrics_data_source.preset", reading=True
+    ):
+        return _deployment_preset(runtime, workspace_id)
+
+
+def _create_query_credentials(runtime: Runtime, workspace_id: str, body: DataSourceCreate) -> Credentials | None:
+    if body.deployment_preset_revision is None:
+        return body.query_credentials
+    preset = _deployment_preset(runtime, workspace_id)
+    if preset is None or preset.revision != body.deployment_preset_revision:
+        raise invalid("deployment_preset_revision", "Deployment preset changed or is unavailable; reload the form")
+    if not body.use_deployment_query_credentials:
+        return body.query_credentials
+    configured = runtime.settings.monitoring.deployment_preset
+    token = runtime.settings.monitoring.deployment_query_bearer_token
+    if configured is None or token is None:
+        raise invalid("use_deployment_query_credentials", "Deployment query credentials are not configured")
+    if body.config.query is None or body.config.query.endpoint != configured.query_endpoint:
+        raise invalid(
+            "use_deployment_query_credentials", "Deployment query credentials require their original endpoint"
+        )
+    return Credentials.model_validate({"headers": {"Authorization": "Bearer " + token.get_secret_value()}})
+
+
 async def _validate_endpoints(runtime: Runtime, config: Configuration) -> None:
     for channel, destination in (("export", config.export), ("query", config.query)):
         if destination is not None:
@@ -132,6 +181,7 @@ async def create_source(runtime: Runtime, actor: Principal, workspace_id: str, b
         runtime.storage, runtime.access, actor, workspace_id, action=action, reading=True
     ):
         pass
+    query_credentials = _create_query_credentials(runtime, workspace_id, body)
     await _validate_endpoints(runtime, body.config)
     async with administering_workspace(runtime.storage, runtime.access, actor, workspace_id, action=action) as (
         session,
@@ -159,7 +209,7 @@ async def create_source(runtime: Runtime, actor: Principal, workspace_id: str, b
             updated_by_id=actor.id,
         )
         row.export_credentials = seal(runtime.keys, row, "export", body.export_credentials)
-        row.query_credentials = seal(runtime.keys, row, "query", body.query_credentials)
+        row.query_credentials = seal(runtime.keys, row, "query", query_credentials)
         session.add(row)
         audit_row(session, actor, row, "create")
         await session.flush()

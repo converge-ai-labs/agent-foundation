@@ -212,9 +212,21 @@ Service 将每次尝试的 Harness span 导出到一个 trace 后端，并从同
 
 `monitoring.enabled` 默认为 `true`，但每个环境仍需显式选择指标数据源。不需要独立采集器的临时历史可选择 **Local Cache**。使用 pull 采集时，配置 `monitoring.collectors.vmagent` 或 `monitoring.collectors.alloy`，再在 Console 创建并选择 pull 数据源。采集器配置映射默认为空。
 
-每个采集器配置必须提供绝对路径的共享 `directory` 和 HTTP(S) 重载 `endpoint`。每个采集器只在一个 `all` 或 `control` 进程上设置 `writer = true`，默认值为 `false`。可选的 `headers` 用于重载请求认证。Alloy 还必须提供 `receiver`，指向已有接收端表达式。包含凭据的设置应受保护。对应的环境变量为 JSON 映射 `A13N_MONITORING__COLLECTORS`。
+每个采集器配置必须提供绝对路径的共享 `directory` 和 HTTP(S) 重载 `endpoint`。每个采集器只在一个 `all` 或 `control` 进程上设置 `writer = true`，默认值为 `false`。可选的 `headers` 用于重载请求认证。对于受信任的明文重载端点，`allow_http_reload = true` 只允许该采集器的 origin，不更改目标和查询端点策略；Helm 托管模式为 Pod 回环接口设置此项。Alloy 还必须提供 `receiver`，指向已有接收端表达式。包含凭据的设置应受保护。对应的环境变量为 JSON 映射 `A13N_MONITORING__COLLECTORS`。
 
-目录挂载、权限、采集器配置和验证步骤见[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)。Service 管理抓取片段；运维负责安装采集器、转发、存储和保留策略。历史仪表盘需要单独配置数据源的 Prometheus HTTP 查询端点。
+目录挂载、权限、采集器配置和验证步骤见[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)。Helm chart 可通过 `monitoring.vmagent.enabled` 提供托管 vmagent 和单例写入进程；外部 vmagent 和 Alloy 仍由运维安装。存储和保留策略由外部后端提供，历史仪表盘需单独配置数据源的 Prometheus HTTP 查询端点。
+
+要提供需管理员明确确认的预设，配置：
+
+```toml
+[monitoring.deployment_preset]
+name = "Deployment metrics"
+collector = "vmagent"
+query_endpoint = "https://metrics.example.com"
+workspace_ids = ["ws_example"]
+```
+
+所选采集器必须已经配置。工作空间列表为空时不提供预设。`A13N_MONITORING__DEPLOYMENT_PRESET` 接受整个对象的 JSON。可选读取令牌通过受保护的 `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` 单独提供，必须是非空、不含空白的可打印 ASCII 字符。重启 control 进程以加载设置变化。确认后创建工作空间数据源，并可选保存凭据快照；后续配置变化不会改写已有数据源或环境绑定。目的地检查和轮换行为见[确认预设](environment-monitoring.md#confirm-a-deployment-preset)。
 
 ## 关联限制
 

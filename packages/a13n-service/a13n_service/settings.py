@@ -23,6 +23,7 @@ from pydantic_ai.exceptions import UserError
 from a13n_service.infra.outbox import OutboxKind, Policy
 from a13n_service.providers.collectors import Configuration as CollectorConfiguration
 from a13n_service.providers.collectors import Kind as CollectorKind
+from a13n_service.providers.metrics import Endpoint as MetricsEndpoint
 from a13n_service.providers.tools.mcp_catalog import McpServers
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.providers.traces.langfuse import Langfuse
@@ -524,6 +525,15 @@ class Telemetry(Section):
                 )
 
 
+class MonitoringPreset(Section):
+    """Operator-offered pull source, explicitly confirmed by an allowlisted workspace admin."""
+
+    name: str = Field(default="Deployment metrics", min_length=1, max_length=128)
+    collector: CollectorKind = "vmagent"
+    query_endpoint: MetricsEndpoint
+    workspace_ids: list[str] = Field(default_factory=list, max_length=1024)
+
+
 class Monitoring(Section):
     """Small-deployment Device monitoring; external export and history query are independent."""
 
@@ -535,9 +545,25 @@ class Monitoring(Section):
     query_concurrency: int = Field(default=8, ge=1, le=64)
     query_seconds: float = Field(default=5, ge=1, le=30)
     query_bytes: int = Field(default=4194304, ge=65536, le=16777216)
+    deployment_preset: MonitoringPreset | None = None
+    deployment_query_bearer_token: SecretStr | None = Field(default=None, repr=False)
     collectors: dict[CollectorKind, CollectorConfiguration] = Field(default_factory=dict)
     collector_seconds: float = Field(default=30, ge=10, le=300)
     collector_targets: int = Field(default=512, ge=1, le=4096)
+
+    @field_validator("deployment_preset", mode="before")
+    @classmethod
+    def decode_preset(cls, value: object) -> object:
+        return json.loads(value) if isinstance(value, str) else value
+
+    @field_validator("deployment_query_bearer_token")
+    @classmethod
+    def valid_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            token = value.get_secret_value()
+            if not token or any(char.isspace() or ord(char) < 32 or ord(char) > 126 for char in token):
+                raise ValueError("Query bearer token must be a nonempty ASCII token without whitespace")
+        return value
 
     @model_validator(mode="after")
     def collector_receivers(self) -> "Monitoring":

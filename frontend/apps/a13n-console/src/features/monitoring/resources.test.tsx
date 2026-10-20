@@ -89,7 +89,9 @@ beforeEach(() => {
                 { kind: "vmagent", available: false },
               ],
             }
-          : { items: [], next_cursor: null },
+          : path.endsWith("deployment-preset")
+            ? null
+            : { items: [], next_cursor: null },
     ),
   );
   state.PATCH.mockResolvedValue(response(source));
@@ -342,4 +344,84 @@ it("rejects an empty credential replacement and allows keeping saved credentials
   );
   await waitFor(() => expect(state.PATCH).toHaveBeenCalledTimes(1));
   expect(state.PATCH.mock.calls[0][1].body.export_credentials).toBeUndefined();
+});
+
+const deploymentPreset: Schema["DeploymentPreset"] = {
+  name: "Deployment metrics",
+  config: {
+    collection: "pull",
+    collector: "vmagent",
+    query: { endpoint: "https://metrics.example.com" },
+  },
+  has_query_credentials: true,
+  revision: "a".repeat(64),
+};
+function offerPreset() {
+  const original = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation((path: string, ...args: unknown[]) =>
+    path.endsWith("deployment-preset")
+      ? Promise.resolve(response(deploymentPreset))
+      : original(path, ...args),
+  );
+  state.POST.mockResolvedValue(response(source));
+}
+it("prefills deployment defaults and only creates after confirmation with explicit credential opt-in", async () => {
+  offerPreset();
+  const { user } = setup(<DataSourcesPage />);
+  await user.click(
+    await screen.findByRole("button", { name: "Add data source" }),
+  );
+  await screen.findByDisplayValue(deploymentPreset.name);
+  expect(state.POST).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("combobox", { name: "Collection" }).textContent,
+  ).toContain("Collector pull");
+  await user.click(
+    screen.getByRole("combobox", { name: "Use deployment query credentials" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Yes" }));
+  await user.click(screen.getByRole("button", { name: "Save data source" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  expect(state.POST.mock.calls[0][1].body).toMatchObject({
+    name: deploymentPreset.name,
+    config: deploymentPreset.config,
+    deployment_preset_revision: deploymentPreset.revision,
+    use_deployment_query_credentials: true,
+  });
+  expect(state.POST.mock.calls[0][1].body.query_credentials).toBeUndefined();
+  expect(state.PUT).not.toHaveBeenCalled();
+});
+it("clears deployment credential consent when the destination changes and preserves manual edits across refetch", async () => {
+  offerPreset();
+  const { user, cache } = setup(<DataSourcesPage />);
+  await user.click(
+    await screen.findByRole("button", { name: "Add data source" }),
+  );
+  await screen.findByDisplayValue(deploymentPreset.name);
+  await user.click(
+    screen.getByRole("combobox", { name: "Use deployment query credentials" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Yes" }));
+  const endpoint = screen.getByLabelText("Prometheus query endpoint");
+  await user.clear(endpoint);
+  await user.type(endpoint, "https://another.example.com");
+  cache.setQueryData(["metrics-deployment-preset", "ws_test"], {
+    ...deploymentPreset,
+    name: "Updated deployment",
+  });
+  expect(screen.getByDisplayValue("https://another.example.com")).toBeTruthy();
+  expect(screen.getByDisplayValue(deploymentPreset.name)).toBeTruthy();
+  await user.click(
+    screen.getByRole("combobox", { name: "Use deployment query credentials" }),
+  );
+  expect(
+    screen.getByRole("option", { name: "Yes" }).getAttribute("aria-disabled"),
+  ).toBe("true");
+  await user.click(screen.getByRole("option", { name: "No" }));
+  await user.click(screen.getByRole("button", { name: "Save data source" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  expect(
+    state.POST.mock.calls[0][1].body.use_deployment_query_credentials,
+  ).toBe(false);
+  expect(state.POST.mock.calls[0][1].body.query_credentials).toBeUndefined();
 });

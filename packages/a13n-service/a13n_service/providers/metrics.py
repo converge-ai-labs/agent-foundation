@@ -2,15 +2,34 @@
 
 from dataclasses import dataclass, field
 from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 
 import anyio
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_service.infra.errors import ServiceError, invalid, rate_limited
 from a13n_service.infra.outbound import open_http
 
+
+def endpoint(value: str) -> str:
+    parsed = urlsplit(value)
+    # urlsplit defers malformed and out-of-range port validation until access.
+    _ = parsed.port
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Use an HTTP(S) endpoint without userinfo, query or fragment")
+    return value.rstrip("/")
+
+
+Endpoint = Annotated[str, Field(min_length=1, max_length=2048), AfterValidator(endpoint)]
 Timestamp = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Expression = Annotated[str, Field(min_length=1, max_length=16384)]
 

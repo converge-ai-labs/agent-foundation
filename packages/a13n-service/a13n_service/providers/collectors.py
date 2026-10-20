@@ -8,7 +8,7 @@ import os
 import tempfile
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
@@ -32,6 +32,8 @@ class Configuration(BaseModel):
     endpoint: str = Field(min_length=1, max_length=2048)
     headers: dict[str, SecretStr] = Field(default_factory=dict, repr=False)
     writer: bool = False
+    # An explicit deployment exception for this reload origin only, not scrape/query destinations.
+    allow_http_reload: bool = False
     # An existing Alloy receiver expression; Service never edits its destination.
     receiver: Receiver | None = None
 
@@ -199,6 +201,10 @@ def _replace(path: Path, content: str) -> None:
 
 async def apply(policy: EndpointPolicy, config: Configuration, kind: Kind, content: str, *, timeout: float) -> None:
     await _file_io(_replace, fragment_path(config, kind), content)
+    endpoint = urlsplit(config.endpoint)
+    if config.allow_http_reload and endpoint.scheme == "http":
+        exception = EndpointPolicy.from_http_origins(http_origins=[f"http://{endpoint.netloc}"])
+        policy = replace(policy, allowed_http_origins=policy.allowed_http_origins | exception.allowed_http_origins)
     async with open_http(policy, timeout=timeout, max_bytes=65536) as client:
         response = await client.post(
             config.endpoint.rstrip("/") + "/-/reload",

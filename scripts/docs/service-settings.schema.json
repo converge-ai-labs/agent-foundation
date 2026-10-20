@@ -100,6 +100,11 @@
           "title": "Writer",
           "type": "boolean"
         },
+        "allow_http_reload": {
+          "default": false,
+          "title": "Allow Http Reload",
+          "type": "boolean"
+        },
         "receiver": {
           "anyOf": [
             {
@@ -832,6 +837,31 @@
           "title": "Query Bytes",
           "type": "integer"
         },
+        "deployment_preset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonitoringPreset"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_query_bearer_token": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deployment Query Bearer Token"
+        },
         "collectors": {
           "additionalProperties": {
             "$ref": "#/$defs/Configuration"
@@ -858,6 +888,42 @@
         }
       },
       "title": "Monitoring",
+      "type": "object"
+    },
+    "MonitoringPreset": {
+      "additionalProperties": false,
+      "description": "Operator-offered pull source, explicitly confirmed by an allowlisted workspace admin.",
+      "properties": {
+        "name": {
+          "default": "Deployment metrics",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "collector": {
+          "$ref": "#/$defs/Kind",
+          "default": "vmagent"
+        },
+        "query_endpoint": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Query Endpoint",
+          "type": "string"
+        },
+        "workspace_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1024,
+          "title": "Workspace Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "query_endpoint"
+      ],
+      "title": "MonitoringPreset",
       "type": "object"
     },
     "Objects": {

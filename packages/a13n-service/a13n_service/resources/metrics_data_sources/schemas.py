@@ -2,10 +2,8 @@
 
 from datetime import datetime
 from typing import Annotated, Literal, Self
-from urllib.parse import urlsplit
 
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -15,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_service.providers.metrics import Endpoint
 from a13n_service.resources.connections.headers import normalize_headers
 
 type Collection = Literal["native", "pull", "proxy", "external"]
@@ -23,25 +22,6 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 LabelName = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z_][a-zA-Z0-9_]*$", max_length=128)]
 LabelValue = Annotated[str, StringConstraints(max_length=256)]
 Labels = Annotated[dict[LabelName, LabelValue], Field(max_length=16)]
-
-
-def endpoint(value: str) -> str:
-    parsed = urlsplit(value)
-    # urlsplit defers malformed and out-of-range port validation until access.
-    _ = parsed.port
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ValueError("Use an HTTP(S) endpoint without userinfo, query or fragment")
-    return value.rstrip("/")
-
-
-Endpoint = Annotated[str, Field(min_length=1, max_length=2048), AfterValidator(endpoint)]
 
 
 class Export(BaseModel):
@@ -104,8 +84,16 @@ class DataSourceCreate(BaseModel):
     export_credentials: Credentials | None = None
     query_credentials: Credentials | None = None
 
+    deployment_preset_revision: str | None = Field(default=None, min_length=64, max_length=64)
+    use_deployment_query_credentials: bool = False
+
     @model_validator(mode="after")
     def credential_destinations(self) -> Self:
+        if self.use_deployment_query_credentials:
+            if self.deployment_preset_revision is None:
+                raise ValueError("Deployment credentials require the displayed preset revision")
+            if self.query_credentials is not None:
+                raise ValueError("Choose deployment or supplied query credentials, not both")
         for channel in ("export", "query"):
             credentials = self.export_credentials if channel == "export" else self.query_credentials
             destination = self.config.export if channel == "export" else self.config.query
@@ -140,6 +128,13 @@ class DataSource(BaseModel):
     updated_by_id: str
     created_at: datetime
     updated_at: datetime
+
+
+class DeploymentPreset(BaseModel):
+    name: str
+    config: Configuration
+    has_query_credentials: bool
+    revision: str
 
 
 class CollectorCapability(BaseModel):

@@ -1,4 +1,8 @@
 {
+  "Configure manually": "手动配置",
+  "Deployment defaults are prefilled. Confirm to create a source in this workspace; Environments remain unchanged.": "已预填部署默认配置。确认后将在此工作区创建数据源，不会更改环境绑定。",
+  "Use deployment query credentials": "使用部署查询凭据",
+  "The server saves a credential snapshot. Later deployment changes do not update this source.": "服务器将保存凭据快照。后续部署配置的变化不会更新此数据源。",
   "Metrics dashboards": "指标仪表盘",
   "Explore infrastructure metrics. Edit panels, queries and layout in one place.": "探索基础设施指标，在同一处编辑面板、查询和布局。",
   "Dashboard": "仪表盘",

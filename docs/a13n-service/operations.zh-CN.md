@@ -28,7 +28,11 @@ a13n-service --config service.toml run --role worker
 
 替换写入进程时，采集器和新旧写入进程必须共享受保护的配置目录。备份运维管理的转发配置及凭据，保护级别与其他部署密钥相同。Service 根据当前环境绑定重新生成自己的片段。
 
-修改后检查环境的采集器状态、采集器的活动目标，以及查询后端的新鲜样本。`reload_requested` 只确认重载请求已被接受。在停止写入进程或禁用监控之前，移除托管片段并重载采集器；停止 Service 不会停用已加载的抓取任务。
+修改后检查环境的采集器状态、采集器的活动目标，以及查询后端的新鲜样本。`reload_requested` 只确认重载请求已被接受。外部模式下，在停止写入进程或禁用监控之前移除托管片段并重载采集器；停止 Service 不会停用已加载的抓取任务。
+
+可选的 Helm 托管 vmagent 将专用写入进程和采集器放在同一个 Recreate Pod 中，使用回环监听器和保留的队列 PVC。普通 control 副本可独立扩缩容。先解除绑定或禁用数据源并确认目标移除，再排空待写入数据，最后关闭托管部署。替换 Pod 时清除过期采集任务并保留队列。强制替换前先隔离失联节点；RWO 和文件锁不能替代分布式节点隔离。监控队列容量，在数据交付或明确决定丢弃之前保留 PVC。详见 [Helm 生命周期指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors)。
+
+预设设置和令牌在进程启动时加载。轮换部署令牌后，重启普通 control Pod，并明确替换已保存数据源的凭据。移除预设或允许列表项只影响后续确认操作，不会在后端撤销已保存的凭据。
 
 ## Schema 迁移
 

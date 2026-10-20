@@ -52,11 +52,13 @@ spec:
         - name: service
           {{- include "a13n.container" . | nindent 10 }}
           args: ["a13n-service", "--config", "/app/service.toml", "run", "--role", {{ $role | quote }}]
-          {{- if .Values.metrics.enabled }}
-          # A setting of its own, so a [telemetry] section in extraConfig still applies.
+          {{- if or .Values.metrics.enabled .Values.monitoring.vmagent.enabled (and .Values.monitoring.deploymentPreset.enabled (eq $role "control")) }}
           env:
+            {{- if .Values.metrics.enabled }}
             - name: A13N_TELEMETRY__METRICS_PORT
               value: {{ .Values.metrics.port | quote }}
+            {{- end }}
+            {{- include "a13n.monitoringEnv" (merge (dict "monitoringAdmin" (eq $role "control")) .) | nindent 12 }}
           {{- end }}
           ports:
             - name: http

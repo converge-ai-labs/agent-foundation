@@ -22,14 +22,14 @@ description: 为环境和 Device 指标选择采集与历史查询后端，并�
 
 ## 选择数据源
 
-| 采集方式   | 适用场景                                       | 基础设施                                              |
-| ---------- | ---------------------------------------------- | ----------------------------------------------------- |
-| `native`   | 托管 Envd 目标直接导出。                       | OTLP 接收端；可选的 Prometheus HTTP 查询后端。        |
-| `pull`     | 已有采集器拉取目标指标。                       | 运维安装的 vmagent 或 Grafana Alloy；可选的查询后端。 |
-| `proxy`    | 小型部署需要临时历史，或目标反向连接 Service。 | Service 和 Redis；可选的 OTLP HTTP 导出与查询后端。   |
-| `external` | 已有采集链路，只需查询。                       | Prometheus HTTP 查询后端。                            |
+| 采集方式   | 适用场景                                       | 基础设施                                                    |
+| ---------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| `native`   | 托管 Envd 目标直接导出。                       | OTLP 接收端；可选的 Prometheus HTTP 查询后端。              |
+| `pull`     | 已有采集器拉取目标指标。                       | Chart 托管的 vmagent 或外部 vmagent/Alloy；可选的查询后端。 |
+| `proxy`    | 小型部署需要临时历史，或目标反向连接 Service。 | Service 和 Redis；可选的 OTLP HTTP 导出与查询后端。         |
+| `external` | 已有采集链路，只需查询。                       | Prometheus HTTP 查询后端。                                  |
 
-**Local Cache** 是内置代理数据源，配置固定。自定义数据源分别配置采集、导出和历史查询。Service 不安装采集器或时序数据库。后端失败不会静默切换到 Local Cache。
+**Local Cache** 是内置代理数据源，配置固定。自定义数据源分别配置采集、导出和历史查询。Helm chart 可选安装 vmagent；历史存储由外部后端提供。后端失败不会静默切换到 Local Cache。
 
 工作空间管理员通过 `/api/v1/metrics-data-sources` 创建数据源。例如，以下请求体选择原生导出和独立的查询端点：
 
@@ -52,6 +52,16 @@ description: 为环境和 Device 指标选择采集与历史查询后端，并�
 
 > [!WARNING]
 > Native 数据源会将写入凭据交付给目标进程。环境管理者可以选择该数据源，在目标上执行代码的用户或 agent 可以读取并复用凭据。请使用接收端限定范围的只写凭据，并确保这些执行者在允许的摄取范围内可信。资源标签不能防止伪造样本身份。如果接收端凭据必须保留在目标之外，请使用 pull 或 proxy 采集。
+
+## 确认部署预设
+
+运维可以向明确列出的工作空间 ID 提供脱敏的拉取采集与查询预设。允许范围内的管理员打开 **添加数据源**，检查预填字段，再选择 **保存数据源**。部署不会自动创建数据源或环境绑定。预设加载失败时，可以重试或选择 **手动配置**。
+
+**使用部署查询凭据** 默认为 **否**。选择 **是** 后，服务器加密保存当前部署读取令牌的快照，令牌不会进入浏览器。编辑查询目的地会清除授权；只有原始端点可以继承凭据。公开预设变化后需要重新打开表单。仅轮换令牌时，确认操作使用当时的令牌；已有数据源在轮换或移除预设后仍保留原快照。需要更新时，请明确替换已保存数据源的凭据。
+
+只有管理员可以读取 `/api/v1/metrics-data-sources/deployment-preset`。监控启用、采集器已配置且工作空间在允许列表内时才返回预设，否则返回 `null`。响应包含配置、是否有凭据和修订标识，不含令牌。API 客户端创建时通过 `deployment_preset_revision` 和 `use_deployment_query_credentials: true` 明确选择继承，不能同时提交普通查询凭据。读取令牌必须由后端限定到允许工作空间的数据范围；允许列表和查询标签不能替代后端租户隔离。
+
+Service 设置见[配置说明](configuration.md#environment-monitoring)，values 和 Secret 引用见 [Helm 部署指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors)。
 
 ## 绑定并验证环境
 
@@ -77,7 +87,9 @@ Linux 互操作测试覆盖带认证的 Envd 抓取、重载、租户标签、�
 
 OTLP 接收端（包括运维自行配置的 OpenTelemetry Collector）可独立用于 native 或 proxy 导出。Service 尚无 OpenTelemetry Collector 或 Prometheus Server 的自动抓取配置适配器。
 
-使用已有采集器安装及运维管理的导出链路。Service 只替换自己生成的采集片段。采集器必须能够访问目标的 HTTP 监听器，Service 写入进程必须能够访问采集器重载端点。历史存储和 Prometheus HTTP 查询端点需要单独配置；仅部署 pull 采集器不会提供仪表盘历史。
+使用托管 vmagent 时，在 Helm 中启用 `monitoring.vmagent.enabled`，并设置完整的远程写入 URL 或 Prometheus 简便 URL。Chart 提供独立单例写入进程、受保护的片段、回环重载接口和持久化转发队列。存储写入 URL 与查询 URL 独立配置，普通 API 副本不会写入片段。关闭采集前先移除目标并排空队列；禁用或卸载后保留 PVC。遵循 [Helm 生命周期说明](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors)，强制替换前需隔离失联节点。
+
+使用外部模式时，采用已有采集器安装及运维管理的导出链路。Service 只替换自己生成的采集片段。采集器必须能够访问目标的 HTTP 监听器，Service 写入进程必须能够访问采集器重载端点。历史存储和 Prometheus HTTP 查询端点需要单独配置；仅部署 pull 采集器不会提供仪表盘历史。
 
 1. 创建受保护的共享目录。将目录挂载到 Service 和采集器，不要只挂载生成的文件：更新使用原子替换。
 2. 两个进程使用能够读取 Service 的 0600 权限片段的 UID。目录仅向受信任的运维人员开放。片段包含监听器凭据，这些凭据也能访问 EIP。
@@ -100,6 +112,7 @@ scrape_config_files:
 [monitoring.collectors.vmagent]
 directory = "/var/lib/a13n/vmagent"
 endpoint = "http://vmagent:8429"
+allow_http_reload = true
 writer = true
 ```
 
@@ -113,6 +126,7 @@ writer = true
 [monitoring.collectors.alloy]
 directory = "/var/lib/a13n/alloy"
 endpoint = "http://alloy:12345"
+allow_http_reload = true
 receiver = "prometheus.remote_write.metrics.receiver"
 writer = true
 ```
@@ -127,7 +141,7 @@ Service 只写入 `a13n-managed.alloy`。将同一目录挂载到 Alloy 的配�
 
 `reload_requested` 表示采集器接受了重载请求。需要在采集器端确认配置生效、采集健康和导出情况；vmagent 异步重载。重载失败会在下次同步重试。等待中或已过期的回执不能证明采集正常。
 
-写入进程运行期间，可以禁用或解除绑定数据源，再确认下一次成功同步移除了对应任务。在停止写入进程、删除其配置或设置 `monitoring.enabled = false` 之前，运维必须自行移除托管片段并重载采集器。停止同步不会停用已加载的任务。
+写入进程运行期间，可以禁用或解除绑定数据源，再确认下一次成功同步移除了对应任务。使用外部采集器时，在停止写入进程、删除其配置或设置 `monitoring.enabled = false` 之前，运维必须自行移除托管片段并重载采集器。停止同步不会停用已加载的任务。
 
 ## 连接反向 Device
 
