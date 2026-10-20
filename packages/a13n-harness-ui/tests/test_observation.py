@@ -267,6 +267,7 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
         return False
 
     operator = SimpleNamespace(
+        _tool_executions=None,
         _restart=None,
         _finish_restart=finish_restart,
         _consume_run=consume,

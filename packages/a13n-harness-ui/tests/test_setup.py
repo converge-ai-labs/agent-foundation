@@ -41,6 +41,7 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "auto", "foreground_wait_seconds": 1.0},
     }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
     result = await publish_setup(path, selection, validate_candidate=_validate())
@@ -121,6 +122,7 @@ async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_v
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "auto", "foreground_wait_seconds": 1.0},
         **authored_tools,
     }
     selection = _selection(tmp_path)

@@ -119,7 +119,11 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
         },
     }
     agent_path.write_text(yaml.safe_dump(agent))
-    path.write_text(path.read_text() + "tools: {enable_codeact: false, enable_ask_user_question: false}\n")
+    # This reconstruction test supplies RunBindings directly, without an App-owned runtime.
+    path.write_text(
+        path.read_text()
+        + "tools: {enable_codeact: false, enable_ask_user_question: false, execution: {mode: inline}}\n"
+    )
 
     def status() -> str:
         return "ready"
@@ -254,7 +258,11 @@ async def test_inactive_plan_preserves_direct_tool_matching_control_name(tmp_pat
         "config": {"mode": "proxy", "search_name": "search"},
     }
     agent_path.write_text(yaml.safe_dump(agent))
-    path.write_text(path.read_text() + "tools: {enable_codeact: false, enable_ask_user_question: false}\n")
+    # This reconstruction test supplies RunBindings directly, without an App-owned runtime.
+    path.write_text(
+        path.read_text()
+        + "tools: {enable_codeact: false, enable_ask_user_question: false, execution: {mode: inline}}\n"
+    )
     configuration = await load_harness_ui_configuration(path)
     selection = replace(_selection(), mcp_server_ids=(), harness_plugin_ids=())
     catalog = HarnessUiExtensionCatalog(host_plugin_factories=(_MemoryFactory(),))
