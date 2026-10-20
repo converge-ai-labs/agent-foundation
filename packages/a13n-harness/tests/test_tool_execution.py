@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, RunError
+from a13n_harness import AgentSpec, DefinitionError, HarnessBuilder, RunBindings, RunError
 from a13n_harness._retained_scope import RetainedScope
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
@@ -427,6 +427,21 @@ def tool_agent(operation, *, config, owned=True):
     return executable, observed
 
 
+async def test_auto_without_runtime_rejects_before_tool_execution():
+    called = False
+
+    async def lookup():
+        nonlocal called
+        called = True
+        return 42
+
+    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="auto"))
+    with pytest.raises(DefinitionError) as caught:
+        await executable.run("start")
+    assert caught.value.code == "tool_execution_unbound"
+    assert not called and observed == []
+
+
 async def test_harness_auto_returns_receipt_then_execution_finishes_after_run_close():
     entered, finish = asyncio.Event(), asyncio.Event()
     calls = 0
@@ -607,7 +622,8 @@ async def test_tool_handoff_publishes_one_return_to_each_channel(immediate):
     await runtime.close()
 
 
-async def test_immediate_unsupported_tool_preserves_original_operation():
+@pytest.mark.parametrize("bound", [False, True])
+async def test_immediate_unsupported_tool_preserves_original_operation(bound):
     entered, finish = asyncio.Event(), asyncio.Event()
 
     async def lookup():
@@ -616,20 +632,24 @@ async def test_immediate_unsupported_tool_preserves_original_operation():
         return 42
 
     executable, observed = tool_agent(lookup, config=ToolExecutionConfig(), owned=False)
-    async with executable.stream("start") as stream:
+    runtime = ToolExecutionRuntime() if bound else None
+    async with executable.stream("start", bindings=RunBindings.embedded(tool_execution=runtime)) as stream:
 
         async def consume():
             return [event async for event in stream]
 
         consumer = asyncio.create_task(consume())
         await entered.wait()
-        with pytest.raises(RunError, match="does not support immediate handoff"):
+        with pytest.raises(RunError) as caught:
             await stream.steer("interrupt", immediate=True)
+        assert caught.value.code == ("tool_handoff_unsupported" if bound else "tool_execution_unbound")
         await stream.steer("ordinary steer")
         finish.set()
         await consumer
         assert stream.result.status == "completed"
     assert observed[0].content == 42
+    if runtime is not None:
+        await runtime.close()
 
 
 async def test_immediate_settlement_publishes_completed_native_result_once(monkeypatch):

@@ -77,7 +77,7 @@ class _ToolDeps:
     def __init__(self) -> None:
         self._steering = _Steering()
         self._tool_executions = RunToolExecutions()
-        self._tool_executions.config = ToolExecutionConfig(foreground_wait_seconds=0)
+        self._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> None:
         del data, suffix
@@ -91,7 +91,7 @@ def _ctx(wait_seconds: float = 0) -> Any:
         events.append(event)
 
     deps = _ToolDeps()
-    deps._tool_executions.config = ToolExecutionConfig(foreground_wait_seconds=wait_seconds)
+    deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=wait_seconds)
     return SimpleNamespace(deps=deps, emit=emit, events=events, tool_call_id=None)
 
 
@@ -568,19 +568,52 @@ async def test_cancellation_during_admission_settles_original_process(
         assert (await environment.processes.inspect(entry.handle)).status.phase == "running"
 
 
-@pytest.mark.parametrize("wait_seconds", [None, 0.125])
+@pytest.mark.parametrize("wait_seconds", [None, 0, 0.125])
 async def test_shell_uses_common_foreground_wait_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wait_seconds):
     async with _bound_process_environment(tmp_path) as environment:
         toolset = ShellToolset(environment)
         ctx = _ctx()
         config = (
-            ToolExecutionConfig() if wait_seconds is None else ToolExecutionConfig(foreground_wait_seconds=wait_seconds)
+            ToolExecutionConfig()
+            if wait_seconds is None
+            else ToolExecutionConfig(mode="auto", foreground_wait_seconds=wait_seconds)
         )
         ctx.deps._tool_executions.config = config
         start = AsyncMock(wraps=toolset._process_controller.start)
         monkeypatch.setattr(toolset._process_controller, "start", start)
         await toolset.shell_exec(ctx, "echo value")
-        assert start.await_args.kwargs["yield_time_seconds"] == (1.0 if wait_seconds is None else wait_seconds)
+        assert start.await_args.kwargs["yield_time_seconds"] == wait_seconds
+        await toolset.close()
+
+
+async def test_inline_shell_waits_through_provider_timeout_until_process_exits(tmp_path: Path, monkeypatch) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        ctx = _ctx()
+        ctx.deps._tool_executions.config = ToolExecutionConfig(foreground_wait_seconds=0)
+        waiting = asyncio.Event()
+        original_wait = environment.processes.wait
+        waits = 0
+
+        async def wait(*args, **kwargs):
+            nonlocal waits
+            waits += 1
+            if waits == 1:
+                raise EnvironmentError("Wait expired", code="environment_timeout")
+            waiting.set()
+            return await original_wait(*args, **kwargs)
+
+        monkeypatch.setattr(environment.processes, "wait", wait)
+        operation = asyncio.create_task(
+            toolset.shell_exec(ctx, "while [ ! -f release ]; do sleep 0.01; done; printf done")
+        )
+        await asyncio.wait_for(waiting.wait(), 2)
+        assert not operation.done()
+        (tmp_path / "release").touch()
+        result = await asyncio.wait_for(operation, 2)
+        assert result["status"]["phase"] == "exited"
+        assert result["stdout"]["text"] == "done"
+        assert waits == 2
         await toolset.close()
 
 
@@ -762,7 +795,7 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
 
         toolset = ShellToolset(environment)
         ctx = SimpleNamespace(deps=SpillDeps(), tool_call_id=None)
-        ctx.deps._tool_executions.config = ToolExecutionConfig(foreground_wait_seconds=2)
+        ctx.deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=2)
         result = await toolset.shell_exec(
             ctx,
             "head -c 30000 /dev/zero | tr '\\0' x",

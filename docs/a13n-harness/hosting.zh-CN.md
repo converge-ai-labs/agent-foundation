@@ -69,7 +69,9 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。CodeAct runner 可整体转到后台，嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
 
-`await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，同时保留逻辑 Run 和支持的工具执行。普通 steering 默认为 `immediate=False`。已接受但尚未送达的输入通过正常状态导出保留，不会强制每条消息写入检查点。
+自动后台执行和即时 steering 都要求 Host 提供 `RunBindings.tool_execution`。Harness 提供 runtime 及其默认内存存储，由 Host 实例化并持有。仅提供 store 无法承担运行中执行的所有权。未绑定 runtime 时，阻塞工具和普通排队 steering 仍然可用。`auto` 在 Run 准备阶段拒绝缺少绑定的配置；即时 steering 在接收输入或抢占前拒绝，包括仅生成模型输出的阶段。
+
+具备绑定后，`await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，同时保留逻辑 Run 和支持的工具执行；在 `inline` 模式下同样可用。`auto` 则无需新用户输入即可释放前台等待，让 Agent 继续执行。普通 steering 默认为 `immediate=False`。已接受但尚未送达的输入通过正常状态导出保留，不会强制每条消息写入检查点。
 
 Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。读取限定在所属 Thread。只有真实结果进入规范历史后，才确认结果已交付。默认内存存储有界保留已完成记录，重启后丢失。自定义 `ToolExecutionStore` 持久化事实和结果，不保存可恢复的 Python 任务。
 

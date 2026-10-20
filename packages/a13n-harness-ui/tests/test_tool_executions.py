@@ -582,7 +582,7 @@ async def test_tool_wait_policy_is_captured_and_old_compositions_default_inline(
     assert restored == captured
     path.write_text('schema_version: "1"\n')
     defaults = _resolve(await load_harness_ui_configuration(path)).tool_execution
-    assert defaults.mode == "auto" and defaults.foreground_wait_seconds == 1.0
+    assert defaults.mode == "inline" and defaults.foreground_wait_seconds == 1.0
     rebuilt = AgentReconstructor().reconstruct(restored, subagent_operator=_UnusedOperator())
     capability = next(
         item for item in rebuilt.executable.definition.capabilities if isinstance(item, ToolExecutionCapability)
@@ -628,20 +628,18 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             assert content[0].metadata.source_id == "tool_execution.completion"
 
 
-def test_ui_execution_defaults_do_not_change_harness_defaults():
+def test_ui_defaults_to_inline_with_immediate_steering_and_optional_auto():
     from a13n_harness import ToolExecutionConfig
     from a13n_harness_ui.configuration.models import HarnessUiDocument
 
     assert ToolExecutionConfig().mode == "inline"
     defaults = HarnessUiDocument()
     assert defaults.input.steering_mode == "immediate"
-    assert defaults.tools.execution.mode == "auto"
+    assert defaults.tools.execution.mode == "inline"
     configured = HarnessUiDocument.model_validate(
         {"tools": {"execution": {"foreground_wait_seconds": 0.25}}, "input": {"steering_mode": "queued"}}
     )
-    assert configured.tools.execution.mode == "auto"
+    assert configured.tools.execution.mode == "inline"
     assert configured.tools.execution.foreground_wait_seconds == 0.25
     assert configured.input.steering_mode == "queued"
-    assert (
-        HarnessUiDocument.model_validate({"tools": {"execution": {"mode": "inline"}}}).tools.execution.mode == "inline"
-    )
+    assert HarnessUiDocument.model_validate({"tools": {"execution": {"mode": "auto"}}}).tools.execution.mode == "auto"

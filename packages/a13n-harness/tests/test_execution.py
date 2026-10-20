@@ -1194,8 +1194,39 @@ async def test_pending_steering_survives_cancel_and_restores_before_new_input() 
     assert len(state.agent_context_state.entries["a13n.steering"].data["pending_requests"]) == 1
 
 
+async def test_immediate_steering_without_runtime_rejects_before_acceptance_during_model_generation() -> None:
+    from a13n_harness.capabilities.steering import steering_input_ids
+
+    started, finish = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def responding(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        calls += 1
+        yield "partial"
+        started.set()
+        await finish.wait()
+        yield " completed"
+
+    executable = _build(FunctionModel(stream_function=responding))
+    async with executable.stream("initial") as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        with pytest.raises(RunError) as caught:
+            await stream.steer("rejected", input_id="rejected-input", immediate=True)
+        assert caught.value.code == "tool_execution_unbound"
+        assert not consumer.done()
+        await stream.steer("accepted", input_id="accepted-input")
+        finish.set()
+        await asyncio.wait_for(consumer, 2)
+        assert stream.result.status == "completed"
+        assert steering_input_ids(stream.result.state.message_history) == ("accepted-input",)
+        assert calls == 2  # Queued input runs only after the original response completes.
+
+
 async def test_immediate_steering_reenters_logical_run_and_preserves_partial_output() -> None:
     from a13n_harness.capabilities.steering import steering_input_ids
+    from a13n_harness.tool_execution import ToolExecutionRuntime
 
     started = asyncio.Event()
     calls: list[tuple[ModelMessage, ...]] = []
@@ -1211,12 +1242,14 @@ async def test_immediate_steering_reenters_logical_run_and_preserves_partial_out
             yield "steered response"
 
     executable = _build(FunctionModel(stream_function=responding))
-    async with executable.stream("initial") as stream:
+    runtime = ToolExecutionRuntime()
+    async with executable.stream("initial", bindings=RunBindings.embedded(tool_execution=runtime)) as stream:
         consumer = asyncio.create_task(_consume_stream(stream))
         await started.wait()
         await stream.steer("change direction", input_id="input_one", immediate=True)
         await stream.steer("and preserve order", input_id="input_two", immediate=True)
         items = await asyncio.wait_for(consumer, 2)
+    await runtime.close()
     terminals = [item for item in items if isinstance(item, HarnessRunResultEvent)]
     assert len(terminals) == 1
     assert terminals[0].result.status == "completed"

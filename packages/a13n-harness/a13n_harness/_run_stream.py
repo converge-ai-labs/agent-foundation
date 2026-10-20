@@ -1046,6 +1046,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         context = self._context
 
         def check_handoff() -> None:
+            if immediate and context.tool_execution is None:
+                raise RunError(
+                    "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",
+                    code="tool_execution_unbound",
+                )
             if immediate and context._tool_executions.unsupported_calls:
                 raise RunError(
                     "An active tool does not support immediate handoff; ordinary steering remains available.",

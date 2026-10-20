@@ -133,7 +133,7 @@ class _ProcessController:
         request: CommandRequest,
         *,
         alias: str | None,
-        yield_time_seconds: float,
+        yield_time_seconds: float | None,
         expected_mount_id: str | None = None,
     ) -> ShellExecSuccess:
         self._guard_execution()
@@ -152,18 +152,22 @@ class _ProcessController:
         try:
             if cancellation is None:
                 await self._emit_status(entry)
-                if yield_time_seconds > 0:
+                while yield_time_seconds is None or yield_time_seconds > 0:
+                    if entry.latest.status.phase in _TERMINAL_PHASES | {"unknown", "missing"}:
+                        break
                     try:
                         baseline = entry.latest
                         waited = await self._environment.processes.wait(
                             entry.handle,
                             condition="initial_terminal",
-                            timeout_seconds=yield_time_seconds,
+                            timeout_seconds=30 if yield_time_seconds is None else yield_time_seconds,
                         )
                         self._adopt_info(entry, waited, baseline=baseline)
                     except EnvironmentError as exc:
                         if exc.code != "environment_timeout":
                             raise
+                    if yield_time_seconds is not None:
+                        break
             observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
         except asyncio.CancelledError:
             if _OWNED_TOOL_EXECUTION.get():

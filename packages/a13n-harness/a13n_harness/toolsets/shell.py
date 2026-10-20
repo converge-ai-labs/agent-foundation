@@ -257,7 +257,7 @@ class ShellToolset:
         execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: _MountAlias = None,
     ) -> ShellExecToolResult:
-        """Start a command and automatically yield a Run-local process reference when still live."""
+        """Run a command; return a Run-local process reference when auto policy or steering releases a live wait."""
         try:
             request = self._command_request(
                 command,
@@ -288,7 +288,11 @@ class ShellToolset:
             result = await self._process_controller.start(
                 request,
                 alias=alias,
-                yield_time_seconds=ctx.deps._tool_executions.config.foreground_wait_seconds,
+                yield_time_seconds=(
+                    ctx.deps._tool_executions.config.foreground_wait_seconds
+                    if ctx.deps._tool_executions.config.mode == "auto"
+                    else None
+                ),
                 expected_mount_id=mount_id,
             )
             if ctx.tool_call_id is not None:

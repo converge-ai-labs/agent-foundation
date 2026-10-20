@@ -138,9 +138,7 @@ class TerminalDisplayConfiguration(ConfigurationModel):
 
 
 class ToolExecutionConfiguration(ToolExecutionConfig):
-    """Harness UI enables automatic background execution by default."""
-
-    mode: Literal["inline", "auto"] = "auto"
+    """Harness UI waits inline by default while retaining immediate handoff support."""
 
 
 class ToolsConfiguration(ConfigurationModel):

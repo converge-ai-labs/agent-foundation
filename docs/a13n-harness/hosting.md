@@ -69,7 +69,9 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Whole CodeAct runners can detach; their nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
 
-`await stream.steer(message, immediate=True)` preempts the current native attempt while keeping the logical Run and supported tool work alive. Ordinary steering defaults to `immediate=False`. Accepted pending input is preserved through normal state export; this does not force a checkpoint per message.
+Automatic background execution and immediate steering both require a Host-supplied `RunBindings.tool_execution`. Harness supplies the runtime and its default memory store; Hosts instantiate and hold them. A store alone cannot own live execution. Without the runtime, blocking tools and ordinary queued steering remain available. `auto` rejects a missing binding during Run preparation; immediate steering rejects it before accepting input or preempting, even during model-only generation.
+
+With that binding, `await stream.steer(message, immediate=True)` preempts the current native attempt while keeping the logical Run and supported tool work alive. It also works in `inline` mode. In contrast, `auto` releases the foreground wait without new user input so the Agent can continue. Ordinary steering defaults to `immediate=False`. Accepted pending input is preserved through normal state export; this does not force a checkpoint per message.
 
 The Agent can inspect, retrieve, wait for and cancel work through `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. Reads are Thread-scoped. Result delivery is acknowledged only after the real result enters canonical history. The default memory store bounds completed retention and is lost on restart. A custom `ToolExecutionStore` persists facts and results, not resumable Python tasks.
 

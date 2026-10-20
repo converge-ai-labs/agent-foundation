@@ -3101,7 +3101,7 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
         from a13n_harness.tool_execution import ToolExecutionConfig
 
         ctx.deps._tool_executions = RunToolExecutions()
-        ctx.deps._tool_executions.config = ToolExecutionConfig(foreground_wait_seconds=0)
+        ctx.deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)
         ctx.tool_call_id = None
         assert toolset._execution_mode({"command": "echo value", "cwd": "/workspace"}) == "owned"
         assert toolset._execution_mode({"command": "echo value", "cwd": "/environment/shared"}) == "process"

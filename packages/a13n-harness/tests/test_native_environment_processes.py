@@ -8,7 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, ToolExecutionConfig, ToolExecutionRuntime
+from a13n_harness.capabilities import ToolExecutionCapability
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentPermissionSet, EnvironmentState
 from a13n_harness.environment.sources import EnvironmentMount
@@ -113,8 +114,13 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
         policy_resources.extend(invocation.resources)
         return InvocationPolicyDecision.allow()
 
+    tool_execution = ToolExecutionRuntime()
+
     def bindings():
-        return RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=allow),))
+        return RunBindings.embedded(
+            tool_execution=tool_execution,
+            capabilities=(InvocationPolicyCapability(evaluator=allow),),
+        )
 
     results = []
 
@@ -144,7 +150,10 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
             AgentSpec(),
             output_type=str,
             model=FunctionModel(stream_function=stream),
-            capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
+            capabilities=(
+                DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+                ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+            ),
         )
 
     first = Source(E2B.execution_connector(configuration, environment_id="env-test", state=state, runtime=runtime))
@@ -198,3 +207,4 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
     assert "private" not in json.dumps(results)
     assert any(resource.kind == "mount" for resource in policy_resources)
     assert any(resource.kind == "managed-process" for resource in policy_resources)
+    await tool_execution.close()
