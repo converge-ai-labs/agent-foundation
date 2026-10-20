@@ -5,11 +5,14 @@ import {
   MenuItem,
   ModalFrame,
   SearchPicker,
+  Tabs,
+  TabsList,
+  TabsTab,
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import { PageActions } from "../../shared/page";
+import { PageActions, useTabParam } from "../../shared/page";
 
 import { ApiError, type Client } from "../../service-client";
 import {
@@ -36,10 +39,31 @@ import { ConflictNotice, Confirm } from "../../shared/dialogs";
 import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
-import { InvitationEditor } from "./invitations";
+import { InvitationEditor, Invitations } from "./invitations";
 import { roles, type MembershipScope, type Role } from "./roles";
 
 export type { MembershipScope };
+
+/** Members and invitations share one navigation entry and scoped header. */
+export function MemberSettings({ scope }: { scope: MembershipScope }) {
+  const { t } = useTranslation();
+  const [tab, setTab] = useTabParam(["members", "invitations"]);
+  return (
+    <div className={styles.stack}>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="underline">
+          <TabsTab value="members">{t("Members")}</TabsTab>
+          <TabsTab value="invitations">{t("Invitations")}</TabsTab>
+        </TabsList>
+      </Tabs>
+      {tab === "invitations" ? (
+        <Invitations key={`${scope.kind}:${scope.id}`} scope={scope} />
+      ) : (
+        <Members key={`${scope.kind}:${scope.id}`} scope={scope} />
+      )}
+    </div>
+  );
+}
 
 /** One page of the grants held at exactly this scope, each naming its principal. */
 function grants(
@@ -77,14 +101,14 @@ export function Members({ scope }: { scope: MembershipScope }) {
       grants(client, scope, { cursor: page.cursor, limit: 30 }, signal),
   });
   const items = bindings.data?.items ?? [];
-  const action =
-    scope.kind === "workspace" ? (
-      organizationCan("admin") && (
+  const action = (
+    <>
+      {scope.kind === "workspace" && organizationCan("admin") && (
         <AddMember scope={scope} organizationId={organization.id} />
-      )
-    ) : (
+      )}
       <InvitationEditor scope={scope} />
-    );
+    </>
+  );
   return (
     <div className={styles.stack}>
       <PageActions>{action}</PageActions>
@@ -399,7 +423,7 @@ function AddMember({
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button variant="default" type="button">
+        <Button variant="outline" type="button">
           <PlusIcon size={14} />
           {t("Add member")}
         </Button>
